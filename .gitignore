@@ -1,0 +1,14 @@
+.DS_Store
+bin/
+.local/
+work/
+.env
+web/node_modules/
+web/.output/
+web/.tanstack/
+web/dist/
+web/.nitro/
+coverage.out
+*.log
+__pycache__/
+*.pyc
