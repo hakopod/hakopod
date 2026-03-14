@@ -1,0 +1,8 @@
+Hakopod
+Copyright 2026 Hakopod contributors
+
+Hakopod original code is licensed under Apache-2.0.
+Third-party dependencies retain their own licenses. See docs/licenses.md.
+No Railway, Render, Vercel, Coolify, Dokploy, Kubernetes, or HAProxy branding
+assets are redistributed as Hakopod branding. References informed behavior
+and interface principles only. No ownership of hakopod.com is asserted.
