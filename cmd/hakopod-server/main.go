@@ -1,0 +1,155 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/hakopod/hakopod/internal/api"
+	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/store"
+	"github.com/hakopod/hakopod/internal/worker"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "hakopod-server:", err)
+		os.Exit(1)
+	}
+}
+func run() error {
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(192 << 20)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	dbURL := os.Getenv("HAKOPOD_DATABASE_URL")
+	if dbURL == "" {
+		return fmt.Errorf("HAKOPOD_DATABASE_URL is required")
+	}
+	db, err := store.Open(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect to PostgreSQL: check HAKOPOD_DATABASE_URL and database health")
+	}
+	defer db.Close()
+	if err = db.Migrate(ctx); err != nil {
+		return fmt.Errorf("database migration failed: %w", err)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
+		fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
+		name := fs.String("name", "operator", "administrator name")
+		keyFile := fs.String("key-file", "", "write the one-time bootstrap key to this restricted file")
+		if err = fs.Parse(os.Args[2:]); err != nil {
+			return err
+		}
+		if *keyFile == "" {
+			return fmt.Errorf("--key-file is required; the bootstrap credential is never printed in logs")
+		}
+		if err = os.MkdirAll(filepath.Dir(*keyFile), 0700); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(*keyFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		raw, err := db.Bootstrap(ctx, *name)
+		if err != nil {
+			f.Close()
+			os.Remove(*keyFile)
+			return err
+		}
+		_, err = f.WriteString(raw + "\n")
+		if err == nil {
+			err = f.Sync()
+		}
+		f.Close()
+		if err != nil {
+			return fmt.Errorf("bootstrap credential file write failed; recover administrator through PostgreSQL before retrying")
+		}
+		fmt.Printf("Administrator created. Bootstrap key saved to %s (0600; expires in 7 days).\n", *keyFile)
+		return nil
+	}
+	rollout := 120 * time.Second
+	if raw := os.Getenv("HAKOPOD_ROLLOUT_TIMEOUT"); raw != "" {
+		rollout, err = time.ParseDuration(raw)
+		if err != nil || rollout < 15*time.Second || rollout > 15*time.Minute {
+			return fmt.Errorf("HAKOPOD_ROLLOUT_TIMEOUT must be 15s–15m")
+		}
+	}
+	port := 0
+	if value := os.Getenv("HAKOPOD_PUBLIC_PORT"); value != "" {
+		port, err = strconv.Atoi(value)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("HAKOPOD_PUBLIC_PORT must be 1–65535")
+		}
+	}
+	domain := os.Getenv("HAKOPOD_APP_DOMAIN")
+	if domain == "" || len(domain) > 190 || len(validation.IsDNS1123Subdomain(domain)) > 0 {
+		return fmt.Errorf("HAKOPOD_APP_DOMAIN must be an operator-owned DNS domain (local-up configures a development domain)")
+	}
+	ingress := env("HAKOPOD_INGRESS_CLASS", "haproxy")
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER")})
+	if err != nil {
+		return fmt.Errorf("initialize Kubernetes client: %w", err)
+	}
+	listen := env("HAKOPOD_LISTEN", "127.0.0.1:8080")
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	cert, key := os.Getenv("HAKOPOD_TLS_CERT"), os.Getenv("HAKOPOD_TLS_KEY")
+	if (ip == nil || !ip.IsLoopback()) && cert == "" && os.Getenv("HAKOPOD_TRUST_PROXY") != "true" {
+		return fmt.Errorf("non-loopback API requires TLS or explicit HAKOPOD_TRUST_PROXY=true behind an HTTPS reverse proxy")
+	}
+	if (cert == "") != (key == "") {
+		return fmt.Errorf("set both HAKOPOD_TLS_CERT and HAKOPOD_TLS_KEY")
+	}
+	srv := &http.Server{Addr: listen, Handler: (&api.Server{Store: db, Cluster: kube}).Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	w := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); w.Run(ctx) }()
+	go func() { defer wg.Done(); w.Resync(ctx) }()
+	serverErr := make(chan error, 1)
+	go func() {
+		if cert != "" {
+			serverErr <- srv.ListenAndServeTLS(cert, key)
+		} else {
+			serverErr <- srv.ListenAndServe()
+		}
+	}()
+	slog.Info("Hakopod management API ready", "listen", listen, "workers", 2, "memory_target", "192MiB")
+	select {
+	case <-ctx.Done():
+	case err = <-serverErr:
+		stop()
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutdownCtx)
+	wg.Wait()
+	if err != nil && !strings.Contains(err.Error(), "Server closed") {
+		return err
+	}
+	return nil
+}
+func env(k, fallback string) string {
+	if value := os.Getenv(k); value != "" {
+		return value
+	}
+	return fallback
+}
