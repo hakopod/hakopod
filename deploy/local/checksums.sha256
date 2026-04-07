@@ -1,0 +1,6 @@
+# k3d v5.9.0 release checksums; chart 1.54.0 repository artifact checksum.
+b4aabc37534f95b9c764e7823f2df923f50d57600837aa60a06266cce47db732  k3d-darwin-amd64
+fe106541d5d0a3f18debcd4d432a16f8c0ce3e6ddc06f8fbb6f696a122313e00  k3d-darwin-arm64
+06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0  k3d-linux-amd64
+03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250  k3d-linux-arm64
+cf1869175352e87866b2caf8c58c31fda32bf763d7e87734e229fba14ecee9ca  kubernetes-ingress-1.54.0.tgz
