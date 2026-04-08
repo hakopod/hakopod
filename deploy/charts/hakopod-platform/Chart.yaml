@@ -1,0 +1,11 @@
+apiVersion: v2
+name: hakopod-platform
+description: Minimal Hakopod development routing infrastructure
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+kubeVersion: ">=1.35.0-0 <1.36.0-0"
+dependencies:
+  - name: kubernetes-ingress
+    version: 1.54.0
+    repository: https://haproxytech.github.io/helm-charts
