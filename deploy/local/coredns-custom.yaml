@@ -1,0 +1,17 @@
+# Local profile: the host's UDP DNS upstream is unreachable from the Docker VM.
+# K3s imports *.override before its default forward, so the first matching root
+# forward handles public names while its kubernetes plugin handles cluster DNS.
+# Change these resolvers to operator-approved addresses when required.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/managed-by: hakopod-development
+data:
+  hakopod.override: |
+    forward . 1.1.1.1 8.8.8.8 {
+      force_tcp
+      max_concurrent 64
+    }
