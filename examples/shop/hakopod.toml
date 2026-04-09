@@ -1,0 +1,51 @@
+schema_version = 1
+name = "shop"
+
+# A real, build-free demo. The Python Alpine index supports amd64 and arm64.
+# The web SERVER proxies /api to the private API; browser code never uses cluster DNS.
+[services.web]
+image = "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a"
+port = 8080
+public = true
+size = "small"
+healthcheck = "/readyz"
+depends_on = ["api"]
+command = ["python", "-u", "-c"]
+args = ['''
+import http.server, os, urllib.request
+class Web(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/readyz':
+            self.send_response(200); self.end_headers(); self.wfile.write(b'ready'); return
+        if self.path == '/api':
+            try:
+                with urllib.request.urlopen(os.environ['API_URL'], timeout=3) as upstream:
+                    body = upstream.read(65536)
+                self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
+            except Exception:
+                self.send_response(503); self.end_headers(); self.wfile.write(b'Private API is unavailable')
+            return
+        self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers()
+        self.wfile.write(b'<!doctype html><html><head><title>Shop on Hakopod</title></head><body style="background:#101114;color:#ededf0;font:18px system-ui;max-width:720px;margin:80px auto;padding:24px"><p style="color:#bca7ed">HAKOPOD / LIVE APPLICATION</p><h1>Your services work together.</h1><p>This public web server connects to a private API using <code>http://api:8080</code>.</p><pre id="result">Loading the private API through the web proxy...</pre><script>fetch("/api").then(r=>r.json()).then(d=>document.querySelector("#result").textContent=JSON.stringify(d,null,2)).catch(()=>document.querySelector("#result").textContent="API unavailable")</script></body></html>')
+http.server.HTTPServer(('0.0.0.0',8080), Web).serve_forever()
+''']
+
+[services.web.env]
+API_URL = "http://api:8080/"
+
+[services.api]
+image = "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a"
+port = 8080
+size = "small"
+healthcheck = "/readyz"
+command = ["python", "-u", "-c"]
+args = ['''
+import http.server, json, platform, socket
+class API(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path not in ('/', '/readyz'):
+            self.send_response(404); self.end_headers(); return
+        body = json.dumps({'service':'private-api','message':'Hello from the private network','python':platform.python_version(),'pod':socket.gethostname()}).encode()
+        self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(body)
+http.server.HTTPServer(('0.0.0.0',8080), API).serve_forever()
+''']
