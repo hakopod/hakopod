@@ -1,0 +1,10 @@
+# The scanner reads only a purpose-built release staging directory, never .local
+# credentials or the whole workspace. Go licenses come from the existing cache.
+check-for-app-update: false
+parallelism: 2
+golang:
+  search-local-mod-cache-licenses: true
+  search-remote-licenses: false
+javascript:
+  include-dev-dependencies: true
+  search-remote-licenses: true
