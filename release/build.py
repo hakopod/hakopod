@@ -53,7 +53,7 @@ def archive(source,destination,epoch):
                     info.mode=0o755 if path.name in ('hakopod','hakopod-server') else 0o644
                     with path.open('rb') as file:bundle.addfile(info,file)
 
-def normalize_sbom_paths(destination,scan,go_cache):
+def normalize_sbom_paths(destination,scan,go_cache,prefix='hakopod'):
     """Keep catalog content intact while replacing machine-specific paths."""
     replacements=[(str(scan),'$RELEASE_STAGE'),(go_cache,'$GOPATH/pkg/mod'),(str(Path.home()),'$HOME')]
     def normalize(value):
@@ -62,8 +62,8 @@ def normalize_sbom_paths(destination,scan,go_cache):
         if isinstance(value,str):
             for original,replacement in replacements:value=value.replace(original,replacement)
         return value
-    for filename in ('hakopod.spdx.json','hakopod.cyclonedx.json','hakopod.syft.json'):
-        path=destination/filename
+    for suffix in ('spdx.json','cyclonedx.json','syft.json'):
+        path=destination/(prefix+'.'+suffix)
         path.write_text(json.dumps(normalize(json.loads(path.read_text())),separators=(',',':'))+'\n')
 
 def main():
@@ -118,7 +118,7 @@ def main():
             f'Hakopod {version} — {system}/{arch}\n\n'
             'Development artifact; no production installer or support guarantee.\n'
             'Run hakopod version/help to inspect the CLI.\n'
-            + ('Run the server from this directory so api/openapi.json is available.\nThe server requires an existing configured PostgreSQL database, Kubernetes\ncredentials and explicit environment configuration; see the repository docs.\n' if system=='linux' else '')
+            + ('The OpenAPI contract is embedded in the server; api/openapi.json is also\nincluded for external tooling. The server requires an existing configured\nPostgreSQL database, Kubernetes credentials and explicit environment\nconfiguration; see the repository docs.\n' if system=='linux' else '')
             + '\nLicense and third-party notices accompany this archive.\n')
         bundles.append(directory)
     dashboard=scan/'dashboard-dependency-lock'
@@ -139,7 +139,7 @@ def main():
     for directory in bundles:archive(directory,destination/(directory.name+'.tar.gz'),epoch)
     archive(notices,destination/f'hakopod_{version}_dependency-notices.tar.gz',epoch)
     shutil.copyfile(notices/'inventory.json',destination/'dependency-license-inventory.json')
-    try:revision=output(['git','rev-parse','--verify','HEAD'])
+    try:revision=subprocess.check_output(['git','rev-parse','--verify','HEAD'],cwd=ROOT,env=ENV,text=True,stderr=subprocess.DEVNULL).strip()
     except subprocess.CalledProcessError:revision=None
     status=output(['git','status','--porcelain'])
     provenance={'version':version,'built_at':datetime.now(timezone.utc).isoformat(),'go_version':output(['go','version']),
@@ -160,6 +160,7 @@ def main():
     cdx=json.loads((destination/'hakopod.cyclonedx.json').read_text())
     assert spdx['spdxVersion']=='SPDX-2.3' and len(spdx.get('packages',[]))>10
     assert cdx['bomFormat']=='CycloneDX' and len(cdx.get('components',[]))>10
+    run(['python3','release/verify-archives.py','--version',version])
     print(f'Built {len(bundles)} platform archives; SPDX packages={len(spdx["packages"])}, CycloneDX components={len(cdx["components"])}',flush=True)
     print(f'Local artifacts and checksums: {destination}',flush=True)
 
