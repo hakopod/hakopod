@@ -74,6 +74,7 @@ export function Copy({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <Button
+      type="button"
       size={label ? 'sm' : 'icon'}
       variant="ghost"
       title="Copy to clipboard"

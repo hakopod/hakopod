@@ -178,8 +178,8 @@ function Keys() {
         </div>
       )}
       <Note>
-        API keys never receive Kubernetes credentials. A deployment key can run code with secrets
-        injected into its authorized services; treat deploy access as a trusted capability.
+        API keys never receive Kubernetes credentials. Deployment access allows running code in
+        authorized services; treat it as a trusted capability.
       </Note>
       <CreateKey
         open={createOpen}
@@ -289,6 +289,7 @@ function CreateKey({
       <form
         onSubmit={async (event) => {
           event.preventDefault()
+          if (busy || created) return
           setBusy(true)
           setError('')
           try {
@@ -338,6 +339,7 @@ function CreateKey({
                   <option value={7}>7 days</option>
                   <option value={30}>30 days</option>
                   <option value={60}>60 days</option>
+                  <option value={89}>89 days</option>
                 </select>
               </label>
             </>
