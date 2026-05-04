@@ -276,7 +276,7 @@ function Workspace({
         Skip to main content
       </a>
       <div className="app-shell">
-        <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
+        <aside id="workspace-navigation" className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
           <Link className="brand" to="/">
             <Logo size={28} />
             <span>
@@ -384,6 +384,8 @@ function Workspace({
               size="icon"
               className="mobile-menu"
               aria-label="Open navigation"
+              aria-controls="workspace-navigation"
+              aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(true)}
             >
               <Icon name="menu" />

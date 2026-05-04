@@ -2663,12 +2663,14 @@ tbody tr:hover {
 @media (max-width: 740px) {
   .sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s;
     width: 222px;
     z-index: 50;
   }
   .sidebar-open {
     transform: translateX(0);
+    visibility: visible;
   }
   .sidebar-backdrop {
     display: block;
