@@ -201,8 +201,8 @@ export function DeployDialog({
                   maxLength={262144}
                 />
                 <p className="field-help">
-                  TOML supports advanced networking, environment variables, dependencies, health
-                  checks, and secret references. Validation runs in the management API.
+                  TOML supports advanced networking, environment variables, dependencies, and health
+                  checks. Secret bindings are not available in this milestone.
                 </p>
               </div>
             ) : (

@@ -346,8 +346,8 @@ function ApplicationDetail() {
             <pre>{specToTOML(app.spec)}</pre>
           </div>
           <Note>
-            Secret references are exported; stored secret values are never returned by this
-            configuration endpoint. Staged edits are validated and reviewed before deployment.
+            Secret bindings are not available in this milestone. Staged edits are validated and
+            reviewed before deployment.
           </Note>
         </Tabs.Content>
       </Tabs.Root>
