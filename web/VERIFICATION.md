@@ -8,9 +8,12 @@
   management mutations use the typed openapi-fetch client.
 - `pnpm typecheck`: passes with strict, no-unused-locals, and no-unused-parameters.
 - `pnpm format:check`: passes across the dashboard source and scripts.
-- `pnpm test`: four security-boundary tests pass: session integrity/expiration;
-  cookie/Origin enforcement; chunked-body memory bound; verified-HTTPS or loopback
-  management API validation.
+- `pnpm test`: five tests pass: session integrity/expiration; cookie/Origin
+  enforcement; chunked-body memory bound; verified-HTTPS or loopback management
+  API validation; and generated-key copying cannot submit its creation form.
+  The last test renders the actual shared Copy component inside a form and
+  failed on the previous implicit-submit button, then passed after the fix.
+  It uses the existing Vite/React toolchain and adds no dependency.
 - `pnpm build`: client and production SSR build pass. No runtime chart, editor,
   topology, animation, or testing dependencies.
 - `pnpm audit --prod`: no known vulnerabilities reported by the registry at the
@@ -20,9 +23,10 @@
 - `pnpm smoke --public-only` passes on the final build: SSR, real static CSS,
   unauthorized request rejection, cross-origin mutation rejection, and sign-in
   body-size rejection. This mode deliberately does not authenticate to Go.
-- Before the shared container-engine outage, the full HTTP smoke passed:
-  administrator authentication against the real Go API, encrypted cookie,
-  authenticated proxy, CSRF, endpoint allowlist, 1 MiB body bound, and logout.
+- After shared container-engine recovery, the full HTTP smoke passed again on
+  the final production dashboard: administrator authentication against the real
+  Go API, encrypted cookie, authenticated proxy, CSRF, endpoint allowlist,
+  1 MiB body bound, and logout.
 - Browser verification against the real Go API before the outage: sign-in,
   application overview, project `demo` / environment `development`, real `shop`
   application, revision 3, two services, actual public endpoint, and an observed
@@ -33,20 +37,68 @@
   masked, and temporary viewport override was reset after testing.
 - The UI displayed the actual Go error during the outage rather than inventing
   applications or successful authentication.
+- After recovery, native Chrome sign-in succeeded against the real API. The
+  overview rendered two actual applications (`shop` and `cli-check`), four
+  services, and observed healthy status for both during the acceptance run.
+  The application history rendered revisions 1–10 with real succeeded, failed,
+  cancelled, and running states; the later overview displayed `shop` revision 11.
+  These were observed browser states, not fixtures or a separate test API.
+- The main task's isolated in-app browser completed service details, deployment
+  history, revision 10's real failure reason and recovery timeline, configuration
+  diff, networking, and live log follow/pause against the recovered Go API.
+- The isolated browser submitted a TOML update after staging and reviewing four
+  changed fields. Deployment `16da0ed5cde2e25da196fa620f68536b` became healthy
+  `shop` revision 13 after the independent acceptance run had finished.
+- Infrastructure showed the actual node `k3d-hakopod-dev-server-0`, ready 1/1,
+  arm64, Kubernetes `v1.35.8+k3s1`, and seven pods.
+- Authenticated mobile navigation opened, followed Applications, and closed;
+  light theme worked. The requested 390×844 override yielded an effective CSS
+  viewport of 325 pixels in that browser; document scroll width was also 325,
+  confirming no horizontal overflow at the measured width. The override was reset.
+- On the final rebuild, the browser created a `Browser verification` key scoped
+  to `demo / development / ui-check`, with only `deployments:read` and an 89-day
+  expiration. Clicking Copy left exactly one matching key in the backend.
+  Rotation displayed 89 days selected, and the replacement's actual expiration
+  matched that choice while preserving scope and permissions. The original key's
+  remaining lifetime was reduced to at most 15 minutes, and both credentials
+  authenticated during overlap.
+  Both keys were then revoked through the UI and returned 401. Audit events
+  showed creation, rotation, and revocations. Temporary credential files were
+  deleted and the test clipboard was restored empty.
+- The final mobile focus check used an actual CSS viewport of 390 pixels.
+  Closed navigation had computed `visibility: hidden`, was absent from the
+  accessibility tree, and received no focus during ten real Tab presses.
+  Document scroll width and viewport width were both 390 pixels, with no
+  horizontal overflow. The temporary viewport override was reset.
+- The final desktop overview screenshot was refreshed after the rebuild and
+  showed two real healthy applications and four services, with no credential
+  values visible.
+
+The final rebuild also corrects the key-copy implicit form submission, rejects
+duplicate key submission while busy or showing an issued key, makes 89-day
+expiration available consistently for creation and rotation, and removes claims
+that the current API supports secret bindings. Closed mobile navigation now uses
+`visibility: hidden` and exposes expanded/controls semantics on its opener.
 
 Local, ignored screenshot files:
 
 - `.local/screenshots/hakopod-login-desktop-dark.png` (repository root)
 - `.local/screenshots/hakopod-login-mobile-light.png` (repository root)
 
+User-facing authenticated screenshots are in the task's outputs directory:
+
+- `/Users/theboringhumane/Documents/Codex/2026-09-12/s/outputs/hakopod-dashboard.png`
+- `/Users/theboringhumane/Documents/Codex/2026-09-12/s/outputs/hakopod-deployment.png`
+- `/Users/theboringhumane/Documents/Codex/2026-09-12/s/outputs/hakopod-mobile.png`
+
 ## Resource measurements and enforced limits
 
-The final compiled client contains 12 JavaScript chunks totaling 579,695 bytes
+The final compiled client contains 12 JavaScript chunks totaling 579,768 bytes
 across **all** routes. Their gzip level 9 comparison size is 188,084 bytes; CSS
-gzip level 9 comparison size is 10,575 bytes. These are build-size measurements, not a promise
-about transfer size without HTTP compression. Routes load separately.
+gzip level 9 comparison size is 10,591 bytes. These are build-size measurements,
+not a promise about transfer size without HTTP compression. Routes load separately.
 
-The final production Node process was observed at 88,912 KiB RSS (about 87 MiB)
+The final production Node process was observed at 96,256 KiB RSS (about 94 MiB)
 and 0.0% CPU after the production smoke test. That is a point-in-time
 measurement, not a peak, concurrency benchmark, or RSS guarantee. The 192 MiB
 old-space cap controls JavaScript heap, not all native process memory.
@@ -63,23 +115,23 @@ their streams.
 
 ## Remaining verification
 
-The shared OrbStack/Docker engine became unresponsive during the independent
-real-cluster acceptance run. Go `/healthz` continued to return 200, while
-`/readyz` returned 503 `PostgreSQL is unavailable` and `/api/v1/me` returned 503
-after its timeout. This blocked additional authenticated browser verification;
-it was not a browser authentication workaround or a simulated backend.
+The initial shared engine outage was resolved before the final authenticated
+HTTP and browser checks. The main task's isolated browser completed the checks
+above while native Chrome was left under user control. No simulated backend was
+substituted.
 
-After the actual development engine and API become ready, rerun the full smoke:
+The final key lifecycle and mobile focus checks passed. Multi-page application
+navigation and UI cancellation/rollback submission have not been exercised in
+this browser pass. Do not infer those from API or source checks.
+
+To rerun the authenticated production HTTP smoke:
 
 ```sh
 HAKOPOD_WEB_URL=http://127.0.0.1:4173 \
 HAKOPOD_API_KEY_FILE=../.local/admin-key pnpm smoke
 ```
 
-Then verify the final application detail, metadata history, paginated overview,
-deployment diff and submit, failure timeline, service logs, node list, API-key
-forms, and authenticated mobile/theme views in the browser against real data.
-These workflows are implemented and typechecked, but their final browser pass
-must not be reported as complete until performed. Kubernetes rollout correctness
-and management-restart acceptance are recorded by the repository's cluster/API
-acceptance suite, separately from this dashboard report.
+Kubernetes rollout correctness and management-restart acceptance are recorded
+by the repository's cluster/API acceptance suite, separately from this dashboard
+report. Use a separate `ui-check` application for browser writes if that suite
+is concurrently using `shop`.

@@ -67,7 +67,8 @@ key is managed by the repository's development scripts, outside `web/`.
 Custom-domain management, certificate diagnostics, secret-entry UI, metrics
 collection, member management, bootstrap enrollment, node drain, and backup
 status are not implemented in this dashboard milestone. The interface does not
-present these controls as working. See the repository milestone tracker.
+present these controls as working. The API also rejects secret-reference bindings
+in this milestone. See the repository milestone tracker.
 
 ## Authentication and limits
 
@@ -104,7 +105,7 @@ times. Configuration diffs render at most 50 rows per page without hiding change
 ```sh
 pnpm generate:api  # ../api/openapi.json → src/lib/api.generated.ts
 pnpm typecheck
-pnpm test         # crypto integrity/expiry, cookie/CSRF, body limits, upstream TLS
+pnpm test         # session security, body/TLS bounds, non-submitting key Copy
 pnpm build
 pnpm smoke --public-only # SSR/security edges; no Go authentication required
 
