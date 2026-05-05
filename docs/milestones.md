@@ -25,28 +25,42 @@ Verified individually on real infrastructure during this build:
   DNS, actual HPA replica ownership and preserved restart annotations.
 - Actual failed readiness with old healthy pod retained, controller deadline,
   and restoration of the prior healthy configuration.
+- Partial group failure with one service ready and another unready: both prior
+  configurations restored. Invalid registry tags are rejected before Kubernetes
+  mutation; a separate kubelet test observed real `ImagePullBackOff` diagnostics.
 - Management process killed during a scoped-key deployment: the same operation
-  resumed after restart; 122 public traffic probes recorded zero errors. CLI
-  status and logs required no browser session.
+  resumed after restart. The latest interruption happened after workload apply;
+  97 public traffic probes recorded zero errors. CLI status and logs required no
+  browser session.
 - Dashboard production build, type checks, session/CSRF/body-limit/HTTPS tests,
   production HTTP smoke and real API-backed overview in a browser.
 
-**Full final combined gate is still pending:** the shared OrbStack Docker engine
-became unresponsive during the final lifecycle rerun. Its database and Kubernetes
-API stopped answering; the Go health endpoint remained responsive. Earlier runs
-exposed and led to fixes for old-pod readiness and stale controller deadline
-conditions. The final interrupted run is not recorded as a pass. See
-`.local/acceptance-interrupted.json` and `.local/restart-acceptance.json` on the
-development machine. Final post-review store/API regressions passed with the race detector against an
-independent PostgreSQL16 process: terminated-backend recovery, immutable digest
+**The full PostgreSQL17/K3s lifecycle and restart gates passed on 2026-09-12.**
+The lifecycle run deployed a baseline, updated the private API image, recovered
+from an intentionally unready release and explicitly rolled back: 585 public
+traffic requests, zero errors. The restart run resumed the same accepted
+operation after management-process termination: 97 requests, zero errors. Both
+temporary scoped keys were revoked. Credential-free evidence is recorded in
+`.local/acceptance.json` and `.local/restart-acceptance.json` on the development
+machine. The earlier engine outage and interrupted run remain historical
+diagnostics in `.local/acceptance-interrupted.json`; they are not pass evidence.
+
+Final post-review store/API regressions passed with the race detector against
+the restored PostgreSQL17 database, with no skipped tests: terminated-backend recovery, immutable digest
 persistence, terminal-state protection, owner scope reduction, targeted diff and
 artifact preservation, rollback seeding, concurrent capacity limits and pagination.
-The exact PostgreSQL17/K3s combined rerun remains needed.
 
-To close the gate after Docker recovers, rebuild/restart the Go server, revoke
-the temporary key noted in the build report, run `scripts/acceptance.py`, rerun
-`tests/restart.py` with its explicit server PID, and finish dashboard application,
-deployment and node browser checks. Preserve actual traffic-error counts.
+The rebuilt arm64 API image passed isolated startup, embedded-contract, license
+and native CLI checks; its server bytes match the release archive. Actual image
+and Go/dashboard dependency SBOMs are generated. Browser deployment submission
+succeeded through revision 13, and live node views, mobile navigation and the
+light theme were checked. Final key-management checks passed: scoped creation,
+copy without an extra form submission, an 89-day rotation retaining the same
+scope and 15-minute old-key overlap, revocation followed by HTTP 401, and audit
+history. At a 390-pixel viewport there was no horizontal overflow, and ten Tab
+presses skipped the closed mobile navigation. The final dashboard type checks,
+regression tests and production build passed. Full Go tests and `go vet` also
+passed; no temporary live-test databases or namespaces remained.
 
 ## Milestone 2: usable single-node release
 

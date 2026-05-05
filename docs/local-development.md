@@ -64,6 +64,8 @@ The acceptance script modifies `demo/development/shop`, revokes its temporary sc
 
 No Redis, Prometheus, logging database, cert-manager or secrets operator runs in the M1 profile. On an idle cluster before application deployment, one measurement was 687 MiB for the K3s node, 12 MiB for its forwarding helper and 18 MiB for PostgreSQL. HAProxy's 104 MiB is included in the node measurement, not additional. This is an observed sample, not a load-test guarantee. Budget spare resources for rolling updates.
 
+A later post-build sample with two deployed applications measured 803.3 MiB for the K3s node, 10.02 MiB for forwarding, 47.2 MiB for PostgreSQL, 21.06 MiB host API RSS and 39.39 MiB dashboard RSS: about 921 MiB combined, excluding the OrbStack VM overhead and unrelated workloads. Dashboard RSS subsequently reached about 94 MiB after browser smoke checks. These are point-in-time samples, not peak or load-test guarantees. The local arm64 API image is about 30.6 MiB on disk, separate from its runtime memory usage.
+
 Stop infrastructure to reclaim memory while preserving data:
 
 ```sh
