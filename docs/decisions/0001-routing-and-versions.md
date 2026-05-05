@@ -26,7 +26,7 @@ K3s 1.36.4 is the latest upstream stable at research time. Hakopod deliberately 
 
 ## Licensing
 
-Hakopod code is Apache-2.0. K3s and both HAProxy controllers are Apache-2.0; k3d is MIT; PostgreSQL has the PostgreSQL License; Python has PSF licensing. HAProxy the separate proxy executable is GPLv2, with LGPL exportable headers and its documented OpenSSL exception. The controller and HAProxy licenses are distinct. Upstream containers and their notices are retained intact; Hakopod does not copy their source or link their code. A complete image SBOM and redistribution review remain release gates.
+Hakopod code is Apache-2.0. K3s and both HAProxy controllers are Apache-2.0; k3d is MIT; PostgreSQL has the PostgreSQL License; Python has PSF licensing. HAProxy the separate proxy executable is GPLv2, with LGPL exportable headers and its documented OpenSSL exception. The controller and HAProxy licenses are distinct. Upstream containers and their notices are retained intact; Hakopod does not copy their source or link their code. The API image has a separate SBOM; complete inventories and redistribution review for all platform images remain release gates.
 
 ## Sources
 

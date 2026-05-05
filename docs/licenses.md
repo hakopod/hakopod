@@ -63,8 +63,11 @@ Six installed npm distributions declare MIT but do not include a license/notice 
 | PostgreSQL | PostgreSQL License, plus image operating-system packages |
 | Python sample image | PSF licensing, plus Alpine and other image packages |
 | Syft 1.51.1 | Apache-2.0; checksum-verified developer scanner, not included in application runtime |
+| Distroless static Debian 12 image | Debian package-specific terms and notices; inventory separately from Go dependencies |
 
 These programs run as separate processes/containers. Hakopod does not relicense upstream software. Redistributing an image requires preserving its notices and satisfying its own source/distribution obligations; a top-level container label is not a complete license inventory. No complete image-license or operating-system scan is claimed by the Go/dashboard dependency SBOM.
+
+The separate 2026-09-12 arm64 API image scan (`hakopod-api.*.json`) identifies 47 Go module records and five Debian packages: `base-files`, `ca-certificates`, `media-types`, `netbase` and `tzdata`. The original `/usr/share/doc/<package>/copyright` files remain in the pinned distroless layers. Reported terms include GPL-2.0, MPL-2.0, ad-hoc and public-domain declarations; `base-files` retains an opaque source-text reference requiring review. The application LICENSE and NOTICE are also included under `/licenses/hakopod/`. This is an actual operating-system/package inventory, while redistribution review and applicable source obligations still require attention for the exact distributed image.
 
 ## Generated evidence and release boundary
 
