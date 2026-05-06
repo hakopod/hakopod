@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate the checked-in OpenAPI contract; no runtime dependency."""
 import json
+import runpy
 from pathlib import Path
 
 S = {"type": "string"}
@@ -70,5 +71,8 @@ for endpoint, operation, content in [("/applications/{id}/logs","streamLogs","te
     route(endpoint,"get",operation,S)
     paths[endpoint]["get"]["responses"]["200"]["content"]={content:{"schema":S}}
 paths["/applications/{id}/logs"]["get"]["parameters"] += [{"name":"service","in":"query","required":True,"schema":S},{"name":"tail","in":"query","schema":{"type":"integer","minimum":1,"maximum":1000,"default":100}},{"name":"follow","in":"query","schema":B}]
+# Feature contracts execute with the same small schema helpers. Each feature owns its file.
+for extension in sorted(Path(__file__).with_name("contracts").glob("*.py")):
+    runpy.run_path(str(extension), init_globals={"S": S, "I": I, "B": B, "T": T, "ref": ref, "array": array, "obj": obj, "mapping": mapping, "schemas": schemas, "paths": paths, "route": route, "items": items})
 doc={"openapi":"3.1.0", "info":{"title":"Hakopod Management API","version":"0.1.0","description":"Durable container deployments. JSON or strict TOML specifications. An accepted 202 survives caller disconnection. Machine keys are scoped to project/environment; only admin keys may manage infrastructure or credentials."}, "servers":[{"url":"/api/v1"}], "security":[{"bearerAuth":[]}], "paths":paths,"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":schemas}}
 Path(__file__).with_name("openapi.json").write_text(json.dumps(doc,indent=2)+"\n")
