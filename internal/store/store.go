@@ -5,11 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	_ "embed"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed 001_initial.sql
-var migration string
+//go:embed *.sql
+var migrations embed.FS
 
 var ErrConflict = errors.New("revision or idempotency conflict")
 var ErrUnauthorized = errors.New("credential is invalid, expired, revoked, or disabled")
@@ -63,8 +64,38 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if !exists {
-		if _, err = tx.Exec(ctx, migration); err != nil {
-			return fmt.Errorf("migration 1: %w", err)
+		if _, err = tx.Exec(ctx, "CREATE TABLE schema_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"); err != nil {
+			return err
+		}
+	}
+	entries, err := migrations.ReadDir(".")
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, err := strconv.Atoi(strings.SplitN(entry.Name(), "_", 2)[0])
+		if err != nil {
+			return fmt.Errorf("invalid migration filename %s", entry.Name())
+		}
+		var applied bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", version).Scan(&applied); err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		body, err := migrations.ReadFile(entry.Name())
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, string(body)); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+		if _, err = tx.Exec(ctx, "INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT DO NOTHING", version); err != nil {
+			return err
 		}
 	}
 	return tx.Commit(ctx)
@@ -85,17 +116,21 @@ func JSON(v any) []byte {
 }
 
 type Principal struct {
-	ID                  string   `json:"id"`
-	Name                string   `json:"name"`
-	Admin               bool     `json:"admin"`
-	KeyID               string   `json:"-"`
-	Project             string   `json:"project"`
-	Environment         string   `json:"environment"`
-	Application         string   `json:"application,omitempty"`
-	Permissions         []string `json:"permissions"`
-	IdentityProject     string   `json:"-"`
-	IdentityEnvironment string   `json:"-"`
-	IdentityPermissions []string `json:"-"`
+	ID                  string        `json:"id"`
+	Name                string        `json:"name"`
+	Admin               bool          `json:"admin"`
+	Owner               bool          `json:"owner"`
+	Email               string        `json:"email,omitempty"`
+	CredentialType      string        `json:"credential_type"`
+	ProjectRoles        []ProjectRole `json:"project_roles,omitempty"`
+	KeyID               string        `json:"-"`
+	Project             string        `json:"project"`
+	Environment         string        `json:"environment"`
+	Application         string        `json:"application,omitempty"`
+	Permissions         []string      `json:"permissions"`
+	IdentityProject     string        `json:"-"`
+	IdentityEnvironment string        `json:"-"`
+	IdentityPermissions []string      `json:"-"`
 }
 
 func contains(xs []string, s string) bool {
@@ -124,6 +159,15 @@ func (p Principal) Allows(permission, project, environment, application string) 
 	}
 	keyOK := contains(p.Permissions, permission) || contains(p.Permissions, "admin")
 	identityOK := p.Admin || contains(p.IdentityPermissions, permission)
+	if p.Email != "" && !p.Admin {
+		identityOK = false
+		for _, role := range p.ProjectRoles {
+			if role.Project == project && contains(rolePermissions(role.Role), permission) {
+				identityOK = true
+				break
+			}
+		}
+	}
 	return keyOK && identityOK
 }
 func (p Principal) IsAdmin() bool {
@@ -218,20 +262,29 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
+	}
+	if err == nil && p.Email != "" {
+		p.ProjectRoles, err = s.projectRoles(ctx, p.ID)
 	}
 	return p, digest, err
 }
 func (s *Store) Authenticate(ctx context.Context, raw string) (Principal, error) {
 	parts := strings.Split(raw, "_")
-	if len(parts) != 3 || parts[0] != "hp" || len(parts[1]) != 32 || len(parts[2]) != 64 {
+	if len(parts) != 3 || (parts[0] != "hp" && parts[0] != "hs") || len(parts[1]) != 32 || len(parts[2]) != 64 {
 		return Principal{}, ErrUnauthorized
 	}
 	p, digest, err := s.principal(ctx, parts[1])
 	if err != nil {
 		return p, err
+	}
+	if (parts[0] == "hp") != (p.CredentialType == "machine") {
+		return Principal{}, ErrUnauthorized
+	}
+	if p.CredentialType == "integration" {
+		return Principal{}, ErrUnauthorized
 	}
 	sum := sha256.Sum256([]byte(raw))
 	if subtle.ConstantTimeCompare(sum[:], digest) != 1 {
@@ -289,7 +342,7 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 	return k, raw, err
 }
 func (s *Store) Keys(ctx context.Context) ([]Key, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT id,identity_id,name,prefix,project,environment,application,permissions,expires_at,revoked_at,last_used_at,created_at FROM api_keys ORDER BY created_at DESC LIMIT 100")
+	rows, err := s.Pool.Query(ctx, "SELECT id,identity_id,name,prefix,project,environment,application,permissions,expires_at,revoked_at,last_used_at,created_at FROM api_keys WHERE kind='machine' ORDER BY created_at DESC LIMIT 100")
 	if err != nil {
 		return nil, err
 	}
