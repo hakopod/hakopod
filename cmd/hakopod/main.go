@@ -82,6 +82,7 @@ func run() error {
 	revision := fs.Int64("revision", 0, "successful revision to restore")
 	apiURL := fs.String("api-url", "", "management API HTTPS origin")
 	keyStdin := fs.Bool("key-stdin", false, "read login API key from stdin")
+	noBrowser := fs.Bool("no-browser", false, "show browser authorization URL without opening it")
 	name := fs.String("name", "", "application or key name")
 	permissions := fs.String("permissions", "deployments:write,deployments:read,logs:read", "comma-separated key permissions")
 	ttl := fs.Duration("ttl", 24*time.Hour, "API key lifetime, maximum 90 days")
@@ -154,6 +155,15 @@ func run() error {
 				return err
 			}
 			cfg.Key = strings.TrimSpace(string(raw))
+		} else {
+			if cfg.Project == "" || cfg.Environment == "" {
+				return &exitError{2, "browser login requires --project and --environment for the CLI session scope"}
+			}
+			session, err := deviceLogin(ctx, cfg, *noBrowser, strings.Split(*permissions, ","))
+			if err != nil {
+				return err
+			}
+			cfg.Key = session.Token
 		}
 		c, err := newClient(cfg)
 		if err != nil {
@@ -191,6 +201,18 @@ func run() error {
 	c, err := newClient(cfg)
 	if err != nil {
 		return err
+	}
+	if command == "logout" {
+		if strings.HasPrefix(cfg.Key, "hs_") {
+			if err = c.request(ctx, "POST", "/auth/logout", map[string]any{}, "", nil); err != nil {
+				return err
+			}
+		}
+		if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		fmt.Println("Logged out; saved credentials removed.")
+		return nil
 	}
 	arg := ""
 	if fs.NArg() > 0 {
@@ -391,6 +413,9 @@ func newClient(cfg config) (*client, error) {
 	if cfg.URL == "" || cfg.Key == "" {
 		return nil, &exitError{2, "HAKOPOD_API_URL and HAKOPOD_API_KEY (or login credentials) are required; noninteractive commands never prompt"}
 	}
+	return anonymousClient(cfg)
+}
+func anonymousClient(cfg config) (*client, error) {
 	u, err := url.Parse(cfg.URL)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, &exitError{2, "API URL must be an HTTPS origin, without credentials, path or query"}
@@ -421,7 +446,9 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.key)
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if idem != "" {
 		req.Header.Set("Idempotency-Key", idem)
@@ -560,7 +587,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--follow": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -580,7 +607,9 @@ func help() {
 	defer w.Flush()
 	fmt.Fprintln(w, `Hakopod — deploy containers on infrastructure you own.
 
-  hakopod login --api-url https://control.example.com --key-stdin
+  hakopod login --api-url https://control.example.com --project demo --environment development
+  hakopod login --api-url https://control.example.com --key-stdin  # CI machine key
+  hakopod logout
   hakopod init --name shop
   hakopod validate
   hakopod plan --project demo --environment development
