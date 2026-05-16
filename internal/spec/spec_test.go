@@ -41,7 +41,7 @@ image="python"
 depends_on=["web"]`, "cycle"},
 		{"secret", minimum + "\n[services.web.env]\nDATABASE_PASSWORD='do-not-disclose'", "secret values"},
 		{"credential_url", minimum + "\n[services.web.env]\nDATABASE_URL='postgres://me:do-not-disclose@db/app'", "secret values"},
-		{"unknown_secret_ref", minimum + "\n[services.web.secrets]\nDATABASE_URL={ref='db'}", "not available"},
+		{"invalid_secret_ref", minimum + "\n[services.web.secrets]\nDATABASE_URL={ref='../db'}", "invalid"},
 		{"unsafe_health", minimum + `healthcheck="//outside.example/"`, "HTTP path"},
 	}
 	for _, test := range cases {

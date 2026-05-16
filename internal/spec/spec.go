@@ -25,19 +25,26 @@ type Application struct {
 }
 
 type Service struct {
-	Image       string               `json:"image" toml:"image"`
-	Port        int32                `json:"port,omitempty" toml:"port"`
-	Public      bool                 `json:"public" toml:"public"`
-	Size        string               `json:"size" toml:"size"`
-	Replicas    int32                `json:"replicas" toml:"replicas"`
-	Healthcheck string               `json:"healthcheck,omitempty" toml:"healthcheck"`
-	Env         map[string]string    `json:"env,omitempty" toml:"env"`
-	Command     []string             `json:"command,omitempty" toml:"command"`
-	Args        []string             `json:"args,omitempty" toml:"args"`
-	DependsOn   []string             `json:"depends_on,omitempty" toml:"depends_on"`
-	Networks    []string             `json:"networks" toml:"networks"`
-	Secrets     map[string]SecretRef `json:"secrets,omitempty" toml:"secrets"`
-	Autoscaling *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
+	Architecture       string               `json:"architecture,omitempty" toml:"architecture"`
+	Volume             *Volume              `json:"volume,omitempty" toml:"volume"`
+	GPU                *GPU                 `json:"gpu,omitempty" toml:"gpu"`
+	RunAsUser          int64                `json:"run_as_user,omitempty" toml:"run_as_user"`
+	Image              string               `json:"image" toml:"image"`
+	Port               int32                `json:"port,omitempty" toml:"port"`
+	Public             bool                 `json:"public" toml:"public"`
+	Size               string               `json:"size" toml:"size"`
+	Replicas           int32                `json:"replicas" toml:"replicas"`
+	Healthcheck        string               `json:"healthcheck,omitempty" toml:"healthcheck"`
+	Env                map[string]string    `json:"env,omitempty" toml:"env"`
+	Command            []string             `json:"command,omitempty" toml:"command"`
+	Args               []string             `json:"args,omitempty" toml:"args"`
+	DependsOn          []string             `json:"depends_on,omitempty" toml:"depends_on"`
+	Networks           []string             `json:"networks" toml:"networks"`
+	Secrets            map[string]SecretRef `json:"secrets,omitempty" toml:"secrets"`
+	Autoscaling        *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
+	RestartNonce       string               `json:"restart_nonce,omitempty" toml:"restart_nonce"`
+	RegistryCredential string               `json:"registry_credential,omitempty" toml:"registry_credential"`
+	TLS                *TLSConfig           `json:"tls,omitempty" toml:"tls"`
 }
 
 type Network struct {
@@ -68,9 +75,11 @@ type Profile struct {
 }
 
 var Profiles = map[string]Profile{
-	"small":  {"100m", "500m", "128Mi", "256Mi"},
-	"medium": {"250m", "1", "256Mi", "512Mi"},
-	"large":  {"500m", "2", "512Mi", "1Gi"},
+	"small":   {"100m", "500m", "128Mi", "256Mi"},
+	"medium":  {"250m", "1", "256Mi", "512Mi"},
+	"large":   {"500m", "2", "512Mi", "1Gi"},
+	"compute": {"1", "4", "2Gi", "4Gi"},
+	"gpu":     {"2", "8", "8Gi", "16Gi"},
 }
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
@@ -155,6 +164,9 @@ func Normalize(input Application) (Application, error) {
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		field := "services." + name
+		if err := validateRuntimeService(svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if !namePattern.MatchString(name) {
 			return Application{}, fmt.Errorf("%s: invalid service name", field)
 		}
@@ -171,7 +183,7 @@ func Normalize(input Application) (Application, error) {
 			svc.Size = "small"
 		}
 		if _, ok := Profiles[svc.Size]; !ok {
-			return Application{}, fmt.Errorf("%s.size: choose small, medium or large", field)
+			return Application{}, fmt.Errorf("%s.size: choose small, medium, large, compute or gpu", field)
 		}
 		if svc.Replicas == 0 {
 			svc.Replicas = 1
@@ -190,14 +202,22 @@ func Normalize(input Application) (Application, error) {
 		}
 		for key, value := range svc.Env {
 			if sensitiveEnv(key, value) {
-				return Application{}, fmt.Errorf("%s.env.%s: secret values cannot be stored in TOML or deployment history; authorized secret-reference bindings are not available in this milestone", field, key)
+				return Application{}, fmt.Errorf("%s.env.%s: secret values cannot be stored in TOML or deployment history; use an application-scoped secret reference", field, key)
 			}
 			if !envPattern.MatchString(key) || len(key) > 128 || strings.IndexByte(value, 0) >= 0 || len(value) > 4096 {
 				return Application{}, fmt.Errorf("%s.env.%s: invalid name or value (maximum 4096 bytes, no NUL)", field, key)
 			}
 		}
-		if len(svc.Secrets) > 0 {
-			return Application{}, fmt.Errorf("%s.secrets: authorized secret bindings are not available in this milestone; secret values must not be placed in TOML", field)
+		if len(svc.Secrets) > 32 {
+			return Application{}, fmt.Errorf("%s.secrets: at most 32 references", field)
+		}
+		for key, reference := range svc.Secrets {
+			if !envPattern.MatchString(key) || len(key) > 128 || !namePattern.MatchString(reference.Ref) {
+				return Application{}, fmt.Errorf("%s.secrets: invalid environment name or secret reference", field)
+			}
+			if _, exists := svc.Env[key]; exists {
+				return Application{}, fmt.Errorf("%s: an environment variable cannot also be a secret reference", field)
+			}
 		}
 		if len(svc.Command) > 64 || len(svc.Args) > 128 {
 			return Application{}, fmt.Errorf("%s: command/args exceed the supported element count", field)
@@ -231,6 +251,9 @@ func Normalize(input Application) (Application, error) {
 				return Application{}, fmt.Errorf("%s.autoscaling: require 1 <= min_replicas <= max_replicas <= 20 and target_cpu between 10 and 95", field)
 			}
 			svc.Replicas = a.MinReplicas
+		}
+		if err := validateWorkload(svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
 		app.Services[name] = svc
 	}
@@ -370,6 +393,13 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "networks", a.Networks, b.Networks, true)
 		add(name, "secrets", a.Secrets, b.Secrets, true)
 		add(name, "autoscaling", a.Autoscaling, b.Autoscaling, false)
+		add(name, "restart_nonce", a.RestartNonce, b.RestartNonce, false)
+		add(name, "registry_credential", a.RegistryCredential, b.RegistryCredential, true)
+		add(name, "tls", a.TLS, b.TLS, true)
+		add(name, "volume", a.Volume, b.Volume, true)
+		add(name, "gpu", a.GPU, b.GPU, false)
+		add(name, "run_as_user", a.RunAsUser, b.RunAsUser, true)
+		add(name, "architecture", a.Architecture, b.Architecture, false)
 	}
 	return changes
 }
@@ -393,6 +423,12 @@ func Warnings(app Application) []string {
 	warnings := make([]string, 0)
 	for _, name := range Names(app) {
 		svc := app.Services[name]
+		if svc.Volume != nil {
+			warnings = append(warnings, name+": persistent service uses one replica and Recreate updates, with brief downtime; rollback restores configuration, not database contents. Back up data separately.")
+		}
+		if svc.GPU != nil {
+			warnings = append(warnings, name+": requires an installed NVIDIA device plugin and matching GPU capacity; model downloads and inference have their own memory and storage costs.")
+		}
 		internal, external := false, false
 		for _, network := range svc.Networks {
 			if app.Networks[network].Internal {
