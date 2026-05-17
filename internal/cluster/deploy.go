@@ -161,6 +161,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 		corev1.ResourceRequestsEphemeralStorage: resource.MustParse("4Gi"), corev1.ResourceLimitsEphemeralStorage: resource.MustParse("8Gi"),
 		corev1.ResourcePods: resource.MustParse("64"), corev1.ResourceServices: resource.MustParse("25"), corev1.ResourcePersistentVolumeClaims: resource.MustParse("0"),
 	}}}
+	workloadQuota(quota, t.Spec)
 	quotaAPI := c.kube.CoreV1().ResourceQuotas(ns)
 	if err := beforeStep(ctx, t); err != nil {
 		return err
@@ -216,7 +217,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 	if seconds < 30 {
 		seconds = 30
 	}
-	return &appsv1.Deployment{
+	result := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labels, Annotations: map[string]string{"hakopod.io/revision": strconv.FormatInt(t.Revision, 10), "hakopod.io/operation": t.OperationID}},
 		Spec: appsv1.DeploymentSpec{Replicas: ptr(svc.Replicas), Selector: &metav1.LabelSelector{MatchLabels: labels}, RevisionHistoryLimit: ptr(int32(2)), MinReadySeconds: 2, ProgressDeadlineSeconds: &seconds,
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{MaxSurge: ptr(intstr.FromInt32(1)), MaxUnavailable: ptr(intstr.FromInt32(0))}},
@@ -225,14 +226,28 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 			}},
 		},
 	}
+	if svc.RestartNonce != "" {
+		result.Spec.Template.Annotations = map[string]string{"hakopod.io/restart-nonce": svc.RestartNonce}
+	}
+	configureWorkload(result, svc)
+	return result
 }
 
 func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc spec.Service) (int64, error) {
 	if err := beforeStep(ctx, t); err != nil {
 		return 0, err
 	}
+	if err := c.prepareStorage(ctx, t, name, svc); err != nil {
+		return 0, err
+	}
+	if err := c.prepareWorkloadSecrets(ctx, t, name, svc); err != nil {
+		return 0, err
+	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout)
+	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {
+		return 0, err
+	}
 	current, err := api.Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		created, err := api.Create(ctx, wanted, metav1.CreateOptions{})
@@ -252,7 +267,14 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if svc.Autoscaling != nil {
 		wanted.Spec.Replicas = current.Spec.Replicas
 	}
-	wanted.Spec.Template.Annotations = current.Spec.Template.Annotations
+	if wanted.Spec.Template.Annotations == nil {
+		wanted.Spec.Template.Annotations = map[string]string{}
+	}
+	for key, value := range current.Spec.Template.Annotations {
+		if key != "hakopod.io/restart-nonce" {
+			wanted.Spec.Template.Annotations[key] = value
+		}
+	}
 	for key, value := range wanted.Annotations {
 		if current.Annotations == nil {
 			current.Annotations = make(map[string]string)
@@ -309,12 +331,19 @@ func (c *Client) hostname(t Target, service string) string {
 
 func (c *Client) serviceURL(t Target, service string) string {
 	scheme := "http"
-	if c.options.TLSIssuer != "" {
+	if c.options.TLSIssuer != "" || t.Spec.Services[service].TLS != nil {
 		scheme = "https"
 	}
 	host := c.hostname(t, service)
-	if c.options.PublicPort > 0 && !((scheme == "http" && c.options.PublicPort == 80) || (scheme == "https" && c.options.PublicPort == 443)) {
-		host = net.JoinHostPort(host, strconv.Itoa(c.options.PublicPort))
+	port := c.options.PublicPort
+	if scheme == "https" {
+		port = c.options.PublicHTTPSPort
+		if port == 0 && c.options.TLSIssuer != "" {
+			port = c.options.PublicPort
+		}
+	}
+	if port > 0 && !((scheme == "http" && port == 80) || (scheme == "https" && port == 443)) {
+		host = net.JoinHostPort(host, strconv.Itoa(port))
 	}
 	return scheme + "://" + host
 }
@@ -326,9 +355,8 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	api := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID))
 	pathType := networkingv1.PathTypePrefix
 	wanted := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: networkingv1.IngressSpec{IngressClassName: ptr(c.options.IngressClass), Rules: []networkingv1.IngressRule{{Host: c.hostname(t, name), IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pathType, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: name, Port: networkingv1.ServiceBackendPort{Number: svc.Port}}}}}}}}}}}
-	if c.options.TLSIssuer != "" {
-		wanted.Annotations = map[string]string{"cert-manager.io/cluster-issuer": c.options.TLSIssuer, "haproxy.org/ssl-redirect": "true"}
-		wanted.Spec.TLS = []networkingv1.IngressTLS{{Hosts: []string{c.hostname(t, name)}, SecretName: "hakopod-tls-" + name}}
+	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {
+		return err
 	}
 	current, err := api.Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -23,22 +24,29 @@ const (
 )
 
 type Options struct {
-	AppDomain      string
-	IngressClass   string
-	RolloutTimeout time.Duration
+	SupervisorURL      string
+	ProxyNamespace     string
+	ProxyConfigMap     string
+	ProxyRelease       string
+	RegistrySecretName func(context.Context, string, string, string) (string, error)
+	AppDomain          string
+	IngressClass       string
+	RolloutTimeout     time.Duration
 	// TLSIssuer must identify an operator-provisioned cert-manager ClusterIssuer.
 	// Empty leaves HTTP explicit; the local development cluster uses this mode.
-	TLSIssuer  string
-	PublicPort int
+	TLSIssuer       string
+	PublicPort      int
+	PublicHTTPSPort int
 	// PolicySettleTime accounts for asynchronous CNI policy propagation before
 	// starting pods. It is a best-effort delay, not a hostile-tenant guarantee.
 	PolicySettleTime time.Duration
 }
 
 type Client struct {
-	kube    kubernetes.Interface
-	options Options
-	http    *http.Client
+	clusterCA []byte
+	kube      kubernetes.Interface
+	options   Options
+	http      *http.Client
 }
 
 type Target struct {
@@ -85,14 +93,26 @@ type ServiceStatus struct {
 }
 
 type Node struct {
-	Name              string `json:"name"`
-	Ready             bool   `json:"ready"`
-	Unschedulable     bool   `json:"unschedulable"`
-	Architecture      string `json:"architecture"`
-	KubeletVersion    string `json:"kubelet_version"`
-	AllocatableCPU    string `json:"allocatable_cpu"`
-	AllocatableMemory string `json:"allocatable_memory"`
-	Pods              int32  `json:"pods"`
+	AllocatableGPU    int64       `json:"allocatable_gpu"`
+	ResourceVersion   string      `json:"resource_version"`
+	ControlPlane      bool        `json:"control_plane"`
+	Metrics           NodeMetrics `json:"metrics"`
+	Name              string      `json:"name"`
+	Ready             bool        `json:"ready"`
+	Unschedulable     bool        `json:"unschedulable"`
+	Architecture      string      `json:"architecture"`
+	KubeletVersion    string      `json:"kubelet_version"`
+	AllocatableCPU    string      `json:"allocatable_cpu"`
+	AllocatableMemory string      `json:"allocatable_memory"`
+	Pods              int32       `json:"pods"`
+}
+
+func (c *Client) restClient() rest.Interface {
+	client := c.kube.CoreV1().RESTClient()
+	if concrete, ok := client.(*rest.RESTClient); ok && concrete == nil {
+		return nil
+	}
+	return client
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
@@ -139,7 +159,14 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		}
 		return nil
 	}}
-	return &Client{kube: kube, options: options, http: client}, nil
+	ca := config.CAData
+	if len(ca) == 0 && config.CAFile != "" {
+		ca, err = os.ReadFile(config.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read Kubernetes CA certificate: %w", err)
+		}
+	}
+	return &Client{kube: kube, options: options, http: client, clusterCA: ca}, nil
 }
 
 // Namespace is independent of display names, so application renames cannot
