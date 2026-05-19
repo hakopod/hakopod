@@ -27,6 +27,10 @@ type imageReference struct{ registry, repository, reference, canonical string }
 // against the received bytes. Anonymous bearer tokens are request-local and are
 // never returned, logged, cached across deployments or persisted.
 func (c *Client) Resolve(ctx context.Context, application spec.Application) (spec.Application, error) {
+	return c.ResolveScoped(ctx, application, "", "")
+}
+
+func (c *Client) ResolveScoped(ctx context.Context, application spec.Application, project, environment string) (spec.Application, error) {
 	app, err := spec.Normalize(application)
 	if err != nil {
 		return spec.Application{}, err
@@ -40,16 +44,35 @@ func (c *Client) Resolve(ctx context.Context, application spec.Application) (spe
 	resolved := make(map[string]string, len(app.Services))
 	for _, name := range spec.Names(app) {
 		svc := app.Services[name]
-		if value, ok := resolved[svc.Image]; ok {
+		selectedArchitectures := architectures
+		if svc.Architecture != "" {
+			present := false
+			for _, architecture := range architectures {
+				present = present || architecture == svc.Architecture
+			}
+			if !present {
+				return spec.Application{}, fmt.Errorf("services.%s.architecture: no available node supports %s", name, svc.Architecture)
+			}
+			selectedArchitectures = []string{svc.Architecture}
+		}
+		cacheKey := svc.Image + "\x00" + svc.RegistryCredential + "\x00" + strings.Join(selectedArchitectures, ",")
+		if value, ok := resolved[cacheKey]; ok {
 			svc.Image = value
 			app.Services[name] = svc
 			continue
 		}
-		value, err := c.resolveImage(ctx, svc.Image, architectures)
+		var credentials *RegistryCredential
+		if svc.RegistryCredential != "" {
+			credentials, err = c.RegistryCredential(ctx, project, environment, svc.RegistryCredential, svc.Image)
+			if err != nil {
+				return spec.Application{}, fmt.Errorf("services.%s.image: scoped registry credential is unavailable or does not match the image registry", name)
+			}
+		}
+		value, err := c.resolveImage(ctx, svc.Image, selectedArchitectures, credentials)
 		if err != nil {
 			return spec.Application{}, fmt.Errorf("services.%s.image: %w", name, err)
 		}
-		resolved[svc.Image], svc.Image = value, value
+		resolved[cacheKey], svc.Image = value, value
 		app.Services[name] = svc
 	}
 	return app, nil
@@ -120,13 +143,22 @@ func (c *Client) architectures(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
-func (c *Client) resolveImage(ctx context.Context, image string, architectures []string) (string, error) {
+func (c *Client) resolveImage(ctx context.Context, image string, architectures []string, credentials ...*RegistryCredential) (string, error) {
 	ref, err := parseReference(image)
 	if err != nil {
 		return "", err
 	}
 	endpoint := "https://" + ref.registry + "/v2/" + ref.repository + "/manifests/" + ref.reference
-	data, token, err := c.registryGet(ctx, endpoint, manifestTypes, "")
+	var credential *RegistryCredential
+	if len(credentials) > 0 && credentials[0] != nil {
+		copy := *credentials[0]
+		copy.Repository = ref.repository
+		credential = &copy
+		if credential.Registry != ref.registry {
+			return "", fmt.Errorf("registry credential does not match the requested host")
+		}
+	}
+	data, token, err := c.registryGet(ctx, endpoint, manifestTypes, "", credential)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +191,7 @@ func (c *Client) resolveImage(ctx context.Context, image string, architectures [
 		if !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(manifest.Config.Digest) {
 			return "", fmt.Errorf("manifest has no valid image configuration digest")
 		}
-		config, _, err := c.registryGet(ctx, "https://"+ref.registry+"/v2/"+ref.repository+"/blobs/"+manifest.Config.Digest, "application/octet-stream", token)
+		config, _, err := c.registryGet(ctx, "https://"+ref.registry+"/v2/"+ref.repository+"/blobs/"+manifest.Config.Digest, "application/octet-stream", token, credential)
 		if err != nil {
 			return "", fmt.Errorf("cannot verify image architecture: %w", err)
 		}
@@ -186,7 +218,11 @@ func (c *Client) resolveImage(ctx context.Context, image string, architectures [
 	return ref.canonical + "@" + digest, nil
 }
 
-func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string) ([]byte, string, error) {
+func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string, credentials ...*RegistryCredential) ([]byte, string, error) {
+	var credential *RegistryCredential
+	if len(credentials) > 0 {
+		credential = credentials[0]
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -196,6 +232,11 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		request.Header.Set("User-Agent", "hakopod/0.1")
 		if token != "" {
 			request.Header.Set("Authorization", "Bearer "+token)
+		} else if credential != nil {
+			if request.URL.Scheme != "https" || request.URL.Host != credential.Registry {
+				return nil, "", fmt.Errorf("registry credential target mismatch")
+			}
+			request.SetBasicAuth(credential.Username, credential.Password)
 		}
 		response, err := c.http.Do(request)
 		if err != nil {
@@ -204,7 +245,7 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		if response.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			challenge := response.Header.Get("WWW-Authenticate")
 			response.Body.Close()
-			token, err = c.registryToken(ctx, challenge)
+			token, err = c.registryToken(ctx, challenge, credential)
 			if err != nil {
 				return nil, "", err
 			}
@@ -213,7 +254,7 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		if response.StatusCode != http.StatusOK {
 			response.Body.Close()
 			if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-				return nil, "", fmt.Errorf("registry authentication required; private registry credentials are not supported in this milestone")
+				return nil, "", fmt.Errorf("registry authentication was denied; verify the scoped credential and repository pull permission")
 			}
 			if response.StatusCode == http.StatusNotFound {
 				return nil, "", fmt.Errorf("image repository, tag or digest was not found")
@@ -233,12 +274,16 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		}
 		return data, token, nil
 	}
-	return nil, "", fmt.Errorf("registry authentication required; private registries are not supported in this milestone")
+	return nil, "", fmt.Errorf("registry authentication was denied")
 }
 
 var bearerField = regexp.MustCompile(`([a-z]+)="([^"]*)"`)
 
-func (c *Client) registryToken(ctx context.Context, challenge string) (string, error) {
+func (c *Client) registryToken(ctx context.Context, challenge string, credentials ...*RegistryCredential) (string, error) {
+	var credential *RegistryCredential
+	if len(credentials) > 0 {
+		credential = credentials[0]
+	}
 	if !strings.HasPrefix(strings.ToLower(challenge), "bearer ") || len(challenge) > 8192 {
 		return "", fmt.Errorf("registry requires unsupported authentication")
 	}
@@ -250,24 +295,35 @@ func (c *Client) registryToken(ctx context.Context, challenge string) (string, e
 	if err != nil || realm.Scheme != "https" || realm.Host == "" || realm.User != nil {
 		return "", fmt.Errorf("registry returned an invalid token endpoint")
 	}
+	if credential != nil && !credential.trustsRealm(realm) {
+		return "", fmt.Errorf("registry requested an untrusted credential token endpoint")
+	}
 	query := realm.Query()
 	for _, key := range []string{"service", "scope"} {
 		if fields[key] != "" {
 			query.Set(key, fields[key])
 		}
 	}
+	if credential != nil {
+		query.Set("scope", "repository:"+credential.Repository+":pull")
+	}
 	realm.RawQuery = query.Encode()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, realm.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("invalid registry token request")
 	}
-	response, err := c.http.Do(request)
+	client := *c.http
+	if credential != nil {
+		request.SetBasicAuth(credential.Username, credential.Password)
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("registry token service could not be reached")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("registry does not allow anonymous image access; private registries are not supported in this milestone")
+		return "", fmt.Errorf("registry token request was denied; verify repository pull permission")
 	}
 	var body struct {
 		Token       string `json:"token"`
