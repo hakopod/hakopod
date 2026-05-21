@@ -136,12 +136,14 @@ func (c *Client) Nodes(ctx context.Context) ([]Node, error) {
 			if len(items) >= 200 {
 				return nil, fmt.Errorf("cluster exceeds the 200-node observation limit")
 			}
-			item := Node{Name: node.Name, Unschedulable: node.Spec.Unschedulable, Architecture: node.Status.NodeInfo.Architecture, KubeletVersion: node.Status.NodeInfo.KubeletVersion, AllocatableCPU: node.Status.Allocatable.Cpu().String(), AllocatableMemory: node.Status.Allocatable.Memory().String()}
+			item := Node{Name: node.Name, ResourceVersion: node.ResourceVersion, ControlPlane: controlPlane(node), Unschedulable: node.Spec.Unschedulable, Architecture: node.Status.NodeInfo.Architecture, KubeletVersion: node.Status.NodeInfo.KubeletVersion, AllocatableCPU: node.Status.Allocatable.Cpu().String(), AllocatableMemory: node.Status.Allocatable.Memory().String()}
 			for _, condition := range node.Status.Conditions {
 				if condition.Type == corev1.NodeReady {
 					item.Ready = condition.Status == corev1.ConditionTrue
 				}
 			}
+			gpu := node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")]
+			item.AllocatableGPU = gpu.Value()
 			index[node.Name] = len(items)
 			items = append(items, item)
 		}
@@ -171,6 +173,7 @@ func (c *Client) Nodes(ctx context.Context) ([]Node, error) {
 		}
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	c.nodeMetrics(ctx, items)
 	return items, nil
 }
 
