@@ -1,0 +1,217 @@
+# Optional Hakopod development storage. Adapted from Rancher local-path-provisioner v0.0.37, Apache-2.0.
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-storage
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path-service-account
+  namespace: hakopod-storage
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path-role
+  namespace: hakopod-storage
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path-role
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "persistentvolumeclaims", "configmaps", "pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path-bind
+  namespace: hakopod-storage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hakopod-local-path-role
+subjects:
+  - kind: ServiceAccount
+    name: hakopod-local-path-service-account
+    namespace: hakopod-storage
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path-bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hakopod-local-path-role
+subjects:
+  - kind: ServiceAccount
+    name: hakopod-local-path-service-account
+    namespace: hakopod-storage
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: local-path-provisioner
+  namespace: hakopod-storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: local-path-provisioner
+  template:
+    metadata:
+      labels:
+        app: local-path-provisioner
+    spec:
+      serviceAccountName: hakopod-local-path-service-account
+      containers:
+        - name: local-path-provisioner
+          image: docker.io/rancher/local-path-provisioner:v0.0.37@sha256:e757967a5ec338f6a9b371c5a9688bedaa8c3578ea3dd4db329ea0084be0a86f
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          imagePullPolicy: IfNotPresent
+          command:
+            - local-path-provisioner
+            - start
+            - --worker-threads=1
+            - --config
+            - /etc/config/config.json
+          ports:
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config/
+          env:
+            - name: SERVICE_ACCOUNT_NAME
+              value: hakopod-local-path-service-account
+            - name: GOMEMLIMIT
+              value: 96MiB
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CONFIG_MOUNT_PATH
+              value: /etc/config/
+            - name: HEALTH_PORT
+              value: "8080"
+      volumes:
+        - name: config-volume
+          configMap:
+            name: local-path-config
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: hakopod-local-path
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: hakopod
+  name: local-path-config
+  namespace: hakopod-storage
+data:
+  config.json: |-
+    {
+            "nodePathMap":[
+            {
+                    "node":"DEFAULT_PATH_FOR_NON_LISTED_NODES",
+                    "paths":["/opt/local-path-provisioner"]
+            }
+            ]
+    }
+  setup: |-
+    #!/bin/sh
+    set -eu
+    mkdir -m 0777 -p "$VOL_DIR"
+  teardown: |-
+    #!/bin/sh
+    set -eu
+    rm -rf "$VOL_DIR"
+  helperPod.yaml: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: helper-pod
+        image: docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+        resources:
+          requests: {cpu: 10m, memory: 8Mi}
+          limits: {cpu: 100m, memory: 32Mi}
+        imagePullPolicy: IfNotPresent
