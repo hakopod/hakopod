@@ -1,0 +1,6 @@
+schemas["ProxyField"] = obj({"name": S, "description": S, "example": S}, ["name", "description", "example"])
+schemas["ProxyConfiguration"] = obj({"namespace": S, "name": S, "resource_version": S, "settings": mapping(S), "fields": array(ref("ProxyField")), "applied_revision": S}, ["namespace", "name", "resource_version", "settings", "fields"])
+schemas["ProxyChange"] = obj({"settings": mapping(S), "status": S, "error": S, "applied_version": S, "attempts": I, "retry_at": T}, ["status", "error"])
+schemas["ProxyStatus"] = obj({"observed": ref("ProxyConfiguration"), "revision": I, "change": ref("ProxyChange"), "drift": B}, ["observed", "revision", "change", "drift"])
+route("/settings/haproxy", "get", "getProxy", ref("ProxyStatus"))
+route("/settings/haproxy", "patch", "setProxy", obj({"revision": I, "status": S}, ["revision", "status"]), obj({"settings": mapping(S), "expected_revision": I, "expected_resource_version": S}, ["settings", "expected_revision", "expected_resource_version"]), "202")
