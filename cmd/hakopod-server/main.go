@@ -97,11 +97,18 @@ func run() error {
 		}
 	}
 	domain := os.Getenv("HAKOPOD_APP_DOMAIN")
+	httpsPort := 0
+	if value := os.Getenv("HAKOPOD_PUBLIC_HTTPS_PORT"); value != "" {
+		httpsPort, err = strconv.Atoi(value)
+		if err != nil || httpsPort < 1 || httpsPort > 65535 {
+			return fmt.Errorf("HAKOPOD_PUBLIC_HTTPS_PORT must be 1–65535")
+		}
+	}
 	if domain == "" || len(domain) > 190 || len(validation.IsDNS1123Subdomain(domain)) > 0 {
 		return fmt.Errorf("HAKOPOD_APP_DOMAIN must be an operator-owned DNS domain (local-up configures a development domain)")
 	}
 	ingress := env("HAKOPOD_INGRESS_CLASS", "haproxy")
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER")})
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
 	}
@@ -118,12 +125,20 @@ func run() error {
 	if (cert == "") != (key == "") {
 		return fmt.Errorf("set both HAKOPOD_TLS_CERT and HAKOPOD_TLS_KEY")
 	}
-	srv := &http.Server{Addr: listen, Handler: (&api.Server{Store: db, Cluster: kube}).Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	identityConfig, err := authConfig()
+	if err != nil {
+		return err
+	}
+	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig}
+	srv := &http.Server{Addr: listen, Handler: management.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	w := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(5)
 	go func() { defer wg.Done(); w.Run(ctx) }()
 	go func() { defer wg.Done(); w.Resync(ctx) }()
+	go func() { defer wg.Done(); management.RunSources(ctx) }()
+	go func() { defer wg.Done(); management.RunPlatform(ctx) }()
+	go func() { defer wg.Done(); management.RunBuilds(ctx) }()
 	serverErr := make(chan error, 1)
 	go func() {
 		if cert != "" {

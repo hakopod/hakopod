@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,12 +22,17 @@ import (
 )
 
 type Server struct {
-	Store      *store.Store
-	Cluster    *cluster.Client
-	mu         sync.Mutex
-	buckets    map[string]bucket
-	concurrent chan struct{}
-	streams    chan struct{}
+	Store   *store.Store
+	Cluster *cluster.Client
+	Auth    AuthConfig
+	// Overrides are only set by in-process tests, never by an API request.
+	githubHTTP            *http.Client
+	githubAPIURL          string
+	githubTestCredentials func(context.Context) (map[string][]byte, error)
+	mu                    sync.Mutex
+	buckets               map[string]bucket
+	concurrent            chan struct{}
+	streams               chan struct{}
 }
 type bucket struct {
 	at     time.Time
@@ -52,6 +56,14 @@ func (s *Server) Handler() http.Handler {
 		write(w, 200, map[string]string{"status": "ready"})
 	})
 	routes := http.NewServeMux()
+	s.registerAuthRoutes(mux, routes)
+	s.registerSourceRoutes(mux, routes)
+	s.registerSettingsRoutes(routes)
+	s.registerWorkloadSecretRoutes(routes)
+	s.registerTemplateRoutes(routes)
+	s.registerProxyRoutes(routes)
+	s.registerBuildRoutes(routes)
+	s.registerRuntimeRoutes(routes)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
 	routes.HandleFunc("POST /api/v1/projects", s.createProject)
@@ -164,13 +176,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			problem(w, 429, "rate_limit", "request rate exceeded")
 			return
 		}
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") {
-			problem(w, 401, "unauthorized", "a bearer API key is required")
+		raw, err := s.authenticateToken(r)
+		if err != nil {
+			failure(w, err)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		p, err := s.Store.Authenticate(ctx, strings.TrimPrefix(auth, "Bearer "))
+		p, err := s.Store.Authenticate(ctx, raw)
 		cancel()
 		if err != nil {
 			failure(w, err)

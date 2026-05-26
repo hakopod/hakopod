@@ -138,7 +138,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}
 	resolved := d.ResolvedSpec
 	if resolved == nil {
-		app, err := w.Cluster.Resolve(ctx, d.Spec)
+		app, err := w.Cluster.ResolveScoped(ctx, d.Spec, a.Project, a.Environment)
 		if err != nil {
 			w.handleFailure(parent, ctx, c, err, nil)
 			return
