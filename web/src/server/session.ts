@@ -126,9 +126,12 @@ export function apiURL(path: string) {
   return `${url.origin}/api/v1/${path}`
 }
 
-export async function boundedBody(request: Request, limit: number): Promise<string | null> {
+export async function boundedBytes(
+  request: Pick<Request, 'headers' | 'body'>,
+  limit: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
   if (Number(request.headers.get('content-length')) > limit) return null
-  if (!request.body) return ''
+  if (!request.body) return new Uint8Array(0)
   const reader = request.body.getReader()
   const bytes = new Uint8Array(limit)
   let size = 0
@@ -143,10 +146,18 @@ export async function boundedBody(request: Request, limit: number): Promise<stri
       bytes.set(value, size)
       size += value.byteLength
     }
-    return new TextDecoder().decode(bytes.subarray(0, size))
+    return bytes.subarray(0, size)
   } finally {
     reader.releaseLock()
   }
+}
+
+export async function boundedBody(
+  request: Pick<Request, 'headers' | 'body'>,
+  limit: number,
+): Promise<string | null> {
+  const bytes = await boundedBytes(request, limit)
+  return bytes === null ? null : new TextDecoder().decode(bytes)
 }
 
 export const privateHeaders = {

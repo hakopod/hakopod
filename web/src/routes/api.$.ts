@@ -1,4 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { authenticatedResponse, oauth } from '../server/auth'
+import { forwardGitHubWebhook } from '../server/github-webhook'
 import {
   apiURL,
   boundedBody,
@@ -7,25 +9,45 @@ import {
   sessionToken,
 } from '../server/session'
 
-const allowed =
-  /^(me|projects|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit)$/
+const allowed = [
+  /^(me|projects|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|scale|tls))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
+  /^auth\/(?:status|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
+  /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
+  /^users(?:\/[A-Za-z0-9_-]+)?$/,
+  /^projects\/[A-Za-z0-9_-]+\/(?:members|invites)$/,
+  /^registries(?:\/[A-Za-z0-9_-]+(?:\/sync)?)?$/,
+  /^tls\/issuers$/,
+  /^settings\/haproxy$/,
+  /^nodes\/(?:[A-Za-z0-9_.-]+\/(?:cordon|drain)|enrollments(?:\/[A-Za-z0-9_-]+)?)$/,
+  /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,
+  /^integrations\/github$/,
+  /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
+  /^templates(?:\/[A-Za-z0-9_-]+\/plan)?$/,
+  /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
+]
 
 async function proxy({ request, params }: { request: Request; params: { _splat?: string } }) {
   try {
+    if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)
     if (request.method !== 'GET') {
       const rejected = requireSameOrigin(request)
       if (rejected) return rejected
     }
-    const path = params._splat || ''
-    if (!allowed.test(path))
+    const path = (params._splat || '').replace(/^v1\/(auth\/oauth\/)/, '$1')
+    if (/^auth\/oauth\/(github|google)\/(start|callback)$/.test(path)) return oauth(request, path)
+    if (!allowed.some((pattern) => pattern.test(path)))
       return Response.json({ error: { message: 'Unknown API endpoint.' } }, { status: 404 })
     const token = sessionToken(request)
-    if (!token)
+    const publicPath =
+      (path === 'auth/status' && request.method === 'GET') ||
+      (/^auth\/passkeys\/login\/(start|finish)$/.test(path) && request.method === 'POST')
+    if (!token && !publicPath)
       return Response.json(
-        { error: { code: 'unauthorized', message: 'Sign in with a valid API key to continue.' } },
+        { error: { code: 'unauthorized', message: 'Sign in to your account to continue.' } },
         { status: 401, headers: privateHeaders },
       )
-    const headers = new Headers({ Authorization: `Bearer ${token}`, Accept: 'application/json' })
+    const headers = new Headers({ Accept: 'application/json' })
+    if (token) headers.set('Authorization', `Bearer ${token}`)
     const idempotency = request.headers.get('idempotency-key')
     if (idempotency) headers.set('Idempotency-Key', idempotency)
     let body: string | undefined
@@ -50,6 +72,7 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
         AbortSignal.timeout(streaming ? 5 * 60 * 1000 : 30000),
       ]),
     })
+    if (path === 'auth/passkeys/login/finish') return authenticatedResponse(request, response)
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -73,5 +96,5 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
 }
 
 export const Route = createFileRoute('/api/$')({
-  server: { handlers: { GET: proxy, POST: proxy, DELETE: proxy } },
+  server: { handlers: { GET: proxy, POST: proxy, DELETE: proxy, PATCH: proxy, PUT: proxy } },
 })
