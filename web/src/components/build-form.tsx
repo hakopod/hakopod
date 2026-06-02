@@ -1,0 +1,316 @@
+import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { components } from '../lib/api.generated'
+import type { Application } from '../lib/types'
+import { client, unwrap } from '../lib/client'
+import { message } from '../lib/api'
+import { useScope } from '../lib/scope'
+import { Button } from './ui/button'
+import { Dialog } from './ui/dialog'
+import { Note } from './shared'
+
+type Build = components['schemas']['BuildConfig']
+export default function BuildForm({
+  build,
+  application,
+  onClose,
+}: {
+  build?: Build
+  application?: Application
+  onClose: () => void
+}) {
+  const scope = useScope()
+  const navigate = useNavigate()
+  const cache = useQueryClient()
+  const project = build?.project || application?.project || scope.project
+  const environment = build?.environment || application?.environment || scope.environment
+  const [name, setName] = useState(build?.name || application?.name || '')
+  const [service, setService] = useState(
+    build?.service || Object.keys(application?.spec.services || {})[0] || 'web',
+  )
+  const [repository, setRepository] = useState(build?.repository || '')
+  const [branch, setBranch] = useState(build?.branch || 'main')
+  const [mode, setMode] = useState<Build['mode']>(build?.mode || 'dockerfile')
+  const [preset, setPreset] = useState<Build['preset']>(build?.preset || 'auto')
+  const [architecture, setArchitecture] = useState<Build['architecture'] | ''>(
+    build?.architecture || '',
+  )
+  const [context, setContext] = useState(build?.context_path || '.')
+  const [dockerfile, setDockerfile] = useState(build?.dockerfile || 'Dockerfile')
+  const [port, setPort] = useState(build?.port || 8080)
+  const [isPublic, setPublic] = useState(build?.public || false)
+  const [size, setSize] = useState(build?.size || 'small')
+  const [registry, setRegistry] = useState(build?.registry_credential || '')
+  const [automatic, setAutomatic] = useState(build?.auto_build || false)
+  const [autoDeploy, setAutoDeploy] = useState(build?.auto_deploy || false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const registries = useQuery({
+    queryKey: ['registries', project, environment],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/registries', { signal, params: { query: { project, environment } } })),
+    gcTime: 0,
+  })
+  const linked = Boolean(build?.application_id || application)
+  return (
+    <Dialog
+      open
+      wide
+      onOpenChange={(open) => {
+        if (!busy && !open) onClose()
+      }}
+      title={build ? 'Edit source build' : 'Build an application from source'}
+      description={`${project} / ${environment} · Build with a Dockerfile or Cloud Native Buildpacks.`}
+    >
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (busy) return
+          setBusy(true)
+          setError('')
+          try {
+            const body = {
+              project,
+              environment,
+              name,
+              service,
+              repository,
+              branch,
+              mode,
+              preset,
+              context_path: context,
+              architecture: architecture || undefined,
+              dockerfile,
+              port,
+              public: isPublic,
+              size,
+              registry_credential: registry,
+              auto_build: automatic,
+              auto_deploy: autoDeploy,
+              application_id: build?.application_id || application?.id || '',
+              ...(build ? { expected_config_revision: build.revision } : {}),
+            }
+            const result = build
+              ? await unwrap(
+                  client.PUT('/builds/{id}', { params: { path: { id: build.id } }, body }),
+                )
+              : await unwrap(client.POST('/builds', { body }))
+            void cache.invalidateQueries({ queryKey: ['builds'] })
+            void cache.invalidateQueries({ queryKey: ['build', result.id] })
+            onClose()
+            void navigate({ to: '/builds/$buildId', params: { buildId: result.id } })
+          } catch (err) {
+            setError(message(err))
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <div className="dialog-body auth-form">
+          <div className="form-grid">
+            <label>
+              Application name
+              <input
+                value={name}
+                readOnly={Boolean(build || application)}
+                onChange={(e) => setName(e.target.value)}
+                pattern="[a-z][a-z0-9-]*"
+                maxLength={63}
+                required
+              />
+            </label>
+            <label>
+              Service
+              {application ? (
+                <select value={service} onChange={(e) => setService(e.target.value)}>
+                  {Object.keys(application.spec.services).map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={service}
+                  readOnly={Boolean(build)}
+                  onChange={(e) => setService(e.target.value)}
+                  pattern="[a-z][a-z0-9-]*"
+                  maxLength={63}
+                  required
+                />
+              )}
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              GitHub repository
+              <input
+                value={repository}
+                onChange={(e) => setRepository(e.target.value)}
+                placeholder="owner/repository"
+                maxLength={201}
+                required
+              />
+            </label>
+            <label>
+              Source branch
+              <input
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                maxLength={200}
+                required
+              />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              Build method
+              <select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
+                <option value="dockerfile">Dockerfile</option>
+                <option value="buildpacks">Cloud Native Buildpacks</option>
+              </select>
+            </label>
+            <label>
+              Build context
+              <input
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                maxLength={200}
+                required
+              />
+            </label>
+          </div>
+          <label>
+            Target architecture
+            <select
+              value={architecture}
+              onChange={(e) => setArchitecture(e.target.value as Build['architecture'] | '')}
+            >
+              <option value="">Infer from a uniform cluster</option>
+              <option value="amd64">Linux AMD64</option>
+              <option value="arm64">Linux ARM64</option>
+            </select>
+          </label>
+          {mode === 'dockerfile' ? (
+            <label>
+              Dockerfile path
+              <input
+                value={dockerfile}
+                onChange={(e) => setDockerfile(e.target.value)}
+                maxLength={200}
+                required
+              />
+            </label>
+          ) : (
+            <label>
+              Buildpack preset
+              <select value={preset} onChange={(e) => setPreset(e.target.value as Build['preset'])}>
+                {['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
+                  (value) => (
+                    <option key={value}>{value}</option>
+                  ),
+                )}
+              </select>
+            </label>
+          )}
+          {!linked && (
+            <div className="form-grid">
+              <label>
+                Service port
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                  required
+                />
+              </label>
+              <label>
+                Resource profile
+                <select value={size} onChange={(e) => setSize(e.target.value)}>
+                  {['small', 'medium', 'large'].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          {!linked && (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setPublic(e.target.checked)}
+              />
+              Expose the service publicly
+            </label>
+          )}
+          <label>
+            Runtime registry credential
+            <select value={registry} onChange={(e) => setRegistry(e.target.value)}>
+              <option value="">None · image must be publicly pullable</option>
+              {registry && !registries.data?.items.some((item) => item.name === registry) && (
+                <option value={registry}>{registry}</option>
+              )}
+              {registries.data?.items.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} · {item.registry}
+                </option>
+              ))}
+            </select>
+            <span className="field-help">
+              Private GHCR images need a saved credential with package read permission.
+            </span>
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={automatic}
+              onChange={(e) => {
+                setAutomatic(e.target.checked)
+                if (!e.target.checked) setAutoDeploy(false)
+              }}
+            />
+            Build automatically on pushes to this source branch
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={autoDeploy}
+              disabled={!automatic}
+              onChange={(e) => setAutoDeploy(e.target.checked)}
+            />
+            Deploy successful verified builds automatically
+          </label>
+          <Note>
+            {linked
+              ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
+              : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
+            Saving build settings prepares a workflow preview. An administrator explicitly installs
+            the reviewed workflow in GitHub.
+          </Note>
+          {automatic && (
+            <Note>
+              Automatic builds require the installed workflow. Automatic deployment additionally
+              needs the signed GitHub workflow event integration and your continuing project
+              authority.
+            </Note>
+          )}
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="dialog-footer">
+          <Button type="button" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? 'Saving…' : build ? 'Save build configuration' : 'Create source build'}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
