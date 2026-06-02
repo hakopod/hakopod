@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan, Service, Spec } from '../lib/types'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
+import { specToTOML } from '../lib/toml'
 import { Dialog } from './ui/dialog'
 import { Button } from './ui/button'
 import { Icon } from './icons'
@@ -20,16 +21,27 @@ export function DeployDialog({
   open,
   onOpenChange,
   application,
+  initialMode = 'form',
+  serviceName,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   application?: Application
+  initialMode?: 'form' | 'toml'
+  serviceName?: string
 }) {
   const scope = useScope()
   const project = application?.project || scope.project
   const environment = application?.environment || scope.environment
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const registries = useQuery({
+    queryKey: ['registries', project, environment],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/registries', { signal, params: { query: { project, environment } } })),
+    enabled: open && Boolean(project && environment),
+    gcTime: 0,
+  })
   const [spec, setSpec] = useState<Spec>(newSpec)
   const [toml, setToml] = useState('')
   const [mode, setMode] = useState<'form' | 'toml'>('form')
@@ -42,11 +54,16 @@ export function DeployDialog({
       setSpec(application ? structuredClone(application.spec) : newSpec())
       setPlan(null)
       setError('')
-      setToml('')
-      setMode('form')
+      setToml(application ? specToTOML(application.spec) : '')
+      setMode(initialMode)
     }
-  }, [open, application?.id])
-  const payload = () => ({ project, environment, ...(mode === 'form' ? { spec } : { toml }) })
+  }, [open, application?.id, initialMode, serviceName])
+  const payload = () => ({
+    project,
+    environment,
+    ...(serviceName ? { service: serviceName } : {}),
+    ...(mode === 'form' ? { spec } : { toml }),
+  })
   async function review() {
     setBusy(true)
     setError('')
@@ -76,6 +93,7 @@ export function DeployDialog({
             environment,
             spec: plan.spec,
             expected_revision: plan.expected_revision,
+            ...(serviceName ? { service: serviceName } : {}),
           },
           params: { header: { 'Idempotency-Key': requestKey.current } },
         }),
@@ -107,7 +125,7 @@ export function DeployDialog({
         plan
           ? 'Review your deployment'
           : application
-            ? `Configure ${application.name}`
+            ? `Configure ${serviceName ? `${application.name} / ${serviceName}` : application.name}`
             : 'Deploy an application'
       }
       description={
@@ -126,6 +144,12 @@ export function DeployDialog({
         </span>
       </div>
       <div className="dialog-body deploy-body">
+        {serviceName && (
+          <Note>
+            This revision stages changes to <strong>{serviceName}</strong> only. Other services and
+            application networks retain their accepted configuration.
+          </Note>
+        )}
         {plan ? (
           <>
             <div className="review-summary">
@@ -202,7 +226,7 @@ export function DeployDialog({
                 />
                 <p className="field-help">
                   TOML supports advanced networking, environment variables, dependencies, and health
-                  checks. Secret bindings are not available in this milestone.
+                  checks, persistent storage, GPU requests, and saved secret bindings.
                 </p>
               </div>
             ) : (
@@ -224,131 +248,169 @@ export function DeployDialog({
                   <span>Services</span>
                   <span className="muted-text">Private network included</span>
                 </div>
-                {Object.entries(spec.services).map(([name, service]) => (
-                  <div className="service-form" key={name}>
-                    <div className="service-form-heading">
-                      <div className="service-mini-icon">
-                        <Icon
-                          name={service.public ? 'globe' : service.port ? 'lock' : 'terminal'}
-                          size={16}
-                        />
+                {Object.entries(spec.services)
+                  .filter(([name]) => !serviceName || name === serviceName)
+                  .map(([name, service]) => (
+                    <div className="service-form" key={name}>
+                      <div className="service-form-heading">
+                        <div className="service-mini-icon">
+                          <Icon
+                            name={service.public ? 'globe' : service.port ? 'lock' : 'terminal'}
+                            size={16}
+                          />
+                        </div>
+                        <strong className="mono">{name}</strong>
+                        <span className="form-spacer" />
+                        {!serviceName && Object.keys(spec.services).length > 1 && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`Remove ${name}`}
+                            onClick={() =>
+                              setSpec((previous) => ({
+                                ...previous,
+                                services: Object.fromEntries(
+                                  Object.entries(previous.services).filter(([key]) => key !== name),
+                                ),
+                              }))
+                            }
+                          >
+                            <Icon name="x" size={14} />
+                          </Button>
+                        )}
                       </div>
-                      <strong className="mono">{name}</strong>
-                      <span className="form-spacer" />
-                      {Object.keys(spec.services).length > 1 && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Remove ${name}`}
-                          onClick={() =>
-                            setSpec((previous) => ({
-                              ...previous,
-                              services: Object.fromEntries(
-                                Object.entries(previous.services).filter(([key]) => key !== name),
-                              ),
-                            }))
-                          }
-                        >
-                          <Icon name="x" size={14} />
-                        </Button>
-                      )}
-                    </div>
-                    <label>
-                      Container image
-                      <input
-                        placeholder="nginx:1.29-alpine"
-                        value={service.image}
-                        onChange={(event) => updateService(name, { image: event.target.value })}
-                      />
-                    </label>
-                    <div className="form-grid-three">
                       <label>
-                        Port
+                        Container image
                         <input
-                          type="number"
-                          min={0}
-                          max={65535}
-                          placeholder="No port"
-                          value={service.port || ''}
+                          placeholder="nginx:1.29-alpine"
+                          value={service.image}
+                          onChange={(event) => updateService(name, { image: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Registry credential
+                        <select
+                          value={service.registry_credential || ''}
                           onChange={(event) =>
                             updateService(name, {
-                              port: Number(event.target.value) || 0,
-                              ...(!Number(event.target.value) ? { public: false } : {}),
+                              registry_credential: event.target.value || undefined,
                             })
                           }
-                        />
-                      </label>
-                      <label>
-                        Size
-                        <select
-                          value={service.size || 'small'}
-                          onChange={(event) => updateService(name, { size: event.target.value })}
                         >
-                          <option value="small">Small</option>
-                          <option value="medium">Medium</option>
-                          <option value="large">Large</option>
+                          <option value="">Public image / no credential</option>
+                          {service.registry_credential &&
+                            !registries.data?.items.some(
+                              (item) => item.name === service.registry_credential,
+                            ) && (
+                              <option value={service.registry_credential}>
+                                {service.registry_credential} (saved reference)
+                              </option>
+                            )}
+                          {registries.data?.items.map((item) => (
+                            <option key={item.name} value={item.name}>
+                              {item.name} · {item.registry}
+                              {item.synchronized ? '' : ' · pending sync'}
+                            </option>
+                          ))}
                         </select>
+                        {registries.error && (
+                          <span className="field-help">
+                            Registry credentials could not be loaded. Existing references are
+                            preserved.
+                          </span>
+                        )}
                       </label>
-                      <label>
-                        Replicas
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={service.replicas || 1}
-                          onChange={(event) =>
-                            updateService(name, { replicas: Number(event.target.value) })
-                          }
-                        />
-                      </label>
+                      <div className="form-grid-three">
+                        <label>
+                          Port
+                          <input
+                            type="number"
+                            min={0}
+                            max={65535}
+                            placeholder="No port"
+                            value={service.port || ''}
+                            onChange={(event) =>
+                              updateService(name, {
+                                port: Number(event.target.value) || 0,
+                                ...(!Number(event.target.value) ? { public: false } : {}),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Size
+                          <select
+                            value={service.size || 'small'}
+                            onChange={(event) => updateService(name, { size: event.target.value })}
+                          >
+                            <option value="small">Small</option>
+                            <option value="medium">Medium</option>
+                            <option value="large">Large</option>
+                          </select>
+                        </label>
+                        <label>
+                          Replicas
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={service.replicas || 1}
+                            onChange={(event) =>
+                              updateService(name, { replicas: Number(event.target.value) })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div className="service-exposure">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={service.public || false}
+                            disabled={!service.port}
+                            onChange={(event) =>
+                              updateService(name, { public: event.target.checked })
+                            }
+                          />
+                          <span>Public HTTP endpoint</span>
+                        </label>
+                        <span>
+                          {service.public
+                            ? 'Gets a generated URL'
+                            : service.port
+                              ? 'Private to this application'
+                              : 'Background worker'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="service-exposure">
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={service.public || false}
-                          disabled={!service.port}
-                          onChange={(event) =>
-                            updateService(name, { public: event.target.checked })
-                          }
-                        />
-                        <span>Public HTTP endpoint</span>
-                      </label>
-                      <span>
-                        {service.public
-                          ? 'Gets a generated URL'
-                          : service.port
-                            ? 'Private to this application'
-                            : 'Background worker'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                <Button
-                  className="add-service-button"
-                  variant="ghost"
-                  onClick={() => {
-                    let name = 'api'
-                    let n = 2
-                    while (spec.services[name]) name = `service-${n++}`
-                    setSpec((previous) => ({
-                      ...previous,
-                      services: {
-                        ...previous.services,
-                        [name]: {
-                          image: '',
-                          port: 8080,
-                          public: false,
-                          size: 'small',
-                          replicas: 1,
+                  ))}
+                {!serviceName && (
+                  <Button
+                    className="add-service-button"
+                    variant="ghost"
+                    disabled={Object.keys(spec.services).length >= 20}
+                    onClick={() => {
+                      let name = 'api'
+                      let n = 2
+                      while (spec.services[name]) name = `service-${n++}`
+                      setSpec((previous) => ({
+                        ...previous,
+                        services: {
+                          ...previous.services,
+                          [name]: {
+                            image: '',
+                            port: 8080,
+                            public: false,
+                            size: 'small',
+                            replicas: 1,
+                          },
                         },
-                      },
-                    }))
-                  }}
-                >
-                  <Icon name="plus" size={16} />
-                  Add service
-                </Button>
+                      }))
+                    }}
+                  >
+                    <Icon name="plus" size={16} />
+                    Add service
+                  </Button>
+                )}
                 <Note>
                   Private services discover each other by name, such as <code>http://api:8080</code>
                   . Your public web server can proxy browser requests to the private API.
