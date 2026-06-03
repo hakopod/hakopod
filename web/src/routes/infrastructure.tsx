@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
+import { useScope } from '../lib/scope'
+import type { Node } from '../lib/types'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { timestamp } from '../lib/api'
@@ -6,6 +9,14 @@ import { client, unwrap } from '../lib/client'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+
+const NodeEnrollments = lazy(() => import('../components/node-controls'))
+const NodeAction = lazy(() =>
+  import('../components/node-controls').then((m) => ({ default: m.NodeAction })),
+)
+const RegistrySettings = lazy(() => import('../components/registry-settings'))
+const IssuerSettings = lazy(() => import('../components/tls-settings'))
+const ProxySettings = lazy(() => import('../components/proxy-settings'))
 
 export const Route = createFileRoute('/infrastructure')({ component: Infrastructure })
 function cpu(quantity: string) {
@@ -25,6 +36,70 @@ function gib(bytes: number) {
 }
 
 function Infrastructure() {
+  const scope = useScope()
+  return (
+    <>
+      <PageHeader
+        eyebrow="OPERATOR / INFRASTRUCTURE"
+        title="Your cloud starts here."
+        description="Machines, private registries, and the ingress behind your applications."
+      />
+      <Tabs.Root defaultValue="nodes">
+        <Tabs.List className="tab-list">
+          <Tabs.Trigger className="tab-trigger" value="nodes">
+            Nodes
+          </Tabs.Trigger>
+          <Tabs.Trigger className="tab-trigger" value="registries">
+            Registries
+          </Tabs.Trigger>
+          <Tabs.Trigger className="tab-trigger" value="tls">
+            Certificates
+          </Tabs.Trigger>
+          {scope.identity.admin && (
+            <Tabs.Trigger className="tab-trigger" value="enrollment">
+              Add workers
+            </Tabs.Trigger>
+          )}
+          {scope.identity.admin && (
+            <Tabs.Trigger className="tab-trigger" value="proxy">
+              HAProxy
+            </Tabs.Trigger>
+          )}
+        </Tabs.List>
+        <Tabs.Content className="tab-content" value="nodes">
+          <Nodes />
+        </Tabs.Content>
+        <Tabs.Content className="tab-content" value="registries">
+          <Suspense fallback={<Loading />}>
+            <RegistrySettings />
+          </Suspense>
+        </Tabs.Content>
+        <Tabs.Content className="tab-content" value="tls">
+          <Suspense fallback={<Loading />}>
+            <IssuerSettings />
+          </Suspense>
+        </Tabs.Content>
+        {scope.identity.admin && (
+          <Tabs.Content className="tab-content" value="enrollment">
+            <Suspense fallback={<Loading />}>
+              <NodeEnrollments />
+            </Suspense>
+          </Tabs.Content>
+        )}
+        {scope.identity.admin && (
+          <Tabs.Content className="tab-content" value="proxy">
+            <Suspense fallback={<Loading />}>
+              <ProxySettings />
+            </Suspense>
+          </Tabs.Content>
+        )}
+      </Tabs.Root>
+    </>
+  )
+}
+function Nodes() {
+  const scope = useScope()
+  const [action, setAction] = useState<{ node: Node; action: 'cordon' | 'drain' } | null>(null)
   const [search, setSearch] = useState('')
   const nodes = useQuery({
     queryKey: ['nodes'],
@@ -37,17 +112,6 @@ function Infrastructure() {
   const totalMemory = items.reduce((sum, node) => sum + memory(node.allocatable_memory), 0)
   return (
     <>
-      <PageHeader
-        eyebrow="OPERATOR / INFRASTRUCTURE"
-        title="Your cloud starts here."
-        description="The machines behind your applications. Capacity from your Kubernetes cluster."
-        action={
-          <Button onClick={() => void nodes.refetch()}>
-            <Icon name="refresh" size={16} className={nodes.isFetching ? 'spin' : ''} />
-            Refresh cluster
-          </Button>
-        }
-      />
       <div className="overview-stats">
         <div className="overview-stat">
           <div>
@@ -99,6 +163,10 @@ function Infrastructure() {
               : 'Waiting for cluster observation'}
           </p>
         </div>
+        <Button onClick={() => void nodes.refetch()}>
+          <Icon name="refresh" size={15} />
+          Refresh nodes
+        </Button>
         <div className="search-input">
           <Icon name="search" size={16} />
           <input
@@ -128,8 +196,11 @@ function Infrastructure() {
                 <th>Status</th>
                 <th>Allocatable CPU</th>
                 <th>Allocatable memory</th>
+                <th>Current usage</th>
+                <th>GPUs</th>
                 <th>Pods</th>
                 <th>Kubernetes</th>
+                {scope.identity.admin && <th>Operations</th>}
               </tr>
             </thead>
             <tbody>
@@ -144,6 +215,7 @@ function Infrastructure() {
                         <strong>{node.name}</strong>
                         <span>
                           {node.architecture}
+                          {node.control_plane ? ' · Control plane' : ' · Worker'}
                           {node.unschedulable ? ' · Scheduling disabled' : ' · Schedulable'}
                         </span>
                       </div>
@@ -163,10 +235,58 @@ function Infrastructure() {
                   <td>
                     <strong className="mono">{gib(memory(node.allocatable_memory))}</strong>
                   </td>
+                  <td>
+                    {node.metrics.available ? (
+                      <div className="node-usage">
+                        <strong>
+                          {node.metrics.cpu_millicores === undefined
+                            ? 'CPU unavailable'
+                            : `${node.metrics.cpu_millicores.toFixed(0)} mCPU`}
+                        </strong>
+                        <span>
+                          {node.metrics.memory_bytes === undefined
+                            ? 'Memory unavailable'
+                            : gib(node.metrics.memory_bytes)}
+                        </span>
+                        <small>{timestamp(node.metrics.sampled_at)}</small>
+                      </div>
+                    ) : (
+                      <span className="muted-text" title={node.metrics.reason}>
+                        Unavailable
+                      </span>
+                    )}
+                  </td>
+                  <td className="mono">{node.allocatable_gpu}</td>
                   <td className="mono">{node.pods}</td>
                   <td>
                     <code className="version-label">{node.kubelet_version}</code>
                   </td>
+                  {scope.identity.admin && (
+                    <td>
+                      {node.control_plane ? (
+                        <span className="field-help">Operator managed</span>
+                      ) : (
+                        <div className="toolbar-actions">
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              setAction({ node: structuredClone(node), action: 'cordon' })
+                            }
+                          >
+                            {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              setAction({ node: structuredClone(node), action: 'drain' })
+                            }
+                          >
+                            Drain
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -182,14 +302,24 @@ function Infrastructure() {
       )}
       <div className="infrastructure-notes">
         <Note>
-          Allocatable values describe capacity, not live usage or free resources. Pod CPU and memory
-          usage, resource requests, and historical metrics are not collected in this milestone.
+          Allocatable values describe workload capacity. Inspect individual services for observed
+          pod CPU, memory, allocations, and events.
         </Note>
         <Note>
           Adding worker nodes expands workload capacity. It does not make the Kubernetes control
           plane, database, or public ingress highly available.
         </Note>
       </div>
+      {action && (
+        <Suspense fallback={<Loading />}>
+          <NodeAction
+            node={action.node}
+            action={action.action}
+            onClose={() => setAction(null)}
+            onChanged={() => void nodes.refetch()}
+          />
+        </Suspense>
+      )}
     </>
   )
 }
