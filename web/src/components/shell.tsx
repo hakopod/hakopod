@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { APIError, message } from '../lib/api'
@@ -10,7 +10,9 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { ErrorState, Note } from './shared'
 
-import { ScopeContext } from '../lib/scope'
+import { ScopeContext, canAccess } from '../lib/scope'
+import { applyAccent } from '../lib/appearance'
+import { AuthScreen } from './auth-screen'
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false)
@@ -27,6 +29,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     staleTime: 30000,
   })
   const queryClient = useQueryClient()
+  useEffect(() => {
+    if (identity.data?.credential_type !== 'browser') return
+    const destination = sessionStorage.getItem('hakopod-auth-return')
+    if (destination?.startsWith('/login/')) {
+      sessionStorage.removeItem('hakopod-auth-return')
+      if (destination !== window.location.pathname + window.location.search)
+        window.location.assign(destination)
+    }
+  }, [identity.data?.credential_type])
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
@@ -58,14 +69,27 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             })
           }
         >
-          Use a different API key
+          Sign in again
         </Button>
       </div>
     )
-  if (!identity.data)
+  if (!identity.data || identity.data.credential_type !== 'browser')
     return (
-      <Login
-        onSuccess={() => void queryClient.invalidateQueries({ queryKey: ['me'] })}
+      <AuthScreen
+        inviteToken={
+          window.location.pathname === '/login/invite'
+            ? new URLSearchParams(window.location.search).get('token') || ''
+            : ''
+        }
+        onSuccess={() => {
+          const destination = sessionStorage.getItem('hakopod-auth-return')
+          sessionStorage.removeItem('hakopod-auth-return')
+          if (destination?.startsWith('/login/')) window.location.assign(destination)
+          else {
+            void queryClient.invalidateQueries({ queryKey: ['me'] })
+            void queryClient.invalidateQueries({ queryKey: ['auth-status'] })
+          }
+        }}
         toggleTheme={toggleTheme}
         theme={theme}
       />
@@ -74,148 +98,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     <Workspace identity={identity.data} theme={theme} toggleTheme={toggleTheme}>
       {children}
     </Workspace>
-  )
-}
-
-function Login({
-  onSuccess,
-  toggleTheme,
-  theme,
-}: {
-  onSuccess: () => void
-  toggleTheme: () => void
-  theme: string
-}) {
-  const [token, setToken] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  async function signIn(event: FormEvent) {
-    event.preventDefault()
-    setError('')
-    setBusy(true)
-    try {
-      const response = await fetch('/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.trim() }),
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error?.message || 'Unable to sign in.')
-      setToken('')
-      onSuccess()
-    } catch (error) {
-      setError(message(error))
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="login-page">
-      <div className="login-brand-panel">
-        <div className="brand">
-          <Logo />
-          <span>
-            hakopod<span className="brand-period">.</span>
-          </span>
-        </div>
-        <div className="login-pitch">
-          <span className="label-chip">
-            <span className="status-dot" /> BUILT FOR YOUR INFRASTRUCTURE
-          </span>
-          <h1>
-            Your next idea.
-            <br />
-            <span>Your own cloud.</span>
-          </h1>
-          <p>
-            Bring your containers. Keep control.
-            <br />A calmer place to build, deploy, and grow.
-          </p>
-          <div className="network-illustration" aria-hidden="true">
-            <div className="network-line network-line-one" />
-            <div className="network-line network-line-two" />
-            <div className="illustration-node node-top">
-              <Icon name="box" size={26} />
-              <span>Your application</span>
-            </div>
-            <div className="illustration-node node-left">
-              <Icon name="globe" />
-              <span>Public web</span>
-            </div>
-            <div className="illustration-node node-right">
-              <Icon name="lock" />
-              <span>Private API</span>
-            </div>
-            <div className="illustration-caption">
-              <Icon name="shield" size={14} /> Connected on your private network
-            </div>
-          </div>
-        </div>
-        <div className="login-footer">Self-hosted. Open source. Yours.</div>
-      </div>
-      <div className="login-form-panel">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="login-theme"
-          aria-label="Toggle color theme"
-          onClick={toggleTheme}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-        </Button>
-        <div className="login-form-content">
-          <div className="login-symbol">
-            <Icon name="key" size={23} />
-          </div>
-          <h2>Welcome to your workspace</h2>
-          <p>Connect to this Hakopod installation with your API key.</p>
-          <form onSubmit={signIn}>
-            <label htmlFor="api-key">API key</label>
-            <input
-              id="api-key"
-              type="password"
-              placeholder="Paste your API key"
-              autoComplete="off"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              required
-              minLength={16}
-              maxLength={512}
-              autoFocus
-            />
-            <p className="field-help">Your key’s permissions determine what you can access.</p>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
-            <Button
-              variant="primary"
-              className="full-width"
-              type="submit"
-              disabled={busy || !token.trim()}
-            >
-              {busy ? 'Connecting…' : 'Open workspace'}
-              <Icon name="arrow" size={17} />
-            </Button>
-          </form>
-          <div className="login-assurance">
-            <Icon name="lock" size={14} />
-            <span>Your key stays in an encrypted, HttpOnly session.</span>
-          </div>
-          <div className="setup-help">
-            <h3>Setting up for the first time?</h3>
-            <p>
-              Start the management API and use the administrator key from your installation’s
-              bootstrap process. Configure the application domain and cluster before deploying.
-            </p>
-          </div>
-        </div>
-        <div className="login-bottom">
-          Hakopod <span>Milestone 1 · Deployment foundation</span>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -230,11 +112,20 @@ function Workspace({
   theme: string
   toggleTheme: () => void
 }) {
+  const location = useLocation()
   const projects = useQuery({
     queryKey: ['projects'],
     queryFn: ({ signal }) => unwrap(client.GET('/projects', { signal })),
     staleTime: 60000,
   })
+  const appearance = useQuery({
+    queryKey: ['appearance'],
+    queryFn: ({ signal }) => unwrap(client.GET('/settings/appearance', { signal })),
+    staleTime: 300000,
+  })
+  useEffect(() => {
+    if (appearance.data) applyAccent(appearance.data.accent_color, theme)
+  }, [appearance.data, theme])
   const [selected, setSelected] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('hakopod-scope') || '{}')
@@ -264,7 +155,7 @@ function Workspace({
   const currentProject = projects.data?.items?.find((p) => p.name === project)
   const environment =
     identity.environment || selected.environment || currentProject?.environments?.[0]?.name || ''
-  const can = (permission: string) => identity.admin || identity.permissions?.includes(permission)
+  const can = (permission: string) => canAccess(identity, project, permission)
   const changeScope = (next: { project: string; environment: string }) => {
     syncScope(next.project, next.environment)
     void navigate({ to: '/' })
@@ -306,6 +197,24 @@ function Workspace({
               <span>Applications</span>
             </Link>
             <Link
+              to="/builds"
+              className="nav-item"
+              activeProps={{ className: 'nav-item active' }}
+              onClick={() => setMobileOpen(false)}
+            >
+              <Icon name="branch" />
+              <span>Source builds</span>
+            </Link>
+            <Link
+              to="/templates"
+              className="nav-item"
+              activeProps={{ className: 'nav-item active' }}
+              onClick={() => setMobileOpen(false)}
+            >
+              <Icon name="grid" />
+              <span>Templates</span>
+            </Link>
+            <Link
               to="/infrastructure"
               className="nav-item"
               activeProps={{ className: 'nav-item active' }}
@@ -314,7 +223,7 @@ function Workspace({
               <Icon name="server" />
               <span>Infrastructure</span>
             </Link>
-            {identity.admin && (
+            {
               <Link
                 to="/settings"
                 className="nav-item"
@@ -322,9 +231,9 @@ function Workspace({
                 onClick={() => setMobileOpen(false)}
               >
                 <Icon name="settings" />
-                <span>Administration</span>
+                <span>{identity.admin ? 'Administration' : 'Account & team'}</span>
               </Link>
-            )}
+            }
           </nav>
           <div className="sidebar-spacer" />
           <div className="ownership-note">
@@ -339,7 +248,7 @@ function Workspace({
           <div className="sidebar-bottom">
             <div className="user-avatar">{(identity.name || 'K').slice(0, 1).toUpperCase()}</div>
             <div className="user-meta">
-              <strong>{identity.name || 'API key session'}</strong>
+              <strong>{identity.name || 'Member'}</strong>
               <span>{identity.admin ? 'Administrator' : 'Scoped access'}</span>
             </div>
             <DropdownMenu.Root>
@@ -456,7 +365,11 @@ function Workspace({
             {projects.error && (
               <ErrorState error={projects.error} retry={() => void projects.refetch()} />
             )}
-            {!project && !projects.isPending && !projects.error ? (
+            {!project &&
+            !projects.isPending &&
+            !projects.error &&
+            !location.pathname.startsWith('/settings') &&
+            !location.pathname.startsWith('/login/') ? (
               <div className="first-project">
                 <div className="eyebrow">YOUR WORKSPACE IS READY</div>
                 <h1>Make room for your next idea.</h1>
@@ -469,9 +382,7 @@ function Workspace({
                     Create your first project
                   </Button>
                 ) : (
-                  <Note>
-                    Ask your administrator to create a project and grant your API key access.
-                  </Note>
+                  <Note>Ask your administrator to create a project and invite you to it.</Note>
                 )}
               </div>
             ) : (
@@ -481,7 +392,7 @@ function Workspace({
           <footer className="app-footer">
             <span>Hakopod · Infrastructure you own</span>
             <span>
-              API v1 <span className="footer-dot">·</span> Deployment foundation
+              API v1 <span className="footer-dot">·</span> Your infrastructure
             </span>
           </footer>
         </div>

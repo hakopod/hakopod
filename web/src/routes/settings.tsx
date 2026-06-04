@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -10,42 +10,88 @@ import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+const AppearanceSettings = lazy(() =>
+  import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
+)
+const GitHubSettings = lazy(() =>
+  import('../components/application-source').then((m) => ({ default: m.GitHubSettings })),
+)
+const AccountSettings = lazy(() => import('../components/account-settings'))
+const TeamSettings = lazy(() => import('../components/team-settings'))
+const InstallationUsers = lazy(() =>
+  import('../components/team-settings').then((m) => ({ default: m.InstallationUsers })),
+)
 
 export const Route = createFileRoute('/settings')({ component: Administration })
 function Administration() {
   const scope = useScope()
-  if (!scope.identity.admin)
-    return (
-      <Empty
-        icon="lock"
-        title="Administrator access required"
-        description="Use an administrator API key to manage this installation."
-      />
-    )
   return (
     <>
       <PageHeader
-        eyebrow="OPERATOR / ADMINISTRATION"
+        eyebrow="WORKSPACE / ACCOUNT & ACCESS"
         title="Access, with intention."
-        description="Scoped credentials and an audit trail for your installation."
+        description="Your account, team access, and installation controls."
       />
-      <Tabs.Root defaultValue="keys">
+      <Tabs.Root defaultValue="account">
         <Tabs.List className="tab-list">
-          <Tabs.Trigger className="tab-trigger" value="keys">
-            <Icon name="key" size={15} />
-            API keys
+          <Tabs.Trigger className="tab-trigger" value="account">
+            <Icon name="shield" size={15} />
+            Account security
           </Tabs.Trigger>
-          <Tabs.Trigger className="tab-trigger" value="audit">
-            <Icon name="activity" size={15} />
-            Audit events
+          <Tabs.Trigger className="tab-trigger" value="teams">
+            <Icon name="network" size={15} />
+            Teams & access
           </Tabs.Trigger>
+          {scope.identity.admin && (
+            <>
+              <Tabs.Trigger className="tab-trigger" value="users">
+                People
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="github">
+                GitHub
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="keys">
+                <Icon name="key" size={15} />
+                API keys
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="audit">
+                <Icon name="activity" size={15} />
+                Audit events
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="appearance">
+                <Icon name="sun" size={15} />
+                Appearance
+              </Tabs.Trigger>
+            </>
+          )}
         </Tabs.List>
-        <Tabs.Content className="tab-content" value="keys">
-          <Keys />
-        </Tabs.Content>
-        <Tabs.Content className="tab-content" value="audit">
-          <AuditLog />
-        </Tabs.Content>
+        <Suspense fallback={<Loading />}>
+          <Tabs.Content className="tab-content" value="account">
+            <AccountSettings />
+          </Tabs.Content>
+          <Tabs.Content className="tab-content" value="teams">
+            <TeamSettings />
+          </Tabs.Content>
+          {scope.identity.admin && (
+            <>
+              <Tabs.Content className="tab-content" value="users">
+                <InstallationUsers />
+              </Tabs.Content>
+              <Tabs.Content className="tab-content" value="github">
+                <GitHubSettings />
+              </Tabs.Content>
+              <Tabs.Content className="tab-content" value="keys">
+                <Keys />
+              </Tabs.Content>
+              <Tabs.Content className="tab-content" value="audit">
+                <AuditLog />
+              </Tabs.Content>
+              <Tabs.Content className="tab-content" value="appearance">
+                <AppearanceSettings />
+              </Tabs.Content>
+            </>
+          )}
+        </Suspense>
       </Tabs.Root>
     </>
   )

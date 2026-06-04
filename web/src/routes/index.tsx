@@ -62,10 +62,18 @@ function Applications() {
         description="From first deploy to what comes next. All on your infrastructure."
         action={
           scope.can('deployments:write') && (
-            <Button variant="primary" onClick={() => setDeployOpen(true)}>
-              <Icon name="plus" size={17} />
-              New application
-            </Button>
+            <div className="toolbar-actions">
+              <Link to="/builds" className="button button-secondary">
+                Build from source
+              </Link>
+              <Link to="/templates" className="button button-secondary">
+                Browse templates
+              </Link>
+              <Button variant="primary" onClick={() => setDeployOpen(true)}>
+                <Icon name="plus" size={17} />
+                New application
+              </Button>
+            </div>
           )
         }
       />
