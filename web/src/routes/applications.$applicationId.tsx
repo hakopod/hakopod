@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -13,14 +13,24 @@ import { Dialog } from '../components/ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { DeployDialog } from '../components/deploy-dialog'
 import { Logs } from '../components/logs'
+const ServiceDetail = lazy(() =>
+  import('../components/service-detail').then((m) => ({ default: m.ServiceDetail })),
+)
+const ApplicationSecrets = lazy(() => import('../components/application-secrets'))
+const ApplicationSource = lazy(() => import('../components/application-source'))
 
 export const Route = createFileRoute('/applications/$applicationId')({
+  validateSearch: (search: Record<string, unknown>): { service?: string } => ({
+    service: typeof search.service === 'string' ? search.service : undefined,
+  }),
   component: ApplicationDetail,
 })
 function ApplicationDetail() {
   const { applicationId } = Route.useParams()
+  const { service: selectedService } = Route.useSearch()
   const scope = useScope()
   const [deployOpen, setDeployOpen] = useState(false)
+  const [deployMode, setDeployMode] = useState<'form' | 'toml'>('form')
   const [tab, setTab] = useState('services')
   const [logService, setLogService] = useState('')
   const application = useQuery({
@@ -40,6 +50,12 @@ function ApplicationDetail() {
   const serviceNames = Object.keys(app.spec.services)
   const observed = app.observed?.services || []
   const endpoint = observed.find((service) => service.url)?.url
+  if (selectedService)
+    return (
+      <Suspense fallback={<Loading />}>
+        <ServiceDetail key={selectedService} application={app} serviceName={selectedService} />
+      </Suspense>
+    )
   return (
     <>
       <Link to="/" className="back-link">
@@ -69,7 +85,13 @@ function ApplicationDetail() {
         </div>
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
-          <Button variant="primary" onClick={() => setDeployOpen(true)}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setDeployMode('form')
+              setDeployOpen(true)
+            }}
+          >
             <Icon name="plus" size={16} />
             Deploy changes
           </Button>
@@ -107,6 +129,8 @@ function ApplicationDetail() {
             ['logs', 'terminal', 'Logs'],
             ['networking', 'network', 'Networking'],
             ['configuration', 'settings', 'Configuration'],
+            ['source', 'branch', 'Source'],
+            ['secrets', 'lock', 'Secrets'],
           ].map(([value, icon, label]) => (
             <Tabs.Trigger className="tab-trigger" key={value} value={value}>
               <Icon name={icon} size={15} />
@@ -129,7 +153,14 @@ function ApplicationDetail() {
             {Object.entries(app.spec.services).map(([name, service]) => {
               const runtime = observed.find((status) => status.name === name)
               return (
-                <div className="service-detail-card" key={name}>
+                <div className="service-detail-card service-card-link" key={name}>
+                  <Link
+                    to="/applications/$applicationId"
+                    params={{ applicationId: app.id }}
+                    search={{ service: name }}
+                    className="service-card-target"
+                    aria-label={`Open ${name} service`}
+                  />
                   <div className="service-detail-header">
                     <div className="service-mini-icon">
                       <Icon
@@ -219,8 +250,8 @@ function ApplicationDetail() {
             <div>
               <strong>Resource metrics</strong>
               <p>
-                Historical CPU and memory charts are not available in this milestone. Node capacity
-                is available in Infrastructure.
+                Open a service to inspect its live CPU, memory, pods, and events. Node capacity is
+                available in Infrastructure.
               </p>
             </div>
             <Link to="/infrastructure">
@@ -238,7 +269,7 @@ function ApplicationDetail() {
             <Empty
               icon="lock"
               title="Logs need additional permission"
-              description="This API key needs logs:read for this application."
+              description="Your account needs logs:read for this application."
             />
           )}
         </Tabs.Content>
@@ -330,10 +361,25 @@ function ApplicationDetail() {
                 Revision {app.revision} · Schema version {app.spec.schema_version}
               </p>
             </div>
-            <Button size="sm" onClick={() => downloadConfig(app.spec)}>
-              <Icon name="code" size={14} />
-              Export TOML
-            </Button>
+            <div className="toolbar-actions">
+              <Button size="sm" onClick={() => downloadConfig(app.spec)}>
+                <Icon name="code" size={14} />
+                Export TOML
+              </Button>
+              {scope.can('deployments:write') && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setDeployMode('toml')
+                    setDeployOpen(true)
+                  }}
+                >
+                  <Icon name="settings" size={14} />
+                  Edit configuration
+                </Button>
+              )}
+            </div>
           </div>
           <div className="code-panel">
             <div>
@@ -346,12 +392,31 @@ function ApplicationDetail() {
             <pre>{specToTOML(app.spec)}</pre>
           </div>
           <Note>
-            Secret bindings are not available in this milestone. Staged edits are validated and
-            reviewed before deployment.
+            Saved secret values stay separate from this configuration. Staged edits are validated
+            and reviewed before deployment.
           </Note>
         </Tabs.Content>
+        <Tabs.Content value="source" className="tab-content">
+          <Suspense fallback={<Loading />}>
+            <ApplicationSource application={app} />
+          </Suspense>
+        </Tabs.Content>
+        <Tabs.Content value="secrets" className="tab-content">
+          <Suspense fallback={<Loading />}>
+            <ApplicationSecrets
+              project={app.project}
+              environment={app.environment}
+              application={app.name}
+            />
+          </Suspense>
+        </Tabs.Content>
       </Tabs.Root>
-      <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} application={app} />
+      <DeployDialog
+        open={deployOpen}
+        onOpenChange={setDeployOpen}
+        application={app}
+        initialMode={deployMode}
+      />
     </>
   )
 }
