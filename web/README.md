@@ -40,9 +40,11 @@ srvx. Set `HOST=0.0.0.0` only when access is intentionally provided through the
 installation's firewall and TLS reverse proxy. Keep the dashboard origin separate
 from deployed applications.
 
-Sign in using the installation's administrator or scoped API key. No key is
-bundled into the application or placed in URLs. The local development bootstrap
-key is managed by the repository's development scripts, outside `web/`.
+On first run, choose an owner name, email and password, and supply the installer
+credential (or use an existing sealed bootstrap administrator session). Once an
+owner exists, use human email/password, a registered passkey, or a configured
+GitHub/Google provider. API keys are reserved for CLI/CI workflows and are managed
+under Administration. The dashboard never fabricates a first owner.
 
 ## Implemented workflows
 
@@ -64,24 +66,42 @@ key is managed by the repository's development scripts, outside `web/`.
 - Keyboard-accessible Radix dialogs, tabs, menus; dark/light themes; responsive
   navigation; deliberate loading, empty, permission, and error states.
 
-Custom-domain management, certificate diagnostics, secret-entry UI, metrics
-collection, member management, bootstrap enrollment, node drain, and backup
-status are not implemented in this dashboard milestone. The interface does not
-present these controls as working. The API also rejects secret-reference bindings
-in this milestone. See the repository milestone tracker.
+Additional connected interfaces include per-service runtime metrics/pods/events,
+service-scoped staging and restart, canonical TOML editing, installation accent,
+human account security/sessions, teams/project roles/invitations, CLI consent,
+write-only application secrets, template planning, GitHub TOML source review,
+private registries and reviewed HAProxy settings. TLS supports PEM upload and
+cert-manager issuer selection with observed readiness. Node views include actual
+usage/GPU capacity, guarded cordon/drain and expiring K3s enrollment credentials.
+Source builds support new applications without a pre-existing image, Dockerfile
+or buildpack workflows, native architecture selection, explicit administrator
+workflow installation in GitHub, build/cancel/status/log links, and a canonical
+server-produced deployment diff. Automatic build/deploy is an explicit setting.
+Optional panels load on demand.
+Implementation and current verification are recorded separately in VERIFICATION.md.
 
 ## Authentication and limits
 
-The browser submits its existing key once to `/session`. Start verifies it at Go
-`/me`, then seals it using AES-256-GCM in a 12-hour HttpOnly, SameSite=Strict,
-host-only cookie. HTTPS cookies use the `__Host-` prefix and Secure attribute.
-Mutations require an exact trusted `Origin`. The presentation server has no
-session database or growing session cache. Changing the session encryption secret
-invalidates browser cookies. Go still validates key revocation and permissions
-on every API call. Logout clears this browser's cookie; revoke the API key to
-invalidate copied credentials.
+The browser sends sign-in credentials to `/session`. Go validates them and issues
+an opaque human session. Start strips that token from browser JSON and seals it
+using AES-256-GCM in a 12-hour HttpOnly, SameSite=Strict, host-only cookie. HTTPS
+cookies use the `__Host-` prefix and Secure attribute. OAuth state is restricted
+to a five-minute HttpOnly/Lax host cookie; pending provider MFA is sealed in a
+five-minute HttpOnly/Strict cookie. Mutations require an exact trusted `Origin`.
+The presentation server has no session database or growing session cache.
+Changing the encryption secret invalidates browser cookies. Go validates session
+revocation and current roles on every API call; logout revokes the Go session.
+Passkeys use native WebAuthn without an additional browser library. Passwords,
+new credentials, MFA setup secrets and recovery codes are not stored in query caches.
 
-Only named platform API paths are proxied. The upstream URL comes from operator
+Only named platform API paths are proxied. The exact public POST
+`/api/v1/webhooks/github` is a separate signed-webhook bridge: raw request bytes
+are limited to 512 KiB, only GitHub signature/event/delivery headers are copied,
+and no browser cookie or bearer credential is forwarded. Go verifies the HMAC.
+Other dashboard mutations keep their same-origin requirement. The generic BFF
+is not a public CLI bearer gateway; direct CLI API requests use the Go API origin.
+
+ The upstream URL comes from operator
 configuration, never a browser field. Request bodies are bounded to 1 MiB
 (4 KiB for sign-in), API requests have a 30-second timeout, and log connections
 have a five-minute timeout. No credential values or request bodies are logged
@@ -95,7 +115,10 @@ last observer leaves. Smaller metadata queries become collectable after 60
 seconds. Application pages contain at most 25 items and follow the Go API’s
 512 KiB payload budget; previous-page cursors are bounded to 20. History contains
 metadata only. The preceding full revision is fetched separately for a diff. Overview refreshes every 15 seconds, application detail every 10 seconds,
-active deployments every 2.5 seconds, and nodes every 30 seconds; background
+active deployments every 2.5 seconds, and nodes every 30 seconds. Per-service
+charts retain at most 24 actual samples. Source build lists are capped at 100,
+run history at 20, and only the selected run polls GitHub observation every ten
+seconds while unfinished. No dummy usage samples are generated; background
 polling is disabled. Live logs keep at most 1,000 lines / 256 KiB, update at most
 four times per second, stop in hidden tabs, and retry ended streams at most three
 times. Configuration diffs render at most 50 rows per page without hiding changes.
@@ -105,13 +128,14 @@ times. Configuration diffs render at most 50 rows per page without hiding change
 ```sh
 pnpm generate:api  # ../api/openapi.json → src/lib/api.generated.ts
 pnpm typecheck
-pnpm test         # session security, body/TLS bounds, non-submitting key Copy
+pnpm test         # human-session boundary, body/TLS bounds, UI regressions
 pnpm build
 pnpm smoke --public-only # SSR/security edges; no Go authentication required
 
-# With production dashboard and Go API running; key is read without being printed.
+# With production dashboard and Go API running; use an authorized existing account.
+# The protected JSON file contains email, password and optional current MFA code.
 HAKOPOD_WEB_URL=http://127.0.0.1:4173 \
-HAKOPOD_API_KEY_FILE=../.local/admin-key pnpm smoke
+HAKOPOD_SMOKE_LOGIN_FILE=/path/to/protected-human-login.json pnpm smoke
 ```
 
 `src/lib/client.ts` binds openapi-fetch to the generated operation, path, request,

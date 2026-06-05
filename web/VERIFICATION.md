@@ -1,3 +1,54 @@
+# Expanded dashboard — production HTTP verified; browser checks pending
+
+The expanded dashboard is implemented and the production bundle built successfully
+on 2026-09-12. The previous foundation verification below remains historical
+and does not verify the new screens.
+
+New local checks passed:
+
+- `pnpm typecheck`, `pnpm format:check`, and `pnpm build` after route generation.
+- Ten BFF/server security tests: human token stripping and encryption, installer
+  proof forwarding without profile substitution, CSRF/body limits, provider MFA,
+  OAuth state/errors, upstream session revocation, raw signed webhook forwarding,
+  exact public webhook path/method, and webhook memory bounds.
+- Three regressions bundled from actual TSX/code: Copy does not submit a form;
+  canonical TOML preserves volumes/GPU/TLS/registry/secret settings; broad browser
+  session envelopes do not override exact project roles.
+- Client output contains neither the configured session encryption secret nor its
+  environment-variable name nor a `node:crypto` import. Only booleans were printed.
+
+The client has 33 JavaScript chunks totaling 711,114 bytes, or 232,192 bytes when
+gzipped individually. The main entry is 413.18 kB raw / 131.41 kB in Vite's gzip
+report; many optional management panels are 1–5 kB gzip. CSS is 11,855 bytes using
+Node's gzip comparison. These are comparison sizes, not measured transfer or RSS.
+The production command retains the 192 MiB Node old-space cap. Current process
+measurements are recorded with the completed cockpit report.
+
+The exact public POST `/api/v1/webhooks/github` bridge preserves raw bytes and
+GitHub signature/event/delivery headers, forwards no browser authority, and leaves
+HMAC validation to Go. Other mutations retain same-origin checks. Public smoke
+now also checks that the exact webhook route accepts POST only.
+
+The new production bundle was restarted on port 4173. Public production smoke
+passed against the live Go API. A separate production dashboard/API and isolated
+PostgreSQL database verified first-owner setup, email/password login, encrypted
+Strict/HttpOnly cookies, authenticated proxying, ten account/platform routes,
+team creation/membership, CSRF/path/body limits, logout and subsequent HTTP 401
+from Go for the revoked session. The disposable database, credentials, logs and
+both temporary processes were removed. The live installation remains unclaimed.
+
+The browser connector returned “Codex auth token is unavailable,” and native
+Codex access was denied. New screens therefore have no claimed visual browser
+verification. The historical screenshots below describe the earlier dashboard.
+
+No live owner account, invitation
+email, repository commit, enrollment token, node operation or deployment was
+created by the dashboard tests. Full HTTP smoke requires an explicitly supplied
+existing human login file; it never bootstraps an owner. The first-owner form has
+empty name, email and password fields.
+
+---
+
 # Dashboard verification — 2026-09-12
 
 ## Completed
@@ -128,7 +179,7 @@ To rerun the authenticated production HTTP smoke:
 
 ```sh
 HAKOPOD_WEB_URL=http://127.0.0.1:4173 \
-HAKOPOD_API_KEY_FILE=../.local/admin-key pnpm smoke
+HAKOPOD_SMOKE_LOGIN_FILE=/path/to/protected-human-login.json pnpm smoke
 ```
 
 Kubernetes rollout correctness and management-restart acceptance are recorded

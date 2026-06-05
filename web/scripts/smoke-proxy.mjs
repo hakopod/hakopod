@@ -15,6 +15,9 @@ const css = await request(stylesheet[1])
 assert.equal(css.status, 200)
 assert.match(css.headers.get('content-type'), /text\/css/)
 
+const webhookMethod = await request('/api/v1/webhooks/github')
+assert.equal(webhookMethod.status, 405, 'exact webhook route is public and accepts POST only')
+
 const crossOrigin = await request('/api/plan', {
   method: 'POST',
   headers: { Origin: 'https://untrusted.example' },
@@ -33,30 +36,41 @@ if (process.argv.includes('--public-only')) {
   )
   process.exit(0)
 }
-const key =
-  process.env.HAKOPOD_API_KEY ||
-  (process.env.HAKOPOD_API_KEY_FILE
-    ? (await readFile(process.env.HAKOPOD_API_KEY_FILE, 'utf8')).trim()
-    : '')
-if (!key) throw new Error('Set HAKOPOD_API_KEY_FILE or HAKOPOD_API_KEY. Values are never printed.')
+if (!process.env.HAKOPOD_SMOKE_LOGIN_FILE)
+  throw new Error(
+    'Set HAKOPOD_SMOKE_LOGIN_FILE to a protected JSON file containing an authorized existing email, password and optional code. This script never creates an owner.',
+  )
+const credentials = JSON.parse(await readFile(process.env.HAKOPOD_SMOKE_LOGIN_FILE, 'utf8'))
 const login = await request('/session', {
   method: 'POST',
   headers: { Origin: origin, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ token: key }),
+  body: JSON.stringify({
+    action: 'login',
+    email: credentials.email,
+    password: credentials.password,
+    code: credentials.code || '',
+  }),
 })
-assert.equal(login.status, 200, 'valid key signs in')
-const setCookie = login.headers.get('set-cookie')
+assert.equal(login.status, 200, 'existing human account signs in')
+const loginBody = await login.json()
+assert.equal(loginBody.authenticated, true)
+assert.equal('token' in loginBody, false, 'the BFF strips the human bearer token')
+const setCookie = login.headers
+  .getSetCookie()
+  .find((value) => /^(?:__Host-)?hakopod_session=/.test(value))
 assert.ok(
   setCookie?.includes('HttpOnly') &&
     setCookie.includes('SameSite=Strict') &&
     setCookie.includes('Path=/'),
 )
-assert.equal(setCookie.includes(key), false, 'bearer token is not in cleartext cookie')
+assert.equal(setCookie.includes(credentials.password), false)
 if (origin.startsWith('https:')) assert.ok(setCookie.includes('Secure'))
 const Cookie = setCookie.split(';')[0]
 const me = await request('/api/me', { headers: { Cookie } })
 assert.equal(me.status, 200)
-assert.equal((await me.text()).includes(key), false)
+const identity = await me.json()
+assert.equal(identity.credential_type, 'browser')
+assert.equal('token' in identity, false)
 const csrf = await request('/api/plan', {
   method: 'POST',
   headers: { Cookie, Origin: 'https://untrusted.example' },
@@ -74,6 +88,11 @@ assert.equal(oversized.status, 413)
 const logout = await request('/session', { method: 'DELETE', headers: { Cookie, Origin: origin } })
 assert.equal(logout.status, 200)
 assert.match(logout.headers.get('set-cookie'), /Max-Age=0/)
+assert.equal(
+  (await request('/api/me', { headers: { Cookie } })).status,
+  401,
+  'Go revoked the underlying session',
+)
 console.log(
   'PASS: production SSR/assets; unauthorized access; encrypted cookie login; API proxy; CSRF; path allowlist; 1 MiB body bound; logout.',
 )
