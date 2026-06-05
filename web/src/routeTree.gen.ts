@@ -10,16 +10,26 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as ApplicationsApplicationIdRouteImport } from './routes/applications.$applicationId'
+import { Route as BuildsBuildIdRouteImport } from './routes/builds.$buildId'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
+import { Route as LoginDeviceRouteImport } from './routes/login.device'
+import { Route as LoginInviteRouteImport } from './routes/login.invite'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuildsRoute = BuildsRouteImport.update({
+  id: '/builds',
+  path: '/builds',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InfrastructureRoute = InfrastructureRouteImport.update({
@@ -37,6 +47,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -48,78 +63,127 @@ const ApplicationsApplicationIdRoute =
     path: '/applications/$applicationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const BuildsBuildIdRoute = BuildsBuildIdRouteImport.update({
+  id: '/$buildId',
+  path: '/$buildId',
+  getParentRoute: () => BuildsRoute,
+} as any)
 const DeploymentsDeploymentIdRoute = DeploymentsDeploymentIdRouteImport.update({
   id: '/deployments/$deploymentId',
   path: '/deployments/$deploymentId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginDeviceRoute = LoginDeviceRouteImport.update({
+  id: '/login/device',
+  path: '/login/device',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginInviteRoute = LoginInviteRouteImport.update({
+  id: '/login/invite',
+  path: '/login/invite',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRoute
+  '/templates': typeof TemplatesRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
+  '/builds/$buildId': typeof BuildsBuildIdRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/login/device': typeof LoginDeviceRoute
+  '/login/invite': typeof LoginInviteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRoute
+  '/templates': typeof TemplatesRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
+  '/builds/$buildId': typeof BuildsBuildIdRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/login/device': typeof LoginDeviceRoute
+  '/login/invite': typeof LoginInviteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRoute
+  '/templates': typeof TemplatesRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
+  '/builds/$buildId': typeof BuildsBuildIdRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/login/device': typeof LoginDeviceRoute
+  '/login/invite': typeof LoginInviteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/builds'
     | '/infrastructure'
     | '/session'
     | '/settings'
+    | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/builds/$buildId'
     | '/deployments/$deploymentId'
+    | '/login/device'
+    | '/login/invite'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/builds'
     | '/infrastructure'
     | '/session'
     | '/settings'
+    | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/builds/$buildId'
     | '/deployments/$deploymentId'
+    | '/login/device'
+    | '/login/invite'
   id:
     | '__root__'
     | '/'
+    | '/builds'
     | '/infrastructure'
     | '/session'
     | '/settings'
+    | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/builds/$buildId'
     | '/deployments/$deploymentId'
+    | '/login/device'
+    | '/login/invite'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BuildsRoute: typeof BuildsRouteWithChildren
   InfrastructureRoute: typeof InfrastructureRoute
   SessionRoute: typeof SessionRoute
   SettingsRoute: typeof SettingsRoute
+  TemplatesRoute: typeof TemplatesRoute
   ApiSplatRoute: typeof ApiSplatRoute
   ApplicationsApplicationIdRoute: typeof ApplicationsApplicationIdRoute
   DeploymentsDeploymentIdRoute: typeof DeploymentsDeploymentIdRoute
+  LoginDeviceRoute: typeof LoginDeviceRoute
+  LoginInviteRoute: typeof LoginInviteRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -129,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/builds': {
+      id: '/builds'
+      path: '/builds'
+      fullPath: '/builds'
+      preLoaderRoute: typeof BuildsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/infrastructure': {
@@ -152,6 +223,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -166,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplicationsApplicationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/builds/$buildId': {
+      id: '/builds/$buildId'
+      path: '/$buildId'
+      fullPath: '/builds/$buildId'
+      preLoaderRoute: typeof BuildsBuildIdRouteImport
+      parentRoute: typeof BuildsRoute
+    }
     '/deployments/$deploymentId': {
       id: '/deployments/$deploymentId'
       path: '/deployments/$deploymentId'
@@ -173,17 +258,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeploymentsDeploymentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/device': {
+      id: '/login/device'
+      path: '/login/device'
+      fullPath: '/login/device'
+      preLoaderRoute: typeof LoginDeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/invite': {
+      id: '/login/invite'
+      path: '/login/invite'
+      fullPath: '/login/invite'
+      preLoaderRoute: typeof LoginInviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface BuildsRouteChildren {
+  BuildsBuildIdRoute: typeof BuildsBuildIdRoute
+}
+
+const BuildsRouteChildren: BuildsRouteChildren = {
+  BuildsBuildIdRoute: BuildsBuildIdRoute,
+}
+
+const BuildsRouteWithChildren =
+  BuildsRoute._addFileChildren(BuildsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BuildsRoute: BuildsRouteWithChildren,
   InfrastructureRoute: InfrastructureRoute,
   SessionRoute: SessionRoute,
   SettingsRoute: SettingsRoute,
+  TemplatesRoute: TemplatesRoute,
   ApiSplatRoute: ApiSplatRoute,
   ApplicationsApplicationIdRoute: ApplicationsApplicationIdRoute,
   DeploymentsDeploymentIdRoute: DeploymentsDeploymentIdRoute,
+  LoginDeviceRoute: LoginDeviceRoute,
+  LoginInviteRoute: LoginInviteRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
