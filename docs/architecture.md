@@ -48,7 +48,8 @@ enforcement, limitations and host-network exceptions are in ADR 0002.
 The reconciler updates only resources bearing the application ownership label.
 HPA owns replicas when enabled. Application reconciliation preserves unrelated
 pod-template annotations, including a future authorized secret restart owner.
-There is no second queue or external controller cache. Targeted rollout watches
+Source pushes, completed builds and infrastructure changes use bounded durable
+PostgreSQL inboxes in the same Go process. There is no external controller cache. Targeted rollout watches
 are backed by periodic reads; runtime snapshots are refreshed in bounded
 50-application pages, with a recorded observation time.
 
@@ -67,6 +68,12 @@ The dashboard splits routes and keeps query cache retention at 60 seconds.
 It pauses polling on hidden tabs and caps displayed log history. No topology
 canvas, charting engine, Redis, Prometheus or log aggregation stack is required.
 Optional retained observability belongs in a later measured profile.
+
+Service charts retain at most 24 actual samples while open, fetched every 15
+seconds, and discard their query cache when closed. Password hashing is limited
+to two concurrent bcrypt operations. Source and automatic-build inboxes each
+accept at most 1,000 pending items. GitHub Actions performs source builds outside
+the management host; bounded result artifacts carry the resulting image digest.
 
 Initial application limits: 20 services, 16 declared networks, 20 replicas per
 service, 20 pending releases per application, and 200 applications per environment.

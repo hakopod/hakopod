@@ -1,6 +1,6 @@
 # ADR 0004: Explicit external prerequisites and deferred privileged workflows
 
-Status: local exposure and K3s encryption implemented; production certificate, secret-provider and enrollment workflows deferred.
+Historical Milestone 1 decision. The [cockpit expansion](../cockpit.md) now implements built-in secret references, uploaded certificates, issuer controls and short-lived worker enrollment. External production DNS/ACME and physical-host gates remain. The original rationale below is retained for context.
 
 ## Public exposure and domains
 
