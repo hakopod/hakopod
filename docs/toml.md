@@ -12,7 +12,7 @@ One-service applications use exactly the same format as groups.
 
 | Service setting | Default and meaning |
 |---|---|
-| `image` | Required public anonymous HTTPS OCI reference; tag resolved and recorded as digest |
+| `image` | Required HTTPS OCI reference; tag resolved and recorded as digest; optional scoped registry credentials |
 | `port` | Omitted for a worker; otherwise private container/service TCP port, 1–65535 |
 | `public` | false; true adds public HTTP ingress and needs a port |
 | `size` | small; centrally defined resources below |
@@ -23,6 +23,14 @@ One-service applications use exactly the same format as groups.
 | `depends_on` | Names of services that must become ready first, bounded by rollout timeout |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
 | `autoscaling` | Optional CPU HPA; min_replicas defaults1, target_cpu defaults70, max_replicas required <=20 |
+| `architecture` | Optional amd64/arm64 image selection and node scheduling restriction |
+| `run_as_user` | Default UID/GID10001; optional positive non-root UID, also used for volume group ownership |
+| `registry_credential` | Name of a managed credential in this application's project/environment; no credential value |
+| `secrets` | Up to32 environment-variable bindings such as `DATABASE_URL = { ref = "database-url" }` |
+| `volume` | One persistent data directory: `mount_path`, `size_gib` (1–200), optional `storage_class`; one replica, no HPA |
+| `gpu` | `count` from1–8; requires advertised NVIDIA GPU capacity; no GPU HPA |
+| `tls` | Exactly one managed `certificate` or cert-manager `issuer`; public services only |
+| `restart_nonce` | Opaque restart marker written by the restart action; at most64 letters, digits, `_` or `-` |
 
 TCP startup checks are distinct from readiness. Hakopod never silently converts
 an HTTP readiness check into liveness. Dependencies sequence rollout only;
@@ -33,13 +41,17 @@ application clients must retry normal runtime failures.
 | small | 100m / 500m | 128Mi / 256Mi |
 | medium | 250m / 1 CPU | 256Mi / 512Mi |
 | large | 500m / 2 CPU | 512Mi / 1Gi |
+| compute | 1 / 4 CPU | 2Gi / 4Gi |
+| gpu | 2 / 8 CPU | 8Gi / 16Gi |
 
 Profiles appear in `plan`. Advanced arbitrary resource overrides are currently
 rejected. Rolling updates allow one additional replica with zero requested
 unavailable replicas; actual availability still depends on capacity, readiness
 correctness and application shutdown behavior. Pods have a 30-second termination
 grace period, run as UID/GID10001, drop capabilities and receive no service-account
-token. Images must support that unprivileged runtime.
+token. Images must support that unprivileged runtime. Persistent services use
+Recreate updates; their PVC survives normal service removal and restart. Existing
+volume size/class changes are rejected until explicitly migrated or expanded.
 
 ## Named networks
 
@@ -86,13 +98,17 @@ Rollback uses a previous successful immutable spec and creates a new revision.
 It does not undo external data changes. Application groups are not atomic;
 deployment detail shows service results and failed-group recovery events.
 
-## Explicitly unavailable in this milestone
+## Secrets and persistent templates
 
-Private-registry credentials, secret bindings, custom domains, host ports, host
-networking, static IPs, privileged containers, persistent volumes and managed
-databases are not supported. Unknown fields fail rather than weakening policy.
-`[services.api.secrets] DATABASE_URL={ref="database-url"}` is a reserved future
-shape and currently fails with a clear unavailable-binding error. Do not put
-credentials in env, image URLs, TOML or source; recognized credential names and
-URL userinfo are rejected. This cannot detect arbitrary secrets disguised as
-ordinary values, and application logs themselves can still contain sensitive data.
+Save an application-scoped secret before referencing it. Secret values are
+write-only, never returned in configuration history, and must be referenced
+explicitly by each service. Updating a value requires a restart/deployment.
+The template catalog creates ordinary specifications using the fields above;
+see [the cockpit guide](cockpit.md) for database, application and vLLM requirements.
+
+Custom domains with DNS ownership validation, host ports, host networking,
+static IPs and privileged containers remain unsupported. Unknown fields fail
+rather than weakening policy. Do not put credentials in env, image URLs, TOML
+or source; recognized credential names and URL userinfo are rejected. This
+cannot detect arbitrary secrets disguised as ordinary values, and application
+logs themselves can still contain sensitive data.

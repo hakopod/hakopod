@@ -9,7 +9,6 @@ Requirements: Docker with at least 4 GiB available, Python 3, curl, kubectl 1.35
 ```sh
 scripts/local-up.sh
 source .local/env
-go run ./cmd/hakopod-server bootstrap --key-file .local/admin-key
 go run ./cmd/hakopod-server
 ```
 
@@ -22,14 +21,14 @@ Use a second terminal for the dashboard, after building or installing its depend
 ```sh
 cd web
 pnpm install --frozen-lockfile
-pnpm dev
+HAKOPOD_WEB_ORIGIN=http://127.0.0.1:4173 pnpm dev --port 4173
 ```
 
-Open `http://localhost:3000`, with the management API on `http://127.0.0.1:8080`. Configure the API key using the local bootstrap key file. Do not commit or print that key into routine logs. CLI credentials can be supplied by `HAKOPOD_API_URL` and `HAKOPOD_API_KEY`; for local use, read the latter from `.local/admin-key` in the shell. CI should use a scoped machine key, never the bootstrap administrator.
+Open `http://127.0.0.1:4173`, with the management API on `http://127.0.0.1:8080`. Complete first-install setup with your chosen administrator details and the installation proof in the restricted `.local/setup-secret` file. No human identity is predefined. Later sign-ins use your account, enabled OAuth provider or enrolled passkey. See [the cockpit guide](cockpit.md) for teams, 2FA, providers, templates, registries and node enrollment. CI uses scoped machine credentials.
 
 ```sh
 export HAKOPOD_API_URL=http://127.0.0.1:8080
-export HAKOPOD_API_KEY="$(cat .local/admin-key)"
+go run ./cmd/hakopod login --project demo --environment development
 go run ./cmd/hakopod validate --file examples/shop/hakopod.toml
 go run ./cmd/hakopod plan --file examples/shop/hakopod.toml --project demo --environment development
 go run ./cmd/hakopod deploy --file examples/shop/hakopod.toml --project demo --environment development --wait
@@ -66,6 +65,14 @@ No Redis, Prometheus, logging database, cert-manager or secrets operator runs in
 
 A later post-build sample with two deployed applications measured 803.3 MiB for the K3s node, 10.02 MiB for forwarding, 47.2 MiB for PostgreSQL, 21.06 MiB host API RSS and 39.39 MiB dashboard RSS: about 921 MiB combined, excluding the OrbStack VM overhead and unrelated workloads. Dashboard RSS subsequently reached about 94 MiB after browser smoke checks. These are point-in-time samples, not peak or load-test guarantees. The local arm64 API image is about 30.6 MiB on disk, separate from its runtime memory usage.
 
+After the cockpit expansion and updated API/SSR smoke, three samples measured
+27.22–30.98 MiB API RSS and 30.77–30.78 MiB dashboard RSS. Docker working sets
+were 891.5 MiB for K3s, 10.16 MiB for forwarding and 60.57 MiB for PostgreSQL:
+approximately 1.0 GiB combined. K3s includes two sample applications and the
+optional storage controller (18 MiB in its pod sample); do not add that controller
+twice. Cert-manager was not installed. This excludes OrbStack VM overhead, the
+browser process and unrelated workloads, and is not a peak-load guarantee.
+
 Stop infrastructure to reclaim memory while preserving data:
 
 ```sh
@@ -76,6 +83,6 @@ Stop the API/dashboard processes in their terminals separately. `scripts/local-u
 
 ## Supported boundaries
 
-The intended first Linux host target is Ubuntu 24.04 LTS on amd64/arm64. There is no tested production installer yet. Containerized K3s does not verify host firewall, NAT, systemd, upgrade or recovery behavior. The current environment does not establish public DNS/TLS, custom domains, private registries, provider outage handling, worker enrollment, physical multi-node/HA topology or backup restoration. These remain explicit milestone gates.
+The intended first Linux host target is Ubuntu 24.04 LTS on amd64/arm64. There is no tested production installer yet. Containerized K3s does not verify host firewall, NAT, systemd, upgrade or recovery behavior. The cockpit expansion verifies uploaded TLS, registry authorization boundaries and actual temporary worker enrollment. Public DNS/ACME renewal, real external private-registry delivery, physical multi-node/HA topology and backup restoration remain external acceptance gates. See [the cockpit guide](cockpit.md) for current scope.
 
 Production recovery must back up PostgreSQL, the K3s datastore, bootstrap token/CA material, encryption keys and configuration outside the host failure domain. A functioning backup command is not evidence of restorability; restoration in a disposable Linux VM is required before an operational-release claim.
