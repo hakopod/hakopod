@@ -119,4 +119,5 @@ env = {
 (root / '.local/env').write_text(''.join(f'export {key}={shlex.quote(value)}\n' for key,value in env.items()))
 PY
 echo 'Hakopod development infrastructure ready. Source .local/env before running the API.'
+python3 "$ROOT/scripts/local-auth.py"
 echo 'Application HTTP: 127.0.0.1:18080; PostgreSQL: 127.0.0.1:55432; kubeconfig: .local/kubeconfig'

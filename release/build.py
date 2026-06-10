@@ -29,7 +29,7 @@ def output(args):
 def fingerprint():
     files=set()
     for folder in ('cmd','internal','api'):
-        files.update(p for p in (ROOT/folder).rglob('*') if p.is_file())
+        files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
     files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml'))
     digest=hashlib.sha256()
     manifest={}

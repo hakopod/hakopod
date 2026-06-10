@@ -27,4 +27,4 @@ api:
 	source .local/env && exec bin/hakopod-server
 
 dashboard:
-	HAKOPOD_API_URL=http://127.0.0.1:8080 pnpm --dir web dev --port 3001
+	HAKOPOD_API_URL=http://127.0.0.1:8080 HAKOPOD_WEB_ORIGIN=http://127.0.0.1:4173 pnpm --dir web dev --port 4173

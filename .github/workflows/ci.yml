@@ -39,8 +39,8 @@ jobs:
       - run: go build ./cmd/...
       - name: Check scripts
         run: |
-          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh release/install-syft.sh
-          python3 -m py_compile scripts/acceptance.py scripts/network-acceptance.py scripts/cross-node-acceptance.py examples/shop/variants.py tests/restart.py release/*.py
+          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh release/install-syft.sh deploy/cert-manager/install.sh
+          python3 -m py_compile scripts/*.py api/generate.py api/contracts/*.py examples/shop/variants.py tests/restart.py release/*.py
   dashboard:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
