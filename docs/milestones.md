@@ -64,19 +64,42 @@ passed; no temporary live-test databases or namespaces remained.
 
 ## Milestone 2: usable single-node release
 
-Some foundations are implemented: scoped key lifecycle, stage/review/deploy,
-named networks/internal egress, live logs and CPU HPA. Still required: Ubuntu
-24.04 disposable-VM installer verification, human authentication/member roles,
-OS credential-store integration, private registries, ownership-verified custom
-domains, cert-manager/ACME staging/renewal, built-in secret bindings and encryption
-key lifecycle, Infisical operator integration and outage tests, persistent drafts.
+The [cockpit expansion](cockpit.md) adds installer-defined human ownership, accounts,
+teams/project roles, passkeys, TOTP, CLI browser consent, scoped secrets, authenticated
+registries, TLS attachment/issuer controls, canonical configuration editing,
+GitHub TOML bindings and source builds, templates/persistent workloads, service/pod
+monitoring and administrator appearance/proxy controls. External OAuth/GitHub setup,
+public DNS/ACME staging/renewal, a verified Ubuntu installer, Infisical integration,
+and backup/key lifecycle remain explicit operational gates.
+
+The expanded API passed the real-cluster lifecycle gate: revisions 14–17 covered
+deployment, image update, intentionally failed readiness with recovery, and
+explicit rollback; 587 public traffic probes recorded zero errors. The updated
+management process was then terminated after applying a workload: the same
+operation resumed as revision 18, with 100 traffic probes and zero errors.
+Temporary deployment keys were revoked and the application finished healthy.
+
+Additional real-cluster checks verified PostgreSQL data survives restart, Valkey
+authentication and commands, Uptime Kuma startup, and Gitea administrator setup
+and authentication after restart on the same PVC. Gitea's `app.ini` is persistent
+and a completed installation stays locked. Uploaded TLS passed a HAProxy handshake;
+HAProxy edits passed the generated configuration validator. Fixtures were cleaned.
+
+Human authentication, sessions, roles, invitations, TOTP/recovery, WebAuthn,
+OAuth/SMTP fixtures, source repository approval, durable queue recovery and build
+artifact verification passed PostgreSQL race tests. An isolated production
+dashboard/API additionally passed first-owner setup, login, team management and
+cookie/session revocation checks. No owner was created in the live installation.
+Visual checks of the expanded browser screens remain unavailable because the
+browser connector lacks its authentication token; earlier screenshots are historical.
 
 ## Milestone 3: cluster expansion
 
-Cross-node CNI communication is verified locally. Dashboard enrollment, bounded
-K3s token lifecycle, physical worker readiness, cordon/drain/remove UX and
-disruption-budget blockers remain unimplemented. Extra workers are not control
-plane or ingress endpoint HA.
+Dashboard worker enrollment, expiring K3s bootstrap credentials, observed node
+resources and bounded cordon/drain controls are implemented. A real temporary tainted
+worker joined the named development cluster using a generated short-lived credential
+and was cleaned up. Revocation was observed after K3s cache propagation. Physical
+Linux workers and control-plane/ingress HA remain separate tests.
 
 ## Milestone 4: operational hardening
 

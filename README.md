@@ -4,9 +4,12 @@ Deploy containerized applications on infrastructure you own. Hakopod combines
 a Go API and reconciler, a small CLI, PostgreSQL durable state, and a TanStack
 Start dashboard over K3s and HAProxy.
 
-This repository implements the first deployment milestone, with additional
-named-network and HPA functionality. It is an early development release,
-not production-ready software. See [verification and remaining gates](docs/milestones.md).
+This repository includes the deployment engine and an expanded cockpit with
+human accounts, team roles, source builds, templates, live service monitoring,
+registry credentials, TLS controls and worker enrollment. See the
+[cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
+It remains a development release; production installation and operational recovery
+have separate acceptance gates.
 The intended project name/domain is Hakopod / hakopod.com; no domain ownership
 or public infrastructure is assumed.
 
@@ -19,7 +22,6 @@ isolated `hakopod-dev` cluster without changing your Kubernetes default context.
 ```sh
 ./scripts/local-up.sh
 make build
-make bootstrap                 # once; saves the administrator key with mode 0600
 make api                       # leave running in this terminal
 ```
 
@@ -30,8 +32,10 @@ pnpm --dir web install --frozen-lockfile
 make dashboard
 ```
 
-Open [the dashboard](http://127.0.0.1:3001). Sign in with the bootstrap key from
-`.local/admin-key`. The local API is on port 8080; application HTTP ingress is
+Open [the dashboard](http://127.0.0.1:4173). On first installation, choose your
+administrator name, email and password. The installer proof is saved in the
+restricted `.local/setup-secret` file; no default human account is created.
+The local API is on port 8080; application HTTP ingress is
 on port 18080. Local HTTP is explicitly a loopback development configuration.
 Dashboard production startup, HTTPS origin and session-secret settings are
 documented in [web/README.md](web/README.md).
@@ -41,7 +45,7 @@ Deploy the real public web/private API example using the same Go API:
 ```sh
 source .local/env
 export HAKOPOD_API_URL=http://127.0.0.1:8080
-export HAKOPOD_API_KEY="$(cat .local/admin-key)"
+bin/hakopod login --project demo --environment development
 bin/hakopod validate --file examples/shop/hakopod.toml
 bin/hakopod plan --file examples/shop/hakopod.toml --project demo --environment development
 bin/hakopod deploy --file examples/shop/hakopod.toml --project demo --environment development --wait
@@ -50,6 +54,8 @@ bin/hakopod deploy --file examples/shop/hakopod.toml --project demo --environmen
 For CI, create a named project/environment-scoped key through the dashboard or
 `hakopod key-create`; store it in the CI secret store as `HAKOPOD_API_KEY` with
 `HAKOPOD_API_URL`. CI needs no browser session or Kubernetes credentials.
+The `bootstrap` command remains an explicit machine-credential recovery/development
+tool. Dashboard sign-in uses human accounts.
 
 ## One application, several services
 
