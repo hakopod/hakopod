@@ -1,0 +1,6 @@
+[submodule "private/license-issuer"]
+	path = private/license-issuer
+	url = ../hakopod-license-issuer.git
+[submodule "packages/ui"]
+	path = packages/ui
+	url = ../hakopod-design-system.git
