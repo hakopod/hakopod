@@ -6,3 +6,11 @@ web/node_modules
 web/dist
 web/.tanstack
 *.log
+web
+brand-kit
+.env
+.env.*
+**/.env
+**/.env.*
+**/__pycache__
+**/*.pyc
