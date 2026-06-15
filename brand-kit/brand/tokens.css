@@ -1,0 +1,11 @@
+/* Hakopod / Open Port. Logo geometry is independent of dashboard accent preferences. */
+:root {
+  --hakopod-ink: #111A17;
+  --hakopod-paper: #F4F5EE;
+  --hakopod-ion: #D8FF45;
+  --hakopod-forest: #2F5641;
+  --hakopod-fog: #B8C4B9;
+  --hakopod-muted: #607065;
+  --hakopod-border: #D9DFD4;
+  --hakopod-font: "Space Grotesk", system-ui, sans-serif;
+}
