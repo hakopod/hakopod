@@ -1,3 +1,4 @@
+import { BrandMark } from '@hakopod/ui'
 import type { CSSProperties } from 'react'
 const paths: Record<string, string> = {
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
@@ -67,21 +68,5 @@ export function Icon({
   )
 }
 export function Logo({ size = 30 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" aria-hidden="true">
-      <rect width="36" height="36" rx="10" fill="var(--accent)" />
-      <path
-        d="m9 12 9-5 9 5v12l-9 5-9-5V12Z"
-        stroke="var(--bg)"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m9 12 9 5 9-5M18 17v12M13 9.7l9 5"
-        stroke="var(--bg)"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
+  return <BrandMark size={size} className="brand-mark" />
 }
