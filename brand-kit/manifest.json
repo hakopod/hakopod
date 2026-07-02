@@ -1,0 +1,357 @@
+{
+  "name": "Hakopod logo and marketing identity kit",
+  "version": "1.0",
+  "recommended_direction": "01 / Open Port",
+  "directions": [
+    "Open Port",
+    "Bridge",
+    "Shell",
+    "Signal",
+    "Container",
+    "Vector"
+  ],
+  "primary_logo": "logos/lockups/hakopod-horizontal-ink.svg",
+  "primary_symbol": "logos/marks/hakopod-mark-ink.svg",
+  "gallery": "index.html",
+  "guide": "guide/hakopod-brand-guide.pdf",
+  "counts": {
+    "svg": 45,
+    "png": 24,
+    "pdf_pages": 6,
+    "ico": 1
+  },
+  "files": [
+    {
+      "path": ".DS_Store",
+      "bytes": 10244
+    },
+    {
+      "path": "README.md",
+      "bytes": 6015
+    },
+    {
+      "path": "brand/brand-copy.md",
+      "bytes": 1174
+    },
+    {
+      "path": "brand/tokens.css",
+      "bytes": 349
+    },
+    {
+      "path": "brand/tokens.json",
+      "bytes": 943
+    },
+    {
+      "path": "concepts/01-open-port.svg",
+      "bytes": 769
+    },
+    {
+      "path": "concepts/02-bridge.svg",
+      "bytes": 630
+    },
+    {
+      "path": "concepts/03-shell.svg",
+      "bytes": 624
+    },
+    {
+      "path": "concepts/04-signal.svg",
+      "bytes": 772
+    },
+    {
+      "path": "concepts/05-container.svg",
+      "bytes": 378
+    },
+    {
+      "path": "concepts/06-vector.svg",
+      "bytes": 846
+    },
+    {
+      "path": "fonts/OFL.txt",
+      "bytes": 4495
+    },
+    {
+      "path": "fonts/SpaceGrotesk-Variable.ttf",
+      "bytes": 136676
+    },
+    {
+      "path": "guide/01-the-identity.svg",
+      "bytes": 47696
+    },
+    {
+      "path": "guide/02-logo-directions.svg",
+      "bytes": 225943
+    },
+    {
+      "path": "guide/03-logo-system.svg",
+      "bytes": 147028
+    },
+    {
+      "path": "guide/04-colors-type.svg",
+      "bytes": 240481
+    },
+    {
+      "path": "guide/05-marketing.svg",
+      "bytes": 190228
+    },
+    {
+      "path": "guide/06-logo-use.svg",
+      "bytes": 271811
+    },
+    {
+      "path": "guide/hakopod-brand-guide.pdf",
+      "bytes": 428999
+    },
+    {
+      "path": "guide/identity-board.svg",
+      "bytes": 128651
+    },
+    {
+      "path": "guide/logo-directions.png",
+      "bytes": 109487
+    },
+    {
+      "path": "icons/favicon-16.png",
+      "bytes": 239
+    },
+    {
+      "path": "icons/favicon-32.png",
+      "bytes": 378
+    },
+    {
+      "path": "icons/favicon-48.png",
+      "bytes": 509
+    },
+    {
+      "path": "icons/favicon-64.png",
+      "bytes": 687
+    },
+    {
+      "path": "icons/favicon.ico",
+      "bytes": 1180
+    },
+    {
+      "path": "icons/favicon.svg",
+      "bytes": 695
+    },
+    {
+      "path": "icons/hakopod-app-icon.svg",
+      "bytes": 869
+    },
+    {
+      "path": "icons/icon-180.png",
+      "bytes": 1463
+    },
+    {
+      "path": "icons/icon-192.png",
+      "bytes": 1543
+    },
+    {
+      "path": "icons/icon-512.png",
+      "bytes": 3088
+    },
+    {
+      "path": "icons/site.webmanifest",
+      "bytes": 344
+    },
+    {
+      "path": "index.html",
+      "bytes": 19567
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-black-1200.png",
+      "bytes": 14451
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-black.svg",
+      "bytes": 5205
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-currentcolor.svg",
+      "bytes": 5250
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-ink-1200.png",
+      "bytes": 22736
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-ink.svg",
+      "bytes": 5205
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-ion-1200.png",
+      "bytes": 21541
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-ion.svg",
+      "bytes": 5205
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-paper-1200.png",
+      "bytes": 22637
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-paper.svg",
+      "bytes": 5205
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-white-1200.png",
+      "bytes": 16684
+    },
+    {
+      "path": "logos/lockups/hakopod-horizontal-white.svg",
+      "bytes": 5205
+    },
+    {
+      "path": "logos/lockups/hakopod-stacked-black.svg",
+      "bytes": 5126
+    },
+    {
+      "path": "logos/lockups/hakopod-stacked-ink.svg",
+      "bytes": 5126
+    },
+    {
+      "path": "logos/lockups/hakopod-stacked-ion.svg",
+      "bytes": 5126
+    },
+    {
+      "path": "logos/lockups/hakopod-stacked-paper.svg",
+      "bytes": 5126
+    },
+    {
+      "path": "logos/lockups/hakopod-stacked-white.svg",
+      "bytes": 5126
+    },
+    {
+      "path": "logos/marks/hakopod-mark-black-512.png",
+      "bytes": 2612
+    },
+    {
+      "path": "logos/marks/hakopod-mark-black.svg",
+      "bytes": 777
+    },
+    {
+      "path": "logos/marks/hakopod-mark-currentcolor.svg",
+      "bytes": 817
+    },
+    {
+      "path": "logos/marks/hakopod-mark-ink-512.png",
+      "bytes": 3215
+    },
+    {
+      "path": "logos/marks/hakopod-mark-ink.svg",
+      "bytes": 777
+    },
+    {
+      "path": "logos/marks/hakopod-mark-ion-512.png",
+      "bytes": 3161
+    },
+    {
+      "path": "logos/marks/hakopod-mark-ion.svg",
+      "bytes": 777
+    },
+    {
+      "path": "logos/marks/hakopod-mark-paper-512.png",
+      "bytes": 3166
+    },
+    {
+      "path": "logos/marks/hakopod-mark-paper.svg",
+      "bytes": 777
+    },
+    {
+      "path": "logos/marks/hakopod-mark-white-512.png",
+      "bytes": 2952
+    },
+    {
+      "path": "logos/marks/hakopod-mark-white.svg",
+      "bytes": 777
+    },
+    {
+      "path": "logos/marks/hakopod-micro.svg",
+      "bytes": 685
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-black.svg",
+      "bytes": 4515
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-currentcolor.svg",
+      "bytes": 4520
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-ink.svg",
+      "bytes": 4515
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-ion.svg",
+      "bytes": 4515
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-paper.svg",
+      "bytes": 4515
+    },
+    {
+      "path": "logos/wordmarks/hakopod-wordmark-white.svg",
+      "bytes": 4515
+    },
+    {
+      "path": "marketing/built-with-hakopod.png",
+      "bytes": 8731
+    },
+    {
+      "path": "marketing/built-with-hakopod.svg",
+      "bytes": 7792
+    },
+    {
+      "path": "marketing/launch-poster-1080x1350.png",
+      "bytes": 66380
+    },
+    {
+      "path": "marketing/launch-poster-1080x1350.svg",
+      "bytes": 41630
+    },
+    {
+      "path": "marketing/open-graph-1200x630.png",
+      "bytes": 45460
+    },
+    {
+      "path": "marketing/open-graph-1200x630.svg",
+      "bytes": 41543
+    },
+    {
+      "path": "marketing/pod-pattern.svg",
+      "bytes": 56830
+    },
+    {
+      "path": "marketing/profile-banner-1500x500.png",
+      "bytes": 38209
+    },
+    {
+      "path": "marketing/profile-banner-1500x500.svg",
+      "bytes": 29204
+    },
+    {
+      "path": "marketing/social-square-1080.png",
+      "bytes": 32095
+    },
+    {
+      "path": "marketing/social-square-1080.svg",
+      "bytes": 19599
+    },
+    {
+      "path": "preview.png",
+      "bytes": 100966
+    },
+    {
+      "path": "source/build.py",
+      "bytes": 23319
+    },
+    {
+      "path": "source/render-jobs.json",
+      "bytes": 3452
+    },
+    {
+      "path": "source/render.cjs",
+      "bytes": 1849
+    }
+  ]
+}
