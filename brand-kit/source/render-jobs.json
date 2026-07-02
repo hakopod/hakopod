@@ -1,0 +1,146 @@
+[
+  {
+    "source": "logos/marks/hakopod-mark-ink.svg",
+    "target": "logos/marks/hakopod-mark-ink-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "logos/lockups/hakopod-horizontal-ink.svg",
+    "target": "logos/lockups/hakopod-horizontal-ink-1200.png",
+    "width": 1200,
+    "height": 260
+  },
+  {
+    "source": "logos/marks/hakopod-mark-paper.svg",
+    "target": "logos/marks/hakopod-mark-paper-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "logos/lockups/hakopod-horizontal-paper.svg",
+    "target": "logos/lockups/hakopod-horizontal-paper-1200.png",
+    "width": 1200,
+    "height": 260
+  },
+  {
+    "source": "logos/marks/hakopod-mark-ion.svg",
+    "target": "logos/marks/hakopod-mark-ion-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "logos/lockups/hakopod-horizontal-ion.svg",
+    "target": "logos/lockups/hakopod-horizontal-ion-1200.png",
+    "width": 1200,
+    "height": 260
+  },
+  {
+    "source": "logos/marks/hakopod-mark-black.svg",
+    "target": "logos/marks/hakopod-mark-black-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "logos/lockups/hakopod-horizontal-black.svg",
+    "target": "logos/lockups/hakopod-horizontal-black-1200.png",
+    "width": 1200,
+    "height": 260
+  },
+  {
+    "source": "logos/marks/hakopod-mark-white.svg",
+    "target": "logos/marks/hakopod-mark-white-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "logos/lockups/hakopod-horizontal-white.svg",
+    "target": "logos/lockups/hakopod-horizontal-white-1200.png",
+    "width": 1200,
+    "height": 260
+  },
+  {
+    "source": "icons/favicon.svg",
+    "target": "icons/favicon-16.png",
+    "width": 16,
+    "height": 16
+  },
+  {
+    "source": "icons/favicon.svg",
+    "target": "icons/favicon-32.png",
+    "width": 32,
+    "height": 32
+  },
+  {
+    "source": "icons/favicon.svg",
+    "target": "icons/favicon-48.png",
+    "width": 48,
+    "height": 48
+  },
+  {
+    "source": "icons/favicon.svg",
+    "target": "icons/favicon-64.png",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "source": "icons/hakopod-app-icon.svg",
+    "target": "icons/icon-180.png",
+    "width": 180,
+    "height": 180
+  },
+  {
+    "source": "icons/hakopod-app-icon.svg",
+    "target": "icons/icon-192.png",
+    "width": 192,
+    "height": 192
+  },
+  {
+    "source": "icons/hakopod-app-icon.svg",
+    "target": "icons/icon-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "source": "marketing/open-graph-1200x630.svg",
+    "target": "marketing/open-graph-1200x630.png",
+    "width": 1200,
+    "height": 630
+  },
+  {
+    "source": "marketing/social-square-1080.svg",
+    "target": "marketing/social-square-1080.png",
+    "width": 1080,
+    "height": 1080
+  },
+  {
+    "source": "marketing/profile-banner-1500x500.svg",
+    "target": "marketing/profile-banner-1500x500.png",
+    "width": 1500,
+    "height": 500
+  },
+  {
+    "source": "marketing/launch-poster-1080x1350.svg",
+    "target": "marketing/launch-poster-1080x1350.png",
+    "width": 1080,
+    "height": 1350
+  },
+  {
+    "source": "marketing/built-with-hakopod.svg",
+    "target": "marketing/built-with-hakopod.png",
+    "width": 576,
+    "height": 112
+  },
+  {
+    "source": "guide/identity-board.svg",
+    "target": "preview.png",
+    "width": 1440,
+    "height": 1192
+  },
+  {
+    "source": "guide/02-logo-directions.svg",
+    "target": "guide/logo-directions.png",
+    "width": 1440,
+    "height": 900
+  }
+]
