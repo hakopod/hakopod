@@ -15,8 +15,10 @@ const css = await request(stylesheet[1])
 assert.equal(css.status, 200)
 assert.match(css.headers.get('content-type'), /text\/css/)
 
-const webhookMethod = await request('/api/v1/webhooks/github')
-assert.equal(webhookMethod.status, 405, 'exact webhook route is public and accepts POST only')
+for (const provider of ['github', 'gitlab']) {
+  const webhookMethod = await request(`/api/v1/webhooks/${provider}`)
+  assert.equal(webhookMethod.status, 405, 'exact webhook route is public and accepts POST only')
+}
 
 const crossOrigin = await request('/api/plan', {
   method: 'POST',

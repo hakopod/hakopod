@@ -130,10 +130,13 @@ export async function boundedBytes(
   request: Pick<Request, 'headers' | 'body'>,
   limit: number,
 ): Promise<Uint8Array<ArrayBuffer> | null> {
-  if (Number(request.headers.get('content-length')) > limit) return null
+  const declared = Number(request.headers.get('content-length'))
+  if (declared > limit) return null
   if (!request.body) return new Uint8Array(0)
   const reader = request.body.getReader()
-  const bytes = new Uint8Array(limit)
+  // Terminal keystrokes and small JSON requests must not reserve the whole limit.
+  const initial = Number.isSafeInteger(declared) && declared > 0 ? Math.min(4096, declared) : 4096
+  let bytes = new Uint8Array(Math.min(limit, initial))
   let size = 0
   try {
     while (true) {
@@ -142,6 +145,12 @@ export async function boundedBytes(
       if (size + value.byteLength > limit) {
         await reader.cancel()
         return null
+      }
+      if (size + value.byteLength > bytes.byteLength) {
+        const capacity = Math.min(limit, Math.max(size + value.byteLength, bytes.byteLength * 2))
+        const expanded = new Uint8Array(capacity)
+        expanded.set(bytes.subarray(0, size))
+        bytes = expanded
       }
       bytes.set(value, size)
       size += value.byteLength

@@ -6,6 +6,7 @@ import {
   sessionCookie,
   requireSameOrigin,
   boundedBody,
+  boundedBytes,
   apiURL,
 } from './session.ts'
 
@@ -86,4 +87,15 @@ test('bearer credentials only leave the server over verified HTTPS or loopback',
     if (previous === undefined) delete process.env.HAKOPOD_API_URL
     else process.env.HAKOPOD_API_URL = previous
   }
+})
+
+test('tiny terminal inputs do not reserve the one MiB proxy maximum', async () => {
+  const request = new Request('http://127.0.0.1/api/terminal/input', {
+    method: 'POST',
+    body: '{"data":"eA=="}',
+  })
+  const bytes = await boundedBytes(request, 1024 * 1024)
+  assert.ok(bytes)
+  assert.equal(new TextDecoder().decode(bytes), '{"data":"eA=="}')
+  assert.ok(bytes.buffer.byteLength <= 4096)
 })
