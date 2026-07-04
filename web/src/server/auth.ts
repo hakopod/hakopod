@@ -144,7 +144,7 @@ export async function signIn(request: Request) {
 }
 
 export async function oauth(request: Request, path: string) {
-  const match = path.match(/^auth\/oauth\/(github|google)\/(start|callback)$/)
+  const match = path.match(/^auth\/oauth\/(github|google|gitlab)\/(start|callback)$/)
   if (!match || request.method !== 'GET') return failure(404, 'Unknown sign-in endpoint.')
   try {
     const state = cookieValue(request, 'hakopod_oauth')

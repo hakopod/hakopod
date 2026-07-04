@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { authenticatedResponse, oauth } from '../server/auth'
 import { forwardGitHubWebhook } from '../server/github-webhook'
+import { forwardGitLabWebhook } from '../server/gitlab-webhook'
 import {
   apiURL,
   boundedBody,
@@ -10,6 +11,10 @@ import {
 } from '../server/session'
 
 const allowed = [
+  /^teams\/[A-Za-z0-9_-]+$/,
+  /^license$/,
+  /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,
+  /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input))?)?$/,
   /^(me|projects|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|scale|tls))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
   /^auth\/(?:status|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
   /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
@@ -20,7 +25,7 @@ const allowed = [
   /^settings\/haproxy$/,
   /^nodes\/(?:[A-Za-z0-9_.-]+\/(?:cordon|drain)|enrollments(?:\/[A-Za-z0-9_-]+)?)$/,
   /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,
-  /^integrations\/github$/,
+  /^integrations\/(?:github|gitlab)$/,
   /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
   /^templates(?:\/[A-Za-z0-9_-]+\/plan)?$/,
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
@@ -29,12 +34,14 @@ const allowed = [
 async function proxy({ request, params }: { request: Request; params: { _splat?: string } }) {
   try {
     if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)
+    if (params._splat === 'v1/webhooks/gitlab') return forwardGitLabWebhook(request)
     if (request.method !== 'GET') {
       const rejected = requireSameOrigin(request)
       if (rejected) return rejected
     }
     const path = (params._splat || '').replace(/^v1\/(auth\/oauth\/)/, '$1')
-    if (/^auth\/oauth\/(github|google)\/(start|callback)$/.test(path)) return oauth(request, path)
+    if (/^auth\/oauth\/(github|google|gitlab)\/(start|callback)$/.test(path))
+      return oauth(request, path)
     if (!allowed.some((pattern) => pattern.test(path)))
       return Response.json({ error: { message: 'Unknown API endpoint.' } }, { status: 404 })
     const token = sessionToken(request)
@@ -61,7 +68,8 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
       body = payload
       headers.set('Content-Type', 'application/json')
     }
-    const streaming = path.endsWith('/logs')
+    const terminalStream = /\/terminal\/[A-Za-z0-9_-]+\/output$/.test(path)
+    const streaming = path.endsWith('/logs') || terminalStream
     const response = await fetch(apiURL(path) + new URL(request.url).search, {
       method: request.method,
       headers,
@@ -69,7 +77,7 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
       redirect: 'error',
       signal: AbortSignal.any([
         request.signal,
-        AbortSignal.timeout(streaming ? 5 * 60 * 1000 : 30000),
+        AbortSignal.timeout(terminalStream ? 11 * 60 * 1000 : streaming ? 5 * 60 * 1000 : 30000),
       ]),
     })
     if (path === 'auth/passkeys/login/finish') return authenticatedResponse(request, response)
