@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Badge, Tooltip } from '@hakopod/ui'
+import { useLicense } from '../lib/license'
+const CommandPalette = lazy(() => import('./command-palette'))
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -149,13 +152,28 @@ function Workspace({
   }, [])
   const [projectOpen, setProjectOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const license = useLicense()
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const project = identity.project || selected.project || projects.data?.items?.[0]?.name || ''
   const currentProject = projects.data?.items?.find((p) => p.name === project)
   const environment =
     identity.environment || selected.environment || currentProject?.environments?.[0]?.name || ''
-  const can = (permission: string) => canAccess(identity, project, permission)
+  const can = (permission: string) =>
+    (identity.admin ||
+      Boolean(license.data?.catalog.find((feature) => feature.id === 'project_rbac')?.enabled)) &&
+    canAccess(identity, project, permission)
   const changeScope = (next: { project: string; environment: string }) => {
     syncScope(next.project, next.environment)
     void navigate({ to: '/' })
@@ -167,117 +185,106 @@ function Workspace({
         Skip to main content
       </a>
       <div className="app-shell">
-        <aside id="workspace-navigation" className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
-          <Link className="brand" to="/">
-            <Logo size={28} />
-            <span>
-              hakopod<span className="brand-period">.</span>
-            </span>
-          </Link>
-          <div className="workspace-card">
-            <span className="workspace-avatar">
-              {(identity.name || 'W').slice(0, 1).toUpperCase()}
-            </span>
-            <div>
-              <strong>Your workspace</strong>
-              <span>Self-hosted infrastructure</span>
-            </div>
-            <Icon name="lock" size={13} />
-          </div>
-          <div className="nav-label">WORKSPACE</div>
-          <nav aria-label="Main navigation">
-            <Link
-              to="/"
-              className="nav-item"
-              activeProps={{ className: 'nav-item active' }}
-              activeOptions={{ exact: true }}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon name="grid" />
-              <span>Applications</span>
+        <aside
+          id="workspace-navigation"
+          className={`sidebar cockpit-rail ${mobileOpen ? 'sidebar-open' : ''}`}
+        >
+          <Tooltip content="Hakopod · Applications">
+            <Link className="rail-brand" to="/" aria-label="Hakopod applications">
+              <Logo size={32} />
             </Link>
-            <Link
-              to="/builds"
-              className="nav-item"
-              activeProps={{ className: 'nav-item active' }}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon name="branch" />
-              <span>Source builds</span>
-            </Link>
-            <Link
-              to="/templates"
-              className="nav-item"
-              activeProps={{ className: 'nav-item active' }}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon name="grid" />
-              <span>Templates</span>
-            </Link>
-            <Link
-              to="/infrastructure"
-              className="nav-item"
-              activeProps={{ className: 'nav-item active' }}
-              onClick={() => setMobileOpen(false)}
-            >
-              <Icon name="server" />
-              <span>Infrastructure</span>
-            </Link>
-            {
-              <Link
-                to="/settings"
-                className="nav-item"
-                activeProps={{ className: 'nav-item active' }}
-                onClick={() => setMobileOpen(false)}
-              >
-                <Icon name="settings" />
-                <span>{identity.admin ? 'Administration' : 'Account & team'}</span>
-              </Link>
-            }
+          </Tooltip>
+          <nav aria-label="Main navigation" className="rail-navigation">
+            {(
+              [
+                ['/', 'grid', 'Applications'],
+                ['/infrastructure', 'server', 'Infrastructure'],
+                ['/builds', 'branch', 'Source builds'],
+                ['/templates', 'box', 'Templates'],
+                ['/settings', 'shield', 'Account & access'],
+              ] as const
+            ).map(([to, icon, label]) => (
+              <Tooltip content={label} key={to}>
+                <Link
+                  to={to}
+                  aria-label={label}
+                  title={label}
+                  className="nav-item rail-item"
+                  activeProps={{ className: 'nav-item rail-item active' }}
+                  activeOptions={{ exact: to === '/' }}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <Icon name={icon} size={19} />
+                  <span className="rail-label">{label}</span>
+                </Link>
+              </Tooltip>
+            ))}
           </nav>
           <div className="sidebar-spacer" />
-          <div className="ownership-note">
-            <Icon name="shield" size={20} />
-            <strong>Runs on your terms.</strong>
-            <p>
-              Your machines.
-              <br />
-              Your applications. Your data.
-            </p>
-          </div>
-          <div className="sidebar-bottom">
-            <div className="user-avatar">{(identity.name || 'K').slice(0, 1).toUpperCase()}</div>
-            <div className="user-meta">
-              <strong>{identity.name || 'Member'}</strong>
-              <span>{identity.admin ? 'Administrator' : 'Scoped access'}</span>
-            </div>
-            <DropdownMenu.Root>
+          <Tooltip content="Quick navigation · ⌘ K">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Quick navigation"
+              onClick={() => setCommandOpen(true)}
+            >
+              <Icon name="search" />
+            </Button>
+          </Tooltip>
+          <Tooltip content={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              onClick={toggleTheme}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            </Button>
+          </Tooltip>
+          <DropdownMenu.Root>
+            <Tooltip content={identity.name || 'Account'}>
               <DropdownMenu.Trigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Account menu">
-                  <Icon name="down" size={15} />
+                <Button
+                  className="rail-avatar"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Account menu"
+                >
+                  {(identity.name || 'H').slice(0, 1).toUpperCase()}
                 </Button>
               </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content className="dropdown-menu" sideOffset={8} align="end">
-                  <DropdownMenu.Item className="dropdown-item" onSelect={toggleTheme}>
-                    <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-                    Use {theme === 'dark' ? 'light' : 'dark'} theme
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    className="dropdown-item"
-                    onSelect={async () => {
-                      await fetch('/session', { method: 'DELETE' })
-                      queryClient.clear()
-                      window.location.assign('/')
-                    }}
-                  >
-                    <Icon name="logout" size={16} />
-                    Sign out
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </div>
+            </Tooltip>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="dropdown-menu"
+                side="right"
+                sideOffset={14}
+                align="end"
+              >
+                <div className="account-menu-heading">
+                  <strong>{identity.name || 'Member'}</strong>
+                  <small>
+                    {identity.admin ? 'Installation administrator' : 'Scoped project access'}
+                  </small>
+                </div>
+                <DropdownMenu.Item className="dropdown-item" onSelect={toggleTheme}>
+                  <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+                  Use {theme === 'dark' ? 'light' : 'dark'} theme
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="dropdown-item"
+                  onSelect={async () => {
+                    await fetch('/session', { method: 'DELETE' })
+                    queryClient.clear()
+                    window.location.assign('/')
+                  }}
+                >
+                  <Icon name="logout" size={16} />
+                  Sign out
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </aside>
         {mobileOpen && (
           <button
@@ -287,7 +294,21 @@ function Workspace({
           />
         )}
         <div className="app-main">
-          <header className="topbar">
+          <header className="topbar cockpit-topbar">
+            <Link to="/" className="brand-wordmark" aria-label="Hakopod">
+              <img
+                className="wordmark-dark"
+                src="/brand/hakopod-horizontal-paper.svg"
+                alt=""
+                width="140"
+              />
+              <img
+                className="wordmark-light"
+                src="/brand/hakopod-horizontal-ink.svg"
+                alt=""
+                width="140"
+              />
+            </Link>
             <Button
               variant="ghost"
               size="icon"
@@ -347,6 +368,27 @@ function Workspace({
               )}
             </div>
             <div className="topbar-right">
+              <button
+                type="button"
+                className="command-trigger"
+                onClick={() => setCommandOpen(true)}
+              >
+                <Icon name="search" size={14} />
+                <span>Find apps, resources…</span>
+                <kbd>⌘ K</kbd>
+              </button>
+              <Link
+                to="/settings"
+                search={{ tab: 'license' }}
+                className="license-header-link"
+                aria-label="View installation license"
+              >
+                <Badge tone={license.data?.plan === 'pro' ? 'accent' : 'neutral'}>
+                  {license.data?.plan
+                    ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
+                    : 'License…'}
+                </Badge>
+              </Link>
               <span className="installation-label">
                 <span className="tiny-square" /> SELF-HOSTED
               </span>
@@ -397,6 +439,16 @@ function Workspace({
           </footer>
         </div>
       </div>
+      {commandOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={commandOpen}
+            onOpenChange={setCommandOpen}
+            project={project}
+            environment={environment}
+          />
+        </Suspense>
+      )}
       <CreateProject
         open={projectOpen}
         setOpen={setProjectOpen}
