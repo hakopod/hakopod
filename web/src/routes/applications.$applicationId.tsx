@@ -16,22 +16,49 @@ import { Logs } from '../components/logs'
 const ServiceDetail = lazy(() =>
   import('../components/service-detail').then((m) => ({ default: m.ServiceDetail })),
 )
+const PodTerminal = lazy(() => import('../components/pod-terminal'))
+const ApplicationTopology = lazy(() => import('../components/application-topology'))
 const ApplicationSecrets = lazy(() => import('../components/application-secrets'))
 const ApplicationSource = lazy(() => import('../components/application-source'))
 
 export const Route = createFileRoute('/applications/$applicationId')({
-  validateSearch: (search: Record<string, unknown>): { service?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { service?: string; tab?: string; pod?: string } => ({
     service: typeof search.service === 'string' ? search.service : undefined,
+    tab:
+      typeof search.tab === 'string' &&
+      [
+        'topology',
+        'services',
+        'deployments',
+        'logs',
+        'terminal',
+        'networking',
+        'configuration',
+        'source',
+        'secrets',
+        'pods',
+        'overview',
+        'network',
+        'settings',
+      ].includes(search.tab)
+        ? search.tab
+        : undefined,
+    pod: typeof search.pod === 'string' ? search.pod : undefined,
   }),
   component: ApplicationDetail,
 })
 function ApplicationDetail() {
   const { applicationId } = Route.useParams()
-  const { service: selectedService } = Route.useSearch()
+  const { service: selectedService, tab: selectedTab, pod: selectedPod } = Route.useSearch()
   const scope = useScope()
   const [deployOpen, setDeployOpen] = useState(false)
   const [deployMode, setDeployMode] = useState<'form' | 'toml'>('form')
-  const [tab, setTab] = useState('services')
+  const [tab, setTab] = useState(selectedTab || 'topology')
+  useEffect(() => {
+    if (selectedTab) setTab(selectedTab)
+  }, [selectedTab])
   const [logService, setLogService] = useState('')
   const application = useQuery({
     queryKey: ['application', applicationId],
@@ -53,7 +80,13 @@ function ApplicationDetail() {
   if (selectedService)
     return (
       <Suspense fallback={<Loading />}>
-        <ServiceDetail key={selectedService} application={app} serviceName={selectedService} />
+        <ServiceDetail
+          key={selectedService}
+          application={app}
+          serviceName={selectedService}
+          initialTab={selectedTab}
+          initialPod={selectedPod}
+        />
       </Suspense>
     )
   return (
@@ -124,9 +157,11 @@ function ApplicationDetail() {
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="tab-list" aria-label="Application sections">
           {[
+            ['topology', 'network', 'Topology'],
             ['services', 'box', 'Services'],
             ['deployments', 'branch', 'Deployments'],
-            ['logs', 'terminal', 'Logs'],
+            ['logs', 'activity', 'Logs'],
+            ['terminal', 'terminal', 'Terminal'],
             ['networking', 'network', 'Networking'],
             ['configuration', 'settings', 'Configuration'],
             ['source', 'branch', 'Source'],
@@ -138,6 +173,16 @@ function ApplicationDetail() {
             </Tabs.Trigger>
           ))}
         </Tabs.List>
+        <Tabs.Content value="topology" className="tab-content">
+          <Suspense fallback={<Loading />}>
+            <ApplicationTopology application={app} />
+          </Suspense>
+        </Tabs.Content>
+        <Tabs.Content value="terminal" className="tab-content">
+          <Suspense fallback={<Loading />}>
+            <PodTerminal applicationId={app.id} services={serviceNames} initialPod={selectedPod} />
+          </Suspense>
+        </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
           <div className="section-toolbar">
             <div>

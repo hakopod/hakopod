@@ -14,6 +14,7 @@ import { Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
 import { DeployDialog } from './deploy-dialog'
 import { Logs } from './logs'
 
+const PodTerminal = lazy(() => import('./pod-terminal'))
 const ServiceTLS = lazy(() => import('./tls-settings').then((m) => ({ default: m.ServiceTLS })))
 
 const readRuntime = (applicationId: string, service: string, signal: AbortSignal) =>
@@ -74,16 +75,33 @@ function MetricChart({
 export function ServiceDetail({
   application,
   serviceName,
+  initialTab,
+  initialPod,
 }: {
   application: Application
   serviceName: string
+  initialTab?: string
+  initialPod?: string
 }) {
   const scope = useScope()
   const navigate = useNavigate()
   const cache = useQueryClient()
   const service = application.spec.services[serviceName]
   const observed = application.observed?.services?.find((item) => item.name === serviceName)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(
+    initialTab &&
+      ['overview', 'pods', 'logs', 'terminal', 'network', 'settings'].includes(initialTab)
+      ? initialTab
+      : 'overview',
+  )
+  const [terminalPod, setTerminalPod] = useState(initialPod || '')
+  useEffect(() => {
+    if (
+      initialTab &&
+      ['overview', 'pods', 'logs', 'terminal', 'network', 'settings'].includes(initialTab)
+    )
+      setTab(initialTab)
+  }, [initialTab])
   const [deployOpen, setDeployOpen] = useState(false)
   const [deployMode, setDeployMode] = useState<'form' | 'toml'>('form')
   const [restartOpen, setRestartOpen] = useState(false)
@@ -186,7 +204,8 @@ export function ServiceDetail({
           {[
             ['overview', 'activity', 'Overview'],
             ['pods', 'box', 'Pods'],
-            ['logs', 'terminal', 'Logs'],
+            ['logs', 'activity', 'Logs'],
+            ['terminal', 'terminal', 'Terminal'],
             ['network', 'network', 'Networking'],
             ['settings', 'settings', 'Settings'],
           ].map(([value, icon, label]) => (
@@ -315,7 +334,30 @@ export function ServiceDetail({
               Refresh
             </Button>
           </div>
-          <PodList runtime={runtime.data} loading={runtime.isPending} error={runtime.error} />
+          <PodList
+            runtime={runtime.data}
+            loading={runtime.isPending}
+            error={runtime.error}
+            onConnect={
+              scope.can('deployments:write')
+                ? (pod) => {
+                    setTerminalPod(pod)
+                    setTab('terminal')
+                  }
+                : undefined
+            }
+          />
+        </Tabs.Content>
+        <Tabs.Content value="terminal" className="tab-content">
+          <Suspense fallback={<Loading />}>
+            <PodTerminal
+              key={terminalPod}
+              applicationId={application.id}
+              services={[serviceName]}
+              initialService={serviceName}
+              initialPod={terminalPod}
+            />
+          </Suspense>
         </Tabs.Content>
         <Tabs.Content value="logs" className="tab-content">
           {scope.can('logs:read') ? (
@@ -520,11 +562,13 @@ function PodList({
   loading,
   error,
   compact = false,
+  onConnect,
 }: {
   runtime?: Runtime
   loading: boolean
   error: unknown
   compact?: boolean
+  onConnect?: (pod: string) => void
 }) {
   if (loading) return <Loading rows={2} />
   if (error) return <ErrorState error={error} />
@@ -554,6 +598,16 @@ function PodList({
               <Icon name="down" size={15} />
             </summary>
             <div className="pod-details">
+              {onConnect && (
+                <Button
+                  size="sm"
+                  disabled={pod.phase !== 'Running'}
+                  onClick={() => onConnect(pod.name)}
+                >
+                  <Icon name="terminal" size={14} />
+                  Connect to pod
+                </Button>
+              )}
               <dl className="service-definition-list">
                 <div>
                   <dt>Pod IP</dt>
