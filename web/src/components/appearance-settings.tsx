@@ -73,7 +73,7 @@ export function AppearanceSettings() {
               setColor(event.target.value)
               setSaved(false)
             }}
-            placeholder="#A494F5"
+            placeholder="#D8FF45"
             required
           />
           <span

@@ -14,7 +14,8 @@ export function accentPalette(color: string, theme: string) {
   if (!validAccent(color)) return null
   const original = rgb(color)
   const dark = theme !== 'light'
-  const background = luminance(rgb(dark ? '#111214' : '#faf9fc'))
+  // Compare against the least forgiving surface in each theme, not only the page.
+  const background = luminance(rgb(dark ? '#222d26' : '#e2e8dc'))
   const readable = (minimum: number) => {
     let channels = original
     for (let step = 0; step <= 20; step++) {

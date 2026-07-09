@@ -1,4 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
+import { Badge, Card, Tooltip } from '@hakopod/ui'
+import { Dialog } from '../components/ui/dialog'
 import * as Tabs from '@radix-ui/react-tabs'
 import { useScope } from '../lib/scope'
 import type { Node } from '../lib/types'
@@ -41,8 +43,8 @@ function Infrastructure() {
     <>
       <PageHeader
         eyebrow="OPERATOR / INFRASTRUCTURE"
-        title="Your cloud starts here."
-        description="Machines, private registries, and the ingress behind your applications."
+        title="Cluster overview"
+        description="Live capacity, node scheduling, registries, and public ingress."
       />
       <Tabs.Root defaultValue="nodes">
         <Tabs.List className="tab-list">
@@ -101,6 +103,8 @@ function Nodes() {
   const scope = useScope()
   const [action, setAction] = useState<{ node: Node; action: 'cordon' | 'drain' } | null>(null)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<'grid' | 'table'>('grid')
+  const [inspector, setInspector] = useState<Node | null>(null)
   const nodes = useQuery({
     queryKey: ['nodes'],
     queryFn: ({ signal }) => unwrap(client.GET('/nodes', { signal })),
@@ -163,6 +167,26 @@ function Nodes() {
               : 'Waiting for cluster observation'}
           </p>
         </div>
+        <div className="view-switch" role="group" aria-label="Node display">
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Node grid"
+            aria-pressed={view === 'grid'}
+            onClick={() => setView('grid')}
+          >
+            <Icon name="grid" size={15} />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Node table"
+            aria-pressed={view === 'table'}
+            onClick={() => setView('table')}
+          >
+            <Icon name="menu" size={15} />
+          </Button>
+        </div>
         <Button onClick={() => void nodes.refetch()}>
           <Icon name="refresh" size={15} />
           Refresh nodes
@@ -187,6 +211,65 @@ function Nodes() {
           title="No nodes reported"
           description="Check the management API’s Kubernetes context and cluster connectivity. Nodes will appear when the cluster returns them."
         />
+      ) : view === 'grid' ? (
+        <div className="node-cockpit-grid">
+          {filtered.map((node) => (
+            <button
+              type="button"
+              className={`node-cockpit-card ${node.ready ? '' : 'node-attention'}`}
+              key={node.name}
+              onClick={() => setInspector(node)}
+              aria-label={`Inspect node ${node.name}`}
+            >
+              <div className="node-card-heading">
+                <Icon name="server" size={18} />
+                <strong>{node.name}</strong>
+                <Status value={node.ready ? 'ready' : 'not ready'} small />
+              </div>
+              <div className="node-card-role">
+                <span>
+                  {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture}
+                </span>
+                <Badge tone={node.unschedulable ? 'warning' : 'neutral'}>
+                  {node.unschedulable ? 'Cordoned' : 'Schedulable'}
+                </Badge>
+              </div>
+              <div
+                className="pod-count-grid"
+                aria-label={`${node.pods} pods reported; individual pod health is not represented here`}
+              >
+                {Array.from({ length: Math.min(80, node.pods) }, (_, index) => (
+                  <i key={index} />
+                ))}
+                {node.pods > 80 && <small>+{node.pods - 80}</small>}
+                {node.pods === 0 && <small>No pods reported</small>}
+              </div>
+              <div className="node-card-pods">
+                <span>{node.pods} pods</span>
+                <span>{node.kubelet_version}</span>
+              </div>
+              <UsageBar
+                label="CPU"
+                used={node.metrics.available ? node.metrics.cpu_millicores : undefined}
+                total={cpu(node.allocatable_cpu) * 1000}
+              />
+              <UsageBar
+                label="Memory"
+                used={node.metrics.available ? node.metrics.memory_bytes : undefined}
+                total={memory(node.allocatable_memory)}
+              />
+              <div className="node-card-footer">
+                <span>
+                  {cpu(node.allocatable_cpu)} cores · {gib(memory(node.allocatable_memory))}
+                </span>
+                <span>
+                  {node.allocatable_gpu > 0 ? `${node.allocatable_gpu} GPU` : 'Inspect'}
+                  <Icon name="arrow" size={12} />
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
       ) : (
         <div className="table-container">
           <table className="node-table">
@@ -300,6 +383,79 @@ function Nodes() {
           )}
         </div>
       )}
+      {inspector && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setInspector(null)
+          }}
+          title={inspector.name}
+          description="Observed node capacity and scheduling state."
+        >
+          <div className="dialog-body">
+            <Card className="node-inspector-metrics">
+              <Status value={inspector.ready ? 'ready' : 'not ready'} />
+              <Badge>{inspector.control_plane ? 'Control plane' : 'Worker'}</Badge>
+              <Badge>{inspector.architecture}</Badge>
+            </Card>
+            <dl className="service-definition-list">
+              <div>
+                <dt>Kubernetes</dt>
+                <dd>{inspector.kubelet_version}</dd>
+              </div>
+              <div>
+                <dt>Scheduling</dt>
+                <dd>{inspector.unschedulable ? 'Disabled (cordoned)' : 'Enabled'}</dd>
+              </div>
+              <div>
+                <dt>Allocatable CPU</dt>
+                <dd>{cpu(inspector.allocatable_cpu)} cores</dd>
+              </div>
+              <div>
+                <dt>Allocatable memory</dt>
+                <dd>{gib(memory(inspector.allocatable_memory))}</dd>
+              </div>
+              <div>
+                <dt>Pods / GPUs</dt>
+                <dd>
+                  {inspector.pods} / {inspector.allocatable_gpu}
+                </dd>
+              </div>
+              <div>
+                <dt>Metrics sampled</dt>
+                <dd>{timestamp(inspector.metrics.sampled_at)}</dd>
+              </div>
+            </dl>
+            {!inspector.metrics.available && (
+              <Note>{inspector.metrics.reason || 'Metrics are unavailable for this node.'}</Note>
+            )}
+          </div>
+          <div className="dialog-footer">
+            {scope.identity.admin && !inspector.control_plane && (
+              <>
+                <Button
+                  onClick={() => {
+                    setAction({ node: inspector, action: 'cordon' })
+                    setInspector(null)
+                  }}
+                >
+                  {inspector.unschedulable ? 'Uncordon' : 'Cordon'}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    setAction({ node: inspector, action: 'drain' })
+                    setInspector(null)
+                  }}
+                >
+                  Review drain
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setInspector(null)}>Close</Button>
+          </div>
+        </Dialog>
+      )}
       <div className="infrastructure-notes">
         <Note>
           Allocatable values describe workload capacity. Inspect individual services for observed
@@ -321,5 +477,32 @@ function Nodes() {
         </Suspense>
       )}
     </>
+  )
+}
+
+function UsageBar({ label, used, total }: { label: string; used?: number; total: number }) {
+  const ratio =
+    used !== undefined && Number.isFinite(total) && total > 0 ? (used / total) * 100 : null
+  return (
+    <div className="usage-bar-row">
+      <span>{label}</span>
+      <div
+        className="usage-bar-track"
+        role="meter"
+        aria-label={`${label} usage against allocatable capacity`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={ratio === null ? undefined : Math.min(100, ratio)}
+        aria-valuetext={ratio === null ? 'Unavailable' : `${ratio.toFixed(1)} percent`}
+      >
+        <i
+          style={{ width: ratio === null ? 0 : `${Math.min(100, ratio)}%` }}
+          className={ratio !== null && ratio > 85 ? 'usage-high' : ''}
+        />
+      </div>
+      <Tooltip side="top" content="Usage compared with allocatable node capacity">
+        <small>{ratio === null ? '—' : `${Math.round(ratio)}%`}</small>
+      </Tooltip>
+    </div>
   )
 }

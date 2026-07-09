@@ -134,10 +134,7 @@ export function AuthScreen({
     <div className="login-page">
       <div className="login-brand-panel">
         <div className="brand">
-          <Logo />
-          <span>
-            hakopod<span className="brand-period">.</span>
-          </span>
+          <img src="/brand/hakopod-horizontal-paper.svg" width="178" alt="Hakopod" />
         </div>
         <div className="login-pitch">
           <span className="label-chip">
@@ -145,16 +142,13 @@ export function AuthScreen({
             BUILT FOR YOUR INFRASTRUCTURE
           </span>
           <h1>
-            Your next idea.
+            Your apps.
             <br />
-            <span>Your own cloud.</span>
+            <span>Your rules.</span>
           </h1>
-          <p>
-            Bring your containers. Keep control.
-            <br />A calmer place to build, deploy, and grow.
-          </p>
+          <p>A home for your apps, on infrastructure you own.</p>
           <div className="auth-illustration" aria-hidden="true">
-            <Icon name="box" size={52} />
+            <Logo size={64} />
             <span>Build. Deploy. Own it.</span>
             <div>
               <Icon name="shield" size={16} />
@@ -316,7 +310,7 @@ export function AuthScreen({
                     </Button>
                   )}
                   {status.data?.providers
-                    .filter((provider) => ['github', 'google'].includes(provider))
+                    .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
                     .map((provider) => (
                       <a
                         className="button button-secondary full-width"
@@ -330,7 +324,12 @@ export function AuthScreen({
                             )
                         }}
                       >
-                        Continue with {provider === 'github' ? 'GitHub' : 'Google'}
+                        Continue with{' '}
+                        {provider === 'github'
+                          ? 'GitHub'
+                          : provider === 'gitlab'
+                            ? 'GitLab'
+                            : 'Google'}
                       </a>
                     ))}
                 </div>
