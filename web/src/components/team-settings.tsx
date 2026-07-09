@@ -1,3 +1,5 @@
+import { useLicense } from '../lib/license'
+import { FeatureLock } from './license-settings'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
@@ -10,10 +12,14 @@ import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 
 export default function TeamSettings() {
   const scope = useScope()
+  const license = useLicense()
+  const hasFeature = (feature: string) =>
+    Boolean(license.data?.catalog.find((item) => item.id === feature)?.enabled)
   const cache = useQueryClient()
   const [selected, setSelected] = useState('')
   const [teamName, setTeamName] = useState('')
   const [adding, setAdding] = useState(false)
+  const [removeTeam, setRemoveTeam] = useState(false)
   const [invite, setInvite] = useState<'team' | 'project' | null>(null)
   const [grant, setGrant] = useState('')
   const [grantRole, setGrantRole] = useState('viewer')
@@ -59,12 +65,22 @@ export default function TeamSettings() {
   }
   return (
     <>
+      {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
+      {license.data && !hasFeature('teams') && <FeatureLock />}
       <div className="section-toolbar">
         <div>
           <h2>Your teams</h2>
           <p>Manage people together, then grant teams access to projects.</p>
         </div>
         <Button
+          disabled={!scope.identity.admin || !hasFeature('teams')}
+          title={
+            !scope.identity.admin
+              ? 'Requires installation administrator access'
+              : !hasFeature('teams')
+                ? 'Requires Hakopod Pro'
+                : undefined
+          }
           onClick={() => {
             setError('')
             setAdding(true)
@@ -92,7 +108,16 @@ export default function TeamSettings() {
                 ))}
               </select>
             </label>
-            {canTeam && <Button onClick={() => setInvite('team')}>Invite member</Button>}
+            {scope.identity.admin && (
+              <Button variant="ghost" onClick={() => setRemoveTeam(true)}>
+                Delete team
+              </Button>
+            )}
+            {canTeam && (
+              <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('team')}>
+                Invite member{!hasFeature('invitations') && ' · Pro'}
+              </Button>
+            )}
           </div>
           {members.isPending ? (
             <Loading rows={2} />
@@ -109,7 +134,7 @@ export default function TeamSettings() {
                   <RoleEditor
                     key={`${member.id}-${member.role}`}
                     role={member.role}
-                    roles={['admin', 'member']}
+                    roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
                     onSave={async (role) => {
                       await unwrap(
                         client.PUT('/teams/{id}/members/{user}', {
@@ -134,7 +159,9 @@ export default function TeamSettings() {
           <p>{scope.project || 'Select a project'} · Role changes take effect on new requests.</p>
         </div>
         {canProject && scope.project && (
-          <Button onClick={() => setInvite('project')}>Invite to project</Button>
+          <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('project')}>
+            Invite to project{!hasFeature('invitations') && ' · Pro'}
+          </Button>
         )}
       </div>
       {scope.project ? (
@@ -155,7 +182,11 @@ export default function TeamSettings() {
                     <RoleEditor
                       key={`${member.identity_id || member.team_id}-${member.role}`}
                       role={member.role}
-                      roles={['admin', 'developer', 'viewer']}
+                      roles={
+                        hasFeature('project_rbac')
+                          ? ['admin', 'developer', 'viewer']
+                          : [member.role]
+                      }
                       onSave={async (role) => {
                         await unwrap(
                           client.PUT('/projects/{project}/members', {
@@ -180,7 +211,7 @@ export default function TeamSettings() {
                 No direct members or teams. Installation administrators retain access.
               </p>
             )}
-            {canProject && Boolean(teams.data?.items.length) && (
+            {canProject && hasFeature('project_rbac') && Boolean(teams.data?.items.length) && (
               <form
                 className="inline-form"
                 onSubmit={async (e) => {
@@ -241,6 +272,45 @@ export default function TeamSettings() {
         Viewers can inspect applications and logs. Developers can deploy and read logs. Project
         admins also manage membership. Team roles control the team’s own membership.
       </Note>
+      <Dialog
+        open={removeTeam}
+        onOpenChange={(open) => {
+          if (!busy) setRemoveTeam(open)
+        }}
+        title={`Delete ${current?.name || 'this team'}?`}
+        description="Remove the team, its memberships, project grants, and pending team invitations. Individual accounts remain."
+      >
+        <div className="dialog-body">
+          <p>
+            This also removes team access to every project. This cleanup remains available on Free.
+          </p>
+        </div>
+        <div className="dialog-footer">
+          <Button disabled={busy} onClick={() => setRemoveTeam(false)}>
+            Keep team
+          </Button>
+          <Button
+            variant="danger"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                await unwrap(client.DELETE('/teams/{id}', { params: { path: { id: team } } }))
+                setRemoveTeam(false)
+                setSelected('')
+                refresh()
+              } catch (err) {
+                setError(message(err))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            Delete team
+          </Button>
+        </div>
+      </Dialog>
       {invite && (
         <InviteDialog
           target={invite}

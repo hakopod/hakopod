@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -17,22 +17,39 @@ const GitHubSettings = lazy(() =>
   import('../components/application-source').then((m) => ({ default: m.GitHubSettings })),
 )
 const AccountSettings = lazy(() => import('../components/account-settings'))
+const LicenseSettings = lazy(() => import('../components/license-settings'))
 const TeamSettings = lazy(() => import('../components/team-settings'))
 const InstallationUsers = lazy(() =>
   import('../components/team-settings').then((m) => ({ default: m.InstallationUsers })),
 )
 
-export const Route = createFileRoute('/settings')({ component: Administration })
+export const Route = createFileRoute('/settings')({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab:
+      typeof search.tab === 'string' &&
+      ['account', 'teams', 'users', 'github', 'keys', 'audit', 'appearance', 'license'].includes(
+        search.tab,
+      )
+        ? search.tab
+        : undefined,
+  }),
+  component: Administration,
+})
 function Administration() {
   const scope = useScope()
+  const selected = Route.useSearch().tab
+  const [tab, setTab] = useState(selected || 'account')
+  useEffect(() => {
+    if (selected) setTab(selected)
+  }, [selected])
   return (
     <>
       <PageHeader
         eyebrow="WORKSPACE / ACCOUNT & ACCESS"
-        title="Access, with intention."
+        title="Account & access"
         description="Your account, team access, and installation controls."
       />
-      <Tabs.Root defaultValue="account">
+      <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="tab-list">
           <Tabs.Trigger className="tab-trigger" value="account">
             <Icon name="shield" size={15} />
@@ -42,13 +59,17 @@ function Administration() {
             <Icon name="network" size={15} />
             Teams & access
           </Tabs.Trigger>
+          <Tabs.Trigger className="tab-trigger" value="license">
+            <Icon name="key" size={15} />
+            License
+          </Tabs.Trigger>
           {scope.identity.admin && (
             <>
               <Tabs.Trigger className="tab-trigger" value="users">
                 People
               </Tabs.Trigger>
               <Tabs.Trigger className="tab-trigger" value="github">
-                GitHub
+                Git providers
               </Tabs.Trigger>
               <Tabs.Trigger className="tab-trigger" value="keys">
                 <Icon name="key" size={15} />
@@ -66,6 +87,9 @@ function Administration() {
           )}
         </Tabs.List>
         <Suspense fallback={<Loading />}>
+          <Tabs.Content className="tab-content" value="license">
+            <LicenseSettings />
+          </Tabs.Content>
           <Tabs.Content className="tab-content" value="account">
             <AccountSettings />
           </Tabs.Content>
