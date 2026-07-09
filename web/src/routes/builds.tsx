@@ -33,7 +33,7 @@ function BuildList() {
       <PageHeader
         eyebrow="WORKSPACE / SOURCE BUILDS"
         title="From repository to running service."
-        description="Build container images on demand with GitHub Actions, Dockerfiles, or Cloud Native Buildpacks."
+        description="Build container images with GitHub Actions or GitLab CI, using Dockerfiles or Cloud Native Buildpacks."
         action={
           scope.can('deployments:write') && (
             <Button variant="primary" onClick={() => setCreate(true)}>
@@ -74,7 +74,8 @@ function BuildList() {
                 </h2>
               </div>
               <p>
-                {build.repository} · {build.branch}
+                {build.provider === 'gitlab' ? 'GitLab' : 'GitHub'} · {build.repository} ·{' '}
+                {build.branch}
               </p>
               <div className="toolbar-actions">
                 <span className="label-chip">
@@ -91,8 +92,9 @@ function BuildList() {
         </div>
       )}
       <Note>
-        Builds use GitHub Actions runner capacity and publish to GHCR. Hakopod has no always-running
-        builder and does not load application build tools into the management process.
+        Builds use the selected Git provider’s runner capacity and container registry. Hakopod has
+        no always-running builder and does not load application build tools into the management
+        process.
       </Note>
       {create && (
         <Suspense fallback={<Loading />}>

@@ -44,6 +44,7 @@ function BuildDetail() {
   if (config.isPending) return <Loading />
   if (config.error || !config.data) return <ErrorState error={config.error} />
   const build = config.data
+  const providerLabel = build.provider === 'gitlab' ? 'GitLab' : 'GitHub'
   const runId = selected || runs.data?.items[0]?.id || ''
   return (
     <>
@@ -60,7 +61,7 @@ function BuildDetail() {
             {build.name} / {build.service}
           </h1>
           <p>
-            {build.repository} · {build.branch}
+            {providerLabel} · {build.repository} · {build.branch}
           </p>
         </div>
         {scope.can('deployments:write') && (
@@ -135,7 +136,7 @@ function BuildDetail() {
         </section>
         <section className="panel service-summary-panel">
           <div className="panel-heading">
-            <h2>GitHub workflow</h2>
+            <h2>{providerLabel} workflow</h2>
             <Status
               value={
                 build.installed_revision === build.revision ? 'installed' : 'installation required'
@@ -186,7 +187,7 @@ function BuildDetail() {
       <div className="section-toolbar">
         <div>
           <h2>Recent build runs</h2>
-          <p>Up to 20 runs. Select a run to observe its current GitHub status.</p>
+          <p>Up to 20 runs. Select a run to observe its current {providerLabel} status.</p>
         </div>
         <Button size="sm" onClick={() => void runs.refetch()}>
           Refresh history
@@ -259,7 +260,10 @@ function BuildDetail() {
               ))}
               <div className="code-panel">
                 <div>
-                  <span>Generated GitHub Actions workflow</span>
+                  <span>
+                    Generated{' '}
+                    {build.provider === 'gitlab' ? 'GitLab CI pipeline' : 'GitHub Actions workflow'}
+                  </span>
                   <Copy value={preview.workflow} />
                 </div>
                 <pre>{preview.workflow}</pre>
@@ -309,7 +313,7 @@ function BuildDetail() {
                 }
               }}
             >
-              {busy ? 'Committing workflow…' : 'Commit reviewed workflow to GitHub'}
+              {busy ? 'Committing workflow…' : `Commit reviewed workflow to ${providerLabel}`}
             </Button>
           )}
         </div>
@@ -377,8 +381,10 @@ function RunDialog({
             />
           </label>
           <Note>
-            Hakopod resolves a commit, dispatches the reviewed GitHub Actions workflow, then
-            verifies the produced image digest. This action uses GitHub runner capacity.
+            Hakopod resolves a commit, dispatches the reviewed{' '}
+            {build.provider === 'gitlab' ? 'GitLab CI pipeline' : 'GitHub Actions workflow'}, then
+            verifies the produced image digest. This action uses{' '}
+            {build.provider === 'gitlab' ? 'GitLab' : 'GitHub'} runner capacity.
           </Note>
           {error && (
             <div className="inline-error" role="alert">
@@ -471,14 +477,14 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
       </dl>
       {current.message && <Note>{current.message}</Note>}
       <div className="toolbar-actions">
-        {/^https:\/\/github\.com\//.test(current.run_url) && (
+        {/^https:\/\/(?:github|gitlab)\.com\//.test(current.run_url) && (
           <a
             href={current.run_url}
             target="_blank"
             rel="noreferrer"
             className="button button-secondary"
           >
-            Build logs in GitHub
+            Build logs in {current.provider === 'gitlab' ? 'GitLab' : 'GitHub'}
             <Icon name="external" size={13} />
           </a>
         )}
@@ -521,11 +527,13 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
             Review image deployment
           </Button>
         )}
-        {scope.can('deployments:write') && active && current.github_run_id > 0 && (
-          <Button size="sm" onClick={() => setCancel(true)}>
-            Cancel build
-          </Button>
-        )}
+        {scope.can('deployments:write') &&
+          active &&
+          (current.remote_run_id || current.github_run_id) > 0 && (
+            <Button size="sm" onClick={() => setCancel(true)}>
+              Cancel build
+            </Button>
+          )}
       </div>
       {error && (
         <div className="inline-error" role="alert">
@@ -635,7 +643,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
           if (!busy) setCancel(open)
         }}
         title="Cancel this build?"
-        description="Request cancellation from GitHub Actions. A completed image or accepted deployment is not removed."
+        description={`Request cancellation from ${build.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'}. A completed image or accepted deployment is not removed.`}
       >
         <div className="dialog-body">
           {error && (

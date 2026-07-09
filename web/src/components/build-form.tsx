@@ -29,6 +29,7 @@ export default function BuildForm({
   const [service, setService] = useState(
     build?.service || Object.keys(application?.spec.services || {})[0] || 'web',
   )
+  const [provider, setProvider] = useState<'github' | 'gitlab'>(build?.provider || 'github')
   const [repository, setRepository] = useState(build?.repository || '')
   const [branch, setBranch] = useState(build?.branch || 'main')
   const [mode, setMode] = useState<Build['mode']>(build?.mode || 'dockerfile')
@@ -75,6 +76,7 @@ export default function BuildForm({
               environment,
               name,
               service,
+              provider,
               repository,
               branch,
               mode,
@@ -140,9 +142,19 @@ export default function BuildForm({
               )}
             </label>
           </div>
+          <label>
+            Git provider
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
+            >
+              <option value="github">GitHub Actions + GHCR</option>
+              <option value="gitlab">GitLab CI + GitLab Container Registry</option>
+            </select>
+          </label>
           <div className="form-grid">
             <label>
-              GitHub repository
+              Repository
               <input
                 value={repository}
                 onChange={(e) => setRepository(e.target.value)}
@@ -287,13 +299,23 @@ export default function BuildForm({
               ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
               : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
             Saving build settings prepares a workflow preview. An administrator explicitly installs
-            the reviewed workflow in GitHub.
+            the reviewed workflow in {provider === 'gitlab' ? 'GitLab' : 'GitHub'}.
           </Note>
+          {provider === 'gitlab' && (
+            <Note>
+              Hakopod manages one .gitlab-ci.yml entrypoint per repository. Installation refuses an
+              existing unowned CI file or a file owned by another build. Configure Pipeline events
+              on the project webhook for automatic deployment.
+            </Note>
+          )}
           {automatic && (
             <Note>
               Automatic builds require the installed workflow. Automatic deployment additionally
-              needs the signed GitHub workflow event integration and your continuing project
-              authority.
+              needs the{' '}
+              {provider === 'gitlab'
+                ? 'authenticated GitLab Pipeline Hook'
+                : 'signed GitHub workflow event'}{' '}
+              integration and your continuing project authority.
             </Note>
           )}
           {error && (

@@ -41,7 +41,7 @@ export default function ApplicationSource({ application }: { application: Applic
     <>
       <div className="section-toolbar">
         <div>
-          <h2>GitHub configuration source</h2>
+          <h2>Repository configuration source</h2>
           <p>Fetch a committed Hakopod TOML file, review it, and deploy an immutable revision.</p>
         </div>
         {scope.can('deployments:write') && (
@@ -58,14 +58,14 @@ export default function ApplicationSource({ application }: { application: Applic
         <section className="panel service-summary-panel">
           <dl className="service-definition-list">
             <div>
-              <dt>Repository</dt>
+              <dt>Provider / repository</dt>
               <dd>
                 <a
-                  href={`https://github.com/${binding.repository}`}
+                  href={`https://${binding.provider === 'gitlab' ? 'gitlab.com' : 'github.com'}/${binding.repository}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {binding.repository}
+                  {binding.provider === 'gitlab' ? 'GitLab' : 'GitHub'} / {binding.repository}
                 </a>
               </dd>
             </div>
@@ -81,7 +81,7 @@ export default function ApplicationSource({ application }: { application: Applic
               <dt>Automatic deployment</dt>
               <dd>
                 {binding.auto_deploy
-                  ? 'Enabled for signed push events'
+                  ? 'Enabled for authenticated push events'
                   : 'Off · Review and deploy manually'}
               </dd>
             </div>
@@ -157,7 +157,7 @@ export default function ApplicationSource({ application }: { application: Applic
       )}
       <Note>
         Source review pins the fetched commit and source mapping revision. Private repositories
-        require the installation’s GitHub connection.
+        require the installation’s matching Git provider connection.
       </Note>
       {edit && (
         <SourceForm
@@ -252,6 +252,7 @@ function SourceForm({
   onClose: () => void
   onSaved: () => void
 }) {
+  const [provider, setProvider] = useState<'github' | 'gitlab'>(source?.provider || 'github')
   const [repository, setRepository] = useState(source?.repository || '')
   const [branch, setBranch] = useState(source?.branch || 'main')
   const [path, setPath] = useState(source?.path || 'hakopod.toml')
@@ -264,7 +265,7 @@ function SourceForm({
       onOpenChange={(open) => {
         if (!busy && !open) onClose()
       }}
-      title="Configure GitHub source"
+      title="Configure repository source"
       description="Save the source mapping for this application."
     >
       <form
@@ -278,6 +279,7 @@ function SourceForm({
               client.PUT('/applications/{id}/source', {
                 params: { path: { id: application.id } },
                 body: {
+                  provider,
                   repository,
                   branch,
                   path,
@@ -295,6 +297,16 @@ function SourceForm({
         }}
       >
         <div className="dialog-body auth-form">
+          <label>
+            Git provider
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
+            >
+              <option value="github">GitHub</option>
+              <option value="gitlab">GitLab.com</option>
+            </select>
+          </label>
           <label>
             Repository
             <input
@@ -329,12 +341,12 @@ function SourceForm({
               checked={automatic}
               onChange={(e) => setAutomatic(e.target.checked)}
             />
-            Deploy automatically on signed pushes to this branch
+            Deploy automatically on authenticated pushes to this branch
           </label>
           {automatic && (
             <Note>
-              Every matching signed push will fetch and deploy its configuration with your current
-              authority. Configure the repository webhook through your administrator.
+              Every matching authenticated push will fetch and deploy its configuration with your
+              current authority. Configure the repository webhook through your administrator.
             </Note>
           )}
           {error && (
@@ -357,6 +369,28 @@ function SourceForm({
 }
 
 export function GitHubSettings() {
+  const [provider, setProvider] = useState<'github' | 'gitlab'>('github')
+  return (
+    <>
+      <div className="provider-picker" role="group" aria-label="Git provider">
+        {(['github', 'gitlab'] as const).map((name) => (
+          <Button
+            key={name}
+            aria-pressed={provider === name}
+            variant={provider === name ? 'primary' : 'secondary'}
+            onClick={() => setProvider(name)}
+          >
+            {name === 'github' ? 'GitHub' : 'GitLab'}
+          </Button>
+        ))}
+      </div>
+      <GitConnectionSettings key={provider} provider={provider} />
+    </>
+  )
+}
+function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) {
+  const label = provider === 'github' ? 'GitHub' : 'GitLab'
+  const endpoint = provider === 'github' ? '/integrations/github' : '/integrations/gitlab'
   const [token, setToken] = useState('')
   const [webhook, setWebhook] = useState('')
   const [created, setCreated] = useState('')
@@ -364,15 +398,15 @@ export function GitHubSettings() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const connection = useQuery({
-    queryKey: ['github-settings'],
-    queryFn: ({ signal }) => unwrap(client.GET('/integrations/github', { signal })),
+    queryKey: ['git-settings', provider],
+    queryFn: ({ signal }) => unwrap(client.GET(endpoint, { signal })),
     gcTime: 0,
   })
   return (
     <>
       <div className="section-toolbar">
         <div>
-          <h2>GitHub integration</h2>
+          <h2>{label} integration</h2>
           <p>Repository access and signed push events for connected applications.</p>
         </div>
       </div>
@@ -396,7 +430,7 @@ export function GitHubSettings() {
               <dd>{connection.data?.configured ? 'Configured' : 'Not configured'}</dd>
             </div>
             <div>
-              <dt>GitHub webhook URL</dt>
+              <dt>{label} webhook URL</dt>
               <dd>
                 <span className="copyable-address">
                   <code>
@@ -418,7 +452,7 @@ export function GitHubSettings() {
               setSaved(false)
               try {
                 const result = await unwrap(
-                  client.PUT('/integrations/github', { body: { token, webhook_secret: webhook } }),
+                  client.PUT(endpoint, { body: { token, webhook_secret: webhook } }),
                 )
                 setCreated(result.webhook_secret || '')
                 setToken('')
@@ -433,7 +467,7 @@ export function GitHubSettings() {
             }}
           >
             <label>
-              GitHub personal access token
+              {label} personal access token
               <input
                 type="password"
                 value={token}
@@ -468,7 +502,7 @@ export function GitHubSettings() {
                 {error}
               </div>
             )}
-            {saved && <Note>GitHub connection saved.</Note>}
+            {saved && <Note>{label} connection saved.</Note>}
             {created && (
               <>
                 <Note>Copy this webhook secret now. It will not be shown again.</Note>
@@ -482,15 +516,15 @@ export function GitHubSettings() {
               </>
             )}
             <Button type="submit" variant="primary" disabled={busy || Boolean(created)}>
-              {busy ? 'Saving…' : 'Save GitHub connection'}
+              {busy ? 'Saving…' : `Save ${label} connection`}
             </Button>
           </form>
         </section>
       )}
       <Note>
-        Use the publicly reachable dashboard webhook URL above for JSON push and workflow_run
-        events. The token must have access to the selected repositories; workflow installation also
-        needs permission to write workflow files.
+        {provider === 'gitlab'
+          ? 'Use the publicly reachable dashboard webhook URL above for GitLab Push Hook and Pipeline Hook events. Set the saved webhook secret as the GitLab Secret token. The access token needs permission to read the connected repository.'
+          : 'Use the publicly reachable dashboard webhook URL above for JSON push and workflow_run events. The token must have access to the selected repositories; workflow installation also needs permission to write workflow files.'}
       </Note>
     </>
   )
