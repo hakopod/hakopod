@@ -692,6 +692,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/teams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteTeam"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/teams/{id}/members": {
         parameters: {
             query?: never;
@@ -927,6 +943,103 @@ export interface paths {
         put?: never;
         post: operations["planSourceBuildDeployment"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/license": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getLicenseStatus"];
+        put: operations["activateLicense"];
+        post?: never;
+        delete: operations["removeLicense"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/logs/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryLogs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/terminal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createTerminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/terminal/{session}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One SSE reader; data JSON is {type:output,data:base64} or {type:exit,code:number,message:string}. Human deployment writer only. Four sessions, ten-minute lifetime, two-minute input-idle timeout; authority rechecked every five seconds. */
+        get: operations["terminalOutput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/terminal/{session}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["terminalInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/terminal/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteTerminal"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1231,6 +1344,39 @@ export interface paths {
         put?: never;
         /** @description GitHub push webhook. Requires X-Hub-Signature-256 HMAC, X-GitHub-Delivery and X-GitHub-Event. Bounded durable inbox with retry and duplicate suppression. */
         post: operations["githubWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/gitlab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["gitlabStatus"];
+        put: operations["configureGitLab"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/gitlab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description GitLab.com push webhook authenticated with X-Gitlab-Token and deduplicated by X-Gitlab-Event-UUID. Provider-separated bounded durable inbox. */
+        post: operations["gitlabWebhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1685,6 +1831,8 @@ export interface components {
             revision: number;
             installed_revision: number;
             installed_commit: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
         };
         BuildInput: {
             /** @enum {string} */
@@ -1708,6 +1856,8 @@ export interface components {
             size?: string;
             auto_build?: boolean;
             auto_deploy?: boolean;
+            /** @enum {string} */
+            provider?: "github" | "gitlab";
             expected_config_revision?: number;
         };
         BuildRun: {
@@ -1728,6 +1878,9 @@ export interface components {
             updated_at: string;
             automatic: boolean;
             auto_status: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
+            remote_run_id: number;
         };
         BuildPreview: {
             config: components["schemas"]["BuildConfig"];
@@ -1756,6 +1909,79 @@ export interface components {
                 };
             };
             expected_config_revision: number;
+        };
+        LicenseFeature: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            plan: "free" | "pro";
+            description: string;
+            enabled: boolean;
+        };
+        LicenseStatus: {
+            installation_id: string;
+            revision: number;
+            /** @enum {string} */
+            plan: "free" | "pro";
+            state: string;
+            valid: boolean;
+            issuer_configured: boolean;
+            licensed_to: string;
+            license_id: string;
+            expires_at: string | null;
+            sequence: number;
+            features: string[];
+            catalog: components["schemas"]["LicenseFeature"][];
+        };
+        LogEntry: {
+            /** Format: date-time */
+            timestamp: string;
+            pod: string;
+            service: string;
+            container: string;
+            message: string;
+            severity: string;
+            fields: {
+                [key: string]: unknown;
+            };
+        };
+        LogQuery: {
+            service: string;
+            pod?: string;
+            container?: string;
+            query?: string;
+            since_seconds?: number;
+            limit?: number;
+            tail?: number;
+            previous?: boolean;
+        };
+        LogQueryResult: {
+            entries: components["schemas"]["LogEntry"][];
+            histogram: {
+                /** Format: date-time */
+                timestamp: string;
+                count: number;
+            }[];
+            scanned: number;
+            matched: number;
+            truncated: boolean;
+            pods: number;
+            window_seconds: number;
+            warnings: string[];
+        };
+        TerminalInput: {
+            pod: string;
+            container?: string;
+            command?: string[];
+            cols?: number;
+            rows?: number;
+        };
+        TerminalSession: {
+            id: string;
+            pod: string;
+            container: string;
+            /** Format: date-time */
+            expires_at: string;
         };
         ProxyField: {
             name: string;
@@ -1955,6 +2181,8 @@ export interface components {
         };
         SourceBinding: {
             application_id: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
             repository: string;
             branch: string;
             path: string;
@@ -1986,6 +2214,13 @@ export interface components {
             };
             commit_sha: string;
             expected_source_revision: number;
+        };
+        GitLabStatus: {
+            configured: boolean;
+            token_configured: boolean;
+            webhook_path: string;
+            webhook_secret?: string;
+            private_repositories?: boolean;
         };
         Template: {
             id: string;
@@ -3242,7 +3477,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: string;
+                provider: "github" | "google" | "gitlab";
             };
             cookie?: never;
         };
@@ -3277,7 +3512,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                provider: string;
+                provider: "github" | "google" | "gitlab";
             };
             cookie?: never;
         };
@@ -3619,6 +3854,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Team"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
                 };
             };
             /** @description Error */
@@ -4269,6 +4537,280 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BuildDeployPlan"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getLicenseStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    activateLicense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    license: string;
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeLicense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenseStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    queryLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogQuery"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogQueryResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TerminalInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalSession"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    terminalOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    terminalInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    data?: string;
+                    cols?: number;
+                    rows?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -5126,6 +5668,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * @default github
+                     * @enum {string}
+                     */
+                    provider?: "github" | "gitlab";
                     repository: string;
                     branch: string;
                     path: string;
@@ -5232,6 +5779,107 @@ export interface operations {
         };
     };
     githubWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accepted?: boolean;
+                        ignored?: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    gitlabStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitLabStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    configureGitLab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token?: string;
+                    webhook_secret?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitLabStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    gitlabWebhook: {
         parameters: {
             query?: never;
             header?: never;
