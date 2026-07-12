@@ -12,10 +12,11 @@ Direct package metadata was checked from the npm registry on 2026-09-12.
 | clsx, tailwind-merge | MIT |
 | class-variance-authority, TypeScript | Apache-2.0 |
 | @types/node, @types/react, @types/react-dom | MIT |
+| @xterm/xterm, @xterm/addon-fit | MIT |
+| Space Grotesk font | SIL Open Font License 1.1 |
 
 No Railway, Render, Vercel, Coolify, or Dokploy brand assets are redistributed.
-The custom logo and small outline icon set were drawn for Hakopod. No external
-fonts are bundled.
+The supplied Hakopod Open Port identity kit provides the logo. Space Grotesk is self-hosted from that kit; its license is preserved in `../packages/ui/assets/OFL.txt`. No external font service is contacted. The compact outline icons are local vectors.
 
 Local UI component patterns are based on shadcn/ui's published conventions.
 The upstream [shadcn/ui license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md)

@@ -1,4 +1,78 @@
-# Expanded dashboard — production HTTP verified; browser checks pending
+# Cockpit and design-system expansion — 2026-09-12
+
+The current dashboard builds and runs in production with the shared local
+`@hakopod/ui` package, supplied Hakopod brand assets, application/node inspectors,
+dependency topology, SQL-like log explorer, pod/database terminal, signed-license
+settings, paid-feature gates, and GitHub/GitLab source/build choices.
+The user has now claimed the live installation. Earlier references below to an
+unclaimed installation record the state at the time of those historical checks.
+
+Current checks passed after regenerating the aggregate OpenAPI and TypeScript
+contracts, including GitLab build provider/run fields and safe team deletion:
+
+- `pnpm typecheck`, `pnpm format:check`, and production `pnpm build`.
+- All 19 tests: 16 server/security tests and three regressions bundled from
+  actual TSX/code. New coverage includes GitLab raw webhook byte/header isolation,
+  exact webhook paths/methods/body bounds, tiny request allocation, and terminal
+  SSE framing. The terminal parser accepts over 128 KiB of coalesced valid frames,
+  preserves split UTF-8 bytes, and rejects oversized output or incomplete frames.
+- Isolated production HTTP smoke using `scripts/serve.mjs`, a random in-memory
+  session secret, and ephemeral loopback port 61345. Real SSR and static CSS,
+  unauthorized access, both public webhook method restrictions, mutation Origin
+  rejection, and the sign-in body bound passed. This public-only smoke did not
+  authenticate to Go or create an account. Its temporary process was removed;
+  the existing dashboard on port 4173 was untouched by this check.
+- Production SSR contains bundled UI code, with no runtime import of raw
+  `@hakopod/ui` TSX. The client contains neither the configured session secret nor
+  `HAKOPOD_SESSION_SECRET`, `HAKOPOD_API_URL`, or `node:crypto`. Only pass/fail
+  results were printed. Initial SSR HTML does not preload the xterm engine.
+
+The direct srvx adapter resolves static assets explicitly and has no per-request
+access logger. This avoids logging OAuth callback query credentials. Ordinary
+API forwarding remains bounded to 30 seconds; terminal output uses an
+eleven-minute BFF timeout around the server's ten-minute lifetime.
+
+## Current resource measurements
+
+The complete client output has 41 JavaScript chunks: 1,099,398 bytes raw and
+333,929 bytes when each file is gzipped at level 9. The main entry is 397,117
+bytes raw / 125,002 bytes gzip. The optional xterm engine is a separate 331,178
+byte raw / 81,915 byte gzip chunk, imported only after Connect; the fit addon is
+also separate. All CSS totals 86,893 bytes raw / 17,550 bytes gzip. The self-hosted
+Space Grotesk variable font is 136,676 bytes raw / 63,683 bytes gzip. These are
+build comparison sizes, not measured network transfer or initial-route totals.
+
+The isolated production Node process was observed at 93,248 KiB RSS (about
+91 MiB) immediately after public smoke. The production command retains the
+192 MiB old-space cap. This point-in-time measurement is not a peak, concurrency
+benchmark, browser-memory measurement, or RSS guarantee.
+
+Explicit bounds include 25 applications per list page; immediate release of
+unobserved full application/deployment queries; 60-second collection for small
+metadata; 32 topology services; 1,000 queried log entries; and 1,000 lines /
+256 KiB for live logs. Live logs render at most four times per second and stop
+in hidden tabs. Terminal scrollback is 500 lines, queued input is at most 16 KiB,
+input/output blocks are at most 4 KiB, and incomplete SSE frames are at most
+16 KiB. Rendering applies backpressure to terminal reads. Small proxied input
+starts with at most a 4 KiB allocation instead of reserving the 1 MiB body limit.
+Go independently limits terminal sessions to four globally, ten minutes total,
+and two minutes idle. Session closure runs when the terminal panel is left.
+
+## Current verification limits
+
+The browser connector returned “Codex auth token is unavailable.” No new visual
+browser, keyboard, responsive-layout, or browser-memory verification is claimed
+for this expansion. The historical screenshots and authenticated checks below
+describe earlier dashboard builds. Current Go/provider/cluster acceptance is
+reported separately by the repository's test and acceptance results; the UI
+build and public HTTP smoke do not establish those behaviors.
+
+No external provider write, invitation email, live owner setup, license issuance,
+pod command, or cluster mutation was performed by these dashboard checks.
+
+---
+
+# Historical expanded dashboard — production HTTP verified; browser checks pending
 
 The expanded dashboard is implemented and the production bundle built successfully
 on 2026-09-12. The previous foundation verification below remains historical
@@ -35,7 +109,8 @@ PostgreSQL database verified first-owner setup, email/password login, encrypted
 Strict/HttpOnly cookies, authenticated proxying, ten account/platform routes,
 team creation/membership, CSRF/path/body limits, logout and subsequent HTTP 401
 from Go for the revoked session. The disposable database, credentials, logs and
-both temporary processes were removed. The live installation remains unclaimed.
+both temporary processes were removed. The live installation was unclaimed at
+the time of that check; the user has since claimed it.
 
 The browser connector returned “Codex auth token is unavailable,” and native
 Codex access was denied. New screens therefore have no claimed visual browser
@@ -49,7 +124,7 @@ empty name, email and password fields.
 
 ---
 
-# Dashboard verification — 2026-09-12
+# Historical foundation dashboard verification — 2026-09-12
 
 ## Completed
 
