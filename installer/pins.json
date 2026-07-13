@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-12",
+  "k3s": {
+    "version": "v1.35.8+k3s1",
+    "amd64": {"url": "https://github.com/k3s-io/k3s/releases/download/v1.35.8%2Bk3s1/k3s", "sha256": "12f81c9bb5b71e098a4f7a2d187e350902a9339a6c3d5e56c20a03f7a417e07f"},
+    "arm64": {"url": "https://github.com/k3s-io/k3s/releases/download/v1.35.8%2Bk3s1/k3s-arm64", "sha256": "898476e008704289382377ef19946f23b511cf2678042cb5c8aef991e64f840a"}
+  },
+  "helm": {
+    "version": "v3.22.0",
+    "amd64": {"url": "https://get.helm.sh/helm-v3.22.0-linux-amd64.tar.gz", "sha256": "1e4ab49e429626cf6c6958d914248b78c9730803c2751b87627e171dc800e7bb"},
+    "arm64": {"url": "https://get.helm.sh/helm-v3.22.0-linux-arm64.tar.gz", "sha256": "f14e804dfee240f55525b667488fe9adca349e63e00c9af634c0beb1421ac310"}
+  },
+  "node": {
+    "version": "v24.21.0",
+    "amd64": {"url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz", "sha256": "6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"},
+    "arm64": {"url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz", "sha256": "724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5"}
+  },
+  "postgres": "postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+  "sources": [
+    "https://github.com/k3s-io/k3s/releases/tag/v1.35.8%2Bk3s1",
+    "https://github.com/k3s-io/k3s/releases/download/v1.35.8%2Bk3s1/sha256sum-amd64.txt",
+    "https://github.com/k3s-io/k3s/releases/download/v1.35.8%2Bk3s1/sha256sum-arm64.txt",
+    "https://get.helm.sh/helm-v3.22.0-linux-amd64.tar.gz.sha256sum",
+    "https://get.helm.sh/helm-v3.22.0-linux-arm64.tar.gz.sha256sum",
+    "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt"
+  ]
+}

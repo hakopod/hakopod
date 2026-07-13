@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "version": "0.1.0-dev",
+  "app_domain": "apps.example.com",
+  "node_ip": "192.0.2.10",
+  "node_name": "hakopod-server",
+  "supervisor_host": "192.0.2.10",
+  "dashboard_mode": "ssh",
+  "dashboard_origin": "http://localhost:3000",
+  "dashboard_port": 3000,
+  "tls_cert_file": "",
+  "tls_key_file": "",
+  "acme": "off",
+  "acme_email": "",
+  "storage": false,
+  "k3s_memory_mib": 2048,
+  "api_memory_mib": 256,
+  "dashboard_memory_mib": 320,
+  "postgres_memory_mib": 256,
+  "max_pods": 50
+}
