@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Trust-boundary tests; no root, systemd or real cluster mutation."""
+import hashlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import subprocess
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+
+HERE = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('host', HERE / 'host.py')
+host = importlib.util.module_from_spec(spec); spec.loader.exec_module(host)
+
+class InstallerTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.config = dict(host.DEFAULTS, app_domain='apps.example.test', node_ip='192.0.2.10', acme='off')
+    def config_file(self, changes=None):
+        path = self.root / 'config.json'; path.write_text(json.dumps(dict(self.config, **(changes or {})))); return path
+    def bundle(self, entries):
+        path = self.root / 'sample.tar.gz'
+        with tarfile.open(path, 'w:gz') as archive:
+            for name, kind, content in entries:
+                entry = tarfile.TarInfo(name)
+                if kind == 'link': entry.type = tarfile.SYMTYPE; entry.linkname = content; archive.addfile(entry)
+                elif kind == 'hardlink': entry.type = tarfile.LNKTYPE; entry.linkname = content; archive.addfile(entry)
+                else: entry.size = len(content); archive.addfile(entry, io.BytesIO(content))
+        return path
+    def test_configuration_is_strict_and_never_shell(self):
+        self.assertEqual(host.config(self.config_file())['supervisor_host'], '192.0.2.10')
+        for changes in ({'unknown': True}, {'schema_version': 2}, {'max_pods': True},
+            {'app_domain': 'apps.test;touch /tmp/pwned'}, {'node_ip': '127.0.0.1'},
+            {'dashboard_port': 6443}, {'dashboard_origin': 'http://example.test:3000'},
+            {'dashboard_origin': 'http://localhost:3000/'}, {'acme': 'production'}, {'storage': 'false'}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError): host.config(self.config_file(changes))
+        path = self.root / 'duplicate.json'; path.write_text('{"schema_version":1,"schema_version":1}')
+        with self.assertRaisesRegex(ValueError, 'Duplicate'): host.config(path)
+    def test_https_requires_separate_domain_and_matching_port(self):
+        valid = dict(dashboard_mode='https', dashboard_port=8443, dashboard_origin='https://console.example.test:8443', tls_cert_file='/root/chain.pem', tls_key_file='/root/key.pem')
+        self.assertEqual(host.config(self.config_file(valid))['dashboard_mode'], 'https')
+        for origin in ('https://foo.apps.example.test:8443', 'https://apps.example.test:8443', 'https://console.example.test', 'https://user@console.example.test:8443'):
+            with self.assertRaises(ValueError): host.config(self.config_file(dict(valid, dashboard_origin=origin)))
+    def test_archive_rejects_traversal_links_devices_duplicates(self):
+        bad = [
+            [('../escape', 'file', b'x')], [('/absolute', 'file', b'x')],
+            [('wrong-root/file', 'file', b'x')], [('bundle/link', 'link', '/etc/passwd')],
+            [('bundle/link', 'link', '../../outside')], [('bundle/link', 'hardlink', 'bundle/file')],
+            [('bundle/link', 'link', 'target'), ('bundle/link/child', 'file', b'x')],
+            [('bundle/file', 'file', b'x'), ('bundle/file', 'file', b'y')],
+        ]
+        for entries in bad:
+            with self.subTest(entries=entries), self.assertRaises(ValueError):
+                host.unpack(self.bundle(entries), self.root / 'out', 'bundle')
+            self.assertFalse((self.root / 'out').exists(), 'Archive is validated before extraction starts')
+    def test_archive_keeps_internal_package_links_and_file_bytes(self):
+        source = self.bundle([('bundle/node_modules/pkg', 'link', '.store/pkg'), ('bundle/node_modules/.store/pkg/index.js', 'file', b'export default 1')])
+        host.unpack(source, self.root / 'out', 'bundle')
+        self.assertEqual((self.root / 'out/bundle/node_modules/pkg/index.js').read_bytes(), b'export default 1')
+    def test_artifact_checksum_and_dry_run_do_not_write_state(self):
+        path = self.config_file()
+        for suffix in ('linux_arm64', 'dashboard'):
+            name = 'hakopod_0.1.0-dev_' + suffix + '.tar.gz'; (self.root / name).write_bytes(b'fixture only')
+        manifest = self.root / 'SHA256SUMS'
+        manifest.write_text(''.join(host.digest(p) + '  ' + p.name + '\n' for p in sorted(self.root.glob('*.tar.gz'))))
+        before = sorted(p.name for p in self.root.iterdir())
+        result = subprocess.run(['bash', str(HERE.parent / 'scripts/install.sh'), '--config', str(path), '--artifact-dir', str(self.root), '--dry-run', '--arch', 'arm64'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('No host paths, services, credentials or cluster resources are changed', result.stdout)
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), before)
+        (self.root / 'hakopod_0.1.0-dev_dashboard.tar.gz').write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'): host.artifacts(self.root, self.config, 'arm64')
+    def test_resume_fingerprint_binds_config_pins_and_bytes(self):
+        first = host.fingerprint(self.config, 'arm64', {'archive': 'a' * 64})
+        for config, arch, artifacts in [(dict(self.config, max_pods=60), 'arm64', {'archive': 'a' * 64}), (self.config, 'amd64', {'archive': 'a' * 64}), (self.config, 'arm64', {'archive': 'b' * 64})]:
+            self.assertNotEqual(host.fingerprint(config, arch, artifacts), first)
+    def test_foreign_kubernetes_objects_are_refused(self):
+        path = self.root / 'object.json'
+        path.write_text(json.dumps({'kind': 'Secret', 'metadata': {'name': 'postgres', 'labels': {}}}))
+        with self.assertRaisesRegex(ValueError, 'unrelated'): host.owned(path, 'a' * 32)
+        path.write_text(json.dumps({'kind': 'Secret', 'metadata': {'name': 'postgres', 'labels': {host.LABEL: 'a' * 32}}}))
+        host.owned(path, 'a' * 32)
+    def test_rendered_limits_secrets_and_ingress_exposure(self):
+        secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
+        with patch.object(host, 'regular', return_value=secret): host.render(self.config, 'arm64', 'b' * 32, self.root / 'render')
+        rendered = self.root / 'render'
+        pg = json.loads((rendered / 'postgres.json').read_text())['items']
+        deployment = next(item for item in pg if item['kind'] == 'Deployment')
+        self.assertEqual(deployment['spec']['template']['spec']['containers'][0]['resources']['limits']['memory'], '256Mi')
+        pv = next(item for item in pg if item['kind'] == 'PersistentVolume')
+        self.assertEqual(pv['spec']['persistentVolumeReclaimPolicy'], 'Retain')
+        ingress = json.loads((rendered / 'haproxy.json').read_text())['kubernetes-ingress']['controller']
+        self.assertEqual(ingress['deployment']['hostPorts'], {'http': 80, 'https': 443, 'stat': 0})
+        self.assertEqual(ingress['service']['type'], 'ClusterIP')
+        self.assertIn('MemoryMax=256M', (rendered / 'hakopod-api.service').read_text())
+        self.assertIn('127.0.0.1:8080', (rendered / 'api.env').read_text())
+        self.assertFalse((rendered / 'api.env').stat().st_mode & 0o077)
+    def test_secret_file_symlink_and_permissions_rejected(self):
+        path = self.root / 'secret'; path.write_text('never print this'); path.chmod(0o644)
+        with self.assertRaises(ValueError): host.regular(path, True)
+        path.chmod(0o600); link = self.root / 'link'; link.symlink_to(path)
+        with self.assertRaises(ValueError): host.regular(link, True)
+
+if __name__ == '__main__': unittest.main(verbosity=2)
