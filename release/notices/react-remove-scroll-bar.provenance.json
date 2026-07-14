@@ -1,0 +1,10 @@
+{
+  "package": "react-remove-scroll-bar",
+  "package_version": "2.3.8",
+  "declared_license": "MIT",
+  "registry_metadata": "https://registry.npmjs.org/react-remove-scroll-bar/2.3.8",
+  "registry_git_head": "b3b1287aad81def2e2ae707274b74531b61ddbaf",
+  "license_source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+  "retrieved_at": "2026-09-12",
+  "scope": "Upstream repository MIT license preserved because npm package omits its license text. The registry gitHead did not resolve publicly; this observed repository commit identifies package version2.3.7, so an exact2.3.8 source-commit match is not claimed."
+}
