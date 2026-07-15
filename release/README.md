@@ -1,5 +1,7 @@
 # Local release preparation
 
+The dedicated Linux installer is described in [installer/README.md](../installer/README.md). After the Go release build below, run `python3 release/build-installer.py` to build a separate local kit containing the actual dashboard runtime and installer inputs. Its output lives in `.local/installer-artifacts/<version>/`; no published download location is assumed. `python3 release/smoke-installer.py --arch arm64 --arch amd64` verifies the exact archives in disposable, memory-limited Linux containers. This verifies packaging/runtime, permissions and templates, not a full systemd/K3s host install. The original Go and dependency-lock SBOM scope below remains distinct.
+
 Run from the repository root after the source and dashboard lockfile are stable:
 
 ```sh
