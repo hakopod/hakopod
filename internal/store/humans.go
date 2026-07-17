@@ -96,7 +96,14 @@ func (p Principal) CanManageProject(project string) bool {
 	return false
 }
 func (s *Store) projectRoles(ctx context.Context, id string) ([]ProjectRole, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT project,role FROM project_members WHERE identity_id=$1 UNION SELECT pt.project,pt.role FROM project_teams pt JOIN team_members tm ON tm.team_id=pt.team_id WHERE tm.identity_id=$1 ORDER BY project,role LIMIT 400`, id)
+	status, err := s.LicenseStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !licenseAllows(status, "project_rbac") {
+		return []ProjectRole{}, nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT project,role FROM project_members WHERE identity_id=$1 UNION SELECT pt.project,pt.role FROM project_teams pt JOIN team_members tm ON tm.team_id=pt.team_id WHERE tm.identity_id=$1 AND $2 ORDER BY project,role LIMIT 400`, id, licenseAllows(status, "teams"))
 	if err != nil {
 		return nil, err
 	}

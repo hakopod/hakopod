@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/license"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,7 +27,11 @@ var ErrConflict = errors.New("revision or idempotency conflict")
 var ErrUnauthorized = errors.New("credential is invalid, expired, revoked, or disabled")
 var ErrForbidden = errors.New("credential does not allow this operation in the requested scope")
 
-type Store struct{ Pool *pgxpool.Pool }
+type Store struct {
+	Pool *pgxpool.Pool
+	// Trusted embedding/test configuration; never supplied by a request.
+	LicenseVerifier *license.Verifier
+}
 
 func Open(ctx context.Context, url string) (*Store, error) {
 	c, err := pgxpool.ParseConfig(url)
@@ -46,7 +51,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		p.Close()
 		return nil, err
 	}
-	return &Store{Pool: p}, nil
+	return &Store{Pool: p, LicenseVerifier: license.ReleaseVerifier()}, nil
 }
 func (s *Store) Close() { s.Pool.Close() }
 func (s *Store) Migrate(ctx context.Context) error {

@@ -24,9 +24,38 @@ type TeamMember struct {
 	Role  string `json:"role"`
 }
 
+// Deletion remains available to the recovery administrator without Pro. Foreign
+// keys remove memberships, project-team grants and pending team invitations.
+func (s *Store) DeleteTeam(ctx context.Context, p Principal, id string) error {
+	if p.CredentialType != "browser" || !p.IsAdmin() {
+		return ErrForbidden
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, "DELETE FROM teams WHERE id=$1", id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'team.delete',$3)", p.ID, p.KeyID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) Teams(ctx context.Context, p Principal) ([]Team, error) {
 	if p.CredentialType != "browser" {
 		return nil, ErrForbidden
+	}
+	if !p.IsAdmin() {
+		if err := s.RequireFeatures(ctx, "teams"); err != nil {
+			return nil, err
+		}
 	}
 	rows, err := s.Pool.Query(ctx, "SELECT t.id,t.name,COALESCE(m.role,'admin') FROM teams t LEFT JOIN team_members m ON m.team_id=t.id AND m.identity_id=$1 WHERE $2 OR m.identity_id IS NOT NULL ORDER BY t.name,t.id LIMIT 100", p.ID, p.IsAdmin())
 	if err != nil {
@@ -56,6 +85,9 @@ func (s *Store) CreateTeam(ctx context.Context, p Principal, name string) (Team,
 		return Team{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = s.requireFeaturesTx(ctx, tx, "teams"); err != nil {
+		return Team{}, err
+	}
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044214)"); err != nil {
 		return Team{}, err
 	}
@@ -82,6 +114,9 @@ func (s *Store) CanManageTeam(ctx context.Context, p Principal, id string) bool 
 	if p.IsAdmin() {
 		return true
 	}
+	if s.RequireFeatures(ctx, "teams") != nil {
+		return false
+	}
 	var yes bool
 	err := s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id=$1 AND identity_id=$2 AND role IN ('owner','admin'))", id, p.ID).Scan(&yes)
 	return err == nil && yes
@@ -89,6 +124,11 @@ func (s *Store) CanManageTeam(ctx context.Context, p Principal, id string) bool 
 func (s *Store) TeamMembers(ctx context.Context, p Principal, id string) ([]TeamMember, error) {
 	if p.CredentialType != "browser" {
 		return nil, ErrForbidden
+	}
+	if !p.IsAdmin() {
+		if err := s.RequireFeatures(ctx, "teams"); err != nil {
+			return nil, err
+		}
 	}
 	var member bool
 	if err := s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id=$1 AND identity_id=$2)", id, p.ID).Scan(&member); err != nil {
@@ -124,6 +164,11 @@ func (s *Store) SetTeamMember(ctx context.Context, p Principal, team, id, role s
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if role != "" {
+		if err = s.requireFeaturesTx(ctx, tx, "teams"); err != nil {
+			return err
+		}
+	}
 	var current string
 	err = tx.QueryRow(ctx, "SELECT role FROM team_members WHERE team_id=$1 AND identity_id=$2 FOR UPDATE", team, id).Scan(&current)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -155,21 +200,37 @@ func (s *Store) SetProjectMember(ctx context.Context, p Principal, project, id, 
 	if role != "" && !contains([]string{"admin", "developer", "viewer"}, role) {
 		return ErrInput
 	}
-	var err error
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if role != "" {
+		features := []string{"project_rbac"}
+		if team != "" {
+			features = append(features, "teams")
+		}
+		if err = s.requireFeaturesTx(ctx, tx, features...); err != nil {
+			return err
+		}
+	}
 	if id != "" {
 		if role == "" {
-			_, err = s.Pool.Exec(ctx, "DELETE FROM project_members WHERE project=$1 AND identity_id=$2", project, id)
+			_, err = tx.Exec(ctx, "DELETE FROM project_members WHERE project=$1 AND identity_id=$2", project, id)
 		} else {
-			_, err = s.Pool.Exec(ctx, "INSERT INTO project_members(project,identity_id,role) SELECT $1,id,$3 FROM identities WHERE id=$2 AND email IS NOT NULL ON CONFLICT(project,identity_id) DO UPDATE SET role=EXCLUDED.role", project, id, role)
+			_, err = tx.Exec(ctx, "INSERT INTO project_members(project,identity_id,role) SELECT $1,id,$3 FROM identities WHERE id=$2 AND email IS NOT NULL ON CONFLICT(project,identity_id) DO UPDATE SET role=EXCLUDED.role", project, id, role)
 		}
 	} else {
 		if role == "" {
-			_, err = s.Pool.Exec(ctx, "DELETE FROM project_teams WHERE project=$1 AND team_id=$2", project, team)
+			_, err = tx.Exec(ctx, "DELETE FROM project_teams WHERE project=$1 AND team_id=$2", project, team)
 		} else {
-			_, err = s.Pool.Exec(ctx, "INSERT INTO project_teams(project,team_id,role) VALUES($1,$2,$3) ON CONFLICT(project,team_id) DO UPDATE SET role=EXCLUDED.role", project, team, role)
+			_, err = tx.Exec(ctx, "INSERT INTO project_teams(project,team_id,role) VALUES($1,$2,$3) ON CONFLICT(project,team_id) DO UPDATE SET role=EXCLUDED.role", project, team, role)
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 type ProjectMember struct {
@@ -182,6 +243,11 @@ type ProjectMember struct {
 func (s *Store) ProjectMembers(ctx context.Context, p Principal, project string) ([]ProjectMember, error) {
 	if p.CredentialType != "browser" || !p.CanManageProject(project) {
 		return nil, ErrForbidden
+	}
+	if !p.IsAdmin() {
+		if err := s.RequireFeatures(ctx, "project_rbac"); err != nil {
+			return nil, err
+		}
 	}
 	rows, err := s.Pool.Query(ctx, "SELECT m.identity_id,'' AS team_id,i.name,m.role FROM project_members m JOIN identities i ON i.id=m.identity_id WHERE m.project=$1 UNION ALL SELECT '',t.id,t.name,m.role FROM project_teams m JOIN teams t ON t.id=m.team_id WHERE m.project=$1 LIMIT 200", project)
 	if err != nil {
@@ -240,6 +306,16 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 		return v, "", err
 	}
 	defer tx.Rollback(ctx)
+	features := []string{"invitations"}
+	if team != "" {
+		features = append(features, "teams")
+	}
+	if project != "" {
+		features = append(features, "project_rbac")
+	}
+	if err = s.requireFeaturesTx(ctx, tx, features...); err != nil {
+		return v, "", err
+	}
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044215)"); err != nil {
 		return v, "", err
 	}
@@ -262,6 +338,9 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 	return v, v.ID + "." + token, tx.Commit(ctx)
 }
 func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, p *Principal) (string, error) {
+	if err := s.RequireFeatures(ctx, "invitations"); err != nil {
+		return "", err
+	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 || len(parts[0]) != 32 || len(parts[1]) != 64 {
 		return "", ErrUnauthorized
@@ -296,6 +375,16 @@ func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, 
 	}
 	if subtle.ConstantTimeCompare(digest[:], want) != 1 {
 		return "", ErrUnauthorized
+	}
+	features := []string{"invitations"}
+	if team != "" {
+		features = append(features, "teams")
+	}
+	if project != "" {
+		features = append(features, "project_rbac")
+	}
+	if err = s.requireFeaturesTx(ctx, tx, features...); err != nil {
+		return "", err
 	}
 	var id string
 	if p != nil {
