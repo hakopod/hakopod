@@ -46,6 +46,8 @@ func TestOAuthVerifiedIdentityStateAndPKCE(t *testing.T) {
 			json.NewEncoder(w).Encode([]map[string]any{{"email": "owner@example.test", "primary": true, "verified": !unverified.Load()}})
 		case "/userinfo":
 			json.NewEncoder(w).Encode(map[string]any{"sub": "google-owner-subject", "email": "owner@example.test", "email_verified": !unverified.Load(), "name": "Provider Owner"})
+		case "/gitlab/userinfo":
+			json.NewEncoder(w).Encode(map[string]any{"sub": "gitlab-owner-subject", "email": "owner@example.test", "email_verified": !unverified.Load(), "name": "Provider Owner"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -62,6 +64,11 @@ func TestOAuthVerifiedIdentityStateAndPKCE(t *testing.T) {
 		c.GoogleAuthURL = provider.URL + "/authorize"
 		c.GoogleTokenURL = provider.URL + "/token"
 		c.GoogleUserInfoURL = provider.URL + "/userinfo"
+		c.GitLabClientID = "gitlab-test"
+		c.GitLabClientSecret = "provider-secret"
+		c.GitLabAuthURL = provider.URL + "/authorize"
+		c.GitLabTokenURL = provider.URL + "/token"
+		c.GitLabUserInfoURL = provider.URL + "/gitlab/userinfo"
 	})
 	ownerToken := h.owner()
 	owner := h.call("GET", "/me", ownerToken, nil, 200)
@@ -116,7 +123,7 @@ func TestOAuthVerifiedIdentityStateAndPKCE(t *testing.T) {
 		}
 		return out
 	}
-	for _, name := range []string{"github", "google"} {
+	for _, name := range []string{"github", "google", "gitlab"} {
 		state, cookie := begin(name)
 		result := callback(name, state, cookie, 200)
 		if result["user"].(map[string]any)["id"] != owner["id"] {
@@ -131,7 +138,9 @@ func TestOAuthVerifiedIdentityStateAndPKCE(t *testing.T) {
 	unverified.Store(true)
 	state, cookie = begin("google")
 	callback("google", state, cookie, 401)
-	t.Log("GitHub/Google token exchange, verified email identity, S256 PKCE, HttpOnly state binding, replay and unverified-email rejection verified against local provider mocks")
+	state, cookie = begin("gitlab")
+	callback("gitlab", state, cookie, 401)
+	t.Log("GitHub/Google/GitLab token exchange, verified email identity, S256 PKCE, HttpOnly state binding, replay and unverified-email rejection verified against local provider mocks")
 }
 
 func TestInvitationSMTPOnlyLocalFixture(t *testing.T) {

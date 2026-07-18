@@ -49,6 +49,9 @@ authroute("/auth/device/approve","post","approveDeviceAuthorization",obj({"appro
 authroute("/auth/oauth/{provider}/start","get","startProviderLogin",obj({}),status="302",public=True)
 authroute("/auth/oauth/{provider}/callback","get","finishProviderLogin",{"oneOf":[ref("HumanSessionCreated"),obj({"mfa_required":B,"challenge":S},["mfa_required","challenge"])]},public=True)
 paths["/auth/oauth/{provider}/callback"]["get"]["parameters"] += [{"name":v,"in":"query","schema":S} for v in ["state","code","error"]]
+for path in ["/auth/oauth/{provider}/start","/auth/oauth/{provider}/callback"]:
+    for parameter in paths[path]["get"]["parameters"]:
+        if parameter["name"] == "provider":parameter["schema"]={"type":"string","enum":["github","google","gitlab"]}
 authroute("/auth/passkeys/register/start","post","beginPasskeyRegistration",ref("PasskeyChallenge"),obj({"name":S,"password":S,"code":S},["name","password"]))
 authroute("/auth/passkeys/register/finish","post","finishPasskeyRegistration",obj({"id":S,"name":S},["id","name"]),obj({"challenge":S,"credential":mapping({})},["challenge","credential"]),"201")
 authroute("/auth/passkeys/login/start","post","beginPasskeyLogin",ref("PasskeyChallenge"),obj({}),public=True)
@@ -58,6 +61,7 @@ authroute("/users","get","listUsers",items("User"))
 authroute("/users/{id}","patch","updateUser",obj({"updated":B},["updated"]),obj({"disabled":B,"admin":B},["disabled","admin"]))
 authroute("/teams","get","listTeams",items("Team"))
 authroute("/teams","post","createTeam",ref("Team"),obj({"name":S},["name"]),"201")
+authroute("/teams/{id}","delete","deleteTeam",obj({"deleted":B},["deleted"]))
 authroute("/teams/{id}/members","get","listTeamMembers",items("TeamMember"))
 authroute("/teams/{id}/members/{user}","put","setTeamMember",obj({"updated":B},["updated"]),obj({"role":S},["role"]))
 authroute("/teams/{id}/invites","post","createTeamInvite",ref("InviteCreated"),obj({"email":S,"role":S,"project":S,"deliver":B},["email","role"]),"201")

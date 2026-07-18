@@ -31,7 +31,7 @@ func TestInstallationSecretFileRestrictions(t *testing.T) {
 }
 
 func TestAuthOriginAndProviderConfiguration(t *testing.T) {
-	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED"} {
+	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_ID", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED"} {
 		t.Setenv(name, "")
 	}
 	for _, origin := range []string{"http://dashboard.example.com", "https://dashboard.example.com/path", "https://user@dashboard.example.com", "https://dashboard.example.com?token=example"} {
@@ -48,5 +48,15 @@ func TestAuthOriginAndProviderConfiguration(t *testing.T) {
 	t.Setenv("HAKOPOD_GITHUB_CLIENT_ID", "configured-client")
 	if _, err = authConfig(); err == nil {
 		t.Fatal("partially configured OAuth provider was accepted")
+	}
+	t.Setenv("HAKOPOD_GITHUB_CLIENT_ID", "")
+	t.Setenv("HAKOPOD_GITLAB_CLIENT_ID", "gitlab-client")
+	if _, err = authConfig(); err == nil {
+		t.Fatal("partial GitLab provider configuration accepted")
+	}
+	t.Setenv("HAKOPOD_GITLAB_CLIENT_SECRET", "gitlab-secret")
+	c, err = authConfig()
+	if err != nil || c.GitLabClientID != "gitlab-client" || c.GitLabClientSecret != "gitlab-secret" {
+		t.Fatal("GitLab provider configuration did not load")
 	}
 }

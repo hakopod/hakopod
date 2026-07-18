@@ -41,6 +41,7 @@ func authConfig() (api.AuthConfig, error) {
 	}
 	c := api.AuthConfig{PublicURL: env("HAKOPOD_WEB_ORIGIN", "http://127.0.0.1:4173"), SetupSecret: setup, EncryptionKey: encryption,
 		GitHubClientID: os.Getenv("HAKOPOD_GITHUB_CLIENT_ID"), GitHubClientSecret: os.Getenv("HAKOPOD_GITHUB_CLIENT_SECRET"), GoogleClientID: os.Getenv("HAKOPOD_GOOGLE_CLIENT_ID"), GoogleClientSecret: os.Getenv("HAKOPOD_GOOGLE_CLIENT_SECRET"),
+		GitLabClientID: os.Getenv("HAKOPOD_GITLAB_CLIENT_ID"), GitLabClientSecret: os.Getenv("HAKOPOD_GITLAB_CLIENT_SECRET"),
 		SMTPAddress: os.Getenv("HAKOPOD_SMTP_ADDRESS"), SMTPUsername: os.Getenv("HAKOPOD_SMTP_USERNAME"), SMTPPassword: os.Getenv("HAKOPOD_SMTP_PASSWORD"), SMTPFrom: os.Getenv("HAKOPOD_SMTP_FROM"), SMTPAllowDelivery: os.Getenv("HAKOPOD_SMTP_ENABLED") == "true"}
 	u, e := url.Parse(c.PublicURL)
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -67,7 +68,7 @@ func authConfig() (api.AuthConfig, error) {
 			return c, fmt.Errorf("auth encryption key must encode exactly 32 random bytes as base64 or hex")
 		}
 	}
-	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") || (c.GoogleClientID == "") != (c.GoogleClientSecret == "") {
+	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") || (c.GoogleClientID == "") != (c.GoogleClientSecret == "") || (c.GitLabClientID == "") != (c.GitLabClientSecret == "") {
 		return c, fmt.Errorf("each OAuth client ID requires its matching client secret")
 	}
 	if c.SMTPAllowDelivery {

@@ -45,6 +45,17 @@ func (s *Server) oauthConfig(provider string) (*oauth2.Config, error) {
 		if s.Auth.GoogleTokenURL != "" {
 			c.Endpoint.TokenURL = s.Auth.GoogleTokenURL
 		}
+	case "gitlab":
+		c.ClientID = s.Auth.GitLabClientID
+		c.ClientSecret = s.Auth.GitLabClientSecret
+		c.Endpoint = oauth2.Endpoint{AuthURL: "https://gitlab.com/oauth/authorize", TokenURL: "https://gitlab.com/oauth/token", AuthStyle: oauth2.AuthStyleInParams}
+		c.Scopes = []string{"openid", "email", "profile"}
+		if s.Auth.GitLabAuthURL != "" {
+			c.Endpoint.AuthURL = s.Auth.GitLabAuthURL
+		}
+		if s.Auth.GitLabTokenURL != "" {
+			c.Endpoint.TokenURL = s.Auth.GitLabTokenURL
+		}
 	default:
 		return nil, store.ErrInput
 	}
@@ -128,9 +139,20 @@ func (s *Server) providerIdentity(ctx context.Context, client *http.Client, prov
 		}
 		return oauthIdentity{}, store.ErrUnauthorized
 	}
-	endpoint := "https://openidconnect.googleapis.com/v1/userinfo"
-	if s.Auth.GoogleUserInfoURL != "" {
-		endpoint = s.Auth.GoogleUserInfoURL
+	var endpoint string
+	switch provider {
+	case "google":
+		endpoint = "https://openidconnect.googleapis.com/v1/userinfo"
+		if s.Auth.GoogleUserInfoURL != "" {
+			endpoint = s.Auth.GoogleUserInfoURL
+		}
+	case "gitlab":
+		endpoint = "https://gitlab.com/oauth/userinfo"
+		if s.Auth.GitLabUserInfoURL != "" {
+			endpoint = s.Auth.GitLabUserInfoURL
+		}
+	default:
+		return oauthIdentity{}, store.ErrUnauthorized
 	}
 	var u struct {
 		Sub      string `json:"sub"`
