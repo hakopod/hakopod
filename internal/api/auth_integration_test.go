@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
@@ -29,22 +30,24 @@ import (
 )
 
 type authHarness struct {
-	t      *testing.T
-	server *httptest.Server
-	db     *store.Store
-	config api.AuthConfig
+	t          *testing.T
+	server     *httptest.Server
+	db         *store.Store
+	config     api.AuthConfig
+	licenseKey ed25519.PrivateKey
 }
 
 func newAuthHarness(t *testing.T, configure func(*api.AuthConfig)) *authHarness {
 	t.Helper()
 	db, _ := database(t)
+	licenseKey := testProLicense(t, db)
 	config := api.AuthConfig{PublicURL: "http://localhost:4173", SetupSecret: strings.Repeat("s", 32), EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))}
 	if configure != nil {
 		configure(&config)
 	}
 	server := httptest.NewServer((&api.Server{Store: db, Auth: config}).Handler())
 	t.Cleanup(server.Close)
-	return &authHarness{t, server, db, config}
+	return &authHarness{t, server, db, config, licenseKey}
 }
 func (h *authHarness) call(method, path, token string, body any, want int) map[string]any {
 	h.t.Helper()

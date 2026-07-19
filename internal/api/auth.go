@@ -19,9 +19,12 @@ type AuthConfig struct {
 	GitHubClientSecret string
 	GoogleClientID     string
 	GoogleClientSecret string
+	GitLabClientID     string
+	GitLabClientSecret string
 	// Provider endpoints are overridden only by trusted in-process integration tests.
 	GitHubAuthURL, GitHubTokenURL, GitHubAPIURL       string
 	GoogleAuthURL, GoogleTokenURL, GoogleUserInfoURL  string
+	GitLabAuthURL, GitLabTokenURL, GitLabUserInfoURL  string
 	SMTPAddress, SMTPUsername, SMTPPassword, SMTPFrom string
 	SMTPAllowInsecure                                 bool
 	SMTPAllowDelivery                                 bool
@@ -69,6 +72,8 @@ func (s *Server) authPublic(next http.HandlerFunc) http.HandlerFunc {
 }
 func authFailure(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, store.ErrLicenseRequired):
+		problem(w, 402, "license_required", err.Error())
 	case errors.Is(err, store.ErrInput):
 		problem(w, 400, "invalid_request", err.Error())
 	case errors.Is(err, store.ErrBusy):
@@ -114,6 +119,7 @@ func (s *Server) registerAuthRoutes(public, protected *http.ServeMux) {
 	protected.HandleFunc("PATCH /api/v1/users/{id}", s.authUpdateUser)
 	protected.HandleFunc("GET /api/v1/teams", s.authTeams)
 	protected.HandleFunc("POST /api/v1/teams", s.authCreateTeam)
+	protected.HandleFunc("DELETE /api/v1/teams/{id}", s.authDeleteTeam)
 	protected.HandleFunc("GET /api/v1/teams/{id}/members", s.authTeamMembers)
 	protected.HandleFunc("PUT /api/v1/teams/{id}/members/{user}", s.authSetTeamMember)
 	protected.HandleFunc("POST /api/v1/teams/{id}/invites", s.authCreateInvite)
@@ -133,6 +139,9 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Auth.GoogleClientID != "" && s.Auth.GoogleClientSecret != "" {
 		providers = append(providers, "google")
+	}
+	if s.Auth.GitLabClientID != "" && s.Auth.GitLabClientSecret != "" {
+		providers = append(providers, "gitlab")
 	}
 	_, passkeyErr := s.webAuthn()
 	write(w, 200, map[string]any{"setup_required": needed, "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
@@ -266,6 +275,13 @@ func (s *Server) authTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, map[string]any{"items": v})
+}
+func (s *Server) authDeleteTeam(w http.ResponseWriter, r *http.Request) {
+	if err := s.Store.DeleteTeam(r.Context(), who(r), r.PathValue("id")); err != nil {
+		authFailure(w, err)
+		return
+	}
+	write(w, 200, map[string]bool{"deleted": true})
 }
 func (s *Server) authCreateTeam(w http.ResponseWriter, r *http.Request) {
 	var in struct {
