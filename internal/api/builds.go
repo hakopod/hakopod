@@ -22,6 +22,7 @@ import (
 )
 
 type buildConfig struct {
+	Provider           string `json:"provider"`
 	Architecture       string `json:"architecture"`
 	AutoBuild          bool   `json:"auto_build"`
 	AutoDeploy         bool   `json:"auto_deploy"`
@@ -47,6 +48,7 @@ type buildConfig struct {
 	InstalledCommit    string `json:"installed_commit"`
 }
 type buildInput struct {
+	Provider               string `json:"provider"`
 	Architecture           string `json:"architecture"`
 	AutoBuild              bool   `json:"auto_build"`
 	AutoDeploy             bool   `json:"auto_deploy"`
@@ -68,6 +70,8 @@ type buildInput struct {
 	ExpectedConfigRevision *int64 `json:"expected_config_revision"`
 }
 type buildRun struct {
+	Provider       string      `json:"provider"`
+	RemoteRunID    int64       `json:"remote_run_id"`
 	Automatic      bool        `json:"automatic"`
 	AutoStatus     string      `json:"auto_status"`
 	ID             string      `json:"id"`
@@ -90,7 +94,14 @@ const buildRunColumns = "id,build_id,config_revision,commit_sha,status,github_ru
 
 func scanBuildRun(row pgx.Row) (buildRun, error) {
 	var b buildRun
-	err := row.Scan(&b.ID, &b.BuildID, &b.ConfigRevision, &b.CommitSHA, &b.Status, &b.GitHubRunID, &b.Conclusion, &b.Image, &b.RunURL, &b.Message, &b.DeploymentID, &b.CreatedAt, &b.UpdatedAt, &b.Config, &b.Automatic, &b.AutoStatus)
+	err := row.Scan(&b.ID, &b.BuildID, &b.ConfigRevision, &b.CommitSHA, &b.Status, &b.RemoteRunID, &b.Conclusion, &b.Image, &b.RunURL, &b.Message, &b.DeploymentID, &b.CreatedAt, &b.UpdatedAt, &b.Config, &b.Automatic, &b.AutoStatus)
+	if b.Config.Provider == "" {
+		b.Config.Provider = "github"
+	}
+	b.Provider = b.Config.Provider
+	if b.Provider == "github" {
+		b.GitHubRunID = b.RemoteRunID
+	}
 	return b, err
 }
 func (s *Server) registerBuildRoutes(routes *http.ServeMux) {
@@ -117,6 +128,10 @@ func validBuildPath(value string) bool {
 func normalizeBuild(in buildInput) (buildConfig, error) {
 	c := buildConfig{Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	c.Repository = strings.ToLower(c.Repository)
+	c.Provider = in.Provider
+	if c.Provider == "" {
+		c.Provider = "github"
+	}
 	if c.Service == "" {
 		c.Service = "web"
 	}
@@ -141,7 +156,7 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	if c.Port == 0 {
 		c.Port = 8080
 	}
-	if !validScope(c.Project, c.Environment) || !slug.MatchString(c.Name) || !slug.MatchString(c.Service) || !repositoryPattern.MatchString(c.Repository) || len(c.Branch) > 200 || strings.ContainsAny(c.Branch, "\r\n\x00 ?#") || !validBuildPath(c.ContextPath) || !validBuildPath(c.Dockerfile) || c.Port < 1 || c.Port > 65535 || len(c.RegistryCredential) > 100 {
+	if !validScope(c.Project, c.Environment) || !slug.MatchString(c.Name) || !slug.MatchString(c.Service) || !validSourceRepository(c.Provider, c.Repository) || len(c.Branch) > 200 || strings.ContainsAny(c.Branch, "\r\n\x00 ?#") || !validBuildPath(c.ContextPath) || !validBuildPath(c.Dockerfile) || c.Port < 1 || c.Port > 65535 || len(c.RegistryCredential) > 100 {
 		return c, fmt.Errorf("%w: select a valid project/environment/name, repository, branch, relative build paths and port", store.ErrInput)
 	}
 	if c.Architecture != "" && c.Architecture != "amd64" && c.Architecture != "arm64" {
@@ -166,6 +181,9 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 func (s *Server) readBuild(ctx context.Context, id string) (buildConfig, error) {
 	var c buildConfig
 	err := s.Store.Pool.QueryRow(ctx, "SELECT config,revision,installed_revision,installed_commit,COALESCE(application_id,''),grant_id FROM build_configs WHERE id=$1", id).Scan(&c, &c.Revision, &c.InstalledRevision, &c.InstalledCommit, &c.ApplicationID, &c.GrantID)
+	if c.Provider == "" {
+		c.Provider = "github"
+	}
 	return c, err
 }
 func (s *Server) authorizedBuild(w http.ResponseWriter, r *http.Request, permission string) (buildConfig, bool) {
@@ -202,6 +220,9 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 		if err = rows.Scan(&c, &c.Revision, &c.InstalledRevision, &c.InstalledCommit, &c.ApplicationID, &c.GrantID); err != nil {
 			authFailure(w, err)
 			return
+		}
+		if c.Provider == "" {
+			c.Provider = "github"
 		}
 		if who(r).Allows("deployments:read", project, environment, c.Name) {
 			out = append(out, c)
@@ -357,6 +378,10 @@ func (s *Server) previewBuild(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if c.Provider == "gitlab" {
+		write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitLab.com CI/CD and Container Registry enabled for this project", "GitLab integration token with API access and repository commit/pipeline permissions", "One Hakopod-managed .gitlab-ci.yml per repository; existing unowned CI or another build's entrypoint will not be overwritten", "A platform administrator explicitly installs the reviewed CI file on the default branch", "Automatic builds also require this exact CI file on the selected source branch and authenticated Pipeline Hook events", "GitLab-hosted Linux runner capacity for the selected architecture and Docker-in-Docker", "Private registry.gitlab.com images require a persistent read_registry pull credential before deployment"}})
+		return
+	}
 	write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitHub Actions enabled for this repository", "GitHub integration token with repository contents/workflows write and Actions write permissions", "Administrator explicitly installs this reviewed workflow on the repository default branch", "Automatic builds also require this exact workflow on the selected source branch when it differs from the repository default branch", "GitHub-hosted Linux runner capacity and GHCR package publishing permission", "For private GHCR images, configure a persistent read:packages registry credential before deployment"}})
 }
 func (s *Server) githubBuildRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
@@ -440,6 +465,10 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.ExpectedConfigRevision == nil || *in.ExpectedConfigRevision != c.Revision {
 		authFailure(w, store.ErrConflict)
+		return
+	}
+	if c.Provider == "gitlab" {
+		s.installGitLabBuild(w, r, c)
 		return
 	}
 	var repo struct {
@@ -552,26 +581,34 @@ func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 	var commit struct {
 		SHA string `json:"sha"`
 	}
-	if err = s.githubGET(r.Context(), "/repos/"+c.Repository+"/commits/"+url.PathEscape(ref), &commit); err != nil {
-		problem(w, 409, "source_unavailable", err.Error())
-		return
-	}
-	if !commitPattern.MatchString(commit.SHA) {
-		problem(w, 503, "invalid_source", "GitHub returned an invalid commit identifier")
-		return
-	}
 	var repo struct {
 		DefaultBranch string `json:"default_branch"`
 	}
-	if err = s.githubGET(r.Context(), "/repos/"+c.Repository, &repo); err != nil {
-		problem(w, 409, "source_unavailable", err.Error())
-		return
-	}
-	content, status, err := s.workflowContents(r.Context(), c, repo.DefaultBranch)
-	text, decodeErr := decodeWorkflow(content)
-	if err != nil || status != 200 || decodeErr != nil || text != buildWorkflow(c) {
-		problem(w, 409, "workflow_changed", "the installed workflow changed; review and install the current generated workflow")
-		return
+	if c.Provider == "gitlab" {
+		commit.SHA, repo.DefaultBranch, err = s.prepareGitLabBuildDispatch(r.Context(), c, ref)
+		if err != nil {
+			problem(w, 409, "source_unavailable", err.Error())
+			return
+		}
+	} else {
+		if err = s.githubGET(r.Context(), "/repos/"+c.Repository+"/commits/"+url.PathEscape(ref), &commit); err != nil {
+			problem(w, 409, "source_unavailable", err.Error())
+			return
+		}
+		if !commitPattern.MatchString(commit.SHA) {
+			problem(w, 503, "invalid_source", "GitHub returned an invalid commit identifier")
+			return
+		}
+		if err = s.githubGET(r.Context(), "/repos/"+c.Repository, &repo); err != nil {
+			problem(w, 409, "source_unavailable", err.Error())
+			return
+		}
+		content, status, err := s.workflowContents(r.Context(), c, repo.DefaultBranch)
+		text, decodeErr := decodeWorkflow(content)
+		if err != nil || status != 200 || decodeErr != nil || text != buildWorkflow(c) {
+			problem(w, 409, "workflow_changed", "the installed workflow changed; review and install the current generated workflow")
+			return
+		}
 	}
 	tx, err := s.Store.Pool.Begin(r.Context())
 	if err != nil {
@@ -629,19 +666,24 @@ func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 		write(w, 202, existing)
 		return
 	}
-	response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+c.Repository+"/actions/workflows/"+url.PathEscape(path.Base(c.workflowPath()))+"/dispatches", map[string]any{"ref": repo.DefaultBranch, "inputs": map[string]string{"commit": commit.SHA, "request_id": id}})
 	state, message := "queued", "Waiting for GitHub Actions to create the run"
-	if err != nil {
-		state = "dispatch_unknown"
-		message = "Dispatch response was interrupted. Refresh to locate the remote run before retrying."
+	var remoteID int64
+	if c.Provider == "gitlab" {
+		state, message, remoteID = s.dispatchGitLabBuild(r.Context(), c, repo.DefaultBranch, commit.SHA, id)
 	} else {
-		response.Body.Close()
-		if response.StatusCode != 204 {
-			state = "failed"
-			message = fmt.Sprintf("GitHub denied workflow dispatch (HTTP %d); check Actions permissions and workflow installation", response.StatusCode)
+		response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+c.Repository+"/actions/workflows/"+url.PathEscape(path.Base(c.workflowPath()))+"/dispatches", map[string]any{"ref": repo.DefaultBranch, "inputs": map[string]string{"commit": commit.SHA, "request_id": id}})
+		if err != nil {
+			state = "dispatch_unknown"
+			message = "Dispatch response was interrupted. Refresh to locate the remote run before retrying."
+		} else {
+			response.Body.Close()
+			if response.StatusCode != 204 {
+				state = "failed"
+				message = fmt.Sprintf("GitHub denied workflow dispatch (HTTP %d); check Actions permissions and workflow installation", response.StatusCode)
+			}
 		}
 	}
-	_, err = s.Store.Pool.Exec(r.Context(), "UPDATE build_runs SET status=$2,message=$3,updated_at=now() WHERE id=$1", id, state, message)
+	_, err = s.Store.Pool.Exec(r.Context(), "UPDATE build_runs SET status=$2,message=$3,github_run_id=$4,updated_at=now() WHERE id=$1", id, state, message, remoteID)
 	if err != nil {
 		authFailure(w, err)
 		return
