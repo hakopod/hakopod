@@ -56,6 +56,7 @@ func sourceDatabase(t *testing.T) *store.Store {
 	if err = db.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	sourcePaidFixture(t, db)
 	return db
 }
 

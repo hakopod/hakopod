@@ -27,6 +27,7 @@ import (
 )
 
 type sourceBinding struct {
+	Provider       string    `json:"provider"`
 	ApplicationID  string    `json:"application_id"`
 	Repository     string    `json:"repository"`
 	Branch         string    `json:"branch"`
@@ -43,9 +44,10 @@ type sourceBinding struct {
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
 var commitPattern = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
 
-const sourceColumns = "application_id,repository,branch,path,auto_deploy,grant_id,revision,last_commit,last_deployment,last_error,updated_at"
+const sourceColumns = "application_id,provider,repository,branch,path,auto_deploy,grant_id,revision,last_commit,last_deployment,last_error,updated_at"
 
 func (s *Server) registerSourceRoutes(public, protected *http.ServeMux) {
+	s.registerGitLabRoutes(public, protected)
 	protected.HandleFunc("GET /api/v1/integrations/github", s.githubStatus)
 	protected.HandleFunc("PUT /api/v1/integrations/github", s.configureGitHub)
 	protected.HandleFunc("GET /api/v1/applications/{id}/source", s.getSource)
@@ -134,7 +136,7 @@ func (s *Server) configureGitHub(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) readSource(ctx context.Context, id string) (sourceBinding, error) {
 	var b sourceBinding
-	err := s.Store.Pool.QueryRow(ctx, "SELECT "+sourceColumns+" FROM application_sources WHERE application_id=$1", id).Scan(&b.ApplicationID, &b.Repository, &b.Branch, &b.Path, &b.AutoDeploy, &b.GrantID, &b.Revision, &b.LastCommit, &b.LastDeployment, &b.LastError, &b.UpdatedAt)
+	err := s.Store.Pool.QueryRow(ctx, "SELECT "+sourceColumns+" FROM application_sources WHERE application_id=$1", id).Scan(&b.ApplicationID, &b.Provider, &b.Repository, &b.Branch, &b.Path, &b.AutoDeploy, &b.GrantID, &b.Revision, &b.LastCommit, &b.LastDeployment, &b.LastError, &b.UpdatedAt)
 	return b, err
 }
 func (s *Server) getSource(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +155,7 @@ func (s *Server) getSource(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"connected": true, "source": b})
 }
 func validSource(b sourceBinding) bool {
-	return repositoryPattern.MatchString(b.Repository) && len(b.Branch) > 0 && len(b.Branch) <= 200 && !strings.ContainsAny(b.Branch, "\r\n\x00 ?#") && b.Path != "" && len(b.Path) <= 256 && !strings.HasPrefix(b.Path, "/") && path.Clean(b.Path) == b.Path && !strings.HasPrefix(b.Path, "../") && !strings.ContainsAny(b.Path, "\\\x00\r\n") && strings.HasSuffix(b.Path, ".toml")
+	return validSourceRepository(b.Provider, b.Repository) && len(b.Branch) > 0 && len(b.Branch) <= 200 && !strings.ContainsAny(b.Branch, "\r\n\x00 ?#") && b.Path != "" && len(b.Path) <= 256 && !strings.HasPrefix(b.Path, "/") && path.Clean(b.Path) == b.Path && !strings.HasPrefix(b.Path, "../") && !strings.ContainsAny(b.Path, "\\\x00\r\n") && strings.HasSuffix(b.Path, ".toml")
 }
 func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
@@ -161,6 +163,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
+		Provider               string `json:"provider"`
 		Repository             string `json:"repository"`
 		Branch                 string `json:"branch"`
 		Path                   string `json:"path"`
@@ -170,7 +173,10 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	b := sourceBinding{Repository: strings.ToLower(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
+	if in.Provider == "" {
+		in.Provider = "github"
+	}
+	b := sourceBinding{Provider: in.Provider, Repository: strings.ToLower(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
 	if !validSource(b) {
 		problem(w, 400, "invalid_source", "use owner/repository, a branch, and a relative .toml path without traversal")
 		return
@@ -191,9 +197,9 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	var previous, approvedRepository string
+	var previous, approvedRepository, approvedProvider string
 	var revision int64
-	err = tx.QueryRow(r.Context(), "SELECT grant_id,revision,repository FROM application_sources WHERE application_id=$1 FOR UPDATE", a.ID).Scan(&previous, &revision, &approvedRepository)
+	err = tx.QueryRow(r.Context(), "SELECT grant_id,revision,repository,provider FROM application_sources WHERE application_id=$1 FOR UPDATE", a.ID).Scan(&previous, &revision, &approvedRepository, &approvedProvider)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)
 		return
@@ -205,15 +211,15 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	// A shared installation token may read private repositories outside this
 	// project's authority. Only a global admin can approve the repository;
 	// project deployers may choose branch/path within that locked approval.
-	repositoryChanged := revision == 0 || !strings.EqualFold(approvedRepository, b.Repository)
+	repositoryChanged := revision == 0 || approvedProvider != b.Provider || !strings.EqualFold(approvedRepository, b.Repository)
 	if repositoryChanged && !who(r).IsAdmin() {
 		problem(w, 403, "repository_approval_required", "a platform administrator must approve the first repository binding or a repository change")
 		return
 	}
 	if in.AutoDeploy {
-		data, err := s.githubCredentials(r.Context())
+		data, err := s.sourceCredentials(r.Context(), b.Provider)
 		if err != nil || len(data["webhook-secret"]) < 32 {
-			problem(w, 400, "github_not_configured", "configure GitHub webhook authentication before enabling automatic deployments")
+			problem(w, 400, "source_not_configured", "configure this source provider’s webhook authentication before enabling automatic deployments")
 			return
 		}
 	}
@@ -222,7 +228,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO application_sources(application_id,repository,branch,path,auto_deploy,grant_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(application_id) DO UPDATE SET repository=EXCLUDED.repository,branch=EXCLUDED.branch,path=EXCLUDED.path,auto_deploy=EXCLUDED.auto_deploy,grant_id=EXCLUDED.grant_id,revision=application_sources.revision+1,updated_at=now()`, a.ID, b.Repository, b.Branch, b.Path, b.AutoDeploy, grant)
+	_, err = tx.Exec(r.Context(), `INSERT INTO application_sources(application_id,repository,branch,path,auto_deploy,grant_id,provider) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(application_id) DO UPDATE SET provider=EXCLUDED.provider,repository=EXCLUDED.repository,branch=EXCLUDED.branch,path=EXCLUDED.path,auto_deploy=EXCLUDED.auto_deploy,grant_id=EXCLUDED.grant_id,revision=application_sources.revision+1,updated_at=now()`, a.ID, b.Repository, b.Branch, b.Path, b.AutoDeploy, grant, b.Provider)
 	if err == nil && previous != "" {
 		_, err = tx.Exec(r.Context(), "UPDATE api_keys SET revoked_at=now() WHERE id=$1", previous)
 	}
@@ -288,6 +294,9 @@ func (s *Server) githubGET(ctx context.Context, endpoint string, output any) err
 	return json.Unmarshal(body, output)
 }
 func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string) (spec.Application, string, error) {
+	if b.Provider == "gitlab" {
+		return s.gitlabSourceSpec(ctx, b, commit)
+	}
 	if commit == "" {
 		var ref struct {
 			SHA string `json:"sha"`
@@ -340,7 +349,7 @@ func (s *Server) planSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if next.Name != a.Name {
-		problem(w, 400, "application_mismatch", "GitHub TOML application name must match this application")
+		problem(w, 400, "application_mismatch", "Source TOML application name must match this application")
 		return
 	}
 	write(w, 200, map[string]any{"application_id": a.ID, "expected_revision": a.Revision, "spec": next, "changes": spec.Diff(&a.Spec, next), "warnings": []string{}, "commit_sha": commit, "expected_source_revision": b.Revision})
@@ -377,7 +386,7 @@ func (s *Server) deploySource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if next.Name != a.Name {
-		problem(w, 400, "application_mismatch", "GitHub TOML application name must match this application")
+		problem(w, 400, "application_mismatch", "Source TOML application name must match this application")
 		return
 	}
 	principal, err := s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
@@ -481,6 +490,12 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 var errSourceQueueFull = errors.New("source inbox is full")
 
 func (s *Server) enqueueSources(ctx context.Context, delivery, commit, repository, ref string) error {
+	return s.enqueueProviderSources(ctx, "github", delivery, commit, repository, ref)
+}
+func (s *Server) enqueueProviderSources(ctx context.Context, provider, delivery, commit, repository, ref string) error {
+	if provider != "github" {
+		delivery = provider + ":" + delivery
+	}
 	repository = strings.ToLower(repository)
 	tx, err := s.Store.Pool.Begin(ctx)
 	if err != nil {
@@ -494,13 +509,13 @@ func (s *Server) enqueueSources(ctx context.Context, delivery, commit, repositor
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM source_jobs WHERE status IN ('queued','running')").Scan(&pending); err != nil {
 		return err
 	}
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM application_sources s WHERE repository=$1 AND 'refs/heads/'||branch=$2 AND auto_deploy AND NOT EXISTS(SELECT 1 FROM source_jobs j WHERE j.application_id=s.application_id AND j.delivery_id=$3)`, repository, ref, delivery).Scan(&added); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM application_sources s WHERE provider=$4 AND repository=$1 AND 'refs/heads/'||branch=$2 AND auto_deploy AND NOT EXISTS(SELECT 1 FROM source_jobs j WHERE j.application_id=s.application_id AND j.delivery_id=$3)`, repository, ref, delivery, provider).Scan(&added); err != nil {
 		return err
 	}
 	if pending+added > 1000 {
 		return errSourceQueueFull
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO source_jobs(id,application_id,source_revision,commit_sha,delivery_id) SELECT md5(application_id||':'||$1),application_id,revision,$2,$1 FROM application_sources WHERE repository=$3 AND 'refs/heads/'||branch=$4 AND auto_deploy ON CONFLICT(application_id,delivery_id) DO NOTHING`, delivery, commit, repository, ref)
+	_, err = tx.Exec(ctx, `INSERT INTO source_jobs(id,application_id,source_revision,commit_sha,delivery_id) SELECT md5(application_id||':'||$1),application_id,revision,$2,$1 FROM application_sources WHERE provider=$5 AND repository=$3 AND 'refs/heads/'||branch=$4 AND auto_deploy ON CONFLICT(application_id,delivery_id) DO NOTHING`, delivery, commit, repository, ref, provider)
 	if err != nil {
 		return err
 	}
