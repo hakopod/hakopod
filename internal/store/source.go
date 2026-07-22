@@ -18,6 +18,6 @@ func (s *Store) NewSourceGrant(ctx context.Context, tx pgx.Tx, p Principal, proj
 	if _, err := rand.Read(digest); err != nil {
 		return "", err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,kind) VALUES($1,$2,'GitHub deployment grant',$3,'internal',$4,$5,$6,ARRAY['deployments:read','deployments:write'], $7,'integration')`, id, p.ID, digest, project, environment, app, time.Now().Add(90*24*time.Hour))
+	_, err := tx.Exec(ctx, `INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,kind) VALUES($1,$2,'Source deployment grant',$3,'internal',$4,$5,$6,ARRAY['deployments:read','deployments:write'], $7,'integration')`, id, p.ID, digest, project, environment, app, time.Now().Add(90*24*time.Hour))
 	return id, err
 }
