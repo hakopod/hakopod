@@ -15,11 +15,22 @@ const uploadAction = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f436
 const packAction = "buildpacks/github-actions/setup-pack@af8c06ccd592e27001cbf78083dcc9b47aa6652a"
 const paketoBuilder = "paketobuildpacks/builder-jammy-buildpackless-base@sha256:9e313856b55fcea8382fd4fc59f840361a99adc814982f4a5b75d5bda7fbf898"
 
-func (c buildConfig) workflowPath() string { return ".github/workflows/hakopod-build-" + c.ID + ".yml" }
+func (c buildConfig) workflowPath() string {
+	if c.Provider == "gitlab" {
+		return ".gitlab-ci.yml"
+	}
+	return ".github/workflows/hakopod-build-" + c.ID + ".yml"
+}
 func (c buildConfig) imageName() string {
+	if c.Provider == "gitlab" {
+		return "registry.gitlab.com/" + strings.ToLower(c.Repository) + "/hakopod-" + c.ID[:12]
+	}
 	return "ghcr.io/" + strings.ToLower(c.Repository) + "-hakopod-" + c.ID[:12]
 }
 func buildWorkflow(c buildConfig) string {
+	if c.Provider == "gitlab" {
+		return gitlabBuildWorkflow(c)
+	}
 	build := `      - name: Build and publish Dockerfile
         uses: {{BUILD_PUSH}}
         with:

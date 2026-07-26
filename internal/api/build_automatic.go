@@ -52,10 +52,13 @@ func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []b
 	if err != nil {
 		return err
 	}
-	if !c.AutoBuild || c.InstalledRevision != c.Revision || !strings.EqualFold(payload.Repository.FullName, c.Repository) || payload.Run.HeadBranch != c.Branch {
+	if c.Provider != "github" || !c.AutoBuild || c.InstalledRevision != c.Revision || !strings.EqualFold(payload.Repository.FullName, c.Repository) || payload.Run.HeadBranch != c.Branch {
 		return nil
 	}
 	runID := fmt.Sprintf("%032x", payload.Run.ID)
+	return s.enqueueAutomaticBuild(ctx, c, runID, payload.Run.HeadSHA, payload.Run.ID, "github-workflow-"+delivery, body)
+}
+func (s *Server) enqueueAutomaticBuild(ctx context.Context, c buildConfig, runID, commit string, remoteID int64, delivery string, body []byte) error {
 	hash := sha256.Sum256(body)
 	tx, err := s.Store.Pool.Begin(ctx)
 	if err != nil {
@@ -66,7 +69,7 @@ func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []b
 		return err
 	}
 	var duplicate bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM build_runs WHERE id=$1 OR (build_id=$2 AND identity_id=(SELECT identity_id FROM api_keys WHERE id=$3) AND idempotency_key=$4))`, runID, c.ID, c.GrantID, "github-workflow-"+delivery).Scan(&duplicate); err != nil || duplicate {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM build_runs WHERE id=$1 OR (build_id=$2 AND identity_id=(SELECT identity_id FROM api_keys WHERE id=$3) AND idempotency_key=$4))`, runID, c.ID, c.GrantID, delivery).Scan(&duplicate); err != nil || duplicate {
 		return err
 	}
 	var pending int
@@ -76,15 +79,15 @@ func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []b
 	if pending >= 1000 {
 		return errBuildQueueFull
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO build_runs(id,build_id,identity_id,key_id,idempotency_key,request_hash,config,config_revision,commit_sha,github_run_id,automatic,auto_status) SELECT $1,$2,identity_id,id,$3,$4,$5,$6,$7,$8,true,'queued' FROM api_keys WHERE id=$9 AND kind='integration' ON CONFLICT DO NOTHING`, runID, c.ID, "github-workflow-"+delivery, hash[:], store.JSON(c), c.Revision, payload.Run.HeadSHA, payload.Run.ID, c.GrantID)
+	_, err = tx.Exec(ctx, `INSERT INTO build_runs(id,build_id,identity_id,key_id,idempotency_key,request_hash,config,config_revision,commit_sha,github_run_id,automatic,auto_status) SELECT $1,$2,identity_id,id,$3,$4,$5,$6,$7,$8,true,'queued' FROM api_keys WHERE id=$9 AND kind='integration' ON CONFLICT DO NOTHING`, runID, c.ID, delivery, hash[:], store.JSON(c), c.Revision, commit, remoteID, c.GrantID)
 	if err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-// This lightweight inbox reader does no builds. GitHub-hosted runners are
-// started only by installed workflows; idle work is one bounded database query.
+// This lightweight inbox reader does no builds. Provider-hosted runners are
+// started only by installed workflows; idle work is bounded PostgreSQL queries.
 func (s *Server) RunBuilds(ctx context.Context) {
 	timer := time.NewTicker(5 * time.Second)
 	defer timer.Stop()
@@ -147,10 +150,10 @@ func (s *Server) processAutomaticBuild(ctx context.Context, run buildRun) (strin
 		return "", "", err
 	}
 	if run.Status != "completed" || run.Conclusion != "success" {
-		return "finished", "GitHub build did not produce a successful deployment candidate", nil
+		return "finished", "Source build did not produce a successful deployment candidate", nil
 	}
 	if run.Image == "" {
-		return "", "", errors.New("waiting for the verified GitHub build-result artifact")
+		return "", "", errors.New("waiting for the verified source build-result artifact")
 	}
 	if !c.AutoDeploy {
 		return "ready", "Verified image ready for an explicit deployment review", nil
@@ -158,7 +161,12 @@ func (s *Server) processAutomaticBuild(ctx context.Context, run buildRun) (strin
 	var latest struct {
 		SHA string `json:"sha"`
 	}
-	if err = s.githubGET(ctx, "/repos/"+c.Repository+"/commits/"+url.PathEscape(c.Branch), &latest); err != nil {
+	if c.Provider == "gitlab" {
+		latest.SHA, err = s.gitlabBuildCommit(ctx, c, c.Branch)
+	} else {
+		err = s.githubGET(ctx, "/repos/"+c.Repository+"/commits/"+url.PathEscape(c.Branch), &latest)
+	}
+	if err != nil {
 		return "", "", err
 	}
 	if latest.SHA != run.CommitSHA {
