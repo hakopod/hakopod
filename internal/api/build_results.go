@@ -49,6 +49,9 @@ func (s *Server) observeBuildRun(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, run)
 }
 func (s *Server) refreshBuildRun(ctx context.Context, run buildRun) (buildRun, error) {
+	if run.Config.Provider == "gitlab" {
+		return s.refreshGitLabBuildRun(ctx, run)
+	}
 	if run.Status == "completed" && run.Image != "" || run.Status == "failed" || run.Status == "cancelled" {
 		return run, nil
 	}
@@ -84,6 +87,7 @@ func (s *Server) refreshBuildRun(ctx context.Context, run buildRun) (buildRun, e
 		return run, errors.New("GitHub run identity did not match the dispatched build")
 	}
 	run.GitHubRunID = remote.ID
+	run.RemoteRunID = remote.ID
 	run.Status = remote.Status
 	run.Conclusion = remote.Conclusion
 	run.RunURL = "https://github.com/" + run.Config.Repository + "/actions/runs/" + strconv.FormatInt(remote.ID, 10)
@@ -149,13 +153,23 @@ func parseBuildArtifact(data []byte, run buildRun) (string, error) {
 		return "", errors.New("invalid build result")
 	}
 	defer reader.Close()
+	data, err = io.ReadAll(io.LimitReader(reader, (32<<10)+1))
+	if err != nil {
+		return "", errors.New("invalid build result contents")
+	}
+	return parseBuildResultJSON(data, run)
+}
+func parseBuildResultJSON(data []byte, run buildRun) (string, error) {
+	if len(data) > 32<<10 {
+		return "", errors.New("build result exceeds 32 KiB")
+	}
 	var result buildArtifactResult
-	decoder := json.NewDecoder(io.LimitReader(reader, 32<<10))
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&result); err != nil {
+	if err := decoder.Decode(&result); err != nil {
 		return "", errors.New("invalid build result JSON")
 	}
-	if err = decoder.Decode(&struct{}{}); err != io.EOF {
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return "", errors.New("build result contains extra content")
 	}
 	prefix := run.Config.imageName() + "@"
@@ -229,6 +243,10 @@ func (s *Server) cancelBuildRun(w http.ResponseWriter, r *http.Request) {
 	run, err := s.readBuildRun(r.Context(), c.ID, r.PathValue("run"))
 	if err != nil {
 		authFailure(w, err)
+		return
+	}
+	if run.Config.Provider == "gitlab" {
+		s.cancelGitLabBuildRun(w, r, run)
 		return
 	}
 	if run.GitHubRunID == 0 {
