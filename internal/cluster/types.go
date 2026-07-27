@@ -43,10 +43,11 @@ type Options struct {
 }
 
 type Client struct {
-	clusterCA []byte
-	kube      kubernetes.Interface
-	options   Options
-	http      *http.Client
+	execConfig *rest.Config
+	clusterCA  []byte
+	kube       kubernetes.Interface
+	options    Options
+	http       *http.Client
 }
 
 type Target struct {
@@ -166,7 +167,9 @@ func New(kubeconfig string, options Options) (*Client, error) {
 			return nil, fmt.Errorf("read Kubernetes CA certificate: %w", err)
 		}
 	}
-	return &Client{kube: kube, options: options, http: client, clusterCA: ca}, nil
+	execConfig := rest.CopyConfig(config)
+	execConfig.Timeout = 0 // Interactive exec is bounded by its session context.
+	return &Client{kube: kube, options: options, http: client, clusterCA: ca, execConfig: execConfig}, nil
 }
 
 // Namespace is independent of display names, so application renames cannot
