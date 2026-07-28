@@ -88,6 +88,12 @@ func run() error {
 	ttl := fs.Duration("ttl", 24*time.Hour, "API key lifetime, maximum 90 days")
 	tail := fs.Int64("tail", 100, "maximum log tail lines (1–1000)")
 	follow := fs.Bool("follow", false, "follow live logs (each connection capped at ten minutes)")
+	pod := fs.String("pod", "", "pod name for terminal or log search")
+	container := fs.String("container", "app", "container name")
+	query := fs.String("query", "", "SQL-like log predicate; returns sampled entries and histogram as JSON")
+	since := fs.Duration("since", time.Hour, "log search window, maximum 24h")
+	previous := fs.Bool("previous", false, "search the previous container instance")
+	commandJSON := fs.String("command-json", "", "terminal executable and arguments as a JSON array, defaults to /bin/sh")
 	// Standard flags accept options before an identifier. Move ordinary positionals
 	// to the end so `status APP --json` and `--json APP` behave consistently.
 	if err := fs.Parse(reorder(os.Args[2:])); err != nil {
@@ -343,12 +349,14 @@ func run() error {
 			}
 		}
 		return deploymentOutput(d, *outputJSON)
-	case "status", "logs", "rollback", "services", "networks":
+	case "status", "logs", "rollback", "services", "networks", "terminal":
 		a, err := findApp(ctx, c, cfg, arg, *file)
 		if err != nil {
 			return err
 		}
 		switch command {
+		case "terminal":
+			return terminal(ctx, c, a.ID, *service, *pod, *container, *commandJSON)
 		case "status":
 			if *outputJSON {
 				return printJSON(a)
@@ -369,6 +377,16 @@ func run() error {
 				} else {
 					return &exitError{2, "--service is required for a multi-service application"}
 				}
+			}
+			if *query != "" || *pod != "" || *previous || *container != "app" {
+				if *follow {
+					return &exitError{2, "log search is a bounded snapshot; omit --follow"}
+				}
+				var result any
+				if err := c.request(ctx, "POST", "/applications/"+a.ID+"/logs/query", map[string]any{"service": *service, "pod": *pod, "container": *container, "query": *query, "tail": *tail, "since_seconds": int64(since.Seconds()), "previous": *previous}, "", &result); err != nil {
+					return err
+				}
+				return printJSON(result)
 			}
 			path := "/applications/" + a.ID + "/logs?" + url.Values{"service": {*service}, "tail": {fmt.Sprint(*tail)}, "follow": {fmt.Sprint(*follow)}}.Encode()
 			req, _ := http.NewRequestWithContext(ctx, "GET", c.url+"/api/v1"+path, nil)
@@ -587,7 +605,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -616,6 +634,9 @@ func help() {
   hakopod deploy --project demo --environment development --wait
   hakopod status shop --project demo --environment development
   hakopod logs shop --service api --follow
+  hakopod logs shop --service api --query "severity >= ERROR" --since 1h
+  hakopod terminal shop --service api --pod POD_NAME
+  hakopod terminal shop --service db --pod POD_NAME --command-json '["psql", "-U", "postgres"]'
   hakopod rollback shop --revision 1 --wait
   hakopod services|networks [APPLICATION]
   hakopod projects|nodes|keys|audit
