@@ -20,7 +20,7 @@ func (s *Server) registerSettingsRoutes(routes *http.ServeMux) {
 }
 
 func (s *Server) getAppearance(w http.ResponseWriter, r *http.Request) {
-	value := appearance{AccentColor: "#a78bfa"}
+	value := appearance{AccentColor: "#D8FF45"}
 	err := s.Store.Pool.QueryRow(r.Context(), "SELECT value FROM installation_settings WHERE name='appearance'").Scan(&value)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)

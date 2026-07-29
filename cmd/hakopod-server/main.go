@@ -155,6 +155,7 @@ func run() error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	management.CloseTerminals()
 	_ = srv.Shutdown(shutdownCtx)
 	wg.Wait()
 	if err != nil && !strings.Contains(err.Error(), "Server closed") {

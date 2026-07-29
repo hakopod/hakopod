@@ -27,12 +27,17 @@ type Server struct {
 	Auth    AuthConfig
 	// Overrides are only set by in-process tests, never by an API request.
 	githubHTTP            *http.Client
+	gitlabHTTP            *http.Client
+	gitlabAPIURL          string
+	gitlabTestCredentials func(context.Context) (map[string][]byte, error)
 	githubAPIURL          string
 	githubTestCredentials func(context.Context) (map[string][]byte, error)
 	mu                    sync.Mutex
 	buckets               map[string]bucket
 	concurrent            chan struct{}
 	streams               chan struct{}
+	terminalMu            sync.Mutex
+	terminals             map[string]*terminalSession
 }
 type bucket struct {
 	at     time.Time
@@ -57,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	routes := http.NewServeMux()
 	s.registerAuthRoutes(mux, routes)
+	s.registerLicenseRoutes(routes)
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
@@ -64,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerProxyRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
+	s.registerTerminalRoutes(routes)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
 	routes.HandleFunc("POST /api/v1/projects", s.createProject)
@@ -77,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/deployments/{id}/cancel", s.cancel)
 	routes.HandleFunc("POST /api/v1/applications/{id}/rollback", s.rollback)
 	routes.HandleFunc("GET /api/v1/applications/{id}/logs", s.logs)
+	routes.HandleFunc("POST /api/v1/applications/{id}/logs/query", s.queryLogs)
 	routes.HandleFunc("GET /api/v1/nodes", s.nodes)
 	routes.HandleFunc("GET /api/v1/keys", s.keys)
 	routes.HandleFunc("POST /api/v1/keys", s.createKey)
@@ -732,14 +740,18 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) guardStream(ctx context.Context, cancel context.CancelFunc, key string, a store.Application, permission string) {
-	timer := time.NewTicker(5 * time.Second)
+	// A blocked pool acquisition must not stretch the revocation window. Poll
+	// every three seconds and allow at most two seconds for each authority read.
+	timer := time.NewTicker(3 * time.Second)
 	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			p, err := s.Store.KeyPrincipal(ctx, key)
+			check, done := context.WithTimeout(ctx, 2*time.Second)
+			p, err := s.Store.KeyPrincipal(check, key)
+			done()
 			if err != nil || !p.Allows(permission, a.Project, a.Environment, a.Name) {
 				cancel()
 				return
