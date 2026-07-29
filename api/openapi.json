@@ -1685,7 +1685,12 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "github",
+                "google",
+                "gitlab"
+              ]
             }
           }
         ],
@@ -1725,7 +1730,12 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "github",
+                "google",
+                "gitlab"
+              ]
             }
           },
           {
@@ -2252,6 +2262,51 @@
                 "required": [
                   "name"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teams/{id}": {
+      "delete": {
+        "operationId": "deleteTeam",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }
@@ -3241,6 +3296,428 @@
                 "type": "object",
                 "properties": {},
                 "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/license": {
+      "get": {
+        "operationId": "getLicenseStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "activateLicense",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "license": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "license",
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeLicense",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/logs/query": {
+      "post": {
+        "operationId": "queryLogs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogQueryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogQuery"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/terminal": {
+      "post": {
+        "operationId": "createTerminal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminalSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminalInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/terminal/{session}/output": {
+      "get": {
+        "operationId": "terminalOutput",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "One SSE reader; data JSON is {type:output,data:base64} or {type:exit,code:number,message:string}. Human deployment writer only. Four sessions, ten-minute lifetime, two-minute input-idle timeout; authority rechecked every five seconds."
+      }
+    },
+    "/applications/{id}/services/{service}/terminal/{session}/input": {
+      "post": {
+        "operationId": "terminalInput",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/terminal/{session}": {
+      "delete": {
+        "operationId": "deleteTerminal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }
@@ -4450,6 +4927,14 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "github",
+                      "gitlab"
+                    ],
+                    "default": "github"
+                  },
                   "repository": {
                     "type": "string"
                   },
@@ -4650,6 +5135,130 @@
         },
         "security": [],
         "description": "GitHub push webhook. Requires X-Hub-Signature-256 HMAC, X-GitHub-Delivery and X-GitHub-Event. Bounded durable inbox with retry and duplicate suppression."
+      }
+    },
+    "/integrations/gitlab": {
+      "get": {
+        "operationId": "gitlabStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitLabStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "configureGitLab",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitLabStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "webhook_secret": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/gitlab": {
+      "post": {
+        "operationId": "gitlabWebhook",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "ignored": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "security": [],
+        "description": "GitLab.com push webhook authenticated with X-Gitlab-Token and deduplicated by X-Gitlab-Event-UUID. Provider-separated bounded durable inbox."
       }
     },
     "/templates": {
@@ -6427,6 +7036,13 @@
           },
           "installed_commit": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
           }
         },
         "required": [
@@ -6449,7 +7065,8 @@
           "auto_deploy",
           "revision",
           "installed_revision",
-          "installed_commit"
+          "installed_commit",
+          "provider"
         ]
       },
       "BuildInput": {
@@ -6527,6 +7144,13 @@
           "auto_deploy": {
             "type": "boolean"
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
           "expected_config_revision": {
             "type": "integer"
           }
@@ -6587,6 +7211,16 @@
           },
           "auto_status": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
+          "remote_run_id": {
+            "type": "integer"
           }
         },
         "required": [
@@ -6604,7 +7238,9 @@
           "created_at",
           "updated_at",
           "automatic",
-          "auto_status"
+          "auto_status",
+          "provider",
+          "remote_run_id"
         ]
       },
       "BuildPreview": {
@@ -6712,6 +7348,290 @@
           "changes",
           "warnings",
           "expected_config_revision"
+        ]
+      },
+      "LicenseFeature": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "plan",
+          "description",
+          "enabled"
+        ]
+      },
+      "LicenseStatus": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "issuer_configured": {
+            "type": "boolean"
+          },
+          "licensed_to": {
+            "type": "string"
+          },
+          "license_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "catalog": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LicenseFeature"
+            }
+          }
+        },
+        "required": [
+          "installation_id",
+          "revision",
+          "plan",
+          "state",
+          "valid",
+          "issuer_configured",
+          "licensed_to",
+          "license_id",
+          "expires_at",
+          "sequence",
+          "features",
+          "catalog"
+        ]
+      },
+      "LogEntry": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pod": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "timestamp",
+          "pod",
+          "service",
+          "container",
+          "message",
+          "severity",
+          "fields"
+        ]
+      },
+      "LogQuery": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "pod": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "since_seconds": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "tail": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "service"
+        ]
+      },
+      "LogQueryResult": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogEntry"
+            }
+          },
+          "histogram": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "timestamp",
+                "count"
+              ]
+            }
+          },
+          "scanned": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "pods": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "entries",
+          "histogram",
+          "scanned",
+          "matched",
+          "truncated",
+          "pods",
+          "window_seconds",
+          "warnings"
+        ]
+      },
+      "TerminalInput": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cols": {
+            "type": "integer"
+          },
+          "rows": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pod"
+        ]
+      },
+      "TerminalSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pod": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "pod",
+          "container",
+          "expires_at"
         ]
       },
       "ProxyField": {
@@ -7423,6 +8343,13 @@
           "application_id": {
             "type": "string"
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
           "repository": {
             "type": "string"
           },
@@ -7454,6 +8381,7 @@
         },
         "required": [
           "application_id",
+          "provider",
           "repository",
           "branch",
           "path",
@@ -7539,6 +8467,31 @@
           "warnings",
           "commit_sha",
           "expected_source_revision"
+        ]
+      },
+      "GitLabStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "token_configured": {
+            "type": "boolean"
+          },
+          "webhook_path": {
+            "type": "string"
+          },
+          "webhook_secret": {
+            "type": "string"
+          },
+          "private_repositories": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "token_configured",
+          "webhook_path"
         ]
       },
       "Template": {
