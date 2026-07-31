@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Exercise a real API, PostgreSQL and Kubernetes deployment lifecycle.
 
-Local development only. Reuses demo/development/shop, creates a temporary scoped
-key, records a compact JSON report without credentials, and revokes that key.
+Local development only. Select a separate fixture with --application to preserve
+demo/development/shop. Creates a temporary scoped key, records a compact JSON
+report without credentials, and revokes that key.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -110,13 +112,20 @@ def main():
     parser.add_argument('--admin-key-file', default=str(ROOT / '.local/admin-key'))
     parser.add_argument('--project', default='demo')
     parser.add_argument('--environment', default='development')
+    parser.add_argument('--application', default='shop', help='Use a separate application name to preserve the interactive sample')
     parser.add_argument('--skip-network', action='store_true')
     args = parser.parse_args()
+    if not re.fullmatch(r'[a-z][a-z0-9-]{0,62}', args.application):
+        raise SystemExit('Choose a valid application slug.')
+    def selected_application(toml):
+        if 'name = "shop"' not in toml:
+            raise AssertionError('Acceptance fixture application header changed.')
+        return toml.replace('name = "shop"', 'name = "' + args.application + '"', 1)
     if urllib.parse.urlsplit(args.api_url).hostname not in ('127.0.0.1', 'localhost', '::1'):
         raise SystemExit('This mutation-heavy acceptance test is restricted to a loopback API.')
     key = Path(args.admin_key_file).read_text().strip()
     admin = API(args.api_url, key)
-    report = {'passed':False, 'started_at':datetime.now(timezone.utc).isoformat(), 'checks':[], 'deployments':[]}
+    report = {'passed':False, 'application':args.application, 'started_at':datetime.now(timezone.utc).isoformat(), 'checks':[], 'deployments':[]}
     def passed(name):
         report['checks'].append(name)
         print('PASS ' + name, flush=True)
@@ -133,7 +142,7 @@ def main():
         deployer.call('GET', '/keys', expected=403)
         deployer.call('GET', '/nodes', expected=403)
         passed('deployment key cannot administer keys or nodes')
-        baseline = (ROOT / 'examples/shop/hakopod.toml').read_text()
+        baseline = selected_application((ROOT / 'examples/shop/hakopod.toml').read_text())
         scope = {'project':args.project, 'environment':args.environment}
         deployer.call('POST', '/plan', dict(scope, toml='schema_version = 999\nname = "invalid"'), expected=400)
         deployer.call('POST', '/plan', {'project':'forbidden-project','environment':'production','toml':baseline}, expected=403)
@@ -171,7 +180,7 @@ def main():
         subprocess.run([sys.executable, str(ROOT/'examples/shop/variants.py')], check=True)
         traffic.thread.start()
         for filename, wanted in [('shop-updated.toml','succeeded'), ('shop-failed-readiness.toml','failed')]:
-            content = (ROOT/'.local/examples'/filename).read_text()
+            content = selected_application((ROOT/'.local/examples'/filename).read_text())
             plan = deployer.call('POST', '/plan', dict(scope, toml=content, service='api'))
             result = deployer.call('POST', '/deployments', dict(scope, toml=content, service='api', expected_revision=plan['expected_revision']), expected=202, idem=uuid.uuid4().hex)
             finished = deployer.wait(result['id'], wanted)
