@@ -69,7 +69,7 @@ history or secret-list responses. Updating a secret requires a service restart o
 deployment to refresh its process environment. Deleting a reference does not erase
 a running process's environment; future deployments using it fail.
 
-## GitHub source and builds
+## GitHub and GitLab source builds
 
 An administrator configures the GitHub repository token and webhook secret. The
 secret is shown once when generated. Subscribe the repository webhook to push
@@ -99,6 +99,12 @@ allowing deployment. Review the canonical deployment diff. Automatic build/deplo
 is optional and uses the same verification and current permission checks. GitHub
 credentials, runner availability and any provider usage charges belong to the
 operator's GitHub installation.
+
+GitLab.com uses the same staged source and deployment model with GitLab CI and
+Container Registry. It supports nested group repository paths, one owned
+`.gitlab-ci.yml` per repository, and Pipeline events for automatic build results.
+Unowned CI and custom CI entrypoints are refused. See
+[GitLab build setup, runner prerequisites and verification](gitlab-builds.md).
 
 ## Templates and persistent workloads
 

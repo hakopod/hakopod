@@ -1,12 +1,12 @@
 # Hakopod
 
-Deploy containerized applications on infrastructure you own. Hakopod combines
+Your apps. Your rules. Deploy applications on infrastructure you own. Hakopod combines
 a Go API and reconciler, a small CLI, PostgreSQL durable state, and a TanStack
 Start dashboard over K3s and HAProxy.
 
 This repository includes the deployment engine and an expanded cockpit with
-human accounts, team roles, source builds, templates, live service monitoring,
-registry credentials, TLS controls and worker enrollment. See the
+human accounts, paid team roles, source builds, templates, live service monitoring,
+searchable logs, container terminals, registry credentials, TLS controls and worker enrollment. See the
 [cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
 It remains a development release; production installation and operational recovery
 have separate acceptance gates.
@@ -20,6 +20,7 @@ The development script pins and verifies its local k3d download. It creates an
 isolated `hakopod-dev` cluster without changing your Kubernetes default context.
 
 ```sh
+python3 scripts/ui-source.py restore  # public component sources; no private repo access
 ./scripts/local-up.sh
 make build
 make api                       # leave running in this terminal
@@ -56,6 +57,44 @@ For CI, create a named project/environment-scoped key through the dashboard or
 `HAKOPOD_API_URL`. CI needs no browser session or Kubernetes credentials.
 The `bootstrap` command remains an explicit machine-credential recovery/development
 tool. Dashboard sign-in uses human accounts.
+
+## Install on a Linux server
+
+The [interactive installer](installer/README.md) supports Linux amd64 and arm64.
+It asks for your domains, node address, dashboard access, certificates, storage
+and resource limits, then shows the plan before making changes. The first person
+to complete setup chooses the administrator account.
+
+```sh
+python3 release/build.py
+python3 release/build-installer.py
+sudo bash scripts/install.sh --artifact-dir .local/installer-artifacts/0.1.0-dev
+```
+
+Run the installation step on a dedicated supported Linux host. Use `--dry-run`
+to review configuration and artifact checksums, or a reviewed `--config` for
+unattended input. No public download service is assumed; build or transfer the
+local release artifacts first. Read the installer guide for Linux prerequisites,
+SSH/HTTPS access, DNS, firewall rules, resume and the host-verification boundary.
+
+## Accounts, licensing and components
+
+Deployment and operational tools stay available in Free. Team creation,
+invitations and project role management require signed Pro entitlements. The
+dashboard shows the feature catalog and activation state; the Go API and durable
+workers enforce it. Expiry preserves accounts, application data and running
+workloads. See [paid features](docs/paid-features.md) for the exact behavior.
+
+The [design system](packages/ui/README.md) is a separate shadcn/Radix component
+repository at `packages/ui`. The public source bundle in `third_party/ui/` makes ordinary
+builds independent of submodule hosting. The license issuer is a separate private
+submodule and is excluded from public release artifacts. Current submodule
+origins are local bare repositories; hosted remotes have not been created.
+Public contributors should restore the UI bundle, without recursively fetching
+the private issuer. See [submodule development](docs/submodules.md).
+
+The [logs and terminals guide](docs/observability.md) explains SQL-style filters,
+live resource observations, terminal permissions and bounds, and GitLab source sync.
 
 ## One application, several services
 

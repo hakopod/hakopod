@@ -72,7 +72,7 @@ Optional retained observability belongs in a later measured profile.
 Service charts retain at most 24 actual samples while open, fetched every 15
 seconds, and discard their query cache when closed. Password hashing is limited
 to two concurrent bcrypt operations. Source and automatic-build inboxes each
-accept at most 1,000 pending items. GitHub Actions performs source builds outside
+accept at most 1,000 pending items. GitHub Actions and GitLab CI perform source builds outside
 the management host; bounded result artifacts carry the resulting image digest.
 
 Initial application limits: 20 services, 16 declared networks, 20 replicas per
