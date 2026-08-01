@@ -50,6 +50,17 @@ def source_fingerprint():
                 h.update((str(path.relative_to(ROOT)) + '\0' + host.digest(path)).encode())
     return h.hexdigest()
 
+def validate_static_stylesheets(dist):
+    # Client and SSR compilation can disagree if a CSS generator scans build
+    # outputs. Catch missing hashed stylesheets before packaging the runtime.
+    references = set()
+    pattern = re.compile(r'''["'](/assets/[^"'?#\s]+\.css)(?:[?#][^"']*)?["']''')
+    for path in (dist / 'server').rglob('*.js'):
+        references.update(pattern.findall(path.read_text()))
+    for reference in sorted(references):
+        if not (dist / 'client' / reference.lstrip('/')).is_file():
+            raise ValueError('SSR stylesheet is missing from client assets: ' + reference)
+
 def package_runtime(dist, output):
     """Copy only actual SSR external packages and their installed runtime closure.
 
@@ -154,6 +165,7 @@ def main():
         dist = source / 'web/dist'
     else: dist = ROOT / 'web/dist'
     if not (dist / 'server/server.js').is_file(): raise ValueError('Built SSR dashboard is missing')
+    validate_static_stylesheets(dist)
     dashboard = stage / f'hakopod_{args.version}_dashboard'; dashboard.mkdir()
     shutil.copytree(dist, dashboard / 'dist')
     shutil.copyfile(ROOT / 'installer/serve.mjs', dashboard / 'serve.mjs')

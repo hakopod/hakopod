@@ -1,6 +1,10 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 @import '@hakopod/ui/tokens.css';
 @import '@hakopod/ui/styles.css';
+
+/* Keep client/SSR candidate sets identical in clean release snapshots. */
+@source './';
+@source '../../packages/ui/src';
 
 @theme inline {
   --color-background: var(--bg);
