@@ -4,6 +4,62 @@ The first milestone's acceptance contract was written before implementation in
 docs/IMPLEMENTATION-CONTRACT.md. Implementation, individual verification and
 the full acceptance gate are recorded separately below.
 
+## Current cockpit and installer expansion — 2026-09-12
+
+This iteration adds signed Free/Pro entitlements, GitLab.com sign-in, GitLab TOML
+synchronization and CI builds, bounded SQL-like log search, pod/database terminals,
+a separately versioned shadcn/Radix component library, branded service/node
+inspectors, and an interactive amd64/arm64 Linux installer. The private issuer
+and public UI are separate local Git repositories; no hosted repositories or
+production signing keys were created.
+
+Final verification passed:
+
+- The complete Go race suite and `go vet`, using temporary PostgreSQL databases.
+  Regressions cover paid-feature expiry/replay, provider ownership/recovery,
+  terminal credential isolation, stalled writes, exhausted database pools,
+  bounded JSON metadata, cancellation and non-finite numeric comparisons.
+- Dashboard type checks, formatting, 19 tests and production builds. Production
+  HTTP smoke passed on the final local dashboard and packaged Linux runtime.
+  Tailwind scans only application/component source; packaging rejects missing
+  SSR stylesheet references.
+- A separate real K3s application exercised network isolation, pod replacement,
+  rollout, failed-readiness recovery and rollback: 570 traffic requests, zero
+  errors. Management was then killed after applying a workload; the same accepted
+  operation resumed, with 102 requests and zero errors. Temporary keys were
+  revoked. The exact fixture application/namespace was removed after ownership
+  and namespace UID checks; audit metadata remains.
+- Real container terminals accepted input, resized to 27×88, returned exit 7,
+  rejected foreign/stale pods, and stopped on disconnect. Actual Kubernetes logs
+  verified CRI timestamps, structured predicates, severity and sampled histograms.
+- Fresh installer archives passed extracted-kit tests on native Linux arm64 and
+  emulated Linux amd64 in 512 MiB containers: binary execution, systemd unit
+  parsing, permissions, dry-run, resume preservation, actual SSR/static assets,
+  authentication boundaries and checksums. The dashboard's observed RSS was
+  77.4 MiB and 112.4 MiB respectively; these are point measurements.
+
+The running local Go API and Node dashboard were observed at 23.4 MiB and
+65.3 MiB RSS after the checks, with 192 MiB soft/heap targets. The development
+K3s node, including application pods, used about 760 MiB; PostgreSQL about 60 MiB.
+These observations are not peak bounds or minimum host requirements. Logs and
+terminals use bounded queues and retention, optional terminal code loads on
+connection, and no retained logging or metrics stack was added.
+
+The user claimed the live installation during development. The owner and
+credentials were preserved; setup now reports complete. `shop` remains revision
+18 and `cli-check` revision 2. Earlier unclaimed-owner statements below describe
+historical checks, not the current installation.
+
+Remaining gates are full systemd/K3s host installation, reboot/restore and public
+ACME issuance, real external OAuth/repository credentials and CI execution,
+physical worker/GPU verification, and current visual browser QA. The browser
+connector remains unavailable. GitLab currently owns one reviewed CI entrypoint
+per repository and refuses unrelated CI replacement. Log search covers bounded
+Kubernetes-retained samples, not an archival logging service. The current local
+release runs Free; Pro activation needs a vendor public verification key embedded
+in a trusted release. See [licensing](paid-features.md), [GitLab builds](gitlab-builds.md),
+[observability](observability.md), and the [installer](../installer/README.md).
+
 ## Milestone 1: working deployment path
 
 Implemented: Go API/reconciler, explicit PostgreSQL migration, durable accepted
