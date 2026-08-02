@@ -36,7 +36,7 @@ func TestLiveCatalogTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanupFailed := false
-	for _, id := range []string{"valkey", "uptime-kuma", "gitea"} {
+	for _, id := range []string{"valkey", "redis", "cockroachdb", "clickhouse", "uptime-kuma", "gitea"} {
 		if selected := os.Getenv("HAKOPOD_CATALOG_TEMPLATE"); selected != "" && selected != id {
 			continue
 		}
@@ -62,8 +62,8 @@ func TestLiveCatalogTemplates(t *testing.T) {
 			defer func() {
 				clean, done := context.WithTimeout(context.Background(), 90*time.Second)
 				defer done()
-				if id == "valkey" {
-					if err := client.DeleteWorkloadSecret(clean, target.Project, target.Environment, target.Spec.Name, "database-password"); err != nil {
+				for _, reference := range spec.TemplateSecretNames(app) {
+					if err := client.DeleteWorkloadSecret(clean, target.Project, target.Environment, target.Spec.Name, reference); err != nil {
 						t.Error("fixture secret cleanup failed", err)
 						cleanupFailed = true
 					}
@@ -101,8 +101,9 @@ func TestLiveCatalogTemplates(t *testing.T) {
 					time.Sleep(500 * time.Millisecond)
 				}
 			}()
-			if id == "valkey" {
-				if err = client.PutWorkloadSecret(ctx, target.Project, target.Environment, target.Spec.Name, "database-password", "catalog-test-password-only"); err != nil {
+			credentials := catalogCredentials(t, id)
+			for reference, value := range credentials.values {
+				if err = client.PutWorkloadSecret(ctx, target.Project, target.Environment, target.Spec.Name, reference, value); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -138,6 +139,8 @@ func TestLiveCatalogTemplates(t *testing.T) {
 				return strings.TrimSpace(string(out))
 			}
 			switch id {
+			case "redis", "cockroachdb", "clickhouse":
+				verifyExpandedCatalog(t, ctx, client, path, &target, credentials)
 			case "valkey":
 				if got := run("valkey-cli", "--raw", "-h", "main", "PING"); !strings.Contains(got, "NOAUTH") {
 					t.Fatalf("unauthenticated Valkey request unexpectedly accepted: %s", got)
