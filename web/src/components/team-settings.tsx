@@ -1,3 +1,4 @@
+import { Avatar } from './avatar'
 import { useLicense } from '../lib/license'
 import { FeatureLock } from './license-settings'
 import { useState } from 'react'
@@ -20,6 +21,11 @@ export default function TeamSettings() {
   const [teamName, setTeamName] = useState('')
   const [adding, setAdding] = useState(false)
   const [removeTeam, setRemoveTeam] = useState(false)
+  const [usernameMember, setUsernameMember] = useState<components['schemas']['TeamMember'] | null>(
+    null,
+  )
+  const [username, setUsername] = useState('')
+  const [usernameError, setUsernameError] = useState('')
   const [invite, setInvite] = useState<'team' | 'project' | null>(null)
   const [grant, setGrant] = useState('')
   const [grantRole, setGrantRole] = useState('viewer')
@@ -126,9 +132,15 @@ export default function TeamSettings() {
           ) : (
             members.data?.items.map((member) => (
               <div className="settings-list-row" key={member.id}>
-                <div>
-                  <strong>{member.name}</strong>
-                  <small>{member.email}</small>
+                <div className="member-identity">
+                  <Avatar name={member.name} url={member.avatar_url} />
+                  <div>
+                    <strong>
+                      {member.name}
+                      {member.username && <span className="muted-text"> @{member.username}</span>}
+                    </strong>
+                    <small>{member.email}</small>
+                  </div>
                 </div>
                 {canTeam && member.role !== 'owner' ? (
                   <RoleEditor
@@ -147,6 +159,19 @@ export default function TeamSettings() {
                   />
                 ) : (
                   <span className="label-chip">{member.role}</span>
+                )}
+                {hasFeature('teams') && (canTeam || member.id === scope.identity.id) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setUsernameMember(member)
+                      setUsername(member.username || '')
+                      setUsernameError('')
+                    }}
+                  >
+                    Username
+                  </Button>
                 )}
               </div>
             ))
@@ -272,6 +297,65 @@ export default function TeamSettings() {
         Viewers can inspect applications and logs. Developers can deploy and read logs. Project
         admins also manage membership. Team roles control the team’s own membership.
       </Note>
+      <Dialog
+        open={Boolean(usernameMember)}
+        onOpenChange={(open) => {
+          if (!open && !busy) setUsernameMember(null)
+        }}
+        title="Team username"
+        description={`A unique username for ${usernameMember?.name || 'this member'} in ${current?.name || 'this team'}.`}
+      >
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            if (!usernameMember || busy) return
+            setBusy(true)
+            setUsernameError('')
+            try {
+              await unwrap(
+                client.PUT('/teams/{id}/members/{user}/username', {
+                  params: { path: { id: team, user: usernameMember.id } },
+                  body: { username },
+                }),
+              )
+              setUsernameMember(null)
+              refresh()
+            } catch (err) {
+              setUsernameError(message(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <div className="dialog-body field-stack">
+            <label>
+              Username
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value.toLowerCase())}
+                minLength={2}
+                maxLength={30}
+                pattern="[a-z][a-z0-9_-]{1,29}"
+                required
+                autoComplete="off"
+              />
+            </label>
+            <p className="field-help">
+              2–30 lowercase letters, digits, underscores, or hyphens. Start with a letter.
+              Usernames are unique within this team.
+            </p>
+            {usernameError && <ErrorState error={usernameError} />}
+          </div>
+          <div className="dialog-footer">
+            <Button type="button" disabled={busy} onClick={() => setUsernameMember(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? 'Saving…' : 'Save username'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
       <Dialog
         open={removeTeam}
         onOpenChange={(open) => {
