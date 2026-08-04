@@ -1,6 +1,9 @@
 import { BrandMark } from '@hakopod/ui'
 import type { CSSProperties } from 'react'
 const paths: Record<string, string> = {
+  database: 'M3 6a9 3 0 1 0 18 0 9 3 0 1 0-18 0ZM3 6v12c0 4 18 4 18 0V6M3 12c0 4 18 4 18 0',
+  archive: 'M3 3h18v5H3zM5 8v13h14V8M9 12h6',
+  user: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21v-3a8 8 0 0 1 16 0v3',
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   box: 'm12 3 9 5-9 5-9-5 9-5ZM3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5',
   server: 'M4 3h16v7H4zM4 14h16v7H4zM7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6',
