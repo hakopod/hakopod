@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router'
+import { Avatar } from './avatar'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
@@ -41,7 +43,15 @@ export default function AccountSettings() {
             {identity.name} · {identity.email}
           </p>
         </div>
-        <Status value={identity.owner ? 'owner' : identity.admin ? 'administrator' : 'member'} />
+        <div className="toolbar-actions">
+          <Avatar name={identity.name || 'Member'} url={identity.avatar_url} />
+          <Status
+            value={identity.owner ? 'super admin' : identity.admin ? 'administrator' : 'member'}
+          />
+          <Link className="button button-sm" to="/settings/profile">
+            Edit profile
+          </Link>
+        </div>
       </div>
       {security.isPending ? (
         <Loading />

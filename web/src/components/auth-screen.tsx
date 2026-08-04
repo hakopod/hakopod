@@ -1,3 +1,4 @@
+import { ServiceIcon } from './service-icon'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { APIError, message } from '../lib/api'
@@ -324,6 +325,7 @@ export function AuthScreen({
                             )
                         }}
                       >
+                        <ServiceIcon name={provider} size={17} />
                         Continue with{' '}
                         {provider === 'github'
                           ? 'GitHub'
