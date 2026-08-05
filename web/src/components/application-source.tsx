@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application } from '../lib/types'
 import type { components } from '../lib/api.generated'
@@ -11,14 +11,13 @@ import { Dialog } from './ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { DiffTable } from './deploy-dialog'
 
-const BuildForm = lazy(() => import('./build-form'))
+import { FormPage, FormHint, FormSection } from './form-page'
+import { ServiceIcon } from './service-icon'
 
 export default function ApplicationSource({ application }: { application: Application }) {
   const scope = useScope()
   const navigate = useNavigate()
   const cache = useQueryClient()
-  const [edit, setEdit] = useState(false)
-  const [buildOpen, setBuildOpen] = useState(false)
   const [plan, setPlan] = useState<components['schemas']['SourcePlan'] | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
@@ -45,7 +44,15 @@ export default function ApplicationSource({ application }: { application: Applic
           <p>Fetch a committed Hakopod TOML file, review it, and deploy an immutable revision.</p>
         </div>
         {scope.can('deployments:write') && (
-          <Button disabled={source.isPending} onClick={() => setEdit(true)}>
+          <Button
+            disabled={source.isPending}
+            onClick={() =>
+              void navigate({
+                to: '/applications/$applicationId/source',
+                params: { applicationId: application.id },
+              })
+            }
+          >
             {binding ? 'Edit source' : 'Connect repository'}
           </Button>
         )}
@@ -146,30 +153,20 @@ export default function ApplicationSource({ application }: { application: Applic
                 Use a Dockerfile or Cloud Native Buildpacks to produce a verified service image.
               </p>
             </div>
-            <Button onClick={() => setBuildOpen(true)}>Configure source build</Button>
+            <Button
+              onClick={() =>
+                void navigate({ to: '/builds/new', search: { application: application.id } })
+              }
+            >
+              Configure source build
+            </Button>
           </div>
         </section>
-      )}
-      {buildOpen && (
-        <Suspense fallback={<Loading />}>
-          <BuildForm application={application} onClose={() => setBuildOpen(false)} />
-        </Suspense>
       )}
       <Note>
         Source review pins the fetched commit and source mapping revision. Private repositories
         require the installation’s matching Git provider connection.
       </Note>
-      {edit && (
-        <SourceForm
-          application={application}
-          source={binding}
-          onClose={() => setEdit(false)}
-          onSaved={() => {
-            setEdit(false)
-            void source.refetch()
-          }}
-        />
-      )}
       <Dialog
         open={Boolean(plan)}
         wide
@@ -241,7 +238,7 @@ export default function ApplicationSource({ application }: { application: Applic
   )
 }
 
-function SourceForm({
+export function SourceForm({
   application,
   source,
   onClose,
@@ -260,11 +257,19 @@ function SourceForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!busy && !open) onClose()
-      }}
+    <FormPage
+      breadcrumbs={[
+        { label: 'Applications', to: '/' },
+        { label: application.name, to: `/applications/${application.id}` },
+        { label: 'Repository source' },
+      ]}
+      icon="branch"
+      help={
+        <FormHint title="A precise source">
+          Choose the branch and exact TOML path. Fetching for review pins an immutable commit before
+          deployment.
+        </FormHint>
+      }
       title="Configure repository source"
       description="Save the source mapping for this application."
     >
@@ -296,66 +301,78 @@ function SourceForm({
           }
         }}
       >
-        <div className="dialog-body auth-form">
-          <label>
-            Git provider
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
-            >
-              <option value="github">GitHub</option>
-              <option value="gitlab">GitLab.com</option>
-            </select>
-          </label>
-          <label>
-            Repository
-            <input
-              value={repository}
-              onChange={(e) => setRepository(e.target.value)}
-              placeholder="owner/repository"
-              maxLength={201}
-              required
-            />
-          </label>
-          <label>
-            Branch
-            <input
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              maxLength={200}
-              required
-            />
-          </label>
-          <label>
-            Configuration path
-            <input
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              maxLength={512}
-              required
-            />
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={automatic}
-              onChange={(e) => setAutomatic(e.target.checked)}
-            />
-            Deploy automatically on authenticated pushes to this branch
-          </label>
-          {automatic && (
-            <Note>
-              Every matching authenticated push will fetch and deploy its configuration with your
-              current authority. Configure the repository webhook through your administrator.
-            </Note>
-          )}
+        <div className="form-body auth-form">
+          <FormSection
+            title="Repository mapping"
+            description="Paths are relative to the repository root."
+            icon="branch"
+          >
+            <label>
+              Git provider
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
+              >
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab.com</option>
+              </select>
+            </label>
+            <label>
+              Repository
+              <input
+                value={repository}
+                onChange={(e) => setRepository(e.target.value)}
+                placeholder="owner/repository"
+                maxLength={201}
+                required
+              />
+            </label>
+            <label>
+              Branch
+              <input
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                maxLength={200}
+                required
+              />
+            </label>
+            <label>
+              Configuration path
+              <input
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                maxLength={512}
+                required
+              />
+            </label>
+          </FormSection>
+          <FormSection
+            title="Automatic deployment"
+            description="Enable only after configuring the matching webhook."
+            icon="refresh"
+          >
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={automatic}
+                onChange={(e) => setAutomatic(e.target.checked)}
+              />
+              Deploy automatically on authenticated pushes to this branch
+            </label>
+            {automatic && (
+              <Note>
+                Every matching authenticated push will fetch and deploy its configuration with your
+                current authority. Configure the repository webhook through your administrator.
+              </Note>
+            )}
+          </FormSection>
           {error && (
             <div className="inline-error" role="alert">
               {error}
             </div>
           )}
         </div>
-        <div className="dialog-footer">
+        <div className="form-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
@@ -364,31 +381,32 @@ function SourceForm({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </FormPage>
   )
 }
 
 export function GitHubSettings() {
-  const [provider, setProvider] = useState<'github' | 'gitlab'>('github')
   return (
-    <>
-      <div className="provider-picker" role="group" aria-label="Git provider">
-        {(['github', 'gitlab'] as const).map((name) => (
-          <Button
-            key={name}
-            aria-pressed={provider === name}
-            variant={provider === name ? 'primary' : 'secondary'}
-            onClick={() => setProvider(name)}
-          >
-            {name === 'github' ? 'GitHub' : 'GitLab'}
-          </Button>
-        ))}
-      </div>
-      <GitConnectionSettings key={provider} provider={provider} />
-    </>
+    <div className="integration-grid">
+      {(['github', 'gitlab'] as const).map((provider) => (
+        <Link
+          key={provider}
+          to="/settings/integrations/$provider"
+          params={{ provider }}
+          className="panel integration-card"
+        >
+          <ServiceIcon name={provider} size={32} />
+          <div>
+            <h2>{provider === 'github' ? 'GitHub' : 'GitLab'}</h2>
+            <p>Repository access, workflow installation, and authenticated webhook events.</p>
+          </div>
+          <span className="button button-secondary">Configure</span>
+        </Link>
+      ))}
+    </div>
   )
 }
-function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) {
+export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) {
   const label = provider === 'github' ? 'GitHub' : 'GitLab'
   const endpoint = provider === 'github' ? '/integrations/github' : '/integrations/gitlab'
   const [token, setToken] = useState('')
@@ -407,7 +425,7 @@ function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) 
       <div className="section-toolbar">
         <div>
           <h2>{label} integration</h2>
-          <p>Repository access and signed push events for connected applications.</p>
+          <p>Repository access and authenticated push events for connected applications.</p>
         </div>
       </div>
       {connection.isPending ? (
@@ -415,7 +433,7 @@ function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) 
       ) : connection.error ? (
         <ErrorState error={connection.error} />
       ) : (
-        <section className="panel service-summary-panel settings-narrow">
+        <section className="panel service-summary-panel ">
           <dl className="service-definition-list">
             <div>
               <dt>Repository credential</dt>
