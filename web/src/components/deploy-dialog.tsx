@@ -6,10 +6,11 @@ import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
-import { Dialog } from './ui/dialog'
+import { FormPage, FormHint } from './form-page'
 import { Button } from './ui/button'
 import { Icon } from './icons'
 import { Note } from './shared'
+import { ServiceIcon } from './service-icon'
 
 const newSpec = (): Spec => ({
   schema_version: 1,
@@ -17,15 +18,13 @@ const newSpec = (): Spec => ({
   services: { web: { image: '', port: 80, public: true, size: 'small', replicas: 1 } },
 })
 
-export function DeployDialog({
-  open,
-  onOpenChange,
+export function DeploymentForm({
+  onClose,
   application,
   initialMode = 'form',
   serviceName,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  onClose: () => void
   application?: Application
   initialMode?: 'form' | 'toml'
   serviceName?: string
@@ -39,7 +38,7 @@ export function DeployDialog({
     queryKey: ['registries', project, environment],
     queryFn: ({ signal }) =>
       unwrap(client.GET('/registries', { signal, params: { query: { project, environment } } })),
-    enabled: open && Boolean(project && environment),
+    enabled: Boolean(project && environment),
     gcTime: 0,
   })
   const [spec, setSpec] = useState<Spec>(newSpec)
@@ -50,14 +49,14 @@ export function DeployDialog({
   const [busy, setBusy] = useState(false)
   const requestKey = useRef('')
   useEffect(() => {
-    if (open) {
+    {
       setSpec(application ? structuredClone(application.spec) : newSpec())
       setPlan(null)
       setError('')
       setToml(application ? specToTOML(application.spec) : '')
       setMode(initialMode)
     }
-  }, [open, application?.id, initialMode, serviceName])
+  }, [application?.id, initialMode, serviceName])
   const payload = () => ({
     project,
     environment,
@@ -100,7 +99,7 @@ export function DeployDialog({
       )
       void queryClient.invalidateQueries({ queryKey: ['applications'] })
       void queryClient.invalidateQueries({ queryKey: ['application', result.application_id] })
-      onOpenChange(false)
+      onClose()
       void navigate({ to: '/deployments/$deploymentId', params: { deploymentId: result.id } })
     } catch (err) {
       setError(message(err))
@@ -115,12 +114,26 @@ export function DeployDialog({
       services: { ...previous.services, [name]: { ...previous.services[name], ...changes } },
     }))
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        if (!busy) onOpenChange(value)
-      }}
-      wide
+    <FormPage
+      breadcrumbs={[
+        { label: 'Applications', to: '/' },
+        ...(application
+          ? [{ label: application.name, to: `/applications/${application.id}` }]
+          : []),
+        { label: application ? 'Configure' : 'New application' },
+      ]}
+      icon="box"
+      help={
+        <>
+          <FormHint title="Start small">
+            Choose the smallest resource profile that fits. You can review a larger profile before
+            applying it later.
+          </FormHint>
+          <FormHint title="Review before deploy">
+            The next step shows the server-validated revision and every configuration change.
+          </FormHint>
+        </>
+      }
       title={
         plan
           ? 'Review your deployment'
@@ -143,7 +156,7 @@ export function DeployDialog({
           <b>2</b>Review & deploy
         </span>
       </div>
-      <div className="dialog-body deploy-body">
+      <div className="form-body deploy-body">
         {serviceName && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
@@ -209,6 +222,13 @@ export function DeployDialog({
                 <Icon name="code" size={15} />
                 Import TOML
               </button>
+              {!application && scope.identity.admin && (
+                <button onClick={() => void navigate({ to: '/applications/import' })}>
+                  <ServiceIcon name="github" size={15} />
+                  <ServiceIcon name="gitlab" size={15} />
+                  Git repository
+                </button>
+              )}
             </div>
             {mode === 'toml' ? (
               <div className="field-stack">
@@ -425,12 +445,12 @@ export function DeployDialog({
           </div>
         )}
       </div>
-      <div className="dialog-footer">
+      <div className="form-footer">
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
           {plan ? 'Only reviewed changes will be submitted' : 'Nothing changes until you deploy'}
         </span>
-        <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onOpenChange(false))}>
+        <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>
           {plan ? 'Back to configuration' : 'Cancel'}
         </Button>
         <Button
@@ -454,7 +474,7 @@ export function DeployDialog({
           <Icon name="arrow" size={15} />
         </Button>
       </div>
-    </Dialog>
+    </FormPage>
   )
 }
 
