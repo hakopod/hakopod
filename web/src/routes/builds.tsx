@@ -1,13 +1,10 @@
-import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
-import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
 import { Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
 
-const BuildForm = lazy(() => import('../components/build-form'))
 export const Route = createFileRoute('/builds')({ component: Builds })
 function Builds() {
   const location = useLocation()
@@ -16,7 +13,6 @@ function Builds() {
 }
 function BuildList() {
   const scope = useScope()
-  const [create, setCreate] = useState(false)
   const builds = useQuery({
     queryKey: ['builds', scope.project, scope.environment],
     queryFn: ({ signal }) =>
@@ -36,10 +32,10 @@ function BuildList() {
         description="Build container images with GitHub Actions or GitLab CI, using Dockerfiles or Cloud Native Buildpacks."
         action={
           scope.can('deployments:write') && (
-            <Button variant="primary" onClick={() => setCreate(true)}>
+            <Link className="button button-primary" to="/builds/new">
               <Icon name="plus" size={15} />
               New source build
-            </Button>
+            </Link>
           )
         }
       />
@@ -54,7 +50,9 @@ function BuildList() {
           description="Connect a repository, review its generated workflow, build, then deploy the verified image."
           action={
             scope.can('deployments:write') && (
-              <Button onClick={() => setCreate(true)}>Create source build</Button>
+              <Link className="button" to="/builds/new">
+                Create source build
+              </Link>
             )
           }
         />
@@ -96,11 +94,6 @@ function BuildList() {
         no always-running builder and does not load application build tools into the management
         process.
       </Note>
-      {create && (
-        <Suspense fallback={<Loading />}>
-          <BuildForm onClose={() => setCreate(false)} />
-        </Suspense>
-      )}
     </>
   )
 }

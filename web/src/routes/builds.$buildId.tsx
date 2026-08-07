@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { createFileRoute, Link, useNavigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
@@ -11,14 +11,16 @@ import { Icon } from '../components/icons'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
 
-const BuildForm = lazy(() => import('../components/build-form'))
 type Build = components['schemas']['BuildConfig']
 type Run = components['schemas']['BuildRun']
-export const Route = createFileRoute('/builds/$buildId')({ component: BuildDetail })
+export const Route = createFileRoute('/builds/$buildId')({ component: BuildRoute })
+function BuildRoute() {
+  const { buildId } = Route.useParams()
+  return useLocation().pathname === `/builds/${buildId}` ? <BuildDetail /> : <Outlet />
+}
 function BuildDetail() {
   const { buildId } = Route.useParams()
   const scope = useScope()
-  const [edit, setEdit] = useState(false)
   const [start, setStart] = useState(false)
   const [preview, setPreview] = useState<components['schemas']['BuildPreview'] | null>(null)
   const [selected, setSelected] = useState('')
@@ -66,7 +68,9 @@ function BuildDetail() {
         </div>
         {scope.can('deployments:write') && (
           <div className="toolbar-actions">
-            <Button onClick={() => setEdit(true)}>Edit build</Button>
+            <Link className="button" to="/builds/$buildId/edit" params={{ buildId }}>
+              Edit build
+            </Link>
             <Button
               variant="primary"
               disabled={build.installed_revision !== build.revision}
@@ -220,11 +224,6 @@ function BuildDetail() {
           </div>
           {runId && <BuildRunDetail key={runId} build={build} runId={runId} />}
         </>
-      )}
-      {edit && (
-        <Suspense fallback={<Loading />}>
-          <BuildForm build={build} onClose={() => setEdit(false)} />
-        </Suspense>
       )}
       {start && (
         <RunDialog

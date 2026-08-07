@@ -7,7 +7,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
-import { Dialog } from './ui/dialog'
+import { FormPage, FormHint, FormSection } from './form-page'
 import { Note } from './shared'
 
 type Build = components['schemas']['BuildConfig']
@@ -55,12 +55,25 @@ export default function BuildForm({
   })
   const linked = Boolean(build?.application_id || application)
   return (
-    <Dialog
-      open
-      wide
-      onOpenChange={(open) => {
-        if (!busy && !open) onClose()
-      }}
+    <FormPage
+      breadcrumbs={[
+        { label: 'Source builds', to: '/builds' },
+        ...(build ? [{ label: build.name, to: `/builds/${build.id}` }] : []),
+        { label: build ? 'Edit build' : 'New source build' },
+      ]}
+      icon="branch"
+      help={
+        <>
+          <FormHint title="Keep builds in Git">
+            The reviewed workflow runs in your provider account. Hakopod deploys its verified image
+            digest.
+          </FormHint>
+          <FormHint title="Private images">
+            Save a registry credential for the selected provider before deploying images that
+            require authentication.
+          </FormHint>
+        </>
+      }
       title={build ? 'Edit source build' : 'Build an application from source'}
       description={`${project} / ${environment} · Build with a Dockerfile or Cloud Native Buildpacks.`}
     >
@@ -109,222 +122,249 @@ export default function BuildForm({
           }
         }}
       >
-        <div className="dialog-body auth-form">
-          <div className="form-grid">
-            <label>
-              Application name
-              <input
-                value={name}
-                readOnly={Boolean(build || application)}
-                onChange={(e) => setName(e.target.value)}
-                pattern="[a-z][a-z0-9-]*"
-                maxLength={63}
-                required
-              />
-            </label>
-            <label>
-              Service
-              {application ? (
-                <select value={service} onChange={(e) => setService(e.target.value)}>
-                  {Object.keys(application.spec.services).map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              ) : (
+        <div className="form-body auth-form">
+          <FormSection
+            title="Repository"
+            description="Select the application, provider, and source branch."
+            icon="branch"
+          >
+            <div className="form-grid">
+              <label>
+                Application name
                 <input
-                  value={service}
-                  readOnly={Boolean(build)}
-                  onChange={(e) => setService(e.target.value)}
+                  value={name}
+                  readOnly={Boolean(build || application)}
+                  onChange={(e) => setName(e.target.value)}
                   pattern="[a-z][a-z0-9-]*"
                   maxLength={63}
                   required
                 />
-              )}
-            </label>
-          </div>
-          <label>
-            Git provider
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
-            >
-              <option value="github">GitHub Actions + GHCR</option>
-              <option value="gitlab">GitLab CI + GitLab Container Registry</option>
-            </select>
-          </label>
-          <div className="form-grid">
-            <label>
-              Repository
-              <input
-                value={repository}
-                onChange={(e) => setRepository(e.target.value)}
-                placeholder="owner/repository"
-                maxLength={201}
-                required
-              />
-            </label>
-            <label>
-              Source branch
-              <input
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                maxLength={200}
-                required
-              />
-            </label>
-          </div>
-          <div className="form-grid">
-            <label>
-              Build method
-              <select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
-                <option value="dockerfile">Dockerfile</option>
-                <option value="buildpacks">Cloud Native Buildpacks</option>
-              </select>
-            </label>
-            <label>
-              Build context
-              <input
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                maxLength={200}
-                required
-              />
-            </label>
-          </div>
-          <label>
-            Target architecture
-            <select
-              value={architecture}
-              onChange={(e) => setArchitecture(e.target.value as Build['architecture'] | '')}
-            >
-              <option value="">Infer from a uniform cluster</option>
-              <option value="amd64">Linux AMD64</option>
-              <option value="arm64">Linux ARM64</option>
-            </select>
-          </label>
-          {mode === 'dockerfile' ? (
-            <label>
-              Dockerfile path
-              <input
-                value={dockerfile}
-                onChange={(e) => setDockerfile(e.target.value)}
-                maxLength={200}
-                required
-              />
-            </label>
-          ) : (
-            <label>
-              Buildpack preset
-              <select value={preset} onChange={(e) => setPreset(e.target.value as Build['preset'])}>
-                {['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
-                  (value) => (
-                    <option key={value}>{value}</option>
-                  ),
+              </label>
+              <label>
+                Service
+                {application ? (
+                  <select value={service} onChange={(e) => setService(e.target.value)}>
+                    {Object.keys(application.spec.services).map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={service}
+                    readOnly={Boolean(build)}
+                    onChange={(e) => setService(e.target.value)}
+                    pattern="[a-z][a-z0-9-]*"
+                    maxLength={63}
+                    required
+                  />
                 )}
+              </label>
+            </div>
+            <label>
+              Git provider
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
+              >
+                <option value="github">GitHub Actions + GHCR</option>
+                <option value="gitlab">GitLab CI + GitLab Container Registry</option>
               </select>
             </label>
-          )}
-          {!linked && (
             <div className="form-grid">
               <label>
-                Service port
+                Repository
                 <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={port}
-                  onChange={(e) => setPort(Number(e.target.value))}
+                  value={repository}
+                  onChange={(e) => setRepository(e.target.value)}
+                  placeholder="owner/repository"
+                  maxLength={201}
                   required
                 />
               </label>
               <label>
-                Resource profile
-                <select value={size} onChange={(e) => setSize(e.target.value)}>
-                  {['small', 'medium', 'large'].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
+                Source branch
+                <input
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                  maxLength={200}
+                  required
+                />
               </label>
             </div>
-          )}
-          {!linked && (
+          </FormSection>
+          <FormSection
+            title="Build recipe"
+            description="Paths are relative to the repository root."
+            icon="code"
+          >
+            <div className="form-grid">
+              <label>
+                Build method
+                <select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
+                  <option value="dockerfile">Dockerfile</option>
+                  <option value="buildpacks">Cloud Native Buildpacks</option>
+                </select>
+              </label>
+              <label>
+                Build context
+                <input
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  maxLength={200}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              Target architecture
+              <select
+                value={architecture}
+                onChange={(e) => setArchitecture(e.target.value as Build['architecture'] | '')}
+              >
+                <option value="">Infer from a uniform cluster</option>
+                <option value="amd64">Linux AMD64</option>
+                <option value="arm64">Linux ARM64</option>
+              </select>
+            </label>
+            {mode === 'dockerfile' ? (
+              <label>
+                Dockerfile path
+                <input
+                  value={dockerfile}
+                  onChange={(e) => setDockerfile(e.target.value)}
+                  maxLength={200}
+                  required
+                />
+              </label>
+            ) : (
+              <label>
+                Buildpack preset
+                <select
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value as Build['preset'])}
+                >
+                  {['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
+                    (value) => (
+                      <option key={value}>{value}</option>
+                    ),
+                  )}
+                </select>
+              </label>
+            )}
+          </FormSection>
+          <FormSection
+            title="Runtime"
+            description="Choose resource and image-pull settings."
+            icon="box"
+          >
+            {!linked && (
+              <div className="form-grid">
+                <label>
+                  Service port
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={port}
+                    onChange={(e) => setPort(Number(e.target.value))}
+                    required
+                  />
+                </label>
+                <label>
+                  Resource profile
+                  <select value={size} onChange={(e) => setSize(e.target.value)}>
+                    {['small', 'medium', 'large'].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            {!linked && (
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setPublic(e.target.checked)}
+                />
+                Expose the service publicly
+              </label>
+            )}
+            <label>
+              Runtime registry credential
+              <select value={registry} onChange={(e) => setRegistry(e.target.value)}>
+                <option value="">None · image must be publicly pullable</option>
+                {registry && !registries.data?.items.some((item) => item.name === registry) && (
+                  <option value={registry}>{registry}</option>
+                )}
+                {registries.data?.items.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name} · {item.registry}
+                  </option>
+                ))}
+              </select>
+              <span className="field-help">
+                Private registry images need a saved credential with package read permission.
+              </span>
+            </label>
+          </FormSection>
+          <FormSection
+            title="Automation"
+            description="Choose how verified commits become deployments."
+            icon="refresh"
+          >
             <label className="checkbox-row">
               <input
                 type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setPublic(e.target.checked)}
+                checked={automatic}
+                onChange={(e) => {
+                  setAutomatic(e.target.checked)
+                  if (!e.target.checked) setAutoDeploy(false)
+                }}
               />
-              Expose the service publicly
+              Build automatically on pushes to this source branch
             </label>
-          )}
-          <label>
-            Runtime registry credential
-            <select value={registry} onChange={(e) => setRegistry(e.target.value)}>
-              <option value="">None · image must be publicly pullable</option>
-              {registry && !registries.data?.items.some((item) => item.name === registry) && (
-                <option value={registry}>{registry}</option>
-              )}
-              {registries.data?.items.map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.name} · {item.registry}
-                </option>
-              ))}
-            </select>
-            <span className="field-help">
-              Private GHCR images need a saved credential with package read permission.
-            </span>
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={automatic}
-              onChange={(e) => {
-                setAutomatic(e.target.checked)
-                if (!e.target.checked) setAutoDeploy(false)
-              }}
-            />
-            Build automatically on pushes to this source branch
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={autoDeploy}
-              disabled={!automatic}
-              onChange={(e) => setAutoDeploy(e.target.checked)}
-            />
-            Deploy successful verified builds automatically
-          </label>
-          <Note>
-            {linked
-              ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
-              : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
-            Saving build settings prepares a workflow preview. An administrator explicitly installs
-            the reviewed workflow in {provider === 'gitlab' ? 'GitLab' : 'GitHub'}.
-          </Note>
-          {provider === 'gitlab' && (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={autoDeploy}
+                disabled={!automatic}
+                onChange={(e) => setAutoDeploy(e.target.checked)}
+              />
+              Deploy successful verified builds automatically
+            </label>
             <Note>
-              Hakopod manages one .gitlab-ci.yml entrypoint per repository. Installation refuses an
-              existing unowned CI file or a file owned by another build. Configure Pipeline events
-              on the project webhook for automatic deployment.
+              {linked
+                ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
+                : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
+              Saving build settings prepares a workflow preview. An administrator explicitly
+              installs the reviewed workflow in {provider === 'gitlab' ? 'GitLab' : 'GitHub'}.
             </Note>
-          )}
-          {automatic && (
-            <Note>
-              Automatic builds require the installed workflow. Automatic deployment additionally
-              needs the{' '}
-              {provider === 'gitlab'
-                ? 'authenticated GitLab Pipeline Hook'
-                : 'signed GitHub workflow event'}{' '}
-              integration and your continuing project authority.
-            </Note>
-          )}
+            {provider === 'gitlab' && (
+              <Note>
+                Hakopod manages one .gitlab-ci.yml entrypoint per repository. Installation refuses
+                an existing unowned CI file or a file owned by another build. Configure Pipeline
+                events on the project webhook for automatic deployment.
+              </Note>
+            )}
+            {automatic && (
+              <Note>
+                Automatic builds require the installed workflow. Automatic deployment additionally
+                needs the{' '}
+                {provider === 'gitlab'
+                  ? 'authenticated GitLab Pipeline Hook'
+                  : 'signed GitHub workflow event'}{' '}
+                integration and your continuing project authority.
+              </Note>
+            )}
+          </FormSection>
           {error && (
             <div className="inline-error" role="alert">
               {error}
             </div>
           )}
         </div>
-        <div className="dialog-footer">
+        <div className="form-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
@@ -333,6 +373,6 @@ export default function BuildForm({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </FormPage>
   )
 }
