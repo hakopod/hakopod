@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { FormPage, FormSection, FormHint } from './form-page'
 import { useQuery } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
@@ -12,7 +14,7 @@ type Registry = components['schemas']['RegistryInfo']
 export default function RegistrySettings() {
   const scope = useScope()
   const query = { project: scope.project, environment: scope.environment }
-  const [edit, setEdit] = useState<Registry | 'new' | null>(null)
+  const navigate = useNavigate()
   const [remove, setRemove] = useState<Registry | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -32,7 +34,10 @@ export default function RegistrySettings() {
           </p>
         </div>
         {scope.can('deployments:write') && (
-          <Button variant="primary" onClick={() => setEdit('new')}>
+          <Button
+            variant="primary"
+            onClick={() => void navigate({ to: '/infrastructure/registries/new' })}
+          >
             Add registry
           </Button>
         )}
@@ -62,7 +67,16 @@ export default function RegistrySettings() {
               </div>
               {scope.can('deployments:write') && (
                 <div className="toolbar-actions">
-                  <Button size="sm" disabled={busy} onClick={() => setEdit(registry)}>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void navigate({
+                        to: '/infrastructure/registries/$name',
+                        params: { name: registry.name },
+                      })
+                    }
+                  >
                     Rotate credential
                   </Button>
                   {!registry.synchronized && (
@@ -115,18 +129,6 @@ export default function RegistrySettings() {
         <code>registry_credential</code> in TOML. Running containers continue after credential
         rotation; future image pulls use the saved credential.
       </Note>
-      {edit && (
-        <RegistryForm
-          registry={edit === 'new' ? undefined : edit}
-          project={query.project}
-          environment={query.environment}
-          onClose={() => setEdit(null)}
-          onSaved={() => {
-            setEdit(null)
-            void registries.refetch()
-          }}
-        />
-      )}
       <Dialog
         open={Boolean(remove)}
         onOpenChange={(open) => {
@@ -177,7 +179,7 @@ export default function RegistrySettings() {
   )
 }
 
-function RegistryForm({
+export function RegistryForm({
   registry,
   project,
   environment,
@@ -198,11 +200,19 @@ function RegistryForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!busy && !open) onClose()
-      }}
+    <FormPage
+      breadcrumbs={[
+        { label: 'Infrastructure', to: '/infrastructure' },
+        { label: 'Registries', to: '/infrastructure' },
+        { label: registry ? 'Rotate credential' : 'Add registry' },
+      ]}
+      icon="lock"
+      help={
+        <FormHint title="Use a dedicated token">
+          Grant only the package read permissions needed for your images. Credential values are
+          write-only.
+        </FormHint>
+      }
       title={registry ? `Rotate ${registry.name}` : 'Add a private registry'}
       description="Hakopod stores the credential securely and synchronizes image pull access."
     >
@@ -235,67 +245,79 @@ function RegistryForm({
           }
         }}
       >
-        <div className="dialog-body auth-form">
-          <label>
-            Credential name
-            <input
-              value={name}
-              readOnly={Boolean(registry)}
-              onChange={(e) => setName(e.target.value)}
-              pattern="[a-z][a-z0-9-]*"
-              maxLength={63}
-              required
-            />
-          </label>
-          <label>
-            Registry host
-            <input
-              value={host}
-              readOnly={Boolean(registry)}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="ghcr.io"
-              maxLength={253}
-              required
-            />
-          </label>
-          <label>
-            Username
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="off"
-              maxLength={256}
-              required
-            />
-          </label>
-          <label>
-            Password or access token
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="off"
-              maxLength={4096}
-              required
-            />
-          </label>
-          <label>
-            Token realm (optional)
-            <input
-              type="url"
-              value={realm}
-              onChange={(e) => setRealm(e.target.value)}
-              placeholder="Only when your registry needs a separate token host"
-              maxLength={512}
-            />
-          </label>
+        <div className="form-body auth-form">
+          <FormSection
+            title="Registry identity"
+            description="Saved applications refer to the credential name."
+            icon="box"
+          >
+            <label>
+              Credential name
+              <input
+                value={name}
+                readOnly={Boolean(registry)}
+                onChange={(e) => setName(e.target.value)}
+                pattern="[a-z][a-z0-9-]*"
+                maxLength={63}
+                required
+              />
+            </label>
+            <label>
+              Registry host
+              <input
+                value={host}
+                readOnly={Boolean(registry)}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="ghcr.io"
+                maxLength={253}
+                required
+              />
+            </label>
+          </FormSection>
+          <FormSection
+            title="Authentication"
+            description="Secrets are encrypted and never returned by the API."
+            icon="lock"
+          >
+            <label>
+              Username
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="off"
+                maxLength={256}
+                required
+              />
+            </label>
+            <label>
+              Password or access token
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="off"
+                maxLength={4096}
+                required
+              />
+            </label>
+            <label>
+              Token realm (optional)
+              <input
+                type="url"
+                value={realm}
+                onChange={(e) => setRealm(e.target.value)}
+                placeholder="Only when your registry needs a separate token host"
+                maxLength={512}
+              />
+            </label>
+          </FormSection>
           {error && (
             <div className="inline-error" role="alert">
               {error}
             </div>
           )}
         </div>
-        <div className="dialog-footer">
+        <div className="form-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
@@ -304,6 +326,6 @@ function RegistryForm({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </FormPage>
   )
 }
