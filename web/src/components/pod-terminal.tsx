@@ -6,11 +6,10 @@ import type { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
-import { useScope } from '../lib/scope'
+import { useScope, canOpenHostTerminal } from '../lib/scope'
 import { Button } from './ui/button'
 import { Icon } from './icons'
 import { Empty, Note } from './shared'
-import type { components } from '../lib/api.generated'
 const presets = {
   sh: ['/bin/sh'],
   bash: ['/bin/bash'],
@@ -20,15 +19,17 @@ const presets = {
   mysql: ['mysql'],
   mongo: ['mongosh'],
 } as const
-type Session = components['schemas']['TerminalSession']
+type Session = { id: string; expires_at: string; pod?: string; container?: string; node?: string }
 export default function PodTerminal({
-  applicationId,
-  services,
+  applicationId = '',
+  services = [],
   initialService,
   initialPod,
+  hostNode,
 }: {
-  applicationId: string
-  services: string[]
+  applicationId?: string
+  services?: string[]
+  hostNode?: string
   initialService?: string
   initialPod?: string
 }) {
@@ -49,6 +50,10 @@ export default function PodTerminal({
   const terminal = useRef<Terminal | null>(null)
   const dispose = useRef<(() => void) | null>(null)
   const alive = useRef(true)
+  const attempt = useRef(0)
+  const allowed = hostNode
+    ? canOpenHostTerminal(scope.identity, hostNode)
+    : scope.can('deployments:write')
   const runtime = useQuery({
     queryKey: ['terminal-pods', applicationId, service],
     queryFn: ({ signal }) =>
@@ -58,13 +63,16 @@ export default function PodTerminal({
           params: { path: { id: applicationId, service } },
         }),
       ),
-    enabled: Boolean(service) && scope.can('deployments:write'),
+    enabled: !hostNode && Boolean(service) && allowed,
     gcTime: 0,
     staleTime: 10000,
   })
   const chosenPod = pod || runtime.data?.pods.find((item) => item.phase === 'Running')?.name || ''
-  const base = `/api/applications/${encodeURIComponent(applicationId)}/services/${encodeURIComponent(service)}/terminal`
+  const base = hostNode
+    ? `/api/nodes/${encodeURIComponent(hostNode)}/terminal`
+    : `/api/applications/${encodeURIComponent(applicationId)}/services/${encodeURIComponent(service)}/terminal`
   const close = (reason = 'Disconnected') => {
+    attempt.current += 1
     const current = active.current
     active.current = null
     controller.current?.abort()
@@ -72,6 +80,7 @@ export default function PodTerminal({
     dispose.current = null
     if (terminal.current) terminal.current.options.disableStdin = true
     if (alive.current) {
+      setBusy(false)
       setConnected(false)
       setState(reason)
     }
@@ -89,9 +98,9 @@ export default function PodTerminal({
       terminal.current?.dispose()
       terminal.current = null
     }
-  }, [applicationId, service])
+  }, [applicationId, service, hostNode])
   async function connect() {
-    if (!element.current || !chosenPod || busy) return
+    if (!element.current || (!hostNode && !chosenPod) || busy || !allowed) return
     let argv: string[]
     try {
       const parsed: unknown = JSON.parse(command)
@@ -108,6 +117,7 @@ export default function PodTerminal({
       return
     }
     close()
+    const generation = attempt.current
     setBusy(true)
     setError('')
     setState('Loading terminal…')
@@ -116,7 +126,7 @@ export default function PodTerminal({
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
       ])
-      if (!alive.current || !element.current) return
+      if (!alive.current || generation !== attempt.current || !element.current) return
       terminal.current?.dispose()
       const css = getComputedStyle(document.documentElement)
       const term = new XTerm({
@@ -138,21 +148,34 @@ export default function PodTerminal({
       term.open(element.current)
       fit.fit()
       terminal.current = term
-      setState('Connecting to pod…')
-      const created = await unwrap(
-        client.POST('/applications/{id}/services/{service}/terminal', {
-          params: { path: { id: applicationId, service } },
-          body: {
-            pod: chosenPod,
-            container,
-            command: argv,
-            cols: Math.min(400, Math.max(20, term.cols)),
-            rows: Math.min(200, Math.max(5, term.rows)),
-          },
-        }),
-      )
-      if (!alive.current) {
-        void fetch(`${base}/${created.id}`, { method: 'DELETE', keepalive: true })
+      setState(hostNode ? 'Connecting to Linux node…' : 'Connecting to pod…')
+      const created = hostNode
+        ? await unwrap(
+            client.POST('/nodes/{node}/terminal', {
+              params: { path: { node: hostNode } },
+              body: {
+                cols: Math.min(400, Math.max(20, term.cols)),
+                rows: Math.min(200, Math.max(5, term.rows)),
+              },
+            }),
+          )
+        : await unwrap(
+            client.POST('/applications/{id}/services/{service}/terminal', {
+              params: { path: { id: applicationId, service } },
+              body: {
+                pod: chosenPod,
+                container,
+                command: argv,
+                cols: Math.min(400, Math.max(20, term.cols)),
+                rows: Math.min(200, Math.max(5, term.rows)),
+              },
+            }),
+          )
+      if (!alive.current || generation !== attempt.current) {
+        void fetch(`${base}/${encodeURIComponent(created.id)}`, {
+          method: 'DELETE',
+          keepalive: true,
+        }).catch(() => undefined)
         return
       }
       active.current = created
@@ -163,6 +186,10 @@ export default function PodTerminal({
         signal: abort.signal,
         cache: 'no-store',
       })
+      if (!alive.current || generation !== attempt.current) {
+        await response.body?.cancel()
+        return
+      }
       if (!response.ok || !response.body)
         throw new Error(`Terminal output could not attach (${response.status}).`)
       term.options.disableStdin = false
@@ -241,20 +268,28 @@ export default function PodTerminal({
       }
       if (!ended && active.current?.id === created.id) close('Output stream closed')
     } catch (err) {
-      if (alive.current && !(err instanceof DOMException && err.name === 'AbortError')) {
+      if (
+        alive.current &&
+        generation === attempt.current &&
+        !(err instanceof DOMException && err.name === 'AbortError')
+      ) {
         setError(message(err))
         close('Connection unavailable')
       }
     } finally {
-      if (alive.current) setBusy(false)
+      if (alive.current && generation === attempt.current) setBusy(false)
     }
   }
-  if (!scope.can('deployments:write'))
+  if (!allowed)
     return (
       <Empty
         icon="lock"
-        title="Terminal requires deployment access"
-        description="Ask a project administrator for permission to operate this application."
+        title={hostNode ? 'Host terminal access required' : 'Terminal requires deployment access'}
+        description={
+          hostNode
+            ? 'The super admin must grant terminal authority for this node.'
+            : 'Ask a project administrator for permission to operate this application.'
+        }
       />
     )
   return (
@@ -262,7 +297,7 @@ export default function PodTerminal({
       <div className="explorer-heading">
         <div>
           <Icon name="terminal" size={18} />
-          <h2>Pod terminal</h2>
+          <h2>{hostNode ? `Host terminal · ${hostNode}` : 'Pod terminal'}</h2>
           <Badge tone={connected ? 'success' : 'neutral'}>{state}</Badge>
         </div>
         {connected && (
@@ -271,76 +306,78 @@ export default function PodTerminal({
           </Button>
         )}
       </div>
-      <div className="terminal-controls">
-        <label>
-          Service
-          <select
-            disabled={connected || busy}
-            value={service}
-            onChange={(e) => {
-              setService(e.target.value)
-              setPod('')
-            }}
-          >
-            {services.map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Pod
-          <select
-            disabled={connected || busy}
-            value={chosenPod}
-            onChange={(e) => setPod(e.target.value)}
-          >
-            <option value="">Choose running pod</option>
-            {runtime.data?.pods.map((item) => (
-              <option key={item.name} value={item.name}>
-                {item.name} · {item.phase}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Container
-          <select
-            disabled={connected || busy}
-            value={container}
-            onChange={(e) => setContainer(e.target.value)}
-          >
-            {(
-              runtime.data?.pods
-                .find((item) => item.name === chosenPod)
-                ?.containers.map((item) => item.name) || ['app']
-            ).map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Client
-          <select
-            disabled={connected || busy}
-            value={preset}
-            onChange={(e) => {
-              setPreset(e.target.value)
-              if (e.target.value !== 'custom')
-                setCommand(JSON.stringify(presets[e.target.value as keyof typeof presets]))
-            }}
-          >
-            <option value="sh">Shell · sh</option>
-            <option value="bash">Shell · bash</option>
-            <option value="psql">PostgreSQL · psql</option>
-            <option value="redis">Redis · redis-cli</option>
-            <option value="valkey">Valkey · valkey-cli</option>
-            <option value="mysql">MySQL · mysql</option>
-            <option value="mongo">MongoDB · mongosh</option>
-            <option value="custom">Custom command</option>
-          </select>
-        </label>
-      </div>
-      {preset === 'custom' && (
+      {!hostNode && (
+        <div className="terminal-controls">
+          <label>
+            Service
+            <select
+              disabled={connected || busy}
+              value={service}
+              onChange={(e) => {
+                setService(e.target.value)
+                setPod('')
+              }}
+            >
+              {services.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Pod
+            <select
+              disabled={connected || busy}
+              value={chosenPod}
+              onChange={(e) => setPod(e.target.value)}
+            >
+              <option value="">Choose running pod</option>
+              {runtime.data?.pods.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} · {item.phase}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Container
+            <select
+              disabled={connected || busy}
+              value={container}
+              onChange={(e) => setContainer(e.target.value)}
+            >
+              {(
+                runtime.data?.pods
+                  .find((item) => item.name === chosenPod)
+                  ?.containers.map((item) => item.name) || ['app']
+              ).map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Client
+            <select
+              disabled={connected || busy}
+              value={preset}
+              onChange={(e) => {
+                setPreset(e.target.value)
+                if (e.target.value !== 'custom')
+                  setCommand(JSON.stringify(presets[e.target.value as keyof typeof presets]))
+              }}
+            >
+              <option value="sh">Shell · sh</option>
+              <option value="bash">Shell · bash</option>
+              <option value="psql">PostgreSQL · psql</option>
+              <option value="redis">Redis · redis-cli</option>
+              <option value="valkey">Valkey · valkey-cli</option>
+              <option value="mysql">MySQL · mysql</option>
+              <option value="mongo">MongoDB · mongosh</option>
+              <option value="custom">Custom command</option>
+            </select>
+          </label>
+        </div>
+      )}
+      {!hostNode && preset === 'custom' && (
         <label className="terminal-command">
           Command and arguments
           <input
@@ -355,11 +392,17 @@ export default function PodTerminal({
       <div className="terminal-connect">
         <p>
           {session && connected
-            ? `${session.pod} · Ends by ${timestamp(session.expires_at)}`
-            : 'Connect to an existing container. Database clients use the container’s environment and must be installed in its image.'}
+            ? `${session.node || session.pod} · Ends by ${timestamp(session.expires_at)}`
+            : hostNode
+              ? 'This is a root shell on the selected Linux node. Commands can affect every workload and its data on that node.'
+              : 'Connect to an existing container. Database clients use the container’s environment and must be installed in its image.'}
         </p>
         {!connected && (
-          <Button variant="primary" disabled={busy || !chosenPod} onClick={() => void connect()}>
+          <Button
+            variant="primary"
+            disabled={busy || (!hostNode && !chosenPod)}
+            onClick={() => void connect()}
+          >
             <Icon name="terminal" size={14} />
             {busy ? 'Connecting…' : 'Connect'}
           </Button>
@@ -376,13 +419,19 @@ export default function PodTerminal({
       <div className="terminal-surface" ref={element} aria-label="Interactive pod terminal" />
       <div className="log-footer">
         <span>
-          {connected ? 'Commands run inside the selected container' : 'Terminal is not connected'}
+          {connected
+            ? hostNode
+              ? 'Root shell on the selected Linux node'
+              : 'Commands run inside the selected container'
+            : 'Terminal is not connected'}
         </span>
         <span>500-line scrollback · 10-minute maximum · 2-minute idle timeout</span>
       </div>
       <Note>
-        Leaving this terminal tab closes its session. A database connection requires its normal
-        database permissions.
+        Leaving this terminal page closes its session.{' '}
+        {hostNode
+          ? 'Host authority is checked independently from project and administrator roles.'
+          : 'A database connection requires its normal database permissions.'}
       </Note>
     </section>
   )

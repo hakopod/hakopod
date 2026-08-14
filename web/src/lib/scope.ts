@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import type { Identity } from './types'
 
 export type Scope = {
@@ -32,4 +32,24 @@ export function useScope() {
   const context = useContext(ScopeContext)
   if (!context) throw new Error('Workspace context is unavailable. Reload the dashboard.')
   return context
+}
+
+export function useResourceScope(resource?: { project: string; environment: string }) {
+  const scope = useScope()
+  useEffect(() => {
+    if (resource) scope.syncScope(resource.project, resource.environment)
+  }, [resource?.project, resource?.environment, scope.syncScope])
+}
+
+export function canOpenHostTerminal(identity: Identity, node: string) {
+  return (
+    identity.credential_type === 'browser' &&
+    Boolean(
+      identity.owner ||
+      identity.host_permissions?.some(
+        (grant) =>
+          grant.permission === 'nodes:terminal' && (grant.node === node || grant.node === '*'),
+      ),
+    )
+  )
 }
