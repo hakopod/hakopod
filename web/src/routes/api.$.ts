@@ -11,6 +11,18 @@ import {
 } from '../server/session'
 
 const allowed = [
+  /^sources\/(?:plan|deploy)$/,
+  /^showcase(?:\/remove)?$/,
+  /^applications\/[A-Za-z0-9_-]+\/domains(?:\/[A-Za-z0-9_.-]+\/verify)?$/,
+  /^auth\/profile$/,
+  /^teams\/[A-Za-z0-9_-]+\/members\/[A-Za-z0-9_-]+\/username$/,
+  /^host-access(?:\/[A-Za-z0-9_-]+(?:\/(?:[A-Za-z0-9_.-]+|\*))?)?$/,
+  /^nodes\/[A-Za-z0-9_.-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input))?)?$/,
+  /^backup-destinations(?:\/[A-Za-z0-9_-]+(?:\/test)?)?$/,
+  /^backup-targets$/,
+  /^backups(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?$/,
+  /^backup-artifacts(?:\/[A-Za-z0-9_-]+(?:\/(?:restore-plan|restore))?)?$/,
+  /^backup-schedules(?:\/[A-Za-z0-9_-]+)?$/,
   /^teams\/[A-Za-z0-9_-]+$/,
   /^license$/,
   /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,

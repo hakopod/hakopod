@@ -10,7 +10,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Hakopod · Your infrastructure, in good hands' },
+      { title: 'Hakopod · Your apps. Your rules.' },
       {
         name: 'description',
         content: 'Deploy and operate container applications on infrastructure you own.',
