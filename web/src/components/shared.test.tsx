@@ -3,7 +3,7 @@ import test from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy } from './shared'
 import { specToTOML } from '../lib/toml'
-import { canAccess } from '../lib/scope'
+import { canAccess, canOpenHostTerminal } from '../lib/scope'
 import type { Identity } from '../lib/types'
 
 test('copying a generated key cannot submit its credential creation form', () => {
@@ -25,6 +25,7 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
   const output = specToTOML({
     schema_version: 1,
     name: 'example',
+    domains: { 'app.example.com': 'web' },
     services: {
       web: {
         image: 'registry.example/app@sha256:' + 'a'.repeat(64),
@@ -39,6 +40,8 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
     },
   })
   for (const expected of [
+    '[domains]',
+    '"app.example.com" = "web"',
     'registry_credential = "private"',
     'restart_nonce = "once"',
     'run_as_user = 1000',
@@ -74,4 +77,33 @@ test('human session envelopes do not override project membership roles', () => {
   assert.equal(canAccess(identity, 'observable', 'deployments:write'), false)
   assert.equal(canAccess(identity, 'observable', 'logs:read'), true)
   assert.equal(canAccess(identity, 'other-project', 'deployments:read'), false)
+})
+
+test('host terminal controls require owner or explicit node authority, never admin alone', () => {
+  const admin: Identity = {
+    id: 'admin',
+    name: 'Administrator',
+    admin: true,
+    owner: false,
+    credential_type: 'browser',
+    permissions: ['admin'],
+    project: '',
+    environment: '',
+  }
+  assert.equal(canOpenHostTerminal(admin, 'node-a'), false)
+  assert.equal(canOpenHostTerminal({ ...admin, owner: true }, 'node-a'), true)
+  const delegated = {
+    ...admin,
+    host_permissions: [{ node: 'node-a', permission: 'nodes:terminal' }],
+  }
+  assert.equal(canOpenHostTerminal(delegated, 'node-a'), true)
+  assert.equal(canOpenHostTerminal(delegated, 'node-b'), false)
+  assert.equal(
+    canOpenHostTerminal(
+      { ...admin, host_permissions: [{ node: '*', permission: 'nodes:terminal' }] },
+      'node-b',
+    ),
+    true,
+  )
+  assert.equal(canOpenHostTerminal({ ...delegated, credential_type: 'machine' }, 'node-a'), false)
 })
