@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import { message, timestamp } from '../lib/api'
@@ -33,8 +33,11 @@ export const Route = createFileRoute('/settings')({
         ? search.tab
         : undefined,
   }),
-  component: Administration,
+  component: AdministrationRoute,
 })
+function AdministrationRoute() {
+  return useLocation().pathname === '/settings' ? <Administration /> : <Outlet />
+}
 function Administration() {
   const scope = useScope()
   const selected = Route.useSearch().tab

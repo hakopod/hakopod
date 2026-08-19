@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import type { Application, DeploymentSummary } from '../lib/types'
@@ -11,11 +11,11 @@ import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
-import { DeployDialog } from '../components/deploy-dialog'
 import { Logs } from '../components/logs'
 const ServiceDetail = lazy(() =>
   import('../components/service-detail').then((m) => ({ default: m.ServiceDetail })),
 )
+const SampleBanner = lazy(() => import('../components/sample-banner'))
 const PodTerminal = lazy(() => import('../components/pod-terminal'))
 const ApplicationTopology = lazy(() => import('../components/application-topology'))
 const ApplicationSecrets = lazy(() => import('../components/application-secrets'))
@@ -47,14 +47,21 @@ export const Route = createFileRoute('/applications/$applicationId')({
         : undefined,
     pod: typeof search.pod === 'string' ? search.pod : undefined,
   }),
-  component: ApplicationDetail,
+  component: ApplicationRoute,
 })
+function ApplicationRoute() {
+  const { applicationId } = Route.useParams()
+  return useLocation().pathname === `/applications/${applicationId}` ? (
+    <ApplicationDetail />
+  ) : (
+    <Outlet />
+  )
+}
 function ApplicationDetail() {
   const { applicationId } = Route.useParams()
   const { service: selectedService, tab: selectedTab, pod: selectedPod } = Route.useSearch()
   const scope = useScope()
-  const [deployOpen, setDeployOpen] = useState(false)
-  const [deployMode, setDeployMode] = useState<'form' | 'toml'>('form')
+  const navigate = useNavigate()
   const [tab, setTab] = useState(selectedTab || 'topology')
   useEffect(() => {
     if (selectedTab) setTab(selectedTab)
@@ -91,6 +98,9 @@ function ApplicationDetail() {
     )
   return (
     <>
+      <Suspense fallback={null}>
+        <SampleBanner applicationId={app.id} />
+      </Suspense>
       <Link to="/" className="back-link">
         <Icon name="back" size={14} />
         All applications
@@ -120,10 +130,13 @@ function ApplicationDetail() {
         {scope.can('deployments:write') && (
           <Button
             variant="primary"
-            onClick={() => {
-              setDeployMode('form')
-              setDeployOpen(true)
-            }}
+            onClick={() =>
+              void navigate({
+                to: '/applications/$applicationId/configure',
+                params: { applicationId },
+                search: { mode: 'form' },
+              })
+            }
           >
             <Icon name="plus" size={16} />
             Deploy changes
@@ -321,6 +334,20 @@ function ApplicationDetail() {
         <Tabs.Content value="networking" className="tab-content">
           <div className="section-toolbar">
             <div>
+              <h2>Custom domains</h2>
+              <p>Map verified hostnames to the application's public HTTP services.</p>
+            </div>
+            <Link
+              className="button button-primary"
+              to="/applications/$applicationId/domains"
+              params={{ applicationId }}
+            >
+              Manage custom domains
+              <Icon name="globe" size={14} />
+            </Link>
+          </div>
+          <div className="section-toolbar">
+            <div>
               <h2>Application networking</h2>
               <p>Service discovery and exposure from the applied specification.</p>
             </div>
@@ -415,10 +442,13 @@ function ApplicationDetail() {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => {
-                    setDeployMode('toml')
-                    setDeployOpen(true)
-                  }}
+                  onClick={() =>
+                    void navigate({
+                      to: '/applications/$applicationId/configure',
+                      params: { applicationId },
+                      search: { mode: 'toml' },
+                    })
+                  }
                 >
                   <Icon name="settings" size={14} />
                   Edit configuration
@@ -456,12 +486,6 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
       </Tabs.Root>
-      <DeployDialog
-        open={deployOpen}
-        onOpenChange={setDeployOpen}
-        application={app}
-        initialMode={deployMode}
-      />
     </>
   )
 }

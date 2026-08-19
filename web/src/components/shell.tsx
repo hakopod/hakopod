@@ -1,3 +1,4 @@
+import { Avatar } from './avatar'
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Badge, Tooltip } from '@hakopod/ui'
 import { useLicense } from '../lib/license'
@@ -201,6 +202,7 @@ function Workspace({
                 ['/infrastructure', 'server', 'Infrastructure'],
                 ['/builds', 'branch', 'Source builds'],
                 ['/templates', 'box', 'Templates'],
+                ...(identity.admin ? [['/backups', 'archive', 'Backups'] as const] : []),
                 ['/settings', 'shield', 'Account & access'],
               ] as const
             ).map(([to, icon, label]) => (
@@ -250,7 +252,7 @@ function Workspace({
                   size="icon"
                   aria-label="Account menu"
                 >
-                  {(identity.name || 'H').slice(0, 1).toUpperCase()}
+                  <Avatar name={identity.name || 'Member'} url={identity.avatar_url} size={34} />
                 </Button>
               </DropdownMenu.Trigger>
             </Tooltip>
@@ -264,7 +266,11 @@ function Workspace({
                 <div className="account-menu-heading">
                   <strong>{identity.name || 'Member'}</strong>
                   <small>
-                    {identity.admin ? 'Installation administrator' : 'Scoped project access'}
+                    {identity.owner
+                      ? 'Super admin'
+                      : identity.admin
+                        ? 'Installation administrator'
+                        : 'Scoped project access'}
                   </small>
                 </div>
                 <DropdownMenu.Item className="dropdown-item" onSelect={toggleTheme}>

@@ -11,7 +11,6 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
-import { DeployDialog } from './deploy-dialog'
 import { Logs } from './logs'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
@@ -102,8 +101,6 @@ export function ServiceDetail({
     )
       setTab(initialTab)
   }, [initialTab])
-  const [deployOpen, setDeployOpen] = useState(false)
-  const [deployMode, setDeployMode] = useState<'form' | 'toml'>('form')
   const [restartOpen, setRestartOpen] = useState(false)
   const [requestKey, setRequestKey] = useState('')
   const [busy, setBusy] = useState(false)
@@ -156,8 +153,11 @@ export function ServiceDetail({
     )
   const metrics = runtime.data?.metrics
   const edit = (mode: 'form' | 'toml') => {
-    setDeployMode(mode)
-    setDeployOpen(true)
+    void navigate({
+      to: '/applications/$applicationId/configure',
+      params: { applicationId: application.id },
+      search: { mode, service: serviceName },
+    })
   }
   return (
     <>
@@ -490,13 +490,6 @@ export function ServiceDetail({
           </div>
         </Tabs.Content>
       </Tabs.Root>
-      <DeployDialog
-        open={deployOpen}
-        onOpenChange={setDeployOpen}
-        application={application}
-        serviceName={serviceName}
-        initialMode={deployMode}
-      />
       <Dialog
         open={restartOpen}
         onOpenChange={(value) => {

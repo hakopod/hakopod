@@ -2,9 +2,9 @@ import { lazy, Suspense, useState } from 'react'
 import { Badge, Card, Tooltip } from '@hakopod/ui'
 import { Dialog } from '../components/ui/dialog'
 import * as Tabs from '@radix-ui/react-tabs'
-import { useScope } from '../lib/scope'
+import { useScope, canOpenHostTerminal } from '../lib/scope'
 import type { Node } from '../lib/types'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
@@ -20,7 +20,17 @@ const RegistrySettings = lazy(() => import('../components/registry-settings'))
 const IssuerSettings = lazy(() => import('../components/tls-settings'))
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 
-export const Route = createFileRoute('/infrastructure')({ component: Infrastructure })
+export const Route = createFileRoute('/infrastructure')({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: ['nodes', 'registries', 'tls', 'enrollment', 'proxy'].includes(String(search.tab))
+      ? String(search.tab)
+      : undefined,
+  }),
+  component: InfrastructureRoute,
+})
+function InfrastructureRoute() {
+  return useLocation().pathname === '/infrastructure' ? <Infrastructure /> : <Outlet />
+}
 function cpu(quantity: string) {
   return quantity.endsWith('m') ? Number(quantity.slice(0, -1)) / 1000 : Number(quantity)
 }
@@ -39,14 +49,27 @@ function gib(bytes: number) {
 
 function Infrastructure() {
   const scope = useScope()
+  const { tab } = Route.useSearch()
+  const navigate = Route.useNavigate()
   return (
     <>
       <PageHeader
         eyebrow="OPERATOR / INFRASTRUCTURE"
         title="Cluster overview"
         description="Live capacity, node scheduling, registries, and public ingress."
+        action={
+          scope.identity.owner && (
+            <Link className="button" to="/settings/host-access">
+              <Icon name="key" size={15} />
+              Host access
+            </Link>
+          )
+        }
       />
-      <Tabs.Root defaultValue="nodes">
+      <Tabs.Root
+        value={tab || 'nodes'}
+        onValueChange={(value) => void navigate({ search: { tab: value } })}
+      >
         <Tabs.List className="tab-list">
           <Tabs.Trigger className="tab-trigger" value="nodes">
             Nodes
@@ -431,6 +454,16 @@ function Nodes() {
             )}
           </div>
           <div className="dialog-footer">
+            {canOpenHostTerminal(scope.identity, inspector.name) && (
+              <Link
+                className="button button-primary"
+                to="/infrastructure/nodes/$node/terminal"
+                params={{ node: inspector.name }}
+              >
+                <Icon name="terminal" size={14} />
+                Host terminal
+              </Link>
+            )}
             {scope.identity.admin && !inspector.control_plane && (
               <>
                 <Button
