@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { lazy, Suspense, useState } from 'react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Badge, Card, Tooltip } from '@hakopod/ui'
 import { relative, timestamp } from '../lib/api'
@@ -9,7 +9,8 @@ import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
 import { Empty, ErrorState, Loading, PageHeader, Status } from '../components/shared'
-import { DeployDialog } from '../components/deploy-dialog'
+
+const SampleBanner = lazy(() => import('../components/sample-banner'))
 
 export const Route = createFileRoute('/')({ component: Applications })
 function Applications() {
@@ -18,7 +19,7 @@ function Applications() {
   const [health, setHealth] = useState('all')
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [selected, setSelected] = useState('')
-  const [deployOpen, setDeployOpen] = useState(false)
+  const navigate = useNavigate()
   const scopeKey = `${scope.project}/${scope.environment}`
   const [page, setPage] = useState({
     scope: scopeKey,
@@ -71,6 +72,9 @@ function Applications() {
   const next = applications.data?.next_cursor
   return (
     <>
+      <Suspense fallback={null}>
+        <SampleBanner />
+      </Suspense>
       <PageHeader
         eyebrow="WORKSPACE / APPLICATIONS"
         title="Application cockpit"
@@ -82,7 +86,7 @@ function Applications() {
                 <Icon name="branch" size={14} />
                 From source
               </Link>
-              <Button variant="primary" onClick={() => setDeployOpen(true)}>
+              <Button variant="primary" onClick={() => void navigate({ to: '/applications/new' })}>
                 <Icon name="plus" size={15} />
                 New application
               </Button>
@@ -187,7 +191,10 @@ function Applications() {
                 action={
                   <div className="toolbar-actions">
                     {scope.can('deployments:write') && (
-                      <Button variant="primary" onClick={() => setDeployOpen(true)}>
+                      <Button
+                        variant="primary"
+                        onClick={() => void navigate({ to: '/applications/new' })}
+                      >
                         Deploy application
                       </Button>
                     )}
@@ -349,7 +356,6 @@ function Applications() {
           )}
         </aside>
       </div>
-      <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} />
     </>
   )
 }
