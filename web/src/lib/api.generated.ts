@@ -788,6 +788,233 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/backup-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["listBackupDestinations"];
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["createBackupDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-destinations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        put: operations["updateBackupDestination"];
+        post?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        delete: operations["deleteBackupDestination"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-destinations/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["testBackupDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["listBackupTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["listBackups"];
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["createBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["getBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["cancelBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["listBackupArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-artifacts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["getBackupArtifact"];
+        put?: never;
+        post?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        delete: operations["deleteBackupArtifact"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-artifacts/{id}/restore-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["planBackupRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-artifacts/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["restoreBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        get: operations["listBackupSchedules"];
+        put?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        post: operations["createBackupSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-schedules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        put: operations["updateBackupSchedule"];
+        post?: never;
+        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        delete: operations["deleteBackupSchedule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/builds": {
         parameters: {
             query?: never;
@@ -948,6 +1175,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApplicationDomains"];
+        put?: never;
+        post: operations["beginDomainVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/domains/{hostname}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyApplicationDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/license": {
         parameters: {
             query?: never;
@@ -1040,6 +1299,150 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["deleteTerminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateProfile"];
+        trace?: never;
+    };
+    "/teams/{id}/members/{user}/username": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setTeamUsername"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHostAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host-access/{user}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["grantHostAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host-access/{user}/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revokeHostAccess"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node}/terminal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["openHostTerminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node}/terminal/{session}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["streamHostTerminal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node}/terminal/{session}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["writeHostTerminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node}/terminal/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["closeHostTerminal"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1383,6 +1786,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sources/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["planSourceImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sources/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["deploySourceImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/templates": {
         parameters: {
             query?: never;
@@ -1409,6 +1844,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["planTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/showcase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getShowcase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/showcase/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["removeShowcase"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1504,6 +1971,9 @@ export interface components {
             networks?: {
                 [key: string]: components["schemas"]["Network"];
             };
+            domains?: {
+                [key: string]: string;
+            };
         };
         Event: {
             id: number;
@@ -1582,6 +2052,11 @@ export interface components {
             /** @enum {string} */
             credential_type: "machine" | "browser" | "cli" | "integration";
             project_roles?: components["schemas"]["ProjectRole"][];
+            avatar_style?: string;
+            avatar_seed?: string;
+            avatar_url?: string;
+            profile_revision?: number;
+            host_permissions?: components["schemas"]["HostPermission"][];
         };
         Node: {
             name: string;
@@ -1738,6 +2213,8 @@ export interface components {
             name: string;
             email: string;
             role: string;
+            username: string;
+            avatar_url: string;
         };
         ProjectMember: {
             identity_id?: string;
@@ -1804,6 +2281,138 @@ export interface components {
             expires_at: string;
             expires_in: number;
             user: components["schemas"]["Principal"];
+        };
+        BackupSource: {
+            /** @enum {string} */
+            kind: "database" | "management";
+            application_id?: string;
+            service?: string;
+            /** @enum {string} */
+            engine: "postgresql" | "mysql";
+            database?: string;
+        };
+        BackupDestination: {
+            id: string;
+            name: string;
+            endpoint: string;
+            region: string;
+            bucket: string;
+            prefix: string;
+            path_style: boolean;
+            allow_http: boolean;
+            revision: number;
+            credential_ref: string;
+            encryption_recipient: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BackupDestinationInput: {
+            name: string;
+            endpoint: string;
+            region: string;
+            bucket: string;
+            prefix: string;
+            path_style: boolean;
+            allow_http: boolean;
+            expected_revision: number;
+            access_key_id?: string;
+            secret_access_key?: string;
+            session_token?: string;
+            encryption_identity?: string;
+        };
+        BackupDestinationCreated: {
+            destination: components["schemas"]["BackupDestination"];
+            recovery_key?: string;
+        };
+        BackupTarget: {
+            /** @enum {string} */
+            kind: "database" | "management";
+            application_id?: string;
+            service?: string;
+            /** @enum {string} */
+            engine: "postgresql" | "mysql";
+            database?: string;
+            application_name?: string;
+            revision: number;
+            pod?: string;
+            pod_uid?: string;
+            available: boolean;
+            message?: string;
+        };
+        BackupArtifact: {
+            id: string;
+            job_id: string;
+            destination_id: string;
+            source: components["schemas"]["BackupSource"];
+            object_key: string;
+            sha256: string;
+            bytes: number;
+            format: string;
+            scope: string;
+            schedule_id?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            deletion_pending?: boolean;
+        };
+        BackupJob: {
+            id: string;
+            /** @enum {string} */
+            kind: "backup" | "restore";
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            destination_id: string;
+            source: components["schemas"]["BackupSource"];
+            target?: components["schemas"]["BackupTarget"];
+            artifact_id?: string;
+            schedule_id?: string;
+            error: string;
+            bytes: number;
+            cancel_requested: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        BackupSchedule: {
+            id: string;
+            name: string;
+            destination_id: string;
+            source: components["schemas"]["BackupSource"];
+            interval_hours: number;
+            retention_count: number;
+            enabled: boolean;
+            revision: number;
+            /** Format: date-time */
+            next_run_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BackupScheduleInput: {
+            name: string;
+            destination_id: string;
+            source: components["schemas"]["BackupSource"];
+            interval_hours: number;
+            retention_count: number;
+            enabled: boolean;
+            expected_revision: number;
+        };
+        BackupRestorePlan: {
+            id: string;
+            artifact_id: string;
+            target: components["schemas"]["BackupTarget"];
+            confirmation: string;
+            scope: string;
+            warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
         };
         BuildConfig: {
             /** @enum {string} */
@@ -1910,6 +2519,17 @@ export interface components {
             };
             expected_config_revision: number;
         };
+        Domain: {
+            hostname: string;
+            service: string;
+            active: boolean;
+            verified: boolean;
+            verification_name: string;
+            verification_value: string;
+            /** Format: date-time */
+            verified_at?: string;
+            target: string;
+        };
         LicenseFeature: {
             id: string;
             name: string;
@@ -1982,6 +2602,42 @@ export interface components {
             container: string;
             /** Format: date-time */
             expires_at: string;
+        };
+        Profile: {
+            name: string;
+            /** @enum {string} */
+            avatar_style: "initials" | "identicon" | "glass";
+            avatar_seed: string;
+            avatar_url: string;
+            revision: number;
+        };
+        ProfileInput: {
+            name: string;
+            /** @enum {string} */
+            avatar_style: "initials" | "identicon" | "glass";
+            avatar_seed?: string;
+            expected_revision: number;
+        };
+        HostPermission: {
+            node: string;
+            permission: string;
+        };
+        HostGrant: {
+            identity_id: string;
+            node: string;
+            permission: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        HostAccess: {
+            super_admin: boolean;
+            grants: components["schemas"]["HostGrant"][];
+            nodes: {
+                name: string;
+                control_plane: boolean;
+                ready: boolean;
+                allowed: boolean;
+            }[];
         };
         ProxyField: {
             name: string;
@@ -2222,6 +2878,36 @@ export interface components {
             webhook_secret?: string;
             private_repositories?: boolean;
         };
+        SourceImportInput: {
+            project: string;
+            environment: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
+            repository: string;
+            branch: string;
+            path: string;
+            auto_deploy: boolean;
+        };
+        SourceImportPlan: {
+            application_id: string;
+            expected_revision: number;
+            spec: components["schemas"]["Spec"];
+            changes: components["schemas"]["Change"][];
+            warnings: string[];
+            resource_profiles?: {
+                [key: string]: {
+                    CPURequest?: string;
+                    CPULimit?: string;
+                    MemoryRequest?: string;
+                    MemoryLimit?: string;
+                };
+            };
+            source: components["schemas"]["SourceImportInput"];
+            commit_sha: string;
+            review_token: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
         Template: {
             id: string;
             name: string;
@@ -2231,6 +2917,13 @@ export interface components {
             upstream: string;
             required_secrets: string[];
             requirements: string[];
+            architectures: string[];
+            resource_summary: string;
+            verification: string;
+            providers: string[];
+            configuration: string;
+            site_url_required: boolean;
+            deployable: boolean;
         };
         TemplatePlan: {
             application_id: string;
@@ -2248,6 +2941,20 @@ export interface components {
             };
             required_secrets: string[];
             model_source?: string;
+        };
+        Showcase: {
+            sample: boolean;
+            name: string;
+            project: string;
+            environment: string;
+            state: string;
+            revision: number;
+            application_id: string;
+            application_revision: number;
+            deployment_id: string;
+            deployment_status: string;
+            message: string;
+            removable: boolean;
         };
         Volume: {
             mount_path: string;
@@ -4126,6 +4833,675 @@ export interface operations {
             };
         };
     };
+    listBackupDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackupDestination"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBackupDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupDestinationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupDestinationCreated"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateBackupDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupDestinationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupDestination"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteBackupDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testBackupDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        bytes: number;
+                        message: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBackupTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackupTarget"][];
+                        truncated: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBackups: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                destination_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackupJob"][];
+                        next_cursor?: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    destination_id: string;
+                    source: components["schemas"]["BackupSource"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBackupArtifacts: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                destination_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackupArtifact"][];
+                        next_cursor?: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBackupArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupArtifact"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteBackupArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirmation: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    planBackupRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    application_id: string;
+                    service: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRestorePlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    restoreBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    plan_id: string;
+                    confirmation: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBackupSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackupSchedule"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBackupSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupScheduleInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSchedule"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateBackupSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupScheduleInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSchedule"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteBackupSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listSourceBuilds: {
         parameters: {
             query: {
@@ -4549,6 +5925,114 @@ export interface operations {
             };
         };
     };
+    listApplicationDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Domain"][];
+                        expected_revision: number;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    beginDomainVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    hostname: string;
+                    service: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    verifyApplicationDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getLicenseStatus: {
         parameters: {
             query?: never;
@@ -4811,6 +6295,356 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setTeamUsername: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                user: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    username: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMember"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getHostAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostAccess"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    grantHostAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    node: string;
+                    permission: string;
+                    /** Format: date-time */
+                    expires_at: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostGrant"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revokeHostAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user: string;
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revoked: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    openHostTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    cols?: number;
+                    rows?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        expires_at: string;
+                        node: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    streamHostTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    writeHostTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    data?: string;
+                    cols?: number;
+                    rows?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    closeHostTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Error */
             default: {
@@ -5915,6 +7749,76 @@ export interface operations {
             };
         };
     };
+    planSourceImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceImportInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceImportPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deploySourceImport: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listTemplates: {
         parameters: {
             query?: never;
@@ -5963,6 +7867,10 @@ export interface operations {
                     name: string;
                     public?: boolean;
                     storage_gib?: number;
+                    architecture?: string;
+                    site_url?: string;
+                    provider?: string;
+                    provider_url?: string;
                     model?: string;
                     model_revision?: string;
                 };
@@ -5976,6 +7884,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplatePlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getShowcase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Showcase"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeShowcase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                    expected_application_id: string;
+                    expected_application_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        state: string;
+                    };
                 };
             };
             /** @description Error */

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BackupsRouteImport } from './routes/backups'
 import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
 import { Route as SessionRouteImport } from './routes/session'
@@ -17,14 +18,41 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as ApplicationsApplicationIdRouteImport } from './routes/applications.$applicationId'
+import { Route as ApplicationsImportRouteImport } from './routes/applications.import'
+import { Route as ApplicationsNewRouteImport } from './routes/applications.new'
+import { Route as BackupsJobIdRouteImport } from './routes/backups.$jobId'
+import { Route as BackupsNewRouteImport } from './routes/backups.new'
 import { Route as BuildsBuildIdRouteImport } from './routes/builds.$buildId'
+import { Route as BuildsNewRouteImport } from './routes/builds.new'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
 import { Route as LoginDeviceRouteImport } from './routes/login.device'
 import { Route as LoginInviteRouteImport } from './routes/login.invite'
+import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
+import { Route as TemplatesTemplateIdRouteImport } from './routes/templates.$templateId'
+import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
+import { Route as ApplicationsApplicationIdDomainsRouteImport } from './routes/applications.$applicationId.domains'
+import { Route as ApplicationsApplicationIdSourceRouteImport } from './routes/applications.$applicationId.source'
+import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.destinations.new'
+import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
+import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
+import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
+import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
+import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
+import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
+import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
+import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/backups.schedules.$scheduleId.edit'
+import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BackupsRoute = BackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BuildsRoute = BuildsRouteImport.update({
@@ -63,9 +91,34 @@ const ApplicationsApplicationIdRoute =
     path: '/applications/$applicationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApplicationsImportRoute = ApplicationsImportRouteImport.update({
+  id: '/applications/import',
+  path: '/applications/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
+  id: '/applications/new',
+  path: '/applications/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BackupsJobIdRoute = BackupsJobIdRouteImport.update({
+  id: '/$jobId',
+  path: '/$jobId',
+  getParentRoute: () => BackupsRoute,
+} as any)
+const BackupsNewRoute = BackupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BackupsRoute,
+} as any)
 const BuildsBuildIdRoute = BuildsBuildIdRouteImport.update({
   id: '/$buildId',
   path: '/$buildId',
+  getParentRoute: () => BuildsRoute,
+} as any)
+const BuildsNewRoute = BuildsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
   getParentRoute: () => BuildsRoute,
 } as any)
 const DeploymentsDeploymentIdRoute = DeploymentsDeploymentIdRouteImport.update({
@@ -83,54 +136,219 @@ const LoginInviteRoute = LoginInviteRouteImport.update({
   path: '/login/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsHostAccessRoute = SettingsHostAccessRouteImport.update({
+  id: '/host-access',
+  path: '/host-access',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsProfileRoute = SettingsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
+  id: '/$templateId',
+  path: '/$templateId',
+  getParentRoute: () => TemplatesRoute,
+} as any)
+const ApplicationsApplicationIdConfigureRoute =
+  ApplicationsApplicationIdConfigureRouteImport.update({
+    id: '/configure',
+    path: '/configure',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
+const ApplicationsApplicationIdDomainsRoute =
+  ApplicationsApplicationIdDomainsRouteImport.update({
+    id: '/domains',
+    path: '/domains',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
+const ApplicationsApplicationIdSourceRoute =
+  ApplicationsApplicationIdSourceRouteImport.update({
+    id: '/source',
+    path: '/source',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
+const BackupsDestinationsNewRoute = BackupsDestinationsNewRouteImport.update({
+  id: '/destinations/new',
+  path: '/destinations/new',
+  getParentRoute: () => BackupsRoute,
+} as any)
+const BackupsSchedulesNewRoute = BackupsSchedulesNewRouteImport.update({
+  id: '/schedules/new',
+  path: '/schedules/new',
+  getParentRoute: () => BackupsRoute,
+} as any)
+const BuildsBuildIdEditRoute = BuildsBuildIdEditRouteImport.update({
+  id: '/edit',
+  path: '/edit',
+  getParentRoute: () => BuildsBuildIdRoute,
+} as any)
+const InfrastructureRegistriesNameRoute =
+  InfrastructureRegistriesNameRouteImport.update({
+    id: '/registries/$name',
+    path: '/registries/$name',
+    getParentRoute: () => InfrastructureRoute,
+  } as any)
+const InfrastructureRegistriesNewRoute =
+  InfrastructureRegistriesNewRouteImport.update({
+    id: '/registries/new',
+    path: '/registries/new',
+    getParentRoute: () => InfrastructureRoute,
+  } as any)
+const SettingsIntegrationsProviderRoute =
+  SettingsIntegrationsProviderRouteImport.update({
+    id: '/$provider',
+    path: '/$provider',
+    getParentRoute: () => SettingsIntegrationsRoute,
+  } as any)
+const BackupsArtifactsArtifactIdRestoreRoute =
+  BackupsArtifactsArtifactIdRestoreRouteImport.update({
+    id: '/artifacts/$artifactId/restore',
+    path: '/artifacts/$artifactId/restore',
+    getParentRoute: () => BackupsRoute,
+  } as any)
+const BackupsDestinationsDestinationIdEditRoute =
+  BackupsDestinationsDestinationIdEditRouteImport.update({
+    id: '/destinations/$destinationId/edit',
+    path: '/destinations/$destinationId/edit',
+    getParentRoute: () => BackupsRoute,
+  } as any)
+const BackupsSchedulesScheduleIdEditRoute =
+  BackupsSchedulesScheduleIdEditRouteImport.update({
+    id: '/schedules/$scheduleId/edit',
+    path: '/schedules/$scheduleId/edit',
+    getParentRoute: () => BackupsRoute,
+  } as any)
+const InfrastructureNodesNodeTerminalRoute =
+  InfrastructureNodesNodeTerminalRouteImport.update({
+    id: '/nodes/$node/terminal',
+    path: '/nodes/$node/terminal',
+    getParentRoute: () => InfrastructureRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
-  '/infrastructure': typeof InfrastructureRoute
+  '/infrastructure': typeof InfrastructureRouteWithChildren
   '/session': typeof SessionRoute
-  '/settings': typeof SettingsRoute
-  '/templates': typeof TemplatesRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/templates': typeof TemplatesRouteWithChildren
   '/api/$': typeof ApiSplatRoute
-  '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
-  '/builds/$buildId': typeof BuildsBuildIdRoute
+  '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
+  '/applications/import': typeof ApplicationsImportRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/backups/$jobId': typeof BackupsJobIdRoute
+  '/backups/new': typeof BackupsNewRoute
+  '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
+  '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/invite': typeof LoginInviteRoute
+  '/settings/host-access': typeof SettingsHostAccessRoute
+  '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
+  '/settings/profile': typeof SettingsProfileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
+  '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
+  '/backups/destinations/new': typeof BackupsDestinationsNewRoute
+  '/backups/schedules/new': typeof BackupsSchedulesNewRoute
+  '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
+  '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
+  '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
+  '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
-  '/infrastructure': typeof InfrastructureRoute
+  '/infrastructure': typeof InfrastructureRouteWithChildren
   '/session': typeof SessionRoute
-  '/settings': typeof SettingsRoute
-  '/templates': typeof TemplatesRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/templates': typeof TemplatesRouteWithChildren
   '/api/$': typeof ApiSplatRoute
-  '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
-  '/builds/$buildId': typeof BuildsBuildIdRoute
+  '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
+  '/applications/import': typeof ApplicationsImportRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/backups/$jobId': typeof BackupsJobIdRoute
+  '/backups/new': typeof BackupsNewRoute
+  '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
+  '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/invite': typeof LoginInviteRoute
+  '/settings/host-access': typeof SettingsHostAccessRoute
+  '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
+  '/settings/profile': typeof SettingsProfileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
+  '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
+  '/backups/destinations/new': typeof BackupsDestinationsNewRoute
+  '/backups/schedules/new': typeof BackupsSchedulesNewRoute
+  '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
+  '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
+  '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
+  '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
-  '/infrastructure': typeof InfrastructureRoute
+  '/infrastructure': typeof InfrastructureRouteWithChildren
   '/session': typeof SessionRoute
-  '/settings': typeof SettingsRoute
-  '/templates': typeof TemplatesRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/templates': typeof TemplatesRouteWithChildren
   '/api/$': typeof ApiSplatRoute
-  '/applications/$applicationId': typeof ApplicationsApplicationIdRoute
-  '/builds/$buildId': typeof BuildsBuildIdRoute
+  '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
+  '/applications/import': typeof ApplicationsImportRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/backups/$jobId': typeof BackupsJobIdRoute
+  '/backups/new': typeof BackupsNewRoute
+  '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
+  '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/invite': typeof LoginInviteRoute
+  '/settings/host-access': typeof SettingsHostAccessRoute
+  '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
+  '/settings/profile': typeof SettingsProfileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
+  '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
+  '/backups/destinations/new': typeof BackupsDestinationsNewRoute
+  '/backups/schedules/new': typeof BackupsSchedulesNewRoute
+  '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
+  '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
+  '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
+  '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/backups'
     | '/builds'
     | '/infrastructure'
     | '/session'
@@ -138,13 +356,36 @@ export interface FileRouteTypes {
     | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/applications/import'
+    | '/applications/new'
+    | '/backups/$jobId'
+    | '/backups/new'
     | '/builds/$buildId'
+    | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/invite'
+    | '/settings/host-access'
+    | '/settings/integrations'
+    | '/settings/profile'
+    | '/templates/$templateId'
+    | '/applications/$applicationId/configure'
+    | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/source'
+    | '/backups/destinations/new'
+    | '/backups/schedules/new'
+    | '/builds/$buildId/edit'
+    | '/infrastructure/registries/$name'
+    | '/infrastructure/registries/new'
+    | '/settings/integrations/$provider'
+    | '/backups/artifacts/$artifactId/restore'
+    | '/backups/destinations/$destinationId/edit'
+    | '/backups/schedules/$scheduleId/edit'
+    | '/infrastructure/nodes/$node/terminal'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/backups'
     | '/builds'
     | '/infrastructure'
     | '/session'
@@ -152,13 +393,36 @@ export interface FileRouteTypes {
     | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/applications/import'
+    | '/applications/new'
+    | '/backups/$jobId'
+    | '/backups/new'
     | '/builds/$buildId'
+    | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/invite'
+    | '/settings/host-access'
+    | '/settings/integrations'
+    | '/settings/profile'
+    | '/templates/$templateId'
+    | '/applications/$applicationId/configure'
+    | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/source'
+    | '/backups/destinations/new'
+    | '/backups/schedules/new'
+    | '/builds/$buildId/edit'
+    | '/infrastructure/registries/$name'
+    | '/infrastructure/registries/new'
+    | '/settings/integrations/$provider'
+    | '/backups/artifacts/$artifactId/restore'
+    | '/backups/destinations/$destinationId/edit'
+    | '/backups/schedules/$scheduleId/edit'
+    | '/infrastructure/nodes/$node/terminal'
   id:
     | '__root__'
     | '/'
+    | '/backups'
     | '/builds'
     | '/infrastructure'
     | '/session'
@@ -166,21 +430,46 @@ export interface FileRouteTypes {
     | '/templates'
     | '/api/$'
     | '/applications/$applicationId'
+    | '/applications/import'
+    | '/applications/new'
+    | '/backups/$jobId'
+    | '/backups/new'
     | '/builds/$buildId'
+    | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/invite'
+    | '/settings/host-access'
+    | '/settings/integrations'
+    | '/settings/profile'
+    | '/templates/$templateId'
+    | '/applications/$applicationId/configure'
+    | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/source'
+    | '/backups/destinations/new'
+    | '/backups/schedules/new'
+    | '/builds/$buildId/edit'
+    | '/infrastructure/registries/$name'
+    | '/infrastructure/registries/new'
+    | '/settings/integrations/$provider'
+    | '/backups/artifacts/$artifactId/restore'
+    | '/backups/destinations/$destinationId/edit'
+    | '/backups/schedules/$scheduleId/edit'
+    | '/infrastructure/nodes/$node/terminal'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BackupsRoute: typeof BackupsRouteWithChildren
   BuildsRoute: typeof BuildsRouteWithChildren
-  InfrastructureRoute: typeof InfrastructureRoute
+  InfrastructureRoute: typeof InfrastructureRouteWithChildren
   SessionRoute: typeof SessionRoute
-  SettingsRoute: typeof SettingsRoute
-  TemplatesRoute: typeof TemplatesRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
+  TemplatesRoute: typeof TemplatesRouteWithChildren
   ApiSplatRoute: typeof ApiSplatRoute
-  ApplicationsApplicationIdRoute: typeof ApplicationsApplicationIdRoute
+  ApplicationsApplicationIdRoute: typeof ApplicationsApplicationIdRouteWithChildren
+  ApplicationsImportRoute: typeof ApplicationsImportRoute
+  ApplicationsNewRoute: typeof ApplicationsNewRoute
   DeploymentsDeploymentIdRoute: typeof DeploymentsDeploymentIdRoute
   LoginDeviceRoute: typeof LoginDeviceRoute
   LoginInviteRoute: typeof LoginInviteRoute
@@ -193,6 +482,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backups': {
+      id: '/backups'
+      path: '/backups'
+      fullPath: '/backups'
+      preLoaderRoute: typeof BackupsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/builds': {
@@ -244,11 +540,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplicationsApplicationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/applications/import': {
+      id: '/applications/import'
+      path: '/applications/import'
+      fullPath: '/applications/import'
+      preLoaderRoute: typeof ApplicationsImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications/new': {
+      id: '/applications/new'
+      path: '/applications/new'
+      fullPath: '/applications/new'
+      preLoaderRoute: typeof ApplicationsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backups/$jobId': {
+      id: '/backups/$jobId'
+      path: '/$jobId'
+      fullPath: '/backups/$jobId'
+      preLoaderRoute: typeof BackupsJobIdRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/backups/new': {
+      id: '/backups/new'
+      path: '/new'
+      fullPath: '/backups/new'
+      preLoaderRoute: typeof BackupsNewRouteImport
+      parentRoute: typeof BackupsRoute
+    }
     '/builds/$buildId': {
       id: '/builds/$buildId'
       path: '/$buildId'
       fullPath: '/builds/$buildId'
       preLoaderRoute: typeof BuildsBuildIdRouteImport
+      parentRoute: typeof BuildsRoute
+    }
+    '/builds/new': {
+      id: '/builds/new'
+      path: '/new'
+      fullPath: '/builds/new'
+      preLoaderRoute: typeof BuildsNewRouteImport
       parentRoute: typeof BuildsRoute
     }
     '/deployments/$deploymentId': {
@@ -272,29 +603,265 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/host-access': {
+      id: '/settings/host-access'
+      path: '/host-access'
+      fullPath: '/settings/host-access'
+      preLoaderRoute: typeof SettingsHostAccessRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/profile': {
+      id: '/settings/profile'
+      path: '/profile'
+      fullPath: '/settings/profile'
+      preLoaderRoute: typeof SettingsProfileRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/templates/$templateId': {
+      id: '/templates/$templateId'
+      path: '/$templateId'
+      fullPath: '/templates/$templateId'
+      preLoaderRoute: typeof TemplatesTemplateIdRouteImport
+      parentRoute: typeof TemplatesRoute
+    }
+    '/applications/$applicationId/configure': {
+      id: '/applications/$applicationId/configure'
+      path: '/configure'
+      fullPath: '/applications/$applicationId/configure'
+      preLoaderRoute: typeof ApplicationsApplicationIdConfigureRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
+    '/applications/$applicationId/domains': {
+      id: '/applications/$applicationId/domains'
+      path: '/domains'
+      fullPath: '/applications/$applicationId/domains'
+      preLoaderRoute: typeof ApplicationsApplicationIdDomainsRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
+    '/applications/$applicationId/source': {
+      id: '/applications/$applicationId/source'
+      path: '/source'
+      fullPath: '/applications/$applicationId/source'
+      preLoaderRoute: typeof ApplicationsApplicationIdSourceRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
+    '/backups/destinations/new': {
+      id: '/backups/destinations/new'
+      path: '/destinations/new'
+      fullPath: '/backups/destinations/new'
+      preLoaderRoute: typeof BackupsDestinationsNewRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/backups/schedules/new': {
+      id: '/backups/schedules/new'
+      path: '/schedules/new'
+      fullPath: '/backups/schedules/new'
+      preLoaderRoute: typeof BackupsSchedulesNewRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/builds/$buildId/edit': {
+      id: '/builds/$buildId/edit'
+      path: '/edit'
+      fullPath: '/builds/$buildId/edit'
+      preLoaderRoute: typeof BuildsBuildIdEditRouteImport
+      parentRoute: typeof BuildsBuildIdRoute
+    }
+    '/infrastructure/registries/$name': {
+      id: '/infrastructure/registries/$name'
+      path: '/registries/$name'
+      fullPath: '/infrastructure/registries/$name'
+      preLoaderRoute: typeof InfrastructureRegistriesNameRouteImport
+      parentRoute: typeof InfrastructureRoute
+    }
+    '/infrastructure/registries/new': {
+      id: '/infrastructure/registries/new'
+      path: '/registries/new'
+      fullPath: '/infrastructure/registries/new'
+      preLoaderRoute: typeof InfrastructureRegistriesNewRouteImport
+      parentRoute: typeof InfrastructureRoute
+    }
+    '/settings/integrations/$provider': {
+      id: '/settings/integrations/$provider'
+      path: '/$provider'
+      fullPath: '/settings/integrations/$provider'
+      preLoaderRoute: typeof SettingsIntegrationsProviderRouteImport
+      parentRoute: typeof SettingsIntegrationsRoute
+    }
+    '/backups/artifacts/$artifactId/restore': {
+      id: '/backups/artifacts/$artifactId/restore'
+      path: '/artifacts/$artifactId/restore'
+      fullPath: '/backups/artifacts/$artifactId/restore'
+      preLoaderRoute: typeof BackupsArtifactsArtifactIdRestoreRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/backups/destinations/$destinationId/edit': {
+      id: '/backups/destinations/$destinationId/edit'
+      path: '/destinations/$destinationId/edit'
+      fullPath: '/backups/destinations/$destinationId/edit'
+      preLoaderRoute: typeof BackupsDestinationsDestinationIdEditRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/backups/schedules/$scheduleId/edit': {
+      id: '/backups/schedules/$scheduleId/edit'
+      path: '/schedules/$scheduleId/edit'
+      fullPath: '/backups/schedules/$scheduleId/edit'
+      preLoaderRoute: typeof BackupsSchedulesScheduleIdEditRouteImport
+      parentRoute: typeof BackupsRoute
+    }
+    '/infrastructure/nodes/$node/terminal': {
+      id: '/infrastructure/nodes/$node/terminal'
+      path: '/nodes/$node/terminal'
+      fullPath: '/infrastructure/nodes/$node/terminal'
+      preLoaderRoute: typeof InfrastructureNodesNodeTerminalRouteImport
+      parentRoute: typeof InfrastructureRoute
+    }
   }
 }
 
+interface BackupsRouteChildren {
+  BackupsJobIdRoute: typeof BackupsJobIdRoute
+  BackupsNewRoute: typeof BackupsNewRoute
+  BackupsDestinationsNewRoute: typeof BackupsDestinationsNewRoute
+  BackupsSchedulesNewRoute: typeof BackupsSchedulesNewRoute
+  BackupsArtifactsArtifactIdRestoreRoute: typeof BackupsArtifactsArtifactIdRestoreRoute
+  BackupsDestinationsDestinationIdEditRoute: typeof BackupsDestinationsDestinationIdEditRoute
+  BackupsSchedulesScheduleIdEditRoute: typeof BackupsSchedulesScheduleIdEditRoute
+}
+
+const BackupsRouteChildren: BackupsRouteChildren = {
+  BackupsJobIdRoute: BackupsJobIdRoute,
+  BackupsNewRoute: BackupsNewRoute,
+  BackupsDestinationsNewRoute: BackupsDestinationsNewRoute,
+  BackupsSchedulesNewRoute: BackupsSchedulesNewRoute,
+  BackupsArtifactsArtifactIdRestoreRoute:
+    BackupsArtifactsArtifactIdRestoreRoute,
+  BackupsDestinationsDestinationIdEditRoute:
+    BackupsDestinationsDestinationIdEditRoute,
+  BackupsSchedulesScheduleIdEditRoute: BackupsSchedulesScheduleIdEditRoute,
+}
+
+const BackupsRouteWithChildren =
+  BackupsRoute._addFileChildren(BackupsRouteChildren)
+
+interface BuildsBuildIdRouteChildren {
+  BuildsBuildIdEditRoute: typeof BuildsBuildIdEditRoute
+}
+
+const BuildsBuildIdRouteChildren: BuildsBuildIdRouteChildren = {
+  BuildsBuildIdEditRoute: BuildsBuildIdEditRoute,
+}
+
+const BuildsBuildIdRouteWithChildren = BuildsBuildIdRoute._addFileChildren(
+  BuildsBuildIdRouteChildren,
+)
+
 interface BuildsRouteChildren {
-  BuildsBuildIdRoute: typeof BuildsBuildIdRoute
+  BuildsBuildIdRoute: typeof BuildsBuildIdRouteWithChildren
+  BuildsNewRoute: typeof BuildsNewRoute
 }
 
 const BuildsRouteChildren: BuildsRouteChildren = {
-  BuildsBuildIdRoute: BuildsBuildIdRoute,
+  BuildsBuildIdRoute: BuildsBuildIdRouteWithChildren,
+  BuildsNewRoute: BuildsNewRoute,
 }
 
 const BuildsRouteWithChildren =
   BuildsRoute._addFileChildren(BuildsRouteChildren)
 
+interface InfrastructureRouteChildren {
+  InfrastructureRegistriesNameRoute: typeof InfrastructureRegistriesNameRoute
+  InfrastructureRegistriesNewRoute: typeof InfrastructureRegistriesNewRoute
+  InfrastructureNodesNodeTerminalRoute: typeof InfrastructureNodesNodeTerminalRoute
+}
+
+const InfrastructureRouteChildren: InfrastructureRouteChildren = {
+  InfrastructureRegistriesNameRoute: InfrastructureRegistriesNameRoute,
+  InfrastructureRegistriesNewRoute: InfrastructureRegistriesNewRoute,
+  InfrastructureNodesNodeTerminalRoute: InfrastructureNodesNodeTerminalRoute,
+}
+
+const InfrastructureRouteWithChildren = InfrastructureRoute._addFileChildren(
+  InfrastructureRouteChildren,
+)
+
+interface SettingsIntegrationsRouteChildren {
+  SettingsIntegrationsProviderRoute: typeof SettingsIntegrationsProviderRoute
+}
+
+const SettingsIntegrationsRouteChildren: SettingsIntegrationsRouteChildren = {
+  SettingsIntegrationsProviderRoute: SettingsIntegrationsProviderRoute,
+}
+
+const SettingsIntegrationsRouteWithChildren =
+  SettingsIntegrationsRoute._addFileChildren(SettingsIntegrationsRouteChildren)
+
+interface SettingsRouteChildren {
+  SettingsHostAccessRoute: typeof SettingsHostAccessRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRouteWithChildren
+  SettingsProfileRoute: typeof SettingsProfileRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsHostAccessRoute: SettingsHostAccessRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRouteWithChildren,
+  SettingsProfileRoute: SettingsProfileRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
+interface TemplatesRouteChildren {
+  TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
+}
+
+const TemplatesRouteChildren: TemplatesRouteChildren = {
+  TemplatesTemplateIdRoute: TemplatesTemplateIdRoute,
+}
+
+const TemplatesRouteWithChildren = TemplatesRoute._addFileChildren(
+  TemplatesRouteChildren,
+)
+
+interface ApplicationsApplicationIdRouteChildren {
+  ApplicationsApplicationIdConfigureRoute: typeof ApplicationsApplicationIdConfigureRoute
+  ApplicationsApplicationIdDomainsRoute: typeof ApplicationsApplicationIdDomainsRoute
+  ApplicationsApplicationIdSourceRoute: typeof ApplicationsApplicationIdSourceRoute
+}
+
+const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChildren =
+  {
+    ApplicationsApplicationIdConfigureRoute:
+      ApplicationsApplicationIdConfigureRoute,
+    ApplicationsApplicationIdDomainsRoute:
+      ApplicationsApplicationIdDomainsRoute,
+    ApplicationsApplicationIdSourceRoute: ApplicationsApplicationIdSourceRoute,
+  }
+
+const ApplicationsApplicationIdRouteWithChildren =
+  ApplicationsApplicationIdRoute._addFileChildren(
+    ApplicationsApplicationIdRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BackupsRoute: BackupsRouteWithChildren,
   BuildsRoute: BuildsRouteWithChildren,
-  InfrastructureRoute: InfrastructureRoute,
+  InfrastructureRoute: InfrastructureRouteWithChildren,
   SessionRoute: SessionRoute,
-  SettingsRoute: SettingsRoute,
-  TemplatesRoute: TemplatesRoute,
+  SettingsRoute: SettingsRouteWithChildren,
+  TemplatesRoute: TemplatesRouteWithChildren,
   ApiSplatRoute: ApiSplatRoute,
-  ApplicationsApplicationIdRoute: ApplicationsApplicationIdRoute,
+  ApplicationsApplicationIdRoute: ApplicationsApplicationIdRouteWithChildren,
+  ApplicationsImportRoute: ApplicationsImportRoute,
+  ApplicationsNewRoute: ApplicationsNewRoute,
   DeploymentsDeploymentIdRoute: DeploymentsDeploymentIdRoute,
   LoginDeviceRoute: LoginDeviceRoute,
   LoginInviteRoute: LoginInviteRoute,
