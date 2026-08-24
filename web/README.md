@@ -74,6 +74,34 @@ under Administration. The dashboard never fabricates a first owner.
   with bounded overlap, and recent audit metadata. Created keys are shown once.
 - Keyboard-accessible Radix dialogs, tabs, menus; dark/light themes; responsive
   navigation; deliberate loading, empty, permission, and error states.
+- Dedicated nested pages for application, build, source, provider, registry,
+  template, backup destination, and schedule forms. Breadcrumbs retain context;
+  concise help cards explain the decisions. Failed requests preserve form values.
+- Administrator Git repository import chooses the provider, branch, and TOML
+  path, then reviews a pinned commit before creating its mapping and release.
+  Opaque review tokens remain in local component state and expire after 15 minutes.
+- Searchable database, model, and agent catalogs show real architecture,
+  resource, license, secret, and verification metadata. Original provider and
+  service SVGs are served locally. Template planning supports model/provider
+  choices where the application supports them; guide-only entries do not deploy.
+- Reviewed custom domains: create ownership proof, verify DNS, review the normal
+  application diff, and deploy. A configured mapping is distinct from working
+  DNS, deployment health, and certificate readiness.
+- Encrypted database backups with object-storage destinations, connection tests,
+  one-time recovery-key display, schedules, paginated jobs and artifacts, job
+  cancellation, and explicit artifact deletion. Restore reviews an expiring plan
+  with the pinned target and requires its exact fresh database name; it never
+  overwrites an existing database.
+- Profile editing with initials or optional DiceBear identicon/glass avatars and
+  revision checks. Avatar requests use opaque seeds, omit credentials and
+  referrers, and fall back to initials. Licensed teams support scoped usernames.
+- Linux host terminals for the super admin or people with explicit, expiring
+  node authority. Installation administrator status alone does not grant a
+  root shell. The host-access page manages real grants; the terminal reuses the
+  bounded, lazy-loaded engine and closes abandoned asynchronous connections.
+- A fresh-install sample banner reads the server's tracked sample state. Removal
+  is reviewed against the sample marker and exact application revision; claimed
+  installations are not retrofitted with a sample by the dashboard.
 
 Additional connected interfaces include per-service runtime metrics/pods/events,
 service-scoped staging and restart, canonical TOML editing, installation accent,
@@ -94,6 +122,12 @@ without an active Pro license. Go enforces these permissions independently.
 Optional panels load on demand.
 Implementation and current verification are recorded separately in VERIFICATION.md.
 
+The backup interface covers PostgreSQL and MySQL database exports and the
+management database. Full host recovery also requires the Kubernetes datastore,
+K3s bootstrap material, encryption keys, and installation configuration described
+in the repository's recovery documentation. A database artifact alone is not a
+complete cluster backup.
+
 ## Shared design system
 
 The dashboard consumes `@hakopod/ui` from the independent `packages/ui` Git
@@ -102,6 +136,10 @@ font are shared package assets. The supplied `brand-kit` remains intact. The
 dashboard bundles this source package into production JavaScript; Node does not
 load raw TSX at runtime. See [submodule setup](../docs/submodules.md) for the
 pinned portable source restore path and local repository arrangement.
+Individual service/provider icons use original project SVGs or CC0 Simple Icons,
+with sources and upstream notices under `public/icons`. No icon runtime package
+or remote icon request is needed. DiceBear is contacted only for a selected
+generated avatar style; initials render entirely locally.
 
 ## Authentication and limits
 
@@ -155,6 +193,12 @@ are at most 4 KiB, and incomplete SSE frames are bounded to 16 KiB. Output waits
 for xterm rendering before reading the next block. Leaving the panel closes its
 session. Go also limits terminal concurrency to four sessions, with a two-minute
 idle timeout. These are explicit bounds, not a measured peak-memory guarantee.
+Backup history keeps one page of at most 100 records and 20 prior cursor strings;
+destination, schedule, and discovered-target lists are bounded to 32, 64, and 128.
+Backup query data is collectable immediately after its last observer leaves.
+Only a selected unfinished job polls, every 2.5 seconds. Profile data and host
+grants contain metadata; recovery keys, backup credentials, and source review
+tokens never enter persistent browser storage or query caches.
 
 ## Schema and verification
 

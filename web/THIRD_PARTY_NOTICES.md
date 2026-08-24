@@ -43,3 +43,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Provider and service logos
+
+Individual SVGs from Simple Icons 16.30.0 are distributed under CC0-1.0. The full license and source URL are in `public/icons/`. These identify their respective third-party services; brand names and marks belong to their owners. No runtime icon package is loaded.
+
+Valkey, Infisical, Flowise, and Open WebUI use unmodified logos from their official project assets. Their source URLs and applicable upstream license texts are retained in `public/icons/`; those logos are separate from the CC0 Simple Icons subset. DiceBear identicon and glass avatars are requested from its documented 10.x service with opaque seeds, and fall back to local initials if unavailable.

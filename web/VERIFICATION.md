@@ -1,4 +1,96 @@
-# Cockpit and design-system expansion — 2026-09-12
+# Forms, catalog, backups, and host access — 2026-09-12
+
+The current dashboard adds dedicated nested form pages with breadcrumbs and help,
+Git repository bootstrap from a reviewed immutable commit, searchable database
+and agent catalogs, original provider/service icons, profiles and avatars, team
+usernames, custom-domain ownership and routing review, database backup/restore
+management, explicit host-terminal grants, and the tracked fresh-install sample
+banner. All screens use the Go API. The reports below this section are historical
+and do not establish verification of these additions.
+
+## Current checks
+
+- Production `pnpm build`, strict `pnpm typecheck`, `pnpm format:check`, and all
+  20 tests passed after final source changes. The generated route tree includes
+  the new nested pages and the aggregate OpenAPI/TypeScript contract includes
+  profiles, host access, backups, domains, repository import, and final template
+  and sample schemas.
+- The test suite includes 16 BFF/security/stream tests and four regressions bundled
+  from actual TSX/code. New host-authority coverage proves that a browser owner
+  or explicit matching node grant enables host controls; administrator status
+  alone, the wrong node, and machine credentials do not. Canonical TOML preserves
+  quoted custom-domain mappings alongside volume/GPU/TLS/secret settings.
+- An isolated production server using `scripts/serve.mjs`, a random in-memory
+  session secret, and ephemeral loopback port 49538 passed public HTTP smoke:
+  real SSR and CSS, unauthorized access, exact GitHub/GitLab webhook method
+  restrictions, mutation Origin rejection, and the sign-in body-size bound.
+  Representative original SVGs served with the correct content type. The process
+  was removed afterward; no live account was created or modified.
+- Initial SSR HTML does not preload the xterm engine. Production SSR bundles the
+  shared UI source without a raw `@hakopod/ui` runtime import. Client output
+  contains neither the configured session secret nor `HAKOPOD_SESSION_SECRET`,
+  `HAKOPOD_API_URL`, or `node:crypto`; only boolean scan results were emitted.
+- Authored source/scripts/documentation passed the no-emoji audit, and the web
+  diff passed whitespace checks. Original SVG assets and their licenses remain
+  unchanged, with source attribution under `public/icons`.
+
+The final source review also corrected hidden provider URL submission when
+switching back to OpenAI, made model identifiers required before model-template
+review, and hardened terminal cleanup against abandoned asynchronous connection
+attempts. Repository review tokens and backup credentials/recovery keys stay in
+component state, outside URLs, persistent browser storage, and query caches.
+Avatar image requests omit credentials and referrers and use opaque seeds.
+
+## Current resource measurements
+
+These are complete build-output comparison sizes, using gzip level 9 separately
+for each file. They are not measured network transfer or initial-route totals.
+
+| Asset group                            | Files | Raw bytes | Gzip bytes |
+| -------------------------------------- | ----: | --------: | ---------: |
+| All client JavaScript                  |    73 | 1,193,180 |    370,602 |
+| Main entry (included above)            |     1 |   428,912 |    134,792 |
+| Optional xterm engine (included above) |     1 |   331,178 |     81,915 |
+| All CSS                                |     2 |    93,266 |     18,647 |
+| Self-hosted variable font              |     1 |   136,676 |     63,683 |
+| Local provider/service SVGs            |    28 |   101,521 |     47,634 |
+
+The isolated production Node process was observed at **91,040 KiB RSS (about
+89 MiB)** immediately after public smoke and static-icon requests. The production
+command retains its **192 MiB old-space cap**. This is a point-in-time measurement,
+not a peak, concurrency benchmark, browser-memory measurement, or RSS guarantee.
+
+New backup views retain one page of at most 100 job/artifact records, with at most
+20 previous cursor strings; destination/schedule/target lists are bounded to
+32/64/128. These query caches become collectable when their last observer leaves.
+Only a selected unfinished backup job polls at 2.5 seconds. Hidden tabs do not
+poll. Catalog search is bounded to 100 characters, and individual static icons
+are requested as needed without a new runtime dependency.
+
+Existing bounds remain: 25 applications per page, 32 topology services, 1,000
+queried log entries, 1,000 live log lines / 256 KiB, 500 terminal scrollback lines,
+16 KiB queued terminal input, 4 KiB terminal blocks, and 16 KiB incomplete SSE
+frames. Terminal rendering applies read backpressure; Go enforces four sessions
+globally, ten-minute lifetimes, and two-minute idle timeouts. New form pages add
+route chunks; the terminal engine still loads only after Connect.
+
+## Current verification limits
+
+The browser connector returned **“Codex auth token is unavailable.”** New visual,
+keyboard, responsive-layout, avatar-network, and browser-memory verification is
+not claimed. Earlier screenshots and browser checks below describe prior builds.
+The live installation is already claimed by the user and was preserved.
+
+Dashboard checks did not issue external provider writes, invitation email,
+live profile/theme updates, host commands, backup operations, or cluster mutations.
+Public HTTP smoke did not authenticate to Go. Real API/provider/cluster acceptance
+and full host recovery are recorded by the repository's separate test and recovery
+reports. The database backup interface does not by itself verify restoration of
+the Kubernetes datastore, K3s material, or the entire installation.
+
+---
+
+# Historical cockpit and design-system expansion — 2026-09-12
 
 The current dashboard builds and runs in production with the shared local
 `@hakopod/ui` package, supplied Hakopod brand assets, application/node inspectors,
