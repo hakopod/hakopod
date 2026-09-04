@@ -21,6 +21,7 @@ import (
 type terminalSession struct {
 	mu                           sync.Mutex
 	id, owner, key, app, service string
+	hostNode                     string
 	options                      cluster.TerminalOptions
 	uid                          types.UID
 	expires, lastInput           time.Time
@@ -87,6 +88,7 @@ func (w terminalWriter) Write(p []byte) (int, error) {
 
 func (s *Server) registerTerminalRoutes(m *http.ServeMux) {
 	s.terminals = map[string]*terminalSession{}
+	s.registerHostRoutes(m)
 	m.HandleFunc("POST /api/v1/applications/{id}/services/{service}/terminal", s.createTerminal)
 	m.HandleFunc("GET /api/v1/applications/{id}/services/{service}/terminal/{session}/output", s.terminalOutput)
 	m.HandleFunc("POST /api/v1/applications/{id}/services/{service}/terminal/{session}/input", s.terminalInput)
@@ -161,6 +163,9 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
 	write(w, 201, map[string]any{"id": x.id, "expires_at": x.expires, "pod": o.Pod, "container": o.Container})
 }
 func (s *Server) terminalFor(w http.ResponseWriter, r *http.Request) (*terminalSession, store.Application, bool) {
+	if r.PathValue("node") != "" {
+		return s.hostTerminalFor(w, r)
+	}
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
 	if !ok {
 		return nil, a, false
@@ -289,7 +294,11 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 		<-s.streams
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_, _ = s.Store.Pool.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'terminal.close',$3,$4)", x.owner, x.key, x.app, store.JSON(map[string]string{"session": x.id, "pod": x.options.Pod}))
+		action, resource := "terminal.close", x.app
+		if x.hostNode != "" {
+			action, resource = "terminal.host.close", x.hostNode
+		}
+		_, _ = s.Store.Pool.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,$3,$4,$5)", x.owner, x.key, action, resource, store.JSON(map[string]string{"session": x.id, "pod": x.options.Pod}))
 	}()
 	// Closing the output request cancels exec even if this handler is blocked in
 	// a response write. Join the callback before finishing the handler.
@@ -303,7 +312,11 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 			<-requestCancelled
 		}
 	}()
-	go s.guardStream(x.ctx, x.cancel, x.key, a, "deployments:write")
+	if x.hostNode != "" {
+		go s.guardHostTerminal(x)
+	} else {
+		go s.guardStream(x.ctx, x.cancel, x.key, a, "deployments:write")
+	}
 	writes := guardResponseWrites(x.ctx, w, 10*time.Second)
 	defer writes.stop()
 	if !writes.begin() {
@@ -319,6 +332,10 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 	output := make(chan []byte, 8)
 	done := make(chan error, 1)
 	go func() {
+		if x.hostNode != "" {
+			done <- s.Cluster.HostTerminal(x.ctx, x.hostNode, x.id, x.uid, &terminalReader{ctx: x.ctx, input: x.input}, terminalWriter{ctx: x.ctx, output: output}, terminalSizes{ctx: x.ctx, sizes: x.sizes})
+			return
+		}
 		done <- s.Cluster.Terminal(x.ctx, cluster.Target{ApplicationID: a.ID, Project: a.Project, Environment: a.Environment, Spec: a.Spec}, x.service, x.options, x.uid, &terminalReader{ctx: x.ctx, input: x.input}, terminalWriter{ctx: x.ctx, output: output}, terminalSizes{ctx: x.ctx, sizes: x.sizes})
 	}()
 	emit := func(value any) bool {
