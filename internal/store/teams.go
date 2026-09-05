@@ -18,10 +18,12 @@ type Team struct {
 	Role string `json:"role"`
 }
 type TeamMember struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Username  string `json:"username"`
+	AvatarURL string `json:"avatar_url"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
 }
 
 // Deletion remains available to the recovery administrator without Pro. Foreign
@@ -137,7 +139,7 @@ func (s *Store) TeamMembers(ctx context.Context, p Principal, id string) ([]Team
 	if !member && !p.IsAdmin() {
 		return nil, ErrForbidden
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT i.id,i.name,i.email,m.role FROM team_members m JOIN identities i ON i.id=m.identity_id WHERE m.team_id=$1 ORDER BY i.name,i.id LIMIT 200", id)
+	rows, err := s.Pool.Query(ctx, "SELECT i.id,i.name,i.email,m.role,m.username,i.avatar_style,i.avatar_seed FROM team_members m JOIN identities i ON i.id=m.identity_id WHERE m.team_id=$1 ORDER BY i.name,i.id LIMIT 200", id)
 	if err != nil {
 		return nil, err
 	}
@@ -145,9 +147,11 @@ func (s *Store) TeamMembers(ctx context.Context, p Principal, id string) ([]Team
 	out := []TeamMember{}
 	for rows.Next() {
 		var v TeamMember
-		if err = rows.Scan(&v.ID, &v.Name, &v.Email, &v.Role); err != nil {
+		var style, seed string
+		if err = rows.Scan(&v.ID, &v.Name, &v.Email, &v.Role, &v.Username, &style, &seed); err != nil {
 			return nil, err
 		}
+		v.AvatarURL = AvatarURL(style, seed, v.ID)
 		out = append(out, v)
 	}
 	return out, rows.Err()

@@ -28,7 +28,9 @@ var ErrUnauthorized = errors.New("credential is invalid, expired, revoked, or di
 var ErrForbidden = errors.New("credential does not allow this operation in the requested scope")
 
 type Store struct {
-	Pool *pgxpool.Pool
+	Pool             *pgxpool.Pool
+	ShowcaseEnabled  bool
+	ProtectedDomains []string
 	// Trusted embedding/test configuration; never supplied by a request.
 	LicenseVerifier *license.Verifier
 }
@@ -121,21 +123,26 @@ func JSON(v any) []byte {
 }
 
 type Principal struct {
-	ID                  string        `json:"id"`
-	Name                string        `json:"name"`
-	Admin               bool          `json:"admin"`
-	Owner               bool          `json:"owner"`
-	Email               string        `json:"email,omitempty"`
-	CredentialType      string        `json:"credential_type"`
-	ProjectRoles        []ProjectRole `json:"project_roles,omitempty"`
-	KeyID               string        `json:"-"`
-	Project             string        `json:"project"`
-	Environment         string        `json:"environment"`
-	Application         string        `json:"application,omitempty"`
-	Permissions         []string      `json:"permissions"`
-	IdentityProject     string        `json:"-"`
-	IdentityEnvironment string        `json:"-"`
-	IdentityPermissions []string      `json:"-"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	Admin               bool             `json:"admin"`
+	Owner               bool             `json:"owner"`
+	Email               string           `json:"email,omitempty"`
+	CredentialType      string           `json:"credential_type"`
+	ProjectRoles        []ProjectRole    `json:"project_roles,omitempty"`
+	AvatarStyle         string           `json:"avatar_style,omitempty"`
+	AvatarSeed          string           `json:"avatar_seed,omitempty"`
+	AvatarURL           string           `json:"avatar_url,omitempty"`
+	ProfileRevision     int64            `json:"profile_revision"`
+	HostPermissions     []HostPermission `json:"host_permissions"`
+	KeyID               string           `json:"-"`
+	Project             string           `json:"project"`
+	Environment         string           `json:"environment"`
+	Application         string           `json:"application,omitempty"`
+	Permissions         []string         `json:"permissions"`
+	IdentityProject     string           `json:"-"`
+	IdentityEnvironment string           `json:"-"`
+	IdentityPermissions []string         `json:"-"`
 }
 
 func contains(xs []string, s string) bool {
@@ -267,12 +274,16 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
 	}
 	if err == nil && p.Email != "" {
 		p.ProjectRoles, err = s.projectRoles(ctx, p.ID)
+	}
+	if err == nil && p.IsHuman() {
+		p.AvatarURL = AvatarURL(p.AvatarStyle, p.AvatarSeed, p.ID)
+		p.HostPermissions, err = s.hostPermissions(ctx, p.ID)
 	}
 	return p, digest, err
 }
