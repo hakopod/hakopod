@@ -22,6 +22,7 @@ type Application struct {
 	Name          string             `json:"name" toml:"name"`
 	Services      map[string]Service `json:"services" toml:"services"`
 	Networks      map[string]Network `json:"networks,omitempty" toml:"networks"`
+	Domains       map[string]string  `json:"domains,omitempty" toml:"domains"`
 }
 
 type Service struct {
@@ -142,6 +143,9 @@ func Normalize(input Application) (Application, error) {
 	}
 	if len(app.Services) == 0 || len(app.Services) > 20 {
 		return Application{}, errors.New("services: define between 1 and 20 services")
+	}
+	if err := ValidateDomains(app); err != nil {
+		return Application{}, err
 	}
 	if len(app.Networks) > 16 {
 		return Application{}, errors.New("networks: at most 16 networks are supported")
@@ -358,6 +362,7 @@ func Diff(before *Application, after Application) []Change {
 	}
 	add("", "name", old.Name, after.Name, false)
 	add("", "networks", old.Networks, after.Networks, true)
+	add("", "domains", old.Domains, after.Domains, false)
 	names := make(map[string]bool)
 	for name := range old.Services {
 		names[name] = true
