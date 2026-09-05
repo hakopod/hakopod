@@ -204,6 +204,11 @@ func (s *Store) SetupOwner(ctx context.Context, name, email, password, existingI
 	if _, err = tx.Exec(ctx, "INSERT INTO projects(name) VALUES('demo') ON CONFLICT DO NOTHING; INSERT INTO environments(project,name) VALUES('demo','development') ON CONFLICT DO NOTHING"); err != nil {
 		return Principal{}, err
 	}
+	if existingID == "" {
+		if err = s.ScheduleShowcase(ctx, tx, id); err != nil {
+			return Principal{}, err
+		}
+	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,action,resource) VALUES($1,'owner.setup',$1)", id); err != nil {
 		return Principal{}, err
 	}
