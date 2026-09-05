@@ -355,6 +355,11 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	api := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID))
 	pathType := networkingv1.PathTypePrefix
 	wanted := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: networkingv1.IngressSpec{IngressClassName: ptr(c.options.IngressClass), Rules: []networkingv1.IngressRule{{Host: c.hostname(t, name), IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pathType, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: name, Port: networkingv1.ServiceBackendPort{Number: svc.Port}}}}}}}}}}}
+	for _, host := range c.serviceHostnames(t, name)[1:] {
+		rule := wanted.Spec.Rules[0].DeepCopy()
+		rule.Host = host
+		wanted.Spec.Rules = append(wanted.Spec.Rules, *rule)
+	}
 	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {
 		return err
 	}

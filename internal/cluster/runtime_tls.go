@@ -108,7 +108,7 @@ func (c *Client) PutTLSCertificate(ctx context.Context, t Target, service string
 	if !ok || !svc.Public || c.options.AppDomain == "" {
 		return "", fmt.Errorf("TLS requires an existing public service and application domain")
 	}
-	_, err := validateTLSCertificate(certificate, key, c.hostname(t, service), time.Now())
+	_, err := c.validateServiceCertificate(t, service, certificate, key)
 	if err != nil {
 		return "", err
 	}
@@ -136,7 +136,7 @@ func (c *Client) PutTLSCertificate(ctx context.Context, t Target, service string
 		if existing.Labels[serviceKey] != service || existing.Type != corev1.SecretTypeTLS || existing.Immutable == nil || !*existing.Immutable {
 			return "", fmt.Errorf("TLS secret ownership or immutability mismatch")
 		}
-		if _, err = validateTLSCertificate(existing.Data[corev1.TLSCertKey], existing.Data[corev1.TLSPrivateKeyKey], c.hostname(t, service), time.Now()); err != nil {
+		if _, err = c.validateServiceCertificate(t, service, existing.Data[corev1.TLSCertKey], existing.Data[corev1.TLSPrivateKeyKey]); err != nil {
 			return "", err
 		}
 		return name, nil
@@ -177,7 +177,7 @@ func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string,
 			if stored.Type != corev1.SecretTypeTLS || stored.Labels[serviceKey] != name || stored.Labels["hakopod.io/tls-upload"] != "true" {
 				return fmt.Errorf("TLS certificate is not owned by this service")
 			}
-			if _, err = validateTLSCertificate(stored.Data[corev1.TLSCertKey], stored.Data[corev1.TLSPrivateKeyKey], c.hostname(t, name), time.Now()); err != nil {
+			if _, err = c.validateServiceCertificate(t, name, stored.Data[corev1.TLSCertKey], stored.Data[corev1.TLSPrivateKeyKey]); err != nil {
 				return err
 			}
 		} else if err := c.TLSIssuerExists(ctx, issuer); err != nil {
@@ -196,7 +196,7 @@ func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string,
 	if issuer != "" {
 		wanted.Annotations["cert-manager.io/cluster-issuer"] = issuer
 	}
-	wanted.Spec.TLS = []networkingv1.IngressTLS{{Hosts: []string{c.hostname(t, name)}, SecretName: secret}}
+	wanted.Spec.TLS = []networkingv1.IngressTLS{{Hosts: c.serviceHostnames(t, name), SecretName: secret}}
 	return nil
 }
 
@@ -247,7 +247,7 @@ func (c *Client) ServiceTLS(ctx context.Context, t Target, service string) (TLSS
 			return value, nil
 		}
 	}
-	leaf, err := validateTLSCertificate(secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], value.Hostname, time.Now())
+	leaf, err := c.validateServiceCertificate(t, service, secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey])
 	if err != nil {
 		value.Message = err.Error()
 		return value, nil

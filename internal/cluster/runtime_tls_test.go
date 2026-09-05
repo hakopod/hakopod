@@ -24,13 +24,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func testTLSCertificate(t *testing.T, hostname string, expiry time.Time) ([]byte, []byte) {
+func testTLSCertificate(t *testing.T, hostname string, expiry time.Time, extraHosts ...string) ([]byte, []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: hostname}, DNSNames: []string{hostname}, NotBefore: time.Now().Add(-time.Minute), NotAfter: expiry, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	template.DNSNames = append(template.DNSNames, extraHosts...)
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
