@@ -12,6 +12,7 @@ import (
 )
 
 func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
+	s.registerShowcaseRoutes(routes)
 	routes.HandleFunc("GET /api/v1/templates", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]any{"items": spec.Templates()}) })
 	routes.HandleFunc("POST /api/v1/templates/{id}/plan", s.planTemplate)
 }
@@ -24,6 +25,10 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		StorageGiB    int64  `json:"storage_gib"`
 		Model         string `json:"model"`
 		ModelRevision string `json:"model_revision"`
+		Architecture  string `json:"architecture"`
+		SiteURL       string `json:"site_url"`
+		Provider      string `json:"provider"`
+		ProviderURL   string `json:"provider_url"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -71,7 +76,7 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		in.ModelRevision = model.SHA
 	}
-	next, err := spec.FromTemplate(r.PathValue("id"), in.Name, in.Public, in.StorageGiB, in.Model, in.ModelRevision)
+	next, err := spec.PlanTemplate(r.PathValue("id"), spec.TemplateOptions{Name: in.Name, Public: in.Public, StorageGiB: in.StorageGiB, Model: in.Model, ModelRevision: in.ModelRevision, Architecture: in.Architecture, SiteURL: in.SiteURL, Provider: in.Provider, ProviderURL: in.ProviderURL})
 	if err != nil {
 		problem(w, 400, "invalid_template", err.Error())
 		return
@@ -89,10 +94,10 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		id = previous.ID
 	}
 	warnings := spec.Warnings(next)
-	required := []string{}
+	required := spec.TemplateSecretNames(next)
 	for _, t := range spec.Templates() {
 		if t.ID == r.PathValue("id") {
-			required = t.RequiredSecrets
+			warnings = append(warnings, t.Verification, t.ResourceSummary)
 			warnings = append(warnings, t.Requirements...)
 		}
 	}
@@ -100,7 +105,7 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		warnings = append(warnings, fmt.Sprintf("Before deployment, save these secret references for %s/%s/%s: %s", in.Project, in.Environment, in.Name, strings.Join(required, ", ")))
 	}
 	write(w, 200, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "changes": spec.Diff(before, next), "warnings": warnings, "required_secrets": required, "model_source": func() string {
-		if in.Model == "" {
+		if in.Model == "" || r.PathValue("id") != "vllm" {
 			return ""
 		}
 		return "https://huggingface.co/" + in.Model + "/tree/" + url.PathEscape(in.ModelRevision)
