@@ -47,6 +47,7 @@ var commitPattern = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
 const sourceColumns = "application_id,provider,repository,branch,path,auto_deploy,grant_id,revision,last_commit,last_deployment,last_error,updated_at"
 
 func (s *Server) registerSourceRoutes(public, protected *http.ServeMux) {
+	s.registerSourceImportRoutes(protected)
 	s.registerGitLabRoutes(public, protected)
 	protected.HandleFunc("GET /api/v1/integrations/github", s.githubStatus)
 	protected.HandleFunc("PUT /api/v1/integrations/github", s.configureGitHub)
