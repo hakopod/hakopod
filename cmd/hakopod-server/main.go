@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -45,6 +46,7 @@ func run() error {
 		return fmt.Errorf("connect to PostgreSQL: check HAKOPOD_DATABASE_URL and database health")
 	}
 	defer db.Close()
+	db.ShowcaseEnabled = true
 	if err = db.Migrate(ctx); err != nil {
 		return fmt.Errorf("database migration failed: %w", err)
 	}
@@ -130,15 +132,22 @@ func run() error {
 		return err
 	}
 	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig}
+	db.ProtectedDomains = []string{domain}
+	if dashboardURL, parseErr := url.Parse(identityConfig.PublicURL); parseErr == nil {
+		db.ProtectedDomains = append(db.ProtectedDomains, strings.ToLower(dashboardURL.Hostname()))
+	}
+	management.ConfigureBackups(api.BackupConfig{DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true"})
 	srv := &http.Server{Addr: listen, Handler: management.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	w := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(7)
 	go func() { defer wg.Done(); w.Run(ctx) }()
 	go func() { defer wg.Done(); w.Resync(ctx) }()
 	go func() { defer wg.Done(); management.RunSources(ctx) }()
 	go func() { defer wg.Done(); management.RunPlatform(ctx) }()
 	go func() { defer wg.Done(); management.RunBuilds(ctx) }()
+	go func() { defer wg.Done(); management.RunBackups(ctx) }()
+	go func() { defer wg.Done(); management.RunShowcase(ctx) }()
 	serverErr := make(chan error, 1)
 	go func() {
 		if cert != "" {

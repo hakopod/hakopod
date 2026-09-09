@@ -15,6 +15,7 @@ import (
 
 	contract "github.com/hakopod/hakopod/api"
 
+	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -25,6 +26,7 @@ type Server struct {
 	Store   *store.Store
 	Cluster *cluster.Client
 	Auth    AuthConfig
+	Backups *backup.Service
 	// Overrides are only set by in-process tests, never by an API request.
 	githubHTTP            *http.Client
 	gitlabHTTP            *http.Client
@@ -32,6 +34,7 @@ type Server struct {
 	gitlabTestCredentials func(context.Context) (map[string][]byte, error)
 	githubAPIURL          string
 	githubTestCredentials func(context.Context) (map[string][]byte, error)
+	domainLookupTXT       func(context.Context, string) ([]string, error)
 	mu                    sync.Mutex
 	buckets               map[string]bucket
 	concurrent            chan struct{}
@@ -63,6 +66,9 @@ func (s *Server) Handler() http.Handler {
 	routes := http.NewServeMux()
 	s.registerAuthRoutes(mux, routes)
 	s.registerLicenseRoutes(routes)
+	s.registerProfileRoutes(routes)
+	s.registerDomainRoutes(routes)
+	s.registerBackupRoutes(routes)
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
@@ -126,6 +132,8 @@ func failure(w http.ResponseWriter, err error) {
 		problem(w, 403, "forbidden", err.Error())
 	case errors.Is(err, store.ErrConflict):
 		problem(w, 409, "conflict", err.Error())
+	case errors.Is(err, store.ErrInput):
+		problem(w, 400, "invalid_request", err.Error())
 	case errors.Is(err, pgx.ErrNoRows):
 		problem(w, 404, "not_found", "resource not found")
 	default:
