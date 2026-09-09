@@ -18,6 +18,10 @@ import (
 // Accept uses one transaction for revision allocation, immutable specification,
 // queue entry and audit record. Advisory locking also covers first creation.
 func (s *Store) Accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, seedResolved ...spec.Application) (Deployment, error) {
+	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, seedResolved...)
+}
+
+func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, seedResolved ...spec.Application) (Deployment, error) {
 	if len(idem) < 8 || len(idem) > 128 {
 		return Deployment{}, errors.New("Idempotency-Key must contain 8–128 characters")
 	}
@@ -45,19 +49,30 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 		seed = &resolved
 		resolvedJSON = JSON(resolved)
 	}
+	showcaseID := ""
+	if initialShowcase != nil {
+		showcaseID = initialShowcase.ID
+	}
 	hash := sha256.Sum256(JSON(struct {
 		Project, Environment string
 		Spec                 spec.Application
 		Expected             int64
 		// Omission preserves hashes for ordinary pre-seeding deployment calls;
 		// presence distinguishes rollback intent even when the desired spec is identical.
-		SeedResolved *spec.Application `json:",omitempty"`
-	}{project, env, next, expected, seed}))
+		SeedResolved  *spec.Application `json:",omitempty"`
+		InitialSource *InitialSource    `json:",omitempty"`
+		ShowcaseID    string            `json:",omitempty"`
+	}{project, env, next, expected, seed, initialSource, showcaseID}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
 	}
 	defer tx.Rollback(ctx)
+	if initialShowcase != nil {
+		if err = s.lockShowcaseAcceptance(ctx, tx, p, project, env, next, *initialShowcase); err != nil {
+			return Deployment{}, err
+		}
+	}
 	// Same identity and idempotency key serialize even when a caller changes scope.
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,1))", p.ID+":"+idem); err != nil {
 		return Deployment{}, err
@@ -70,7 +85,18 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 			return Deployment{}, fmt.Errorf("%w: idempotency key reused with different input", ErrConflict)
 		}
 		d, e := scanDep(tx.QueryRow(ctx, "SELECT "+depCols+" FROM deployments WHERE id=$1", existingID))
-		return d, e
+		if e != nil {
+			return d, e
+		}
+		if initialShowcase != nil {
+			if e = s.recordShowcaseAcceptance(ctx, tx, showcaseID, d.ApplicationID, d.ID); e != nil {
+				return Deployment{}, e
+			}
+			if e = tx.Commit(ctx); e != nil {
+				return Deployment{}, e
+			}
+		}
+		return d, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, err
@@ -114,6 +140,9 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 	if a.Revision != expected {
 		return Deployment{}, fmt.Errorf("%w: expected %d, current revision is %d; plan again", ErrConflict, expected, a.Revision)
 	}
+	if err = s.reserveDomains(ctx, tx, a.ID, next); err != nil {
+		return Deployment{}, err
+	}
 	var pending int
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM deployments WHERE application_id=$1 AND status IN ('queued','running')", a.ID).Scan(&pending); err != nil {
 		return Deployment{}, err
@@ -129,11 +158,21 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 	if _, err = tx.Exec(ctx, "UPDATE applications SET revision=$2,spec=$3,updated_at=now(),status='queued' WHERE id=$1", a.ID, revision, JSON(next)); err != nil {
 		return Deployment{}, err
 	}
+	if initialSource != nil {
+		if err = s.bindInitialSource(ctx, tx, p, a, id, *initialSource); err != nil {
+			return Deployment{}, err
+		}
+	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'deployment.accept',$3,$4)", p.ID, p.KeyID, id, JSON(map[string]any{"revision": revision, "application_id": a.ID})); err != nil {
 		return Deployment{}, err
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO deployment_events(deployment_id,type,message) VALUES($1,'queued','Release accepted into the durable application queue')", id); err != nil {
 		return Deployment{}, err
+	}
+	if initialShowcase != nil {
+		if err = s.recordShowcaseAcceptance(ctx, tx, showcaseID, a.ID, id); err != nil {
+			return Deployment{}, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Deployment{}, err
