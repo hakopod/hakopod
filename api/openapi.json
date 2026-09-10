@@ -2674,6 +2674,984 @@
         }
       }
     },
+    "/backup-destinations": {
+      "get": {
+        "operationId": "listBackupDestinations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackupDestination"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "post": {
+        "operationId": "createBackupDestination",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDestinationCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupDestinationInput"
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-destinations/{id}": {
+      "put": {
+        "operationId": "updateBackupDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDestination"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupDestinationInput"
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "delete": {
+        "operationId": "deleteBackupDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-destinations/{id}/test": {
+      "post": {
+        "operationId": "testBackupDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "bytes",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-targets": {
+      "get": {
+        "operationId": "listBackupTargets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackupTarget"
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backups": {
+      "get": {
+        "operationId": "listBackups",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "destination_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackupJob"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "post": {
+        "operationId": "createBackup",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "destination_id": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "$ref": "#/components/schemas/BackupSource"
+                  }
+                },
+                "required": [
+                  "destination_id",
+                  "source"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backups/{id}": {
+      "get": {
+        "operationId": "getBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backups/{id}/cancel": {
+      "post": {
+        "operationId": "cancelBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-artifacts": {
+      "get": {
+        "operationId": "listBackupArtifacts",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "destination_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackupArtifact"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-artifacts/{id}": {
+      "get": {
+        "operationId": "getBackupArtifact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupArtifact"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "delete": {
+        "operationId": "deleteBackupArtifact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirmation"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-artifacts/{id}/restore-plan": {
+      "post": {
+        "operationId": "planBackupRestore",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestorePlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "application_id": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "application_id",
+                  "service"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-artifacts/{id}/restore": {
+      "post": {
+        "operationId": "restoreBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plan_id": {
+                    "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "plan_id",
+                  "confirmation"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-schedules": {
+      "get": {
+        "operationId": "listBackupSchedules",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackupSchedule"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "post": {
+        "operationId": "createBackupSchedule",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSchedule"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupScheduleInput"
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
+    "/backup-schedules/{id}": {
+      "put": {
+        "operationId": "updateBackupSchedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSchedule"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupScheduleInput"
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      },
+      "delete": {
+        "operationId": "deleteBackupSchedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database."
+      }
+    },
     "/builds": {
       "get": {
         "operationId": "listSourceBuilds",
@@ -3302,6 +4280,172 @@
         }
       }
     },
+    "/applications/{id}/domains": {
+      "get": {
+        "operationId": "listApplicationDomains",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Domain"
+                      }
+                    },
+                    "expected_revision": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "expected_revision"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "beginDomainVerification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hostname",
+                  "service"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/domains/{hostname}/verify": {
+      "post": {
+        "operationId": "verifyApplicationDomain",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -3710,6 +4854,504 @@
         "responses": {
           "204": {
             "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "operationId": "getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teams/{id}/members/{user}/username": {
+      "put": {
+        "operationId": "setTeamUsername",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMember"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "username"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/host-access": {
+      "get": {
+        "operationId": "getHostAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostAccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/host-access/{user}": {
+      "put": {
+        "operationId": "grantHostAccess",
+        "parameters": [
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostGrant"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "permission": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "node",
+                  "permission",
+                  "expires_at"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/host-access/{user}/{node}": {
+      "delete": {
+        "operationId": "revokeHostAccess",
+        "parameters": [
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{node}/terminal": {
+      "post": {
+        "operationId": "openHostTerminal",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "node": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "expires_at",
+                    "node"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{node}/terminal/{session}/output": {
+      "get": {
+        "operationId": "streamHostTerminal",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{node}/terminal/{session}/input": {
+      "post": {
+        "operationId": "writeHostTerminal",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{node}/terminal/{session}": {
+      "delete": {
+        "operationId": "closeHostTerminal",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -5261,6 +6903,101 @@
         "description": "GitLab.com push webhook authenticated with X-Gitlab-Token and deduplicated by X-Gitlab-Event-UUID. Provider-separated bounded durable inbox."
       }
     },
+    "/sources/plan": {
+      "post": {
+        "operationId": "planSourceImport",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceImportPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceImportInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sources/deploy": {
+      "post": {
+        "operationId": "deploySourceImport",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_token"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/templates": {
       "get": {
         "operationId": "listTemplates",
@@ -5357,6 +7094,18 @@
                   "storage_gib": {
                     "type": "integer"
                   },
+                  "architecture": {
+                    "type": "string"
+                  },
+                  "site_url": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "provider_url": {
+                    "type": "string"
+                  },
                   "model": {
                     "type": "string"
                   },
@@ -5368,6 +7117,96 @@
                   "project",
                   "environment",
                   "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/showcase": {
+      "get": {
+        "operationId": "getShowcase",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Showcase"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/showcase/remove": {
+      "post": {
+        "operationId": "removeShowcase",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  },
+                  "expected_application_id": {
+                    "type": "string"
+                  },
+                  "expected_application_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision",
+                  "expected_application_id",
+                  "expected_application_revision"
                 ]
               }
             }
@@ -5772,6 +7611,12 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/Network"
             }
+          },
+          "domains": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -6086,6 +7931,24 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ProjectRole"
+            }
+          },
+          "avatar_style": {
+            "type": "string"
+          },
+          "avatar_seed": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string"
+          },
+          "profile_revision": {
+            "type": "integer"
+          },
+          "host_permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HostPermission"
             }
           }
         },
@@ -6695,13 +8558,21 @@
           },
           "role": {
             "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
           "email",
-          "role"
+          "role",
+          "username",
+          "avatar_url"
         ]
       },
       "ProjectMember": {
@@ -6948,6 +8819,482 @@
           "expires_at",
           "expires_in",
           "user"
+        ]
+      },
+      "BackupSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "database",
+              "management"
+            ]
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "postgresql",
+              "mysql"
+            ]
+          },
+          "database": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "engine"
+        ]
+      },
+      "BackupDestination": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "path_style": {
+            "type": "boolean"
+          },
+          "allow_http": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "credential_ref": {
+            "type": "string"
+          },
+          "encryption_recipient": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "endpoint",
+          "region",
+          "bucket",
+          "prefix",
+          "path_style",
+          "allow_http",
+          "revision",
+          "credential_ref",
+          "encryption_recipient",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "BackupDestinationInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "path_style": {
+            "type": "boolean"
+          },
+          "allow_http": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "access_key_id": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "secret_access_key": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "session_token": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "encryption_identity": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "endpoint",
+          "region",
+          "bucket",
+          "prefix",
+          "path_style",
+          "allow_http",
+          "expected_revision"
+        ]
+      },
+      "BackupDestinationCreated": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "$ref": "#/components/schemas/BackupDestination"
+          },
+          "recovery_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination"
+        ]
+      },
+      "BackupTarget": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "database",
+              "management"
+            ]
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "postgresql",
+              "mysql"
+            ]
+          },
+          "database": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "pod": {
+            "type": "string"
+          },
+          "pod_uid": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "engine",
+          "revision",
+          "available"
+        ]
+      },
+      "BackupArtifact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BackupSource"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletion_pending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "destination_id",
+          "source",
+          "object_key",
+          "sha256",
+          "bytes",
+          "format",
+          "scope",
+          "created_at"
+        ]
+      },
+      "BackupJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BackupSource"
+          },
+          "target": {
+            "$ref": "#/components/schemas/BackupTarget"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "destination_id",
+          "source",
+          "error",
+          "bytes",
+          "cancel_requested",
+          "created_at"
+        ]
+      },
+      "BackupSchedule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BackupSource"
+          },
+          "interval_hours": {
+            "type": "integer"
+          },
+          "retention_count": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "destination_id",
+          "source",
+          "interval_hours",
+          "retention_count",
+          "enabled",
+          "revision",
+          "next_run_at",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "BackupScheduleInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BackupSource"
+          },
+          "interval_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8760
+          },
+          "retention_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "destination_id",
+          "source",
+          "interval_hours",
+          "retention_count",
+          "enabled",
+          "expected_revision"
+        ]
+      },
+      "BackupRestorePlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/BackupTarget"
+          },
+          "confirmation": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_id",
+          "target",
+          "confirmation",
+          "scope",
+          "warnings",
+          "expires_at"
         ]
       },
       "BuildConfig": {
@@ -7350,6 +9697,45 @@
           "expected_config_revision"
         ]
       },
+      "Domain": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "verification_name": {
+            "type": "string"
+          },
+          "verification_value": {
+            "type": "string"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "service",
+          "active",
+          "verified",
+          "verification_name",
+          "verification_value",
+          "target"
+        ]
+      },
       "LicenseFeature": {
         "type": "object",
         "properties": {
@@ -7632,6 +10018,149 @@
           "pod",
           "container",
           "expires_at"
+        ]
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "avatar_style": {
+            "type": "string",
+            "enum": [
+              "initials",
+              "identicon",
+              "glass"
+            ]
+          },
+          "avatar_seed": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "avatar_style",
+          "avatar_seed",
+          "avatar_url",
+          "revision"
+        ]
+      },
+      "ProfileInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "avatar_style": {
+            "type": "string",
+            "enum": [
+              "initials",
+              "identicon",
+              "glass"
+            ]
+          },
+          "avatar_seed": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "avatar_style",
+          "expected_revision"
+        ]
+      },
+      "HostPermission": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "permission"
+        ]
+      },
+      "HostGrant": {
+        "type": "object",
+        "properties": {
+          "identity_id": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "identity_id",
+          "node",
+          "permission",
+          "expires_at"
+        ]
+      },
+      "HostAccess": {
+        "type": "object",
+        "properties": {
+          "super_admin": {
+            "type": "boolean"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HostGrant"
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "control_plane": {
+                  "type": "boolean"
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "allowed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "control_plane",
+                "ready",
+                "allowed"
+              ]
+            }
+          }
+        },
+        "required": [
+          "super_admin",
+          "grants",
+          "nodes"
         ]
       },
       "ProxyField": {
@@ -8494,6 +11023,116 @@
           "webhook_path"
         ]
       },
+      "SourceImportInput": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
+          "repository": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "auto_deploy": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "provider",
+          "repository",
+          "branch",
+          "path",
+          "auto_deploy"
+        ]
+      },
+      "SourceImportPlan": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_profiles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "CPURequest": {
+                  "type": "string"
+                },
+                "CPULimit": {
+                  "type": "string"
+                },
+                "MemoryRequest": {
+                  "type": "string"
+                },
+                "MemoryLimit": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceImportInput"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "review_token": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "application_id",
+          "expected_revision",
+          "spec",
+          "changes",
+          "warnings",
+          "source",
+          "commit_sha",
+          "review_token",
+          "expires_at"
+        ]
+      },
       "Template": {
         "type": "object",
         "properties": {
@@ -8526,6 +11165,33 @@
             "items": {
               "type": "string"
             }
+          },
+          "architectures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_summary": {
+            "type": "string"
+          },
+          "verification": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "configuration": {
+            "type": "string"
+          },
+          "site_url_required": {
+            "type": "boolean"
+          },
+          "deployable": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -8536,7 +11202,14 @@
           "license",
           "upstream",
           "required_secrets",
-          "requirements"
+          "requirements",
+          "architectures",
+          "resource_summary",
+          "verification",
+          "providers",
+          "configuration",
+          "site_url_required",
+          "deployable"
         ]
       },
       "TemplatePlan": {
@@ -8601,6 +11274,61 @@
           "changes",
           "warnings",
           "required_secrets"
+        ]
+      },
+      "Showcase": {
+        "type": "object",
+        "properties": {
+          "sample": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "application_revision": {
+            "type": "integer"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "deployment_status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "removable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sample",
+          "name",
+          "project",
+          "environment",
+          "state",
+          "revision",
+          "application_id",
+          "application_revision",
+          "deployment_id",
+          "deployment_status",
+          "message",
+          "removable"
         ]
       },
       "Volume": {
