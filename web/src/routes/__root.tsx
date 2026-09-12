@@ -3,6 +3,8 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-r
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DashboardShell } from '../components/shell'
 import { APIError } from '../lib/api'
+import { Empty } from '../components/shared'
+import { Button } from '../components/ui/button'
 import css from '../styles.css?url'
 
 export const Route = createRootRoute({
@@ -24,10 +26,15 @@ export const Route = createRootRoute({
   }),
   component: Root,
   notFoundComponent: () => (
-    <div className="empty-state">
-      <h1>Page not found</h1>
-      <a href="/">Return to applications</a>
-    </div>
+    <Empty
+      title="Page not found"
+      description="This address doesn’t match a page in this console."
+      action={
+        <Button variant="primary" asChild>
+          <a href="/">Return to applications</a>
+        </Button>
+      }
+    />
   ),
 })
 
@@ -48,13 +55,13 @@ function Root() {
       }),
   )
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{document.documentElement.dataset.theme=localStorage.getItem('hakopod-theme')||'dark'}catch{}",
+              "(()=>{let t='dark';try{if(localStorage.getItem('hakopod-theme')==='light')t='light'}catch{}const r=document.documentElement;r.dataset.theme=t;r.classList.remove('dark','light');r.classList.add(t)})()",
           }}
         />
       </head>

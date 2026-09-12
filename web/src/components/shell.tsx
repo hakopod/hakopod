@@ -1,30 +1,42 @@
-import { Avatar } from './avatar'
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Badge, Tooltip } from '@hakopod/ui'
-import { useLicense } from '../lib/license'
-const CommandPalette = lazy(() => import('./command-palette'))
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Field } from '@hakopod/hatch-ui/components/field'
+import { Menu, MenuItem, MenuSeparator } from '@hakopod/hatch-ui/components/dropdown-menu'
+import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetBody,
+} from '@hakopod/hatch-ui/components/sheet'
+import { useLicense } from '../lib/license'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { Identity } from '../lib/types'
+import { ScopeContext, canAccess } from '../lib/scope'
+import { useTheme } from '../lib/appearance'
+import { Avatar } from './avatar'
 import { Logo, Icon } from './icons'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { ErrorState, Note } from './shared'
-
-import { ScopeContext, canAccess } from '../lib/scope'
-import { applyAccent } from '../lib/appearance'
+import { Badge, Tooltip } from './ui/surfaces'
+import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { AuthScreen } from './auth-screen'
+
+const CommandPalette = lazy(() => import('./command-palette'))
+const AppearanceSettings = lazy(() =>
+  import('./appearance-settings').then((module) => ({ default: module.AppearanceSettings })),
+)
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const [theme, setTheme] = useState('dark')
-  useEffect(() => {
-    setMounted(true)
-    setTheme(document.documentElement.dataset.theme || 'dark')
-  }, [])
+  const [resetError, setResetError] = useState('')
+  const [theme, setTheme] = useTheme()
+  useEffect(() => setMounted(true), [])
   const identity = useQuery({
     queryKey: ['me'],
     queryFn: ({ signal }) => unwrap(client.GET('/me', { signal })),
@@ -42,36 +54,40 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         window.location.assign(destination)
     }
   }, [identity.data?.credential_type])
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    document.documentElement.dataset.theme = next
-    try {
-      localStorage.setItem('hakopod-theme', next)
-    } catch {}
-  }
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
   if (!mounted || identity.isPending)
     return (
-      <div className="boot-state">
-        <Logo size={40} />
-        <p>Connecting to your workspace…</p>
-        <div className="boot-line" />
+      <div className="hako-connection-page">
+        <Logo size={32} />
+        <h1>Connecting to your workspace</h1>
+        <Loading rows={3} />
       </div>
     )
   if (identity.error && !(identity.error instanceof APIError && identity.error.status === 401))
     return (
-      <div className="connection-page">
-        <Logo size={42} />
-        <h1>Let’s reconnect.</h1>
-        <p>Your dashboard couldn’t reach the management API.</p>
+      <div className="hako-connection-page">
+        <Logo size={32} />
+        <h1>Reconnect to Hakopod</h1>
+        <p>The console couldn’t reach the management API.</p>
         <ErrorState error={identity.error} retry={() => void identity.refetch()} />
+        {resetError && (
+          <p className="hako-session-error" role="alert">
+            {resetError}
+          </p>
+        )}
         <Button
-          onClick={() =>
-            void fetch('/session', { method: 'DELETE' }).then(() => {
+          variant="outline"
+          onClick={async () => {
+            setResetError('')
+            try {
+              const response = await fetch('/session', { method: 'DELETE' })
+              if (!response.ok) throw new Error('The session could not be cleared. Try again.')
               queryClient.clear()
               void identity.refetch()
-            })
-          }
+            } catch (error) {
+              setResetError(message(error))
+            }
+          }}
         >
           Sign in again
         </Button>
@@ -122,14 +138,6 @@ function Workspace({
     queryFn: ({ signal }) => unwrap(client.GET('/projects', { signal })),
     staleTime: 60000,
   })
-  const appearance = useQuery({
-    queryKey: ['appearance'],
-    queryFn: ({ signal }) => unwrap(client.GET('/settings/appearance', { signal })),
-    staleTime: 300000,
-  })
-  useEffect(() => {
-    if (appearance.data) applyAccent(appearance.data.accent_color, theme)
-  }, [appearance.data, theme])
   const [selected, setSelected] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('hakopod-scope') || '{}')
@@ -154,21 +162,33 @@ function Workspace({
   const [projectOpen, setProjectOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const accountTrigger = useRef<HTMLButtonElement>(null)
+  const [sessionError, setSessionError] = useState('')
   const license = useLicense()
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        if (!commandOpen && document.querySelector('[role="dialog"]')) return
         setCommandOpen((open) => !open)
       }
     }
+    const desktop = window.matchMedia('(min-width: 768px)')
+    const onResize = () => {
+      if (desktop.matches) setMobileOpen(false)
+    }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [])
+    desktop.addEventListener('change', onResize)
+    return () => {
+      window.removeEventListener('keydown', key)
+      desktop.removeEventListener('change', onResize)
+    }
+  }, [commandOpen])
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const project = identity.project || selected.project || projects.data?.items?.[0]?.name || ''
-  const currentProject = projects.data?.items?.find((p) => p.name === project)
+  const currentProject = projects.data?.items?.find((item) => item.name === project)
   const environment =
     identity.environment || selected.environment || currentProject?.environments?.[0]?.name || ''
   const can = (permission: string) =>
@@ -180,145 +200,61 @@ function Workspace({
     void navigate({ to: '/' })
     setMobileOpen(false)
   }
+  const navigation = [
+    { to: '/', icon: 'grid', label: 'Applications' },
+    { to: '/templates', icon: 'box', label: 'Catalog' },
+    { to: '/builds', icon: 'branch', label: 'Builds' },
+    { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
+    ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
+    { to: '/settings', icon: 'settings', label: 'Settings' },
+  ]
+  const isActive = (to: string) =>
+    to === '/'
+      ? location.pathname === '/' || /^\/(applications|deployments)(\/|$)/.test(location.pathname)
+      : location.pathname === to || location.pathname.startsWith(to + '/')
+  const accountRole = identity.owner
+    ? 'Super admin'
+    : identity.admin
+      ? 'Installation administrator'
+      : 'Scoped project access'
+  const signOut = async () => {
+    setSessionError('')
+    try {
+      const response = await fetch('/session', { method: 'DELETE' })
+      if (!response.ok) throw new Error('Sign-out failed. Try again.')
+      queryClient.clear()
+      window.location.assign('/')
+    } catch (error) {
+      setSessionError(message(error))
+    }
+  }
+  const links = (mobile = false) =>
+    navigation.map(({ to, icon, label }) => (
+      <Link
+        key={to}
+        to={to}
+        className="hako-nav-link interactive"
+        data-active={isActive(to) || undefined}
+        aria-current={isActive(to) ? 'page' : undefined}
+        onClick={() => setMobileOpen(false)}
+      >
+        {mobile && <Icon name={icon} size={18} />}
+        <span>{label}</span>
+        <Brackets />
+      </Link>
+    ))
   return (
     <ScopeContext.Provider value={{ project, environment, identity, can, syncScope }}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <div className="app-shell">
-        <aside
-          id="workspace-navigation"
-          className={`sidebar cockpit-rail ${mobileOpen ? 'sidebar-open' : ''}`}
-        >
-          <Tooltip content="Hakopod · Applications">
-            <Link className="rail-brand" to="/" aria-label="Hakopod applications">
-              <Logo size={32} />
-            </Link>
-          </Tooltip>
-          <nav aria-label="Main navigation" className="rail-navigation">
-            {(
-              [
-                ['/', 'grid', 'Applications'],
-                ['/infrastructure', 'server', 'Infrastructure'],
-                ['/builds', 'branch', 'Source builds'],
-                ['/templates', 'box', 'Templates'],
-                ...(identity.admin ? [['/backups', 'archive', 'Backups'] as const] : []),
-                ['/settings', 'shield', 'Account & access'],
-              ] as const
-            ).map(([to, icon, label]) => (
-              <Tooltip content={label} key={to}>
-                <Link
-                  to={to}
-                  aria-label={label}
-                  title={label}
-                  className="nav-item rail-item"
-                  activeProps={{ className: 'nav-item rail-item active' }}
-                  activeOptions={{ exact: to === '/' }}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <Icon name={icon} size={19} />
-                  <span className="rail-label">{label}</span>
-                </Link>
-              </Tooltip>
-            ))}
-          </nav>
-          <div className="sidebar-spacer" />
-          <Tooltip content="Quick navigation · ⌘ K">
+      <div className="hako-shell">
+        <header className="hako-global-header">
+          <div className="hako-brand-group">
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Quick navigation"
-              onClick={() => setCommandOpen(true)}
-            >
-              <Icon name="search" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              onClick={toggleTheme}
-            >
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-            </Button>
-          </Tooltip>
-          <DropdownMenu.Root>
-            <Tooltip content={identity.name || 'Account'}>
-              <DropdownMenu.Trigger asChild>
-                <Button
-                  className="rail-avatar"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Account menu"
-                >
-                  <Avatar name={identity.name || 'Member'} url={identity.avatar_url} size={34} />
-                </Button>
-              </DropdownMenu.Trigger>
-            </Tooltip>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="dropdown-menu"
-                side="right"
-                sideOffset={14}
-                align="end"
-              >
-                <div className="account-menu-heading">
-                  <strong>{identity.name || 'Member'}</strong>
-                  <small>
-                    {identity.owner
-                      ? 'Super admin'
-                      : identity.admin
-                        ? 'Installation administrator'
-                        : 'Scoped project access'}
-                  </small>
-                </div>
-                <DropdownMenu.Item className="dropdown-item" onSelect={toggleTheme}>
-                  <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-                  Use {theme === 'dark' ? 'light' : 'dark'} theme
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className="dropdown-item"
-                  onSelect={async () => {
-                    await fetch('/session', { method: 'DELETE' })
-                    queryClient.clear()
-                    window.location.assign('/')
-                  }}
-                >
-                  <Icon name="logout" size={16} />
-                  Sign out
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </aside>
-        {mobileOpen && (
-          <button
-            className="sidebar-backdrop"
-            aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
-          />
-        )}
-        <div className="app-main">
-          <header className="topbar cockpit-topbar">
-            <Link to="/" className="brand-wordmark" aria-label="Hakopod">
-              <img
-                className="wordmark-dark"
-                src="/brand/hakopod-horizontal-paper.svg"
-                alt=""
-                width="140"
-              />
-              <img
-                className="wordmark-light"
-                src="/brand/hakopod-horizontal-ink.svg"
-                alt=""
-                width="140"
-              />
-            </Link>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mobile-menu"
+              className="hako-mobile-toggle"
               aria-label="Open navigation"
               aria-controls="workspace-navigation"
               aria-expanded={mobileOpen}
@@ -326,125 +262,226 @@ function Workspace({
             >
               <Icon name="menu" />
             </Button>
-            <div className="context-select">
-              <Icon name="box" size={17} />
+            <Link to="/" className="hako-wordmark" aria-label="Hakopod applications">
+              <img
+                className="hako-wordmark-dark"
+                src="/brand/hakopod-horizontal-paper.svg"
+                alt=""
+                width="140"
+              />
+              <img
+                className="hako-wordmark-light"
+                src="/brand/hakopod-horizontal-ink.svg"
+                alt=""
+                width="140"
+              />
+            </Link>
+          </div>
+          <nav className="hako-global-nav" aria-label="Main navigation">
+            {links()}
+          </nav>
+          <div className="hako-header-tools">
+            <Tooltip content="Quick navigation · ⌘ K">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Quick navigation"
+                onClick={() => setCommandOpen(true)}
+              >
+                <Icon name="search" />
+              </Button>
+            </Tooltip>
+            <a
+              className="hako-docs-link interactive"
+              href="https://github.com/hakopod/hakopod/blob/main/docs/cockpit.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Docs
+              <Brackets />
+            </a>
+            <Menu
+              className="hako-account-menu"
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Account menu"
+                  ref={accountTrigger}
+                  className="hako-account-trigger"
+                >
+                  <Avatar name={identity.name || 'Member'} url={identity.avatar_url} size={28} />
+                </Button>
+              }
+            >
+              <div className="hako-account-identity">
+                <div>
+                  <Avatar name={identity.name || 'Member'} url={identity.avatar_url} size={28} />
+                  <strong>{identity.name || 'Member'}</strong>
+                </div>
+                {identity.email && <p>{identity.email}</p>}
+                <small>{accountRole}</small>
+              </div>
+              <MenuItem onSelect={() => setPreferencesOpen(true)}>
+                <Icon name="user" />
+                Personal preferences
+              </MenuItem>
+              <MenuItem
+                onSelect={() => void navigate({ to: '/settings', search: { tab: 'account' } })}
+              >
+                <Icon name="shield" />
+                Account security
+              </MenuItem>
+              {identity.admin && (
+                <MenuItem
+                  onSelect={() => void navigate({ to: '/settings', search: { tab: 'keys' } })}
+                >
+                  <Icon name="key" />
+                  API keys
+                </MenuItem>
+              )}
+              <MenuItem onSelect={toggleTheme}>
+                <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+                Use {theme === 'dark' ? 'light' : 'dark'} theme
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => void signOut()}>
+                <Icon name="logout" />
+                Sign out
+              </MenuItem>
+            </Menu>
+          </div>
+        </header>
+        <div className="hako-scope-bar">
+          <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
+            <Icon name="box" size={17} />
+            <div className="hako-scope-select interactive">
               <select
                 aria-label="Project"
                 value={project}
+                disabled={Boolean(identity.project)}
                 onChange={(event) =>
                   changeScope({
                     project: event.target.value,
                     environment:
-                      projects.data?.items.find((p) => p.name === event.target.value)
+                      projects.data?.items.find((item) => item.name === event.target.value)
                         ?.environments?.[0]?.name || '',
                   })
                 }
               >
                 {!project && <option value="">Select a project</option>}
-                {projects.data?.items?.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name}
+                {project && !currentProject && <option value={project}>{project}</option>}
+                {projects.data?.items?.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.name}
                   </option>
                 ))}
               </select>
-              <span className="context-slash">/</span>
-              <span className="environment-dot" />
+              <Brackets />
+            </div>
+            <Icon name="chevron" size={12} />
+            <div className="hako-scope-select interactive">
               <select
                 aria-label="Environment"
                 value={environment}
+                disabled={Boolean(identity.environment) || !project}
                 onChange={(event) => changeScope({ project, environment: event.target.value })}
               >
-                {!environment && <option value="">Environment</option>}
-                {currentProject?.environments?.map((env) => (
-                  <option key={env.name} value={env.name}>
-                    {env.name}
+                {!environment && <option value="">Select an environment</option>}
+                {environment &&
+                  !currentProject?.environments?.some((item) => item.name === environment) && (
+                    <option value={environment}>{environment}</option>
+                  )}
+                {currentProject?.environments?.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
                   </option>
                 ))}
               </select>
-              {identity.admin && (
+              <Brackets />
+            </div>
+            {identity.admin && (
+              <Tooltip content="Create a project">
                 <Button
                   variant="ghost"
                   size="icon"
                   aria-label="Create project"
-                  title="Create project"
                   onClick={() => setProjectOpen(true)}
                 >
-                  <Icon name="plus" size={14} />
+                  <Icon name="plus" size={16} />
                 </Button>
-              )}
-            </div>
-            <div className="topbar-right">
-              <button
-                type="button"
-                className="command-trigger"
-                onClick={() => setCommandOpen(true)}
-              >
-                <Icon name="search" size={14} />
-                <span>Find apps, resources…</span>
-                <kbd>⌘ K</kbd>
-              </button>
-              <Link
-                to="/settings"
-                search={{ tab: 'license' }}
-                className="license-header-link"
-                aria-label="View installation license"
-              >
-                <Badge tone={license.data?.plan === 'pro' ? 'accent' : 'neutral'}>
-                  {license.data?.plan
-                    ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
-                    : 'License…'}
-                </Badge>
-              </Link>
-              <span className="installation-label">
-                <span className="tiny-square" /> SELF-HOSTED
-              </span>
-              <span className="topbar-divider" />
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-                onClick={toggleTheme}
-              >
-                <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
-              </Button>
-            </div>
-          </header>
-          <main id="main-content" tabIndex={-1} className="page-content">
-            {projects.error && (
-              <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+              </Tooltip>
             )}
-            {!project &&
-            !projects.isPending &&
+          </div>
+          <Link
+            to="/settings"
+            search={{ tab: 'license' }}
+            className="hako-license-link"
+            aria-label="View installation license"
+          >
+            <Badge tone="neutral">
+              {license.data?.plan
+                ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
+                : 'License'}
+            </Badge>
+          </Link>
+        </div>
+        <main id="main-content" tabIndex={-1} className="page-content hako-page-content">
+          {sessionError && (
+            <div className="hako-session-error" role="alert">
+              {sessionError}
+            </div>
+          )}
+          {projects.error && (
+            <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+          )}
+          {!project && projects.isPending ? (
+            <Loading />
+          ) : !project &&
             !projects.error &&
             !location.pathname.startsWith('/settings') &&
             !location.pathname.startsWith('/login/') ? (
-              <div className="first-project">
-                <div className="eyebrow">YOUR WORKSPACE IS READY</div>
-                <h1>Make room for your next idea.</h1>
-                <p>
-                  Projects organize applications and environments, with access scoped to your team.
-                </p>
-                {identity.admin ? (
+            <Empty
+              icon="box"
+              title="Create your first project"
+              description="Projects organize applications and environments, with access scoped to your team."
+              action={
+                identity.admin ? (
                   <Button variant="primary" onClick={() => setProjectOpen(true)}>
                     <Icon name="plus" />
-                    Create your first project
+                    Create project
                   </Button>
                 ) : (
                   <Note>Ask your administrator to create a project and invite you to it.</Note>
-                )}
-              </div>
-            ) : (
-              children
-            )}
-          </main>
-          <footer className="app-footer">
-            <span>Hakopod · Infrastructure you own</span>
-            <span>
-              API v1 <span className="footer-dot">·</span> Your infrastructure
-            </span>
-          </footer>
-        </div>
+                )
+              }
+            />
+          ) : (
+            children
+          )}
+        </main>
+        <footer className="hako-footer">
+          <span>Hakopod · Infrastructure you own</span>
+          <span>Self-hosted · API v1</span>
+        </footer>
       </div>
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent className="hako-mobile-sheet">
+          <SheetHeader>
+            <SheetTitle>Navigation</SheetTitle>
+            <SheetDescription>Applications and installation controls.</SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            <nav
+              id="workspace-navigation"
+              className="hako-mobile-links"
+              aria-label="Mobile navigation"
+            >
+              {links(true)}
+            </nav>
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
       {commandOpen && (
         <Suspense fallback={null}>
           <CommandPalette
@@ -452,18 +489,119 @@ function Workspace({
             onOpenChange={setCommandOpen}
             project={project}
             environment={environment}
+            onPreferences={() => setPreferencesOpen(true)}
           />
         </Suspense>
       )}
-      <CreateProject
-        open={projectOpen}
-        setOpen={setProjectOpen}
-        onCreated={(name, env) => {
-          void queryClient.invalidateQueries({ queryKey: ['projects'] })
-          changeScope({ project: name, environment: env })
-        }}
-      />
+      {preferencesOpen && (
+        <Preferences
+          identity={identity}
+          open={preferencesOpen}
+          onOpenChange={setPreferencesOpen}
+          restoreFocus={() => accountTrigger.current?.focus()}
+        />
+      )}
+      {identity.admin && (
+        <CreateProject
+          open={projectOpen}
+          setOpen={setProjectOpen}
+          onCreated={(name, env) => {
+            void queryClient.invalidateQueries({ queryKey: ['projects'] })
+            changeScope({ project: name, environment: env })
+          }}
+        />
+      )}
     </ScopeContext.Provider>
+  )
+}
+
+function Preferences({
+  identity,
+  open,
+  onOpenChange,
+  restoreFocus,
+}: {
+  identity: Identity
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  restoreFocus: () => void
+}) {
+  const [section, setSection] = useState('profile')
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Personal preferences"
+      description="Your account and browser preferences."
+      onCloseAutoFocus={(event) => {
+        event.preventDefault()
+        restoreFocus()
+      }}
+      wide
+    >
+      <div className="hako-preferences">
+        <SettingsLayout
+          sections={[
+            { id: 'profile', label: 'Profile', group: 'Personal' },
+            { id: 'appearance', label: 'Appearance' },
+          ]}
+          active={section}
+          onSectionChange={setSection}
+          label="Personal preference sections"
+        >
+          {section === 'appearance' ? (
+            <Suspense fallback={<Loading rows={2} />}>
+              <AppearanceSettings />
+            </Suspense>
+          ) : (
+            <div className="hako-preferences-profile">
+              <div className="hako-profile-summary">
+                <Avatar name={identity.name || 'Member'} url={identity.avatar_url} size={40} />
+                <div>
+                  <h2>{identity.name || 'Member'}</h2>
+                  {identity.email && <p>{identity.email}</p>}
+                </div>
+              </div>
+              <dl className="hako-profile-details">
+                <div>
+                  <dt>Account ID</dt>
+                  <dd>
+                    <code>{identity.id}</code>
+                    <Copy value={identity.id} label="Copy ID" />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Access</dt>
+                  <dd>
+                    {identity.owner
+                      ? 'Super admin'
+                      : identity.admin
+                        ? 'Installation administrator'
+                        : 'Scoped project access'}
+                  </dd>
+                </div>
+              </dl>
+              <div className="hako-preferences-actions">
+                <Button variant="primary" asChild>
+                  <Link to="/settings/profile" onClick={() => onOpenChange(false)}>
+                    Edit profile
+                  </Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link
+                    to="/settings"
+                    search={{ tab: 'account' }}
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Account security
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          )}
+        </SettingsLayout>
+      </div>
+    </Dialog>
   )
 }
 
@@ -473,7 +611,7 @@ function CreateProject({
   onCreated,
 }: {
   open: boolean
-  setOpen: (v: boolean) => void
+  setOpen: (open: boolean) => void
   onCreated: (name: string, environment: string) => void
 }) {
   const [name, setName] = useState('')
@@ -483,13 +621,16 @@ function CreateProject({
   return (
     <Dialog
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        if (!busy) setOpen(next)
+      }}
       title="Create a project"
-      description="A home for related applications and their environments."
+      description="Group related applications and their environments."
     >
       <form
         onSubmit={async (event) => {
           event.preventDefault()
+          if (busy) return
           setBusy(true)
           setError('')
           try {
@@ -504,30 +645,32 @@ function CreateProject({
           }
         }}
       >
-        <div className="dialog-body field-stack">
-          <label>
-            Project name
-            <input
-              required
-              pattern="[a-z0-9][a-z0-9-]*"
-              placeholder="my-project"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label>
-            Initial environment
-            <input
-              required
-              pattern="[a-z0-9][a-z0-9-]*"
-              value={environment}
-              onChange={(event) => setEnvironment(event.target.value)}
-            />
-          </label>
-          {error && <div className="inline-error">{error}</div>}
+        <div className="dialog-body field-stack hako-project-form">
+          <Field
+            label="Project name"
+            required
+            pattern="[a-z0-9][a-z0-9-]*"
+            placeholder="my-project"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            help="Use lowercase letters, numbers, and hyphens."
+          />
+          <Field
+            label="Initial environment"
+            required
+            pattern="[a-z0-9][a-z0-9-]*"
+            value={environment}
+            onChange={(event) => setEnvironment(event.target.value)}
+            help="Separate development and production within the same project."
+          />
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
-          <Button type="button" onClick={() => setOpen(false)}>
+          <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>

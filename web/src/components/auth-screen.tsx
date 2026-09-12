@@ -4,7 +4,10 @@ import { useQuery } from '@tanstack/react-query'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { passkeyCredential } from '../lib/webauthn'
-import { Icon, Logo } from './icons'
+import { AuthCard } from '@hakopod/hatch-ui/blocks/auth-card'
+import { Field } from '@hakopod/hatch-ui/components/field'
+import { PasswordField } from '@hakopod/hatch-ui/components/password-field'
+import { Icon } from './icons'
 import { Button } from './ui/button'
 import { ErrorState, Loading } from './shared'
 
@@ -132,51 +135,42 @@ export function AuthScreen({
         ? 'Make this workspace yours'
         : 'Welcome back'
   return (
-    <div className="login-page">
-      <div className="login-brand-panel">
-        <div className="brand">
-          <img src="/brand/hakopod-horizontal-paper.svg" width="178" alt="Hakopod" />
-        </div>
-        <div className="login-pitch">
-          <span className="label-chip">
-            <span className="status-dot" />
-            BUILT FOR YOUR INFRASTRUCTURE
-          </span>
-          <h1>
-            Your apps.
-            <br />
-            <span>Your rules.</span>
-          </h1>
-          <p>A home for your apps, on infrastructure you own.</p>
-          <div className="auth-illustration" aria-hidden="true">
-            <Logo size={64} />
-            <span>Build. Deploy. Own it.</span>
-            <div>
-              <Icon name="shield" size={16} />
-              Your infrastructure, together.
-            </div>
-          </div>
-        </div>
-        <div className="login-footer">Self-hosted. Open source. Yours.</div>
-      </div>
-      <div className="login-form-panel">
-        {toggleTheme && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="login-theme"
-            aria-label="Toggle color theme"
-            onClick={toggleTheme}
-          >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-          </Button>
-        )}
-        <div className="login-form-content">
-          <div className="login-symbol">
-            <Icon name={setup ? 'shield' : 'lock'} size={23} />
-          </div>
-          <h2>{title}</h2>
-          <p>
+    <div className={`hako-auth-page ${signedIn ? 'hako-auth-embedded' : ''}`}>
+      {!signedIn && (
+        <header className="hako-auth-header">
+          <a href="/" className="hako-wordmark" aria-label="Hakopod home">
+            <img
+              className="hako-wordmark-dark"
+              src="/brand/hakopod-horizontal-paper.svg"
+              alt=""
+              width="140"
+            />
+            <img
+              className="hako-wordmark-light"
+              src="/brand/hakopod-horizontal-ink.svg"
+              alt=""
+              width="140"
+            />
+          </a>
+          {toggleTheme && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              onClick={toggleTheme}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            </Button>
+          )}
+        </header>
+      )}
+      <div className="hako-auth-main bg-grid">
+        <AuthCard
+          className="hako-auth-card"
+          title={title}
+          footer={<span>Your infrastructure. Your team.</span>}
+        >
+          <p className="hako-auth-description">
             {providerMFA
               ? 'Enter an authenticator code or a recovery code.'
               : inviteToken
@@ -185,7 +179,7 @@ export function AuthScreen({
                   : 'Choose your name and password to accept this invitation. Existing members can sign in first.'
                 : setup
                   ? 'Create the first owner account for this Hakopod installation.'
-                  : 'Sign in to your Hakopod account.'}
+                  : 'Sign in to deploy and operate your applications.'}
           </p>
           {status.isPending ? (
             <Loading rows={2} />
@@ -193,96 +187,128 @@ export function AuthScreen({
             <ErrorState error={status.error} retry={() => void status.refetch()} />
           ) : (
             <>
-              <form onSubmit={submit} className="auth-form">
+              {!setup &&
+                !inviteToken &&
+                !providerMFA &&
+                (status.data?.passkeys || Boolean(status.data?.providers.length)) && (
+                  <div className="hako-auth-alternatives">
+                    {status.data?.passkeys && (
+                      <Button
+                        variant="outline"
+                        className="full-width"
+                        disabled={busy}
+                        onClick={() => void passkey()}
+                      >
+                        <Icon name="key" size={16} />
+                        Sign in with a passkey
+                      </Button>
+                    )}
+                    {status.data?.providers
+                      .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
+                      .map((provider) => (
+                        <Button variant="outline" className="full-width" asChild key={provider}>
+                          <a
+                            href={`/api/v1/auth/oauth/${provider}/start`}
+                            onClick={() => {
+                              if (location.pathname.startsWith('/login/'))
+                                sessionStorage.setItem(
+                                  'hakopod-auth-return',
+                                  location.pathname + location.search,
+                                )
+                            }}
+                          >
+                            <ServiceIcon name={provider} size={17} />
+                            Continue with{' '}
+                            {provider === 'github'
+                              ? 'GitHub'
+                              : provider === 'gitlab'
+                                ? 'GitLab'
+                                : 'Google'}
+                          </a>
+                        </Button>
+                      ))}
+                    <div className="hako-auth-divider">
+                      <span>Or use your email</span>
+                    </div>
+                  </div>
+                )}
+              <form onSubmit={submit} className="hako-auth-form" aria-busy={busy}>
                 {!providerMFA && (
                   <>
                     {(setup || (inviteToken && !signedIn)) && (
-                      <label>
-                        Your name
-                        <input
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          autoComplete="name"
-                          maxLength={100}
-                          required
-                        />
-                      </label>
+                      <Field
+                        label="Your name"
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        autoComplete="name"
+                        maxLength={100}
+                        required
+                      />
                     )}
                     {!inviteToken && (
-                      <label>
-                        Email address
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          autoComplete="username"
-                          maxLength={254}
-                          required
-                        />
-                      </label>
+                      <Field
+                        label="Email address"
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        autoComplete="username"
+                        maxLength={254}
+                        required
+                      />
                     )}
                     {(!signedIn || !inviteToken) && (
-                      <label>
-                        Password
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          autoComplete={setup || inviteToken ? 'new-password' : 'current-password'}
-                          minLength={setup || inviteToken ? 12 : undefined}
-                          maxLength={72}
-                          required
-                        />
-                      </label>
+                      <PasswordField
+                        label="Password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        autoComplete={setup || inviteToken ? 'new-password' : 'current-password'}
+                        minLength={setup || inviteToken ? 12 : undefined}
+                        maxLength={72}
+                        required
+                      />
                     )}
                     {(setup || (inviteToken && !signedIn)) && (
                       <>
-                        <label>
-                          Confirm password
-                          <input
-                            type="password"
-                            value={confirmation}
-                            onChange={(e) => setConfirmation(e.target.value)}
-                            autoComplete="new-password"
-                            minLength={12}
-                            maxLength={72}
-                            required
-                          />
-                        </label>
+                        <PasswordField
+                          label="Confirm password"
+                          value={confirmation}
+                          onChange={(event) => setConfirmation(event.target.value)}
+                          autoComplete="new-password"
+                          minLength={12}
+                          maxLength={72}
+                          required
+                        />
                         <p className="field-help">Use at least 12 characters.</p>
                       </>
                     )}
                     {setup && (
-                      <label>
-                        Installer credential
-                        <input
-                          type="password"
+                      <>
+                        <PasswordField
+                          label="Installer credential"
                           value={installer}
-                          onChange={(e) => setInstaller(e.target.value)}
+                          onChange={(event) => setInstaller(event.target.value)}
                           autoComplete="off"
                           maxLength={512}
                           placeholder="Setup token or bootstrap administrator key"
                         />
-                        <span className="field-help">
-                          From this installation’s setup. An existing bootstrap session can also
-                          claim ownership.
-                        </span>
-                      </label>
+                        <p className="field-help">
+                          Use the credential from this installation’s setup. An existing bootstrap
+                          session can also claim ownership.
+                        </p>
+                      </>
                     )}
                   </>
                 )}
                 {mfa && (
-                  <label>
-                    Authenticator or recovery code
-                    <input
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      autoComplete="one-time-code"
-                      maxLength={128}
-                      required
-                      autoFocus
-                    />
-                  </label>
+                  <Field
+                    label="Authenticator or recovery code"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    autoComplete="one-time-code"
+                    maxLength={128}
+                    required
+                    autoFocus
+                  />
                 )}
                 {error && (
                   <div className="inline-error" role="alert">
@@ -302,40 +328,6 @@ export function AuthScreen({
                   <Icon name="arrow" size={16} />
                 </Button>
               </form>
-              {!setup && !inviteToken && !providerMFA && (
-                <div className="auth-alternatives">
-                  {status.data?.passkeys && (
-                    <Button className="full-width" disabled={busy} onClick={() => void passkey()}>
-                      <Icon name="key" size={16} />
-                      Sign in with a passkey
-                    </Button>
-                  )}
-                  {status.data?.providers
-                    .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
-                    .map((provider) => (
-                      <a
-                        className="button button-secondary full-width"
-                        href={`/api/v1/auth/oauth/${provider}/start`}
-                        key={provider}
-                        onClick={() => {
-                          if (location.pathname.startsWith('/login/'))
-                            sessionStorage.setItem(
-                              'hakopod-auth-return',
-                              location.pathname + location.search,
-                            )
-                        }}
-                      >
-                        <ServiceIcon name={provider} size={17} />
-                        Continue with{' '}
-                        {provider === 'github'
-                          ? 'GitHub'
-                          : provider === 'gitlab'
-                            ? 'GitLab'
-                            : 'Google'}
-                      </a>
-                    ))}
-                </div>
-              )}
               {inviteToken && !signedIn && (
                 <p className="field-help">
                   <a
@@ -354,14 +346,11 @@ export function AuthScreen({
               )}
             </>
           )}
-          <div className="login-assurance">
+          <p className="hako-auth-assurance">
             <Icon name="lock" size={14} />
             <span>Your browser session uses a secure, HttpOnly cookie.</span>
-          </div>
-        </div>
-        <div className="login-bottom">
-          Hakopod<span>Your infrastructure. Your team.</span>
-        </div>
+          </p>
+        </AuthCard>
       </div>
     </div>
   )

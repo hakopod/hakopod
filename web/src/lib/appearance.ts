@@ -1,45 +1,46 @@
-export const validAccent = (value: string) => /^#[0-9a-f]{6}$/i.test(value)
+import { useSyncExternalStore } from 'react'
 
-function rgb(hex: string) {
-  return [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16))
+export type Theme = 'dark' | 'light'
+const themeEvent = 'hakopod-theme-change'
+
+function currentTheme(): Theme {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
 }
-function luminance(values: number[]) {
-  const linear = values.map((value) => {
-    const channel = value / 255
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+
+function applyTheme(theme: Theme) {
+  const root = document.documentElement
+  root.classList.remove('dark', 'light')
+  root.classList.add(theme)
+  root.dataset.theme = theme
+  // Remove custom colours left by an older console in this browser session.
+  for (const token of ['--accent', '--accent-strong', '--accent-wash', '--accent-border'])
+    root.style.removeProperty(token)
 }
-export function accentPalette(color: string, theme: string) {
-  if (!validAccent(color)) return null
-  const original = rgb(color)
-  const dark = theme !== 'light'
-  // Compare against the least forgiving surface in each theme, not only the page.
-  const background = luminance(rgb(dark ? '#222d26' : '#e2e8dc'))
-  const readable = (minimum: number) => {
-    let channels = original
-    for (let step = 0; step <= 20; step++) {
-      channels = original.map((value) =>
-        Math.round(value + ((dark ? 255 : 0) - value) * (step / 20)),
-      )
-      const foreground = luminance(channels)
-      const contrast =
-        (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
-      if (contrast >= minimum) break
+
+export function setTheme(theme: Theme) {
+  applyTheme(theme)
+  try {
+    localStorage.setItem('hakopod-theme', theme)
+  } catch {}
+  window.dispatchEvent(new Event(themeEvent))
+}
+
+function subscribe(listener: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === 'hakopod-theme' || event.key === null) {
+      applyTheme(event.newValue === 'light' ? 'light' : 'dark')
+      listener()
     }
-    return '#' + channels.map((value) => value.toString(16).padStart(2, '0')).join('')
   }
-  return {
-    '--accent': readable(4.5),
-    '--accent-strong': readable(5.5),
-    '--accent-wash': color + (dark ? '15' : '0d'),
-    '--accent-border': color + '50',
+  window.addEventListener(themeEvent, listener)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(themeEvent, listener)
+    window.removeEventListener('storage', onStorage)
   }
 }
 
-export function applyAccent(color: string, theme: string) {
-  const palette = accentPalette(color, theme)
-  if (!palette) return
-  for (const [name, value] of Object.entries(palette))
-    document.documentElement.style.setProperty(name, value)
+export function useTheme() {
+  const theme = useSyncExternalStore(subscribe, currentTheme, (): Theme => 'dark')
+  return [theme, setTheme] as const
 }
