@@ -13,14 +13,14 @@ For local development, `scripts/local-auth.py` creates this proof and a separate
 MFA encryption key under `.local`, without creating a user. `local-up.sh` calls it.
 Existing bootstrap administrators can migrate through the same setup screen.
 
-Administrators create teams and invite members by email. Team membership and
+Team creation and email invitations require a valid paid license. Team membership and
 project grants are separate: project roles are administrator, developer and
 viewer. Role reductions, disabled accounts and revoked sessions affect current
 API requests and queued deployments. Browser sessions, CLI sessions and CI keys
 have separate lifecycles. `hakopod login --project PROJECT --environment ENV`
 opens browser consent for the requested scope; CI uses expiring scoped API keys.
 
-Email/password, GitHub OAuth, Google OAuth, discoverable passkeys, TOTP, recovery
+Email/password, GitHub OAuth, GitLab OAuth, Google OAuth, discoverable passkeys, TOTP, recovery
 codes and session revocation are implemented. OAuth providers appear when their
 client credentials are configured. Passkeys require a secure browser origin
 (HTTPS, or loopback development). TOTP secrets are encrypted separately from the
@@ -32,6 +32,16 @@ Configure `HAKOPOD_WEB_ORIGIN` with the dashboard origin. The Go process accepts
 restricted files. Their equivalent non-file variables are supported, but do not
 set both forms. The encryption key must encode 32 random bytes as base64 or hex.
 The local script preserves existing secrets on repeat runs.
+
+Fresh installations queue a labelled shop sample after the first owner completes
+setup. Its public storefront calls a private catalog service. Checkout is sample
+data only. The dashboard can remove the tracked sample after a revision review;
+removing it does not cause it to return. Existing installations are left alone.
+
+Profile settings offer initials, DiceBear identicons and gradient avatars. Seeds
+are opaque IDs or a chosen value, never the person's email. Team usernames are
+unique within a team and may differ between teams. A profile change uses a
+revision check so an older browser tab cannot silently replace it.
 
 GitHub/Google OAuth use `HAKOPOD_GITHUB_CLIENT_ID`,
 `HAKOPOD_GITHUB_CLIENT_SECRET`, `HAKOPOD_GOOGLE_CLIENT_ID` and
@@ -71,6 +81,16 @@ a running process's environment; future deployments using it fail.
 
 ## GitHub and GitLab source builds
 
+The new-application flow can read a TOML file from GitHub or GitLab before an
+application exists. Choose the provider, repository, branch and exact relative
+path. Review the commit and normalized configuration, then import. The signed
+review lasts 15 minutes and belongs to the current login credential. The first
+release, repository binding, scoped automation grant and audit entry commit in
+one transaction. Importing makes no repository writes. Initial repository
+approval requires a platform administrator; an existing application uses its
+Source page. Add custom domains after the application exists so DNS ownership
+can be verified against that application.
+
 An administrator configures the GitHub repository token and webhook secret. The
 secret is shown once when generated. Subscribe the repository webhook to push
 events for TOML-based deployments and workflow-run events for completed source
@@ -108,7 +128,8 @@ Unowned CI and custom CI entrypoints are refused. See
 
 ## Templates and persistent workloads
 
-The catalog supplies PostgreSQL, Valkey, Uptime Kuma, Gitea and vLLM configurations.
+The catalog includes database, monitoring, development, analytics, secret-management
+and AI presets. See [template requirements and verification](templates.md).
 Templates produce ordinary reviewable specifications, with resource limits,
 required secret references, upstream/license links and prerequisites.
 
@@ -116,7 +137,8 @@ Persistent services have one replica, no HPA and a Recreate update strategy. An
 owned PVC survives service restarts and ordinary service removal. Data updates
 can have downtime. Configuration rollback does not roll back database contents.
 Existing PVC size/class changes require an explicit storage migration/expansion;
-they are not silently performed by a deployment. Back up databases separately.
+they are not silently performed by a deployment. Database backups are separate
+from configuration rollback.
 
 The optional development storage module is installed with
 `python3 scripts/local-storage-up.py`. It is pinned to Rancher local-path-provisioner
@@ -146,6 +168,25 @@ DNS and reachable challenge ports. Use staging first; a localhost wildcard canno
 receive a public Let's Encrypt certificate. HTTP and HTTPS local ingress use
 18080 and 18443 respectively. Public DNS/ACME renewal remains an external validation
 gate; a valid uploaded-certificate fixture is not evidence of ACME issuance.
+
+Custom domains belong to an application and target one of its public HTTP
+services. Add the supplied DNS TXT record, verify ownership, then review and
+apply the mapping. Configure a CNAME or your ingress A/AAAA records separately.
+The installation's own domain is reserved. A hostname cannot be claimed by
+another Hakopod application. Removed routes keep their reservation for historical
+rollbacks. Certificates must cover the generated hostname and all configured
+custom names; a managed issuer requests those names together.
+
+The host terminal opens a root shell on a selected Linux node, including a
+control-plane node. This can affect every workload and file on that node. Only
+the installer owner has this permission by default; ordinary administrator
+authority does not include it. The owner can grant a named node or all nodes to
+another person with an expiry of at most 30 days. Grants, account state and node
+identity are checked during the connection. Terminals require a browser session,
+expire after ten minutes, and close after two minutes without input. At most four
+pod or host terminals may be open in the management process. Temporary host jobs
+have deadlines and are removed on close. Commands and output are not stored in
+the audit log.
 
 The optional [certificate-controller module](../deploy/cert-manager/README.md)
 vendors cert-manager v1.21.2 with digest-pinned images and a combined 384 MiB

@@ -10,6 +10,21 @@ Required application fields are `name` and a `services` map. Each service needs
 an `image`. The minimum public service also needs `port` and `public=true`.
 One-service applications use exactly the same format as groups.
 
+An optional application-level `domains` table maps custom hostnames to public
+HTTP services:
+
+```toml
+[domains]
+"shop.example.com" = "web"
+```
+
+Create the application first, then verify each hostname in Custom domains before
+adding it to a deployment. Hostnames use lowercase DNS names without wildcards,
+schemes, paths or ports. At most 20 mappings are active at once. The platform
+reserves verified claims for the application so historical rollbacks cannot take
+another app's hostname. Removing a mapping removes routing, not its reservation.
+DNS routing and certificate coverage are separate checks.
+
 | Service setting | Default and meaning |
 |---|---|
 | `image` | Required HTTPS OCI reference; tag resolved and recorded as digest; optional scoped registry credentials |
