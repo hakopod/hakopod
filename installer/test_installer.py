@@ -98,6 +98,9 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(ingress['service']['type'], 'ClusterIP')
         self.assertIn('MemoryMax=256M', (rendered / 'hakopod-api.service').read_text())
         self.assertIn('127.0.0.1:8080', (rendered / 'api.env').read_text())
+        self.assertIn('HAKOPOD_MANAGED_POSTGRES="true"', (rendered / 'api.env').read_text())
+        self.assertIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-api.service').read_text())
+        self.assertNotIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-dashboard.service').read_text())
         self.assertFalse((rendered / 'api.env').stat().st_mode & 0o077)
     def test_secret_file_symlink_and_permissions_rejected(self):
         path = self.root / 'secret'; path.write_text('never print this'); path.chmod(0o644)

@@ -402,6 +402,9 @@ def render(c, arch, installation, out):
         'HAKOPOD_LISTEN': '127.0.0.1:8080', 'HAKOPOD_WEB_ORIGIN': c['dashboard_origin'],
         'HAKOPOD_SETUP_SECRET_FILE': '/etc/hakopod/secrets/setup-token',
         'HAKOPOD_AUTH_ENCRYPTION_KEY_FILE': '/etc/hakopod/secrets/auth-encryption-key',
+
+        'HAKOPOD_MANAGED_POSTGRES': 'true',
+        'HAKOPOD_BACKUP_STATE_DIR': '/var/lib/hakopod/backups',
         'HAKOPOD_TLS_ISSUER': 'hakopod-acme' if c['acme'] != 'off' else '',
     }))
     dashboard_env = dict(NODE_ENV='production', HOST='127.0.0.1' if c['dashboard_mode'] == 'ssh' else c['node_ip'],
@@ -462,6 +465,7 @@ UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
+{'ReadWritePaths=/var/lib/hakopod/backups' if name == 'api' else ''}
 ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

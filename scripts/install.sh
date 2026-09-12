@@ -120,7 +120,7 @@ installation=$(python3 "$helper" prepare "${args[@]}")
 python3 - <<'PY'
 from pathlib import Path
 for name in ('/opt/hakopod/tools','/opt/hakopod/releases','/var/lib/hakopod/downloads',
-             '/var/lib/hakopod/install-stage','/var/lib/hakopod/postgres','/etc/hakopod/secrets'):
+             '/var/lib/hakopod/install-stage','/var/lib/hakopod/postgres','/var/lib/hakopod/backups','/etc/hakopod/secrets'):
     path=Path(name)
     if path.is_symlink(): raise SystemExit('Refusing unexpected symlink: ' + name)
 PY
@@ -200,6 +200,7 @@ for account in hakopod-api hakopod-dashboard; do
   if ! getent passwd "$account" >/dev/null; then useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$account"; fi
   [ "$(id -u "$account")" != 0 ] || die 'A dedicated service user cannot be root'
 done
+install -d -m 0700 -o hakopod-api -g hakopod-api /var/lib/hakopod/backups
 rendered="$stage/rendered"
 python3 "$helper" render "${args[@]}" --id "$installation" --destination "$rendered"
 for file in k3s.yaml api.env dashboard.env; do install -m 0600 "$rendered/$file" "/etc/hakopod/$file"; done

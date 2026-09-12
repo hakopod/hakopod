@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import secrets
 import shlex
+import shutil
 
 root = Path(__file__).resolve().parent.parent
 local = root / ".local"
@@ -26,6 +27,12 @@ for variable, filename in [
 settings["HAKOPOD_WEB_ORIGIN"] = "http://127.0.0.1:4173"
 settings["HAKOPOD_PUBLIC_HTTPS_PORT"] = "18443"
 settings["HAKOPOD_K3S_SUPERVISOR_URL"] = "https://k3d-hakopod-dev-server-0:6443"
+settings["HAKOPOD_BACKUP_STATE_DIR"] = str(local / "backups")
+pg_dump = shutil.which("pg_dump")
+if not pg_dump and Path("/opt/homebrew/opt/libpq/bin/pg_dump").is_file():
+    pg_dump = "/opt/homebrew/opt/libpq/bin/pg_dump"
+if pg_dump:
+    settings["HAKOPOD_PG_DUMP_PATH"] = pg_dump
 path = local / "env"
 lines = path.read_text().splitlines() if path.exists() else []
 lines = [line for line in lines if not any(line.startswith(f"export {key}=") for key in settings)]
