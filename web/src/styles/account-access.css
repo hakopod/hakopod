@@ -1,0 +1,62 @@
+.hako-auth-workspace-choice {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  margin: 0 0 20px;
+  border: 1px solid var(--border);
+}
+.hako-auth-workspace-choice legend {
+  padding: 0 6px;
+  font-size: 13px;
+}
+.hako-auth-workspace-choice label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hako-auth-workspace-choice input {
+  accent-color: var(--action);
+}
+.hako-auth-workspace-choice p {
+  margin: 0;
+}
+.hako-auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  font-size: 13px;
+}
+.hako-auth-links a:hover {
+  color: var(--action);
+  text-decoration: underline;
+}
+.onboarding-page {
+  max-width: 1000px;
+  margin: 32px auto;
+}
+.onboarding-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 20px;
+}
+.onboarding-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+}
+.onboarding-option h2,
+.onboarding-option p {
+  margin: 0;
+}
+.onboarding-option p {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted-fg);
+}

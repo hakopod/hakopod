@@ -1,4 +1,5 @@
 import { ServiceIcon } from './service-icon'
+import '../styles/account-access.css'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { APIError, message } from '../lib/api'
@@ -10,6 +11,18 @@ import { PasswordField } from '@hakopod/hatch-ui/components/password-field'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { ErrorState, Loading } from './shared'
+
+function authLocation() {
+  if (typeof window === 'undefined') return { mode: 'login', token: '' }
+  const fragment = window.location.hash
+  return {
+    mode: window.location.pathname.split('/')[2] || 'login',
+    token:
+      fragment.length <= 2048
+        ? new URLSearchParams(fragment.slice(1)).get('token')?.slice(0, 512) || ''
+        : '',
+  }
+}
 
 export async function submitSession(body: Record<string, unknown>) {
   const response = await fetch('/session', {
@@ -25,6 +38,12 @@ export async function submitSession(body: Record<string, unknown>) {
       response.status,
       payload.error?.code,
     )
+  return payload as {
+    authenticated?: boolean
+    onboarding_required?: boolean
+    accepted?: boolean
+    reset?: boolean
+  }
 }
 
 export function AuthScreen({
@@ -46,6 +65,27 @@ export function AuthScreen({
     staleTime: 30000,
     retry: false,
   })
+  const [location, setLocation] = useState(authLocation)
+  const { mode, token: linkToken } = location
+  const register = mode === 'signup' && !inviteToken
+  const forgot = mode === 'forgot'
+  const reset = mode === 'reset'
+  const verify = mode === 'verify'
+  const [sent, setSent] = useState(false)
+  const [workspace, setWorkspace] = useState<'invite' | 'personal'>(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('workspace') === 'personal'
+      ? 'personal'
+      : 'invite',
+  )
+  const invite = useQuery({
+    queryKey: ['invite-details', inviteToken],
+    queryFn: ({ signal }) =>
+      unwrap(client.POST('/auth/invites/inspect', { body: { token: inviteToken }, signal })),
+    enabled: Boolean(inviteToken),
+    retry: false,
+    staleTime: 60000,
+  })
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -56,13 +96,33 @@ export function AuthScreen({
   const [providerMFA, setProviderMFA] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const setup = status.data?.setup_required && !inviteToken
+  const setup = status.data?.setup_required && !inviteToken && !forgot && !reset && !verify
+  const newPassword = setup || register || reset || Boolean(inviteToken && !signedIn)
+  useEffect(() => {
+    const syncLocation = () => {
+      const next = authLocation()
+      setLocation((current) =>
+        current.mode === next.mode && current.token === next.token ? current : next,
+      )
+    }
+    syncLocation()
+    window.addEventListener('hashchange', syncLocation)
+    window.addEventListener('popstate', syncLocation)
+    return () => {
+      window.removeEventListener('hashchange', syncLocation)
+      window.removeEventListener('popstate', syncLocation)
+    }
+  }, [])
+  useEffect(() => {
+    setSent(false)
+    setError('')
+  }, [mode, linkToken])
   useEffect(() => {
     const controller = new AbortController()
     void fetch('/session', { signal: controller.signal, cache: 'no-store' })
       .then((response) => response.json())
       .then((body) => {
-        if (body.mfa_required) {
+        if (body.mfa_required && mode === 'login' && !inviteToken) {
           setProviderMFA(true)
           setMFA(true)
         }
@@ -73,35 +133,46 @@ export function AuthScreen({
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy) return
-    if ((setup || (inviteToken && !signedIn)) && password !== confirmation) {
+    if (newPassword && password !== confirmation) {
       setError('The passwords do not match.')
       return
     }
-    if ((setup || (inviteToken && !signedIn)) && new TextEncoder().encode(password).length > 72) {
+    if (newPassword && new TextEncoder().encode(password).length > 72) {
       setError('Use a password no longer than 72 UTF-8 bytes.')
       return
     }
     setBusy(true)
     setError('')
     try {
-      await submitSession(
-        providerMFA
-          ? { action: 'mfa', code }
-          : inviteToken
-            ? {
-                action: 'invite',
-                invite_token: inviteToken,
-                ...(signedIn ? {} : { name, password }),
-              }
-            : setup
-              ? { action: 'setup', name, email, password, installer_credential: installer }
-              : { action: 'login', email, password, code },
+      const result = await submitSession(
+        forgot
+          ? { action: 'forgot', email }
+          : reset
+            ? { action: 'reset', token: linkToken, password }
+            : verify
+              ? { action: 'verify', token: linkToken }
+              : register && !setup
+                ? { action: 'register', name, email, password }
+                : providerMFA
+                  ? { action: 'mfa', code }
+                  : inviteToken
+                    ? {
+                        action: 'invite',
+                        invite_token: inviteToken,
+                        workspace,
+                        ...(signedIn ? {} : { name, password }),
+                      }
+                    : setup
+                      ? { action: 'setup', name, email, password, installer_credential: installer }
+                      : { action: 'login', email, password, code },
       )
       setPassword('')
       setConfirmation('')
       setInstaller('')
       setCode('')
-      onSuccess()
+      if (result.accepted || result.reset) setSent(true)
+      else if (result.onboarding_required) window.location.assign('/login/onboarding')
+      else onSuccess()
     } catch (err) {
       if (err instanceof APIError && err.code === 'mfa_required') setMFA(true)
       setError(message(err))
@@ -115,25 +186,43 @@ export function AuthScreen({
     try {
       const start = await unwrap(client.POST('/auth/passkeys/login/start', { body: {} }))
       const credential = await passkeyCredential(start.options.publicKey)
-      await unwrap(
+      const result = await unwrap(
         client.POST('/auth/passkeys/login/finish', {
           body: { challenge: start.challenge, credential },
         }),
       )
-      onSuccess()
+      if (result.onboarding_required) window.location.assign('/login/onboarding')
+      else onSuccess()
     } catch (err) {
       setError(message(err))
     } finally {
       setBusy(false)
     }
   }
-  const title = providerMFA
-    ? 'Complete your sign-in'
-    : inviteToken
-      ? 'Join your team'
-      : setup
-        ? 'Make this workspace yours'
-        : 'Welcome back'
+  function rememberReturn() {
+    const destination = new URL(window.location.href)
+    if (!['/login/invite', '/login/device'].includes(destination.pathname)) return
+    if (destination.pathname === '/login/invite')
+      destination.searchParams.set('workspace', workspace)
+    try {
+      sessionStorage.setItem('hakopod-auth-return', destination.pathname + destination.search)
+    } catch {}
+  }
+  const title = forgot
+    ? 'Reset your password'
+    : reset
+      ? 'Choose a new password'
+      : verify
+        ? 'Verify your email'
+        : register && !setup
+          ? 'Create your account'
+          : providerMFA
+            ? 'Complete your sign-in'
+            : inviteToken
+              ? 'Choose your workspace'
+              : setup
+                ? 'Make this workspace yours'
+                : 'Welcome back'
   return (
     <div className={`hako-auth-page ${signedIn ? 'hako-auth-embedded' : ''}`}>
       {!signedIn && (
@@ -171,15 +260,23 @@ export function AuthScreen({
           footer={<span>Your infrastructure. Your team.</span>}
         >
           <p className="hako-auth-description">
-            {providerMFA
-              ? 'Enter an authenticator code or a recovery code.'
-              : inviteToken
-                ? signedIn
-                  ? 'Accept this invitation using your current account.'
-                  : 'Choose your name and password to accept this invitation. Existing members can sign in first.'
-                : setup
-                  ? 'Create the first owner account for this Hakopod installation.'
-                  : 'Sign in to deploy and operate your applications.'}
+            {forgot
+              ? 'We will email a recovery link if this address has an account.'
+              : reset
+                ? 'Your two-factor authentication stays enabled. Your existing browser and CLI sessions will be signed out.'
+                : verify
+                  ? 'Confirm your email to finish registration, then choose your workspace.'
+                  : register && !setup
+                    ? 'Create a personal workspace or join a team that invited you.'
+                    : providerMFA
+                      ? 'Enter an authenticator code or a recovery code.'
+                      : inviteToken
+                        ? signedIn
+                          ? 'Accept this invitation using your current account.'
+                          : 'Choose how you want to get started. An invitation can create your account even when public registration is closed.'
+                        : setup
+                          ? 'Create the first owner account for this Hakopod installation.'
+                          : 'Sign in to deploy and operate your applications.'}
           </p>
           {status.isPending ? (
             <Loading rows={2} />
@@ -187,162 +284,258 @@ export function AuthScreen({
             <ErrorState error={status.error} retry={() => void status.refetch()} />
           ) : (
             <>
-              {!setup &&
-                !inviteToken &&
-                !providerMFA &&
-                (status.data?.passkeys || Boolean(status.data?.providers.length)) && (
-                  <div className="hako-auth-alternatives">
-                    {status.data?.passkeys && (
-                      <Button
-                        variant="outline"
-                        className="full-width"
-                        disabled={busy}
-                        onClick={() => void passkey()}
-                      >
-                        <Icon name="key" size={16} />
-                        Sign in with a passkey
-                      </Button>
-                    )}
-                    {status.data?.providers
-                      .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
-                      .map((provider) => (
-                        <Button variant="outline" className="full-width" asChild key={provider}>
-                          <a
-                            href={`/api/v1/auth/oauth/${provider}/start`}
-                            onClick={() => {
-                              if (location.pathname.startsWith('/login/'))
-                                sessionStorage.setItem(
-                                  'hakopod-auth-return',
-                                  location.pathname + location.search,
-                                )
-                            }}
-                          >
-                            <ServiceIcon name={provider} size={17} />
-                            Continue with{' '}
-                            {provider === 'github'
-                              ? 'GitHub'
-                              : provider === 'gitlab'
-                                ? 'GitLab'
-                                : 'Google'}
-                          </a>
-                        </Button>
-                      ))}
-                    <div className="hako-auth-divider">
-                      <span>Or use your email</span>
-                    </div>
-                  </div>
-                )}
-              <form onSubmit={submit} className="hako-auth-form" aria-busy={busy}>
-                {!providerMFA && (
-                  <>
-                    {(setup || (inviteToken && !signedIn)) && (
-                      <Field
-                        label="Your name"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                        autoComplete="name"
-                        maxLength={100}
-                        required
-                      />
-                    )}
-                    {!inviteToken && (
-                      <Field
-                        label="Email address"
-                        type="email"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        autoComplete="username"
-                        maxLength={254}
-                        required
-                      />
-                    )}
-                    {(!signedIn || !inviteToken) && (
-                      <PasswordField
-                        label="Password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        autoComplete={setup || inviteToken ? 'new-password' : 'current-password'}
-                        minLength={setup || inviteToken ? 12 : undefined}
-                        maxLength={72}
-                        required
-                      />
-                    )}
-                    {(setup || (inviteToken && !signedIn)) && (
-                      <>
-                        <PasswordField
-                          label="Confirm password"
-                          value={confirmation}
-                          onChange={(event) => setConfirmation(event.target.value)}
-                          autoComplete="new-password"
-                          minLength={12}
-                          maxLength={72}
-                          required
-                        />
-                        <p className="field-help">Use at least 12 characters.</p>
-                      </>
-                    )}
-                    {setup && (
-                      <>
-                        <PasswordField
-                          label="Installer credential"
-                          value={installer}
-                          onChange={(event) => setInstaller(event.target.value)}
-                          autoComplete="off"
-                          maxLength={512}
-                          placeholder="Setup token or bootstrap administrator key"
-                        />
+              {sent ? (
+                <div role="status" className="hako-auth-description">
+                  {reset
+                    ? 'Your password has been changed. Sign in with your new password.'
+                    : 'If this address is eligible, an email is on its way. The link expires in 15 minutes. Check your spam folder too.'}
+                  <p>
+                    <a href="/">Return to sign in</a>
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {register && !setup && !status.data?.signup_enabled ? (
+                    <p className="inline-error">
+                      Registration is closed. Use an invitation from your administrator.
+                    </p>
+                  ) : null}
+                  {(forgot || (register && !setup)) && !status.data?.email_delivery && (
+                    <p className="field-help">
+                      Email delivery is not configured.{' '}
+                      {register
+                        ? 'Use one of the configured providers below, or contact your administrator.'
+                        : 'Contact your administrator for account recovery.'}
+                    </p>
+                  )}
+                  {inviteToken && (
+                    <fieldset className="hako-auth-workspace-choice">
+                      <legend>Where would you like to start?</legend>
+                      <label>
+                        <input
+                          type="radio"
+                          name="workspace-choice"
+                          value="invite"
+                          checked={workspace === 'invite'}
+                          onChange={() => setWorkspace('invite')}
+                        />{' '}
+                        Join the invited workspace
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="workspace-choice"
+                          value="personal"
+                          checked={workspace === 'personal'}
+                          onChange={() => setWorkspace('personal')}
+                        />{' '}
+                        Create a separate personal workspace
+                      </label>
+                      <p className="field-help">
+                        A personal workspace is private to you. It does not grant access to the
+                        inviting team.
+                      </p>
+                      {invite.data && (
                         <p className="field-help">
-                          Use the credential from this installation’s setup. An existing bootstrap
-                          session can also claim ownership.
+                          Invitation for {invite.data.email}
+                          {invite.data.project ? ` · ${invite.data.project}` : ''}
                         </p>
+                      )}
+                      {invite.error && (
+                        <ErrorState error={invite.error} retry={() => void invite.refetch()} />
+                      )}
+                    </fieldset>
+                  )}
+                  {!setup &&
+                    !signedIn &&
+                    !forgot &&
+                    !reset &&
+                    !verify &&
+                    (!register || status.data?.signup_enabled) &&
+                    !providerMFA &&
+                    (status.data?.passkeys || Boolean(status.data?.providers.length)) && (
+                      <div className="hako-auth-alternatives">
+                        {status.data?.passkeys && !register && !inviteToken && (
+                          <Button
+                            variant="outline"
+                            className="full-width"
+                            disabled={busy}
+                            onClick={() => void passkey()}
+                          >
+                            <Icon name="key" size={16} />
+                            Sign in with a passkey
+                          </Button>
+                        )}
+                        {status.data?.providers
+                          .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
+                          .map((provider) => (
+                            <Button variant="outline" className="full-width" asChild key={provider}>
+                              <a
+                                href={`/api/v1/auth/oauth/${provider}/start${register || inviteToken ? `?${new URLSearchParams({ intent: 'register', ...(inviteToken ? { invite_token: inviteToken } : {}) })}` : ''}`}
+                                onClick={rememberReturn}
+                              >
+                                <ServiceIcon name={provider} size={17} />
+                                Continue with{' '}
+                                {provider === 'github'
+                                  ? 'GitHub'
+                                  : provider === 'gitlab'
+                                    ? 'GitLab'
+                                    : 'Google'}
+                              </a>
+                            </Button>
+                          ))}
+                        <div className="hako-auth-divider">
+                          <span>Or use your email</span>
+                        </div>
+                      </div>
+                    )}
+                  <form onSubmit={submit} className="hako-auth-form" aria-busy={busy}>
+                    {!providerMFA && !verify && (
+                      <>
+                        {(setup || register || (inviteToken && !signedIn)) && !reset && !forgot && (
+                          <Field
+                            label="Your name"
+                            value={name}
+                            onChange={(event) => setName(event.target.value)}
+                            autoComplete="name"
+                            maxLength={100}
+                            required
+                          />
+                        )}
+                        {!inviteToken && !reset && (
+                          <Field
+                            label="Email address"
+                            type="email"
+                            value={email}
+                            onChange={(event) => setEmail(event.target.value)}
+                            autoComplete="username"
+                            maxLength={254}
+                            required
+                          />
+                        )}
+                        {(!signedIn || !inviteToken) && !forgot && (
+                          <PasswordField
+                            label="Password"
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            autoComplete={newPassword ? 'new-password' : 'current-password'}
+                            minLength={newPassword ? 12 : undefined}
+                            maxLength={72}
+                            required
+                          />
+                        )}
+                        {newPassword && !forgot && (
+                          <>
+                            <PasswordField
+                              label="Confirm password"
+                              value={confirmation}
+                              onChange={(event) => setConfirmation(event.target.value)}
+                              autoComplete="new-password"
+                              minLength={12}
+                              maxLength={72}
+                              required
+                            />
+                            <p className="field-help">Use at least 12 characters.</p>
+                          </>
+                        )}
+                        {setup && (
+                          <>
+                            <PasswordField
+                              label="Installer credential"
+                              value={installer}
+                              onChange={(event) => setInstaller(event.target.value)}
+                              autoComplete="off"
+                              maxLength={512}
+                              placeholder="Setup token or bootstrap administrator key"
+                            />
+                            <p className="field-help">
+                              Use the credential from this installation’s setup. An existing
+                              bootstrap session can also claim ownership.
+                            </p>
+                          </>
+                        )}
                       </>
                     )}
-                  </>
-                )}
-                {mfa && (
-                  <Field
-                    label="Authenticator or recovery code"
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    autoComplete="one-time-code"
-                    maxLength={128}
-                    required
-                    autoFocus
-                  />
-                )}
-                {error && (
-                  <div className="inline-error" role="alert">
-                    {error}
-                  </div>
-                )}
-                <Button variant="primary" className="full-width" type="submit" disabled={busy}>
-                  {busy
-                    ? 'Signing in…'
-                    : providerMFA
-                      ? 'Verify and continue'
-                      : inviteToken
-                        ? 'Accept invitation'
-                        : setup
-                          ? 'Create owner account'
-                          : 'Sign in'}
-                  <Icon name="arrow" size={16} />
-                </Button>
-              </form>
-              {inviteToken && !signedIn && (
-                <p className="field-help">
-                  <a
-                    href="/"
-                    onClick={() =>
-                      sessionStorage.setItem(
-                        'hakopod-auth-return',
-                        location.pathname + location.search,
-                      )
-                    }
-                  >
-                    Sign in with an existing account
-                  </a>
-                  , then accept your invitation.
-                </p>
+                    {mfa && (
+                      <Field
+                        label="Authenticator or recovery code"
+                        value={code}
+                        onChange={(event) => setCode(event.target.value)}
+                        autoComplete="one-time-code"
+                        maxLength={128}
+                        required
+                        autoFocus
+                      />
+                    )}
+                    {error && (
+                      <div className="inline-error" role="alert">
+                        {error}
+                      </div>
+                    )}
+                    <Button
+                      variant="primary"
+                      className="full-width"
+                      type="submit"
+                      disabled={
+                        busy ||
+                        ((verify || reset) && !linkToken) ||
+                        (register &&
+                          !setup &&
+                          (!status.data?.signup_enabled || !status.data?.email_delivery)) ||
+                        (forgot && !status.data?.password_recovery) ||
+                        Boolean(inviteToken && !invite.data)
+                      }
+                    >
+                      {busy
+                        ? 'Please wait…'
+                        : forgot
+                          ? 'Send recovery link'
+                          : reset
+                            ? 'Save new password'
+                            : verify
+                              ? 'Verify and continue'
+                              : register && !setup
+                                ? 'Create account'
+                                : providerMFA
+                                  ? 'Verify and continue'
+                                  : inviteToken
+                                    ? workspace === 'personal'
+                                      ? 'Create personal workspace'
+                                      : 'Accept invitation'
+                                    : setup
+                                      ? 'Create owner account'
+                                      : 'Sign in'}
+                      <Icon name="arrow" size={16} />
+                    </Button>
+                  </form>
+                  {(verify || reset) && !linkToken && (
+                    <p role="alert" className="inline-error">
+                      This link is missing its token. Open the full link from your email.
+                    </p>
+                  )}
+                  {!setup && !inviteToken && !providerMFA && (
+                    <div className="hako-auth-links">
+                      {register || forgot || reset || verify ? (
+                        <a href="/">Back to sign in</a>
+                      ) : (
+                        <>
+                          <a href="/login/forgot">Forgot password?</a>
+                          {status.data?.signup_enabled && (
+                            <a href="/login/signup">Create an account</a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {inviteToken && !signedIn && (
+                    <p className="field-help">
+                      <a href="/" onClick={rememberReturn}>
+                        Sign in with an existing account
+                      </a>
+                      , then accept your invitation.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}

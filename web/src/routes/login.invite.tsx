@@ -6,6 +6,7 @@ import { Empty } from '../components/shared'
 export const Route = createFileRoute('/login/invite')({
   validateSearch: (search: Record<string, unknown>) => ({
     token: typeof search.token === 'string' ? search.token.slice(0, 512) : '',
+    workspace: search.workspace === 'personal' ? 'personal' : 'invite',
   }),
   component: Invite,
 })

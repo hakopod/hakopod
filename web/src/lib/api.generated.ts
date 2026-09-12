@@ -788,6 +788,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/register/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password/forgot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invites/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["inspectInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOnboarding"];
+        put?: never;
+        post: operations["completeOnboarding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/backup-destinations": {
         parameters: {
             query?: never;
@@ -1961,6 +2057,15 @@ export interface components {
             run_as_user?: number;
             /** @enum {string} */
             architecture?: "amd64" | "arm64";
+            mounts?: components["schemas"]["Mount"][];
+            temporary_mounts?: components["schemas"]["TemporaryMount"][];
+            ports?: components["schemas"]["PrivatePort"][];
+            network_access?: components["schemas"]["NetworkAccess"];
+            run_as_group?: number;
+            fs_group?: number;
+            read_only_root_filesystem?: boolean;
+            working_dir?: string;
+            termination_grace_seconds?: number;
         };
         Spec: {
             schema_version: number;
@@ -1973,6 +2078,9 @@ export interface components {
             };
             domains?: {
                 [key: string]: string;
+            };
+            volumes?: {
+                [key: string]: components["schemas"]["NamedVolume"];
             };
         };
         Event: {
@@ -2038,6 +2146,10 @@ export interface components {
             environments: {
                 name: string;
             }[];
+            display_name?: string;
+            description?: string;
+            /** @description Personal projects cannot be shared through invitations or team membership. */
+            readonly personal?: boolean;
         };
         Principal: {
             id: string;
@@ -2174,12 +2286,15 @@ export interface components {
             passkeys: boolean;
             totp: boolean;
             email_delivery: boolean;
+            signup_enabled: boolean;
+            password_recovery: boolean;
         };
         HumanSessionCreated: {
             token: string;
             user: components["schemas"]["Principal"];
             /** Format: date-time */
             expires_at: string;
+            onboarding_required: boolean;
         };
         HumanSession: {
             id: string;
@@ -2281,6 +2396,19 @@ export interface components {
             expires_at: string;
             expires_in: number;
             user: components["schemas"]["Principal"];
+        };
+        OnboardingInvite: {
+            id: string;
+            team_name: string;
+            project: string;
+            role: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        Onboarding: {
+            required: boolean;
+            personal_project: string;
+            invitations: components["schemas"]["OnboardingInvite"][];
         };
         BackupSource: {
             /** @enum {string} */
@@ -2964,6 +3092,33 @@ export interface components {
         GPU: {
             count: number;
         };
+        NamedVolume: {
+            size_gib: number;
+            storage_class?: string;
+            /** @enum {string} */
+            access_mode?: "ReadWriteOnce" | "ReadWriteMany";
+        };
+        Mount: {
+            volume: string;
+            mount_path: string;
+            sub_path?: string;
+            read_only?: boolean;
+        };
+        TemporaryMount: {
+            mount_path: string;
+            size_mib: number;
+            memory?: boolean;
+        };
+        PrivatePort: {
+            name: string;
+            port: number;
+            target_port?: number;
+            /** @enum {string} */
+            protocol?: "TCP" | "UDP";
+        };
+        NetworkAccess: {
+            from: string[];
+        };
         WorkloadSecret: {
             name: string;
             /** Format: date-time */
@@ -3050,6 +3205,8 @@ export interface operations {
                 "application/json": {
                     name: string;
                     environment: string;
+                    display_name?: string;
+                    description?: string;
                 };
             };
         };
@@ -3063,6 +3220,8 @@ export interface operations {
                     "application/json": {
                         name?: string;
                         environment?: string;
+                        display_name?: string;
+                        description?: string;
                     };
                 };
             };
@@ -4014,6 +4173,8 @@ export interface operations {
                     token: string;
                     name?: string;
                     password?: string;
+                    /** @enum {string} */
+                    workspace?: "invite" | "personal";
                 };
             };
         };
@@ -4181,7 +4342,10 @@ export interface operations {
     };
     startProviderLogin: {
         parameters: {
-            query?: never;
+            query?: {
+                intent?: string;
+                invite_token?: string;
+            };
             header?: never;
             path: {
                 provider: "github" | "google" | "gitlab";
@@ -4820,6 +4984,256 @@ export interface operations {
                     "application/json": {
                         updated: boolean;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    registerAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    email: string;
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accepted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    verifyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumanSessionCreated"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accepted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reset: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    inspectInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invite"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Onboarding"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    choice: "invite" | "personal";
+                    invite_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumanSessionCreated"];
                 };
             };
             /** @description Error */

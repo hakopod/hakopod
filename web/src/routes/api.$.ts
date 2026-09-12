@@ -28,7 +28,7 @@ const allowed = [
   /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input))?)?$/,
   /^(me|projects|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|scale|tls))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
-  /^auth\/(?:status|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
+  /^auth\/(?:status|onboarding|invites\/inspect|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
   /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
   /^users(?:\/[A-Za-z0-9_-]+)?$/,
   /^projects\/[A-Za-z0-9_-]+\/(?:members|invites)$/,
@@ -59,6 +59,7 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
     const token = sessionToken(request)
     const publicPath =
       (path === 'auth/status' && request.method === 'GET') ||
+      (path === 'auth/invites/inspect' && request.method === 'POST') ||
       (/^auth\/passkeys\/login\/(start|finish)$/.test(path) && request.method === 'POST')
     if (!token && !publicPath)
       return Response.json(
@@ -92,7 +93,11 @@ async function proxy({ request, params }: { request: Request; params: { _splat?:
         AbortSignal.timeout(terminalStream ? 11 * 60 * 1000 : streaming ? 5 * 60 * 1000 : 30000),
       ]),
     })
-    if (path === 'auth/passkeys/login/finish') return authenticatedResponse(request, response)
+    if (
+      path === 'auth/passkeys/login/finish' ||
+      (path === 'auth/onboarding' && request.method === 'POST')
+    )
+      return authenticatedResponse(request, response)
     return new Response(response.body, {
       status: response.status,
       headers: {

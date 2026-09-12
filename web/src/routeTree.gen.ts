@@ -26,7 +26,12 @@ import { Route as BuildsBuildIdRouteImport } from './routes/builds.$buildId'
 import { Route as BuildsNewRouteImport } from './routes/builds.new'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
 import { Route as LoginDeviceRouteImport } from './routes/login.device'
+import { Route as LoginForgotRouteImport } from './routes/login.forgot'
 import { Route as LoginInviteRouteImport } from './routes/login.invite'
+import { Route as LoginOnboardingRouteImport } from './routes/login.onboarding'
+import { Route as LoginResetRouteImport } from './routes/login.reset'
+import { Route as LoginSignupRouteImport } from './routes/login.signup'
+import { Route as LoginVerifyRouteImport } from './routes/login.verify'
 import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
@@ -131,9 +136,34 @@ const LoginDeviceRoute = LoginDeviceRouteImport.update({
   path: '/login/device',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginForgotRoute = LoginForgotRouteImport.update({
+  id: '/login/forgot',
+  path: '/login/forgot',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginInviteRoute = LoginInviteRouteImport.update({
   id: '/login/invite',
   path: '/login/invite',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginOnboardingRoute = LoginOnboardingRouteImport.update({
+  id: '/login/onboarding',
+  path: '/login/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginResetRoute = LoginResetRouteImport.update({
+  id: '/login/reset',
+  path: '/login/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginSignupRoute = LoginSignupRouteImport.update({
+  id: '/login/signup',
+  path: '/login/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginVerifyRoute = LoginVerifyRouteImport.update({
+  id: '/login/verify',
+  path: '/login/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsHostAccessRoute = SettingsHostAccessRouteImport.update({
@@ -250,7 +280,12 @@ export interface FileRoutesByFullPath {
   '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
+  '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
+  '/login/onboarding': typeof LoginOnboardingRoute
+  '/login/reset': typeof LoginResetRoute
+  '/login/signup': typeof LoginSignupRoute
+  '/login/verify': typeof LoginVerifyRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -287,7 +322,12 @@ export interface FileRoutesByTo {
   '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
+  '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
+  '/login/onboarding': typeof LoginOnboardingRoute
+  '/login/reset': typeof LoginResetRoute
+  '/login/signup': typeof LoginSignupRoute
+  '/login/verify': typeof LoginVerifyRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -325,7 +365,12 @@ export interface FileRoutesById {
   '/builds/new': typeof BuildsNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
+  '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
+  '/login/onboarding': typeof LoginOnboardingRoute
+  '/login/reset': typeof LoginResetRoute
+  '/login/signup': typeof LoginSignupRoute
+  '/login/verify': typeof LoginVerifyRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -364,7 +409,12 @@ export interface FileRouteTypes {
     | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
+    | '/login/forgot'
     | '/login/invite'
+    | '/login/onboarding'
+    | '/login/reset'
+    | '/login/signup'
+    | '/login/verify'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -401,7 +451,12 @@ export interface FileRouteTypes {
     | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
+    | '/login/forgot'
     | '/login/invite'
+    | '/login/onboarding'
+    | '/login/reset'
+    | '/login/signup'
+    | '/login/verify'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -438,7 +493,12 @@ export interface FileRouteTypes {
     | '/builds/new'
     | '/deployments/$deploymentId'
     | '/login/device'
+    | '/login/forgot'
     | '/login/invite'
+    | '/login/onboarding'
+    | '/login/reset'
+    | '/login/signup'
+    | '/login/verify'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -472,7 +532,12 @@ export interface RootRouteChildren {
   ApplicationsNewRoute: typeof ApplicationsNewRoute
   DeploymentsDeploymentIdRoute: typeof DeploymentsDeploymentIdRoute
   LoginDeviceRoute: typeof LoginDeviceRoute
+  LoginForgotRoute: typeof LoginForgotRoute
   LoginInviteRoute: typeof LoginInviteRoute
+  LoginOnboardingRoute: typeof LoginOnboardingRoute
+  LoginResetRoute: typeof LoginResetRoute
+  LoginSignupRoute: typeof LoginSignupRoute
+  LoginVerifyRoute: typeof LoginVerifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -596,11 +661,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginDeviceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login/forgot': {
+      id: '/login/forgot'
+      path: '/login/forgot'
+      fullPath: '/login/forgot'
+      preLoaderRoute: typeof LoginForgotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login/invite': {
       id: '/login/invite'
       path: '/login/invite'
       fullPath: '/login/invite'
       preLoaderRoute: typeof LoginInviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/onboarding': {
+      id: '/login/onboarding'
+      path: '/login/onboarding'
+      fullPath: '/login/onboarding'
+      preLoaderRoute: typeof LoginOnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/reset': {
+      id: '/login/reset'
+      path: '/login/reset'
+      fullPath: '/login/reset'
+      preLoaderRoute: typeof LoginResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/signup': {
+      id: '/login/signup'
+      path: '/login/signup'
+      fullPath: '/login/signup'
+      preLoaderRoute: typeof LoginSignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login/verify': {
+      id: '/login/verify'
+      path: '/login/verify'
+      fullPath: '/login/verify'
+      preLoaderRoute: typeof LoginVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/host-access': {
@@ -864,7 +964,12 @@ const rootRouteChildren: RootRouteChildren = {
   ApplicationsNewRoute: ApplicationsNewRoute,
   DeploymentsDeploymentIdRoute: DeploymentsDeploymentIdRoute,
   LoginDeviceRoute: LoginDeviceRoute,
+  LoginForgotRoute: LoginForgotRoute,
   LoginInviteRoute: LoginInviteRoute,
+  LoginOnboardingRoute: LoginOnboardingRoute,
+  LoginResetRoute: LoginResetRoute,
+  LoginSignupRoute: LoginSignupRoute,
+  LoginVerifyRoute: LoginVerifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -66,11 +66,16 @@ export async function authenticatedResponse(
     'Set-Cookie': sessionCookie(request, sealSession(result.token)),
   })
   headers.append('Set-Cookie', temporaryCookie(request, 'hakopod_mfa', ''))
-  if (redirect) headers.set('Location', '/')
+  if (redirect) headers.set('Location', result.onboarding_required ? '/login/onboarding' : '/')
   return redirect
     ? new Response(null, { status: 303, headers })
     : Response.json(
-        { authenticated: true, user: result.user, expires_at: result.expires_at },
+        {
+          authenticated: true,
+          user: result.user,
+          expires_at: result.expires_at,
+          onboarding_required: result.onboarding_required === true,
+        },
         { headers },
       )
 }
@@ -90,7 +95,19 @@ export async function signIn(request: Request) {
     if (!input || typeof input !== 'object' || Array.isArray(input))
       return failure(400, 'Expected a sign-in request.')
     const action = input.action
-    if (!['login', 'setup', 'invite', 'mfa'].includes(String(action)))
+    if (
+      ![
+        'login',
+        'setup',
+        'invite',
+        'mfa',
+        'register',
+        'verify',
+        'forgot',
+        'reset',
+        'onboarding',
+      ].includes(String(action))
+    )
       return failure(400, 'Choose a supported sign-in method.')
     const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'application/json' })
     let payload: Record<string, unknown>
@@ -120,11 +137,33 @@ export async function signIn(request: Request) {
       const challenge = openSession(cookieValue(request, 'hakopod_mfa'))
       if (!challenge) return failure(401, 'This sign-in challenge expired. Start sign-in again.')
       payload = { challenge, code: input.code }
+    } else if (action === 'register') {
+      path = 'auth/register'
+      payload = { name: input.name, email: input.email, password: input.password }
+    } else if (action === 'verify') {
+      path = 'auth/register/verify'
+      payload = { token: input.token }
+    } else if (action === 'forgot') {
+      path = 'auth/password/forgot'
+      payload = { email: input.email }
+    } else if (action === 'reset') {
+      path = 'auth/password/reset'
+      payload = { token: input.token, password: input.password }
+    } else if (action === 'onboarding') {
+      path = 'auth/onboarding'
+      const existing = sessionToken(request)
+      if (existing) headers.set('Authorization', `Bearer ${existing}`)
+      payload = { choice: input.choice, invite_id: input.invite_id }
     } else {
       path = 'auth/invites/accept'
       const existing = sessionToken(request)
       if (existing) headers.set('Authorization', `Bearer ${existing}`)
-      payload = { token: input.invite_token, name: input.name, password: input.password }
+      payload = {
+        token: input.invite_token,
+        name: input.name,
+        password: input.password,
+        workspace: input.workspace,
+      }
     }
     const response = await fetch(apiURL(path), {
       method: 'POST',
@@ -133,6 +172,29 @@ export async function signIn(request: Request) {
       redirect: 'error',
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]),
     })
+    if (['register', 'forgot', 'reset'].includes(String(action))) {
+      const text = await boundedBody(response, 64 * 1024)
+      if (text === null) return failure(502, 'The authentication response exceeded its size limit.')
+      let result: Record<string, unknown>
+      try {
+        result = JSON.parse(text)
+      } catch {
+        return failure(502, 'The authentication service returned an invalid response.')
+      }
+      if (!response.ok) return upstreamFailure(response.status, result?.error)
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        (action === 'reset' ? result.reset !== true : result.accepted !== true)
+      )
+        return failure(502, 'The authentication service returned an invalid response.')
+      const responseHeaders = new Headers(privateHeaders)
+      if (action === 'reset') responseHeaders.append('Set-Cookie', sessionCookie(request, '', true))
+      return Response.json(action === 'reset' ? { reset: true } : { accepted: true }, {
+        status: response.status,
+        headers: responseHeaders,
+      })
+    }
     return await authenticatedResponse(request, response)
   } catch {
     return failure(

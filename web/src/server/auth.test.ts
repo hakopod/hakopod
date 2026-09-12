@@ -38,6 +38,58 @@ test('human sessions are sealed and never exposed in browser JSON or headers', a
   assert.equal(malformed.status, 502)
 })
 
+test('registration and recovery keep mail tokens out of browser responses', async (t) => {
+  const calls: { path: string; body: Record<string, unknown> }[] = []
+  const fetch = t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit = {}) => {
+    calls.push({ path: String(path), body: JSON.parse(String(init.body)) })
+    return Response.json({ accepted: true, token: 'must-never-reach-browser' }, { status: 202 })
+  })
+  const registration = {
+    action: 'register',
+    email: 'new@example.invalid',
+    name: 'New person',
+    password: 'a long registration password',
+  }
+  const registered = await signIn(request(registration))
+  assert.equal(registered.status, 202)
+  assert.deepEqual(await registered.json(), { accepted: true })
+  assert.equal(registered.headers.getSetCookie().length, 0)
+  assert.match(calls[0].path, /auth\/register$/)
+  assert.deepEqual(calls[0].body, {
+    email: registration.email,
+    name: registration.name,
+    password: registration.password,
+  })
+  assert.equal((await signIn(request({ action: 'forgot', email: registration.email }))).status, 202)
+  assert.match(calls[1].path, /auth\/password\/forgot$/)
+  fetch.mock.mockImplementation(async () =>
+    Response.json({ reset: true, token: 'must-never-reach-browser' }),
+  )
+  const reset = await signIn(
+    request({ action: 'reset', token: 'email-proof', password: 'new account password' }),
+  )
+  assert.deepEqual(await reset.json(), { reset: true })
+  assert.match(reset.headers.getSetCookie()[0], /Max-Age=0/)
+})
+
+test('verified registration redirects to onboarding with a sealed session', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit = {}) => {
+    assert.match(String(url), /auth\/register\/verify$/)
+    assert.deepEqual(JSON.parse(String(init.body)), { token: 'email-proof' })
+    return Response.json({ token, user: { name: 'Verified person' }, onboarding_required: true })
+  })
+  const verified = await signIn(request({ action: 'verify', token: 'email-proof' }))
+  const result = await verified.json()
+  assert.equal(result.onboarding_required, true)
+  assert.equal(result.token, undefined)
+  const redirect = await authenticatedResponse(
+    request({}),
+    Response.json({ token, onboarding_required: true }),
+    true,
+  )
+  assert.equal(redirect.headers.get('Location'), '/login/onboarding')
+})
+
 test('setup forwards only the chosen profile and installer proof; CSRF cannot reach auth', async (t) => {
   const calls: { url: string; headers: Headers; body: Record<string, unknown> }[] = []
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit = {}) => {
