@@ -1,5 +1,11 @@
 # Linux installer
 
+Management backups use the exact owned PostgreSQL container and its pinned
+client tools. The installer creates a private restore staging directory at
+`/var/lib/hakopod/backups` and allows only the API service to write there.
+Configure an S3-compatible destination in the dashboard after setup. Preserve
+`/etc/hakopod`, cluster state and application volumes separately.
+
 This installer installs a dedicated, single-server Hakopod on **Ubuntu 24.04/26.04 or Debian 12/13, amd64 or arm64**, with systemd, cgroup v2, Python 3.10+, and swap disabled. It is implementation scope, not a claim that every host/architecture combination has passed a full installation. Read the verification record below. At least 4 GiB RAM and 30 GiB free disk are required; allow additional capacity for application pods, rollouts, and optional modules. Runtime caps are conservative, configurable bounds, not measured idle usage or a guarantee that every workload fits.
 
 Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state, conflicting ports, service accounts or installer paths are refused. An existing installation can be resumed only with its original configuration, ownership marker and artifact bytes. The installer does not adopt another PostgreSQL database, cluster, or Helm installation. It does not change DNS, your firewall, swap configuration, SSH access, or OS package repositories. No uninstaller or automatic data deletion is provided.
