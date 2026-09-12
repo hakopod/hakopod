@@ -1,25 +1,49 @@
-import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Skeleton } from '@hakopod/hatch-ui/components/skeleton'
+import { Status as HatchStatus, type StatusTone } from '@hakopod/hatch-ui/components/status'
 import { Icon } from './icons'
 import { Button } from './ui/button'
-import { message } from '../lib/api'
+import { APIError, message } from '../lib/api'
 
 export function Status({ value, small }: { value?: string; small?: boolean }) {
-  const status = (value || 'unknown').toLowerCase()
-  const color = ['healthy', 'ready', 'succeeded', 'running'].includes(status)
-    ? status === 'running'
-      ? 'blue'
-      : 'green'
-    : ['failed', 'error', 'unhealthy', 'not ready'].includes(status)
-      ? 'red'
-      : ['queued', 'pending', 'partial', 'progressing'].includes(status)
-        ? 'amber'
-        : 'muted'
+  const status = (value || 'unknown').toLowerCase().replaceAll('_', ' ')
+  const tone: StatusTone = [
+    'healthy',
+    'ready',
+    'succeeded',
+    'complete',
+    'active',
+    'verified',
+    'synchronized',
+    'live',
+  ].includes(status)
+    ? 'success'
+    : [
+          'failed',
+          'error',
+          'unhealthy',
+          'not ready',
+          'crashed',
+          'crashloop',
+          'expired',
+          'revoked',
+          'misconfigured',
+        ].includes(status)
+      ? 'error'
+      : ['running', 'building', 'deploying', 'progressing', 'terminating', 'issuing cert'].includes(
+            status,
+          )
+        ? 'running'
+        : ['pending', 'partial', 'degraded', 'expiring', 'pending dns', 'incomplete'].includes(
+              status,
+            )
+          ? 'warning'
+          : 'neutral'
   return (
-    <span className={`status status-${color} ${small ? 'status-small' : ''}`}>
-      <span className="status-dot" />
-      {status.replaceAll('_', ' ')}
-    </span>
+    <HatchStatus tone={tone} className={`hako-status ${small ? 'hako-status-small' : ''}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </HatchStatus>
   )
 }
 export function Empty({
@@ -34,26 +58,29 @@ export function Empty({
   action?: ReactNode
 }) {
   return (
-    <div className="empty-state">
-      <div className="empty-icon">
-        <Icon name={icon} size={26} />
-      </div>
-      <h3>{title}</h3>
-      <p>{description}</p>
-      {action}
+    <div className="hako-empty-canvas bg-grid">
+      <section className="hako-empty-card">
+        <Brackets bold />
+        <Icon name={icon} size={24} />
+        <h2>{title}</h2>
+        <p>{description}</p>
+        {action && <div className="hako-empty-actions">{action}</div>}
+      </section>
     </div>
   )
 }
 export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
   return (
-    <div className="error-state" role="alert">
+    <div className="hako-error-state" role="alert">
       <Icon name="alert" />
       <div>
-        <strong>Something needs attention</strong>
+        <h2>Something needs attention</h2>
         <p>{message(error)}</p>
+        {error instanceof APIError && error.code && <code>{error.code}</code>}
       </div>
       {retry && (
-        <Button size="sm" onClick={retry}>
+        <Button variant="primary" size="sm" onClick={retry}>
+          <Icon name="refresh" size={14} />
           Retry
         </Button>
       )}
@@ -62,9 +89,9 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
 }
 export function Loading({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="loading-stack" aria-label="Loading" role="status">
-      {Array.from({ length: rows }, (_, i) => (
-        <div className="skeleton" key={i} />
+    <div className="hako-loading-stack" aria-label="Loading" role="status">
+      {Array.from({ length: Math.max(1, Math.min(20, rows)) }, (_, i) => (
+        <Skeleton className="hako-skeleton-row" key={i} />
       ))}
       <span className="sr-only">Loading data…</span>
     </div>
@@ -72,18 +99,21 @@ export function Loading({ rows = 3 }: { rows?: number }) {
 }
 export function Copy({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false)
+  const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timeout.current), [])
   return (
     <Button
       type="button"
       size={label ? 'sm' : 'icon'}
       variant="ghost"
       title="Copy to clipboard"
-      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+      aria-label={copied ? 'Copied' : label || 'Copy to clipboard'}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)
+          clearTimeout(timeout.current)
           setCopied(true)
-          setTimeout(() => setCopied(false), 1800)
+          timeout.current = setTimeout(() => setCopied(false), 1800)
         } catch {
           setCopied(false)
         }
@@ -106,19 +136,19 @@ export function PageHeader({
   action?: ReactNode
 }) {
   return (
-    <div className="page-heading">
+    <header className="page-heading hako-page-heading">
       <div>
         {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>
       {action && <div className="heading-action">{action}</div>}
-    </div>
+    </header>
   )
 }
 export function Note({ children }: { children: ReactNode }) {
   return (
-    <div className="note">
+    <div className="note hako-note">
       <Icon name="info" size={16} />
       <div>{children}</div>
     </div>

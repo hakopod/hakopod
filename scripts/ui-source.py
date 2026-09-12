@@ -4,6 +4,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
@@ -16,17 +17,28 @@ EXCLUDED = {".git", "node_modules", "dist", ".local", "__pycache__"}
 
 def source_files(source):
     files = []
-    for path in sorted(source.rglob("*")):
-        relative = path.relative_to(source)
-        if any(part in EXCLUDED for part in relative.parts):
-            continue
-        if path.is_symlink():
-            raise ValueError(f"UI source cannot contain a symlink: {relative}")
-        if path.is_file():
-            files.append(path)
+    hatch = (source / "packages/ui/package.json").is_file()
+    # Ship the consumer package, not Hatch's docs, examples, or build tools.
+    roots = [source / "packages/ui"] if hatch else [source]
+    if hatch:
+        files.extend(source / name for name in ["package.json", "LICENSE", "NOTICE"]
+                     if (source / name).is_file())
+    if any(path.is_symlink() for path in [*roots, *files]):
+        raise ValueError("UI source roots and licenses cannot be symlinks")
+    for root in roots:
+        for directory, dirs, names in os.walk(root):
+            dirs[:] = sorted(name for name in dirs if name not in EXCLUDED)
+            for name in [*dirs, *sorted(names)]:
+                path = Path(directory) / name
+                if name in EXCLUDED:
+                    continue
+                if path.is_symlink():
+                    raise ValueError(f"UI source cannot contain a symlink: {path.relative_to(source)}")
+                if path.is_file():
+                    files.append(path)
     if not files or len(files) > 512 or sum(p.stat().st_size for p in files) > LIMIT:
         raise ValueError("UI source exceeds 512 files/10 MiB or is empty")
-    return files
+    return sorted(files)
 
 
 def pack(source, destination):

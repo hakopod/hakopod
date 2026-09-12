@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), tanstackStart(), react()],
     // The local design system exports TSX source; production Node runs only JS.
-    ssr: { noExternal: ['@hakopod/ui'] },
+    ssr: { noExternal: ['@hakopod/hatch-ui'] },
     server: { port: 3000, host: '127.0.0.1' },
     build: { sourcemap: false, chunkSizeWarningLimit: 450 },
   }

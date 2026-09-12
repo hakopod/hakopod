@@ -3,7 +3,8 @@
 	url = ../hakopod-license-issuer.git
 [submodule "packages/ui"]
 	path = packages/ui
-	url = ../hakopod-design-system.git
+	url = ../hatch-ui.git
+	branch = sudo
 [submodule "private/cloud"]
 	path = private/cloud
 	url = ../hakopod-cloud.git

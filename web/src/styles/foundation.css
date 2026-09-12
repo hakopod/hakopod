@@ -1,0 +1,552 @@
+:root,
+.dark,
+.light {
+  --error-surface: color-mix(in srgb, var(--destructive) 9%, var(--card));
+  --warning-surface: color-mix(in srgb, var(--warn) 9%, var(--card));
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+}
+body {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.sr-only {
+  top: 0;
+  left: 0;
+}
+h1,
+h2,
+h3,
+h4,
+strong,
+b {
+  font-weight: 500;
+}
+h1 {
+  font-size: 28px;
+  letter-spacing: -0.045em;
+}
+h2 {
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+h3 {
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+code,
+pre,
+kbd,
+.mono {
+  font-family: var(--font-mono);
+}
+code {
+  font-size: 12px;
+}
+::selection {
+  color: var(--foreground);
+  background: var(--state-dim);
+}
+button:disabled {
+  opacity: 1;
+  background: var(--surface-3);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: none;
+}
+/* The fallback gives native links and controls the same four focus corners. */
+:where(a, button, select, summary):focus-visible:not(:has(> .brackets)) {
+  background-image:
+    linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state)),
+    linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state)),
+    linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state)),
+    linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state));
+  background-position:
+    top left,
+    top left,
+    top right,
+    top right,
+    bottom left,
+    bottom left,
+    bottom right,
+    bottom right;
+  background-size:
+    10px 1px,
+    1px 10px,
+    10px 1px,
+    1px 10px,
+    10px 1px,
+    1px 10px,
+    10px 1px,
+    1px 10px;
+  background-repeat: no-repeat;
+}
+label {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+label:focus-within {
+  color: var(--state);
+}
+label > .input-wrap,
+label > .native-select-wrap {
+  display: block;
+  margin-top: 8px;
+}
+.input-wrap {
+  min-width: 0;
+  width: 100%;
+}
+.input-wrap input,
+.input-wrap textarea,
+select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--foreground);
+}
+.input-wrap input,
+select {
+  height: 44px;
+}
+.input-wrap input {
+  margin: 0;
+}
+.input-wrap textarea {
+  margin: 0;
+  min-height: 112px;
+  width: 100%;
+  height: auto;
+}
+.input-wrap input:focus,
+.input-wrap textarea:focus {
+  border-color: var(--state);
+}
+.input-wrap input::placeholder,
+.input-wrap textarea::placeholder {
+  color: var(--muted);
+}
+.input-wrap:has(input:disabled) > .brackets,
+.input-wrap:has(textarea:disabled) > .brackets {
+  display: none;
+}
+.native-select-wrap {
+  position: relative;
+  min-width: 0;
+  display: inline-block;
+  width: 100%;
+}
+.native-select-wrap > select {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background-color: var(--card);
+  cursor: pointer;
+}
+.native-select-wrap > .brackets {
+  opacity: 0;
+}
+.native-select-wrap:focus-within > .brackets {
+  opacity: 1;
+}
+.native-select-wrap:focus-within select {
+  border-color: var(--state);
+  background-color: var(--hatch-base);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--state);
+  width: 16px;
+  height: 16px;
+}
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--state);
+  outline-offset: 3px;
+}
+.field-stack {
+  display: grid;
+  gap: 20px;
+}
+.field-help {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.field-stack > .field-help {
+  margin-top: -12px;
+}
+.form-grid-two,
+.form-grid-three {
+  gap: 20px;
+  align-items: start;
+}
+.button:not(.button-sm, .button-md, .button-lg, .button-icon, .button-chip) {
+  min-height: 40px;
+  padding: 0 16px;
+}
+.button-danger {
+  background: var(--destructive);
+  color: var(--destructive-fg);
+}
+.button svg {
+  width: 16px;
+  height: 16px;
+}
+.button-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.badge-success {
+  color: var(--success);
+}
+.badge-error {
+  color: var(--destructive);
+}
+.label-chip {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+.dialog-content:not(.sheet) {
+  width: 760px;
+}
+.dialog-content.dialog-wide:not(.sheet) {
+  width: 1000px;
+}
+.dialog-content > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.dialog-header {
+  padding: 28px 32px 24px;
+}
+.dialog-header h2 {
+  font-size: 26px;
+}
+.dialog-header p {
+  margin-top: 10px;
+  max-width: 66ch;
+  font-size: 14px;
+}
+.dialog-body {
+  padding: 28px 32px;
+  min-height: 0;
+  overflow: auto;
+}
+.dialog-footer {
+  padding: 20px 32px;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.dialog-body + .dialog-body {
+  padding-top: 0;
+}
+.dialog-content .created-key {
+  background: var(--hatch-base);
+  border-color: var(--state-dim);
+}
+.dialog-content .created-key code {
+  color: var(--foreground);
+}
+.tab-list {
+  gap: 24px;
+  padding: 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.tab-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 16px 0;
+  font-size: 15px;
+}
+.tab-trigger[data-state='active'] {
+  color: var(--state);
+  border: 0;
+  background: transparent;
+}
+.tab-content {
+  min-width: 0;
+}
+.panel,
+.table-container,
+.settings-panel,
+.form-card {
+  border-radius: 3px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+}
+.panel,
+.settings-panel {
+  min-width: 0;
+}
+.panel-heading {
+  min-height: 60px;
+  padding: 16px 24px;
+}
+.panel-heading h2 {
+  font-size: 16px;
+}
+.panel-body {
+  padding: 24px;
+}
+.section-toolbar {
+  min-height: 48px;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.section-toolbar h2 {
+  font-size: 18px;
+}
+.section-toolbar p {
+  font-size: 13px;
+  margin-top: 5px;
+}
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.table-container {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+thead th {
+  height: 48px;
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--card);
+}
+th,
+td {
+  padding: 12px 20px;
+}
+tbody td {
+  height: 56px;
+  border-bottom: 0;
+  font-size: 13px;
+}
+tbody tr:hover {
+  background: var(--surface-2);
+}
+table strong {
+  font-size: 14px;
+}
+table small {
+  font-size: 12px;
+}
+.table-name,
+.key-name {
+  font-size: 14px;
+}
+.table-name svg,
+.key-name > svg {
+  color: var(--muted);
+}
+.table-container .empty-canvas {
+  min-height: 260px;
+}
+.note,
+.inline-error,
+.error-state {
+  border-radius: 3px;
+  font-size: 13px;
+  padding: 14px 16px;
+}
+.note {
+  border-left: 2px solid var(--state);
+  line-height: 1.6;
+}
+.note code {
+  font-size: 12px;
+}
+.inline-error,
+.error-state {
+  border-color: var(--destructive);
+  background: var(--error-surface);
+}
+.success-text {
+  color: var(--success);
+}
+.error-state p,
+.error-state strong {
+  font-size: 14px;
+}
+.loading-stack {
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+}
+.loading-stack .skeleton {
+  min-height: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-2);
+}
+.bg-grid {
+  background-image:
+    linear-gradient(var(--hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
+  background-size: 160px 160px;
+  background-position: center;
+}
+.empty-canvas {
+  min-height: 320px;
+}
+.empty-card {
+  background: var(--card);
+  max-width: 560px;
+}
+.empty-card h1,
+.empty-card h2,
+.empty-card h3 {
+  font-size: 24px;
+}
+.empty-card p {
+  font-size: 14px;
+  max-width: 46ch;
+}
+.profile-avatar {
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.brand-mark {
+  color: var(--foreground);
+}
+.metrics-chart svg {
+  width: 100%;
+  height: auto;
+}
+.metric-track > i,
+.usage-bar > span {
+  background: var(--action);
+}
+.code-editor,
+.config-preview,
+.terminal-output,
+.logs-output,
+.log-line {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.code-editor {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+}
+.config-preview {
+  overflow: auto;
+  tab-size: 2;
+  white-space: pre;
+}
+.permission-checkboxes {
+  gap: 12px;
+  background: var(--background);
+}
+.permission-checkboxes code {
+  font-size: 12px;
+}
+.checkbox-label {
+  color: var(--foreground);
+  font-size: 13px;
+}
+.list-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.copy-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.copy-id code {
+  overflow-wrap: anywhere;
+}
+.copy-id > .button {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .dialog-content:not(.sheet) {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .dialog-header,
+  .dialog-body {
+    padding: 24px 20px;
+  }
+  .dialog-header h2 {
+    font-size: 22px;
+  }
+  .dialog-footer {
+    padding: 20px;
+    flex-wrap: wrap;
+  }
+  .dialog-close {
+    top: 16px;
+    right: 16px;
+  }
+  .form-grid-two,
+  .form-grid-three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .section-toolbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .table-container {
+    max-width: 100%;
+  }
+  th,
+  td {
+    padding: 12px 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

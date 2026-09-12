@@ -1,0 +1,1009 @@
+/* Console frame and shared surfaces. Hatch owns the brand and component tokens. */
+.hako-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 56px auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
+  background: var(--background);
+}
+.hako-global-header {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(104px, 1fr);
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--card);
+  position: relative;
+  z-index: 10;
+}
+.hako-brand-group,
+.hako-header-tools,
+.hako-global-nav,
+.hako-scope-fields {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.hako-brand-group {
+  gap: 12px;
+}
+.hako-wordmark {
+  display: block;
+  flex: 0 0 140px;
+  width: 140px;
+  padding: 2px 0;
+}
+.hako-wordmark img {
+  display: block;
+  width: 140px;
+  height: 24px;
+  object-fit: contain;
+}
+.hako-wordmark .hako-wordmark-light {
+  display: none;
+}
+.light .hako-wordmark .hako-wordmark-dark {
+  display: none;
+}
+.light .hako-wordmark .hako-wordmark-light {
+  display: block;
+}
+.hako-wordmark:focus-visible {
+  background: var(--surface-3);
+}
+.hako-global-nav {
+  gap: 24px;
+  align-self: stretch;
+}
+.hako-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+  margin-block: 12px;
+  padding-block: 4px;
+}
+.hako-nav-link:hover {
+  color: var(--foreground);
+}
+.hako-nav-link[data-active] {
+  color: var(--state);
+}
+.hako-header-tools {
+  justify-content: flex-end;
+  gap: 12px;
+}
+.hako-docs-link {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 6px;
+}
+.hako-docs-link:hover {
+  color: var(--foreground);
+}
+.hako-account-trigger.button {
+  padding: 2px;
+}
+.hako-mobile-toggle.button {
+  display: none;
+}
+.hako-scope-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 24px;
+  min-height: 60px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--card);
+}
+.hako-scope-fields {
+  gap: 12px;
+}
+.hako-scope-fields > svg {
+  color: var(--muted);
+}
+.hako-scope-select {
+  max-width: 240px;
+  min-width: 0;
+}
+.hako-scope-select select {
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  padding: 6px 24px 6px 8px;
+  margin: 0;
+  height: 32px;
+  width: auto;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.hako-scope-select:focus-within > .brackets {
+  opacity: 1;
+}
+.hako-scope-select select:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 1;
+}
+.hako-license-link {
+  flex-shrink: 0;
+}
+.hako-shell .hako-page-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+  width: 100%;
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+}
+.hako-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 24px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.hako-account-menu {
+  width: 440px;
+  max-width: calc(100vw - 28px);
+}
+.hako-account-menu .menu-item {
+  gap: 12px;
+  padding: 12px 16px;
+  font-size: 16px;
+}
+.hako-account-identity {
+  padding: 16px 16px 20px;
+}
+.hako-account-identity > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hako-account-identity strong {
+  font-size: 18px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.hako-account-identity p {
+  padding-left: 40px;
+  margin-top: 6px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.hako-account-identity small {
+  display: block;
+  padding-left: 40px;
+  margin-top: 6px;
+  font: 11px var(--font-mono);
+  color: var(--muted);
+}
+.hako-mobile-sheet.sheet {
+  left: 0;
+  right: auto;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  animation-name: hako-sheet-left;
+}
+.hako-mobile-sheet.sheet > .brackets i:nth-child(odd) {
+  display: none;
+}
+.hako-mobile-sheet.sheet > .brackets i:nth-child(even) {
+  display: block;
+}
+.hako-mobile-sheet.sheet .dialog-body {
+  padding: 16px 24px;
+}
+.hako-mobile-links {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.hako-mobile-links .hako-nav-link {
+  margin: 2px 0;
+  padding: 14px 8px;
+  font-size: 16px;
+}
+.hako-mobile-links .hako-nav-link[data-active] {
+  background: var(--surface-2);
+}
+.hako-preferences {
+  overflow-y: auto;
+  min-height: 0;
+}
+.hako-preferences .settings-layout {
+  min-height: 340px;
+}
+.hako-preferences .settings-content {
+  min-width: 0;
+}
+.hako-preferences .settings-nav .nav-group {
+  padding-top: 0;
+}
+.hako-preferences-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+.hako-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.hako-profile-summary h2 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.hako-profile-summary p {
+  font-size: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hako-profile-details {
+  display: grid;
+  margin: 0;
+  border-block: 1px solid var(--hairline);
+}
+.hako-profile-details > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 0;
+}
+.hako-profile-details dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hako-profile-details dd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+}
+.hako-profile-details code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.hako-preferences-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hako-appearance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  max-width: 640px;
+}
+.hako-appearance h2 {
+  font-size: 20px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.hako-appearance p {
+  color: var(--muted);
+  font-size: 14px;
+}
+.hako-theme-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.hako-theme-option {
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+.hako-theme-option[aria-pressed='true'] {
+  border-color: var(--state);
+}
+.hako-theme-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 18px 1fr;
+  gap: 6px;
+  padding: 12px;
+  height: 100px;
+  border: 1px solid var(--preview-line);
+  border-radius: 2px;
+}
+.hako-theme-preview-dark {
+  background: #111a17;
+  --preview-line: #26372f;
+  --preview-surface: #17231e;
+}
+.hako-theme-preview-light {
+  background: #f4f5ee;
+  --preview-line: #d9dfd4;
+  --preview-surface: #e9ece4;
+}
+.hako-theme-preview span {
+  border: 1px solid var(--preview-line);
+  background: var(--preview-surface);
+  border-radius: 2px;
+}
+.hako-theme-preview span:first-child {
+  grid-column: 1 / -1;
+  border: 0;
+  border-bottom: 1px solid var(--preview-line);
+  background: transparent;
+}
+.hako-theme-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 6px 6px;
+  font-size: 14px;
+}
+.hako-theme-label svg:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--state);
+}
+.hako-theme-caption {
+  font-size: 12px;
+}
+.hako-session-error {
+  border-left: 2px solid var(--destructive);
+  background: var(--card);
+  padding: 16px;
+  color: var(--destructive);
+  margin-bottom: 20px;
+}
+.hako-connection-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  justify-items: start;
+  gap: 20px;
+  max-width: 760px;
+  min-height: 100dvh;
+  padding: 32px;
+  margin: 0 auto;
+}
+.hako-connection-page h1 {
+  font-size: 24px;
+  font-weight: 500;
+}
+.hako-connection-page > p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.hako-connection-page .hako-loading-stack {
+  width: 100%;
+}
+.hako-auth-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
+  min-height: 100dvh;
+  background: var(--background);
+}
+.hako-auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--card);
+}
+.hako-auth-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: 48px 24px;
+}
+.hako-auth-card.auth-card {
+  width: 540px;
+}
+.hako-auth-card.auth-card .field-heading {
+  display: flex;
+}
+.hako-auth-card.auth-card .field > label {
+  display: block;
+}
+.hako-auth-card.auth-card h1 {
+  font-weight: 500;
+  font-size: 24px;
+}
+.hako-auth-card.auth-card footer {
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.hako-auth-description {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.hako-auth-form,
+.hako-auth-alternatives {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+.hako-auth-alternatives {
+  gap: 12px;
+}
+.hako-auth-form .field > label {
+  margin-bottom: 8px;
+}
+.hako-auth-form .field {
+  margin: 0;
+}
+.hako-auth-form .field-help {
+  margin: -12px 0 0;
+  font-size: 12px;
+}
+.hako-auth-form .field input {
+  margin: 0;
+}
+.hako-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0;
+}
+.hako-auth-divider::before,
+.hako-auth-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--hairline);
+}
+.hako-auth-assurance {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hako-auth-assurance svg {
+  margin-top: 2px;
+}
+.hako-auth-embedded {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.hako-status.ui-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.hako-status-small.ui-status {
+  font-size: 11px;
+}
+.hako-empty-canvas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: 60px 24px;
+  min-height: 320px;
+}
+.hako-empty-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 16px;
+  position: relative;
+  width: min(100%, 540px);
+  padding: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: var(--card);
+  text-align: center;
+}
+.hako-empty-card > svg {
+  color: var(--state);
+}
+.hako-empty-card h2 {
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.035em;
+  line-height: 1.25;
+}
+.hako-empty-card p {
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 52ch;
+  line-height: 1.6;
+}
+.hako-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.hako-error-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--destructive);
+  background: var(--card);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.hako-error-state > svg {
+  color: var(--destructive);
+  margin-top: 3px;
+}
+.hako-error-state h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.hako-error-state p {
+  font-size: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hako-error-state code {
+  display: block;
+  font-size: 12px;
+  color: var(--destructive);
+  margin-top: 8px;
+}
+.hako-loading-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--hairline);
+}
+.hako-skeleton-row.ui-skeleton {
+  min-height: 56px;
+  height: 56px;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  animation: none;
+}
+.hako-skeleton-row.ui-skeleton:last-of-type {
+  border-bottom: 0;
+}
+.hako-page-heading.page-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.hako-page-heading.page-heading h1 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+.hako-page-heading.page-heading p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.hako-page-heading.page-heading .eyebrow {
+  font: 11px var(--font-mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.hako-page-heading.page-heading .heading-action {
+  align-self: center;
+  padding: 0;
+}
+.hako-page-heading.page-heading .button {
+  height: 36px;
+}
+.hako-note.note {
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--info);
+  background: var(--surface-2);
+  border-radius: 2px;
+  color: var(--muted);
+  padding: 16px;
+  font-size: 13px;
+}
+.hako-note.note > svg {
+  color: var(--info);
+}
+.hako-form-page.form-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 1280px;
+  padding-bottom: 24px;
+}
+.hako-form-page .breadcrumbs {
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+.hako-form-page .form-page-heading {
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 24px;
+  margin-bottom: 0;
+}
+.hako-form-page .form-page-heading h1 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+.hako-form-page .form-page-heading p {
+  font-size: 14px;
+}
+.hako-form-page .form-page-symbol {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  color: var(--state);
+  background: transparent;
+}
+.hako-form-page .form-page-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.hako-form-page .form-page-layout.with-help {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+.hako-form-page .form-page-main {
+  padding-top: 24px;
+}
+.hako-form-page .form-page-layout.with-help .form-page-main {
+  padding-right: 24px;
+}
+.hako-form-page .form-page-help {
+  border-left: 1px solid var(--hairline);
+  padding: 24px;
+  gap: 24px;
+}
+.hako-form-section.form-card {
+  position: relative;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: var(--card);
+  overflow: visible;
+  padding: 0;
+}
+.hako-form-section.form-card > header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.hako-form-section.form-card > header > svg {
+  color: var(--state);
+}
+.hako-form-section.form-card h2 {
+  font-size: 16px;
+  font-weight: 500;
+}
+.hako-form-section.form-card header p {
+  font-size: 13px;
+}
+.hako-form-section .form-card-content {
+  padding: 24px;
+  gap: 20px;
+}
+.hako-form-page .form-page-main > .form-body {
+  border-radius: 3px;
+}
+.hako-form-page .form-page-main > .form-body:has(.form-card) {
+  background: transparent;
+}
+.hako-form-page .form-footer {
+  border-radius: 3px;
+  box-shadow: none;
+  background: var(--card);
+  padding: 16px 24px;
+  margin-top: 24px;
+}
+.hako-form-hint.form-hint {
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+}
+.hako-form-hint.form-hint h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.hako-form-hint.form-hint > svg {
+  color: var(--info);
+}
+.hako-command-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+.hako-command-input.input-wrap {
+  min-width: 0;
+}
+.hako-command-input .hako-command-search {
+  min-height: 56px;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  padding: 12px 16px;
+}
+.hako-command-results {
+  max-height: min(50dvh, 440px);
+  overflow-y: auto;
+  padding: 5px;
+  margin: -5px;
+}
+.hako-command-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 16px 8px 8px;
+  font: 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.hako-command-group span {
+  margin-left: auto;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.hako-command-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--foreground);
+  background: transparent;
+  text-align: left;
+}
+.hako-command-result > span:not(.brackets) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.hako-command-result > .ui-status {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+.hako-command-result > svg {
+  color: var(--muted);
+}
+.hako-command-result[aria-selected='true'] {
+  background: var(--surface-3);
+  color: var(--state);
+}
+.hako-command-result[aria-selected='true'] > .brackets {
+  opacity: 1;
+}
+.hako-command-empty,
+.hako-command-notice {
+  padding: 16px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.hako-command-notice {
+  border-left: 2px solid var(--warn);
+  padding: 12px 16px;
+  background: var(--surface-2);
+}
+.hako-command-help {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--hairline);
+  padding-top: 16px;
+  color: var(--muted);
+  font: 11px var(--font-mono);
+}
+@keyframes hako-sheet-left {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (max-width: 1199px) {
+  .hako-global-header {
+    gap: 16px;
+    padding-inline: 20px;
+    grid-template-columns: 140px minmax(0, 1fr) auto;
+  }
+  .hako-global-nav {
+    justify-content: center;
+    gap: 18px;
+  }
+  .hako-nav-link {
+    font-size: 13px;
+  }
+  .hako-header-tools {
+    gap: 8px;
+  }
+  .hako-docs-link {
+    display: none;
+  }
+}
+@media (max-width: 1023px) {
+  .hako-global-header {
+    padding-inline: 16px;
+    gap: 16px;
+  }
+  .hako-global-nav {
+    gap: 12px;
+  }
+  .hako-nav-link {
+    font-size: 12px;
+  }
+  .hako-form-page .form-page-layout.with-help {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hako-form-page .form-page-layout.with-help .form-page-main {
+    padding-right: 0;
+  }
+  .hako-form-page .form-page-help {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    padding: 24px 0;
+    margin-top: 24px;
+  }
+  .hako-preferences .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hako-preferences .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 8px 16px;
+    gap: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .hako-preferences .settings-nav .nav-group {
+    display: none;
+  }
+  .hako-preferences .settings-nav button {
+    padding: 8px;
+  }
+  .hako-preferences .settings-nav button[data-active='true']::after {
+    display: none;
+  }
+  .hako-preferences .settings-content {
+    padding: 24px;
+  }
+}
+@media (max-width: 767px) {
+  .hako-global-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .hako-global-nav {
+    display: none;
+  }
+  .hako-mobile-toggle.button {
+    display: inline-flex;
+  }
+  .hako-brand-group {
+    gap: 8px;
+  }
+  .hako-scope-bar {
+    padding: 12px 16px;
+  }
+  .hako-scope-fields {
+    gap: 8px;
+    flex: 1;
+  }
+  .hako-scope-fields > svg:first-child {
+    display: none;
+  }
+  .hako-scope-select {
+    max-width: min(37vw, 220px);
+  }
+  .hako-scope-select select {
+    font-size: 11px;
+    padding-left: 4px;
+  }
+  .hako-license-link {
+    display: none;
+  }
+  .hako-shell .hako-page-content {
+    padding: 20px 16px 32px;
+  }
+  .hako-footer {
+    padding: 12px 16px;
+    font-size: 9px;
+  }
+  .hako-page-heading.page-heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .hako-page-heading.page-heading .heading-action {
+    justify-self: start;
+    flex-wrap: wrap;
+  }
+  .hako-page-heading.page-heading h1,
+  .hako-form-page .form-page-heading h1 {
+    font-size: 24px;
+  }
+  .hako-empty-canvas {
+    padding: 36px 8px;
+  }
+  .hako-empty-card {
+    padding: 28px 20px;
+  }
+  .hako-error-state {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .hako-error-state > .button {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .hako-form-page .form-page-help {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hako-form-page .form-page-heading {
+    gap: 12px;
+  }
+  .hako-form-section.form-card > header,
+  .hako-form-section .form-card-content {
+    padding: 20px;
+  }
+  .hako-auth-main {
+    padding: 32px 20px;
+  }
+  .hako-auth-card.auth-card .auth-body {
+    padding: 24px 20px;
+  }
+  .hako-auth-embedded .hako-auth-main {
+    padding: 16px 4px;
+  }
+  .hako-profile-details > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .hako-command-input .hako-command-search {
+    font-size: 16px;
+  }
+  .hako-command-help {
+    gap: 12px;
+    font-size: 10px;
+  }
+  .hako-command-result {
+    gap: 8px;
+    padding-inline: 8px;
+  }
+  .hako-command-result > .ui-status {
+    max-width: 100px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hako-mobile-sheet.sheet {
+    animation: none;
+  }
+}
