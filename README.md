@@ -80,6 +80,12 @@ unattended input. No public download service is assumed; build or transfer the
 local release artifacts first. Read the installer guide for Linux prerequisites,
 SSH/HTTPS access, DNS, firewall rules, resume and the host-verification boundary.
 
+AWS, GCP and Azure provisioning for the planned Bring Your Own Cloud managed
+service lives in the private `hakopod/hakopod-cloud` repository, linked at
+`private/cloud`. It starts with one Ubuntu server and the same installer on
+amd64 or arm64. See [cloud deployments](docs/cloud-deployments.md) for scope,
+access and the remaining cloud acceptance tests.
+
 ## Accounts, licensing and components
 
 Deployment and operational tools stay available in Free. Team creation,
@@ -90,11 +96,11 @@ workloads. See [paid features](docs/paid-features.md) for the exact behavior.
 
 The [design system](https://github.com/hakopod/hakopod-design-system) is a separate shadcn/Radix component
 repository at `packages/ui`. The public source bundle in `third_party/ui/` makes ordinary
-builds independent of submodule hosting. The license issuer is a separate private
-submodule and is excluded from public release artifacts. Both submodule URLs
+builds independent of submodule hosting. The license issuer and commercial cloud
+toolkit are separate private submodules, excluded from public release artifacts. Submodule URLs
 resolve to sibling repositories in the Hakopod GitHub organization.
 Public contributors should restore the UI bundle, without recursively fetching
-the private issuer. See [submodule development](docs/submodules.md).
+private repositories. See [submodule development](docs/submodules.md).
 
 The [logs and terminals guide](docs/observability.md) explains SQL-style filters,
 live resource observations, terminal permissions and bounds, and GitLab source sync.

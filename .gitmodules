@@ -4,3 +4,6 @@
 [submodule "packages/ui"]
 	path = packages/ui
 	url = ../hakopod-design-system.git
+[submodule "private/cloud"]
+	path = private/cloud
+	url = ../hakopod-cloud.git
