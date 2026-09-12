@@ -2,15 +2,18 @@
 .hako-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 56px auto minmax(0, 1fr) auto;
+  --hako-header-height: 56px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 100dvh;
   background: var(--background);
 }
 .hako-global-header {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) auto minmax(104px, 1fr);
+  grid-template-columns: 140px minmax(240px, 360px) minmax(0, 1fr) auto;
+  grid-template-areas: 'brand scope nav tools';
+  min-height: 56px;
   align-items: center;
-  gap: 28px;
+  gap: 18px;
   min-width: 0;
   padding: 0 24px;
   border-bottom: 1px solid var(--hairline);
@@ -27,6 +30,7 @@
   min-width: 0;
 }
 .hako-brand-group {
+  grid-area: brand;
   gap: 12px;
 }
 .hako-wordmark {
@@ -54,7 +58,9 @@
   background: var(--surface-3);
 }
 .hako-global-nav {
-  gap: 24px;
+  grid-area: nav;
+  justify-content: center;
+  gap: 18px;
   align-self: stretch;
 }
 .hako-nav-link {
@@ -71,9 +77,11 @@
   color: var(--foreground);
 }
 .hako-nav-link[data-active] {
-  color: var(--state);
+  --state: var(--destructive);
+  color: var(--destructive);
 }
 .hako-header-tools {
+  grid-area: tools;
   justify-content: flex-end;
   gap: 12px;
 }
@@ -91,24 +99,17 @@
 .hako-mobile-toggle.button {
   display: none;
 }
-.hako-scope-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 12px 24px;
-  min-height: 60px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--card);
-}
 .hako-scope-fields {
-  gap: 12px;
+  grid-area: scope;
+  gap: 8px;
 }
 .hako-scope-fields > svg {
+  flex-shrink: 0;
   color: var(--muted);
 }
 .hako-scope-select {
-  max-width: 240px;
+  flex: 1 1 0;
+  max-width: 200px;
   min-width: 0;
 }
 .hako-scope-select select {
@@ -118,7 +119,7 @@
   padding: 6px 24px 6px 8px;
   margin: 0;
   height: 32px;
-  width: auto;
+  width: 100%;
   max-width: 100%;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -132,9 +133,6 @@
   color: var(--muted);
   cursor: default;
   opacity: 1;
-}
-.hako-license-link {
-  flex-shrink: 0;
 }
 .hako-shell .hako-page-content {
   display: grid;
@@ -359,6 +357,269 @@
 }
 .hako-theme-caption {
   font-size: 12px;
+}
+.hako-accent-settings {
+  display: grid;
+  gap: 20px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+}
+.hako-accent-settings h3 {
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.hako-accent-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hako-accent-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 8px 10px;
+  color: var(--foreground);
+  background: transparent;
+  font-size: 13px;
+}
+.hako-accent-option[aria-pressed='true'] {
+  border-color: var(--state);
+}
+.hako-accent-option > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  border-radius: 2px;
+}
+.hako-accent-custom {
+  display: grid;
+  gap: 8px;
+}
+.hako-accent-custom > label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hako-accent-custom > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hako-accent-custom .input-wrap {
+  width: 144px;
+  min-width: 0;
+}
+.hako-accent-custom input[type='color'] {
+  width: 42px;
+  height: 40px;
+  padding: 3px;
+  flex-shrink: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+.field:focus-within label,
+.light .field:focus-within label,
+.action-text,
+.light .action-text {
+  color: var(--action-text, var(--state));
+}
+html[data-accent] .button-primary:hover {
+  filter: none;
+}
+.hako-project-wizard.dialog-content {
+  width: min(1000px, calc(100vw - 40px));
+}
+.hako-project-wizard .dialog-header {
+  padding: 30px 40px 28px;
+}
+.hako-project-wizard .dialog-header h1,
+.hako-project-wizard .dialog-header h2 {
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+.hako-project-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 36px 20px 0;
+  color: var(--muted);
+}
+.hako-project-steps > span,
+.hako-project-steps button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hako-project-steps button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 15px var(--font-sans);
+}
+.hako-project-steps button:disabled {
+  color: var(--muted);
+  background: transparent;
+}
+.hako-project-steps button[aria-current='step'] {
+  color: var(--foreground);
+}
+.hako-project-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  padding: 30px 40px 36px;
+}
+.hako-project-fields .field {
+  margin: 0;
+}
+.hako-project-fields .field-heading {
+  margin-bottom: 10px;
+}
+.hako-project-fields .field-heading > .button {
+  padding: 0;
+  height: auto;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.hako-project-fields .field-heading label {
+  font-size: 14px;
+}
+.hako-project-fields textarea {
+  min-height: 112px;
+}
+.hako-project-fields .hako-disclosure {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+.hako-project-fields .hako-disclosure code {
+  overflow-wrap: anywhere;
+}
+.hako-project-footer {
+  justify-content: space-between;
+  padding: 24px 40px;
+}
+.hako-environment-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -12px;
+}
+.hako-project-review {
+  margin: 0;
+}
+.hako-project-review > div {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.hako-project-review > div:last-child {
+  border-bottom: 0;
+}
+.hako-project-review dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hako-project-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.hako-assistant-sheet.dialog-content {
+  width: min(500px, calc(100vw - 16px));
+}
+.hako-assistant-sheet .dialog-header {
+  padding: 24px;
+}
+.hako-assistant-sheet .dialog-body {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+  align-content: start;
+}
+.hako-assistant-sheet .dialog-header h2 {
+  font-size: 22px;
+  font-weight: 500;
+}
+.hako-guidance-scope {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hako-guidance-scope code {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+}
+.hako-guidance-actions {
+  display: grid;
+  border-top: 1px solid var(--hairline);
+}
+.hako-guidance-actions > :is(a, button) {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 15px;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+}
+.hako-guidance-actions strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.hako-guidance-actions small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.hako-guidance-actions > :is(a, button):hover {
+  background: var(--surface-2);
+}
+@media (max-width: 600px) {
+  .hako-project-wizard.dialog-content {
+    width: calc(100vw - 24px);
+  }
+  .hako-project-wizard .dialog-header,
+  .hako-project-fields,
+  .hako-project-footer {
+    padding: 22px;
+  }
+  .hako-project-wizard .dialog-header h1,
+  .hako-project-wizard .dialog-header h2 {
+    font-size: 24px;
+  }
+  .hako-project-steps {
+    gap: 8px;
+    margin-right: 50px;
+  }
+  .hako-project-steps button {
+    font-size: 12px;
+    gap: 6px;
+  }
+  .hako-project-steps > span {
+    gap: 8px;
+  }
+  .hako-project-review > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
 }
 .hako-session-error {
   border-left: 2px solid var(--destructive);
@@ -829,24 +1090,26 @@
     opacity: 1;
   }
 }
-@media (max-width: 1199px) {
+@media (max-width: 1439px) {
+  .hako-shell {
+    --hako-header-height: 96px;
+  }
   .hako-global-header {
-    gap: 16px;
-    padding-inline: 20px;
     grid-template-columns: 140px minmax(0, 1fr) auto;
+    grid-template-areas: 'brand scope tools' 'nav nav nav';
+    grid-template-rows: 52px 44px;
+    gap: 0 24px;
   }
   .hako-global-nav {
-    justify-content: center;
-    gap: 18px;
+    justify-content: flex-start;
+    gap: 28px;
+    border-top: 1px solid var(--hairline);
   }
   .hako-nav-link {
-    font-size: 13px;
+    margin-block: 6px;
   }
   .hako-header-tools {
     gap: 8px;
-  }
-  .hako-docs-link {
-    display: none;
   }
 }
 @media (max-width: 1023px) {
@@ -855,10 +1118,13 @@
     gap: 16px;
   }
   .hako-global-nav {
-    gap: 12px;
+    gap: 24px;
   }
   .hako-nav-link {
-    font-size: 12px;
+    font-size: 13px;
+  }
+  .hako-docs-link {
+    display: none;
   }
   .hako-form-page .form-page-layout.with-help {
     grid-template-columns: minmax(0, 1fr);
@@ -898,9 +1164,14 @@
   }
 }
 @media (max-width: 767px) {
+  .hako-shell {
+    --hako-header-height: 100px;
+  }
   .hako-global-header {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
+    grid-template-areas: 'brand tools' 'scope scope';
+    grid-template-rows: 52px 48px;
+    gap: 0 12px;
     padding: 0 16px;
   }
   .hako-global-nav {
@@ -912,25 +1183,23 @@
   .hako-brand-group {
     gap: 8px;
   }
-  .hako-scope-bar {
-    padding: 12px 16px;
+  .hako-command-trigger.button {
+    display: none;
   }
   .hako-scope-fields {
     gap: 8px;
-    flex: 1;
+    min-height: 48px;
+    border-top: 1px solid var(--hairline);
   }
   .hako-scope-fields > svg:first-child {
     display: none;
   }
   .hako-scope-select {
-    max-width: min(37vw, 220px);
+    max-width: none;
   }
   .hako-scope-select select {
-    font-size: 11px;
+    font-size: 12px;
     padding-left: 4px;
-  }
-  .hako-license-link {
-    display: none;
   }
   .hako-shell .hako-page-content {
     padding: 20px 16px 32px;

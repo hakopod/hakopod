@@ -11,7 +11,7 @@ import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { Copy, Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+import { Copy, Empty, ErrorState, Loading, Note } from '../components/shared'
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
 )
@@ -61,11 +61,9 @@ function Administration() {
   const tab = sections.some((section) => section.id === selected) ? selected : 'account'
   return (
     <div className="settings-page">
-      <PageHeader
-        eyebrow="WORKSPACE / SETTINGS"
-        title="Settings"
-        description="Manage your account, workspace access, and installation."
-      />
+      <header className="hako-settings-header">
+        <h1>Workspace settings</h1>
+      </header>
       <SettingsLayout
         sections={sections}
         active={tab}

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect } from 'react'
-import type { Identity } from './types'
+import type { Identity, Project } from './types'
 
 export type Scope = {
   project: string
@@ -9,6 +9,17 @@ export type Scope = {
   syncScope: (project: string, environment: string) => void
 }
 export const ScopeContext = createContext<Scope | null>(null)
+
+export function resolveWorkspaceScope(
+  projects: Project[] | undefined,
+  preferred: { project: string; environment: string },
+) {
+  const project = projects?.find((item) => item.name === preferred.project) || projects?.[0]
+  const environment =
+    project?.environments.find((item) => item.name === preferred.environment) ||
+    project?.environments[0]
+  return { project, environment: environment?.name || '' }
+}
 
 // Browser credentials carry a broad session envelope; project roles determine
 // which controls are available. Go independently authorizes every request.

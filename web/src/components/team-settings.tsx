@@ -49,6 +49,14 @@ export default function TeamSettings() {
     scope.identity.project_roles?.some(
       (item) => item.project === scope.project && item.role === 'admin',
     )
+  const projects = useQuery({
+    queryKey: ['projects'],
+    queryFn: ({ signal }) => unwrap(client.GET('/projects', { signal })),
+    staleTime: 60000,
+  })
+  const currentProject = projects.data?.items.find((item) => item.name === scope.project)
+  const personalProject = currentProject?.personal === true
+  const canShareProject = canProject && currentProject?.personal === false
   const members = useQuery({
     queryKey: ['team-members', team],
     queryFn: ({ signal }) =>
@@ -65,7 +73,7 @@ export default function TeamSettings() {
           params: { path: { project: scope.project } },
         }),
       ),
-    enabled: Boolean(scope.project),
+    enabled: Boolean(scope.project && canShareProject),
     gcTime: 0,
   })
   const refresh = () => {
@@ -197,14 +205,27 @@ export default function TeamSettings() {
           <h2>Project access</h2>
           <p>{scope.project || 'Select a project'} · Role changes take effect on new requests.</p>
         </div>
-        {canProject && scope.project && (
+        {canShareProject && scope.project && (
           <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('project')}>
             Invite to project{!hasFeature('invitations') && ' · Pro'}
           </Button>
         )}
       </div>
       {scope.project ? (
-        project.isPending ? (
+        projects.isPending ? (
+          <Loading rows={2} />
+        ) : projects.error ? (
+          <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+        ) : !currentProject ? (
+          <Note>This project is unavailable. Choose another project to manage access.</Note>
+        ) : personalProject ? (
+          <Note>
+            This personal workspace is private to its owner. Personal workspaces cannot be shared
+            with members or teams.
+          </Note>
+        ) : !canProject ? (
+          <Note>Project administrators manage access to this project.</Note>
+        ) : project.isPending ? (
           <Loading rows={2} />
         ) : project.error ? (
           <ErrorState error={project.error} />
@@ -217,7 +238,7 @@ export default function TeamSettings() {
                     <strong>{member.name}</strong>
                     <small>{member.team_id ? 'Team' : 'Member'}</small>
                   </div>
-                  {canProject ? (
+                  {canShareProject ? (
                     <RoleEditor
                       key={`${member.identity_id || member.team_id}-${member.role}`}
                       role={member.role}
@@ -252,53 +273,56 @@ export default function TeamSettings() {
                 No direct members or teams. Installation administrators retain access.
               </p>
             )}
-            {canProject && hasFeature('project_rbac') && Boolean(teams.data?.items.length) && (
-              <form
-                className="inline-form"
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  setBusy(true)
-                  setError('')
-                  try {
-                    await unwrap(
-                      client.PUT('/projects/{project}/members', {
-                        params: { path: { project: scope.project } },
-                        body: { team_id: grant, role: grantRole },
-                      }),
-                    )
-                    setGrant('')
-                    refresh()
-                  } catch (err) {
-                    setError(message(err))
-                  } finally {
-                    setBusy(false)
-                  }
-                }}
-              >
-                <label>
-                  Grant a team access
-                  <Select value={grant} onChange={(e) => setGrant(e.target.value)} required>
-                    <option value="">Choose a team</option>
-                    {teams.data?.items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label>
-                  Role
-                  <Select value={grantRole} onChange={(e) => setGrantRole(e.target.value)}>
-                    {['viewer', 'developer', 'admin'].map((role) => (
-                      <option key={role}>{role}</option>
-                    ))}
-                  </Select>
-                </label>
-                <Button type="submit" disabled={busy || !grant}>
-                  Grant access
-                </Button>
-              </form>
-            )}
+            {canShareProject &&
+              hasFeature('project_rbac') &&
+              hasFeature('teams') &&
+              Boolean(teams.data?.items.length) && (
+                <form
+                  className="inline-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    setBusy(true)
+                    setError('')
+                    try {
+                      await unwrap(
+                        client.PUT('/projects/{project}/members', {
+                          params: { path: { project: scope.project } },
+                          body: { team_id: grant, role: grantRole },
+                        }),
+                      )
+                      setGrant('')
+                      refresh()
+                    } catch (err) {
+                      setError(message(err))
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}
+                >
+                  <label>
+                    Grant a team access
+                    <Select value={grant} onChange={(e) => setGrant(e.target.value)} required>
+                      <option value="">Choose a team</option>
+                      {teams.data?.items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <label>
+                    Role
+                    <Select value={grantRole} onChange={(e) => setGrantRole(e.target.value)}>
+                      {['viewer', 'developer', 'admin'].map((role) => (
+                        <option key={role}>{role}</option>
+                      ))}
+                    </Select>
+                  </label>
+                  <Button type="submit" disabled={busy || !grant}>
+                    Grant access
+                  </Button>
+                </form>
+              )}
           </section>
         )
       ) : (
@@ -309,10 +333,12 @@ export default function TeamSettings() {
           {error}
         </div>
       )}
-      <Note>
-        Viewers can inspect applications and logs. Developers can deploy and read logs. Project
-        admins also manage membership. Team roles control the team’s own membership.
-      </Note>
+      {!personalProject && (
+        <Note>
+          Viewers can inspect applications and logs. Developers can deploy and read logs. Project
+          admins also manage membership. Team roles control the team’s own membership.
+        </Note>
+      )}
       <Dialog
         open={Boolean(usernameMember)}
         onOpenChange={(open) => {

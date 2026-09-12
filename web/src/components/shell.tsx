@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
-import { Field } from '@hakopod/hatch-ui/components/field'
 import { Menu, MenuItem, MenuSeparator } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
 import {
@@ -17,17 +16,20 @@ import { useLicense } from '../lib/license'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { Identity } from '../lib/types'
-import { ScopeContext, canAccess } from '../lib/scope'
+import { ScopeContext, canAccess, resolveWorkspaceScope } from '../lib/scope'
 import { useTheme } from '../lib/appearance'
 import { Avatar } from './avatar'
 import { Logo, Icon } from './icons'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Badge, Tooltip } from './ui/surfaces'
+import { Tooltip } from './ui/surfaces'
+import { Bot } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { AuthScreen } from './auth-screen'
 
 const CommandPalette = lazy(() => import('./command-palette'))
+const ProjectWizard = lazy(() => import('./project-wizard'))
+const WorkspaceGuidance = lazy(() => import('./workspace-guidance'))
 const AppearanceSettings = lazy(() =>
   import('./appearance-settings').then((module) => ({ default: module.AppearanceSettings })),
 )
@@ -163,6 +165,7 @@ function Workspace({
   const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const accountTrigger = useRef<HTMLButtonElement>(null)
   const [sessionError, setSessionError] = useState('')
   const license = useLicense()
@@ -187,14 +190,12 @@ function Workspace({
   }, [commandOpen])
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const project = identity.project || selected.project || projects.data?.items?.[0]?.name || ''
-  const currentProject = projects.data?.items?.find((item) => item.name === project)
-  const environment =
-    identity.environment || selected.environment || currentProject?.environments?.[0]?.name || ''
-  const can = (permission: string) =>
-    (identity.admin ||
-      Boolean(license.data?.catalog.find((feature) => feature.id === 'project_rbac')?.enabled)) &&
-    canAccess(identity, project, permission)
+  const { project: currentProject, environment } = resolveWorkspaceScope(projects.data?.items, {
+    project: identity.project || selected.project,
+    environment: identity.environment || selected.environment,
+  })
+  const project = currentProject?.name || ''
+  const can = (permission: string) => canAccess(identity, project, permission)
   const changeScope = (next: { project: string; environment: string }) => {
     syncScope(next.project, next.environment)
     void navigate({ to: '/' })
@@ -277,6 +278,66 @@ function Workspace({
               />
             </Link>
           </div>
+          <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
+            <Icon name="box" size={17} />
+            <div className="hako-scope-select interactive">
+              <select
+                aria-label="Project"
+                value={project}
+                disabled={Boolean(identity.project)}
+                onChange={(event) =>
+                  changeScope({
+                    project: event.target.value,
+                    environment:
+                      projects.data?.items.find((item) => item.name === event.target.value)
+                        ?.environments?.[0]?.name || '',
+                  })
+                }
+              >
+                {!project && <option value="">Select a project</option>}
+                {project && !currentProject && <option value={project}>{project}</option>}
+                {projects.data?.items?.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.display_name || item.name}
+                  </option>
+                ))}
+              </select>
+              <Brackets />
+            </div>
+            <Icon name="chevron" size={12} />
+            <div className="hako-scope-select interactive">
+              <select
+                aria-label="Environment"
+                value={environment}
+                disabled={Boolean(identity.environment) || !project}
+                onChange={(event) => changeScope({ project, environment: event.target.value })}
+              >
+                {!environment && <option value="">Select an environment</option>}
+                {environment &&
+                  !currentProject?.environments?.some((item) => item.name === environment) && (
+                    <option value={environment}>{environment}</option>
+                  )}
+                {currentProject?.environments?.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <Brackets />
+            </div>
+            {identity.admin && (
+              <Tooltip content="Create a project">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Create project"
+                  onClick={() => setProjectOpen(true)}
+                >
+                  <Icon name="plus" size={16} />
+                </Button>
+              </Tooltip>
+            )}
+          </div>
           <nav className="hako-global-nav" aria-label="Main navigation">
             {links()}
           </nav>
@@ -285,6 +346,7 @@ function Workspace({
               <Button
                 variant="ghost"
                 size="icon"
+                className="hako-command-trigger"
                 aria-label="Quick navigation"
                 onClick={() => setCommandOpen(true)}
               >
@@ -300,6 +362,17 @@ function Workspace({
               Docs
               <Brackets />
             </a>
+            <Tooltip content="Workspace assistant">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open assistant"
+                aria-expanded={assistantOpen}
+                onClick={() => setAssistantOpen(true)}
+              >
+                <Bot size={19} strokeWidth={1.75} aria-hidden="true" />
+              </Button>
+            </Tooltip>
             <Menu
               className="hako-account-menu"
               trigger={
@@ -340,6 +413,14 @@ function Workspace({
                   API keys
                 </MenuItem>
               )}
+              <MenuItem
+                onSelect={() => void navigate({ to: '/settings', search: { tab: 'license' } })}
+              >
+                <Icon name="info" />
+                {license.data?.plan
+                  ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
+                  : 'Installation license'}
+              </MenuItem>
               <MenuItem onSelect={toggleTheme}>
                 <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
                 Use {theme === 'dark' ? 'light' : 'dark'} theme
@@ -352,81 +433,11 @@ function Workspace({
             </Menu>
           </div>
         </header>
-        <div className="hako-scope-bar">
-          <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
-            <Icon name="box" size={17} />
-            <div className="hako-scope-select interactive">
-              <select
-                aria-label="Project"
-                value={project}
-                disabled={Boolean(identity.project)}
-                onChange={(event) =>
-                  changeScope({
-                    project: event.target.value,
-                    environment:
-                      projects.data?.items.find((item) => item.name === event.target.value)
-                        ?.environments?.[0]?.name || '',
-                  })
-                }
-              >
-                {!project && <option value="">Select a project</option>}
-                {project && !currentProject && <option value={project}>{project}</option>}
-                {projects.data?.items?.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <Brackets />
-            </div>
-            <Icon name="chevron" size={12} />
-            <div className="hako-scope-select interactive">
-              <select
-                aria-label="Environment"
-                value={environment}
-                disabled={Boolean(identity.environment) || !project}
-                onChange={(event) => changeScope({ project, environment: event.target.value })}
-              >
-                {!environment && <option value="">Select an environment</option>}
-                {environment &&
-                  !currentProject?.environments?.some((item) => item.name === environment) && (
-                    <option value={environment}>{environment}</option>
-                  )}
-                {currentProject?.environments?.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <Brackets />
-            </div>
-            {identity.admin && (
-              <Tooltip content="Create a project">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Create project"
-                  onClick={() => setProjectOpen(true)}
-                >
-                  <Icon name="plus" size={16} />
-                </Button>
-              </Tooltip>
-            )}
-          </div>
-          <Link
-            to="/settings"
-            search={{ tab: 'license' }}
-            className="hako-license-link"
-            aria-label="View installation license"
-          >
-            <Badge tone="neutral">
-              {license.data?.plan
-                ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
-                : 'License'}
-            </Badge>
-          </Link>
-        </div>
-        <main id="main-content" tabIndex={-1} className="page-content hako-page-content">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={`page-content hako-page-content${location.pathname === '/settings' ? ' hako-settings-main' : ''}`}
+        >
           {sessionError && (
             <div className="hako-session-error" role="alert">
               {sessionError}
@@ -501,15 +512,27 @@ function Workspace({
           restoreFocus={() => accountTrigger.current?.focus()}
         />
       )}
-      {identity.admin && (
-        <CreateProject
-          open={projectOpen}
-          setOpen={setProjectOpen}
-          onCreated={(name, env) => {
-            void queryClient.invalidateQueries({ queryKey: ['projects'] })
-            changeScope({ project: name, environment: env })
-          }}
-        />
+      {identity.admin && projectOpen && (
+        <Suspense fallback={null}>
+          <ProjectWizard
+            open={projectOpen}
+            onOpenChange={setProjectOpen}
+            onCreated={(name, env) => {
+              void queryClient.invalidateQueries({ queryKey: ['projects'] })
+              changeScope({ project: name, environment: env })
+            }}
+          />
+        </Suspense>
+      )}
+      {assistantOpen && (
+        <Suspense fallback={null}>
+          <WorkspaceGuidance
+            open={assistantOpen}
+            onOpenChange={setAssistantOpen}
+            onCreateProject={() => setProjectOpen(true)}
+            onCommands={() => setCommandOpen(true)}
+          />
+        </Suspense>
       )}
     </ScopeContext.Provider>
   )
@@ -601,83 +624,6 @@ function Preferences({
           )}
         </SettingsLayout>
       </div>
-    </Dialog>
-  )
-}
-
-function CreateProject({
-  open,
-  setOpen,
-  onCreated,
-}: {
-  open: boolean
-  setOpen: (open: boolean) => void
-  onCreated: (name: string, environment: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [environment, setEnvironment] = useState('development')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!busy) setOpen(next)
-      }}
-      title="Create a project"
-      description="Group related applications and their environments."
-    >
-      <form
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (busy) return
-          setBusy(true)
-          setError('')
-          try {
-            await unwrap(client.POST('/projects', { body: { name, environment } }))
-            onCreated(name, environment)
-            setOpen(false)
-            setName('')
-          } catch (err) {
-            setError(message(err))
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        <div className="dialog-body field-stack hako-project-form">
-          <Field
-            label="Project name"
-            required
-            pattern="[a-z0-9][a-z0-9-]*"
-            placeholder="my-project"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            help="Use lowercase letters, numbers, and hyphens."
-          />
-          <Field
-            label="Initial environment"
-            required
-            pattern="[a-z0-9][a-z0-9-]*"
-            value={environment}
-            onChange={(event) => setEnvironment(event.target.value)}
-            help="Separate development and production within the same project."
-          />
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
-        </div>
-        <div className="dialog-footer">
-          <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? 'Creating…' : 'Create project'}
-          </Button>
-        </div>
-      </form>
     </Dialog>
   )
 }

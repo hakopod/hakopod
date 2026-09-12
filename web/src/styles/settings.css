@@ -4,11 +4,39 @@
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
 }
+.hako-shell .hako-settings-main {
+  padding: 0;
+  max-width: none;
+}
+.hako-settings-header {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.hako-settings-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.settings-page .settings-content h2 {
+  font-size: 16px;
+  font-weight: 500;
+}
+.settings-page .security-grid {
+  border: 0;
+}
+.settings-page .security-grid > .panel {
+  padding: 24px 0;
+  background: transparent;
+}
 .settings-page > .settings-layout {
   grid-template-columns: 220px minmax(0, 1fr);
-  border: 1px solid var(--hairline);
-  background: var(--card);
-  min-height: 600px;
+  border: 0;
+  background: transparent;
+  min-height: calc(100dvh - var(--hako-header-height, 96px) - 96px);
 }
 .settings-page .settings-nav {
   padding: 24px 0;
@@ -27,9 +55,9 @@
   width: 100%;
 }
 .settings-page .settings-content {
-  max-width: none;
+  max-width: 1040px;
   min-width: 0;
-  padding: 32px;
+  padding: 28px 32px 48px;
 }
 .settings-page .settings-content > .section-toolbar:first-child {
   margin-top: 0;
@@ -335,9 +363,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@media (max-width: 1000px) {
+@media (max-width: 1023px) {
   .settings-page > .settings-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .settings-page .settings-nav {
     display: flex;
