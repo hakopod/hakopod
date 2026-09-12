@@ -94,11 +94,13 @@ dashboard shows the feature catalog and activation state; the Go API and durable
 workers enforce it. Expiry preserves accounts, application data and running
 workloads. See [paid features](docs/paid-features.md) for the exact behavior.
 
-The [design system](https://github.com/hakopod/hakopod-design-system) is a separate shadcn/Radix component
-repository at `packages/ui`. The public source bundle in `third_party/ui/` makes ordinary
-builds independent of submodule hosting. The license issuer and commercial cloud
-toolkit are separate private submodules, excluded from public release artifacts. Submodule URLs
-resolve to sibling repositories in the Hakopod GitHub organization.
+The [Hatch design system](https://github.com/hakopod/hatch-ui) is a separate
+shadcn/Radix component repository at `packages/ui`, with its consumer package at
+`packages/ui/packages/ui`. The public source bundle in `third_party/ui/` makes
+ordinary builds independent of submodule hosting. The license issuer and
+commercial cloud toolkit are separate private submodules, excluded from public
+release artifacts. Submodule URLs resolve to sibling repositories in the Hakopod
+GitHub organization.
 Public contributors should restore the UI bundle, without recursively fetching
 private repositories. See [submodule development](docs/submodules.md).
 

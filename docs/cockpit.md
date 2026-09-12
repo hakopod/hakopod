@@ -210,8 +210,9 @@ applying. Stale operator edits cause a conflict. Existing application traffic
 does not depend on this worker. Arbitrary HAProxy snippets and public admin sockets
 are not exposed by this editor.
 
-Administrators can persist an installation accent color. Browser panels are loaded
-as needed; no heavy charting library or code-editor runtime is required.
+The console uses fixed Hakopod brand colors. Each browser can choose the Ink or
+Paper theme. Browser panels are loaded as needed; no heavy charting library or
+code-editor runtime is required.
 
 ## Verification boundaries
 

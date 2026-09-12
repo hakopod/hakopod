@@ -104,7 +104,7 @@ under Administration. The dashboard never fabricates a first owner.
   installations are not retrofitted with a sample by the dashboard.
 
 Additional connected interfaces include per-service runtime metrics/pods/events,
-service-scoped staging and restart, canonical TOML editing, installation accent,
+service-scoped staging and restart, canonical TOML editing, local theme preferences,
 human account security/sessions, licensed teams/project roles/invitations, CLI consent,
 write-only application secrets, template planning, GitHub/GitLab TOML source review,
 private registries and reviewed HAProxy settings. TLS supports PEM upload and
@@ -130,16 +130,26 @@ complete cluster backup.
 
 ## Shared design system
 
-The dashboard consumes `@hakopod/ui` from the independent `packages/ui` Git
-submodule. Its shadcn-based Radix components, semantic tokens, brand mark, and
-font are shared package assets. The supplied `brand-kit` remains intact. The
-dashboard bundles this source package into production JavaScript; Node does not
+The dashboard consumes `@hakopod/hatch-ui` from the independent `packages/ui` Git
+submodule at `packages/ui/packages/ui`. Hatch provides Radix components, Ink/Paper
+themes, Ion actions, Forest state indicators, focus brackets, and self-hosted Space
+Grotesk and Space Mono fonts. The console uses a top navbar, scoped page headers,
+dense operation tables, grouped settings, and inspection sheets. The supplied
+`brand-kit` remains intact. The dashboard bundles this source package into
+production JavaScript; Node does not
 load raw TSX at runtime. See [submodule setup](../docs/submodules.md) for the
 pinned portable source restore path and local repository arrangement.
 Individual service/provider icons use original project SVGs or CC0 Simple Icons,
-with sources and upstream notices under `public/icons`. No icon runtime package
-or remote icon request is needed. DiceBear is contacted only for a selected
-generated avatar style; initials render entirely locally.
+with sources and upstream notices under `public/icons`. Interface icons use
+tree-shaken Lucide components; provider icons make no remote request. DiceBear is
+contacted only for a selected generated avatar style; initials render locally.
+
+Extend the console through Hatch primitives and the token-based styles in
+`src/styles`. Keep actions in Ion and states in Forest, use hairline separators,
+and preserve visible labels and keyboard focus. Prefer tables for operational
+data and inspection sheets for detail. Put forms with more than four inputs on
+nested pages. Use real API observations; missing telemetry needs an empty state.
+Hatch's public `examples/dashboard` illustrates the shared visual patterns.
 
 ## Authentication and limits
 

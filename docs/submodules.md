@@ -4,12 +4,12 @@ Hakopod uses three separately versioned Git repositories:
 
 | Path | Purpose | Distribution |
 | --- | --- | --- |
-| `packages/ui` | Branded shadcn/Radix components, tokens and public assets | Public |
+| `packages/ui` | Hatch monorepo; consumer components in `packages/ui/packages/ui` | Public |
 | `private/license-issuer` | Offline license issuance tools | Private |
 | `private/cloud` | AWS, GCP and Azure provisioning and managed-deployment workflows | Private, commercial |
 
 The parent tracks Git commit references. The public component repository is
-[hakopod/hakopod-design-system](https://github.com/hakopod/hakopod-design-system).
+[hakopod/hatch-ui](https://github.com/hakopod/hatch-ui).
 The license issuer lives in the private `hakopod/hakopod-license-issuer`
 repository and requires separate access. The commercial cloud toolkit lives in
 the private `hakopod/hakopod-cloud` repository. Relative URLs in `.gitmodules` resolve
@@ -25,8 +25,10 @@ pnpm --dir web build
 ```
 
 Restore fills an absent/empty `packages/ui` directory. It preserves an existing
-working copy. Archive extraction rejects traversal, symlinks, duplicates,
-unexpected repository metadata and excessive size. CI uses this public path and
+working copy. The bundle contains only Hatch’s consumer package and licenses; the
+documentation site and example dashboard are not shipped. Archive extraction
+rejects traversal, symlinks, duplicates, unexpected repository metadata and
+excessive size. CI uses this public path and
 never requests private submodule credentials. A source archive may already contain
 the restored UI files.
 
@@ -58,7 +60,7 @@ python3 scripts/ui-source.py pack
 ```
 
 The snapshot is source, not a second hand-maintained implementation. Preserve the
-font's OFL license and the package's component notices. Private issuer changes
+fonts’ OFL licenses and the package's component notices. Private issuer changes
 are committed only in its own repository; the parent stores the resulting gitlink.
 Never include issuer/cloud source, private keys, installation secrets or activation
 tokens in public source bundles, dashboard archives or container images.

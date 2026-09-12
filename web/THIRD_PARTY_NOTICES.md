@@ -13,10 +13,15 @@ Direct package metadata was checked from the npm registry on 2026-09-12.
 | class-variance-authority, TypeScript | Apache-2.0 |
 | @types/node, @types/react, @types/react-dom | MIT |
 | @xterm/xterm, @xterm/addon-fit | MIT |
-| Space Grotesk font | SIL Open Font License 1.1 |
+| Lucide React | ISC |
+| Space Grotesk and Space Mono fonts | SIL Open Font License 1.1 |
 
 No Railway, Render, Vercel, Coolify, or Dokploy brand assets are redistributed.
-The supplied Hakopod Open Port identity kit provides the logo. Space Grotesk is self-hosted from that kit; its license is preserved in `../packages/ui/assets/OFL.txt`. No external font service is contacted. The compact outline icons are local vectors.
+The supplied Hakopod Open Port identity kit provides the logo. Hatch supplies
+locally hosted Space Grotesk and Space Mono. Their OFL licenses are preserved at
+`../packages/ui/packages/ui/src/fonts/SpaceGrotesk-OFL.txt` and
+`../packages/ui/packages/ui/src/fonts/SpaceMono-OFL.txt`. No external font service
+is contacted. Interface icons use Lucide React; provider icons remain local assets.
 
 Local UI component patterns are based on shadcn/ui's published conventions.
 The upstream [shadcn/ui license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md)
