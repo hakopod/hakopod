@@ -6,7 +6,8 @@ Start dashboard over K3s and HAProxy.
 
 This repository includes the deployment engine and an expanded cockpit with
 human accounts, paid team roles, source builds, templates, live service monitoring,
-searchable logs, container terminals, registry credentials, TLS controls and worker enrollment. See the
+searchable logs, container and host terminals, custom domains, encrypted backups,
+registry credentials, TLS controls and worker enrollment. See the
 [cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
 It remains a development release; production installation and operational recovery
 have separate acceptance gates.
@@ -36,6 +37,8 @@ make dashboard
 Open [the dashboard](http://127.0.0.1:4173). On first installation, choose your
 administrator name, email and password. The installer proof is saved in the
 restricted `.local/setup-secret` file; no default human account is created.
+Fresh installations then queue a labelled, removable shop sample. Existing
+accounts and applications are preserved when the server restarts or upgrades.
 The local API is on port 8080; application HTTP ingress is
 on port 18080. Local HTTP is explicitly a loopback development configuration.
 Dashboard production startup, HTTPS origin and session-secret settings are
@@ -95,6 +98,11 @@ the private issuer. See [submodule development](docs/submodules.md).
 
 The [logs and terminals guide](docs/observability.md) explains SQL-style filters,
 live resource observations, terminal permissions and bounds, and GitLab source sync.
+The [template catalog](docs/templates.md) records each preset's credentials,
+storage, memory and verification limits. [Backups](docs/backups.md) explains
+S3-compatible destinations, schedules, recovery keys and restores into fresh
+database names. A management backup covers the logical database, not the whole
+host or Kubernetes cluster.
 
 ## One application, several services
 
@@ -130,8 +138,11 @@ healthy release. Explicit rollback creates a new auditable revision.
 ## Keep it small
 
 The default profile runs no Redis, retained logging stack, Prometheus or external
-secret service. Two workers share one Go process with a 192 MiB soft memory
-target; streams, API pages, query caches and connection pools are bounded.
+secret service. Deployment concurrency is two in one Go process with a 192 MiB
+soft memory target; streams, API pages, query caches and connection pools are bounded.
+The same process runs one backup or restore at a time with a reusable 8 MiB upload
+buffer. Optional agent and model workloads run only when deployed; browsing their
+templates does not start them or download their images.
 Application pages use a 512 KiB specification/observation budget; deployment
 history is metadata-only, with full revisions fetched on demand.
 

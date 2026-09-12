@@ -4,7 +4,44 @@ The first milestone's acceptance contract was written before implementation in
 docs/IMPLEMENTATION-CONTRACT.md. Implementation, individual verification and
 the full acceptance gate are recorded separately below.
 
-## Current cockpit and installer expansion — 2026-09-12
+## Current operations expansion — 2026-09-12
+
+This update adds dedicated nested forms, 13 deployable database/application/agent
+presets and a guided Xem entry, first-install sample shop, GitHub/GitLab TOML
+import, avatars and team usernames, verified custom domains, explicit host-shell
+grants, and encrypted S3-compatible backups with schedules and reviewed restores.
+The [template guide](templates.md) and [backup guide](backups.md) describe exact
+requirements and recovery scope.
+
+The full Go race suite passed against disposable PostgreSQL databases, followed
+by the affected backup retry regressions and `go vet`. Dashboard build, strict
+types, formatting and 20 tests passed. Generated contracts reproduce unchanged.
+Nine installer tests and Bash syntax passed.
+
+Real cluster tests verified Redis, ClickHouse and secure CockroachDB authentication,
+persistent restarts and cleanup; sample web/private-catalog checkout and removal;
+custom HTTP/TLS domain routing; and scoped host shell input/output and cleanup.
+Backups restored 1,200 PostgreSQL rows, two MySQL rows and a management fixture
+account into fresh databases. Expired reviews, replaced pod UIDs, existing
+database names and corrupt objects were refused with originals unchanged.
+Transaction fault tests cover sample cancellation/connection loss and accepted
+source/restore retries. Completed restore receipts follow the 90-day job lifetime.
+
+The retained API and dashboard were rebuilt and restarted with 95 shop traffic
+requests and no errors. The owner remained claimed, shop stayed healthy at
+revision 18, and cli-check stayed healthy at revision 2. Observed process RSS was
+28.6 MiB for Go and 74.6 MiB for Node, with their 192 MiB soft/heap targets.
+These are local snapshots, not peak-memory or host-capacity guarantees. One
+backup/restore runs at a time and uses a reusable 8 MiB upload buffer.
+
+Large optional workspaces and GPU inference have manifest/configuration review
+only. Public provider execution, public S3 compatibility, ACME, physical GPUs,
+full host installation and reboot recovery remain separate acceptance gates.
+Current visual browser QA remains unavailable because the connector lacks its
+authentication token. The UI and private issuer repositories are unchanged;
+the public release excludes private signing code and local credentials.
+
+## Historical cockpit and installer expansion — 2026-09-12
 
 This iteration adds signed Free/Pro entitlements, GitLab.com sign-in, GitLab TOML
 synchronization and CI builds, bounded SQL-like log search, pod/database terminals,
