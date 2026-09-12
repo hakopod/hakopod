@@ -11,6 +11,24 @@
 .ops-page > .back-link {
   justify-self: start;
 }
+.ops-page > .hako-page-heading {
+  margin-bottom: 20px;
+}
+.ops-page > .hako-page-heading h1,
+.ops-page .application-heading h1 {
+  font-size: 24px;
+}
+.ops-page > .hako-page-heading p {
+  font-size: 13px;
+  max-width: 72ch;
+}
+.ops-page .section-toolbar {
+  margin-bottom: 16px;
+}
+.ops-page .section-toolbar h2,
+.ops-page .panel-heading h2 {
+  font-size: 16px;
+}
 .ops-page .application-heading {
   margin-bottom: 20px;
   gap: 16px;
@@ -44,6 +62,12 @@
 }
 .ops-page .tab-trigger {
   flex-shrink: 0;
+}
+.ops-page .application-tabs .tab-trigger[data-state='active'] {
+  color: var(--destructive);
+  border-bottom: 2px solid var(--destructive);
+  padding-bottom: 14px;
+  background: color-mix(in srgb, var(--destructive) 5%, transparent);
 }
 .ops-summary {
   display: grid;
@@ -167,6 +191,27 @@
 .ops-table td:last-child {
   width: 48px;
 }
+.ops-table .ops-linked-row {
+  position: relative;
+  isolation: isolate;
+}
+.ops-table .ops-linked-row:hover,
+.ops-table .ops-linked-row:has(.ops-row-link:focus-visible) {
+  background: var(--surface-2);
+}
+.ops-table .ops-row-link {
+  position: static;
+}
+.ops-table .ops-row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.ops-table .ops-linked-row button {
+  position: relative;
+  z-index: 2;
+}
 .ops-object {
   display: flex;
   align-items: center;
@@ -281,6 +326,101 @@
   padding: 12px 0;
   font-size: 12px;
   color: var(--muted);
+}
+.runtime-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.runtime-freshness {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+  margin: 16px 0 0;
+  font-size: 12px;
+}
+.runtime-freshness > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+}
+.runtime-freshness dt {
+  color: var(--muted);
+}
+.runtime-freshness dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.runtime-help {
+  line-height: 1.7;
+  margin-top: 14px;
+}
+.ops-service-page .service-network-content > .hako-note {
+  margin-bottom: 28px;
+}
+.service-peer-list,
+.service-address-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.service-peer-list > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.service-private-ports {
+  margin-top: 24px;
+}
+.ops-page .service-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  margin-bottom: 24px;
+}
+.ops-page .service-settings-grid > .panel {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.service-storage-list {
+  margin: 0;
+}
+.service-storage-list > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.service-storage-list > div:last-child {
+  border-bottom: 0;
+}
+.service-storage-list dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.service-storage-list code {
+  overflow-wrap: anywhere;
+}
+.service-storage-list dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.service-storage-list dd > small {
+  flex-basis: 100%;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .ops-page .resource-note {
   border: 1px solid var(--hairline);
@@ -530,6 +670,25 @@
 .ops-logs .log-query-form {
   padding: 20px;
 }
+.ops-logs .log-volume-panel {
+  border-bottom: 1px solid var(--hairline);
+  background: var(--background);
+}
+.ops-logs .log-volume-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 0;
+  font: 12px var(--font-mono);
+}
+.ops-logs .log-volume-heading small {
+  color: var(--muted);
+}
+.ops-logs .log-volume-empty {
+  padding: 24px 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .ops-logs .log-filter-row {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.6fr) minmax(120px, 1fr) minmax(
@@ -620,7 +779,8 @@
   align-items: stretch;
   gap: 2px;
   padding: 16px 20px 0;
-  border-top: 1px solid var(--hairline);
+  margin-top: 0;
+  border-top: 0;
   background: var(--background);
 }
 .ops-logs .histogram-bucket {
@@ -648,6 +808,7 @@
   background: var(--surface-3);
 }
 .ops-logs .histogram-axis {
+  margin-top: 0;
   padding: 8px 20px 16px;
   display: flex;
   justify-content: space-between;
@@ -882,6 +1043,84 @@
 .ops-topology .inspector-actions {
   gap: 8px;
 }
+.toml-editor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.toml-editor-heading label {
+  margin: 0;
+}
+.deploy-toml-field .code-editor {
+  min-height: 400px;
+  resize: vertical;
+}
+.dialog-content.toml-editor-dialog:not(.sheet) {
+  width: calc(100vw - 48px);
+  max-width: 1600px;
+  height: calc(100dvh - 48px);
+}
+.toml-editor-dialog .dialog-header {
+  padding: 20px 24px;
+}
+.toml-editor-dialog .dialog-header h2 {
+  font-size: 20px;
+}
+.toml-editor-dialog .dialog-header p {
+  margin-top: 6px;
+}
+.toml-editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
+}
+.toml-editor-body > .input-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.toml-editor-body .code-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+}
+.toml-editor-footer {
+  align-items: center;
+  padding: 16px 24px;
+}
+.toml-editor-footer > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.hako-form-page .deploy-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px 20px;
+}
+.hako-form-page .deploy-footer .dialog-footer-note {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 220px;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.deploy-footer .dialog-footer-note > svg {
+  flex-shrink: 0;
+}
+.deploy-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 @media (max-width: 1100px) {
   .ops-run-layout {
     grid-template-columns: 220px minmax(0, 1fr);
@@ -904,6 +1143,9 @@
   }
 }
 @media (max-width: 960px) {
+  .ops-page .service-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .ops-run-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -952,6 +1194,31 @@
   }
 }
 @media (max-width: 640px) {
+  .dialog-content.toml-editor-dialog:not(.sheet) {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .toml-editor-body {
+    padding: 16px;
+  }
+  .toml-editor-footer {
+    padding: 16px;
+  }
+  .toml-editor-footer > span {
+    max-width: 22ch;
+  }
+  .hako-form-page .deploy-footer {
+    padding: 16px;
+  }
+  .deploy-footer-actions {
+    width: 100%;
+  }
+  .runtime-freshness > div {
+    grid-template-columns: 90px minmax(0, 1fr);
+    gap: 8px;
+  }
   .ops-summary-three {
     grid-template-columns: minmax(0, 1fr);
   }

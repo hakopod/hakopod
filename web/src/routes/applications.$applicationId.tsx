@@ -73,6 +73,7 @@ function ApplicationDetail() {
     queryFn: ({ signal }) =>
       unwrap(client.GET('/applications/{id}', { signal, params: { path: { id: applicationId } } })),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
     gcTime: 0,
   })
   const configuration = useMemo(
@@ -93,7 +94,7 @@ function ApplicationDetail() {
     return (
       <Suspense fallback={<Loading />}>
         <ServiceDetail
-          key={selectedService}
+          key={`${app.id}:${selectedService}`}
           application={app}
           serviceName={selectedService}
           initialTab={selectedTab}
@@ -176,7 +177,7 @@ function ApplicationDetail() {
         </span>
       </div>
       <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="tab-list" aria-label="Application sections">
+        <Tabs.List className="tab-list application-tabs" aria-label="Application sections">
           {[
             ['services', 'box', 'Services'],
             ['topology', 'network', 'Topology'],
@@ -271,7 +272,11 @@ function ApplicationDetail() {
                           : `${service.replicas || 1} desired`}
                       </td>
                       <td>
-                        {service.public ? 'Public HTTP' : service.port ? 'Private' : 'Worker'}
+                        {service.public
+                          ? 'Public HTTP'
+                          : service.port || service.ports?.length
+                            ? 'Private'
+                            : 'Worker'}
                         <small className="ops-table-sub mono">
                           {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
                         </small>
@@ -363,8 +368,8 @@ function ApplicationDetail() {
         <Tabs.Content value="networking" className="tab-content">
           <div className="section-toolbar">
             <div>
-              <h2>Custom domains</h2>
-              <p>Map verified hostnames to the application's public HTTP services.</p>
+              <h2>Networking</h2>
+              <p>Service discovery, private networks, and public domains.</p>
             </div>
             <Link
               className="button button-secondary"
@@ -374,12 +379,6 @@ function ApplicationDetail() {
               Manage custom domains
               <Icon name="globe" size={14} />
             </Link>
-          </div>
-          <div className="section-toolbar">
-            <div>
-              <h2>Application networking</h2>
-              <p>Service discovery and exposure from the applied specification.</p>
-            </div>
           </div>
           <div className="table-container">
             <table>
@@ -407,19 +406,32 @@ function ApplicationDetail() {
                       </span>
                     </td>
                     <td>
-                      {service.port ? (
-                        <span className="copyable-address">
-                          <code>
-                            {observed.find((s) => s.name === name)?.internal_address ||
-                              `${name}:${service.port}`}
-                          </code>
-                          <Copy
-                            value={
-                              observed.find((s) => s.name === name)?.internal_address ||
-                              `${name}:${service.port}`
-                            }
-                          />
-                        </span>
+                      {service.port || service.ports?.length ? (
+                        <div className="service-address-list">
+                          {Boolean(service.port) && (
+                            <span className="copyable-address">
+                              <code>
+                                {observed.find((s) => s.name === name)?.internal_address ||
+                                  `${name}:${service.port}`}
+                              </code>
+                              <Copy
+                                value={
+                                  observed.find((s) => s.name === name)?.internal_address ||
+                                  `${name}:${service.port}`
+                                }
+                              />
+                            </span>
+                          )}
+                          {service.ports?.map((port) => (
+                            <span className="copyable-address" key={port.name}>
+                              <code>
+                                {name}:{port.port}
+                              </code>
+                              <small>{port.protocol}</small>
+                              <Copy value={`${name}:${port.port}`} />
+                            </span>
+                          ))}
+                        </div>
                       ) : (
                         <span className="muted-text">No inbound port</span>
                       )}
@@ -609,14 +621,15 @@ function DeploymentHistory({ application }: { application: Application }) {
               {[...deployments]
                 .sort((a, b) => b.revision - a.revision)
                 .map((deployment) => (
-                  <tr key={deployment.id}>
+                  <tr key={deployment.id} className="ops-linked-row">
                     <td>
                       <div className="ops-object">
                         <Status value={deployment.status} small />
                         <Link
-                          className="ops-object-name"
+                          className="ops-object-name ops-row-link"
                           to="/deployments/$deploymentId"
                           params={{ deploymentId: deployment.id }}
+                          aria-label={`Inspect deployment revision ${deployment.revision}`}
                         >
                           r{deployment.revision}
                         </Link>

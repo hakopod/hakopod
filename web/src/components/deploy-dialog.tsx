@@ -11,6 +11,7 @@ import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { FormPage, FormHint } from './form-page'
 import { Button } from './ui/button'
+import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Note } from './shared'
 import { ServiceIcon } from './service-icon'
@@ -50,6 +51,8 @@ export function DeploymentForm({
   const [plan, setPlan] = useState<Plan | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [editorExpanded, setEditorExpanded] = useState(false)
+  const expandedEditor = useRef<HTMLTextAreaElement>(null)
   const requestKey = useRef('')
   useEffect(() => {
     {
@@ -66,6 +69,32 @@ export function DeploymentForm({
     ...(serviceName ? { service: serviceName } : {}),
     ...(mode === 'form' ? { spec } : { toml }),
   })
+  async function changeMode(next: 'form' | 'toml') {
+    if (busy || mode === next) return
+    setError('')
+    setPlan(null)
+    if (next === 'toml') {
+      setToml(specToTOML(spec))
+      setMode(next)
+      return
+    }
+    if (!toml.trim()) {
+      setMode(next)
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await unwrap(client.POST('/plan', { body: payload() }))
+      if (application && result.application_id !== application.id)
+        throw new Error('Keep the original application name when editing this application.')
+      setSpec(result.spec)
+      setMode(next)
+    } catch (cause) {
+      setError(message(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
   async function review() {
     setBusy(true)
     setError('')
@@ -163,7 +192,7 @@ export function DeploymentForm({
         {serviceName && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
-            application networks retain their accepted configuration.
+            application networks and volumes retain their accepted configuration.
           </Note>
         )}
         {plan ? (
@@ -217,11 +246,19 @@ export function DeploymentForm({
         ) : (
           <>
             <div className="segmented-control">
-              <button className={mode === 'form' ? 'selected' : ''} onClick={() => setMode('form')}>
+              <button
+                disabled={busy}
+                className={mode === 'form' ? 'selected' : ''}
+                onClick={() => void changeMode('form')}
+              >
                 <Icon name="box" size={15} />
                 Container images
               </button>
-              <button className={mode === 'toml' ? 'selected' : ''} onClick={() => setMode('toml')}>
+              <button
+                disabled={busy}
+                className={mode === 'toml' ? 'selected' : ''}
+                onClick={() => void changeMode('toml')}
+              >
                 <Icon name="code" size={15} />
                 Import TOML
               </button>
@@ -234,8 +271,20 @@ export function DeploymentForm({
               )}
             </div>
             {mode === 'toml' ? (
-              <div className="field-stack">
-                <label htmlFor="toml-import">hakopod.toml</label>
+              <div className="field-stack deploy-toml-field">
+                <div className="toml-editor-heading">
+                  <label htmlFor="toml-import">hakopod.toml</label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-haspopup="dialog"
+                    onClick={() => setEditorExpanded(true)}
+                  >
+                    <Icon name="external" size={14} />
+                    Expand editor
+                  </Button>
+                </div>
                 <Textarea
                   id="toml-import"
                   className="code-editor"
@@ -248,8 +297,9 @@ export function DeploymentForm({
                   maxLength={262144}
                 />
                 <p className="field-help">
-                  TOML supports advanced networking, environment variables, dependencies, and health
-                  checks, persistent storage, GPU requests, and saved secret bindings.
+                  Configure networks, private ports, peer access, mounts and filesystem permissions
+                  here alongside images, health checks and secret references. Switching to the form
+                  validates and keeps these settings.
                 </p>
               </div>
             ) : (
@@ -448,35 +498,64 @@ export function DeploymentForm({
           </div>
         )}
       </div>
-      <div className="form-footer">
+      <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
           {plan ? 'Only reviewed changes will be submitted' : 'Nothing changes until you deploy'}
         </span>
-        <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>
-          {plan ? 'Back to configuration' : 'Cancel'}
-        </Button>
-        <Button
-          variant="primary"
-          disabled={
-            busy ||
-            (!plan &&
-              mode === 'form' &&
-              (!spec.name || Object.values(spec.services).some((service) => !service.image))) ||
-            (!plan && mode === 'toml' && !toml.trim())
-          }
-          onClick={() => void (plan ? deploy() : review())}
-        >
-          {busy
-            ? plan
-              ? 'Submitting…'
-              : 'Validating…'
-            : plan
-              ? 'Deploy changes'
-              : 'Review changes'}
-          <Icon name="arrow" size={15} />
-        </Button>
+        <div className="deploy-footer-actions">
+          <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>
+            {plan ? 'Back to configuration' : 'Cancel'}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={
+              busy ||
+              (!plan &&
+                mode === 'form' &&
+                (!spec.name || Object.values(spec.services).some((service) => !service.image))) ||
+              (!plan && mode === 'toml' && !toml.trim())
+            }
+            onClick={() => void (plan ? deploy() : review())}
+          >
+            {busy
+              ? plan
+                ? 'Submitting…'
+                : 'Validating…'
+              : plan
+                ? 'Deploy changes'
+                : 'Review changes'}
+            <Icon name="arrow" size={15} />
+          </Button>
+        </div>
       </div>
+      <Dialog
+        open={editorExpanded}
+        onOpenChange={setEditorExpanded}
+        className="toml-editor-dialog"
+        title="Edit hakopod.toml"
+        description="Changes stay in this form until you review and deploy."
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          expandedEditor.current?.focus({ preventScroll: true })
+        }}
+      >
+        <div className="toml-editor-body">
+          <Textarea
+            ref={expandedEditor}
+            aria-label="Expanded TOML configuration"
+            className="code-editor"
+            value={toml}
+            onChange={(event) => setToml(event.target.value)}
+            spellCheck={false}
+            maxLength={262144}
+          />
+        </div>
+        <div className="dialog-footer toml-editor-footer">
+          <span>Escape closes the editor and keeps your changes.</span>
+          <Button onClick={() => setEditorExpanded(false)}>Done editing</Button>
+        </div>
+      </Dialog>
     </FormPage>
   )
 }

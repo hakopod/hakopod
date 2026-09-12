@@ -149,6 +149,69 @@ export function Logs({
         </Suspense>
       ) : (
         <>
+          <section className="log-volume-panel" aria-label="Log volume">
+            <div className="log-volume-heading">
+              <span>Log volume</span>
+              <small>{logs.isFetching ? 'Querying…' : 'Returned time buckets'}</small>
+            </div>
+            {data && !logs.error ? (
+              <>
+                <div
+                  className="log-histogram"
+                  role="group"
+                  aria-label={`Log volume across ${histogram.length} time buckets; ${data.matched} matching entries in the sampled data`}
+                >
+                  {histogram.map((bar, index) => (
+                    <Tooltip
+                      key={`${bar.timestamp}-${index}`}
+                      side="top"
+                      content={`${timestamp(bar.timestamp)} · ${bar.count} entries`}
+                    >
+                      <button
+                        className="histogram-bucket"
+                        type="button"
+                        aria-label={`Inspect ${bar.count} entries from ${timestamp(bar.timestamp)}`}
+                        aria-pressed={range?.from === Date.parse(bar.timestamp)}
+                        onClick={() => {
+                          const from = Date.parse(bar.timestamp)
+                          const next = histogram[index + 1]?.timestamp
+                          const previous = histogram[index - 1]?.timestamp
+                          const step = previous ? from - Date.parse(previous) : 60000
+                          setRange({ from, to: next ? Date.parse(next) : from + step })
+                        }}
+                      >
+                        <i style={{ height: `${(bar.count / maximum) * 100}%` }} />
+                        <span className="sr-only">
+                          {timestamp(bar.timestamp)}: {bar.count}
+                        </span>
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
+                <div className="histogram-axis">
+                  <span>
+                    {histogram[0] ? timestamp(histogram[0].timestamp) : 'No histogram returned'}
+                  </span>
+                  <span>{histogram.at(-1) ? timestamp(histogram.at(-1)!.timestamp) : ''}</span>
+                </div>
+                {range && (
+                  <div className="ops-range-banner">
+                    <span>
+                      Showing loaded entries from {timestamp(new Date(range.from).toISOString())} to{' '}
+                      {timestamp(new Date(range.to).toISOString())}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setRange(null)}>
+                      Clear time selection
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="log-volume-empty">
+                {logs.isPending ? 'Waiting for query results.' : 'No histogram available.'}
+              </p>
+            )}
+          </section>
           <form
             className="log-query-form"
             onSubmit={(e) => {
@@ -263,55 +326,6 @@ export function Logs({
           ) : (
             data && (
               <>
-                <div
-                  className="log-histogram"
-                  role="group"
-                  aria-label={`Log volume across ${histogram.length} time buckets; ${data.matched} matching entries in the sampled data`}
-                >
-                  {histogram.map((bar, index) => (
-                    <Tooltip
-                      key={`${bar.timestamp}-${index}`}
-                      side="top"
-                      content={`${timestamp(bar.timestamp)} · ${bar.count} entries`}
-                    >
-                      <button
-                        className="histogram-bucket"
-                        type="button"
-                        aria-label={`Inspect ${bar.count} entries from ${timestamp(bar.timestamp)}`}
-                        aria-pressed={range?.from === Date.parse(bar.timestamp)}
-                        onClick={() => {
-                          const from = Date.parse(bar.timestamp)
-                          const next = histogram[index + 1]?.timestamp
-                          const previous = histogram[index - 1]?.timestamp
-                          const step = previous ? from - Date.parse(previous) : 60000
-                          setRange({ from, to: next ? Date.parse(next) : from + step })
-                        }}
-                      >
-                        <i style={{ height: `${(bar.count / maximum) * 100}%` }} />
-                        <span className="sr-only">
-                          {timestamp(bar.timestamp)}: {bar.count}
-                        </span>
-                      </button>
-                    </Tooltip>
-                  ))}
-                </div>
-                <div className="histogram-axis">
-                  <span>
-                    {histogram[0] ? timestamp(histogram[0].timestamp) : 'No histogram returned'}
-                  </span>
-                  <span>{histogram.at(-1) ? timestamp(histogram.at(-1)!.timestamp) : ''}</span>
-                </div>
-                {range && (
-                  <div className="ops-range-banner">
-                    <span>
-                      Showing loaded entries from {timestamp(new Date(range.from).toISOString())} to{' '}
-                      {timestamp(new Date(range.to).toISOString())}
-                    </span>
-                    <Button size="sm" variant="ghost" onClick={() => setRange(null)}>
-                      Clear time selection
-                    </Button>
-                  </div>
-                )}
                 <div className="log-result-toolbar">
                   <span>
                     <strong>{range ? entries.length : data.matched}</strong>{' '}

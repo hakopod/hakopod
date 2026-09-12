@@ -2,14 +2,21 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
-import type { Application } from '../lib/types'
+import type { Application, Service, Spec } from '../lib/types'
 import { client, unwrap } from '../lib/client'
 import { message, relative, timestamp } from '../lib/api'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
+import {
+  metricSampleAge,
+  metricsStaleAfter,
+  retainMetricSample,
+  type MetricSample,
+} from '../lib/runtime-metrics'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
 import { Logs } from './logs'
@@ -25,7 +32,18 @@ const readRuntime = (applicationId: string, service: string, signal: AbortSignal
     }),
   )
 type Runtime = Awaited<ReturnType<typeof readRuntime>>
-type Sample = { at: string; cpu: number; memory: number }
+const sampleTimeFormat = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+function sampleTimestamp(value: string) {
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? sampleTimeFormat.format(time) : 'Unavailable'
+}
 
 function memory(bytes?: number) {
   if (bytes === undefined) return 'Unavailable'
@@ -39,7 +57,7 @@ function MetricChart({
   field,
   label,
 }: {
-  samples: Sample[]
+  samples: MetricSample[]
   field: 'cpu' | 'memory'
   label: string
 }) {
@@ -106,29 +124,46 @@ export function ServiceDetail({
   const [requestKey, setRequestKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [samples, setSamples] = useState<Sample[]>([])
+  const [samples, setSamples] = useState<MetricSample[]>([])
+  const [paused, setPaused] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const [now, setNow] = useState(Date.now)
+  const runtimeTab = tab === 'overview' || tab === 'pods'
+  const polling = Boolean(service) && visible && runtimeTab && !paused
+  useEffect(() => {
+    const change = () => {
+      setVisible(!document.hidden)
+      setNow(Date.now())
+    }
+    document.addEventListener('visibilitychange', change)
+    change()
+    return () => document.removeEventListener('visibilitychange', change)
+  }, [])
+  useEffect(() => {
+    if (!visible || tab !== 'overview') return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [visible, tab])
   const runtime = useQuery({
     queryKey: ['service-runtime', application.id, serviceName],
     queryFn: ({ signal }) => readRuntime(application.id, serviceName, signal),
-    enabled: Boolean(service),
-    refetchInterval: 15000,
+    enabled: polling,
+    refetchInterval: polling ? 15000 : false,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    retry: false,
     gcTime: 0,
   })
   useEffect(() => {
-    const metrics = runtime.data?.metrics
-    if (
-      !metrics?.available ||
-      metrics.cpu_millicores === undefined ||
-      metrics.memory_bytes === undefined
-    )
-      return
-    const at = metrics.sampled_at || runtime.data?.observed_at
-    if (!at || !Number.isFinite(Date.parse(at))) return
-    const sample = { at, cpu: metrics.cpu_millicores, memory: metrics.memory_bytes }
-    setSamples((previous) =>
-      previous[previous.length - 1]?.at === at ? previous : [...previous.slice(-23), sample],
-    )
+    if (!polling)
+      void cache.cancelQueries({
+        queryKey: ['service-runtime', application.id, serviceName],
+        exact: true,
+      })
+  }, [polling, cache, application.id, serviceName])
+  useEffect(() => {
+    setSamples((previous) => retainMetricSample(previous, runtime.data?.metrics))
   }, [runtime.data])
   const back = (
     <Link
@@ -153,11 +188,28 @@ export function ServiceDetail({
       </>
     )
   const metrics = runtime.data?.metrics
+  const hasPorts = Boolean(service.port || service.ports?.length)
+  const sampleAge = metricSampleAge(
+    metrics?.sampled_at,
+    runtime.data?.observed_at,
+    runtime.dataUpdatedAt,
+    now,
+  )
+  const fresh = metrics?.available && sampleAge !== null && sampleAge <= metricsStaleAfter
+  const freshness = runtime.error
+    ? 'Check failed'
+    : !metrics?.available
+      ? 'No sample'
+      : !fresh
+        ? 'Stale sample'
+        : polling
+          ? 'Live'
+          : 'Paused'
   const edit = (mode: 'form' | 'toml') => {
     void navigate({
       to: '/applications/$applicationId/configure',
       params: { applicationId: application.id },
-      search: { mode, service: serviceName },
+      search: { mode, ...(mode === 'form' ? { service: serviceName } : {}) },
     })
   }
   return (
@@ -165,7 +217,7 @@ export function ServiceDetail({
       {back}
       <div className="application-heading">
         <div className="app-symbol app-symbol-large">
-          <Icon name={service.public ? 'globe' : service.port ? 'box' : 'terminal'} size={27} />
+          <Icon name={service.public ? 'globe' : hasPorts ? 'box' : 'terminal'} size={27} />
         </div>
         <div>
           <div className="title-row">
@@ -206,7 +258,7 @@ export function ServiceDetail({
       </div>
       {observed?.message && <Note>{observed.message}</Note>}
       <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="tab-list" aria-label="Service sections">
+        <Tabs.List className="tab-list application-tabs" aria-label="Service sections">
           {[
             ['overview', 'activity', 'Overview'],
             ['pods', 'box', 'Pods'],
@@ -246,7 +298,7 @@ export function ServiceDetail({
                   <dd>
                     {service.public
                       ? 'Public HTTP'
-                      : service.port
+                      : hasPorts
                         ? 'Application private network'
                         : 'No inbound port'}
                   </dd>
@@ -264,19 +316,36 @@ export function ServiceDetail({
             <section className="panel service-summary-panel">
               <div className="panel-heading">
                 <h2>Resource usage</h2>
+                <Badge tone={fresh && !runtime.error ? 'success' : 'warning'}>{freshness}</Badge>
+              </div>
+              <div className="runtime-controls">
                 <Button
-                  size="icon"
+                  size="sm"
                   variant="ghost"
-                  aria-label="Refresh service runtime"
-                  onClick={() => void runtime.refetch()}
+                  aria-pressed={paused}
+                  onClick={() => setPaused((value) => !value)}
                 >
-                  <Icon name="refresh" size={15} />
+                  <Icon name={paused ? 'play' : 'pause'} size={14} />
+                  {paused ? 'Resume live' : 'Pause live'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={runtime.isFetching}
+                  onClick={() => void runtime.refetch({ cancelRefetch: false })}
+                >
+                  <Icon name="refresh" size={14} className={runtime.isFetching ? 'spin' : ''} />
+                  {runtime.isFetching ? 'Probing…' : 'Probe now'}
                 </Button>
               </div>
+              {runtime.error && (
+                <ErrorState
+                  error={runtime.error}
+                  retry={() => void runtime.refetch({ cancelRefetch: false })}
+                />
+              )}
               {runtime.isPending ? (
                 <Loading rows={2} />
-              ) : runtime.error ? (
-                <ErrorState error={runtime.error} retry={() => void runtime.refetch()} />
               ) : !metrics?.available ? (
                 <Empty
                   icon="activity"
@@ -303,13 +372,48 @@ export function ServiceDetail({
                       <MetricChart samples={samples} field="memory" label="Memory usage" />
                     </div>
                   </div>
-                  <p className="field-help">
-                    {metrics.pods_sampled} / {metrics.pods_expected} pods sampled ·{' '}
-                    {timestamp(metrics.sampled_at)}. Up to 24 actual samples retained while this
-                    view is open.
-                  </p>
                 </>
               )}
+              <dl className="runtime-freshness">
+                <div>
+                  <dt>Source sample</dt>
+                  <dd>
+                    {metrics?.sampled_at ? (
+                      <time dateTime={metrics.sampled_at}>
+                        {sampleTimestamp(metrics.sampled_at)}
+                      </time>
+                    ) : (
+                      'Unavailable'
+                    )}
+                    {sampleAge !== null && <span> · {Math.floor(sampleAge / 1000)}s old</span>}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last checked</dt>
+                  <dd>
+                    {runtime.data?.observed_at ? (
+                      <time dateTime={runtime.data.observed_at}>
+                        {sampleTimestamp(runtime.data.observed_at)}
+                      </time>
+                    ) : (
+                      'Waiting for cluster'
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <p className="field-help runtime-help">
+                {paused
+                  ? 'Automatic checks paused.'
+                  : 'Checks every 15 seconds while this view is active.'}{' '}
+                Probe reads the latest sample available from the cluster.
+                {metrics && (
+                  <>
+                    {' '}
+                    {metrics.pods_sampled} / {metrics.pods_expected} pods sampled.
+                  </>
+                )}{' '}
+                {samples.length} / 24 samples retained in this view.
+              </p>
             </section>
           </div>
           <div className="section-toolbar">
@@ -380,10 +484,16 @@ export function ServiceDetail({
             />
           )}
         </Tabs.Content>
-        <Tabs.Content value="network" className="tab-content">
+        <Tabs.Content value="network" className="tab-content service-network-content">
           <section className="panel service-summary-panel">
             <div className="panel-heading">
               <h2>Service networking</h2>
+              {scope.can('deployments:write') && (
+                <Button size="sm" variant="ghost" onClick={() => edit('toml')}>
+                  <Icon name="code" size={14} />
+                  Edit configuration
+                </Button>
+              )}
             </div>
             <dl className="service-definition-list">
               <div>
@@ -391,7 +501,7 @@ export function ServiceDetail({
                 <dd>
                   {service.public
                     ? 'Public HTTP'
-                    : service.port
+                    : hasPorts
                       ? 'Private service'
                       : 'Background worker'}
                 </dd>
@@ -406,6 +516,8 @@ export function ServiceDetail({
                         value={observed?.internal_address || `${serviceName}:${service.port}`}
                       />
                     </span>
+                  ) : service.ports?.length ? (
+                    'Additional ports listed below'
                   ) : (
                     'No inbound port'
                   )}
@@ -436,6 +548,26 @@ export function ServiceDetail({
                 </dd>
               </div>
               <div>
+                <dt>Allowed peers</dt>
+                <dd className="service-peer-list">
+                  {service.network_access === undefined
+                    ? 'Services on shared networks'
+                    : service.network_access.from.length
+                      ? service.network_access.from.map((name) => (
+                          <Link
+                            key={name}
+                            to="/applications/$applicationId"
+                            params={{ applicationId: application.id }}
+                            search={{ service: name }}
+                          >
+                            {name}
+                            <Icon name="chevron" size={12} />
+                          </Link>
+                        ))
+                      : 'No peer services allowed'}
+                </dd>
+              </div>
+              <div>
                 <dt>Readiness dependencies</dt>
                 <dd>
                   {service.depends_on?.length
@@ -455,9 +587,49 @@ export function ServiceDetail({
               </div>
             </dl>
           </section>
+          {Boolean(service.ports?.length) && (
+            <section className="service-private-ports">
+              <div className="section-toolbar">
+                <div>
+                  <h2>Additional private ports</h2>
+                  <p>Configured endpoints for permitted services on shared networks.</p>
+                </div>
+              </div>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Protocol</th>
+                      <th>Private address</th>
+                      <th>Container port</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {service.ports?.map((port) => (
+                      <tr key={port.name}>
+                        <td>{port.name}</td>
+                        <td className="mono">{port.protocol}</td>
+                        <td>
+                          <span className="copyable-address">
+                            <code>
+                              {serviceName}:{port.port}
+                            </code>
+                            <Copy value={`${serviceName}:${port.port}`} />
+                          </span>
+                        </td>
+                        <td className="mono">{port.target_port}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
           <Note>
             Private addresses are reachable by permitted workloads in this application. Browser
-            requests use the public endpoint or a server-side proxy.
+            requests use the public endpoint or a server-side proxy. Editing configuration opens the
+            full application TOML so shared network and volume changes can be reviewed together.
           </Note>
           <Suspense fallback={<Loading rows={2} />}>
             <ServiceTLS application={application} service={serviceName} />
@@ -476,9 +648,59 @@ export function ServiceDetail({
               </Button>
             )}
           </div>
+          <Note>
+            Shared networks and volume declarations can affect other services. Configuration edits
+            are reviewed for the whole application.
+          </Note>
           {service.autoscaling && (
             <Note>Replica count is managed by this service's autoscaling configuration.</Note>
           )}
+          <div className="service-settings-grid">
+            <section className="panel service-summary-panel">
+              <div className="panel-heading">
+                <h2>Runtime settings</h2>
+                <span className="label-chip">Revision {application.revision}</span>
+              </div>
+              <dl className="service-definition-list">
+                <div>
+                  <dt>User ID</dt>
+                  <dd className="mono">{service.run_as_user || '10001 (default)'}</dd>
+                </div>
+                <div>
+                  <dt>Group ID</dt>
+                  <dd className="mono">
+                    {service.run_as_group || `${service.run_as_user || 10001} (default)`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Volume group</dt>
+                  <dd className="mono">
+                    {service.fs_group || `${service.run_as_user || 10001} (default)`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Root filesystem</dt>
+                  <dd>{service.read_only_root_filesystem ? 'Read-only' : 'Writable'}</dd>
+                </div>
+                <div>
+                  <dt>Working directory</dt>
+                  <dd className="mono break-text">{service.working_dir || 'Image default'}</dd>
+                </div>
+                <div>
+                  <dt>Shutdown grace</dt>
+                  <dd>
+                    {service.termination_grace_seconds
+                      ? `${service.termination_grace_seconds} seconds`
+                      : '30 seconds (default)'}
+                  </dd>
+                </div>
+              </dl>
+              <p className="field-help">
+                Configured values. Open a pod to inspect its observed state.
+              </p>
+            </section>
+            <ServiceStorage service={service} volumes={application.spec.volumes} />
+          </div>
           <div className="code-panel">
             <div>
               <span>
@@ -491,6 +713,12 @@ export function ServiceDetail({
                 schema_version: application.spec.schema_version,
                 name: application.name,
                 services: { [serviceName]: service },
+                volumes: Object.fromEntries(
+                  (service.mounts || []).flatMap((mount) => {
+                    const volume = application.spec.volumes?.[mount.volume]
+                    return volume ? [[mount.volume, volume]] : []
+                  }),
+                ),
               })}
             </pre>
           </div>
@@ -553,6 +781,73 @@ export function ServiceDetail({
         </div>
       </Dialog>
     </div>
+  )
+}
+
+function ServiceStorage({ service, volumes }: { service: Service; volumes: Spec['volumes'] }) {
+  const mounts = [
+    ...(service.volume
+      ? [
+          {
+            path: service.volume.mount_path,
+            name: 'Service volume',
+            details: `${service.volume.size_gib} GiB · ${service.volume.storage_class || 'Default storage class'}`,
+            access: 'Read and write',
+          },
+        ]
+      : []),
+    ...(service.mounts || []).map((mount) => {
+      const volume = volumes?.[mount.volume]
+      return {
+        path: mount.mount_path,
+        name: mount.volume,
+        details: [
+          volume
+            ? `${volume.size_gib} GiB · ${volume.access_mode}`
+            : 'Volume definition unavailable',
+          volume?.storage_class || 'Default storage class',
+          mount.sub_path ? `Subdirectory: ${mount.sub_path}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        access: mount.read_only ? 'Read-only' : 'Read and write',
+      }
+    }),
+    ...(service.temporary_mounts || []).map((mount) => ({
+      path: mount.mount_path,
+      name: mount.memory ? 'Temporary memory' : 'Temporary disk',
+      details: `${mount.size_mib} MiB limit · Removed with the pod`,
+      access: 'Read and write',
+    })),
+  ]
+  return (
+    <section className="panel service-summary-panel">
+      <div className="panel-heading">
+        <h2>Storage mounts</h2>
+        <span className="label-chip">{mounts.length} configured</span>
+      </div>
+      {mounts.length ? (
+        <dl className="service-storage-list">
+          {mounts.map((mount) => (
+            <div key={mount.path}>
+              <dt>
+                <code>{mount.path}</code>
+                <Copy value={mount.path} />
+              </dt>
+              <dd>
+                <strong>{mount.name}</strong>
+                <span>{mount.access}</span>
+                <small>{mount.details}</small>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="field-help">
+          No storage mounts configured. Container files are replaced with the pod.
+        </p>
+      )}
+    </section>
   )
 }
 

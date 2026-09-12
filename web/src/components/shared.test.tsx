@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import './toml-code.test'
+import './shell-behavior.test'
+import '../lib/runtime-metrics.test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy } from './shared'
 import { specToTOML } from '../lib/toml'
@@ -78,6 +80,49 @@ test('human session envelopes do not override project membership roles', () => {
   assert.equal(canAccess(identity, 'observable', 'deployments:write'), false)
   assert.equal(canAccess(identity, 'observable', 'logs:read'), true)
   assert.equal(canAccess(identity, 'other-project', 'deployments:read'), false)
+})
+
+test('TOML export retains network denials, mount permissions and advanced runtime settings', () => {
+  const output = specToTOML({
+    schema_version: 1,
+    name: 'runtime-example',
+    networks: { private: { internal: true } },
+    volumes: { data: { size_gib: 10, access_mode: 'ReadWriteOnce' } },
+    services: {
+      api: {
+        image: 'registry.example/api@sha256:' + 'b'.repeat(64),
+        networks: ['private'],
+        network_access: { from: [] },
+        ports: [{ name: 'metrics', port: 9090, target_port: 9091, protocol: 'TCP' }],
+        mounts: [{ volume: 'data', mount_path: '/data', read_only: true, sub_path: 'archive' }],
+        temporary_mounts: [{ mount_path: '/tmp', size_mib: 16, memory: true }],
+        read_only_root_filesystem: true,
+        run_as_user: 12345,
+        run_as_group: 23456,
+        fs_group: 23456,
+        working_dir: '/data',
+        termination_grace_seconds: 45,
+      },
+    },
+  })
+  assert.match(output, /\[services\.api\.network_access\]\nfrom = \[\]/)
+  assert.match(output, /\[networks\.private\]\ninternal = true/)
+  assert.match(output, /\[volumes\.data\]\nsize_gib = 10\naccess_mode = "ReadWriteOnce"/)
+  for (const setting of [
+    '"target_port" = 9091',
+    '"protocol" = "TCP"',
+    '"read_only" = true',
+    '"sub_path" = "archive"',
+    '"size_mib" = 16',
+    '"memory" = true',
+    'read_only_root_filesystem = true',
+    'run_as_user = 12345',
+    'run_as_group = 23456',
+    'fs_group = 23456',
+    'working_dir = "/data"',
+    'termination_grace_seconds = 45',
+  ])
+    assert.ok(output.includes(setting), `Export lost ${setting}`)
 })
 
 test('host terminal controls require owner or explicit node authority, never admin alone', () => {
