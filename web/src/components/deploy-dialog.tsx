@@ -1,3 +1,6 @@
+import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
+import { Select } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -233,7 +236,7 @@ export function DeploymentForm({
             {mode === 'toml' ? (
               <div className="field-stack">
                 <label htmlFor="toml-import">hakopod.toml</label>
-                <textarea
+                <Textarea
                   id="toml-import"
                   className="code-editor"
                   value={toml}
@@ -253,7 +256,7 @@ export function DeploymentForm({
               <div className="field-stack">
                 <label>
                   Application name
-                  <input
+                  <Input
                     placeholder="my-application"
                     value={spec.name}
                     disabled={Boolean(application)}
@@ -301,7 +304,7 @@ export function DeploymentForm({
                       </div>
                       <label>
                         Container image
-                        <input
+                        <Input
                           placeholder="nginx:1.29-alpine"
                           value={service.image}
                           onChange={(event) => updateService(name, { image: event.target.value })}
@@ -309,7 +312,7 @@ export function DeploymentForm({
                       </label>
                       <label>
                         Registry credential
-                        <select
+                        <Select
                           value={service.registry_credential || ''}
                           onChange={(event) =>
                             updateService(name, {
@@ -332,7 +335,7 @@ export function DeploymentForm({
                               {item.synchronized ? '' : ' · pending sync'}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                         {registries.error && (
                           <span className="field-help">
                             Registry credentials could not be loaded. Existing references are
@@ -343,7 +346,7 @@ export function DeploymentForm({
                       <div className="form-grid-three">
                         <label>
                           Port
-                          <input
+                          <Input
                             type="number"
                             min={0}
                             max={65535}
@@ -359,18 +362,18 @@ export function DeploymentForm({
                         </label>
                         <label>
                           Size
-                          <select
+                          <Select
                             value={service.size || 'small'}
                             onChange={(event) => updateService(name, { size: event.target.value })}
                           >
                             <option value="small">Small</option>
                             <option value="medium">Medium</option>
                             <option value="large">Large</option>
-                          </select>
+                          </Select>
                         </label>
                         <label>
                           Replicas
-                          <input
+                          <Input
                             type="number"
                             min={1}
                             max={20}
@@ -383,7 +386,7 @@ export function DeploymentForm({
                       </div>
                       <div className="service-exposure">
                         <label className="checkbox-label">
-                          <input
+                          <Input
                             type="checkbox"
                             checked={service.public || false}
                             disabled={!service.port}

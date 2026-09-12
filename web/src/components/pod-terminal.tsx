@@ -1,7 +1,9 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { readTerminalEvents } from '../lib/terminal-stream'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Badge } from '@hakopod/ui'
+import { Badge } from './ui/surfaces'
 import type { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { client, unwrap } from '../lib/client'
@@ -44,6 +46,7 @@ export default function PodTerminal({
   const [busy, setBusy] = useState(false)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
   const element = useRef<HTMLDivElement>(null)
   const active = useRef<Session | null>(null)
   const controller = useRef<AbortController | null>(null)
@@ -99,6 +102,40 @@ export default function PodTerminal({
       terminal.current = null
     }
   }, [applicationId, service, hostNode])
+  useEffect(() => {
+    const update = () => {
+      if (!terminal.current) return
+      const css = getComputedStyle(document.documentElement)
+      terminal.current.options.theme = {
+        background: css.getPropertyValue('--background').trim(),
+        foreground: css.getPropertyValue('--foreground').trim(),
+        cursor: css.getPropertyValue('--action').trim(),
+        selectionBackground: '#60706555',
+      }
+    }
+    const observer = new MutationObserver(update)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-theme'],
+    })
+    return () => observer.disconnect()
+  }, [])
+  const readOutput = () => {
+    const buffer = terminal.current?.buffer.active
+    if (!buffer) return ''
+    const lines: string[] = []
+    for (let i = Math.max(0, buffer.length - 500); i < buffer.length; i++)
+      lines.push(buffer.getLine(i)?.translateToString(true) || '')
+    return lines.join('\n')
+  }
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([readOutput()], { type: 'text/plain;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'hakopod-terminal.txt'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
   async function connect() {
     if (!element.current || (!hostNode && !chosenPod) || busy || !allowed) return
     let argv: string[]
@@ -120,6 +157,7 @@ export default function PodTerminal({
     const generation = attempt.current
     setBusy(true)
     setError('')
+    setCopied(false)
     setState('Loading terminal…')
     try {
       const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([
@@ -133,13 +171,13 @@ export default function PodTerminal({
         cursorBlink: false,
         scrollback: 500,
         fontSize: 13,
-        lineHeight: 1.25,
+        lineHeight: 1.8,
         fontFamily: css.getPropertyValue('--font-mono').trim(),
         disableStdin: true,
         theme: {
-          background: css.getPropertyValue('--bg').trim(),
-          foreground: css.getPropertyValue('--text').trim(),
-          cursor: css.getPropertyValue('--accent').trim(),
+          background: css.getPropertyValue('--background').trim(),
+          foreground: css.getPropertyValue('--foreground').trim(),
+          cursor: css.getPropertyValue('--action').trim(),
           selectionBackground: '#60706555',
         },
       })
@@ -293,24 +331,44 @@ export default function PodTerminal({
       />
     )
   return (
-    <section className="terminal-panel">
+    <section className="terminal-panel ops-terminal">
       <div className="explorer-heading">
         <div>
           <Icon name="terminal" size={18} />
           <h2>{hostNode ? `Host terminal · ${hostNode}` : 'Pod terminal'}</h2>
           <Badge tone={connected ? 'success' : 'neutral'}>{state}</Badge>
         </div>
-        {connected && (
-          <Button size="sm" variant="danger" onClick={() => close()}>
-            Disconnect
+        <div className="toolbar-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!session}
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(terminal.current?.getSelection() || readOutput())
+                .then(
+                  () => setCopied(true),
+                  () => setError('Clipboard unavailable. Download the terminal output instead.'),
+                )
+            }}
+          >
+            {copied ? 'Copied' : 'Copy'}
           </Button>
-        )}
+          <Button variant="ghost" size="sm" disabled={!session} onClick={download}>
+            Download
+          </Button>
+          {connected && (
+            <Button size="sm" variant="danger" onClick={() => close()}>
+              Disconnect
+            </Button>
+          )}
+        </div>
       </div>
       {!hostNode && (
         <div className="terminal-controls">
           <label>
             Service
-            <select
+            <Select
               disabled={connected || busy}
               value={service}
               onChange={(e) => {
@@ -321,11 +379,11 @@ export default function PodTerminal({
               {services.map((name) => (
                 <option key={name}>{name}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Pod
-            <select
+            <Select
               disabled={connected || busy}
               value={chosenPod}
               onChange={(e) => setPod(e.target.value)}
@@ -336,11 +394,11 @@ export default function PodTerminal({
                   {item.name} · {item.phase}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Container
-            <select
+            <Select
               disabled={connected || busy}
               value={container}
               onChange={(e) => setContainer(e.target.value)}
@@ -352,11 +410,11 @@ export default function PodTerminal({
               ).map((name) => (
                 <option key={name}>{name}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Client
-            <select
+            <Select
               disabled={connected || busy}
               value={preset}
               onChange={(e) => {
@@ -373,14 +431,14 @@ export default function PodTerminal({
               <option value="mysql">MySQL · mysql</option>
               <option value="mongo">MongoDB · mongosh</option>
               <option value="custom">Custom command</option>
-            </select>
+            </Select>
           </label>
         </div>
       )}
       {!hostNode && preset === 'custom' && (
         <label className="terminal-command">
           Command and arguments
-          <input
+          <Input
             className="mono"
             disabled={connected || busy}
             value={command}
@@ -404,7 +462,7 @@ export default function PodTerminal({
             onClick={() => void connect()}
           >
             <Icon name="terminal" size={14} />
-            {busy ? 'Connecting…' : 'Connect'}
+            {busy ? 'Connecting…' : session ? 'Reconnect' : 'Connect'}
           </Button>
         )}
       </div>
@@ -416,7 +474,18 @@ export default function PodTerminal({
       {runtime.error && (
         <Note>Pod discovery is unavailable. Refresh the service before connecting.</Note>
       )}
-      <div className="terminal-surface" ref={element} aria-label="Interactive pod terminal" />
+      {session && (
+        <div className="ops-terminal-session">
+          <Icon name="terminal" size={14} />
+          <code>{session.node || session.pod}</code>
+          <span>{connected ? 'Connected' : '— session ended —'}</span>
+        </div>
+      )}
+      <div
+        className="terminal-surface"
+        ref={element}
+        aria-label={hostNode ? 'Interactive node terminal' : 'Interactive pod terminal'}
+      />
       <div className="log-footer">
         <span>
           {connected

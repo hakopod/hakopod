@@ -1,6 +1,10 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
+import { Textarea } from './ui/textarea'
 import { lazy, Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Badge, Tooltip } from '@hakopod/ui'
+import { Badge, Tooltip } from './ui/surfaces'
+import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
@@ -9,6 +13,7 @@ import { timestamp } from '../lib/api'
 import type { components } from '../lib/api.generated'
 const LiveLogs = lazy(() => import('./live-logs'))
 type Query = components['schemas']['LogQuery']
+type LogEntry = components['schemas']['LogEntry']
 const examples = [
   ['Errors', 'severity >= ERROR'],
   ['Timeouts', "message ILIKE '%timeout%'"],
@@ -24,6 +29,8 @@ export function Logs({
   services: string[]
   initialService?: string
 }) {
+  const [selected, setSelected] = useState<LogEntry | null>(null)
+  const [range, setRange] = useState<{ from: number; to: number } | null>(null)
   const [mode, setMode] = useState<'explore' | 'live'>('explore')
   const [service, setService] = useState(initialService || services[0] || '')
   const [pod, setPod] = useState('')
@@ -68,6 +75,7 @@ export function Logs({
     refetchOnWindowFocus: false,
   })
   const run = () => {
+    setRange(null)
     const next = {
       service,
       pod: pod || undefined,
@@ -84,7 +92,11 @@ export function Logs({
   const data = logs.data
   const histogram = data?.histogram.slice(0, 120) || []
   const maximum = Math.max(1, ...histogram.map((bar) => bar.count))
-  const entries = data?.entries.slice(0, 1000) || []
+  const entries = (data?.entries.slice(0, 1000) || []).filter(
+    (entry) =>
+      !range ||
+      (Date.parse(entry.timestamp) >= range.from && Date.parse(entry.timestamp) < range.to),
+  )
   const exportLogs = () => {
     const blob = new Blob([entries.map((entry) => JSON.stringify(entry)).join('\n')], {
       type: 'application/x-ndjson',
@@ -105,7 +117,7 @@ export function Logs({
       />
     )
   return (
-    <section className="log-explorer">
+    <section className="log-explorer ops-logs">
       <div className="explorer-heading">
         <div>
           <Icon name="terminal" size={18} />
@@ -147,7 +159,7 @@ export function Logs({
             <div className="log-filter-row">
               <label>
                 Service
-                <select
+                <Select
                   value={service}
                   onChange={(e) => {
                     setService(e.target.value)
@@ -157,20 +169,20 @@ export function Logs({
                   {services.map((name) => (
                     <option key={name}>{name}</option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Pod
-                <select value={pod} onChange={(e) => setPod(e.target.value)}>
+                <Select value={pod} onChange={(e) => setPod(e.target.value)}>
                   <option value="">All service pods</option>
                   {runtime.data?.pods.map((item) => (
                     <option key={item.name}>{item.name}</option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Container
-                <input
+                <Input
                   value={container}
                   onChange={(e) => setContainer(e.target.value)}
                   placeholder="app"
@@ -179,17 +191,17 @@ export function Logs({
               </label>
               <label>
                 Time window
-                <select value={since} onChange={(e) => setSince(Number(e.target.value))}>
+                <Select value={since} onChange={(e) => setSince(Number(e.target.value))}>
                   <option value={900}>Last 15 minutes</option>
                   <option value={3600}>Last hour</option>
                   <option value={21600}>Last 6 hours</option>
                   <option value={86400}>Last 24 hours</option>
-                </select>
+                </Select>
               </label>
             </div>
             <div className="query-editor">
               <span className="query-prefix">WHERE</span>
-              <textarea
+              <Textarea
                 aria-label="SQL-like log filter"
                 placeholder="severity >= ERROR AND message ILIKE '%timeout%'"
                 value={draft}
@@ -217,7 +229,7 @@ export function Logs({
               ))}
               <span className="form-spacer" />
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={previous}
                   onChange={(e) => setPrevious(e.target.checked)}
@@ -226,11 +238,11 @@ export function Logs({
               </label>
               <label className="query-limit">
                 Limit
-                <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+                <Select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
                   <option>100</option>
                   <option>500</option>
                   <option>1000</option>
-                </select>
+                </Select>
               </label>
             </div>
             <details className="query-reference">
@@ -253,7 +265,7 @@ export function Logs({
               <>
                 <div
                   className="log-histogram"
-                  role="img"
+                  role="group"
                   aria-label={`Log volume across ${histogram.length} time buckets; ${data.matched} matching entries in the sampled data`}
                 >
                   {histogram.map((bar, index) => (
@@ -262,12 +274,24 @@ export function Logs({
                       side="top"
                       content={`${timestamp(bar.timestamp)} · ${bar.count} entries`}
                     >
-                      <div className="histogram-bucket" tabIndex={0}>
+                      <button
+                        className="histogram-bucket"
+                        type="button"
+                        aria-label={`Inspect ${bar.count} entries from ${timestamp(bar.timestamp)}`}
+                        aria-pressed={range?.from === Date.parse(bar.timestamp)}
+                        onClick={() => {
+                          const from = Date.parse(bar.timestamp)
+                          const next = histogram[index + 1]?.timestamp
+                          const previous = histogram[index - 1]?.timestamp
+                          const step = previous ? from - Date.parse(previous) : 60000
+                          setRange({ from, to: next ? Date.parse(next) : from + step })
+                        }}
+                      >
                         <i style={{ height: `${(bar.count / maximum) * 100}%` }} />
                         <span className="sr-only">
                           {timestamp(bar.timestamp)}: {bar.count}
                         </span>
-                      </div>
+                      </button>
                     </Tooltip>
                   ))}
                 </div>
@@ -277,15 +301,27 @@ export function Logs({
                   </span>
                   <span>{histogram.at(-1) ? timestamp(histogram.at(-1)!.timestamp) : ''}</span>
                 </div>
+                {range && (
+                  <div className="ops-range-banner">
+                    <span>
+                      Showing loaded entries from {timestamp(new Date(range.from).toISOString())} to{' '}
+                      {timestamp(new Date(range.to).toISOString())}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setRange(null)}>
+                      Clear time selection
+                    </Button>
+                  </div>
+                )}
                 <div className="log-result-toolbar">
                   <span>
-                    <strong>{data.matched}</strong> matches · {data.scanned} sampled lines ·{' '}
+                    <strong>{range ? entries.length : data.matched}</strong>{' '}
+                    {range ? 'visible entries' : 'matches'} · {data.scanned} sampled lines ·{' '}
                     {data.pods} pods
                   </span>
                   {data.truncated && <Badge tone="warning">Truncated</Badge>}
                   <span className="form-spacer" />
                   <label className="checkbox-row">
-                    <input
+                    <Input
                       type="checkbox"
                       checked={wrap}
                       onChange={(e) => setWrap(e.target.checked)}
@@ -295,7 +331,7 @@ export function Logs({
                   <Copy value={entries.map((entry) => entry.message).join('\n')} label="Copy" />
                   <Button size="sm" variant="ghost" onClick={exportLogs} disabled={!entries.length}>
                     <Icon name="external" size={13} />
-                    Export
+                    Download
                   </Button>
                 </div>
                 {data.warnings.map((warning) => (
@@ -304,47 +340,29 @@ export function Logs({
                 <div className={`log-results ${wrap ? 'log-wrap' : ''}`} role="log" aria-live="off">
                   {entries.length ? (
                     entries.map((entry, index) => (
-                      <details
-                        className="log-entry"
+                      <button
+                        type="button"
+                        className="ops-log-line"
                         key={`${entry.timestamp}-${entry.pod}-${index}`}
+                        onClick={() => setSelected(entry)}
+                        aria-label={`Inspect ${entry.severity || 'default'} log from ${entry.pod} at ${entry.timestamp || 'unknown time'}`}
                       >
-                        <summary>
-                          <time>
-                            {entry.timestamp
-                              ? new Date(entry.timestamp).toLocaleTimeString(undefined, {
-                                  hour12: false,
-                                })
-                              : '—'}
-                          </time>
-                          <span className={`log-severity severity-${entry.severity.toLowerCase()}`}>
-                            {entry.severity || 'DEFAULT'}
-                          </span>
-                          <code className="log-pod" title={entry.pod}>
-                            {entry.pod}
-                          </code>
-                          <span className="log-message">{entry.message}</span>
-                          <Icon name="down" size={12} />
-                        </summary>
-                        <div className="log-entry-detail">
-                          <dl>
-                            <div>
-                              <dt>Time</dt>
-                              <dd>{entry.timestamp || 'Unavailable'}</dd>
-                            </div>
-                            <div>
-                              <dt>Source</dt>
-                              <dd>
-                                {entry.service} / {entry.pod} / {entry.container}
-                              </dd>
-                            </div>
-                          </dl>
-                          <pre>{entry.message}</pre>
-                          {Object.keys(entry.fields).length > 0 && (
-                            <pre>{JSON.stringify(entry.fields, null, 2)}</pre>
-                          )}
-                          <Copy value={JSON.stringify(entry, null, 2)} label="Copy entry" />
-                        </div>
-                      </details>
+                        <time title={entry.timestamp}>
+                          {entry.timestamp
+                            ? new Date(entry.timestamp).toLocaleTimeString(undefined, {
+                                hour12: false,
+                              })
+                            : '—'}
+                        </time>
+                        <span className={`log-severity severity-${entry.severity.toLowerCase()}`}>
+                          {entry.severity || 'DEFAULT'}
+                        </span>
+                        <code className="log-pod" title={entry.pod}>
+                          {entry.pod}
+                        </code>
+                        <span className="log-message">{entry.message}</span>
+                        <Icon name="chevron" size={12} />
+                      </button>
                     ))
                   ) : (
                     <Empty
@@ -363,6 +381,65 @@ export function Logs({
           )}
         </>
       )}
+      <Dialog
+        sheet
+        open={Boolean(selected)}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null)
+        }}
+        title="Log entry"
+        description="Structured fields returned by the selected container."
+      >
+        {selected && (
+          <>
+            <div className="dialog-body ops-log-inspector">
+              <Badge>{selected.severity || 'DEFAULT'}</Badge>
+              <dl className="service-definition-list">
+                <div>
+                  <dt>Timestamp</dt>
+                  <dd className="mono">{selected.timestamp || 'Unavailable'}</dd>
+                </div>
+                <div>
+                  <dt>Service</dt>
+                  <dd>
+                    <code>{selected.service}</code>
+                    <Copy value={selected.service} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Pod</dt>
+                  <dd className="break-text">
+                    <code>{selected.pod}</code>
+                    <Copy value={selected.pod} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Container</dt>
+                  <dd>
+                    <code>{selected.container}</code>
+                  </dd>
+                </div>
+              </dl>
+              <h3>Message</h3>
+              <pre className="ops-inspector-code">{selected.message}</pre>
+              {Object.keys(selected.fields).length > 0 && (
+                <>
+                  <h3>Structured fields</h3>
+                  <pre className="ops-inspector-code">
+                    {JSON.stringify(selected.fields, null, 2)}
+                  </pre>
+                </>
+              )}
+            </div>
+            <div className="dialog-footer">
+              <Button variant="ghost" onClick={() => setSelected(null)}>
+                Close
+              </Button>
+              <Copy value={JSON.stringify(selected, null, 2)} label="Copy JSON" />
+            </div>
+          </>
+        )}
+      </Dialog>
     </section>
   )
 }

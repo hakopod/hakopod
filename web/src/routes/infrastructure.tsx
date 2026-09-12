@@ -1,5 +1,7 @@
+import { Input } from '../components/ui/input'
 import { lazy, Suspense, useState } from 'react'
-import { Badge, Card, Tooltip } from '@hakopod/ui'
+import { Badge, Tooltip } from '../components/ui/surfaces'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Dialog } from '../components/ui/dialog'
 import * as Tabs from '@radix-ui/react-tabs'
 import { useScope, canOpenHostTerminal } from '../lib/scope'
@@ -10,7 +12,7 @@ import { timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
-import { Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
 
 const NodeEnrollments = lazy(() => import('../components/node-controls'))
 const NodeAction = lazy(() =>
@@ -52,25 +54,37 @@ function Infrastructure() {
   const { tab } = Route.useSearch()
   const navigate = Route.useNavigate()
   return (
-    <>
+    <div className="ops-page">
       <PageHeader
         eyebrow="OPERATOR / INFRASTRUCTURE"
-        title="Cluster overview"
+        title="Infrastructure"
         description="Live capacity, node scheduling, registries, and public ingress."
         action={
-          scope.identity.owner && (
-            <Link className="button" to="/settings/host-access">
-              <Icon name="key" size={15} />
-              Host access
-            </Link>
-          )
+          <div className="toolbar-actions">
+            {scope.identity.owner && (
+              <Link className="button button-secondary" to="/settings/host-access">
+                <Icon name="key" size={15} />
+                Host access
+              </Link>
+            )}
+            {scope.identity.admin && (!tab || tab === 'nodes') && (
+              <Link
+                className="button button-primary"
+                to="/infrastructure"
+                search={{ tab: 'enrollment' }}
+              >
+                <Icon name="plus" size={15} />
+                Add node
+              </Link>
+            )}
+          </div>
         }
       />
       <Tabs.Root
         value={tab || 'nodes'}
         onValueChange={(value) => void navigate({ search: { tab: value } })}
       >
-        <Tabs.List className="tab-list">
+        <Tabs.List className="tab-list" aria-label="Infrastructure sections">
           <Tabs.Trigger className="tab-trigger" value="nodes">
             Nodes
           </Tabs.Trigger>
@@ -119,384 +133,299 @@ function Infrastructure() {
           </Tabs.Content>
         )}
       </Tabs.Root>
-    </>
+    </div>
   )
 }
 function Nodes() {
   const scope = useScope()
   const [action, setAction] = useState<{ node: Node; action: 'cordon' | 'drain' } | null>(null)
   const [search, setSearch] = useState('')
-  const [view, setView] = useState<'grid' | 'table'>('grid')
-  const [inspector, setInspector] = useState<Node | null>(null)
+  const [selectedNode, setSelectedNode] = useState('')
   const nodes = useQuery({
     queryKey: ['nodes'],
     queryFn: ({ signal }) => unwrap(client.GET('/nodes', { signal })),
     refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    gcTime: 0,
   })
   const items = nodes.data?.items || []
-  const filtered = items.filter((node) => node.name.includes(search))
+  const filtered = items.filter((node) => node.name.toLowerCase().includes(search.toLowerCase()))
+  const inspector = items.find((node) => node.name === selectedNode)
   const totalCPU = items.reduce((sum, node) => sum + cpu(node.allocatable_cpu), 0)
   const totalMemory = items.reduce((sum, node) => sum + memory(node.allocatable_memory), 0)
   return (
     <>
-      <div className="overview-stats">
-        <div className="overview-stat">
-          <div>
-            <span>Ready nodes</span>
-            <strong>
-              {nodes.data ? items.filter((node) => node.ready).length : '—'}
-              <small> / {nodes.data ? items.length : '—'}</small>
-            </strong>
-          </div>
-          <span className="stat-icon stat-green">
-            <Icon name="server" />
-          </span>
-          <p>Kubernetes readiness condition</p>
-        </div>
-        <div className="overview-stat">
-          <div>
-            <span>Allocatable CPU</span>
-            <strong>
-              {nodes.data && Number.isFinite(totalCPU)
-                ? totalCPU.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                : '—'}
-              <small> cores</small>
-            </strong>
-          </div>
-          <span className="stat-icon">
-            <Icon name="activity" />
-          </span>
-          <p>Capacity available to workloads</p>
-        </div>
-        <div className="overview-stat">
-          <div>
-            <span>Allocatable memory</span>
-            <strong>{nodes.data ? gib(totalMemory) : '—'}</strong>
-          </div>
-          <span className="stat-icon">
-            <Icon name="grid" />
-          </span>
-          <p>After system reservations</p>
-        </div>
-      </div>
-      <div className="section-toolbar">
+      <dl className="ops-summary ops-summary-three" aria-label="Cluster capacity">
         <div>
-          <h2>
-            Cluster nodes <span className="count-badge">{items.length}</span>
-          </h2>
-          <p>
-            {nodes.dataUpdatedAt
-              ? `Last refreshed ${timestamp(new Date(nodes.dataUpdatedAt).toISOString())}`
-              : 'Waiting for cluster observation'}
-          </p>
+          <dt>Ready nodes</dt>
+          <dd>
+            {nodes.data ? `${items.filter((node) => node.ready).length} / ${items.length}` : '—'}
+          </dd>
+          <small>Kubernetes readiness condition</small>
         </div>
-        <div className="view-switch" role="group" aria-label="Node display">
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Node grid"
-            aria-pressed={view === 'grid'}
-            onClick={() => setView('grid')}
-          >
-            <Icon name="grid" size={15} />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Node table"
-            aria-pressed={view === 'table'}
-            onClick={() => setView('table')}
-          >
-            <Icon name="menu" size={15} />
+        <div>
+          <dt>Allocatable CPU</dt>
+          <dd>
+            {nodes.data && Number.isFinite(totalCPU)
+              ? `${totalCPU.toLocaleString(undefined, { maximumFractionDigits: 2 })} cores`
+              : '—'}
+          </dd>
+          <small>Available to workloads</small>
+        </div>
+        <div>
+          <dt>Allocatable memory</dt>
+          <dd>{nodes.data ? gib(totalMemory) : '—'}</dd>
+          <small>After system reservations</small>
+        </div>
+      </dl>
+      <section className="ops-resource-list" aria-label="Cluster nodes">
+        <div className="resource-toolbar">
+          <div className="ops-search-input">
+            <Icon name="search" size={15} />
+            <Input
+              aria-label="Search nodes"
+              placeholder="Find a node…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          <span className="muted-text">{items.length} nodes</span>
+          <span className="form-spacer" />
+          <Button variant="ghost" size="sm" onClick={() => void nodes.refetch()}>
+            <Icon name="refresh" size={15} className={nodes.isFetching ? 'spin' : ''} />
+            Refresh
           </Button>
         </div>
-        <Button onClick={() => void nodes.refetch()}>
-          <Icon name="refresh" size={15} />
-          Refresh nodes
-        </Button>
-        <div className="search-input">
-          <Icon name="search" size={16} />
-          <input
-            aria-label="Search nodes"
-            placeholder="Find a node…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+        {nodes.isPending ? (
+          <Loading />
+        ) : nodes.error ? (
+          <ErrorState error={nodes.error} retry={() => void nodes.refetch()} />
+        ) : !items.length ? (
+          <Empty
+            icon="server"
+            title="No nodes reported"
+            description="Check the management API’s Kubernetes context and cluster connectivity. Nodes appear when the cluster returns them."
           />
-        </div>
-      </div>
-      {nodes.isPending ? (
-        <Loading />
-      ) : nodes.error ? (
-        <ErrorState error={nodes.error} retry={() => void nodes.refetch()} />
-      ) : !items.length ? (
-        <Empty
-          icon="server"
-          title="No nodes reported"
-          description="Check the management API’s Kubernetes context and cluster connectivity. Nodes will appear when the cluster returns them."
-        />
-      ) : view === 'grid' ? (
-        <div className="node-cockpit-grid">
-          {filtered.map((node) => (
-            <button
-              type="button"
-              className={`node-cockpit-card ${node.ready ? '' : 'node-attention'}`}
-              key={node.name}
-              onClick={() => setInspector(node)}
-              aria-label={`Inspect node ${node.name}`}
-            >
-              <div className="node-card-heading">
-                <Icon name="server" size={18} />
-                <strong>{node.name}</strong>
-                <Status value={node.ready ? 'ready' : 'not ready'} small />
-              </div>
-              <div className="node-card-role">
-                <span>
-                  {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture}
-                </span>
-                <Badge tone={node.unschedulable ? 'warning' : 'neutral'}>
-                  {node.unschedulable ? 'Cordoned' : 'Schedulable'}
-                </Badge>
-              </div>
-              <div
-                className="pod-count-grid"
-                aria-label={`${node.pods} pods reported; individual pod health is not represented here`}
-              >
-                {Array.from({ length: Math.min(80, node.pods) }, (_, index) => (
-                  <i key={index} />
+        ) : !filtered.length ? (
+          <Empty icon="search" title="No matching nodes" description="Try a different node name." />
+        ) : (
+          <div className="table-container ops-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node / state</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>Pods / GPUs</th>
+                  <th>Kubernetes</th>
+                  <th>
+                    <span className="sr-only">Node actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((node) => (
+                  <tr key={node.name}>
+                    <td>
+                      <div className="ops-object">
+                        <Status value={node.ready ? 'ready' : 'not ready'} small />
+                        <button
+                          type="button"
+                          className="ops-object-name"
+                          onClick={() => setSelectedNode(node.name)}
+                        >
+                          {node.name}
+                        </button>
+                      </div>
+                      <small className="ops-table-sub">
+                        {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture} ·{' '}
+                        {node.unschedulable ? 'Cordoned' : 'Schedulable'}
+                      </small>
+                    </td>
+                    <td>
+                      <span className="mono">
+                        {node.metrics.available && node.metrics.cpu_millicores !== undefined
+                          ? `${node.metrics.cpu_millicores.toFixed(0)} mCPU used`
+                          : 'Usage unavailable'}
+                      </span>
+                      <small className="ops-table-sub mono">
+                        {cpu(node.allocatable_cpu)} cores allocatable
+                      </small>
+                    </td>
+                    <td>
+                      <span className="mono">
+                        {node.metrics.available && node.metrics.memory_bytes !== undefined
+                          ? `${gib(node.metrics.memory_bytes)} used`
+                          : 'Usage unavailable'}
+                      </span>
+                      <small className="ops-table-sub mono">
+                        {gib(memory(node.allocatable_memory))} allocatable
+                      </small>
+                    </td>
+                    <td className="mono">
+                      {node.pods} pods
+                      <small className="ops-table-sub">{node.allocatable_gpu} GPUs</small>
+                    </td>
+                    <td>
+                      <code>{node.kubelet_version}</code>
+                    </td>
+                    <td>
+                      <Menu
+                        trigger={
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`Actions for ${node.name}`}
+                          >
+                            <span aria-hidden="true">···</span>
+                          </Button>
+                        }
+                      >
+                        <MenuItem onSelect={() => setSelectedNode(node.name)}>
+                          <Icon name="server" size={14} />
+                          Inspect node
+                        </MenuItem>
+                        {scope.identity.admin && !node.control_plane && (
+                          <>
+                            <MenuItem
+                              onSelect={() =>
+                                setAction({ node: structuredClone(node), action: 'cordon' })
+                              }
+                            >
+                              {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                            </MenuItem>
+                            <MenuItem
+                              destructive
+                              onSelect={() =>
+                                setAction({ node: structuredClone(node), action: 'drain' })
+                              }
+                            >
+                              Review drain
+                            </MenuItem>
+                          </>
+                        )}
+                      </Menu>
+                    </td>
+                  </tr>
                 ))}
-                {node.pods > 80 && <small>+{node.pods - 80}</small>}
-                {node.pods === 0 && <small>No pods reported</small>}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="resource-footnote">
+          <span>
+            {nodes.dataUpdatedAt
+              ? `Refreshed ${timestamp(new Date(nodes.dataUpdatedAt).toISOString())}`
+              : 'Waiting for cluster observation'}
+          </span>
+          <span>Capacity and usage are separate observations</span>
+        </div>
+      </section>
+      <Dialog
+        sheet
+        open={Boolean(inspector)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedNode('')
+        }}
+        title={inspector?.name || 'Node'}
+        description="Observed capacity, usage, and scheduling state."
+      >
+        {inspector && (
+          <>
+            <div className="dialog-body ops-node-inspector">
+              <div className="ops-object">
+                <Status value={inspector.ready ? 'ready' : 'not ready'} />
+                <Badge>{inspector.control_plane ? 'Control plane' : 'Worker'}</Badge>
+                <Copy value={inspector.name} label="Copy node name" />
               </div>
-              <div className="node-card-pods">
-                <span>{node.pods} pods</span>
-                <span>{node.kubelet_version}</span>
-              </div>
+              <dl className="service-definition-list">
+                <div>
+                  <dt>Architecture</dt>
+                  <dd className="mono">{inspector.architecture}</dd>
+                </div>
+                <div>
+                  <dt>Kubernetes</dt>
+                  <dd className="mono">{inspector.kubelet_version}</dd>
+                </div>
+                <div>
+                  <dt>Scheduling</dt>
+                  <dd>{inspector.unschedulable ? 'Disabled (cordoned)' : 'Enabled'}</dd>
+                </div>
+                <div>
+                  <dt>Allocatable CPU</dt>
+                  <dd className="mono">{cpu(inspector.allocatable_cpu)} cores</dd>
+                </div>
+                <div>
+                  <dt>Allocatable memory</dt>
+                  <dd className="mono">{gib(memory(inspector.allocatable_memory))}</dd>
+                </div>
+                <div>
+                  <dt>Pods / GPUs</dt>
+                  <dd className="mono">
+                    {inspector.pods} / {inspector.allocatable_gpu}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Metrics sampled</dt>
+                  <dd>{timestamp(inspector.metrics.sampled_at)}</dd>
+                </div>
+              </dl>
               <UsageBar
                 label="CPU"
-                used={node.metrics.available ? node.metrics.cpu_millicores : undefined}
-                total={cpu(node.allocatable_cpu) * 1000}
+                used={inspector.metrics.available ? inspector.metrics.cpu_millicores : undefined}
+                total={cpu(inspector.allocatable_cpu) * 1000}
               />
               <UsageBar
                 label="Memory"
-                used={node.metrics.available ? node.metrics.memory_bytes : undefined}
-                total={memory(node.allocatable_memory)}
+                used={inspector.metrics.available ? inspector.metrics.memory_bytes : undefined}
+                total={memory(inspector.allocatable_memory)}
               />
-              <div className="node-card-footer">
-                <span>
-                  {cpu(node.allocatable_cpu)} cores · {gib(memory(node.allocatable_memory))}
-                </span>
-                <span>
-                  {node.allocatable_gpu > 0 ? `${node.allocatable_gpu} GPU` : 'Inspect'}
-                  <Icon name="arrow" size={12} />
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="table-container">
-          <table className="node-table">
-            <thead>
-              <tr>
-                <th>Node</th>
-                <th>Status</th>
-                <th>Allocatable CPU</th>
-                <th>Allocatable memory</th>
-                <th>Current usage</th>
-                <th>GPUs</th>
-                <th>Pods</th>
-                <th>Kubernetes</th>
-                {scope.identity.admin && <th>Operations</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((node) => (
-                <tr key={node.name}>
-                  <td>
-                    <div className="node-name">
-                      <div className="node-icon">
-                        <Icon name="server" size={21} />
-                      </div>
-                      <div>
-                        <strong>{node.name}</strong>
-                        <span>
-                          {node.architecture}
-                          {node.control_plane ? ' · Control plane' : ' · Worker'}
-                          {node.unschedulable ? ' · Scheduling disabled' : ' · Schedulable'}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <Status value={node.ready ? 'ready' : 'not ready'} small />
-                  </td>
-                  <td>
-                    <strong className="mono">
-                      {cpu(node.allocatable_cpu).toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      })}
-                    </strong>
-                    <span className="muted-text"> cores</span>
-                  </td>
-                  <td>
-                    <strong className="mono">{gib(memory(node.allocatable_memory))}</strong>
-                  </td>
-                  <td>
-                    {node.metrics.available ? (
-                      <div className="node-usage">
-                        <strong>
-                          {node.metrics.cpu_millicores === undefined
-                            ? 'CPU unavailable'
-                            : `${node.metrics.cpu_millicores.toFixed(0)} mCPU`}
-                        </strong>
-                        <span>
-                          {node.metrics.memory_bytes === undefined
-                            ? 'Memory unavailable'
-                            : gib(node.metrics.memory_bytes)}
-                        </span>
-                        <small>{timestamp(node.metrics.sampled_at)}</small>
-                      </div>
-                    ) : (
-                      <span className="muted-text" title={node.metrics.reason}>
-                        Unavailable
-                      </span>
-                    )}
-                  </td>
-                  <td className="mono">{node.allocatable_gpu}</td>
-                  <td className="mono">{node.pods}</td>
-                  <td>
-                    <code className="version-label">{node.kubelet_version}</code>
-                  </td>
-                  {scope.identity.admin && (
-                    <td>
-                      {node.control_plane ? (
-                        <span className="field-help">Operator managed</span>
-                      ) : (
-                        <div className="toolbar-actions">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              setAction({ node: structuredClone(node), action: 'cordon' })
-                            }
-                          >
-                            {node.unschedulable ? 'Uncordon' : 'Cordon'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              setAction({ node: structuredClone(node), action: 'drain' })
-                            }
-                          >
-                            Drain
-                          </Button>
-                        </div>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!filtered.length && (
-            <Empty
-              icon="search"
-              title="No matching nodes"
-              description="Try a different node name."
-            />
-          )}
-        </div>
-      )}
-      {inspector && (
-        <Dialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setInspector(null)
-          }}
-          title={inspector.name}
-          description="Observed node capacity and scheduling state."
-        >
-          <div className="dialog-body">
-            <Card className="node-inspector-metrics">
-              <Status value={inspector.ready ? 'ready' : 'not ready'} />
-              <Badge>{inspector.control_plane ? 'Control plane' : 'Worker'}</Badge>
-              <Badge>{inspector.architecture}</Badge>
-            </Card>
-            <dl className="service-definition-list">
-              <div>
-                <dt>Kubernetes</dt>
-                <dd>{inspector.kubelet_version}</dd>
-              </div>
-              <div>
-                <dt>Scheduling</dt>
-                <dd>{inspector.unschedulable ? 'Disabled (cordoned)' : 'Enabled'}</dd>
-              </div>
-              <div>
-                <dt>Allocatable CPU</dt>
-                <dd>{cpu(inspector.allocatable_cpu)} cores</dd>
-              </div>
-              <div>
-                <dt>Allocatable memory</dt>
-                <dd>{gib(memory(inspector.allocatable_memory))}</dd>
-              </div>
-              <div>
-                <dt>Pods / GPUs</dt>
-                <dd>
-                  {inspector.pods} / {inspector.allocatable_gpu}
-                </dd>
-              </div>
-              <div>
-                <dt>Metrics sampled</dt>
-                <dd>{timestamp(inspector.metrics.sampled_at)}</dd>
-              </div>
-            </dl>
-            {!inspector.metrics.available && (
-              <Note>{inspector.metrics.reason || 'Metrics are unavailable for this node.'}</Note>
-            )}
-          </div>
-          <div className="dialog-footer">
-            {canOpenHostTerminal(scope.identity, inspector.name) && (
-              <Link
-                className="button button-primary"
-                to="/infrastructure/nodes/$node/terminal"
-                params={{ node: inspector.name }}
-              >
-                <Icon name="terminal" size={14} />
-                Host terminal
-              </Link>
-            )}
-            {scope.identity.admin && !inspector.control_plane && (
-              <>
+              {!inspector.metrics.available && (
+                <Note>{inspector.metrics.reason || 'Metrics are unavailable for this node.'}</Note>
+              )}
+              {inspector.control_plane && (
+                <Note>
+                  Control plane scheduling is operator managed. Worker operations appear on worker
+                  nodes.
+                </Note>
+              )}
+            </div>
+            <div className="dialog-footer">
+              <Button variant="ghost" onClick={() => setSelectedNode('')}>
+                Close
+              </Button>
+              {scope.identity.admin && !inspector.control_plane && (
                 <Button
                   onClick={() => {
                     setAction({ node: inspector, action: 'cordon' })
-                    setInspector(null)
+                    setSelectedNode('')
                   }}
                 >
                   {inspector.unschedulable ? 'Uncordon' : 'Cordon'}
                 </Button>
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    setAction({ node: inspector, action: 'drain' })
-                    setInspector(null)
-                  }}
+              )}
+              {canOpenHostTerminal(scope.identity, inspector.name) && (
+                <Link
+                  className="button button-primary"
+                  to="/infrastructure/nodes/$node/terminal"
+                  params={{ node: inspector.name }}
                 >
-                  Review drain
-                </Button>
-              </>
-            )}
-            <Button onClick={() => setInspector(null)}>Close</Button>
-          </div>
-        </Dialog>
-      )}
+                  <Icon name="terminal" size={14} />
+                  Open terminal
+                </Link>
+              )}
+            </div>
+          </>
+        )}
+      </Dialog>
       <div className="infrastructure-notes">
         <Note>
-          Allocatable values describe workload capacity. Inspect individual services for observed
-          pod CPU, memory, allocations, and events.
+          Allocatable values describe workload capacity. Service pages show observed pod CPU,
+          memory, allocations, and events.
         </Note>
         <Note>
-          Adding worker nodes expands workload capacity. It does not make the Kubernetes control
-          plane, database, or public ingress highly available.
+          Adding workers expands workload capacity. It does not make the control plane, database, or
+          public ingress highly available.
         </Note>
       </div>
       {action && (

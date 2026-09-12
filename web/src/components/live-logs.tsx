@@ -1,7 +1,9 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
 import { Button } from './ui/button'
-import { Empty, Note } from './shared'
+import { Copy, Empty, Note } from './shared'
 import { message } from '../lib/api'
 
 export default function LiveLogs({
@@ -14,6 +16,7 @@ export default function LiveLogs({
   initialService?: string
 }) {
   const [service, setService] = useState(initialService || services[0] || '')
+  const [wrap, setWrap] = useState(false)
   const [follow, setFollow] = useState(false)
   const [visible, setVisible] = useState(true)
   const [restart, setRestart] = useState(0)
@@ -105,6 +108,14 @@ export default function LiveLogs({
   useEffect(() => {
     if (follow) end.current?.scrollIntoView({ block: 'nearest' })
   }, [text, follow])
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `hakopod-${service}-logs.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
   if (!services.length)
     return (
       <Empty
@@ -114,11 +125,11 @@ export default function LiveLogs({
       />
     )
   return (
-    <div>
+    <div className="ops-live-logs">
       <div className="logs-toolbar">
         <div className="inline-field">
           <Icon name="box" size={15} />
-          <select
+          <Select
             aria-label="Log service"
             value={service}
             onChange={(event) => setService(event.target.value)}
@@ -126,14 +137,26 @@ export default function LiveLogs({
             {services.map((name) => (
               <option key={name}>{name}</option>
             ))}
-          </select>
+          </Select>
         </div>
         <span className={`log-connection ${state === 'Live' && visible ? 'log-connected' : ''}`}>
           <span className="status-dot" />
           {visible ? state : 'Paused while tab is hidden'}
         </span>
         <div className="form-spacer" />
-        <Button size="sm" onClick={() => setFollow((value) => !value)}>
+        <label className="checkbox-row">
+          <Input
+            type="checkbox"
+            checked={wrap}
+            onChange={(event) => setWrap(event.target.checked)}
+          />
+          Wrap
+        </label>
+        <Copy value={text} label="Copy" />
+        <Button size="sm" variant="ghost" disabled={!text} onClick={download}>
+          Download
+        </Button>
+        <Button variant="primary" size="sm" onClick={() => setFollow((value) => !value)}>
           <Icon name={follow ? 'pause' : 'play'} size={14} />
           {follow ? 'Pause live' : 'Follow live'}
         </Button>
@@ -145,7 +168,7 @@ export default function LiveLogs({
           <Icon name="refresh" size={15} />
         </Button>
       </div>
-      <div className="log-window" role="log" aria-live="off">
+      <div className={`log-window ${wrap ? 'ops-log-wrap' : ''}`} role="log" aria-live="off">
         {error ? (
           <div className="log-error">
             <Icon name="alert" size={17} />

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Pipeline, type PipelineStage } from '@hakopod/hatch-ui/blocks/pipeline'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Plan } from '../lib/types'
-import { activeDeployment, message, timestamp } from '../lib/api'
+import { activeDeployment, message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
@@ -16,6 +19,8 @@ function DeploymentDetail() {
   const { deploymentId } = Route.useParams()
   const scope = useScope()
   const queryClient = useQueryClient()
+  const [stage, setStage] = useState('reconcile')
+  const [tab, setTab] = useState('events')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -25,6 +30,7 @@ function DeploymentDetail() {
       unwrap(client.GET('/deployments/{id}', { signal, params: { path: { id: deploymentId } } })),
     refetchInterval: (query) => (activeDeployment(query.state.data?.status) ? 2500 : false),
     gcTime: 0,
+    refetchIntervalInBackground: false,
   })
   const application = useQuery({
     queryKey: ['application', deployment.data?.application_id],
@@ -59,6 +65,9 @@ function DeploymentDetail() {
     return <ErrorState error={deployment.error} retry={() => void deployment.refetch()} />
   const release = deployment.data
   const previous = previousDeployment.data
+  const recentRevisions = [...(application.data?.deployments || [])]
+  if (!recentRevisions.some((run) => run.id === release.id)) recentRevisions.push(release)
+  recentRevisions.sort((a, b) => b.revision - a.revision)
   const changedFields: Plan['changes'] = []
   if (previous || release.revision === 1) {
     const serviceNames = new Set([
@@ -101,34 +110,87 @@ function DeploymentDetail() {
           ),
         )
       : null
+  const imageResolved =
+    Boolean(release.resolved_spec) ||
+    (release.events || []).some((event) => event.type === 'resolved')
+  const stages: PipelineStage[] = [
+    {
+      id: 'accepted',
+      label: 'Accepted',
+      state: 'success',
+      description: `Revision ${release.revision} persisted`,
+    },
+    {
+      id: 'images',
+      label: 'Images',
+      state: imageResolved ? 'success' : 'neutral',
+      description: imageResolved ? 'Digests resolved' : 'No resolution recorded',
+    },
+    {
+      id: 'reconcile',
+      label: 'Reconcile',
+      state:
+        release.status === 'running'
+          ? 'running'
+          : release.status === 'succeeded'
+            ? 'success'
+            : release.status === 'failed'
+              ? 'error'
+              : 'neutral',
+      description: release.status,
+    },
+    {
+      id: 'result',
+      label: 'Result',
+      state:
+        release.status === 'succeeded'
+          ? 'success'
+          : release.status === 'failed'
+            ? 'error'
+            : 'neutral',
+      description: release.finished_at ? release.status : 'Not finished',
+    },
+  ]
+  const stageContext: Record<string, string> = {
+    accepted: `Accepted ${timestamp(release.created_at)}. This immutable revision contains ${Object.keys(release.spec.services).length} services.`,
+    images: imageResolved
+      ? 'The recorded resolved specification pins container images to digests. Inspect Services to copy the exact images.'
+      : 'No resolved specification has been recorded for this revision yet.',
+    reconcile: release.started_at
+      ? `Started ${timestamp(release.started_at)}. Events below record workload changes, readiness, and any recovery.`
+      : 'This deployment has not recorded a start time.',
+    result: release.finished_at
+      ? `Finished ${timestamp(release.finished_at)}${elapsed !== null ? ` after ${elapsed}s` : ''}. The recorded result is ${release.status}.`
+      : 'A final result has not been recorded yet.',
+  }
   return (
-    <>
+    <div className="ops-page ops-deployment-page">
       <Link
         to="/applications/$applicationId"
         params={{ applicationId: release.application_id }}
+        search={{ tab: 'deployments' }}
         className="back-link"
       >
         <Icon name="back" size={14} />
-        {application.data?.name || 'Application'}
+        {application.data?.name || 'Application'} / Deployments
       </Link>
       <div className="application-heading">
-        <div className="app-symbol app-symbol-large">
-          <Icon name="branch" size={27} />
-        </div>
         <div>
           <div className="title-row">
+            <Status value={release.status} />
             <h1>
               Deployment <span className="muted-text">r{release.revision}</span>
             </h1>
-            <Status value={release.status} />
           </div>
           <div className="application-metadata">
             <code>{release.id}</code>
             <Copy value={release.id} />
-            <span>{timestamp(release.created_at)}</span>
+            <time dateTime={release.created_at} title={release.created_at}>
+              {relative(release.created_at)}
+            </time>
           </div>
         </div>
-        <div className="form-spacer" />
+        <span className="form-spacer" />
         {activeDeployment(release.status) && scope.can('deployments:write') && (
           <Button onClick={() => setCancelOpen(true)}>
             <Icon name="x" size={15} />
@@ -137,6 +199,7 @@ function DeploymentDetail() {
         )}
         <Button
           size="icon"
+          variant="ghost"
           aria-label="Refresh deployment"
           onClick={() => {
             void deployment.refetch()
@@ -155,108 +218,126 @@ function DeploymentDetail() {
           </div>
         </div>
       )}
-      <div className="deployment-summary">
-        <div>
-          <span>APPLICATION</span>
-          <Link
-            to="/applications/$applicationId"
-            params={{ applicationId: release.application_id }}
-          >
-            {application.data?.name || release.spec?.name}
-            <Icon name="chevron" size={13} />
-          </Link>
-        </div>
-        <div>
-          <span>STARTED</span>
-          <strong>{release.started_at ? timestamp(release.started_at) : 'Waiting in queue'}</strong>
-        </div>
-        <div>
-          <span>DURATION</span>
-          <strong>
-            {elapsed !== null
-              ? `${elapsed}s`
-              : activeDeployment(release.status)
-                ? 'In progress'
-                : '—'}
-          </strong>
-        </div>
-        <div>
-          <span>SERVICES</span>
-          <strong>{Object.keys(release.spec?.services || {}).length} in this revision</strong>
-        </div>
-      </div>
-      <div className="deployment-columns">
-        <div>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Deployment timeline</h2>
-              <span className="label-chip">
-                <Icon name="activity" size={12} />
-                {activeDeployment(release.status) ? 'Auto-refreshing' : 'Recorded events'}
-              </span>
-            </div>
-            <div className="timeline">
-              <div className="timeline-event">
-                <span className="timeline-icon">
-                  <Icon name="check" size={13} />
-                </span>
-                <div>
-                  <h3>Deployment accepted</h3>
-                  <p>Revision {release.revision} was persisted by the management API.</p>
-                  <time>{timestamp(release.created_at)}</time>
-                </div>
+      {release.cancel_requested && (
+        <Note>Cancellation requested. Waiting for the reconciler to reach a safe boundary.</Note>
+      )}
+      <div className="ops-run-layout">
+        <aside className="ops-run-list" aria-label="Deployment history">
+          <div className="ops-list-heading">Recent revisions</div>
+          {recentRevisions.map((run) => (
+            <Link
+              key={run.id}
+              to="/deployments/$deploymentId"
+              params={{ deploymentId: run.id }}
+              className={`ops-run-card interactive ${run.id === release.id && activeDeployment(run.status) ? 'hatch' : ''}`}
+              data-selected={run.id === release.id}
+              aria-current={run.id === release.id ? 'page' : undefined}
+            >
+              <Brackets />
+              <div className="ops-object">
+                <Status value={run.status} small />
+                <span className="mono">r{run.revision}</span>
               </div>
-              {(release.events || []).slice(-200).map((event, index) => (
-                <div
-                  className={`timeline-event ${/fail|error/.test(event.type) ? 'timeline-error' : ''}`}
-                  key={event.id || index}
-                >
-                  <span className="timeline-icon">
-                    <Icon
-                      name={
-                        /fail|error/.test(event.type)
-                          ? 'x'
-                          : /success|ready|complete/.test(event.type)
-                            ? 'check'
-                            : 'activity'
-                      }
-                      size={13}
-                    />
-                  </span>
-                  <div>
-                    <h3>
-                      {event.service && <span className="event-service">{event.service}</span>}
-                      {event.type.replaceAll('_', ' ')}
-                    </h3>
-                    <p>{event.message}</p>
-                    <time>{timestamp(event.time)}</time>
-                  </div>
-                </div>
-              ))}
-              {!(release.events || []).length && (
-                <div className="timeline-wait">
-                  <span className="timeline-icon">
-                    <Icon name="clock" size={13} />
-                  </span>
+              <code>{run.id.slice(0, 12)}</code>
+              <time dateTime={run.created_at} title={run.created_at}>
+                {relative(run.created_at)}
+              </time>
+            </Link>
+          ))}
+          {application.error && <p className="field-help">Application history is unavailable.</p>}
+        </aside>
+        <div className="ops-run-detail">
+          <Pipeline stages={stages} active={stage} onStageChange={setStage} />
+          <div className="ops-stage-context" role="status">
+            {stageContext[stage]}
+          </div>
+          <Tabs.Root value={tab} onValueChange={setTab}>
+            <Tabs.List className="tab-list" aria-label="Deployment inspection">
+              <Tabs.Trigger className="tab-trigger" value="events">
+                Events
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="changes">
+                Changes
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="services">
+                Services
+              </Tabs.Trigger>
+            </Tabs.List>
+            <Tabs.Content className="tab-content" value="events">
+              <div className="section-toolbar">
+                <div>
+                  <h2>Recorded events</h2>
                   <p>
+                    {activeDeployment(release.status)
+                      ? 'Observing the reconciler every 2.5 seconds.'
+                      : 'Events retained with this release.'}
+                  </p>
+                </div>
+                <Copy
+                  value={(release.events || [])
+                    .slice(-200)
+                    .map(
+                      (event) =>
+                        `${event.time} ${event.type} ${event.service || ''} ${event.message}`,
+                    )
+                    .join('\n')}
+                  label="Copy events"
+                />
+              </div>
+              <div className="ops-deployment-events" role="log" aria-live="off">
+                <div className="ops-deployment-event">
+                  <time title={release.created_at}>{timestamp(release.created_at)}</time>
+                  <span className="ops-event-type">
+                    <Icon name="check" size={14} />
+                    accepted
+                  </span>
+                  <span>Revision {release.revision} persisted by the management API.</span>
+                </div>
+                {(release.events || []).slice(-200).map((event, index) => (
+                  <div
+                    className={`ops-deployment-event ${/fail|error/.test(event.type) ? 'ops-event-error' : ''}`}
+                    key={event.id || index}
+                  >
+                    <time title={event.time}>{timestamp(event.time)}</time>
+                    <span className="ops-event-type">
+                      <Icon
+                        name={
+                          /fail|error/.test(event.type)
+                            ? 'alert'
+                            : /success|ready|complete/.test(event.type)
+                              ? 'check'
+                              : 'activity'
+                        }
+                        size={14}
+                      />
+                      {event.type.replaceAll('_', ' ')}
+                    </span>
+                    <span>
+                      {event.service && <code className="ops-event-service">{event.service}</code>}
+                      {event.message}
+                    </span>
+                  </div>
+                ))}
+                {!(release.events || []).length && (
+                  <p className="ops-event-empty">
                     {activeDeployment(release.status)
                       ? 'Waiting for the reconciler’s first event.'
                       : 'No additional events were recorded.'}
                   </p>
+                )}
+              </div>
+            </Tabs.Content>
+            <Tabs.Content className="tab-content" value="changes">
+              <div className="section-toolbar">
+                <div>
+                  <h2>Configuration diff</h2>
+                  <p>
+                    {release.revision === 1
+                      ? 'Initial release'
+                      : `r${release.revision - 1} → r${release.revision}`}
+                  </p>
                 </div>
-              )}
-            </div>
-          </section>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Configuration diff</h2>
-              <span className="muted-text">
-                {release.revision === 1
-                  ? 'Initial release'
-                  : `r${release.revision - 1} → r${release.revision}`}
-              </span>
-            </div>
-            <div className="panel-body">
+              </div>
               {previousDeployment.isFetching && !previous ? (
                 <Loading rows={1} />
               ) : previousDeployment.error ? (
@@ -269,63 +350,69 @@ function DeploymentDetail() {
               ) : (
                 <Note>
                   The previous revision is outside the loaded history. Open the application’s
-                  configuration to inspect its current canonical specification.
+                  configuration to inspect its current specification.
                 </Note>
               )}
-            </div>
-          </section>
+            </Tabs.Content>
+            <Tabs.Content className="tab-content" value="services">
+              <div className="section-toolbar">
+                <div>
+                  <h2>Service results</h2>
+                  <p>Requested configuration and observations recorded for this revision.</p>
+                </div>
+              </div>
+              <div className="table-container ops-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Service / state</th>
+                      <th>Image</th>
+                      <th>Replicas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(release.spec.services).map(([name, service]) => {
+                      const result = results.find((item) => item.name === name)
+                      const resolved = release.resolved_spec?.services?.[name]?.image
+                      return (
+                        <tr key={name}>
+                          <td>
+                            <div className="ops-object">
+                              <Status value={result?.status || 'not observed'} small />
+                              <Link
+                                className="ops-object-name"
+                                to="/applications/$applicationId"
+                                params={{ applicationId: release.application_id }}
+                                search={{ service: name }}
+                              >
+                                {name}
+                              </Link>
+                            </div>
+                            {result?.message && (
+                              <small className="ops-table-sub">{result.message}</small>
+                            )}
+                          </td>
+                          <td>
+                            <code className="ops-image" title={resolved || service.image}>
+                              {resolved || service.image}
+                            </code>
+                            <div className="ops-object-id">
+                              <small>{resolved ? 'Resolved image' : 'Requested image'}</small>
+                              <Copy value={resolved || service.image} label="Copy image" />
+                            </div>
+                          </td>
+                          <td className="mono">
+                            {result ? `${result.ready} / ${result.desired} ready` : 'Not observed'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Tabs.Content>
+          </Tabs.Root>
         </div>
-        <aside>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Service results</h2>
-              <Icon name="box" size={16} />
-            </div>
-            <div className="release-services">
-              {Object.entries(release.spec?.services || {}).map(([name, service]) => {
-                const result = results.find((item) => item.name === name)
-                const resolved = release.resolved_spec?.services?.[name]?.image
-                return (
-                  <div className="release-service" key={name}>
-                    <div>
-                      <strong>
-                        <Icon name={service.public ? 'globe' : 'box'} size={15} />
-                        {name}
-                      </strong>
-                      <Status value={result?.status || 'not observed'} small />
-                    </div>
-                    <span className="release-image-label">
-                      {resolved ? 'RESOLVED IMAGE' : 'REQUESTED IMAGE'}
-                    </span>
-                    <code>{resolved || service.image}</code>
-                    {resolved && <Copy value={resolved} label="Copy digest" />}
-                    {result && (
-                      <p>
-                        {result.ready} / {result.desired} replicas ready
-                      </p>
-                    )}
-                    {result?.message && <div className="service-message">{result.message}</div>}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-          <div className="deployment-explainer">
-            <Icon name="shield" size={20} />
-            <h3>A release you can trace.</h3>
-            <p>
-              Image digests and service configuration belong to this immutable revision. Rollback
-              creates another recorded deployment.
-            </p>
-            <Link
-              to="/applications/$applicationId"
-              params={{ applicationId: release.application_id }}
-            >
-              View application
-              <Icon name="arrow" size={14} />
-            </Link>
-          </div>
-        </aside>
       </div>
       <Dialog
         open={cancelOpen}
@@ -372,6 +459,6 @@ function DeploymentDetail() {
           </Button>
         </div>
       </Dialog>
-    </>
+    </div>
   )
 }

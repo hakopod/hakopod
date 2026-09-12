@@ -1,15 +1,15 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import type { Application, DeploymentSummary } from '../lib/types'
-import { message, relative, timestamp } from '../lib/api'
+import { APIError, message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
-import { Dialog } from '../components/ui/dialog'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { Logs } from '../components/logs'
 const ServiceDetail = lazy(() =>
@@ -62,7 +62,7 @@ function ApplicationDetail() {
   const { service: selectedService, tab: selectedTab, pod: selectedPod } = Route.useSearch()
   const scope = useScope()
   const navigate = useNavigate()
-  const [tab, setTab] = useState(selectedTab || 'topology')
+  const [tab, setTab] = useState(selectedTab || 'services')
   useEffect(() => {
     if (selectedTab) setTab(selectedTab)
   }, [selectedTab])
@@ -97,7 +97,7 @@ function ApplicationDetail() {
       </Suspense>
     )
   return (
-    <>
+    <div className="ops-page">
       <Suspense fallback={null}>
         <SampleBanner applicationId={app.id} />
       </Suspense>
@@ -111,10 +111,12 @@ function ApplicationDetail() {
         </div>
         <div>
           <div className="title-row">
-            <h1>{app.name}</h1>
             <Status value={app.observed?.status || 'not observed'} />
+            <h1>{app.name}</h1>
           </div>
           <div className="application-metadata">
+            <code>{app.id}</code>
+            <Copy value={app.id} />
             <span>
               <Icon name="branch" size={13} />
               Revision {app.revision} · {app.status}
@@ -129,7 +131,11 @@ function ApplicationDetail() {
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
           <Button
-            variant="primary"
+            variant={
+              ['logs', 'terminal', 'configuration', 'source', 'secrets'].includes(tab)
+                ? 'secondary'
+                : 'primary'
+            }
             onClick={() =>
               void navigate({
                 to: '/applications/$applicationId/configure',
@@ -170,8 +176,8 @@ function ApplicationDetail() {
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="tab-list" aria-label="Application sections">
           {[
-            ['topology', 'network', 'Topology'],
             ['services', 'box', 'Services'],
+            ['topology', 'network', 'Topology'],
             ['deployments', 'branch', 'Deployments'],
             ['logs', 'activity', 'Logs'],
             ['terminal', 'terminal', 'Terminal'],
@@ -200,102 +206,123 @@ function ApplicationDetail() {
           <div className="section-toolbar">
             <div>
               <h2>Services</h2>
-              <p>One application. Connected services. Independent health.</p>
+              <p>
+                Observed state and desired configuration. Open a service for pods, logs, and
+                resource usage.
+              </p>
             </div>
             <span className="label-chip">
               <Icon name="network" size={12} />
               Application private network
             </span>
           </div>
-          <div className="service-detail-grid">
-            {Object.entries(app.spec.services).map(([name, service]) => {
-              const runtime = observed.find((status) => status.name === name)
-              return (
-                <div className="service-detail-card service-card-link" key={name}>
-                  <Link
-                    to="/applications/$applicationId"
-                    params={{ applicationId: app.id }}
-                    search={{ service: name }}
-                    className="service-card-target"
-                    aria-label={`Open ${name} service`}
-                  />
-                  <div className="service-detail-header">
-                    <div className="service-mini-icon">
-                      <Icon
-                        name={service.public ? 'globe' : service.port ? 'box' : 'terminal'}
-                        size={20}
-                      />
-                    </div>
-                    <h3>{name}</h3>
-                    <span className="form-spacer" />
-                    <Status value={runtime?.status || 'not observed'} small />
-                  </div>
-                  <div className="service-detail-image">
-                    <span>CONTAINER IMAGE</span>
-                    <code title={runtime?.image || service.image}>
-                      {runtime?.image || service.image}
-                    </code>
-                  </div>
-                  <div className="service-facts">
-                    <div>
-                      <span>Exposure</span>
-                      <strong>
-                        <Icon name={service.public ? 'globe' : 'lock'} size={13} />
-                        {service.public ? 'Public HTTP' : service.port ? 'Private' : 'Worker'}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Replicas</span>
-                      <strong>
+          <div className="table-container ops-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Image</th>
+                  <th>Replicas</th>
+                  <th>Exposure</th>
+                  <th>Profile</th>
+                  <th>
+                    <span className="sr-only">Service actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(app.spec.services).map(([name, service]) => {
+                  const runtime = observed.find((status) => status.name === name)
+                  return (
+                    <tr key={name}>
+                      <td>
+                        <div className="ops-object">
+                          <Status value={runtime?.status || 'not observed'} small />
+                          <Link
+                            className="ops-object-name"
+                            to="/applications/$applicationId"
+                            params={{ applicationId: app.id }}
+                            search={{ service: name }}
+                          >
+                            {name}
+                          </Link>
+                        </div>
+                        <div className="ops-object-id">
+                          <code>{name}</code>
+                          <Copy value={name} />
+                        </div>
+                        {runtime?.message && (
+                          <small className="ops-table-sub">{runtime.message}</small>
+                        )}
+                      </td>
+                      <td>
+                        <code className="ops-image" title={runtime?.image || service.image}>
+                          {runtime?.image || service.image}
+                        </code>
+                        <small className="ops-table-sub">
+                          {runtime?.image ? 'Observed image' : 'Requested image'}
+                        </small>
+                      </td>
+                      <td className="mono">
                         {runtime
                           ? `${runtime.ready} / ${runtime.desired} ready`
                           : `${service.replicas || 1} desired`}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Resource profile</span>
-                      <strong>{service.size || 'small'}</strong>
-                    </div>
-                    <div>
-                      <span>Readiness</span>
-                      <strong className="mono">
-                        {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
-                      </strong>
-                    </div>
-                  </div>
-                  {runtime?.message && (
-                    <div className="service-message">
-                      <Icon name="info" size={14} />
-                      {runtime.message}
-                    </div>
-                  )}
-                  <div className="service-detail-footer">
-                    {runtime?.url && /^https?:\/\//.test(runtime.url) ? (
-                      <a href={runtime.url} target="_blank" rel="noreferrer">
-                        <Icon name="external" size={13} />
-                        Open service
-                      </a>
-                    ) : (
-                      <span>
-                        <Icon name="lock" size={13} />
-                        {service.port ? `${name}:${service.port}` : 'No inbound port'}
-                      </span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setLogService(name)
-                        setTab('logs')
-                      }}
-                    >
-                      <Icon name="terminal" size={13} />
-                      View logs
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
+                      </td>
+                      <td>
+                        {service.public ? 'Public HTTP' : service.port ? 'Private' : 'Worker'}
+                        <small className="ops-table-sub mono">
+                          {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
+                        </small>
+                      </td>
+                      <td className="mono">{service.size || 'small'}</td>
+                      <td>
+                        <Menu
+                          trigger={
+                            <Button variant="ghost" size="icon" aria-label={`Actions for ${name}`}>
+                              <span aria-hidden="true">···</span>
+                            </Button>
+                          }
+                        >
+                          <MenuItem
+                            onSelect={() =>
+                              void navigate({
+                                to: '/applications/$applicationId',
+                                params: { applicationId: app.id },
+                                search: { service: name },
+                              })
+                            }
+                          >
+                            <Icon name="box" size={14} />
+                            Inspect service
+                          </MenuItem>
+                          {scope.can('logs:read') && (
+                            <MenuItem
+                              onSelect={() => {
+                                setLogService(name)
+                                setTab('logs')
+                              }}
+                            >
+                              <Icon name="terminal" size={14} />
+                              View logs
+                            </MenuItem>
+                          )}
+                          {runtime?.url && /^https?:\/\//.test(runtime.url) && (
+                            <MenuItem
+                              onSelect={() =>
+                                window.open(runtime.url, '_blank', 'noopener,noreferrer')
+                              }
+                            >
+                              <Icon name="external" size={14} />
+                              Open endpoint
+                            </MenuItem>
+                          )}
+                        </Menu>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
           {!observed.length && (
             <Note>
@@ -338,7 +365,7 @@ function ApplicationDetail() {
               <p>Map verified hostnames to the application's public HTTP services.</p>
             </div>
             <Link
-              className="button button-primary"
+              className="button button-secondary"
               to="/applications/$applicationId/domains"
               params={{ applicationId }}
             >
@@ -440,7 +467,6 @@ function ApplicationDetail() {
               </Button>
               {scope.can('deployments:write') && (
                 <Button
-                  variant="primary"
                   size="sm"
                   onClick={() =>
                     void navigate({
@@ -486,43 +512,95 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
       </Tabs.Root>
-    </>
+    </div>
   )
 }
 
 function DeploymentHistory({ application }: { application: Application }) {
   const scope = useScope()
-  const deployments = application.deployments || []
-  const [rollback, setRollback] = useState<DeploymentSummary | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
   const navigate = useNavigate()
-  const [requestKey, setRequestKey] = useState('')
+  const deployments = application.deployments || []
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const rollbackRequest = useRef<{
+    applicationId: string
+    revision: number
+    expectedRevision: number
+    key: string
+    pending: boolean
+  } | null>(null)
+  async function rollback(deployment: DeploymentSummary) {
+    if (rollbackRequest.current?.pending) return
+    // Retain the same request after a lost response, even if the app refreshes.
+    if (
+      rollbackRequest.current?.applicationId !== application.id ||
+      rollbackRequest.current.revision !== deployment.revision
+    ) {
+      rollbackRequest.current = {
+        applicationId: application.id,
+        revision: deployment.revision,
+        expectedRevision: application.revision,
+        key: crypto.randomUUID(),
+        pending: false,
+      }
+    }
+    const request = rollbackRequest.current
+    request.pending = true
+    setBusy(deployment.id)
+    setError('')
+    try {
+      const accepted = await unwrap(
+        client.POST('/applications/{id}/rollback', {
+          params: {
+            path: { id: request.applicationId },
+            header: { 'Idempotency-Key': request.key },
+          },
+          body: { revision: request.revision, expected_revision: request.expectedRevision },
+        }),
+      )
+      void navigate({ to: '/deployments/$deploymentId', params: { deploymentId: accepted.id } })
+    } catch (err) {
+      if (err instanceof APIError && [400, 403, 404, 409, 422].includes(err.status))
+        rollbackRequest.current = null
+      setError(message(err))
+    } finally {
+      request.pending = false
+      setBusy('')
+    }
+  }
   return (
     <>
       <div className="section-toolbar">
         <div>
           <h2>Deployment history</h2>
-          <p>Every release is an immutable application revision.</p>
+          <p>
+            Immutable revisions, most recent first. Open a release for events and its configuration
+            diff.
+          </p>
         </div>
-        <span className="muted-text">Most recent first</span>
       </div>
+      {error && (
+        <div className="inline-error" role="alert">
+          {error}
+        </div>
+      )}
       {!deployments.length ? (
         <Empty
           icon="branch"
           title="No deployments recorded"
-          description="Accepted releases will appear here with their status and service results."
+          description="Accepted releases appear here with their status and service results."
         />
       ) : (
-        <div className="table-container">
+        <div className="table-container ops-table">
           <table>
             <thead>
               <tr>
-                <th>Revision</th>
-                <th>Status</th>
-                <th>Created</th>
+                <th>Revision / state</th>
                 <th>Deployment</th>
-                <th />
+                <th>Created</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -531,52 +609,66 @@ function DeploymentHistory({ application }: { application: Application }) {
                 .map((deployment) => (
                   <tr key={deployment.id}>
                     <td>
-                      <Link
-                        to="/deployments/$deploymentId"
-                        params={{ deploymentId: deployment.id }}
-                        className="table-name"
-                      >
-                        <span className="revision-icon">
-                          <Icon name="branch" size={14} />
-                        </span>
-                        r{deployment.revision}
+                      <div className="ops-object">
+                        <Status value={deployment.status} small />
+                        <Link
+                          className="ops-object-name"
+                          to="/deployments/$deploymentId"
+                          params={{ deploymentId: deployment.id }}
+                        >
+                          r{deployment.revision}
+                        </Link>
                         {deployment.revision === application.revision && (
                           <span className="current-label">Current</span>
                         )}
-                      </Link>
+                      </div>
                     </td>
                     <td>
-                      <Status value={deployment.status} small />
+                      <div className="ops-object-id">
+                        <code>{deployment.id}</code>
+                        <Copy value={deployment.id} />
+                      </div>
                     </td>
-                    <td>{timestamp(deployment.created_at)}</td>
                     <td>
-                      <code className="muted-text">{deployment.id.slice(0, 12)}</code>
+                      <time title={deployment.created_at} dateTime={deployment.created_at}>
+                        {relative(deployment.created_at)}
+                      </time>
                     </td>
-                    <td className="align-right">
-                      {scope.can('deployments:write') &&
-                        deployment.status === 'succeeded' &&
-                        deployment.revision < application.revision && (
+                    <td>
+                      <Menu
+                        trigger={
                           <Button
-                            size="sm"
                             variant="ghost"
-                            onClick={() => {
-                              setRollback(deployment)
-                              setError('')
-                              setRequestKey(crypto.randomUUID())
-                            }}
+                            size="icon"
+                            aria-label={`Actions for revision ${deployment.revision}`}
                           >
-                            Roll back
+                            <span aria-hidden="true">···</span>
                           </Button>
-                        )}
-                      <Button asChild size="icon" variant="ghost">
-                        <Link
-                          to="/deployments/$deploymentId"
-                          params={{ deploymentId: deployment.id }}
-                          aria-label={`View revision ${deployment.revision}`}
+                        }
+                      >
+                        <MenuItem
+                          onSelect={() =>
+                            void navigate({
+                              to: '/deployments/$deploymentId',
+                              params: { deploymentId: deployment.id },
+                            })
+                          }
                         >
-                          <Icon name="chevron" size={16} />
-                        </Link>
-                      </Button>
+                          Inspect deployment
+                        </MenuItem>
+                        {scope.can('deployments:write') &&
+                          deployment.status === 'succeeded' &&
+                          deployment.revision < application.revision && (
+                            <MenuItem
+                              disabled={Boolean(busy)}
+                              onSelect={() => void rollback(deployment)}
+                            >
+                              {busy === deployment.id
+                                ? 'Creating rollback…'
+                                : 'Roll back to this revision'}
+                            </MenuItem>
+                          )}
+                      </Menu>
                     </td>
                   </tr>
                 ))}
@@ -584,58 +676,10 @@ function DeploymentHistory({ application }: { application: Application }) {
           </table>
         </div>
       )}
-      <Dialog
-        open={Boolean(rollback)}
-        onOpenChange={(open) => {
-          if (!busy && !open) setRollback(null)
-        }}
-        title={`Roll back to revision ${rollback?.revision || ''}`}
-        description="Create a new, auditable release from the selected revision’s resolved image digests."
-      >
-        <div className="dialog-body">
-          <Note>
-            This restores the recorded service configuration. It does not reverse database
-            migrations or restore historical values from external secret providers.
-          </Note>
-          {error && <div className="inline-error">{error}</div>}
-        </div>
-        <div className="dialog-footer">
-          <Button disabled={busy} onClick={() => setRollback(null)}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={async () => {
-              if (!rollback) return
-              setBusy(true)
-              setError('')
-              try {
-                const accepted = await unwrap(
-                  client.POST('/applications/{id}/rollback', {
-                    params: {
-                      path: { id: application.id },
-                      header: { 'Idempotency-Key': requestKey },
-                    },
-                    body: { revision: rollback.revision, expected_revision: application.revision },
-                  }),
-                )
-                setRollback(null)
-                void navigate({
-                  to: '/deployments/$deploymentId',
-                  params: { deploymentId: accepted.id },
-                })
-              } catch (err) {
-                setError(message(err))
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {busy ? 'Submitting…' : 'Create rollback deployment'}
-          </Button>
-        </div>
-      </Dialog>
+      <Note>
+        Rollback creates a new deployment from recorded image digests and configuration. Database
+        migrations and external secret values are not rolled back.
+      </Note>
     </>
   )
 }

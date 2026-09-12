@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import type { Application } from '../lib/types'
 import { client, unwrap } from '../lib/client'
-import { message, timestamp } from '../lib/api'
+import { message, relative, timestamp } from '../lib/api'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
@@ -160,7 +161,7 @@ export function ServiceDetail({
     })
   }
   return (
-    <>
+    <div className="ops-page ops-service-page">
       {back}
       <div className="application-heading">
         <div className="app-symbol app-symbol-large">
@@ -168,10 +169,12 @@ export function ServiceDetail({
         </div>
         <div>
           <div className="title-row">
-            <h1>{serviceName}</h1>
             <Status value={observed?.status || 'not observed'} />
+            <h1>{serviceName}</h1>
           </div>
           <div className="application-metadata">
+            <code>{serviceName}</code>
+            <Copy value={serviceName} />
             <span>
               {application.project} / {application.environment} / {application.name}
             </span>
@@ -191,7 +194,10 @@ export function ServiceDetail({
               <Icon name="refresh" size={14} />
               Restart
             </Button>
-            <Button variant="primary" onClick={() => edit('form')}>
+            <Button
+              variant={['logs', 'terminal', 'settings'].includes(tab) ? 'secondary' : 'primary'}
+              onClick={() => edit('form')}
+            >
               <Icon name="settings" size={14} />
               Stage changes
             </Button>
@@ -514,7 +520,7 @@ export function ServiceDetail({
             Cancel
           </Button>
           <Button
-            variant="primary"
+            variant="danger"
             disabled={busy}
             onClick={async () => {
               setBusy(true)
@@ -546,7 +552,7 @@ export function ServiceDetail({
           </Button>
         </div>
       </Dialog>
-    </>
+    </div>
   )
 }
 
@@ -563,6 +569,8 @@ function PodList({
   compact?: boolean
   onConnect?: (pod: string) => void
 }) {
+  const [inspected, setInspected] = useState('')
+  const pod = runtime?.pods.find((item) => item.name === inspected)
   if (loading) return <Loading rows={2} />
   if (error) return <ErrorState error={error} />
   if (!runtime?.pods.length)
@@ -575,117 +583,266 @@ function PodList({
     )
   return (
     <>
-      <div className="pod-list">
-        {runtime.pods.slice(0, compact ? 6 : 40).map((pod) => (
-          <details className="pod-card" key={pod.name}>
-            <summary>
-              <Icon name="box" size={18} />
-              <div>
-                <strong>{pod.name}</strong>
-                <span>
-                  {pod.node_name || 'Node not assigned'} · {pod.phase}
-                </span>
+      <div className="table-container ops-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Pod / state</th>
+              <th>Restarts</th>
+              <th>CPU / memory</th>
+              <th>Age</th>
+              <th>Node</th>
+              <th>
+                <span className="sr-only">Pod actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {runtime.pods.slice(0, compact ? 6 : 40).map((item) => {
+              const cpuKnown =
+                item.containers.length > 0 &&
+                item.containers.every((container) => container.cpu_millicores !== undefined)
+              const memoryKnown =
+                item.containers.length > 0 &&
+                item.containers.every((container) => container.memory_bytes !== undefined)
+              const crash = item.containers.some(
+                (container) => container.reason === 'CrashLoopBackOff',
+              )
+              return (
+                <tr key={item.name}>
+                  <td>
+                    <div className="ops-object">
+                      <Status
+                        value={crash ? 'CrashLoop' : item.ready ? 'ready' : item.phase}
+                        small
+                      />
+                      <button
+                        type="button"
+                        className="ops-object-name"
+                        onClick={() => setInspected(item.name)}
+                      >
+                        {item.name}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="mono">
+                    {item.containers.reduce((n, container) => n + container.restarts, 0)}
+                  </td>
+                  <td className="mono">
+                    {cpuKnown
+                      ? `${item.containers.reduce((n, container) => n + (container.cpu_millicores || 0), 0).toFixed(1)} mCPU`
+                      : 'Unavailable'}
+                    <small className="ops-table-sub">
+                      {memoryKnown
+                        ? memory(
+                            item.containers.reduce(
+                              (n, container) => n + (container.memory_bytes || 0),
+                              0,
+                            ),
+                          )
+                        : 'Memory unavailable'}
+                    </small>
+                  </td>
+                  <td>
+                    <time dateTime={item.created_at} title={item.created_at}>
+                      {relative(item.created_at)}
+                    </time>
+                  </td>
+                  <td>
+                    <code>{item.node_name || 'Not assigned'}</code>
+                  </td>
+                  <td>
+                    <Menu
+                      trigger={
+                        <Button variant="ghost" size="icon" aria-label={`Actions for ${item.name}`}>
+                          <span aria-hidden="true">···</span>
+                        </Button>
+                      }
+                    >
+                      <MenuItem onSelect={() => setInspected(item.name)}>
+                        <Icon name="box" size={14} />
+                        Inspect pod
+                      </MenuItem>
+                      {onConnect && (
+                        <MenuItem
+                          disabled={item.phase !== 'Running'}
+                          onSelect={() => onConnect(item.name)}
+                        >
+                          <Icon name="terminal" size={14} />
+                          Open terminal
+                        </MenuItem>
+                      )}
+                    </Menu>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {(runtime.truncated || (!compact && runtime.pods.length > 40)) && (
+        <Note>This response is limited. Inspect the cluster for additional pods or events.</Note>
+      )}
+      <Dialog
+        open={Boolean(pod)}
+        onOpenChange={(open) => {
+          if (!open) setInspected('')
+        }}
+        title={pod?.name || 'Pod'}
+        description="Observed containers, allocations, conditions, and recent events."
+        sheet
+      >
+        {pod && (
+          <>
+            <div className="dialog-body ops-pod-inspector">
+              <div className="ops-object">
+                <Status value={pod.ready ? 'ready' : pod.phase} />
+                <Copy value={pod.name} label="Copy pod name" />
               </div>
-              <span className="form-spacer" />
-              <Status value={pod.ready ? 'ready' : pod.phase} small />
-              <Icon name="down" size={15} />
-            </summary>
-            <div className="pod-details">
-              {onConnect && (
-                <Button
-                  size="sm"
-                  disabled={pod.phase !== 'Running'}
-                  onClick={() => onConnect(pod.name)}
-                >
-                  <Icon name="terminal" size={14} />
-                  Connect to pod
-                </Button>
-              )}
               <dl className="service-definition-list">
                 <div>
+                  <dt>Node</dt>
+                  <dd className="mono">{pod.node_name || 'Not assigned'}</dd>
+                </div>
+                <div>
                   <dt>Pod IP</dt>
-                  <dd>{pod.pod_ip || 'Not assigned'}</dd>
+                  <dd>
+                    {pod.pod_ip ? (
+                      <span className="copyable-address">
+                        <code>{pod.pod_ip}</code>
+                        <Copy value={pod.pod_ip} />
+                      </span>
+                    ) : (
+                      'Not assigned'
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Created</dt>
-                  <dd>{timestamp(pod.created_at)}</dd>
+                  <dd>
+                    <time title={pod.created_at}>{timestamp(pod.created_at)}</time>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Observed</dt>
+                  <dd>{timestamp(runtime.observed_at)}</dd>
                 </div>
               </dl>
+              <h3>Containers</h3>
               {pod.containers.map((container) => (
-                <div className="pod-container" key={container.name}>
-                  <h3>
-                    {container.name}
-                    <Status value={container.state} small />
-                  </h3>
-                  <p>
-                    {container.reason}
-                    {container.message ? ` · ${container.message}` : ''}
-                  </p>
+                <section className="ops-inspector-section" key={container.name}>
+                  <div className="ops-object">
+                    <Status value={container.ready ? 'ready' : container.state} small />
+                    <h3>{container.name}</h3>
+                  </div>
+                  {(container.reason || container.message) && (
+                    <p className="field-help">
+                      {container.reason}
+                      {container.message ? ` · ${container.message}` : ''}
+                    </p>
+                  )}
                   <dl className="service-definition-list">
                     <div>
-                      <dt>Ready / restarts</dt>
+                      <dt>Readiness / restarts</dt>
                       <dd>
                         {container.ready ? 'Ready' : 'Not ready'} · {container.restarts} restarts
                       </dd>
                     </div>
                     <div>
                       <dt>CPU request / limit</dt>
-                      <dd>
+                      <dd className="mono">
                         {container.resources.requests.cpu || 'Unspecified'} /{' '}
                         {container.resources.limits.cpu || 'Unspecified'}
                       </dd>
                     </div>
                     <div>
                       <dt>Memory request / limit</dt>
-                      <dd>
+                      <dd className="mono">
                         {container.resources.requests.memory || 'Unspecified'} /{' '}
                         {container.resources.limits.memory || 'Unspecified'}
                       </dd>
                     </div>
                     <div>
+                      <dt>Observed usage</dt>
+                      <dd className="mono">
+                        {container.cpu_millicores === undefined
+                          ? 'CPU unavailable'
+                          : `${container.cpu_millicores.toFixed(1)} mCPU`}{' '}
+                        / {memory(container.memory_bytes)}
+                      </dd>
+                    </div>
+                    <div>
                       <dt>Image</dt>
-                      <dd className="mono break-text">{container.image_id || container.image}</dd>
+                      <dd>
+                        <code className="break-text">{container.image_id || container.image}</code>
+                        <Copy value={container.image_id || container.image} label="Copy image" />
+                      </dd>
                     </div>
                   </dl>
-                </div>
+                </section>
               ))}
-              {pod.conditions.length > 0 && (
-                <div className="pod-conditions">
-                  <h3>Conditions</h3>
+              <h3>Conditions</h3>
+              {pod.conditions.length ? (
+                <div className="ops-event-list">
                   {pod.conditions.map((condition) => (
                     <div key={condition.type}>
-                      <strong>
-                        {condition.type}: {condition.status}
-                      </strong>
+                      <div className="ops-object">
+                        <Status value={condition.status === 'True' ? 'ready' : 'pending'} small />
+                        <strong>{condition.type}</strong>
+                      </div>
                       <p>
                         {condition.reason}
                         {condition.message ? ` · ${condition.message}` : ''}
                       </p>
+                      <time title={condition.last_transition_time}>
+                        {timestamp(condition.last_transition_time)}
+                      </time>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <p className="field-help">No conditions returned.</p>
               )}
-              {pod.events.length > 0 && (
-                <div className="pod-conditions">
-                  <h3>Recent events</h3>
+              <h3>Recent events</h3>
+              {pod.events.length ? (
+                <div className="ops-event-list">
                   {pod.events.slice(-12).map((event, index) => (
                     <div key={`${event.reason}-${index}`}>
-                      <strong>
-                        {event.reason} <span className="muted-text">×{event.count}</span>
-                      </strong>
+                      <div className="ops-object">
+                        <Icon name={event.type === 'Warning' ? 'alert' : 'info'} size={14} />
+                        <strong>{event.reason}</strong>
+                        <span className="muted-text">×{event.count}</span>
+                      </div>
                       <p>{event.message}</p>
-                      <time>{timestamp(event.last_seen)}</time>
+                      <time title={event.last_seen}>{timestamp(event.last_seen)}</time>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <p className="field-help">No recent events returned.</p>
               )}
             </div>
-          </details>
-        ))}
-      </div>
-      {(runtime.truncated || (!compact && runtime.pods.length > 40)) && (
-        <Note>This response is limited. Inspect the cluster for additional pods or events.</Note>
-      )}
+            <div className="dialog-footer">
+              <Button variant="ghost" onClick={() => setInspected('')}>
+                Close
+              </Button>
+              {onConnect && (
+                <Button
+                  variant="primary"
+                  disabled={pod.phase !== 'Running'}
+                  onClick={() => {
+                    onConnect(pod.name)
+                    setInspected('')
+                  }}
+                >
+                  <Icon name="terminal" size={14} />
+                  Open terminal
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </Dialog>
     </>
   )
 }

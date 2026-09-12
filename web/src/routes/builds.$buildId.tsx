@@ -1,9 +1,13 @@
+import { Input } from '../components/ui/input'
 import { useEffect, useState } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Pipeline, type PipelineStage } from '@hakopod/hatch-ui/blocks/pipeline'
 import { createFileRoute, Link, useNavigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
-import { APIError, message, timestamp } from '../lib/api'
+import { APIError, activeDeployment, message, relative, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -13,6 +17,13 @@ import { DiffTable } from '../components/deploy-dialog'
 
 type Build = components['schemas']['BuildConfig']
 type Run = components['schemas']['BuildRun']
+function runStatus(run: Run) {
+  if (run.conclusion === 'success') return 'succeeded'
+  if (run.conclusion === 'failure' || run.conclusion === 'timed_out') return 'failed'
+  if (run.conclusion === 'cancelled') return 'cancelled'
+  if (run.status === 'in_progress') return 'building'
+  return run.status
+}
 export const Route = createFileRoute('/builds/$buildId')({ component: BuildRoute })
 function BuildRoute() {
   const { buildId } = Route.useParams()
@@ -22,6 +33,7 @@ function BuildDetail() {
   const { buildId } = Route.useParams()
   const scope = useScope()
   const [start, setStart] = useState(false)
+  const [tab, setTab] = useState('runs')
   const [preview, setPreview] = useState<components['schemas']['BuildPreview'] | null>(null)
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(false)
@@ -49,7 +61,7 @@ function BuildDetail() {
   const providerLabel = build.provider === 'gitlab' ? 'GitLab' : 'GitHub'
   const runId = selected || runs.data?.items[0]?.id || ''
   return (
-    <>
+    <div className="ops-page ops-build-page">
       <Link to="/builds" className="back-link">
         <Icon name="back" size={14} />
         All source builds
@@ -59,9 +71,20 @@ function BuildDetail() {
           <div className="eyebrow">
             SOURCE BUILD / {build.project} / {build.environment}
           </div>
-          <h1>
-            {build.name} / {build.service}
-          </h1>
+          <div className="title-row">
+            <Status
+              value={
+                build.installed_revision === build.revision ? 'installed' : 'installation required'
+              }
+            />
+            <h1>
+              {build.name} / {build.service}
+            </h1>
+          </div>
+          <div className="ops-object-id">
+            <code>{build.id}</code>
+            <Copy value={build.id} />
+          </div>
           <p>
             {providerLabel} · {build.repository} · {build.branch}
           </p>
@@ -72,7 +95,7 @@ function BuildDetail() {
               Edit build
             </Link>
             <Button
-              variant="primary"
+              variant={runId || tab === 'configuration' ? 'secondary' : 'primary'}
               disabled={build.installed_revision !== build.revision}
               onClick={() => setStart(true)}
             >
@@ -81,150 +104,187 @@ function BuildDetail() {
           </div>
         )}
       </div>
-      <div className="service-overview-grid">
-        <section className="panel service-summary-panel">
-          <div className="panel-heading">
-            <h2>Build configuration</h2>
-            <span className="label-chip">r{build.revision}</span>
-          </div>
-          <dl className="service-definition-list">
-            <div>
-              <dt>Method</dt>
-              <dd>{build.mode === 'buildpacks' ? `Buildpacks · ${build.preset}` : 'Dockerfile'}</dd>
-            </div>
-            <div>
-              <dt>Architecture</dt>
-              <dd>{build.architecture}</dd>
-            </div>
-            <div>
-              <dt>Context</dt>
-              <dd>
-                <code>{build.context_path}</code>
-              </dd>
-            </div>
-            {build.mode === 'dockerfile' && (
-              <div>
-                <dt>Dockerfile</dt>
-                <dd>
-                  <code>{build.dockerfile}</code>
-                </dd>
-              </div>
-            )}
-            <div>
-              <dt>Automatic build / deploy</dt>
-              <dd>
-                {build.auto_build ? 'Build on push' : 'Manual builds'} ·{' '}
-                {build.auto_deploy ? 'Deploy verified successes' : 'Review deployments manually'}
-              </dd>
-            </div>
-            <div>
-              <dt>Runtime registry credential</dt>
-              <dd>{build.registry_credential || 'None'}</dd>
-            </div>
-            {build.application_id && (
-              <div>
-                <dt>Application</dt>
-                <dd>
-                  <Link
-                    to="/applications/$applicationId"
-                    params={{ applicationId: build.application_id }}
-                    search={{ service: build.service }}
-                  >
-                    Open service
-                    <Icon name="arrow" size={13} />
-                  </Link>
-                </dd>
-              </div>
-            )}
-          </dl>
-        </section>
-        <section className="panel service-summary-panel">
-          <div className="panel-heading">
-            <h2>{providerLabel} workflow</h2>
-            <Status
-              value={
-                build.installed_revision === build.revision ? 'installed' : 'installation required'
-              }
-            />
-          </div>
-          <p className="muted-text">
-            Review the generated workflow before an administrator commits it to the repository’s
-            default branch.
-          </p>
-          {build.installed_commit && (
-            <p className="field-help break-text">
-              Installed commit: <code>{build.installed_commit}</code>
-            </p>
-          )}
-          {scope.can('deployments:write') && (
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                setError('')
-                try {
-                  setPreview(
-                    await unwrap(
-                      client.POST('/builds/{id}/preview', {
-                        params: { path: { id: build.id } },
-                        body: {},
-                      }),
-                    ),
-                  )
-                } catch (err) {
-                  setError(message(err))
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              {busy ? 'Loading…' : 'Review workflow'}
-            </Button>
-          )}
-        </section>
-      </div>
       {error && (
         <div className="inline-error" role="alert">
           {error}
         </div>
       )}
-      <div className="section-toolbar">
-        <div>
-          <h2>Recent build runs</h2>
-          <p>Up to 20 runs. Select a run to observe its current {providerLabel} status.</p>
-        </div>
-        <Button size="sm" onClick={() => void runs.refetch()}>
-          Refresh history
-        </Button>
-      </div>
-      {runs.isPending ? (
-        <Loading rows={2} />
-      ) : runs.error ? (
-        <ErrorState error={runs.error} />
-      ) : !runs.data?.items.length ? (
-        <Empty
-          icon="branch"
-          title="No builds started"
-          description="Install the reviewed workflow, then run a build of this repository."
-        />
-      ) : (
-        <>
-          <div className="build-run-selector">
-            {runs.data.items.map((run) => (
-              <button
-                key={run.id}
-                className={`build-run-choice ${run.id === runId ? 'selected' : ''}`}
-                onClick={() => setSelected(run.id)}
-              >
-                <code>{run.commit_sha.slice(0, 9)}</code>
-                <Status value={run.status} small />
-                <span>{timestamp(run.created_at)}</span>
-              </button>
-            ))}
+      <Tabs.Root value={tab} onValueChange={setTab}>
+        <Tabs.List className="tab-list" aria-label="Source build sections">
+          <Tabs.Trigger className="tab-trigger" value="runs">
+            Runs
+          </Tabs.Trigger>
+          <Tabs.Trigger className="tab-trigger" value="configuration">
+            Configuration
+          </Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="configuration" className="tab-content">
+          <div className="service-overview-grid">
+            <section className="panel service-summary-panel">
+              <div className="panel-heading">
+                <h2>Build configuration</h2>
+                <span className="label-chip">r{build.revision}</span>
+              </div>
+              <dl className="service-definition-list">
+                <div>
+                  <dt>Method</dt>
+                  <dd>
+                    {build.mode === 'buildpacks' ? `Buildpacks · ${build.preset}` : 'Dockerfile'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Architecture</dt>
+                  <dd>{build.architecture}</dd>
+                </div>
+                <div>
+                  <dt>Context</dt>
+                  <dd>
+                    <code>{build.context_path}</code>
+                  </dd>
+                </div>
+                {build.mode === 'dockerfile' && (
+                  <div>
+                    <dt>Dockerfile</dt>
+                    <dd>
+                      <code>{build.dockerfile}</code>
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Automatic build / deploy</dt>
+                  <dd>
+                    {build.auto_build ? 'Build on push' : 'Manual builds'} ·{' '}
+                    {build.auto_deploy
+                      ? 'Deploy verified successes'
+                      : 'Review deployments manually'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Runtime registry credential</dt>
+                  <dd>{build.registry_credential || 'None'}</dd>
+                </div>
+                {build.application_id && (
+                  <div>
+                    <dt>Application</dt>
+                    <dd>
+                      <Link
+                        to="/applications/$applicationId"
+                        params={{ applicationId: build.application_id }}
+                        search={{ service: build.service }}
+                      >
+                        Open service
+                        <Icon name="arrow" size={13} />
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+            <section className="panel service-summary-panel">
+              <div className="panel-heading">
+                <h2>{providerLabel} workflow</h2>
+                <Status
+                  value={
+                    build.installed_revision === build.revision
+                      ? 'installed'
+                      : 'installation required'
+                  }
+                />
+              </div>
+              <p className="muted-text">
+                Review the generated workflow before an administrator commits it to the repository’s
+                default branch.
+              </p>
+              {build.installed_commit && (
+                <p className="field-help break-text">
+                  Installed commit: <code>{build.installed_commit}</code>
+                  <Copy value={build.installed_commit} />
+                </p>
+              )}
+              {scope.can('deployments:write') && (
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true)
+                    setError('')
+                    try {
+                      setPreview(
+                        await unwrap(
+                          client.POST('/builds/{id}/preview', {
+                            params: { path: { id: build.id } },
+                            body: {},
+                          }),
+                        ),
+                      )
+                    } catch (err) {
+                      setError(message(err))
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}
+                >
+                  {busy ? 'Loading…' : 'Review workflow'}
+                </Button>
+              )}
+            </section>
           </div>
-          {runId && <BuildRunDetail key={runId} build={build} runId={runId} />}
-        </>
-      )}
+        </Tabs.Content>
+        <Tabs.Content value="runs" className="tab-content">
+          <div className="section-toolbar">
+            <div>
+              <h2>Recent build runs</h2>
+              <p>Up to 20 runs. Select a run to observe its current {providerLabel} status.</p>
+            </div>
+            <Button size="sm" onClick={() => void runs.refetch()}>
+              Refresh history
+            </Button>
+          </div>
+          {runs.isPending ? (
+            <Loading rows={2} />
+          ) : runs.error ? (
+            <ErrorState error={runs.error} />
+          ) : !runs.data?.items.length ? (
+            <Empty
+              icon="branch"
+              title="No builds started"
+              description="Install the reviewed workflow, then run a build of this repository."
+            />
+          ) : (
+            <>
+              <div className="ops-run-layout">
+                <aside className="ops-run-list" aria-label="Build run history">
+                  {runs.data.items.map((run) => (
+                    <button
+                      type="button"
+                      key={run.id}
+                      className={`ops-run-card interactive ${run.id === runId && !['completed', 'failed', 'cancelled'].includes(run.status) ? 'hatch' : ''}`}
+                      data-selected={run.id === runId}
+                      aria-pressed={run.id === runId}
+                      onClick={() => setSelected(run.id)}
+                    >
+                      <Brackets />
+                      <div className="ops-object">
+                        <Status value={runStatus(run)} small />
+                        <code>{run.commit_sha.slice(0, 9) || run.id.slice(0, 9)}</code>
+                      </div>
+                      <small>
+                        {build.branch} / {run.automatic ? 'Git push' : 'Manual build'}
+                      </small>
+                      <time title={run.created_at} dateTime={run.created_at}>
+                        {relative(run.created_at)}
+                      </time>
+                    </button>
+                  ))}
+                </aside>
+                <div className="ops-run-detail">
+                  {runId && <BuildRunDetail key={runId} build={build} runId={runId} />}
+                </div>
+              </div>
+            </>
+          )}
+        </Tabs.Content>
+      </Tabs.Root>
       {start && (
         <RunDialog
           build={build}
@@ -317,7 +377,7 @@ function BuildDetail() {
           )}
         </div>
       </Dialog>
-    </>
+    </div>
   )
 }
 
@@ -368,7 +428,7 @@ function RunDialog({
         <div className="dialog-body auth-form">
           <label>
             Exact commit (optional)
-            <input
+            <Input
               value={commit}
               onChange={(e) => {
                 setCommit(e.target.value)
@@ -409,6 +469,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [deploy, setDeploy] = useState(false)
+  const [stage, setStage] = useState('build')
   const [cancel, setCancel] = useState(false)
   const [deploymentPlan, setDeploymentPlan] = useState<
     components['schemas']['BuildDeployPlan'] | null
@@ -435,6 +496,20 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
     },
     refetchIntervalInBackground: false,
   })
+  const release = useQuery({
+    queryKey: ['deployment', run.data?.deployment_id],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/deployments/{id}', {
+          signal,
+          params: { path: { id: run.data!.deployment_id } },
+        }),
+      ),
+    enabled: Boolean(run.data?.deployment_id),
+    refetchInterval: (query) => (activeDeployment(query.state.data?.status) ? 10000 : false),
+    refetchIntervalInBackground: false,
+    gcTime: 0,
+  })
   if (run.isPending) return <Loading />
   if (run.error || !run.data)
     return <ErrorState error={run.error} retry={() => void run.refetch()} />
@@ -445,19 +520,94 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
     Boolean(current.image) &&
     current.config_revision === build.revision
   const active = !['completed', 'failed', 'cancelled'].includes(current.status)
+  const failed =
+    current.status === 'failed' ||
+    (current.status === 'completed' &&
+      current.conclusion !== 'success' &&
+      current.conclusion !== 'cancelled')
+  const stages: PipelineStage[] = [
+    {
+      id: 'source',
+      label: 'Source',
+      state: current.commit_sha ? 'success' : 'neutral',
+      description: current.commit_sha ? current.commit_sha.slice(0, 9) : 'No commit returned',
+    },
+    {
+      id: 'build',
+      label: 'Build',
+      state: failed
+        ? 'error'
+        : current.conclusion === 'success'
+          ? 'success'
+          : ['queued', 'cancelled'].includes(current.status)
+            ? 'neutral'
+            : current.status === 'dispatch_unknown'
+              ? 'warning'
+              : active
+                ? 'running'
+                : 'neutral',
+      description: current.conclusion || current.status,
+    },
+    {
+      id: 'image',
+      label: 'Image',
+      state: current.image ? 'success' : 'neutral',
+      description: current.image ? 'Digest verified' : 'No verified image',
+    },
+    {
+      id: 'deploy',
+      label: 'Deploy',
+      state:
+        release.data?.status === 'succeeded'
+          ? 'success'
+          : release.data?.status === 'failed'
+            ? 'error'
+            : activeDeployment(release.data?.status)
+              ? 'running'
+              : 'neutral',
+      description:
+        release.data?.status ||
+        (release.error
+          ? 'Observation unavailable'
+          : current.deployment_id
+            ? 'Loading observation'
+            : current.automatic
+              ? current.auto_status || 'Not requested'
+              : 'Manual deployment'),
+    },
+  ]
+  const descriptions: Record<string, string> = {
+    source: 'The immutable source commit resolved for this run.',
+    build: `The current status reported by ${current.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'}. Open provider logs for individual build steps.`,
+    image:
+      'Only verified image digests are eligible for deployment. An earlier configuration revision must be reviewed again.',
+    deploy:
+      'Deployment has its own recorded events and readiness result. Open it to inspect service health.',
+  }
   return (
-    <section className="panel service-summary-panel">
+    <section className="ops-build-run">
       <div className="section-toolbar">
         <div>
           <h2>Build {current.id.slice(0, 8)}</h2>
+          <div className="ops-object-id">
+            <code>{current.id}</code>
+            <Copy value={current.id} />
+          </div>
           <p>{timestamp(current.created_at)}</p>
         </div>
-        <Status value={current.status} />
+        <Status value={runStatus(current)} />
+      </div>
+      <Pipeline stages={stages} active={stage} onStageChange={setStage} />
+      <div className="ops-stage-context" role="status">
+        {descriptions[stage]}
       </div>
       <dl className="service-definition-list">
         <div>
           <dt>Source commit</dt>
-          <dd className="mono break-text">{current.commit_sha}</dd>
+          <dd className="mono break-text">
+            {current.commit_sha}
+            <Copy value={current.commit_sha} />
+          </dd>
         </div>
         <div>
           <dt>Result</dt>
@@ -465,7 +615,10 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
         </div>
         <div>
           <dt>Verified image</dt>
-          <dd className="mono break-text">{current.image || 'Not available yet'}</dd>
+          <dd className="mono break-text">
+            {current.image || 'Not available yet'}
+            {current.image && <Copy value={current.image} label="Copy digest" />}
+          </dd>
         </div>
         {current.automatic && (
           <div>

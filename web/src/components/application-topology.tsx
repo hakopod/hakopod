@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Badge, Card } from '@hakopod/ui'
+import { Badge, Card } from './ui/surfaces'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import type { Application } from '../lib/types'
 import { Icon } from './icons'
-import { Status, Note } from './shared'
+import { Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
   const names = Object.keys(app.spec.services).slice(0, 32)
   const [selected, setSelected] = useState(names[0] || '')
@@ -23,7 +24,7 @@ export default function ApplicationTopology({ application: app }: { application:
       .map((dependency) => ({ from: name, to: dependency })),
   )
   return (
-    <>
+    <div className="ops-topology">
       <div className="section-toolbar">
         <div>
           <h2>Service topology</h2>
@@ -78,11 +79,13 @@ export default function ApplicationTopology({ application: app }: { application:
                 <button
                   type="button"
                   key={item}
-                  className={`topology-node ${name === item ? 'selected' : ''}`}
+                  className={`topology-node interactive ${name === item ? 'selected hatch' : ''}`}
                   style={{ left: at.x, top: at.y }}
                   aria-pressed={name === item}
                   onClick={() => setSelected(item)}
                 >
+                  <Brackets />
+                  <Status value={state?.status || 'not observed'} small />
                   <div>
                     <Icon
                       name={config.public ? 'globe' : config.port ? 'box' : 'terminal'}
@@ -91,7 +94,6 @@ export default function ApplicationTopology({ application: app }: { application:
                     <strong>{item}</strong>
                     <Icon name="chevron" size={13} />
                   </div>
-                  <Status value={state?.status || 'not observed'} small />
                   <small>
                     {state
                       ? `${state.ready}/${state.desired} ready`
@@ -111,9 +113,9 @@ export default function ApplicationTopology({ application: app }: { application:
         {service && (
           <Card className="topology-inspector inspector-card">
             <div className="inspector-heading">
-              <Icon name="box" size={18} />
-              <h2>{name}</h2>
               <Status value={observed?.status || 'not observed'} small />
+              <h2>{name}</h2>
+              <Copy value={name} label="Copy service slug" />
             </div>
             {observed?.message && <p className="inspector-summary">{observed.message}</p>}
             <div className="inspector-facts">
@@ -141,6 +143,7 @@ export default function ApplicationTopology({ application: app }: { application:
                 <dt>Image</dt>
                 <dd>
                   <code>{observed?.image || service.image}</code>
+                  <Copy value={observed?.image || service.image} label="Copy image" />
                 </dd>
               </div>
               <div>
@@ -165,7 +168,7 @@ export default function ApplicationTopology({ application: app }: { application:
                 to="/applications/$applicationId"
                 params={{ applicationId: app.id }}
                 search={{ service: name }}
-                className="button button-primary"
+                className="button button-secondary"
               >
                 Inspect service
                 <Icon name="arrow" size={14} />
@@ -196,6 +199,6 @@ export default function ApplicationTopology({ application: app }: { application:
           application.
         </Note>
       )}
-    </>
+    </div>
   )
 }
