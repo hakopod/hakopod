@@ -88,11 +88,11 @@ dashboard shows the feature catalog and activation state; the Go API and durable
 workers enforce it. Expiry preserves accounts, application data and running
 workloads. See [paid features](docs/paid-features.md) for the exact behavior.
 
-The [design system](packages/ui/README.md) is a separate shadcn/Radix component
+The [design system](https://github.com/hakopod/hakopod-design-system) is a separate shadcn/Radix component
 repository at `packages/ui`. The public source bundle in `third_party/ui/` makes ordinary
 builds independent of submodule hosting. The license issuer is a separate private
-submodule and is excluded from public release artifacts. Current submodule
-origins are local bare repositories; hosted remotes have not been created.
+submodule and is excluded from public release artifacts. Both submodule URLs
+resolve to sibling repositories in the Hakopod GitHub organization.
 Public contributors should restore the UI bundle, without recursively fetching
 the private issuer. See [submodule development](docs/submodules.md).
 
