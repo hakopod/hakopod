@@ -12,6 +12,7 @@ import (
 )
 
 type AuthConfig struct {
+	SignupEnabled      bool
 	PublicURL          string
 	SetupSecret        string
 	EncryptionKey      string
@@ -95,6 +96,13 @@ func (s *Server) registerAuthRoutes(public, protected *http.ServeMux) {
 	public.HandleFunc("GET /api/v1/auth/status", s.authPublic(s.authStatus))
 	public.HandleFunc("POST /api/v1/auth/setup", s.authPublic(s.authSetup))
 	public.HandleFunc("POST /api/v1/auth/login", s.authPublic(s.authLogin))
+	public.HandleFunc("POST /api/v1/auth/register", s.authPublic(s.authRegister))
+	public.HandleFunc("POST /api/v1/auth/register/verify", s.authPublic(s.authVerifyRegistration))
+	public.HandleFunc("POST /api/v1/auth/password/forgot", s.authPublic(s.authForgotPassword))
+	public.HandleFunc("POST /api/v1/auth/password/reset", s.authPublic(s.authResetPassword))
+	public.HandleFunc("POST /api/v1/auth/invites/inspect", s.authPublic(s.authInspectInvite))
+	protected.HandleFunc("GET /api/v1/auth/onboarding", s.authOnboarding)
+	protected.HandleFunc("POST /api/v1/auth/onboarding", s.authCompleteOnboarding)
 	public.HandleFunc("POST /api/v1/auth/mfa/complete", s.authPublic(s.authMFAComplete))
 	public.HandleFunc("POST /api/v1/auth/invites/accept", s.authPublic(s.authAcceptInvite))
 	public.HandleFunc("POST /api/v1/auth/device/start", s.authPublic(s.authDeviceStart))
@@ -144,7 +152,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		providers = append(providers, "gitlab")
 	}
 	_, passkeyErr := s.webAuthn()
-	write(w, 200, map[string]any{"setup_required": needed, "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
+	write(w, 200, map[string]any{"setup_required": needed, "signup_enabled": s.Auth.SignupEnabled && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
 }
 func (s *Server) sessionResponse(w http.ResponseWriter, r *http.Request, session store.Session) {
 	http.SetCookie(w, &http.Cookie{Name: "hakopod_session", Value: session.Token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Auth.PublicURL, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: int(time.Until(session.ExpiresAt).Seconds()), Expires: session.ExpiresAt})
@@ -375,11 +383,16 @@ func (s *Server) authCreateInvite(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) authAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Token    string `json:"token"`
-		Name     string `json:"name"`
-		Password string `json:"password"`
+		Workspace string `json:"workspace"`
+		Token     string `json:"token"`
+		Name      string `json:"name"`
+		Password  string `json:"password"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if in.Workspace != "" && in.Workspace != "invite" && in.Workspace != "personal" {
+		authFailure(w, store.ErrInput)
 		return
 	}
 	var p *store.Principal
@@ -391,7 +404,7 @@ func (s *Server) authAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		}
 		p = &current
 	}
-	id, err := s.Store.AcceptInvite(r.Context(), in.Token, in.Name, in.Password, p)
+	id, err := s.Store.AcceptInviteChoice(r.Context(), in.Token, in.Name, in.Password, p, in.Workspace == "personal")
 	if err != nil {
 		authFailure(w, err)
 		return

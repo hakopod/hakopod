@@ -98,6 +98,15 @@
                     },
                     "environment": {
                       "type": "string"
+                    },
+                    "display_name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 1000
                     }
                   },
                   "required": []
@@ -128,6 +137,15 @@
                   },
                   "environment": {
                     "type": "string"
+                  },
+                  "display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 1000
                   }
                 },
                 "required": [
@@ -1465,6 +1483,13 @@
                   },
                   "password": {
                     "type": "string"
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "personal"
+                    ]
                   }
                 },
                 "required": [
@@ -1691,6 +1716,20 @@
                 "google",
                 "gitlab"
               ]
+            }
+          },
+          {
+            "name": "intent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invite_token",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2667,6 +2706,356 @@
                 },
                 "required": [
                   "role"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "registerAccount",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/register/verify": {
+      "post": {
+        "operationId": "verifyRegistration",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanSessionCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/password/forgot": {
+      "post": {
+        "operationId": "requestPasswordReset",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/password/reset": {
+      "post": {
+        "operationId": "resetPassword",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reset": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "reset"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/invites/inspect": {
+      "post": {
+        "operationId": "inspectInvite",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invite"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/auth/onboarding": {
+      "get": {
+        "operationId": "getOnboarding",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Onboarding"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "completeOnboarding",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanSessionCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "choice": {
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "personal"
+                    ]
+                  },
+                  "invite_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "choice"
                 ]
               }
             }
@@ -7585,6 +7974,42 @@
               "amd64",
               "arm64"
             ]
+          },
+          "mounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Mount"
+            }
+          },
+          "temporary_mounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemporaryMount"
+            }
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrivatePort"
+            }
+          },
+          "network_access": {
+            "$ref": "#/components/schemas/NetworkAccess"
+          },
+          "run_as_group": {
+            "type": "integer"
+          },
+          "fs_group": {
+            "type": "integer"
+          },
+          "read_only_root_filesystem": {
+            "type": "boolean"
+          },
+          "working_dir": {
+            "type": "string"
+          },
+          "termination_grace_seconds": {
+            "type": "integer"
           }
         },
         "required": [
@@ -7616,6 +8041,12 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "volumes": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NamedVolume"
             }
           }
         },
@@ -7877,6 +8308,20 @@
                 "name"
               ]
             }
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "personal": {
+            "type": "boolean",
+            "readOnly": true,
+            "description": "Personal projects cannot be shared through invitations or team membership."
           }
         },
         "required": [
@@ -8409,6 +8854,12 @@
           },
           "email_delivery": {
             "type": "boolean"
+          },
+          "signup_enabled": {
+            "type": "boolean"
+          },
+          "password_recovery": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -8417,7 +8868,9 @@
           "providers",
           "passkeys",
           "totp",
-          "email_delivery"
+          "email_delivery",
+          "signup_enabled",
+          "password_recovery"
         ]
       },
       "HumanSessionCreated": {
@@ -8432,12 +8885,16 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "onboarding_required": {
+            "type": "boolean"
           }
         },
         "required": [
           "token",
           "user",
-          "expires_at"
+          "expires_at",
+          "onboarding_required"
         ]
       },
       "HumanSession": {
@@ -8819,6 +9276,56 @@
           "expires_at",
           "expires_in",
           "user"
+        ]
+      },
+      "OnboardingInvite": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "team_name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "team_name",
+          "project",
+          "role",
+          "expires_at"
+        ]
+      },
+      "Onboarding": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "boolean"
+          },
+          "personal_project": {
+            "type": "string"
+          },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OnboardingInvite"
+            }
+          }
+        },
+        "required": [
+          "required",
+          "personal_project",
+          "invitations"
         ]
       },
       "BackupSource": {
@@ -11358,6 +11865,109 @@
         },
         "required": [
           "count"
+        ]
+      },
+      "NamedVolume": {
+        "type": "object",
+        "properties": {
+          "size_gib": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "storage_class": {
+            "type": "string"
+          },
+          "access_mode": {
+            "type": "string",
+            "enum": [
+              "ReadWriteOnce",
+              "ReadWriteMany"
+            ]
+          }
+        },
+        "required": [
+          "size_gib"
+        ]
+      },
+      "Mount": {
+        "type": "object",
+        "properties": {
+          "volume": {
+            "type": "string"
+          },
+          "mount_path": {
+            "type": "string"
+          },
+          "sub_path": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "volume",
+          "mount_path"
+        ]
+      },
+      "TemporaryMount": {
+        "type": "object",
+        "properties": {
+          "mount_path": {
+            "type": "string"
+          },
+          "size_mib": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128
+          },
+          "memory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mount_path",
+          "size_mib"
+        ]
+      },
+      "PrivatePort": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "target_port": {
+            "type": "integer"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "TCP",
+              "UDP"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "port"
+        ]
+      },
+      "NetworkAccess": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "from"
         ]
       },
       "WorkloadSecret": {

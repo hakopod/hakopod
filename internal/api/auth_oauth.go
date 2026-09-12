@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/store"
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 	"io"
 	"net"
@@ -66,15 +65,28 @@ func (s *Server) oauthConfig(provider string) (*oauth2.Config, error) {
 	return c, nil
 }
 func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
+	if intent := r.URL.Query().Get("intent"); intent != "" && intent != "login" && intent != "register" {
+		authFailure(w, store.ErrInput)
+		return
+	}
 	provider := r.PathValue("provider")
 	config, err := s.oauthConfig(provider)
 	if err != nil {
 		problem(w, 409, "provider_not_configured", "this sign-in provider has not been configured by the operator")
 		return
 	}
+	if r.URL.Query().Get("intent") == "register" && r.URL.Query().Get("invite_token") == "" && !s.signupOpen(w, r) {
+		return
+	}
+	if invite := r.URL.Query().Get("invite_token"); invite != "" {
+		if _, err := s.Store.InviteDetails(r.Context(), invite); err != nil {
+			authFailure(w, err)
+			return
+		}
+	}
 	verifier := oauth2.GenerateVerifier()
 	binding := store.NewID() + store.NewID()
-	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding}, 5*time.Minute)
+	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding, "intent": r.URL.Query().Get("intent"), "invite_token": r.URL.Query().Get("invite_token")}, 5*time.Minute)
 	if err != nil {
 		authFailure(w, err)
 		return
@@ -160,7 +172,7 @@ func (s *Server) providerIdentity(ctx context.Context, client *http.Client, prov
 		Verified bool   `json:"email_verified"`
 		Name     string `json:"name"`
 	}
-	if err := decodeProvider(ctx, client, endpoint, token, &u); err != nil || !u.Verified || u.Sub == "" {
+	if err := decodeProvider(ctx, client, endpoint, token, &u); err != nil || !u.Verified || u.Sub == "" || len(u.Sub) > 512 {
 		return oauthIdentity{}, store.ErrUnauthorized
 	}
 	normalized, err := store.NormalizeEmail(u.Email)
@@ -170,6 +182,10 @@ func (s *Server) providerIdentity(ctx context.Context, client *http.Client, prov
 	return oauthIdentity{u.Sub, normalized, u.Name}, nil
 }
 func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if len(r.URL.Query().Get("code")) > 4096 || len(r.URL.Query().Get("state")) > 512 {
+		authFailure(w, store.ErrUnauthorized)
+		return
+	}
 	provider := r.PathValue("provider")
 	config, err := s.oauthConfig(provider)
 	if err != nil {
@@ -209,32 +225,8 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
-	tx, err := s.Store.Pool.Begin(ctx)
+	id, err := s.Store.ResolveOAuthAccount(ctx, provider, verified.Subject, verified.Email, verified.Name, s.Auth.SignupEnabled && pending["intent"] == "register", pending["invite_token"])
 	if err != nil {
-		authFailure(w, err)
-		return
-	}
-	defer tx.Rollback(ctx)
-	var id string
-	err = tx.QueryRow(ctx, "SELECT i.id FROM oauth_identities o JOIN identities i ON i.id=o.identity_id WHERE o.provider=$1 AND o.subject=$2 AND NOT i.disabled", provider, verified.Subject).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		if err = tx.QueryRow(ctx, "SELECT id FROM identities WHERE email=$1 AND NOT disabled FOR UPDATE", verified.Email).Scan(&id); err != nil {
-			problem(w, 403, "invitation_required", "accept an invitation before signing in with this provider")
-			return
-		}
-		if _, err = tx.Exec(ctx, "INSERT INTO oauth_identities(provider,subject,identity_id) VALUES($1,$2,$3)", provider, verified.Subject, id); err != nil {
-			authFailure(w, store.ErrConflict)
-			return
-		}
-	} else if err != nil {
-		authFailure(w, err)
-		return
-	}
-	if _, err = tx.Exec(ctx, "UPDATE identities SET email_verified=true WHERE id=$1 AND email=$2", id, verified.Email); err != nil {
-		authFailure(w, err)
-		return
-	}
-	if err = tx.Commit(ctx); err != nil {
 		authFailure(w, err)
 		return
 	}
@@ -294,10 +286,45 @@ func (s *Server) authMFAComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessionResponse(w, r, session)
 }
+
+var authMailSlots = make(chan struct{}, 2)
+
 func (s *Server) sendAuthMail(ctx context.Context, recipient, subject, body string) error {
 	if !s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "" {
 		return store.ErrForbidden
 	}
+	select {
+	case authMailSlots <- struct{}{}:
+		defer func() { <-authMailSlots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return store.ErrBusy
+	}
+	return s.deliverAuthMail(ctx, recipient, subject, body)
+}
+
+// Public registration and recovery must not expose account existence through
+// SMTP latency. Reserve a slot before starting work; there is no waiting queue.
+func (s *Server) startAuthMail(ctx context.Context, recipient, subject, body, challenge, kind string) {
+	select {
+	case authMailSlots <- struct{}{}:
+	default:
+		_, _ = s.Store.ConsumeChallenge(ctx, challenge, kind)
+		return
+	}
+	go func() {
+		defer func() { <-authMailSlots }()
+		mailContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if s.deliverAuthMail(mailContext, recipient, subject, body) != nil {
+			_, _ = s.Store.ConsumeChallenge(mailContext, challenge, kind)
+			_, _ = s.Store.Pool.Exec(mailContext, "INSERT INTO audit_events(identity_id,action,resource) VALUES('','auth.email.failed',$1)", kind)
+		}
+	}()
+}
+
+func (s *Server) deliverAuthMail(ctx context.Context, recipient, subject, body string) error {
 	recipient, err := store.NormalizeEmail(recipient)
 	if err != nil {
 		return err

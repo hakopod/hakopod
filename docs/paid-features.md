@@ -10,13 +10,17 @@ from authentication and source synchronization.
 
 The implemented Pro feature identifiers are `teams`, `invitations` and
 `project_rbac`. They cover team creation/membership, creating and accepting member
-invitations, and granting or using project roles for people and teams. These
+invitations, and granting or using shared project roles for people and teams. These
 features are explicit signed entitlements; a `pro` label alone does not grant them.
 The authenticated `GET /api/v1/license` catalog is the UI's source of feature state.
 
+Public signup is optional. A verified account can create one private personal
+workspace in Free. Its ownership is separate from shared project grants: it
+cannot accept members or team assignments. See [accounts](accounts.md).
+
 On expiry, removal, invalid signature or a signed downgrade, paid mutations stop.
 Existing users can still authenticate and manage their own security. Direct and
-team-derived project roles stop authorizing new requests and durable worker
+team-derived shared project roles stop authorizing new requests and durable worker
 execution. Global administrators retain Free operations and recovery access;
 they may revoke memberships and role grants or delete a team to clean up safely.
 Existing global administrators are not demoted by license changes. Running

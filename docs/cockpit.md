@@ -27,6 +27,12 @@ client credentials are configured. Passkeys require a secure browser origin
 database; recovery codes are hashed and consumed once. Never lose the encryption
 key when backing up or restoring the installation.
 
+Public signup is opt-in with `HAKOPOD_SIGNUP_ENABLED=true`. Email registration
+verifies the address before creating an account. New accounts can accept an
+invitation or create one private personal workspace without paid sharing. The
+forgot-password flow sends a single-use email link and keeps two-factor
+authentication enabled. See [account setup and recovery](accounts.md).
+
 Configure `HAKOPOD_WEB_ORIGIN` with the dashboard origin. The Go process accepts
 `HAKOPOD_SETUP_SECRET_FILE` and `HAKOPOD_AUTH_ENCRYPTION_KEY_FILE`, pointing at
 restricted files. Their equivalent non-file variables are supported, but do not
@@ -43,9 +49,10 @@ are opaque IDs or a chosen value, never the person's email. Team usernames are
 unique within a team and may differ between teams. A profile change uses a
 revision check so an older browser tab cannot silently replace it.
 
-GitHub/Google OAuth use `HAKOPOD_GITHUB_CLIENT_ID`,
+GitHub/Google/GitLab OAuth use `HAKOPOD_GITHUB_CLIENT_ID`,
 `HAKOPOD_GITHUB_CLIENT_SECRET`, `HAKOPOD_GOOGLE_CLIENT_ID` and
-`HAKOPOD_GOOGLE_CLIENT_SECRET`. Register each callback as
+`HAKOPOD_GOOGLE_CLIENT_SECRET`, `HAKOPOD_GITLAB_CLIENT_ID` and
+`HAKOPOD_GITLAB_CLIENT_SECRET`. Register each callback as
 `DASHBOARD_ORIGIN/api/v1/auth/oauth/PROVIDER/callback`.
 Email delivery requires `HAKOPOD_SMTP_ENABLED=true`, `HAKOPOD_SMTP_ADDRESS`
 (`host:port`), `HAKOPOD_SMTP_FROM` and any required username/password. Production

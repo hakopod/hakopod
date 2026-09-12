@@ -230,7 +230,17 @@ var slug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
 
 func validScope(p, e string) bool { return slug.MatchString(p) && slug.MatchString(e) }
 func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.Store.Pool.Query(r.Context(), "SELECT project,name FROM environments ORDER BY project,name LIMIT 200")
+	p := who(r)
+	visible := []string{}
+	for _, candidate := range []string{p.Project, p.IdentityProject} {
+		if candidate != "" {
+			visible = append(visible, candidate)
+		}
+	}
+	for _, role := range p.ProjectRoles {
+		visible = append(visible, role.Project)
+	}
+	rows, err := s.Store.Pool.Query(r.Context(), "SELECT e.project,e.name,p.display_name,p.description,EXISTS(SELECT 1 FROM personal_workspaces w WHERE w.project=e.project) FROM environments e JOIN projects p ON p.name=e.project WHERE ($1 OR e.project=ANY($2::text[])) AND ($3='' OR e.name=$3) ORDER BY e.project,e.name LIMIT 200", p.IsAdmin(), visible, p.Environment)
 	if err != nil {
 		failure(w, err)
 		return
@@ -242,13 +252,16 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 	type project struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
+		DisplayName  string `json:"display_name"`
+		Description  string `json:"description"`
+		Personal     bool   `json:"personal"`
 		Environments []env  `json:"environments"`
 	}
 	out := []project{}
-	p := who(r)
 	for rows.Next() {
-		var a, b string
-		if err = rows.Scan(&a, &b); err != nil {
+		var a, b, displayName, description string
+		var personal bool
+		if err = rows.Scan(&a, &b, &displayName, &description, &personal); err != nil {
 			failure(w, err)
 			return
 		}
@@ -258,7 +271,10 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if len(out) == 0 || out[len(out)-1].Name != a {
-			out = append(out, project{ID: a, Name: a, Environments: []env{}})
+			if displayName == "" {
+				displayName = a
+			}
+			out = append(out, project{ID: a, Name: a, DisplayName: displayName, Description: description, Personal: personal, Environments: []env{}})
 		}
 		out[len(out)-1].Environments = append(out[len(out)-1].Environments, env{Name: b})
 	}
@@ -273,8 +289,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Name        string `json:"name"`
-		Environment string `json:"environment"`
+		Name        string  `json:"name"`
+		Environment string  `json:"environment"`
+		DisplayName *string `json:"display_name"`
+		Description *string `json:"description"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -283,13 +301,25 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_scope", "project/environment use 1–40 lowercase letters, digits and hyphens")
 		return
 	}
+	displayName, description, err := projectMetadata(in.Name, in.DisplayName, in.Description)
+	if err != nil {
+		problem(w, 400, "invalid_project", err.Error())
+		return
+	}
 	tx, err := s.Store.Pool.Begin(r.Context())
 	if err != nil {
 		failure(w, err)
 		return
 	}
 	defer tx.Rollback(r.Context())
-	_, err = tx.Exec(r.Context(), "INSERT INTO projects(name) VALUES($1) ON CONFLICT DO NOTHING", in.Name)
+	created, err := tx.Exec(r.Context(), "INSERT INTO projects(name,display_name,description) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", in.Name, displayName, description)
+	if err == nil && created.RowsAffected() == 0 && (in.DisplayName != nil || in.Description != nil) {
+		problem(w, 409, "project_exists", "This project ID is already in use. Choose another ID.")
+		return
+	}
+	if err == nil && created.RowsAffected() == 0 {
+		err = tx.QueryRow(r.Context(), "SELECT COALESCE(NULLIF(display_name,''),name),description FROM projects WHERE name=$1", in.Name).Scan(&displayName, &description)
+	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), "INSERT INTO environments(project,name) VALUES($1,$2) ON CONFLICT DO NOTHING", in.Name, in.Environment)
 	}
@@ -303,7 +333,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	write(w, 201, map[string]string{"name": in.Name, "environment": in.Environment})
+	write(w, 201, map[string]string{"name": in.Name, "environment": in.Environment, "display_name": displayName, "description": description})
 }
 func (s *Server) applications(w http.ResponseWriter, r *http.Request) {
 	project, env := scope(r)

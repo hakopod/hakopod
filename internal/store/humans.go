@@ -100,10 +100,7 @@ func (s *Store) projectRoles(ctx context.Context, id string) ([]ProjectRole, err
 	if err != nil {
 		return nil, err
 	}
-	if !licenseAllows(status, "project_rbac") {
-		return []ProjectRole{}, nil
-	}
-	rows, err := s.Pool.Query(ctx, `SELECT project,role FROM project_members WHERE identity_id=$1 UNION SELECT pt.project,pt.role FROM project_teams pt JOIN team_members tm ON tm.team_id=pt.team_id WHERE tm.identity_id=$1 AND $2 ORDER BY project,role LIMIT 400`, id, licenseAllows(status, "teams"))
+	rows, err := s.Pool.Query(ctx, `SELECT project,'admin' AS role FROM personal_workspaces WHERE identity_id=$1 UNION SELECT project,role FROM project_members WHERE identity_id=$1 AND $3 UNION SELECT pt.project,pt.role FROM project_teams pt JOIN team_members tm ON tm.team_id=pt.team_id WHERE tm.identity_id=$1 AND $2 AND $3 ORDER BY project,role LIMIT 400`, id, licenseAllows(status, "teams"), licenseAllows(status, "project_rbac"))
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +252,10 @@ func (s *Store) SuccessfulLogin(ctx context.Context, id string) error {
 }
 
 type Session struct {
-	Token     string    `json:"token"`
-	User      Principal `json:"user"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token              string    `json:"token"`
+	User               Principal `json:"user"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	OnboardingRequired bool      `json:"onboarding_required"`
 }
 
 func (s *Store) NewSession(ctx context.Context, identity, kind, project, environment string, permissions []string) (Session, error) {
@@ -285,8 +283,8 @@ func (s *Store) NewSession(ctx context.Context, identity, kind, project, environ
 		return Session{}, err
 	}
 	defer tx.Rollback(ctx)
-	var eligible bool
-	if err = tx.QueryRow(ctx, "SELECT email IS NOT NULL AND NOT disabled FROM identities WHERE id=$1 FOR UPDATE", identity).Scan(&eligible); err != nil {
+	var eligible, onboarding bool
+	if err = tx.QueryRow(ctx, "SELECT email IS NOT NULL AND NOT disabled,onboarding_required FROM identities WHERE id=$1 FOR UPDATE", identity).Scan(&eligible, &onboarding); err != nil {
 		return Session{}, err
 	}
 	if !eligible {
@@ -306,7 +304,7 @@ func (s *Store) NewSession(ctx context.Context, identity, kind, project, environ
 		return Session{}, err
 	}
 	p, err := s.KeyPrincipal(ctx, id)
-	return Session{raw, p, expires}, err
+	return Session{Token: raw, User: p, ExpiresAt: expires, OnboardingRequired: onboarding}, err
 }
 func (s *Store) RevokeSession(ctx context.Context, p Principal, id string) error {
 	if !p.IsHuman() {

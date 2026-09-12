@@ -209,6 +209,13 @@ func (s *Store) SetProjectMember(ctx context.Context, p Principal, project, id, 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var personal bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)", project).Scan(&personal); err != nil {
+		return err
+	}
+	if personal {
+		return fmt.Errorf("%w: personal workspaces cannot be shared", ErrForbidden)
+	}
 	if role != "" {
 		features := []string{"project_rbac"}
 		if team != "" {
@@ -310,6 +317,13 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 		return v, "", err
 	}
 	defer tx.Rollback(ctx)
+	var personal bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)", project).Scan(&personal); err != nil {
+		return v, "", err
+	}
+	if personal {
+		return v, "", fmt.Errorf("%w: personal workspaces cannot be shared", ErrForbidden)
+	}
 	features := []string{"invitations"}
 	if team != "" {
 		features = append(features, "teams")
@@ -342,6 +356,9 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 	return v, v.ID + "." + token, tx.Commit(ctx)
 }
 func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, p *Principal) (string, error) {
+	return s.AcceptInviteChoice(ctx, token, name, password, p, false)
+}
+func (s *Store) AcceptInviteChoice(ctx context.Context, token, name, password string, p *Principal, personal bool) (string, error) {
 	if err := s.RequireFeatures(ctx, "invitations"); err != nil {
 		return "", err
 	}
@@ -368,6 +385,9 @@ func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, 
 		return "", err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044216)"); err != nil {
+		return "", err
+	}
 	var email, team, project, role string
 	var want []byte
 	err = tx.QueryRow(ctx, "SELECT email,COALESCE(team_id,''),COALESCE(project,''),role,digest FROM invites WHERE id=$1 AND accepted_at IS NULL AND expires_at>now() FOR UPDATE", parts[0]).Scan(&email, &team, &project, &role, &want)
@@ -419,7 +439,12 @@ func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, 
 			return "", err
 		}
 	}
-	if team != "" {
+	if personal {
+		if _, err = personalWorkspaceTx(ctx, tx, id); err != nil {
+			return "", err
+		}
+	}
+	if team != "" && !personal {
 		teamRole := role
 		if project != "" {
 			teamRole = "member"
@@ -428,12 +453,15 @@ func (s *Store) AcceptInvite(ctx context.Context, token, name, password string, 
 			return "", err
 		}
 	}
-	if project != "" {
+	if project != "" && !personal {
 		if _, err = tx.Exec(ctx, "INSERT INTO project_members(project,identity_id,role) VALUES($1,$2,$3) ON CONFLICT(project,identity_id) DO UPDATE SET role=EXCLUDED.role", project, id, role); err != nil {
 			return "", err
 		}
 	}
 	if _, err = tx.Exec(ctx, "UPDATE invites SET accepted_at=now() WHERE id=$1", parts[0]); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(ctx, "UPDATE identities SET onboarding_required=false,email_verified=true WHERE id=$1", id); err != nil {
 		return "", err
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,action,resource) VALUES($1,'invite.accept',$2)", id, parts[0]); err != nil {
