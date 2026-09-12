@@ -5,3 +5,5 @@ Build complete, tested vertical slices. Never show invented cluster state, logs,
 Use strict versioned TOML, immutable revisions, optimistic concurrency, digest-pinned images, scoped bearer keys, and owned Kubernetes resources. Never log credentials or secret bodies. No application may receive cluster credentials. Preserve other contributors' work. Record implemented versus verified behavior accurately.
 
 Run `go test ./...`, the dashboard build, and real-cluster acceptance tests for Kubernetes behavior. Development fixtures must be explicitly marked; the dashboard uses real API data. All development infrastructure must use the named Hakopod development cluster/context; never mutate an existing operator cluster.
+
+Use plain human English in product copy, documentation and comments. Do not use emojis. Forms with more than four inputs belong on dedicated nested pages with concise help, clear navigation and a review step for consequential actions. Preserve entered values when a request fails.
