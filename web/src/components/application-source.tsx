@@ -1,3 +1,5 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -13,6 +15,8 @@ import { DiffTable } from './deploy-dialog'
 
 import { FormPage, FormHint, FormSection } from './form-page'
 import { ServiceIcon } from './service-icon'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Status } from './shared'
 
 export default function ApplicationSource({ application }: { application: Application }) {
   const scope = useScope()
@@ -309,17 +313,17 @@ export function SourceForm({
           >
             <label>
               Git provider
-              <select
+              <Select
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
               >
                 <option value="github">GitHub</option>
                 <option value="gitlab">GitLab.com</option>
-              </select>
+              </Select>
             </label>
             <label>
               Repository
-              <input
+              <Input
                 value={repository}
                 onChange={(e) => setRepository(e.target.value)}
                 placeholder="owner/repository"
@@ -329,7 +333,7 @@ export function SourceForm({
             </label>
             <label>
               Branch
-              <input
+              <Input
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
                 maxLength={200}
@@ -338,7 +342,7 @@ export function SourceForm({
             </label>
             <label>
               Configuration path
-              <input
+              <Input
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 maxLength={512}
@@ -352,7 +356,7 @@ export function SourceForm({
             icon="refresh"
           >
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={automatic}
                 onChange={(e) => setAutomatic(e.target.checked)}
@@ -387,23 +391,57 @@ export function SourceForm({
 
 export function GitHubSettings() {
   return (
-    <div className="integration-grid">
-      {(['github', 'gitlab'] as const).map((provider) => (
-        <Link
-          key={provider}
-          to="/settings/integrations/$provider"
-          params={{ provider }}
-          className="panel integration-card"
-        >
-          <ServiceIcon name={provider} size={32} />
-          <div>
-            <h2>{provider === 'github' ? 'GitHub' : 'GitLab'}</h2>
-            <p>Repository access, workflow installation, and authenticated webhook events.</p>
-          </div>
-          <span className="button button-secondary">Configure</span>
-        </Link>
-      ))}
-    </div>
+    <>
+      <div className="provider-section-title">
+        <h2>Git providers</h2>
+        <p>Connect repository access and signed webhooks for automatic deployments.</p>
+      </div>
+      <div className="integration-grid">
+        {(['github', 'gitlab'] as const).map((provider) => (
+          <GitProviderCard key={provider} provider={provider} />
+        ))}
+      </div>
+    </>
+  )
+}
+function GitProviderCard({ provider }: { provider: 'github' | 'gitlab' }) {
+  const connection = useQuery({
+    queryKey: ['git-settings', provider],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET(provider === 'github' ? '/integrations/github' : '/integrations/gitlab', {
+          signal,
+        }),
+      ),
+    gcTime: 0,
+  })
+  const ready = connection.data?.configured && connection.data?.token_configured
+  return (
+    <Link
+      to="/settings/integrations/$provider"
+      params={{ provider }}
+      className="panel integration-card interactive"
+    >
+      <Brackets />
+      <ServiceIcon name={provider} size={32} />
+      <div>
+        <h2>{provider === 'github' ? 'GitHub' : 'GitLab'}</h2>
+        <p>Repository access, build workflows, and authenticated push events.</p>
+      </div>
+      <div className="integration-state">
+        <Status
+          value={
+            connection.isPending
+              ? 'loading'
+              : connection.error
+                ? 'unavailable'
+                : ready
+                  ? 'configured'
+                  : 'setup needed'
+          }
+        />
+      </div>
+    </Link>
   )
 }
 export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitlab' }) {
@@ -433,7 +471,7 @@ export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitl
       ) : connection.error ? (
         <ErrorState error={connection.error} />
       ) : (
-        <section className="panel service-summary-panel ">
+        <section className="panel service-summary-panel git-connection-panel">
           <dl className="service-definition-list">
             <div>
               <dt>Repository credential</dt>
@@ -486,7 +524,7 @@ export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitl
           >
             <label>
               {label} personal access token
-              <input
+              <Input
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -501,7 +539,7 @@ export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitl
             </label>
             <label>
               Webhook signing secret
-              <input
+              <Input
                 type="password"
                 value={webhook}
                 onChange={(e) => setWebhook(e.target.value)}

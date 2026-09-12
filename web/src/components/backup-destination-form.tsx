@@ -1,3 +1,4 @@
+import { Input } from './ui/input'
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -83,7 +84,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               <Copy value={recovery} label="Copy recovery key" />
             </div>
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={saved}
                 onChange={(event) => setSaved(event.target.checked)}
@@ -159,7 +160,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
             >
               <label>
                 Display name
-                <input
+                <Input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   maxLength={80}
@@ -169,7 +170,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               </label>
               <label>
                 S3 endpoint
-                <input
+                <Input
                   type="url"
                   value={endpoint}
                   disabled={Boolean(destination)}
@@ -182,7 +183,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               <div className="form-grid-two">
                 <label>
                   Region
-                  <input
+                  <Input
                     value={region}
                     disabled={Boolean(destination)}
                     onChange={(event) => setRegion(event.target.value)}
@@ -192,7 +193,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
                 </label>
                 <label>
                   Bucket
-                  <input
+                  <Input
                     value={bucket}
                     disabled={Boolean(destination)}
                     onChange={(event) => setBucket(event.target.value)}
@@ -203,7 +204,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               </div>
               <label>
                 Object prefix
-                <input
+                <Input
                   value={prefix}
                   disabled={Boolean(destination)}
                   onChange={(event) => setPrefix(event.target.value)}
@@ -211,7 +212,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
                 />
               </label>
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={pathStyle}
                   disabled={Boolean(destination)}
@@ -220,7 +221,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
                 Use path-style bucket addressing
               </label>
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={allowHTTP}
                   disabled={Boolean(destination)}
@@ -246,7 +247,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
             >
               <label>
                 Access key ID
-                <input
+                <Input
                   type="password"
                   value={access}
                   onChange={(event) => setAccess(event.target.value)}
@@ -257,7 +258,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               </label>
               <label>
                 Secret access key
-                <input
+                <Input
                   type="password"
                   value={secret}
                   onChange={(event) => setSecret(event.target.value)}
@@ -268,7 +269,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               </label>
               <label>
                 Session token (optional)
-                <input
+                <Input
                   type="password"
                   value={session}
                   onChange={(event) => setSession(event.target.value)}
@@ -285,7 +286,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               >
                 <label>
                   Existing age identity (optional)
-                  <input
+                  <Input
                     type="password"
                     value={identity}
                     onChange={(event) => setIdentity(event.target.value)}

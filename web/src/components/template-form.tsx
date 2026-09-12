@@ -1,3 +1,5 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -226,7 +228,7 @@ export default function TemplateForm({
           >
             <label>
               Application name
-              <input
+              <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Choose a name"
@@ -237,7 +239,7 @@ export default function TemplateForm({
             </label>
             <label>
               Persistent storage (GiB)
-              <input
+              <Input
                 type="number"
                 min={1}
                 max={1024}
@@ -247,7 +249,7 @@ export default function TemplateForm({
             </label>
             <label>
               Target architecture
-              <select
+              <Select
                 value={architecture}
                 onChange={(event) => setArchitecture(event.target.value)}
               >
@@ -257,12 +259,12 @@ export default function TemplateForm({
                     Linux {value.toUpperCase()}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             {template.site_url_required && (
               <label>
                 Canonical site URL
-                <input
+                <Input
                   type="url"
                   value={siteURL}
                   onChange={(event) => setSiteURL(event.target.value)}
@@ -276,7 +278,7 @@ export default function TemplateForm({
               </label>
             )}
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={isPublic}
                 onChange={(e) => setPublic(e.target.checked)}
@@ -287,7 +289,7 @@ export default function TemplateForm({
               <>
                 <label>
                   Hugging Face model
-                  <input
+                  <Input
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     placeholder="organization/model"
@@ -297,7 +299,7 @@ export default function TemplateForm({
                 </label>
                 <label>
                   Model revision (optional)
-                  <input
+                  <Input
                     value={revision}
                     onChange={(e) => setRevision(e.target.value)}
                     placeholder="Resolve current immutable revision"
@@ -314,7 +316,7 @@ export default function TemplateForm({
               <>
                 <label>
                   Model provider
-                  <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+                  <Select value={provider} onChange={(event) => setProvider(event.target.value)}>
                     {template.providers.map((value) => (
                       <option key={value} value={value}>
                         {value === 'openai'
@@ -324,12 +326,12 @@ export default function TemplateForm({
                             : value}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 {provider === 'openai-compatible' && (
                   <label>
                     Provider API URL
-                    <input
+                    <Input
                       type="url"
                       value={providerURL}
                       onChange={(event) => setProviderURL(event.target.value)}
@@ -341,7 +343,7 @@ export default function TemplateForm({
                 )}
                 <label>
                   Model
-                  <input
+                  <Input
                     value={model}
                     onChange={(event) => setModel(event.target.value)}
                     maxLength={200}

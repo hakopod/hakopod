@@ -1,4 +1,7 @@
+import { Input } from './ui/input'
 import { useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { useNavigate } from '@tanstack/react-router'
 import { FormPage, FormSection, FormHint } from './form-page'
 import { useQuery } from '@tanstack/react-query'
@@ -16,6 +19,7 @@ export default function RegistrySettings() {
   const query = { project: scope.project, environment: scope.environment }
   const navigate = useNavigate()
   const [remove, setRemove] = useState<Registry | null>(null)
+  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const registries = useQuery({
@@ -66,11 +70,21 @@ export default function RegistrySettings() {
                 <Status value={registry.synchronized ? 'synchronized' : 'not verified'} small />
               </div>
               {scope.can('deployments:write') && (
-                <div className="toolbar-actions">
-                  <Button
-                    size="sm"
+                <Menu
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={busy}
+                      aria-label={`Actions for registry ${registry.name}`}
+                    >
+                      <MoreHorizontal size={16} strokeWidth={1.75} />
+                    </Button>
+                  }
+                >
+                  <MenuItem
                     disabled={busy}
-                    onClick={() =>
+                    onSelect={() =>
                       void navigate({
                         to: '/infrastructure/registries/$name',
                         params: { name: registry.name },
@@ -78,12 +92,12 @@ export default function RegistrySettings() {
                     }
                   >
                     Rotate credential
-                  </Button>
+                  </MenuItem>
                   {!registry.synchronized && (
-                    <Button
-                      size="sm"
+                    <MenuItem
                       disabled={busy}
-                      onClick={async () => {
+                      onSelect={async () => {
+                        if (busy) return
                         setBusy(true)
                         setError('')
                         try {
@@ -101,25 +115,26 @@ export default function RegistrySettings() {
                       }}
                     >
                       Synchronize now
-                    </Button>
+                    </MenuItem>
                   )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
+                  <MenuItem
+                    destructive
+                    disabled={busy}
+                    onSelect={() => {
                       setError('')
+                      setConfirmation('')
                       setRemove(registry)
                     }}
                   >
                     Delete
-                  </Button>
-                </div>
+                  </MenuItem>
+                </Menu>
               )}
             </div>
           ))}
         </div>
       )}
-      {error && (
+      {error && !remove && (
         <div className="inline-error" role="alert">
           {error}
         </div>
@@ -138,6 +153,16 @@ export default function RegistrySettings() {
         description="Services using this credential may fail future private image pulls."
       >
         <div className="dialog-body">
+          <label>
+            Type <code>{remove?.name}</code> to delete this credential
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm registry credential name"
+            />
+          </label>
           {error && (
             <div className="inline-error" role="alert">
               {error}
@@ -150,9 +175,9 @@ export default function RegistrySettings() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !remove || confirmation !== remove.name}
             onClick={async () => {
-              if (!remove) return
+              if (!remove || busy || confirmation !== remove.name) return
               setBusy(true)
               setError('')
               try {
@@ -253,7 +278,7 @@ export function RegistryForm({
           >
             <label>
               Credential name
-              <input
+              <Input
                 value={name}
                 readOnly={Boolean(registry)}
                 onChange={(e) => setName(e.target.value)}
@@ -264,7 +289,7 @@ export function RegistryForm({
             </label>
             <label>
               Registry host
-              <input
+              <Input
                 value={host}
                 readOnly={Boolean(registry)}
                 onChange={(e) => setHost(e.target.value)}
@@ -281,7 +306,7 @@ export function RegistryForm({
           >
             <label>
               Username
-              <input
+              <Input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="off"
@@ -291,7 +316,7 @@ export function RegistryForm({
             </label>
             <label>
               Password or access token
-              <input
+              <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -302,7 +327,7 @@ export function RegistryForm({
             </label>
             <label>
               Token realm (optional)
-              <input
+              <Input
                 type="url"
                 value={realm}
                 onChange={(e) => setRealm(e.target.value)}

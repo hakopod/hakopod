@@ -1,3 +1,4 @@
+import { Input } from './ui/input'
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -91,7 +92,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
           <FormSection title="Database and destination" icon="database">
             <label>
               Schedule name
-              <input
+              <Input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 maxLength={80}
@@ -110,7 +111,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
             <div className="form-grid-two">
               <label>
                 Interval in hours
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={8760}
@@ -121,7 +122,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
               </label>
               <label>
                 Backups to retain
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={100}
@@ -132,7 +133,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
               </label>
             </div>
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={enabled}
                 onChange={(event) => setEnabled(event.target.checked)}

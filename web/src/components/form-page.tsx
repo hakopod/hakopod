@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
+import { Card } from '@hakopod/hatch-ui/components/card'
 import { Icon } from './icons'
 
 export function FormPage({
@@ -18,7 +19,7 @@ export function FormPage({
   icon?: string
 }) {
   return (
-    <div className="form-page">
+    <div className="form-page hako-form-page">
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           {breadcrumbs.map((item, index) => (
@@ -65,7 +66,7 @@ export function FormSection({
 }) {
   const id = useId()
   return (
-    <section className="form-card" aria-labelledby={id}>
+    <Card className="form-card hako-form-section" role="region" aria-labelledby={id}>
       <header>
         <Icon name={icon} size={17} />
         <div>
@@ -74,13 +75,13 @@ export function FormSection({
         </div>
       </header>
       <div className="form-card-content">{children}</div>
-    </section>
+    </Card>
   )
 }
 
 export function FormHint({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="form-hint">
+    <section className="form-hint hako-form-hint">
       <Icon name="info" size={17} />
       <h3>{title}</h3>
       <div>{children}</div>

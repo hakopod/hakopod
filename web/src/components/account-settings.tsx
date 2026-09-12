@@ -1,3 +1,4 @@
+import { Input } from './ui/input'
 import { Link } from '@tanstack/react-router'
 import { Avatar } from './avatar'
 import { useState } from 'react'
@@ -16,6 +17,7 @@ export default function AccountSettings() {
   const [action, setAction] = useState<'totp' | 'disable' | 'passkey' | null>(null)
   const [remove, setRemove] = useState<{ id: string; name: string } | null>(null)
   const [revoke, setRevoke] = useState<{ id: string; current: boolean } | null>(null)
+  const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const security = useQuery({
@@ -108,6 +110,7 @@ export default function AccountSettings() {
                         size="sm"
                         variant="ghost"
                         disabled={!security.data.password_enabled}
+                        aria-label={`Remove passkey ${key.name}`}
                         onClick={() => setRemove(key)}
                       >
                         Remove
@@ -122,6 +125,7 @@ export default function AccountSettings() {
             {action && (
               <SecurityAction
                 action={action}
+                accountLabel={identity.email || identity.name || identity.id}
                 mfa={security.data.totp_enabled}
                 onClose={() => setAction(null)}
                 onSuccess={refresh}
@@ -130,6 +134,7 @@ export default function AccountSettings() {
             {remove && (
               <SecurityAction
                 action="remove"
+                accountLabel={identity.email || identity.name || identity.id}
                 passkey={remove}
                 mfa={security.data.totp_enabled}
                 onClose={() => setRemove(null)}
@@ -167,8 +172,10 @@ export default function AccountSettings() {
                 size="sm"
                 onClick={() => {
                   setError('')
+                  setConfirmation('')
                   setRevoke(session)
                 }}
+                aria-label={`Revoke ${session.kind} session ${session.id}`}
               >
                 Revoke
               </Button>
@@ -189,6 +196,16 @@ export default function AccountSettings() {
         }
       >
         <div className="dialog-body">
+          <label>
+            Type <code>{revoke?.id}</code> to revoke this session
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm session ID"
+            />
+          </label>
           {error && (
             <div className="inline-error" role="alert">
               {error}
@@ -201,9 +218,9 @@ export default function AccountSettings() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !revoke || confirmation !== revoke.id}
             onClick={async () => {
-              if (!revoke || busy) return
+              if (!revoke || busy || confirmation !== revoke.id) return
               setBusy(true)
               setError('')
               try {
@@ -234,12 +251,14 @@ export default function AccountSettings() {
 
 function SecurityAction({
   action,
+  accountLabel,
   passkey,
   mfa,
   onClose,
   onSuccess,
 }: {
   action: 'totp' | 'disable' | 'passkey' | 'remove'
+  accountLabel: string
   passkey?: { id: string; name: string }
   mfa: boolean
   onClose: () => void
@@ -248,6 +267,13 @@ function SecurityAction({
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const confirmationTarget =
+    action === 'remove'
+      ? passkey?.name || passkey?.id
+      : action === 'disable'
+        ? accountLabel
+        : undefined
   const [setup, setSetup] = useState<{
     challenge: string
     secret: string
@@ -278,7 +304,7 @@ function SecurityAction({
       <form
         onSubmit={async (event) => {
           event.preventDefault()
-          if (busy) return
+          if (busy || (confirmationTarget && confirmation !== confirmationTarget)) return
           setBusy(true)
           setError('')
           try {
@@ -354,7 +380,7 @@ function SecurityAction({
               </div>
               <label>
                 Authenticator code
-                <input
+                <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   autoComplete="one-time-code"
@@ -370,7 +396,7 @@ function SecurityAction({
               {action === 'passkey' && (
                 <label>
                   Passkey name
-                  <input
+                  <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="This device"
@@ -381,7 +407,7 @@ function SecurityAction({
               )}
               <label>
                 Current password
-                <input
+                <Input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -393,12 +419,26 @@ function SecurityAction({
               {(mfa || action === 'disable') && (
                 <label>
                   Authenticator or recovery code
-                  <input
+                  <Input
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     autoComplete="one-time-code"
                     maxLength={128}
                     required
+                  />
+                </label>
+              )}
+              {confirmationTarget && (
+                <label>
+                  Type <code>{confirmationTarget}</code> to confirm{' '}
+                  {action === 'remove' ? 'passkey removal' : 'disabling your authenticator'}
+                  <Input
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    required
+                    aria-label={action === 'remove' ? 'Confirm passkey name' : 'Confirm account'}
                   />
                 </label>
               )}
@@ -418,9 +458,19 @@ function SecurityAction({
             <Button
               type="submit"
               variant={action === 'disable' || action === 'remove' ? 'danger' : 'primary'}
-              disabled={busy}
+              disabled={busy || Boolean(confirmationTarget && confirmation !== confirmationTarget)}
             >
-              {busy ? 'Working…' : setup ? 'Verify authenticator' : 'Continue'}
+              {busy
+                ? 'Working…'
+                : setup
+                  ? 'Verify authenticator'
+                  : action === 'remove'
+                    ? 'Remove passkey'
+                    : action === 'disable'
+                      ? 'Disable authenticator'
+                      : action === 'passkey'
+                        ? 'Register passkey'
+                        : 'Start setup'}
             </Button>
           )}
         </div>

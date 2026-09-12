@@ -1,5 +1,6 @@
+import { Input } from '../components/ui/input'
 import { useState } from 'react'
-import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import type { components } from '../lib/api.generated'
@@ -14,9 +15,10 @@ import {
   type BackupSchedule,
 } from '../lib/backups'
 import { Button } from '../components/ui/button'
+import { RowActions } from '../components/ui/row-actions'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
-import { Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
 
 export const Route = createFileRoute('/backups')({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -49,10 +51,28 @@ function Backups() {
         title="Backups"
         description="Encrypted database backups, object storage destinations, and reviewed restores."
         action={
-          <Link className="button button-primary" to="/backups/new">
-            <Icon name="plus" size={15} />
-            Run backup
-          </Link>
+          tab === 'destinations' ? (
+            <Button asChild variant="primary">
+              <Link to="/backups/destinations/new">
+                <Icon name="plus" size={15} />
+                Add destination
+              </Link>
+            </Button>
+          ) : tab === 'schedules' ? (
+            <Button asChild variant="primary">
+              <Link to="/backups/schedules/new">
+                <Icon name="plus" size={15} />
+                Create schedule
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild variant="primary">
+              <Link to="/backups/new">
+                <Icon name="plus" size={15} />
+                Run backup
+              </Link>
+            </Button>
+          )
         }
       />
       <nav className="tab-list" aria-label="Backup sections">
@@ -65,6 +85,7 @@ function Backups() {
           <button
             key={value}
             className={`tab-trigger ${tab === value ? 'selected' : ''}`}
+            data-state={tab === value ? 'active' : 'inactive'}
             aria-current={tab === value ? 'page' : undefined}
             onClick={() => void navigate({ search: { tab: value } })}
           >
@@ -316,7 +337,7 @@ function RemoveArtifact({
           <label>
             Type the backup ID to confirm
             <code className="field-help break-text">{artifact.id}</code>
-            <input
+            <Input
               value={confirmation}
               disabled={artifact.deletion_pending}
               onChange={(event) => setConfirmation(event.target.value)}
@@ -346,20 +367,37 @@ function RemoveArtifact({
 }
 function Destinations() {
   const destinations = useBackupDestinations()
+  const navigate = useNavigate()
   const [remove, setRemove] = useState<BackupDestination | null>(null)
   const [testing, setTesting] = useState('')
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
+  async function test(item: BackupDestination) {
+    if (testing) return
+    setTesting(item.id)
+    setError('')
+    setResult('')
+    try {
+      const value = await unwrap(
+        client.POST('/backup-destinations/{id}/test', {
+          params: { path: { id: item.id } },
+          body: {},
+        }),
+      )
+      setResult(`${item.name}: ${value.message}`)
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setTesting('')
+    }
+  }
   return (
     <>
       <div className="section-toolbar">
         <div>
           <h2>Object storage</h2>
-          <p>Up to 32 encrypted backup destinations.</p>
+          <p>Connect and test the buckets used by backups. Credentials stay on the server.</p>
         </div>
-        <Link className="button button-primary" to="/backups/destinations/new">
-          Add destination
-        </Link>
       </div>
       {destinations.isPending ? (
         <Loading />
@@ -372,75 +410,84 @@ function Destinations() {
           description="Connect an S3-compatible bucket for encrypted database backups."
         />
       ) : (
-        <div className="catalog-grid">
-          {destinations.data.items.map((item) => (
-            <section className="panel catalog-card" key={item.id}>
-              <div className="title-row">
-                <Icon name="archive" size={23} />
-                <h2>{item.name}</h2>
-              </div>
-              <p className="break-text">{item.endpoint}</p>
-              <dl className="service-definition-list">
-                <div>
-                  <dt>Bucket / prefix</dt>
-                  <dd>
-                    {item.bucket} / {item.prefix || 'root'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Region</dt>
-                  <dd>{item.region}</dd>
-                </div>
-                <div>
-                  <dt>Encryption</dt>
-                  <dd>
-                    <code title={item.encryption_recipient}>
-                      {item.encryption_recipient.slice(0, 18)}…
-                    </code>
-                  </dd>
-                </div>
-              </dl>
-              <div className="toolbar-actions">
-                <Link
-                  className="button button-sm"
-                  to="/backups/destinations/$destinationId/edit"
-                  params={{ destinationId: item.id }}
-                >
-                  Edit
-                </Link>
-                <Button
-                  size="sm"
-                  disabled={Boolean(testing)}
-                  onClick={async () => {
-                    setTesting(item.id)
-                    setError('')
-                    setResult('')
-                    try {
-                      const value = await unwrap(
-                        client.POST('/backup-destinations/{id}/test', {
-                          params: { path: { id: item.id } },
-                          body: {},
-                        }),
-                      )
-                      setResult(value.message)
-                    } catch (err) {
-                      setError(message(err))
-                    } finally {
-                      setTesting('')
-                    }
-                  }}
-                >
-                  {testing === item.id ? 'Testing…' : 'Test connection'}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setRemove(item)}>
-                  Remove
-                </Button>
-              </div>
-            </section>
-          ))}
+        <div className="table-container">
+          <table className="backup-config-table">
+            <thead>
+              <tr>
+                <th>Destination</th>
+                <th>Bucket / prefix</th>
+                <th>Region</th>
+                <th>Encryption recipient</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {destinations.data.items.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <Link
+                      to="/backups/destinations/$destinationId/edit"
+                      params={{ destinationId: item.id }}
+                    >
+                      <strong>{item.name}</strong>
+                    </Link>
+                    <small>{item.endpoint}</small>
+                    <span className="copy-id">
+                      <code>{item.id.slice(0, 12)}</code>
+                      <Copy value={item.id} />
+                    </span>
+                  </td>
+                  <td>
+                    {item.bucket}
+                    <small>{item.prefix || 'Bucket root'}</small>
+                  </td>
+                  <td>{item.region}</td>
+                  <td>
+                    <span className="copy-id">
+                      <code title={item.encryption_recipient}>
+                        {item.encryption_recipient.slice(0, 18)}…
+                      </code>
+                      <Copy value={item.encryption_recipient} />
+                    </span>
+                  </td>
+                  <td>
+                    <RowActions
+                      label={item.name}
+                      actions={[
+                        {
+                          label: 'Edit destination',
+                          run: () =>
+                            void navigate({
+                              to: '/backups/destinations/$destinationId/edit',
+                              params: { destinationId: item.id },
+                            }),
+                        },
+                        {
+                          label: testing === item.id ? 'Testing connection…' : 'Test connection',
+                          run: () => void test(item),
+                          disabled: Boolean(testing),
+                        },
+                        {
+                          label: 'Remove destination',
+                          run: () => setRemove(item),
+                          destructive: true,
+                        },
+                      ]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
-      {result && <Note>{result}</Note>}
+      {result && (
+        <div role="status">
+          <Note>{result}</Note>
+        </div>
+      )}
       {error && <ErrorState error={error} />}
       {remove && (
         <RemoveBackupConfig
@@ -456,17 +503,15 @@ function Destinations() {
 }
 function Schedules() {
   const schedules = useBackupSchedules()
+  const navigate = useNavigate()
   const [remove, setRemove] = useState<BackupSchedule | null>(null)
   return (
     <>
       <div className="section-toolbar">
         <div>
           <h2>Backup schedules</h2>
-          <p>Recurring jobs with bounded retained backup counts.</p>
+          <p>Review the next run, source, and retained backup count.</p>
         </div>
-        <Link className="button button-primary" to="/backups/schedules/new">
-          Create schedule
-        </Link>
       </div>
       {schedules.isPending ? (
         <Loading />
@@ -479,31 +524,56 @@ function Schedules() {
           description="Choose a database, destination, interval, and retention count."
         />
       ) : (
-        <div className="panel settings-session-list">
-          {schedules.data.items.map((item) => (
-            <div className="settings-list-row" key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <small>{sourceLabel(item.source)}</small>
-                <small>
-                  Every {item.interval_hours} hours · Keep {item.retention_count} ·{' '}
-                  {item.enabled ? `Next ${timestamp(item.next_run_at)}` : 'Paused'}
-                </small>
-              </div>
-              <div className="toolbar-actions">
-                <Link
-                  className="button button-sm"
-                  to="/backups/schedules/$scheduleId/edit"
-                  params={{ scheduleId: item.id }}
-                >
-                  Edit
-                </Link>
-                <Button size="sm" variant="ghost" onClick={() => setRemove(item)}>
-                  Remove
-                </Button>
-              </div>
-            </div>
-          ))}
+        <div className="table-container">
+          <table className="backup-config-table">
+            <thead>
+              <tr>
+                <th>Schedule</th>
+                <th>Source</th>
+                <th>Interval</th>
+                <th>Retention</th>
+                <th>Next run</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.data.items.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <Status value={item.enabled ? 'active' : 'paused'} />
+                    <Link to="/backups/schedules/$scheduleId/edit" params={{ scheduleId: item.id }}>
+                      <strong>{item.name}</strong>
+                    </Link>
+                    <small>
+                      <code>{item.id.slice(0, 12)}</code>
+                    </small>
+                  </td>
+                  <td>{sourceLabel(item.source)}</td>
+                  <td>Every {item.interval_hours} hours</td>
+                  <td>{item.retention_count} backups</td>
+                  <td>{item.enabled ? timestamp(item.next_run_at) : 'Paused'}</td>
+                  <td>
+                    <RowActions
+                      label={item.name}
+                      actions={[
+                        {
+                          label: 'Edit schedule',
+                          run: () =>
+                            void navigate({
+                              to: '/backups/schedules/$scheduleId/edit',
+                              params: { scheduleId: item.id },
+                            }),
+                        },
+                        { label: 'Remove schedule', run: () => setRemove(item), destructive: true },
+                      ]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {remove && (
@@ -533,6 +603,7 @@ function RemoveBackupConfig({
 }) {
   const cache = useQueryClient()
   const [busy, setBusy] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   return (
     <Dialog
@@ -549,6 +620,14 @@ function RemoveBackupConfig({
     >
       <div className="dialog-body">
         <Note>Stored backup objects are not deleted by this action.</Note>
+        <label>
+          Type {name} to remove this {kind}
+          <Input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="off"
+          />
+        </label>
         {error && <ErrorState error={error} />}
       </div>
       <div className="dialog-footer">
@@ -557,8 +636,9 @@ function RemoveBackupConfig({
         </Button>
         <Button
           variant="danger"
-          disabled={busy}
+          disabled={busy || confirmation !== name}
           onClick={async () => {
+            if (busy || confirmation !== name) return
             setBusy(true)
             setError('')
             try {

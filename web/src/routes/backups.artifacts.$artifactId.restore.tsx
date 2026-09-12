@@ -1,3 +1,5 @@
+import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -132,7 +134,7 @@ function RestoreBackup() {
             ))}
             <label>
               Type the new database name to confirm
-              <input
+              <Input
                 value={confirmation}
                 disabled={item.deletion_pending}
                 onChange={(event) => setConfirmation(event.target.value)}
@@ -151,7 +153,7 @@ function RestoreBackup() {
           >
             <label>
               Restore to
-              <select
+              <Select
                 value={selected}
                 disabled={item.deletion_pending}
                 onChange={(event) => setSelected(event.target.value)}
@@ -162,7 +164,7 @@ function RestoreBackup() {
                     {value.application_name || value.application_id} / {value.service}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             {!eligible.length && (
               <Note>Create a compatible database service before restoring this artifact.</Note>

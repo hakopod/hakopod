@@ -1,7 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
+import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import * as Tabs from '@radix-ui/react-tabs'
+import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
 import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { APIKey } from '../lib/types'
@@ -40,95 +42,61 @@ function AdministrationRoute() {
 }
 function Administration() {
   const scope = useScope()
-  const selected = Route.useSearch().tab
-  const [tab, setTab] = useState(selected || 'account')
-  useEffect(() => {
-    if (selected) setTab(selected)
-  }, [selected])
+  const selected = Route.useSearch().tab || 'account'
+  const navigate = Route.useNavigate()
+  const sections = [
+    { id: 'account', label: 'Account security', group: 'Personal' },
+    { id: 'appearance', label: 'Appearance', group: 'Personal' },
+    { id: 'teams', label: 'Teams & access', group: 'Workspace' },
+    { id: 'license', label: 'License & features', group: 'Workspace' },
+    ...(scope.identity.admin
+      ? [
+          { id: 'users', label: 'People', group: 'Installation' },
+          { id: 'github', label: 'Git providers', group: 'Installation' },
+          { id: 'keys', label: 'API keys', group: 'Installation' },
+          { id: 'audit', label: 'Audit events', group: 'Installation' },
+        ]
+      : []),
+  ]
+  const tab = sections.some((section) => section.id === selected) ? selected : 'account'
   return (
-    <>
+    <div className="settings-page">
       <PageHeader
-        eyebrow="WORKSPACE / ACCOUNT & ACCESS"
-        title="Account & access"
-        description="Your account, team access, and installation controls."
+        eyebrow="WORKSPACE / SETTINGS"
+        title="Settings"
+        description="Manage your account, workspace access, and installation."
       />
-      <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="tab-list">
-          <Tabs.Trigger className="tab-trigger" value="account">
-            <Icon name="shield" size={15} />
-            Account security
-          </Tabs.Trigger>
-          <Tabs.Trigger className="tab-trigger" value="teams">
-            <Icon name="network" size={15} />
-            Teams & access
-          </Tabs.Trigger>
-          <Tabs.Trigger className="tab-trigger" value="license">
-            <Icon name="key" size={15} />
-            License
-          </Tabs.Trigger>
-          {scope.identity.admin && (
-            <>
-              <Tabs.Trigger className="tab-trigger" value="users">
-                People
-              </Tabs.Trigger>
-              <Tabs.Trigger className="tab-trigger" value="github">
-                Git providers
-              </Tabs.Trigger>
-              <Tabs.Trigger className="tab-trigger" value="keys">
-                <Icon name="key" size={15} />
-                API keys
-              </Tabs.Trigger>
-              <Tabs.Trigger className="tab-trigger" value="audit">
-                <Icon name="activity" size={15} />
-                Audit events
-              </Tabs.Trigger>
-              <Tabs.Trigger className="tab-trigger" value="appearance">
-                <Icon name="sun" size={15} />
-                Appearance
-              </Tabs.Trigger>
-            </>
-          )}
-        </Tabs.List>
+      <SettingsLayout
+        sections={sections}
+        active={tab}
+        onSectionChange={(next) => void navigate({ search: { tab: next } })}
+      >
         <Suspense fallback={<Loading />}>
-          <Tabs.Content className="tab-content" value="license">
-            <LicenseSettings />
-          </Tabs.Content>
-          <Tabs.Content className="tab-content" value="account">
-            <AccountSettings />
-          </Tabs.Content>
-          <Tabs.Content className="tab-content" value="teams">
-            <TeamSettings />
-          </Tabs.Content>
+          {tab === 'account' && <AccountSettings />}
+          {tab === 'appearance' && <AppearanceSettings />}
+          {tab === 'teams' && <TeamSettings />}
+          {tab === 'license' && <LicenseSettings />}
           {scope.identity.admin && (
             <>
-              <Tabs.Content className="tab-content" value="users">
-                <InstallationUsers />
-              </Tabs.Content>
-              <Tabs.Content className="tab-content" value="github">
-                <GitHubSettings />
-              </Tabs.Content>
-              <Tabs.Content className="tab-content" value="keys">
-                <Keys />
-              </Tabs.Content>
-              <Tabs.Content className="tab-content" value="audit">
-                <AuditLog />
-              </Tabs.Content>
-              <Tabs.Content className="tab-content" value="appearance">
-                <AppearanceSettings />
-              </Tabs.Content>
+              {tab === 'users' && <InstallationUsers />}
+              {tab === 'github' && <GitHubSettings />}
+              {tab === 'keys' && <Keys />}
+              {tab === 'audit' && <AuditLog />}
             </>
           )}
         </Suspense>
-      </Tabs.Root>
-    </>
+      </SettingsLayout>
+    </div>
   )
 }
+
 function Keys() {
   const scope = useScope()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [rotation, setRotation] = useState<APIKey | null>(null)
   const [revoke, setRevoke] = useState<APIKey | null>(null)
+  const [confirmName, setConfirmName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const keys = useQuery({
@@ -236,6 +204,7 @@ function Keys() {
                           variant="ghost"
                           onClick={() => {
                             setRevoke(key)
+                            setConfirmName('')
                             setError('')
                           }}
                         >
@@ -274,7 +243,19 @@ function Keys() {
             Existing workloads remain running. Accepted operations revalidate authority before new
             privileged steps.
           </Note>
-          {error && <div className="inline-error">{error}</div>}
+          <label>
+            Type {revoke?.name} to revoke this key
+            <Input
+              value={confirmName}
+              autoComplete="off"
+              onChange={(event) => setConfirmName(event.target.value)}
+            />
+          </label>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>
@@ -282,9 +263,9 @@ function Keys() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || confirmName !== revoke?.name}
             onClick={async () => {
-              if (!revoke) return
+              if (!revoke || confirmName !== revoke.name || busy) return
               setBusy(true)
               setError('')
               try {
@@ -408,19 +389,19 @@ function CreateKey({
               </Note>
               <label>
                 Replacement expires in
-                <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+                <Select value={days} onChange={(event) => setDays(Number(event.target.value))}>
                   <option value={7}>7 days</option>
                   <option value={30}>30 days</option>
                   <option value={60}>60 days</option>
                   <option value={89}>89 days</option>
-                </select>
+                </Select>
               </label>
             </>
           ) : (
             <>
               <label>
                 Key name
-                <input
+                <Input
                   required
                   placeholder="production-deploy"
                   value={name}
@@ -431,7 +412,7 @@ function CreateKey({
               <div className="form-grid-two">
                 <label>
                   Application restriction
-                  <input
+                  <Input
                     placeholder="All in this environment"
                     value={application}
                     onChange={(event) => setApplication(event.target.value)}
@@ -439,19 +420,19 @@ function CreateKey({
                 </label>
                 <label>
                   Expires in
-                  <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+                  <Select value={days} onChange={(event) => setDays(Number(event.target.value))}>
                     <option value={7}>7 days</option>
                     <option value={30}>30 days</option>
                     <option value={60}>60 days</option>
                     <option value={89}>89 days</option>
-                  </select>
+                  </Select>
                 </label>
               </div>
               <label>Permissions</label>
               <div className="permission-checkboxes">
                 {['deployments:read', 'deployments:write', 'logs:read'].map((permission) => (
                   <label className="checkbox-label" key={permission}>
-                    <input
+                    <Input
                       type="checkbox"
                       checked={permissions.includes(permission)}
                       onChange={(event) =>

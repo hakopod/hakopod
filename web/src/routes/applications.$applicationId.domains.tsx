@@ -1,3 +1,5 @@
+import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -257,7 +259,7 @@ function ApplicationDomains() {
                 >
                   <label>
                     Hostname
-                    <input
+                    <Input
                       value={hostname}
                       onChange={(event) => setHostname(event.target.value)}
                       placeholder="app.example.com"
@@ -269,7 +271,7 @@ function ApplicationDomains() {
                   </label>
                   <label>
                     Public service
-                    <select
+                    <Select
                       value={selected}
                       onChange={(event) => setService(event.target.value)}
                       required
@@ -277,7 +279,7 @@ function ApplicationDomains() {
                       {publicServices.map((name) => (
                         <option key={name}>{name}</option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   {!publicServices.length && (
                     <Note>Configure a public HTTP service before adding a domain.</Note>

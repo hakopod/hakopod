@@ -1,7 +1,11 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { Avatar } from './avatar'
 import { useLicense } from '../lib/license'
 import { FeatureLock } from './license-settings'
 import { useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
@@ -20,7 +24,8 @@ export default function TeamSettings() {
   const [selected, setSelected] = useState('')
   const [teamName, setTeamName] = useState('')
   const [adding, setAdding] = useState(false)
-  const [removeTeam, setRemoveTeam] = useState(false)
+  const [removeTeam, setRemoveTeam] = useState<{ id: string; name: string } | null>(null)
+  const [confirmation, setConfirmation] = useState('')
   const [usernameMember, setUsernameMember] = useState<components['schemas']['TeamMember'] | null>(
     null,
   )
@@ -106,16 +111,23 @@ export default function TeamSettings() {
           <div className="section-toolbar">
             <label className="inline-label">
               Team
-              <select value={team} onChange={(e) => setSelected(e.target.value)}>
+              <Select value={team} onChange={(e) => setSelected(e.target.value)}>
                 {teams.data.items.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             {scope.identity.admin && (
-              <Button variant="ghost" onClick={() => setRemoveTeam(true)}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setError('')
+                  setConfirmation('')
+                  if (current) setRemoveTeam({ id: current.id, name: current.name })
+                }}
+              >
                 Delete team
               </Button>
             )}
@@ -146,6 +158,8 @@ export default function TeamSettings() {
                   <RoleEditor
                     key={`${member.id}-${member.role}`}
                     role={member.role}
+                    subject={member.name || member.email || member.id}
+                    scopeName={`team ${current?.name || team}`}
                     roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
                     onSave={async (role) => {
                       await unwrap(
@@ -207,6 +221,8 @@ export default function TeamSettings() {
                     <RoleEditor
                       key={`${member.identity_id || member.team_id}-${member.role}`}
                       role={member.role}
+                      subject={member.name || member.identity_id || member.team_id || 'member'}
+                      scopeName={`project ${scope.project}`}
                       roles={
                         hasFeature('project_rbac')
                           ? ['admin', 'developer', 'viewer']
@@ -261,22 +277,22 @@ export default function TeamSettings() {
               >
                 <label>
                   Grant a team access
-                  <select value={grant} onChange={(e) => setGrant(e.target.value)} required>
+                  <Select value={grant} onChange={(e) => setGrant(e.target.value)} required>
                     <option value="">Choose a team</option>
                     {teams.data?.items.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label>
                   Role
-                  <select value={grantRole} onChange={(e) => setGrantRole(e.target.value)}>
+                  <Select value={grantRole} onChange={(e) => setGrantRole(e.target.value)}>
                     {['viewer', 'developer', 'admin'].map((role) => (
                       <option key={role}>{role}</option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <Button type="submit" disabled={busy || !grant}>
                   Grant access
@@ -288,7 +304,7 @@ export default function TeamSettings() {
       ) : (
         <Note>Choose a project to manage access.</Note>
       )}
-      {error && (
+      {error && !removeTeam && !adding && (
         <div className="inline-error" role="alert">
           {error}
         </div>
@@ -330,7 +346,7 @@ export default function TeamSettings() {
           <div className="dialog-body field-stack">
             <label>
               Username
-              <input
+              <Input
                 value={username}
                 onChange={(event) => setUsername(event.target.value.toLowerCase())}
                 minLength={2}
@@ -344,7 +360,11 @@ export default function TeamSettings() {
               2–30 lowercase letters, digits, underscores, or hyphens. Start with a letter.
               Usernames are unique within this team.
             </p>
-            {usernameError && <ErrorState error={usernameError} />}
+            {usernameError && (
+              <div className="inline-error" role="alert">
+                {usernameError}
+              </div>
+            )}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setUsernameMember(null)}>
@@ -357,31 +377,49 @@ export default function TeamSettings() {
         </form>
       </Dialog>
       <Dialog
-        open={removeTeam}
+        open={Boolean(removeTeam)}
         onOpenChange={(open) => {
-          if (!busy) setRemoveTeam(open)
+          if (!busy && !open) setRemoveTeam(null)
         }}
-        title={`Delete ${current?.name || 'this team'}?`}
+        title={`Delete ${removeTeam?.name || 'this team'}?`}
         description="Remove the team, its memberships, project grants, and pending team invitations. Individual accounts remain."
       >
-        <div className="dialog-body">
+        <div className="dialog-body field-stack">
           <p>
             This also removes team access to every project. This cleanup remains available on Free.
           </p>
+          <label>
+            Type <code>{removeTeam?.name}</code> to delete this team
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm team name"
+            />
+          </label>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
-          <Button disabled={busy} onClick={() => setRemoveTeam(false)}>
+          <Button disabled={busy} onClick={() => setRemoveTeam(null)}>
             Keep team
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !removeTeam || confirmation !== removeTeam.name}
             onClick={async () => {
+              if (busy || !removeTeam || confirmation !== removeTeam.name) return
               setBusy(true)
               setError('')
               try {
-                await unwrap(client.DELETE('/teams/{id}', { params: { path: { id: team } } }))
-                setRemoveTeam(false)
+                await unwrap(
+                  client.DELETE('/teams/{id}', { params: { path: { id: removeTeam.id } } }),
+                )
+                setRemoveTeam(null)
                 setSelected('')
                 refresh()
               } catch (err) {
@@ -433,7 +471,7 @@ export default function TeamSettings() {
           <div className="dialog-body auth-form">
             <label>
               Team name
-              <input
+              <Input
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 maxLength={80}
@@ -463,52 +501,111 @@ export default function TeamSettings() {
 function RoleEditor({
   role,
   roles,
+  subject,
+  scopeName,
   onSave,
 }: {
   role: string
   roles: string[]
+  subject: string
+  scopeName: string
   onSave: (role: string) => Promise<void>
 }) {
   const [next, setNext] = useState(role)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
+  const save = async (value: string) => {
+    if (busy || (!value && confirmation !== subject)) return
+    setBusy(true)
+    setError('')
+    try {
+      await onSave(value)
+      setConfirmOpen(false)
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
-    <form
-      className="role-editor"
-      onSubmit={async (e) => {
-        e.preventDefault()
-        if (busy || next === role) return
-        setBusy(true)
-        setError('')
-        try {
-          await onSave(next)
-        } catch (err) {
-          setError(message(err))
-        } finally {
-          setBusy(false)
-        }
-      }}
-    >
-      <select aria-label="Member role" value={next} onChange={(e) => setNext(e.target.value)}>
-        {roles.map((value) => (
-          <option key={value}>{value}</option>
-        ))}
-        <option value="">Remove access</option>
-      </select>
-      <Button
-        size="sm"
-        type="submit"
-        disabled={busy || next === role}
-        variant={next ? 'secondary' : 'danger'}
+    <>
+      <form
+        className="role-editor"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (busy || next === role) return
+          if (!next) {
+            setError('')
+            setConfirmation('')
+            setConfirmOpen(true)
+          } else void save(next)
+        }}
       >
-        {next ? 'Save' : 'Remove'}
-      </Button>
-      {error && (
-        <span className="inline-error" role="alert">
-          {error}
-        </span>
-      )}
-    </form>
+        <Select
+          aria-label={`Role for ${subject}`}
+          value={next}
+          onChange={(event) => setNext(event.target.value)}
+        >
+          {roles.map((value) => (
+            <option key={value}>{value}</option>
+          ))}
+          <option value="">Remove access</option>
+        </Select>
+        <Button
+          size="sm"
+          type="submit"
+          disabled={busy || next === role}
+          variant={next ? 'secondary' : 'danger'}
+        >
+          {next ? 'Save' : 'Remove'}
+        </Button>
+        {error && !confirmOpen && (
+          <span className="inline-error" role="alert">
+            {error}
+          </span>
+        )}
+      </form>
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (!busy) setConfirmOpen(open)
+        }}
+        title={`Remove ${subject}’s access?`}
+        description={`Remove this membership from ${scopeName}. Other memberships and the account remain.`}
+      >
+        <div className="dialog-body field-stack">
+          <label>
+            Type <code>{subject}</code> to remove this membership
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm member name"
+            />
+          </label>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="dialog-footer">
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirmOpen(false)}>
+            Keep access
+          </Button>
+          <Button
+            variant="danger"
+            disabled={busy || confirmation !== subject}
+            onClick={() => void save('')}
+          >
+            {busy ? 'Removing…' : 'Remove access'}
+          </Button>
+        </div>
+      </Dialog>
+    </>
   )
 }
 
@@ -593,7 +690,7 @@ function InviteDialog({
             <>
               <label>
                 Email address
-                <input
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -603,16 +700,16 @@ function InviteDialog({
               </label>
               <label>
                 Role
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
+                <Select value={role} onChange={(e) => setRole(e.target.value)}>
                   {(target === 'team' ? ['member', 'admin'] : ['viewer', 'developer', 'admin']).map(
                     (value) => (
                       <option key={value}>{value}</option>
                     ),
                   )}
-                </select>
+                </Select>
               </label>
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={deliver}
                   disabled={!status.data?.email_delivery}
@@ -656,8 +753,14 @@ export function InstallationUsers() {
     gcTime: 0,
   })
   const [change, setChange] = useState<components['schemas']['User'] | null>(null)
+  const [changeAction, setChangeAction] = useState<
+    'grant-admin' | 'remove-admin' | 'enable' | 'disable'
+  >('enable')
+  const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const removingAccess = changeAction === 'remove-admin' || changeAction === 'disable'
+  const confirmationTarget = change?.name || change?.email || change?.id || ''
   return (
     <>
       <div className="section-toolbar">
@@ -685,26 +788,43 @@ export function InstallationUsers() {
                 </small>
               </div>
               {!user.owner && (
-                <div className="toolbar-actions">
-                  <Button
-                    size="sm"
-                    onClick={() => {
+                <Menu
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={busy}
+                      aria-label={`Actions for ${user.name || user.email}`}
+                    >
+                      <MoreHorizontal size={16} strokeWidth={1.75} />
+                    </Button>
+                  }
+                >
+                  <MenuItem
+                    destructive={user.admin}
+                    disabled={busy}
+                    onSelect={() => {
                       setError('')
+                      setConfirmation('')
+                      setChangeAction(user.admin ? 'remove-admin' : 'grant-admin')
                       setChange({ ...user, admin: !user.admin })
                     }}
                   >
                     {user.admin ? 'Remove admin' : 'Make admin'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
+                  </MenuItem>
+                  <MenuItem
+                    destructive={!user.disabled}
+                    disabled={busy}
+                    onSelect={() => {
                       setError('')
+                      setConfirmation('')
+                      setChangeAction(user.disabled ? 'enable' : 'disable')
                       setChange({ ...user, disabled: !user.disabled })
                     }}
                   >
                     {user.disabled ? 'Enable' : 'Disable'}
-                  </Button>
-                </div>
+                  </MenuItem>
+                </Menu>
               )}
             </div>
           ))}
@@ -718,7 +838,20 @@ export function InstallationUsers() {
         title={`Update ${change?.name || 'account'}?`}
         description={`Result: ${change?.disabled ? 'disabled account' : 'enabled account'}, ${change?.admin ? 'installation administrator' : 'member'}.`}
       >
-        <div className="dialog-body">
+        <div className="dialog-body field-stack">
+          {removingAccess && (
+            <label>
+              Type <code>{confirmationTarget}</code> to{' '}
+              {changeAction === 'disable' ? 'disable this account' : 'remove administrator access'}
+              <Input
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Confirm account name"
+              />
+            </label>
+          )}
           {error && (
             <div className="inline-error" role="alert">
               {error}
@@ -730,10 +863,10 @@ export function InstallationUsers() {
             Cancel
           </Button>
           <Button
-            variant="primary"
-            disabled={busy}
+            variant={removingAccess ? 'danger' : 'primary'}
+            disabled={busy || !change || (removingAccess && confirmation !== confirmationTarget)}
             onClick={async () => {
-              if (!change || busy) return
+              if (!change || busy || (removingAccess && confirmation !== confirmationTarget)) return
               setBusy(true)
               setError('')
               try {
@@ -752,7 +885,15 @@ export function InstallationUsers() {
               }
             }}
           >
-            Update account
+            {busy
+              ? 'Updating…'
+              : changeAction === 'disable'
+                ? 'Disable account'
+                : changeAction === 'enable'
+                  ? 'Enable account'
+                  : changeAction === 'remove-admin'
+                    ? 'Remove administrator'
+                    : 'Make administrator'}
           </Button>
         </div>
       </Dialog>

@@ -1,4 +1,8 @@
+import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
 import { useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
@@ -21,6 +25,7 @@ export default function ApplicationSecrets({
   const cache = useQueryClient()
   const [edit, setEdit] = useState<string | null>(null)
   const [remove, setRemove] = useState('')
+  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const secrets = useQuery({
@@ -64,21 +69,33 @@ export default function ApplicationSecrets({
                 <small>Updated {timestamp(secret.updated_at)}</small>
               </div>
               {scope.can('deployments:write') && (
-                <div className="toolbar-actions">
-                  <Button size="sm" onClick={() => setEdit(secret.name)}>
+                <Menu
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={busy}
+                      aria-label={`Actions for secret ${secret.name}`}
+                    >
+                      <MoreHorizontal size={16} strokeWidth={1.75} />
+                    </Button>
+                  }
+                >
+                  <MenuItem disabled={busy} onSelect={() => setEdit(secret.name)}>
                     Replace value
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
+                  </MenuItem>
+                  <MenuItem
+                    destructive
+                    disabled={busy}
+                    onSelect={() => {
                       setError('')
+                      setConfirmation('')
                       setRemove(secret.name)
                     }}
                   >
                     Delete
-                  </Button>
-                </div>
+                  </MenuItem>
+                </Menu>
               )}
             </div>
           ))}
@@ -119,6 +136,16 @@ export default function ApplicationSecrets({
         description="Workloads referencing this name may fail on their next start. The deleted value cannot be recovered here."
       >
         <div className="dialog-body">
+          <label>
+            Type <code>{remove}</code> to delete this secret
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm secret name"
+            />
+          </label>
           {error && (
             <div className="inline-error" role="alert">
               {error}
@@ -131,8 +158,9 @@ export default function ApplicationSecrets({
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !remove || confirmation !== remove}
             onClick={async () => {
+              if (busy || !remove || confirmation !== remove) return
               setBusy(true)
               setError('')
               try {
@@ -192,7 +220,7 @@ export function SecretForm({
     >
       <label>
         Secret name
-        <input
+        <Input
           value={name}
           readOnly={Boolean(initialName)}
           onChange={(e) => setName(e.target.value)}
@@ -203,7 +231,7 @@ export function SecretForm({
       </label>
       <label>
         Value
-        <textarea
+        <Textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
           rows={3}

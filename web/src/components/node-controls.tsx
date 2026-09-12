@@ -1,3 +1,4 @@
+import { Input } from './ui/input'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
@@ -161,7 +162,7 @@ export function NodeAction({
             variant={action === 'drain' ? 'danger' : 'primary'}
             disabled={busy || snapshot.control_plane}
             onClick={async () => {
-              if (busy) return
+              if (busy || snapshot.control_plane) return
               setBusy(true)
               setError('')
               try {
@@ -208,6 +209,7 @@ export function NodeAction({
 export default function NodeEnrollments() {
   const [create, setCreate] = useState(false)
   const [revoke, setRevoke] = useState('')
+  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const list = useQuery({
@@ -262,8 +264,10 @@ export default function NodeEnrollments() {
                   </div>
                   <Button
                     size="sm"
+                    aria-label={`Revoke enrollment ${entry.id}`}
                     onClick={() => {
                       setError('')
+                      setConfirmation('')
                       setRevoke(entry.id)
                     }}
                   >
@@ -288,7 +292,17 @@ export default function NodeEnrollments() {
         title="Revoke enrollment credential?"
         description="New worker joins with this credential will be denied. Existing joined workers remain registered."
       >
-        <div className="dialog-body">
+        <div className="dialog-body field-stack">
+          <label>
+            Type <code>{revoke}</code> to revoke this enrollment credential
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm enrollment ID"
+            />
+          </label>
           {error && (
             <div className="inline-error" role="alert">
               {error}
@@ -301,8 +315,9 @@ export default function NodeEnrollments() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !revoke || confirmation !== revoke}
             onClick={async () => {
+              if (busy || !revoke || confirmation !== revoke) return
               setBusy(true)
               setError('')
               try {
@@ -391,7 +406,7 @@ function EnrollmentForm({ onClose, onCreated }: { onClose: () => void; onCreated
             <>
               <label>
                 Expires in minutes
-                <input
+                <Input
                   type="number"
                   value={ttl}
                   onChange={(e) => setTTL(Number(e.target.value))}

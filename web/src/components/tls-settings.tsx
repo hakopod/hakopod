@@ -1,3 +1,5 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -197,16 +199,16 @@ function TLSForm({
           <>
             <label>
               Certificate method
-              <select value={mode} onChange={(e) => setMode(e.target.value as 'upload' | 'issuer')}>
+              <Select value={mode} onChange={(e) => setMode(e.target.value as 'upload' | 'issuer')}>
                 <option value="upload">Upload PEM certificate and private key</option>
                 <option value="issuer">Use a managed ACME issuer</option>
-              </select>
+              </Select>
             </label>
             {mode === 'upload' ? (
               <>
                 <label>
                   Certificate chain (.pem or .crt)
-                  <input
+                  <Input
                     type="file"
                     accept=".pem,.crt,.cer"
                     onChange={(e) => void file(e.target.files?.[0], false)}
@@ -214,7 +216,7 @@ function TLSForm({
                 </label>
                 <label>
                   Private key (.pem or .key)
-                  <input
+                  <Input
                     type="file"
                     accept=".pem,.key"
                     onChange={(e) => void file(e.target.files?.[0], true)}
@@ -237,14 +239,14 @@ function TLSForm({
               <>
                 <label>
                   Issuer
-                  <select value={issuer} onChange={(e) => setIssuer(e.target.value)}>
+                  <Select value={issuer} onChange={(e) => setIssuer(e.target.value)}>
                     <option value="">Choose an issuer</option>
                     {issuers.data.items.map((item) => (
                       <option key={item.name} value={item.name}>
                         {item.name} · {item.ready ? 'ready' : 'not ready'}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 {!issuers.data.items.length && (
                   <Note>An administrator must create a certificate issuer in Infrastructure.</Note>
@@ -451,7 +453,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
             <>
               <label>
                 Issuer name
-                <input
+                <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   pattern="[a-z][a-z0-9-]*"
@@ -461,7 +463,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
               </label>
               <label>
                 ACME contact email
-                <input
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -470,7 +472,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
                 />
               </label>
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={production}
                   onChange={(e) => setProduction(e.target.checked)}

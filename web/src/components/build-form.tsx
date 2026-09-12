@@ -1,3 +1,5 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -131,7 +133,7 @@ export default function BuildForm({
             <div className="form-grid">
               <label>
                 Application name
-                <input
+                <Input
                   value={name}
                   readOnly={Boolean(build || application)}
                   onChange={(e) => setName(e.target.value)}
@@ -143,13 +145,13 @@ export default function BuildForm({
               <label>
                 Service
                 {application ? (
-                  <select value={service} onChange={(e) => setService(e.target.value)}>
+                  <Select value={service} onChange={(e) => setService(e.target.value)}>
                     {Object.keys(application.spec.services).map((item) => (
                       <option key={item}>{item}</option>
                     ))}
-                  </select>
+                  </Select>
                 ) : (
-                  <input
+                  <Input
                     value={service}
                     readOnly={Boolean(build)}
                     onChange={(e) => setService(e.target.value)}
@@ -162,18 +164,18 @@ export default function BuildForm({
             </div>
             <label>
               Git provider
-              <select
+              <Select
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
               >
                 <option value="github">GitHub Actions + GHCR</option>
                 <option value="gitlab">GitLab CI + GitLab Container Registry</option>
-              </select>
+              </Select>
             </label>
             <div className="form-grid">
               <label>
                 Repository
-                <input
+                <Input
                   value={repository}
                   onChange={(e) => setRepository(e.target.value)}
                   placeholder="owner/repository"
@@ -183,7 +185,7 @@ export default function BuildForm({
               </label>
               <label>
                 Source branch
-                <input
+                <Input
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
                   maxLength={200}
@@ -200,14 +202,14 @@ export default function BuildForm({
             <div className="form-grid">
               <label>
                 Build method
-                <select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
+                <Select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
                   <option value="dockerfile">Dockerfile</option>
                   <option value="buildpacks">Cloud Native Buildpacks</option>
-                </select>
+                </Select>
               </label>
               <label>
                 Build context
-                <input
+                <Input
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   maxLength={200}
@@ -217,19 +219,19 @@ export default function BuildForm({
             </div>
             <label>
               Target architecture
-              <select
+              <Select
                 value={architecture}
                 onChange={(e) => setArchitecture(e.target.value as Build['architecture'] | '')}
               >
                 <option value="">Infer from a uniform cluster</option>
                 <option value="amd64">Linux AMD64</option>
                 <option value="arm64">Linux ARM64</option>
-              </select>
+              </Select>
             </label>
             {mode === 'dockerfile' ? (
               <label>
                 Dockerfile path
-                <input
+                <Input
                   value={dockerfile}
                   onChange={(e) => setDockerfile(e.target.value)}
                   maxLength={200}
@@ -239,7 +241,7 @@ export default function BuildForm({
             ) : (
               <label>
                 Buildpack preset
-                <select
+                <Select
                   value={preset}
                   onChange={(e) => setPreset(e.target.value as Build['preset'])}
                 >
@@ -248,7 +250,7 @@ export default function BuildForm({
                       <option key={value}>{value}</option>
                     ),
                   )}
-                </select>
+                </Select>
               </label>
             )}
           </FormSection>
@@ -261,7 +263,7 @@ export default function BuildForm({
               <div className="form-grid">
                 <label>
                   Service port
-                  <input
+                  <Input
                     type="number"
                     min={1}
                     max={65535}
@@ -272,17 +274,17 @@ export default function BuildForm({
                 </label>
                 <label>
                   Resource profile
-                  <select value={size} onChange={(e) => setSize(e.target.value)}>
+                  <Select value={size} onChange={(e) => setSize(e.target.value)}>
                     {['small', 'medium', 'large'].map((value) => (
                       <option key={value}>{value}</option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
             )}
             {!linked && (
               <label className="checkbox-row">
-                <input
+                <Input
                   type="checkbox"
                   checked={isPublic}
                   onChange={(e) => setPublic(e.target.checked)}
@@ -292,7 +294,7 @@ export default function BuildForm({
             )}
             <label>
               Runtime registry credential
-              <select value={registry} onChange={(e) => setRegistry(e.target.value)}>
+              <Select value={registry} onChange={(e) => setRegistry(e.target.value)}>
                 <option value="">None · image must be publicly pullable</option>
                 {registry && !registries.data?.items.some((item) => item.name === registry) && (
                   <option value={registry}>{registry}</option>
@@ -302,7 +304,7 @@ export default function BuildForm({
                     {item.name} · {item.registry}
                   </option>
                 ))}
-              </select>
+              </Select>
               <span className="field-help">
                 Private registry images need a saved credential with package read permission.
               </span>
@@ -314,7 +316,7 @@ export default function BuildForm({
             icon="refresh"
           >
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={automatic}
                 onChange={(e) => {
@@ -325,7 +327,7 @@ export default function BuildForm({
               Build automatically on pushes to this source branch
             </label>
             <label className="checkbox-row">
-              <input
+              <Input
                 type="checkbox"
                 checked={autoDeploy}
                 disabled={!automatic}

@@ -1,3 +1,4 @@
+import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -166,7 +167,7 @@ function ImportRepository() {
                 </div>
                 <label>
                   Repository
-                  <input
+                  <Input
                     required
                     value={repository}
                     onChange={(event) => setRepository(event.target.value)}
@@ -180,7 +181,7 @@ function ImportRepository() {
                 </label>
                 <label>
                   Branch
-                  <input
+                  <Input
                     required
                     value={branch}
                     onChange={(event) => setBranch(event.target.value)}
@@ -191,7 +192,7 @@ function ImportRepository() {
                 </label>
                 <label>
                   Configuration path
-                  <input
+                  <Input
                     required
                     value={path}
                     onChange={(event) => setPath(event.target.value)}
@@ -211,7 +212,7 @@ function ImportRepository() {
               </FormSection>
               <FormSection title="After the first deployment" icon="refresh">
                 <label className="checkbox-row">
-                  <input
+                  <Input
                     type="checkbox"
                     checked={automatic}
                     onChange={(event) => setAutomatic(event.target.checked)}

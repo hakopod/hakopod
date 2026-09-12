@@ -1,3 +1,4 @@
+import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -91,7 +92,7 @@ function ProfileForm({ profile }: { profile: components['schemas']['Profile'] })
             </div>
             <label>
               Name
-              <input
+              <Input
                 required
                 maxLength={100}
                 value={name}

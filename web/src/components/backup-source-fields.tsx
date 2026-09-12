@@ -1,3 +1,5 @@
+import { Input } from './ui/input'
+import { Select } from './ui/select'
 import { Link } from '@tanstack/react-router'
 import {
   useBackupDestinations,
@@ -28,7 +30,7 @@ export function BackupSourceFields({
     <>
       <label>
         Database source
-        <select
+        <Select
           value={source ? sourceKey(source) : ''}
           onChange={(event) => {
             const target = targets.data?.items.find(
@@ -50,13 +52,13 @@ export function BackupSourceFields({
               {!item.available ? ' · unavailable' : ''}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       {targets.data?.truncated && <Note>The discovery list reached its 128-target limit.</Note>}
       {source?.kind === 'database' && (
         <label>
           Database name
-          <input
+          <Input
             value={source.database || ''}
             maxLength={128}
             placeholder="Use the service’s configured database"
@@ -70,7 +72,7 @@ export function BackupSourceFields({
       )}
       <label>
         Object storage destination
-        <select
+        <Select
           required
           value={destination}
           onChange={(event) => onDestination(event.target.value)}
@@ -81,7 +83,7 @@ export function BackupSourceFields({
               {item.name} · {item.bucket}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       {!destinations.data?.items.length && (
         <Note>

@@ -1,3 +1,5 @@
+import { Select } from '../components/ui/select'
+import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +19,7 @@ function HostAccess() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [revoke, setRevoke] = useState<components['schemas']['HostGrant'] | null>(null)
+  const [confirmation, setConfirmation] = useState('')
   const access = useQuery({
     queryKey: ['host-access'],
     queryFn: ({ signal }) => unwrap(client.GET('/host-access', { signal })),
@@ -93,7 +96,7 @@ function HostAccess() {
             ) : (
               <label>
                 Person
-                <select value={user} onChange={(event) => setUser(event.target.value)} required>
+                <Select value={user} onChange={(event) => setUser(event.target.value)} required>
                   <option value="">Choose a person</option>
                   {users.data?.items
                     .filter((item) => !item.disabled && !item.owner)
@@ -102,26 +105,26 @@ function HostAccess() {
                         {item.name} · {item.email}
                       </option>
                     ))}
-                </select>
+                </Select>
               </label>
             )}
             <label>
               Node
-              <select value={node} onChange={(event) => setNode(event.target.value)} required>
+              <Select value={node} onChange={(event) => setNode(event.target.value)} required>
                 <option value="">Choose a node</option>
                 {access.data.nodes.map((item) => (
                   <option key={item.name}>{item.name}</option>
                 ))}
                 <option value="*">All nodes</option>
-              </select>
+              </Select>
             </label>
             <label>
               Expires after
-              <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+              <Select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
                 <option value={1}>1 hour</option>
                 <option value={8}>8 hours</option>
                 <option value={24}>24 hours</option>
-              </select>
+              </Select>
             </label>
             <Button type="submit" variant="primary" disabled={busy || !user || !node}>
               Grant host access
@@ -142,7 +145,16 @@ function HostAccess() {
                     {timestamp(grant.expires_at)}
                   </small>
                 </div>
-                <Button size="sm" variant="danger" onClick={() => setRevoke(grant)}>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  aria-label={`Revoke host access for ${grant.identity_id} on ${grant.node === '*' ? 'all nodes' : grant.node}`}
+                  onClick={() => {
+                    setError('')
+                    setConfirmation('')
+                    setRevoke(grant)
+                  }}
+                >
                   Revoke
                 </Button>
               </div>
@@ -151,7 +163,11 @@ function HostAccess() {
             <Note>No delegated host permissions. The super admin retains owner authority.</Note>
           )}
         </FormSection>
-        {error && <ErrorState error={error} />}
+        {error && !revoke && (
+          <div className="inline-error" role="alert">
+            {error}
+          </div>
+        )}
       </div>
       <div className="form-footer">
         <Link className="button" to="/infrastructure">
@@ -164,18 +180,34 @@ function HostAccess() {
           if (!open && !busy) setRevoke(null)
         }}
         title="Revoke host access?"
-        description={`Remove delegated terminal authority for ${revoke?.node || 'this node'}.`}
+        description={`Remove ${users.data?.items.find((item) => item.id === revoke?.identity_id)?.name || revoke?.identity_id || 'this person'}’s terminal authority for ${revoke?.node === '*' ? 'all nodes' : revoke?.node || 'this node'}.`}
       >
-        <div className="dialog-body">{error && <ErrorState error={error} />}</div>
+        <div className="dialog-body field-stack">
+          <label>
+            Type <code>{revoke?.identity_id}</code> to revoke this grant
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Confirm account ID"
+            />
+          </label>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>
             Cancel
           </Button>
           <Button
             variant="danger"
-            disabled={busy}
+            disabled={busy || !revoke || confirmation !== revoke.identity_id}
             onClick={async () => {
-              if (!revoke) return
+              if (!revoke || busy || confirmation !== revoke.identity_id) return
               setBusy(true)
               setError('')
               try {

@@ -1,7 +1,8 @@
+import { Textarea } from './ui/textarea'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Badge, Card } from '@hakopod/ui'
+import { Badge, Card } from './ui/surfaces'
 import { useLicense } from '../lib/license'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
@@ -115,7 +116,7 @@ export default function LicenseSettings() {
             >
               <label>
                 Signed license
-                <textarea
+                <Textarea
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   rows={4}

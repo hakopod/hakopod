@@ -1,3 +1,4 @@
+import { Textarea } from './ui/textarea'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
@@ -164,7 +165,7 @@ function ProxyEditor({
           <>
             <label>
               Settings object (JSON)
-              <textarea
+              <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 className="toml-editor"
