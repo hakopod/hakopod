@@ -16,6 +16,10 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+.button-deploy {
+  --action: var(--destructive);
+  --action-fg: var(--destructive-fg);
+}
 .ops-page .application-heading .app-symbol {
   display: none;
 }

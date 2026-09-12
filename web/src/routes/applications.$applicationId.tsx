@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { Logs } from '../components/logs'
+import { TOMLCode } from '../components/toml-code'
 const ServiceDetail = lazy(() =>
   import('../components/service-detail').then((m) => ({ default: m.ServiceDetail })),
 )
@@ -74,6 +75,10 @@ function ApplicationDetail() {
     refetchInterval: 10000,
     gcTime: 0,
   })
+  const configuration = useMemo(
+    () => (application.data ? specToTOML(application.data.spec) : ''),
+    [application.data?.spec],
+  )
   useEffect(() => {
     if (application.data) scope.syncScope(application.data.project, application.data.environment)
   }, [application.data?.project, application.data?.environment, scope.syncScope])
@@ -131,11 +136,8 @@ function ApplicationDetail() {
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
           <Button
-            variant={
-              ['logs', 'terminal', 'configuration', 'source', 'secrets'].includes(tab)
-                ? 'secondary'
-                : 'primary'
-            }
+            variant="primary"
+            className="button-deploy"
             onClick={() =>
               void navigate({
                 to: '/applications/$applicationId/configure',
@@ -488,9 +490,9 @@ function ApplicationDetail() {
                 <Icon name="code" size={14} />
                 hakopod.toml
               </span>
-              <Copy value={specToTOML(app.spec)} label="Copy" />
+              <Copy value={configuration} label="Copy" />
             </div>
-            <pre>{specToTOML(app.spec)}</pre>
+            <TOMLCode code={configuration} />
           </div>
           <Note>
             Saved secret values stay separate from this configuration. Staged edits are validated

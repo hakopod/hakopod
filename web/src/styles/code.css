@@ -1,0 +1,36 @@
+.toml-code,
+.code-panel .toml-code {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  white-space: pre;
+  tab-size: 2;
+}
+.toml-code code {
+  font: inherit;
+  color: inherit;
+}
+.toml-code .toml-table {
+  color: var(--info);
+  font-weight: 700;
+}
+.toml-code .toml-key {
+  color: var(--info);
+}
+.toml-code .toml-string {
+  color: var(--state);
+}
+.toml-code .toml-number,
+.toml-code .toml-boolean {
+  color: var(--warn);
+}
+.toml-code .toml-comment,
+.toml-code .toml-punctuation {
+  color: var(--muted);
+}
+.toml-code .toml-comment {
+  font-style: italic;
+}
+.toml-code:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: -2px;
+}

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import './toml-code.test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy } from './shared'
 import { specToTOML } from '../lib/toml'

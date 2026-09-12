@@ -22,6 +22,8 @@ Go authorization, reconciliation, database schemas or Kubernetes operations.
 - Dashboard tests passed: 16 server boundary/stream tests and four existing
   regressions covering copy-button form safety, canonical configuration, project
   membership roles and host-terminal authority.
+- Three TOML rendering regressions also passed: exact text/escaping, string and
+  comment boundaries, and bounded highlighting of oversized or nested input.
 - Hatch at the pinned commit passed its build, TypeScript and all 25 tests.
 - Public UI snapshot tests passed: deterministic restoration, safe archive
   extraction and consumer-only packaging. The snapshot contains 47 files and
@@ -64,6 +66,13 @@ retained the original key and expected revision. After a definitive HTTP 409,
 another attempt used a new key and the refreshed revision. Both successes
 navigated to the returned deployment. Temporary servers were stopped afterward.
 
+The applied configuration now uses lightweight TOML syntax highlighting and its
+Deploy changes action uses a red accent. Both were visually checked in Ink and
+Paper using the actual components in a labelled static fixture. Copy and Export
+still use the canonical source text. Highlighting scans at most 65,536 UTF-16
+units and emits at most 512 colored spans; the complete remaining text stays
+visible without highlighting. It adds no runtime dependency.
+
 Live GitHub/GitLab workflow execution, remote build cancellation and artifact
 deployment were not exercised. Provider, backup, TLS, licensing and terminal
 operations require their own integration acceptance; rendering their controls
@@ -77,8 +86,8 @@ per file at level 9; actual HTTP compression depends on deployment configuration
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 84 | 1,235,569 | 387,762 |
-| CSS | 2 | 124,747 | 23,120 |
+| JavaScript | 84 | 1,237,861 | 388,677 |
+| CSS | 2 | 125,378 | 23,285 |
 | Fonts | 2 | 236,032 | 109,697 |
 
 The main JavaScript entry is 369,561 bytes. The 331,178-byte xterm chunk loads only

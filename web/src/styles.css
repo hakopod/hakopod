@@ -6,6 +6,7 @@
 @import './styles/shell.css';
 @import './styles/operations.css';
 @import './styles/settings.css';
+@import './styles/code.css';
 
 /* Match the source set for browser and server builds. */
 @source './';
