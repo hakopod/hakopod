@@ -1,0 +1,59 @@
+# Set HAKOPOD_CONFIG_FILE to this file when starting hakopod-server.
+# Existing environment variables override these defaults.
+schema_version = 1
+
+[server]
+listen = "127.0.0.1:8080"
+web_origin = "https://dashboard.example.com"
+app_domain = "apps.example.com"
+ingress_class = "haproxy"
+rollout_timeout = "2m"
+
+# Store the database connection string in a 0600 file, or set
+# HAKOPOD_DATABASE_URL through the process environment.
+# database_url_file = "/etc/hakopod/secrets/database-url"
+# kubeconfig_file = "/etc/hakopod/kubeconfig"
+
+# Omit public ports to use the ingress defaults.
+# public_port = 80
+# public_https_port = 443
+# tls_issuer = "letsencrypt"
+
+# Bind beyond loopback only with both TLS files, or behind an HTTPS proxy.
+# tls_cert_file = "/etc/hakopod/tls/certificate.pem"
+# tls_key_file = "/etc/hakopod/tls/private-key.pem"
+# trust_proxy = true
+# k3s_supervisor_url = "https://control.example.com:6443"
+# haproxy_namespace = "haproxy-controller"
+# haproxy_configmap = "hakopod-ingress-kubernetes-ingress"
+# haproxy_release = "hakopod-ingress"
+
+[auth]
+signup_enabled = false
+# setup_secret_file = "/etc/hakopod/secrets/setup"
+# encryption_key_file = "/etc/hakopod/secrets/auth-encryption"
+
+# Configure each provider as a pair. Use 0600 secret files.
+# [oauth.github]
+# client_id = "your-github-client-id"
+# client_secret_file = "/etc/hakopod/secrets/github-client"
+
+# [oauth.gitlab]
+# client_id = "your-gitlab-client-id"
+# client_secret_file = "/etc/hakopod/secrets/gitlab-client"
+
+# [oauth.google]
+# client_id = "your-google-client-id"
+# client_secret_file = "/etc/hakopod/secrets/google-client"
+
+[smtp]
+enabled = false
+# address = "smtp.example.com:587"
+# from = "accounts@example.com"
+# username = "smtp-user"
+# password_file = "/etc/hakopod/secrets/smtp-password"
+
+[backups]
+pg_dump_path = "pg_dump"
+state_dir = "/var/lib/hakopod/backups"
+managed_postgres = false

@@ -32,14 +32,20 @@ func main() {
 	}
 }
 func run() error {
+	if err := loadOperatorConfig(); err != nil {
+		return err
+	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(192 << 20)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dbURL := os.Getenv("HAKOPOD_DATABASE_URL")
+	dbURL, err := secretSetting("HAKOPOD_DATABASE_URL")
+	if err != nil {
+		return err
+	}
 	if dbURL == "" {
-		return fmt.Errorf("HAKOPOD_DATABASE_URL is required")
+		return fmt.Errorf("HAKOPOD_DATABASE_URL or HAKOPOD_DATABASE_URL_FILE is required")
 	}
 	db, err := store.Open(ctx, dbURL)
 	if err != nil {

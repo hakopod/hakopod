@@ -31,7 +31,7 @@ func TestInstallationSecretFileRestrictions(t *testing.T) {
 }
 
 func TestAuthOriginAndProviderConfiguration(t *testing.T) {
-	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_ID", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED"} {
+	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_ID", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED", "HAKOPOD_SIGNUP_ENABLED"} {
 		t.Setenv(name, "")
 	}
 	for _, origin := range []string{"http://dashboard.example.com", "https://dashboard.example.com/path", "https://user@dashboard.example.com", "https://dashboard.example.com?token=example"} {
@@ -42,7 +42,7 @@ func TestAuthOriginAndProviderConfiguration(t *testing.T) {
 	}
 	t.Setenv("HAKOPOD_WEB_ORIGIN", "http://127.0.0.1:4173")
 	c, err := authConfig()
-	if err != nil || c.SetupSecret != "" {
+	if err != nil || c.SetupSecret != "" || c.SignupEnabled {
 		t.Fatal("loopback installation should load without inventing an owner credential")
 	}
 	t.Setenv("HAKOPOD_GITHUB_CLIENT_ID", "configured-client")
@@ -58,5 +58,19 @@ func TestAuthOriginAndProviderConfiguration(t *testing.T) {
 	c, err = authConfig()
 	if err != nil || c.GitLabClientID != "gitlab-client" || c.GitLabClientSecret != "gitlab-secret" {
 		t.Fatal("GitLab provider configuration did not load")
+	}
+}
+
+func TestRegistrationEnvironmentIsOptIn(t *testing.T) {
+	t.Setenv("HAKOPOD_WEB_ORIGIN", "http://127.0.0.1:4173")
+	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_ID", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED"} {
+		t.Setenv(name, "")
+	}
+	for _, value := range []string{"", "false", "TRUE", "1", "true"} {
+		t.Setenv("HAKOPOD_SIGNUP_ENABLED", value)
+		config, err := authConfig()
+		if err != nil || config.SignupEnabled != (value == "true") {
+			t.Fatalf("signup configuration %q: %v", value, err)
+		}
 	}
 }

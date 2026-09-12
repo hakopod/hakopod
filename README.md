@@ -89,10 +89,19 @@ access and the remaining cloud acceptance tests.
 ## Accounts, licensing and components
 
 Deployment and operational tools stay available in Free. Team creation,
-invitations and project role management require signed Pro entitlements. The
+invitations and shared project role management require signed Pro entitlements. The
 dashboard shows the feature catalog and activation state; the Go API and durable
 workers enforce it. Expiry preserves accounts, application data and running
 workloads. See [paid features](docs/paid-features.md) for the exact behavior.
+
+Public signup is disabled by default. Enable it with `HAKOPOD_SIGNUP_ENABLED=true`
+to let verified accounts choose an invitation or a private personal workspace.
+Email verification and password recovery use configured SMTP; GitHub, GitLab and
+Google use the configured OAuth clients. See [accounts](docs/accounts.md).
+
+Server startup settings can live in a strict, versioned TOML file selected by
+`HAKOPOD_CONFIG_FILE`. Environment values still override it, and credentials stay
+in restricted files or the environment. See [operator configuration](docs/operator-configuration.md).
 
 The [Hatch design system](https://github.com/hakopod/hatch-ui) is a separate
 shadcn/Radix component repository at `packages/ui`, with its consumer package at
