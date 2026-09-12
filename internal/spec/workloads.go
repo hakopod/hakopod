@@ -17,6 +17,9 @@ type GPU struct {
 }
 
 func validateWorkload(s Service) error {
+	if err := validateMountControls(s); err != nil {
+		return err
+	}
 	if s.Architecture != "" && s.Architecture != "amd64" && s.Architecture != "arm64" {
 		return fmt.Errorf("architecture must be amd64 or arm64")
 	}

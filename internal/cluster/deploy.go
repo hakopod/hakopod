@@ -190,7 +190,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 	}
 	profile := spec.Profiles[svc.Size]
 	container := corev1.Container{Name: "app", Image: svc.Image, ImagePullPolicy: corev1.PullIfNotPresent,
-		Command: svc.Command, Args: svc.Args,
+		Command: svc.Command, Args: svc.Args, WorkingDir: svc.WorkingDir,
 		Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPURequest), corev1.ResourceMemory: resource.MustParse(profile.MemoryRequest), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPULimit), corev1.ResourceMemory: resource.MustParse(profile.MemoryLimit), corev1.ResourceEphemeralStorage: resource.MustParse("128Mi")}},
 		SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 	}
@@ -203,7 +203,6 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 		container.Env = append(container.Env, corev1.EnvVar{Name: key, Value: svc.Env[key]})
 	}
 	if svc.Port != 0 {
-		container.Ports = []corev1.ContainerPort{{Name: "service", ContainerPort: svc.Port, Protocol: corev1.ProtocolTCP}}
 		handler := corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(svc.Port)}}
 		if svc.Healthcheck != "" {
 			handler = corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: svc.Healthcheck, Port: intstr.FromInt32(svc.Port), Scheme: corev1.URISchemeHTTP}}
@@ -212,6 +211,9 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 		// A startup probe is deliberately TCP: a failing readiness endpoint must
 		// not be silently reused as a liveness restart policy.
 		container.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(svc.Port)}}, PeriodSeconds: 2, TimeoutSeconds: 2, FailureThreshold: 60}
+	}
+	for _, p := range spec.ServicePorts(svc) {
+		container.Ports = append(container.Ports, corev1.ContainerPort{Name: p.Name, ContainerPort: p.TargetPort, Protocol: corev1.Protocol(p.Protocol)})
 	}
 	seconds := int32(deadline.Seconds())
 	if seconds < 30 {
@@ -296,7 +298,7 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 	}
 	api := c.kube.CoreV1().Services(Namespace(t.ApplicationID))
 	current, err := api.Get(ctx, name, metav1.GetOptions{})
-	if svc.Port == 0 {
+	if len(spec.ServicePorts(svc)) == 0 {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -308,7 +310,10 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 		}
 		return api.Delete(ctx, name, deleteOptions(current))
 	}
-	wanted := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: labelsFor(t, name), Ports: []corev1.ServicePort{{Name: "service", Port: svc.Port, TargetPort: intstr.FromInt32(svc.Port), Protocol: corev1.ProtocolTCP}}}}
+	wanted := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: labelsFor(t, name)}}
+	for _, p := range spec.ServicePorts(svc) {
+		wanted.Spec.Ports = append(wanted.Spec.Ports, corev1.ServicePort{Name: p.Name, Port: p.Port, TargetPort: intstr.FromInt32(p.TargetPort), Protocol: corev1.Protocol(p.Protocol)})
+	}
 	if apierrors.IsNotFound(err) {
 		_, err = api.Create(ctx, wanted, metav1.CreateOptions{})
 		return err

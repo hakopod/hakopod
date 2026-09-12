@@ -111,8 +111,12 @@ func TestPolicyNetworkMembershipAndInternalEgress(t *testing.T) {
 	if len(byService["worker"].Spec.Ingress) != 0 {
 		t.Fatal("worker has inbound policy exceptions")
 	}
-	if len(byService["api"].Spec.Ingress) != 1 {
-		t.Fatal("private API accepts traffic outside its shared network")
+	for _, rule := range byService["api"].Spec.Ingress {
+		for _, peer := range rule.From {
+			if peer.NamespaceSelector != nil || peer.PodSelector == nil || !spec.AllowsPeer(target.Spec, peer.PodSelector.MatchLabels[serviceKey], "api") {
+				t.Fatal("private API accepts traffic outside its shared network")
+			}
+		}
 	}
 	for _, rule := range byService["api"].Spec.Egress {
 		for _, peer := range rule.To {

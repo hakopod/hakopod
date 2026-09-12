@@ -60,24 +60,28 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 			if !t.Spec.Networks[network].Internal {
 				external = true
 			}
-			if svc.Port != 0 {
-				port := intstr.FromInt32(svc.Port)
-				policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
-					From:  []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{networkKey(network): "true", ownerKey: ownerID(t.ApplicationID)}}}},
-					Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
-				})
+		}
+		for _, source := range spec.Names(t.Spec) {
+			if !spec.AllowsPeer(t.Spec, source, name) {
+				continue
 			}
+			ports := networkPorts(svc)
+			if len(ports) == 0 {
+				continue
+			}
+			selector := selectorFor(t, source)
+			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: []networkingv1.NetworkPolicyPeer{{PodSelector: &selector}}, Ports: ports})
 		}
 		for _, destName := range spec.Names(t.Spec) {
 			dest := t.Spec.Services[destName]
-			if dest.Port == 0 || !shareNetwork(svc.Networks, dest.Networks) {
+			ports := networkPorts(dest)
+			if len(ports) == 0 || !spec.AllowsPeer(t.Spec, name, destName) {
 				continue
 			}
-			port := intstr.FromInt32(dest.Port)
 			selector := selectorFor(t, destName)
 			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 				To:    []networkingv1.NetworkPolicyPeer{{PodSelector: &selector}},
-				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+				Ports: ports,
 			})
 		}
 		if external {
@@ -99,6 +103,16 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 		policies = append(policies, policy)
 	}
 	return policies
+}
+
+func networkPorts(service spec.Service) []networkingv1.NetworkPolicyPort {
+	ports := make([]networkingv1.NetworkPolicyPort, 0, len(service.Ports)+1)
+	for _, p := range spec.ServicePorts(service) {
+		port := intstr.FromInt32(p.TargetPort)
+		protocol := corev1.Protocol(p.Protocol)
+		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &protocol, Port: &port})
+	}
+	return ports
 }
 
 func shareNetwork(a, b []string) bool {

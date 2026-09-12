@@ -428,6 +428,18 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			}
 		}
 		merged.Services[in.Service] = svc
+		for _, network := range svc.Networks {
+			if old, exists := merged.Networks[network]; !exists || old != next.Networks[network] {
+				problem(w, 400, "shared_configuration", "Shared networks must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
+				return next, nil, false
+			}
+		}
+		for _, mount := range svc.Mounts {
+			if old, exists := merged.Volumes[mount.Volume]; !exists || old != next.Volumes[mount.Volume] {
+				problem(w, 400, "shared_configuration", "Shared volumes must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
+				return next, nil, false
+			}
+		}
 		next, err = spec.Normalize(merged)
 		if err != nil {
 			problem(w, 400, "invalid_spec", err.Error())

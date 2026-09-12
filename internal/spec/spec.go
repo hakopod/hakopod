@@ -18,34 +18,44 @@ import (
 const MaxBytes = 256 << 10
 
 type Application struct {
-	SchemaVersion int                `json:"schema_version" toml:"schema_version"`
-	Name          string             `json:"name" toml:"name"`
-	Services      map[string]Service `json:"services" toml:"services"`
-	Networks      map[string]Network `json:"networks,omitempty" toml:"networks"`
-	Domains       map[string]string  `json:"domains,omitempty" toml:"domains"`
+	SchemaVersion int                    `json:"schema_version" toml:"schema_version"`
+	Name          string                 `json:"name" toml:"name"`
+	Services      map[string]Service     `json:"services" toml:"services"`
+	Networks      map[string]Network     `json:"networks,omitempty" toml:"networks"`
+	Volumes       map[string]NamedVolume `json:"volumes,omitempty" toml:"volumes"`
+	Domains       map[string]string      `json:"domains,omitempty" toml:"domains"`
 }
 
 type Service struct {
-	Architecture       string               `json:"architecture,omitempty" toml:"architecture"`
-	Volume             *Volume              `json:"volume,omitempty" toml:"volume"`
-	GPU                *GPU                 `json:"gpu,omitempty" toml:"gpu"`
-	RunAsUser          int64                `json:"run_as_user,omitempty" toml:"run_as_user"`
-	Image              string               `json:"image" toml:"image"`
-	Port               int32                `json:"port,omitempty" toml:"port"`
-	Public             bool                 `json:"public" toml:"public"`
-	Size               string               `json:"size" toml:"size"`
-	Replicas           int32                `json:"replicas" toml:"replicas"`
-	Healthcheck        string               `json:"healthcheck,omitempty" toml:"healthcheck"`
-	Env                map[string]string    `json:"env,omitempty" toml:"env"`
-	Command            []string             `json:"command,omitempty" toml:"command"`
-	Args               []string             `json:"args,omitempty" toml:"args"`
-	DependsOn          []string             `json:"depends_on,omitempty" toml:"depends_on"`
-	Networks           []string             `json:"networks" toml:"networks"`
-	Secrets            map[string]SecretRef `json:"secrets,omitempty" toml:"secrets"`
-	Autoscaling        *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
-	RestartNonce       string               `json:"restart_nonce,omitempty" toml:"restart_nonce"`
-	RegistryCredential string               `json:"registry_credential,omitempty" toml:"registry_credential"`
-	TLS                *TLSConfig           `json:"tls,omitempty" toml:"tls"`
+	Architecture            string               `json:"architecture,omitempty" toml:"architecture"`
+	Volume                  *Volume              `json:"volume,omitempty" toml:"volume"`
+	GPU                     *GPU                 `json:"gpu,omitempty" toml:"gpu"`
+	RunAsUser               int64                `json:"run_as_user,omitempty" toml:"run_as_user"`
+	RunAsGroup              int64                `json:"run_as_group,omitempty" toml:"run_as_group"`
+	FSGroup                 int64                `json:"fs_group,omitempty" toml:"fs_group"`
+	ReadOnlyRootFilesystem  bool                 `json:"read_only_root_filesystem,omitempty" toml:"read_only_root_filesystem"`
+	WorkingDir              string               `json:"working_dir,omitempty" toml:"working_dir"`
+	TerminationGraceSeconds int64                `json:"termination_grace_seconds,omitempty" toml:"termination_grace_seconds"`
+	Mounts                  []Mount              `json:"mounts,omitempty" toml:"mounts"`
+	TemporaryMounts         []TemporaryMount     `json:"temporary_mounts,omitempty" toml:"temporary_mounts"`
+	Image                   string               `json:"image" toml:"image"`
+	Port                    int32                `json:"port,omitempty" toml:"port"`
+	Ports                   []Port               `json:"ports,omitempty" toml:"ports"`
+	NetworkAccess           *NetworkAccess       `json:"network_access,omitempty" toml:"network_access"`
+	Public                  bool                 `json:"public" toml:"public"`
+	Size                    string               `json:"size" toml:"size"`
+	Replicas                int32                `json:"replicas" toml:"replicas"`
+	Healthcheck             string               `json:"healthcheck,omitempty" toml:"healthcheck"`
+	Env                     map[string]string    `json:"env,omitempty" toml:"env"`
+	Command                 []string             `json:"command,omitempty" toml:"command"`
+	Args                    []string             `json:"args,omitempty" toml:"args"`
+	DependsOn               []string             `json:"depends_on,omitempty" toml:"depends_on"`
+	Networks                []string             `json:"networks" toml:"networks"`
+	Secrets                 map[string]SecretRef `json:"secrets,omitempty" toml:"secrets"`
+	Autoscaling             *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
+	RestartNonce            string               `json:"restart_nonce,omitempty" toml:"restart_nonce"`
+	RegistryCredential      string               `json:"registry_credential,omitempty" toml:"registry_credential"`
+	TLS                     *TLSConfig           `json:"tls,omitempty" toml:"tls"`
 }
 
 type Network struct {
@@ -261,6 +271,12 @@ func Normalize(input Application) (Application, error) {
 		}
 		app.Services[name] = svc
 	}
+	if err := validateNamedStorage(app); err != nil {
+		return Application{}, err
+	}
+	if err := validateNetworkAccess(app); err != nil {
+		return Application{}, err
+	}
 	if _, err := Order(app); err != nil {
 		return Application{}, err
 	}
@@ -361,7 +377,8 @@ func Diff(before *Application, after Application) []Change {
 		changes = append(changes, Change{service, field, a, b, sensitive})
 	}
 	add("", "name", old.Name, after.Name, false)
-	add("", "networks", old.Networks, after.Networks, true)
+	add("", "networks", old.Networks, after.Networks, false)
+	add("", "volumes", old.Volumes, after.Volumes, false)
 	add("", "domains", old.Domains, after.Domains, false)
 	names := make(map[string]bool)
 	for name := range old.Services {
@@ -386,8 +403,10 @@ func Diff(before *Application, after Application) []Change {
 			continue
 		}
 		add(name, "image", a.Image, b.Image, false)
-		add(name, "port", a.Port, b.Port, true)
-		add(name, "public", a.Public, b.Public, true)
+		add(name, "port", a.Port, b.Port, false)
+		add(name, "ports", a.Ports, b.Ports, false)
+		add(name, "network_access", a.NetworkAccess, b.NetworkAccess, false)
+		add(name, "public", a.Public, b.Public, false)
 		add(name, "size", a.Size, b.Size, false)
 		add(name, "replicas", a.Replicas, b.Replicas, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
@@ -395,15 +414,22 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "command", a.Command, b.Command, false)
 		add(name, "args", a.Args, b.Args, false)
 		add(name, "depends_on", a.DependsOn, b.DependsOn, false)
-		add(name, "networks", a.Networks, b.Networks, true)
+		add(name, "networks", a.Networks, b.Networks, false)
 		add(name, "secrets", a.Secrets, b.Secrets, true)
 		add(name, "autoscaling", a.Autoscaling, b.Autoscaling, false)
 		add(name, "restart_nonce", a.RestartNonce, b.RestartNonce, false)
-		add(name, "registry_credential", a.RegistryCredential, b.RegistryCredential, true)
-		add(name, "tls", a.TLS, b.TLS, true)
-		add(name, "volume", a.Volume, b.Volume, true)
+		add(name, "registry_credential", a.RegistryCredential, b.RegistryCredential, false)
+		add(name, "tls", a.TLS, b.TLS, false)
+		add(name, "volume", a.Volume, b.Volume, false)
+		add(name, "mounts", a.Mounts, b.Mounts, false)
+		add(name, "temporary_mounts", a.TemporaryMounts, b.TemporaryMounts, false)
 		add(name, "gpu", a.GPU, b.GPU, false)
-		add(name, "run_as_user", a.RunAsUser, b.RunAsUser, true)
+		add(name, "run_as_user", a.RunAsUser, b.RunAsUser, false)
+		add(name, "run_as_group", a.RunAsGroup, b.RunAsGroup, false)
+		add(name, "fs_group", a.FSGroup, b.FSGroup, false)
+		add(name, "read_only_root_filesystem", a.ReadOnlyRootFilesystem, b.ReadOnlyRootFilesystem, false)
+		add(name, "working_dir", a.WorkingDir, b.WorkingDir, false)
+		add(name, "termination_grace_seconds", a.TerminationGraceSeconds, b.TerminationGraceSeconds, false)
 		add(name, "architecture", a.Architecture, b.Architecture, false)
 	}
 	return changes
@@ -428,7 +454,7 @@ func Warnings(app Application) []string {
 	warnings := make([]string, 0)
 	for _, name := range Names(app) {
 		svc := app.Services[name]
-		if svc.Volume != nil {
+		if svc.Volume != nil || len(svc.Mounts) > 0 {
 			warnings = append(warnings, name+": persistent service uses one replica and Recreate updates, with brief downtime; rollback restores configuration, not database contents. Back up data separately.")
 		}
 		if svc.GPU != nil {

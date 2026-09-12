@@ -95,6 +95,43 @@ func TestTargetedPlanAndSlimHistory(t *testing.T) {
 	if planned["web"].(map[string]any)["image"] != resolved.Services["web"].Image {
 		t.Fatal("untouched mutable tag was not pinned to the accepted artifact")
 	}
+	for _, field := range []string{"networks", "volumes"} {
+		t.Run("shared "+field, func(t *testing.T) {
+			changed, err := spec.Normalize(next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if field == "networks" {
+				changed.Networks["default"] = spec.Network{Internal: true}
+			} else {
+				changed.Volumes = map[string]spec.NamedVolume{"data": {SizeGiB: 1}}
+				svc := changed.Services["api"]
+				svc.Mounts = []spec.Mount{{Volume: "data", MountPath: "/data"}}
+				changed.Services["api"] = svc
+			}
+			body := map[string]any{"project": "demo", "environment": "development", "service": "api", "spec": changed}
+			status, result := call("POST", "/api/v1/plan", body)
+			problem, _ := result["error"].(map[string]any)
+			if status != http.StatusBadRequest || problem["code"] != "shared_configuration" {
+				t.Fatalf("targeted plan silently changed shared configuration: %d %v", status, result)
+			}
+			delete(body, "service")
+			status, result = call("POST", "/api/v1/plan", body)
+			if status != http.StatusOK {
+				t.Fatalf("application-wide plan rejected shared configuration: %d %v", status, result)
+			}
+			found := false
+			for _, value := range result["changes"].([]any) {
+				change := value.(map[string]any)
+				if change["service"] == "" && change["field"] == field {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("shared configuration missing from application-wide review")
+			}
+		})
+	}
 	status, app := call("GET", "/api/v1/applications/"+d.ApplicationID, nil)
 	if status != 200 {
 		t.Fatal(status)
