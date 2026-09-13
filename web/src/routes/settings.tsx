@@ -31,6 +31,9 @@ const GitHubSettings = lazy(() =>
 const AccountSettings = lazy(() => import('../components/account-settings'))
 const LicenseSettings = lazy(() => import('../components/license-settings'))
 const TeamSettings = lazy(() => import('../components/team-settings'))
+const SecretProviders = lazy(() =>
+  import('../components/secret-providers').then((module) => ({ default: module.SecretProviders })),
+)
 const InstallationUsers = lazy(() =>
   import('../components/team-settings').then((m) => ({ default: m.InstallationUsers })),
 )
@@ -39,9 +42,17 @@ export const Route = createFileRoute('/settings')({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
     tab:
       typeof search.tab === 'string' &&
-      ['account', 'teams', 'users', 'github', 'keys', 'audit', 'appearance', 'license'].includes(
-        search.tab,
-      )
+      [
+        'account',
+        'teams',
+        'users',
+        'github',
+        'keys',
+        'audit',
+        'appearance',
+        'license',
+        'secret-providers',
+      ].includes(search.tab)
         ? search.tab
         : undefined,
   }),
@@ -63,6 +74,7 @@ function Administration() {
       ? [
           { id: 'users', label: 'People', group: 'Installation' },
           { id: 'github', label: 'Git providers', group: 'Installation' },
+          { id: 'secret-providers', label: 'Secret providers', group: 'Installation' },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
         ]
@@ -87,6 +99,7 @@ function Administration() {
             <>
               {tab === 'users' && <InstallationUsers />}
               {tab === 'github' && <GitHubSettings />}
+              {tab === 'secret-providers' && <SecretProviders />}
               {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}
             </>

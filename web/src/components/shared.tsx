@@ -177,7 +177,7 @@ export function PageHeader({
     <header className="page-heading hako-page-heading">
       <div className="hako-page-heading-title">
         {eyebrow && <span className="sr-only">{eyebrow}</span>}
-        <h1>{title}</h1>
+        <h1 className="min-w-0 break-words">{title}</h1>
         {description && <HeadingHelp title={title}>{description}</HeadingHelp>}
       </div>
       {action && <div className="heading-action">{action}</div>}
