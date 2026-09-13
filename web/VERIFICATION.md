@@ -1,8 +1,8 @@
 # Dashboard and runtime verification
 
-Verified locally on 2026-09-12. This record covers the Hatch migration and the
-following account, workspace, runtime and TOML changes. It distinguishes checks
-against real services from isolated browser fixtures.
+Verified locally on 2026-09-12 and 2026-09-13. This record covers the Hatch
+migration, account and runtime changes, and the compact dashboard follow-up.
+It distinguishes checks against real services from isolated browser fixtures.
 
 ## What changed
 
@@ -26,6 +26,22 @@ TOML file with restricted secret-file references.
 Signup is opt-in and verifies email. New users choose an invitation or a private
 workspace. Password recovery keeps MFA enabled and invalidates browser/CLI
 sessions. Paid team and shared-project permissions remain enforced in Go.
+
+The compact follow-up merges desktop navigation into a 56-pixel header, narrows
+scope selectors, and keeps the application heading and its actions on one row.
+Application rows are native links with independent copy controls. Provider cards
+share borders and guidance actions have horizontal padding. Secondary page help
+is available from a keyboard-accessible tooltip.
+
+Node inspection adds blue CPU and purple memory charts with readable Ink/Paper
+contrast. It reuses the node query, checks every 15 seconds while inspecting or
+30 seconds on the list, and offers pause and manual probe controls. History is
+limited to 24 actual source samples and clears when inspection closes.
+
+HAProxy now exposes 20 reviewed settings, including backend check/queue/FIN
+timeouts, drain deadlines, load balancing and connection behavior. The editor
+submits only changed fields. Go validates bounds and choices, preserves unrelated
+configuration, and retains authorization, revision checks and audit records.
 
 ## Automated checks
 
@@ -67,6 +83,12 @@ ReadWriteMany configuration is validated and requires an explicit capable storag
 class. Multi-node CSI sharing was not exercised; the local provisioner supports
 ReadWriteOnce. Rollback changes configuration, not stored data.
 
+The September 13 HAProxy acceptance ran on the same development cluster with
+controller 3.2.15 (chart 1.54.0) and HAProxy 3.2.23. It verified all 12 newly
+supported properties in the generated HAProxy configuration, checked the result
+with `haproxy -c`, restored the original ConfigMap data and annotations, and
+verified the restored generated configuration. No test settings remain applied.
+
 ## Browser checks
 
 The initial migration was checked using real API data in the development
@@ -78,7 +100,7 @@ changed for browser QA.
 The follow-up used an independent headless Chrome profile and temporary Vite
 fixtures rendering the actual components and routes. Each fixture was labelled
 as artificial data, intercepted API requests and blocked external traffic.
-All 36 browser checks passed with no browser errors. Temporary fixture servers
+All 36 checks from the September 12 follow-up passed with no browser errors. Temporary fixture servers
 and browser processes were stopped. Screenshots and reports are kept locally under
 `work/ui-migration/operations-fixture/`; they are not part of the product.
 
@@ -100,6 +122,15 @@ recovery, verification links, the first installer screen and invitation/personal
 onboarding. Personal users retain deployment controls on Free, cannot share
 personal workspaces, and fall back to their own scope after an account switch.
 
+The September 13 compactness suite passed 17 browser checks with no browser
+errors. It covered header widths from 390 to 1792 pixels, single-row application
+headings, whole-row navigation, separate copy controls, contiguous provider cards,
+guidance padding and keyboard focus. Node checks covered Ink/Paper contrast,
+pause/resume, source timestamps, the 24-sample cap, staleness, unavailable values,
+failed probes, slower list polling and cancellation on hide or tab exit. HAProxy
+checks verified changed-field-only requests, invalid-value rejection and failed
+draft retention. This suite used isolated fixtures, not live configuration edits.
+
 Earlier isolated fixtures also checked build pipelines and rollback retries.
 Ambiguous retries retained their original key/revision; definitive conflicts
 required a fresh plan. TOML highlighting retained exact canonical text and
@@ -119,17 +150,17 @@ level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 93 | 1,271,646 | 400,477 |
-| CSS | 3 | 136,187 | 25,359 |
+| JavaScript | 91 | 1,276,538 | 401,203 |
+| CSS | 3 | 140,105 | 26,009 |
 | Fonts | 2 | 236,032 | 109,697 |
 
-The main JavaScript entry is 377,413 bytes. The 331,178-byte xterm chunk loads only
+The main JavaScript entry is 377,524 bytes. The 331,178-byte xterm chunk loads only
 after Connect. Project creation, appearance and guidance panels load on demand.
 This follow-up adds no runtime package dependency. The portable UI source archive
 remains 135,846 bytes and contains only the consumer library.
 
-After restart and HTTP smoke checks, a process sample showed 36,848 KiB API RSS
-and 103,760 KiB dashboard RSS. These are point-in-time observations, not peak or
+After restart and HTTP smoke checks, a process sample showed 35,424 KiB API RSS
+and 106,784 KiB dashboard RSS. These are point-in-time observations, not peak or
 capacity guarantees. Go retains its 192 MiB soft memory target, and Node its
 192 MiB old-space cap. Neither setting caps total process memory.
 
