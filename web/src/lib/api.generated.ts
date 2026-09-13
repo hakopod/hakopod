@@ -1367,6 +1367,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cloud/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCloudCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/delivery": {
         parameters: {
             query?: never;
@@ -2960,6 +2976,21 @@ export interface components {
                 };
             };
             expected_config_revision: number;
+        };
+        CloudCapabilities: {
+            version: number;
+            /** @enum {string} */
+            mode: "managed-cloud";
+            enforced: boolean;
+            node_limit: number;
+            node_count: number;
+            node_count_complete: boolean;
+            services_per_application: number;
+            replicas_per_service: number;
+            profiles: string[];
+            public_tcp: boolean;
+            gpu: boolean;
+            aws_identity: boolean;
         };
         PublicTCPListener: {
             port: number;
@@ -7062,6 +7093,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildDeployPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCloudCapabilities: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudCapabilities"];
                 };
             };
             /** @description Error */
