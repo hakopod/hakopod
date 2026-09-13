@@ -388,6 +388,9 @@ func randomBootstrapToken() (string, string, error) {
 	return string(value[:6]), string(value[6:]), nil
 }
 func (c *Client) CreateEnrollment(ctx context.Context, ttl time.Duration) (Enrollment, error) {
+	if c.CloudMode() {
+		return Enrollment{}, fmt.Errorf("%w: the initial Cloud plan supports its existing node only; additional node enrollment is unavailable", ErrCloudLimit)
+	}
 	if ttl < 5*time.Minute || ttl > time.Hour {
 		return Enrollment{}, fmt.Errorf("enrollment TTL must be between 5 and 60 minutes")
 	}

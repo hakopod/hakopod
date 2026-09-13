@@ -93,3 +93,32 @@ The public `GET /api/v1/auth/status` response includes `deployment_mode` as
 `self-hosted` or `managed-cloud`, including before first-owner setup. It reports
 the validated startup mode and does not enable public signup or bypass signed
 entitlements. Cloud connections can use it to reject self-hosted installations.
+
+## Initial Cloud connection limits
+
+Managed-cloud mode now enforces the initial BYO-node policy: exactly one
+registered Kubernetes node, 1–10 services per application, small/medium/large
+resource profiles, and at most three replicas per service including autoscaling.
+GPU and AWS workload identity are unavailable alongside public TCP. Additional
+node enrollment is disabled in this mode. Self-hosted installations retain their
+existing profiles, replica limits and administrator-provisioned public ports.
+
+Planning, every new durable revision and reconciliation check these limits.
+Rollback checks both the desired and resolved historical specifications. A denied
+revision cannot allocate a new application or queue entry. Returning an existing
+idempotency result does not enqueue another operation; reconciliation still checks
+the current policy before applying it. Switching deployment mode does not delete
+existing workloads or guarantee that old workloads already meet the new limits.
+
+`GET /api/v1/cloud/capabilities?project=demo&environment=development` exposes
+versioned enforcement and a bounded node-count observation to a machine key with
+read access to that project/environment. It returns no node names, addresses or
+credentials. Cloud checks it when connecting and before forwarding an operation.
+Old engine versions without this contract must fail the Cloud connection check.
+A node joined outside Hakopod causes subsequent checks to fail; administrators
+who control and modify the engine remain outside a remote enforcement guarantee.
+
+Validation covers ordinary revisions, resolved rollback input, key scopes,
+parallel/self-hosted policy behavior and a read-only capability/preflight check
+against `k3d-hakopod-dev`. A denied real-cluster deployment created no namespace.
+These are configured limits; no production capacity or billing claim is implied.

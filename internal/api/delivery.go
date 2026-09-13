@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) validateDeliveryPlan(w http.ResponseWriter, r *http.Request, project, environment string, next spec.Application, existing *store.Application) bool {
-	if !spec.HasDeliveryCapabilities(next) {
+	if s.Cluster == nil && s.Auth.DeploymentMode != cluster.DeploymentManagedCloud && !spec.HasDeliveryCapabilities(next) {
 		return true
 	}
 	if s.Cluster == nil {

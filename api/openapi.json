@@ -5064,6 +5064,51 @@
         }
       }
     },
+    "/cloud/capabilities": {
+      "get": {
+        "operationId": "getCloudCapabilities",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudCapabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/services/{service}/delivery": {
       "get": {
         "operationId": "getServiceDelivery",
@@ -11656,6 +11701,67 @@
           "changes",
           "warnings",
           "expected_config_revision"
+        ]
+      },
+      "CloudCapabilities": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "managed-cloud"
+            ]
+          },
+          "enforced": {
+            "type": "boolean"
+          },
+          "node_limit": {
+            "type": "integer"
+          },
+          "node_count": {
+            "type": "integer"
+          },
+          "node_count_complete": {
+            "type": "boolean"
+          },
+          "services_per_application": {
+            "type": "integer"
+          },
+          "replicas_per_service": {
+            "type": "integer"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "public_tcp": {
+            "type": "boolean"
+          },
+          "gpu": {
+            "type": "boolean"
+          },
+          "aws_identity": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version",
+          "mode",
+          "enforced",
+          "node_limit",
+          "node_count",
+          "node_count_complete",
+          "services_per_application",
+          "replicas_per_service",
+          "profiles",
+          "public_tcp",
+          "gpu",
+          "aws_identity"
         ]
       },
       "PublicTCPListener": {

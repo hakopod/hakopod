@@ -32,6 +32,11 @@ func TestManagedCloudDeniesPublicTCPForAdminScopedDeployAndRollback(t *testing.T
 	}
 	var clusterRequests atomic.Int32
 	kubernetes := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/api/v1/nodes" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"NodeList","metadata":{},"items":[{"metadata":{"name":"fixture-node"}}]}`))
+			return
+		}
 		clusterRequests.Add(1)
 		http.Error(w, "no cluster call expected", http.StatusServiceUnavailable)
 	}))
