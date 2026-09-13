@@ -29,7 +29,7 @@ managed PostgreSQL or supply a dedicated existing database; external connections
 require verified TLS. No Go or frontend compilation runs on the server.
 
 First setup lets you choose the administrator. Public signup stays disabled in
-self-hosted binaries; licensed teams can enroll explicitly invited members.
+self-hosted binaries; Free teams can enroll explicitly invited members.
 See the [installer guide](installer/README.md) for reviewing the script,
 requirements and noninteractive configuration, and the
 [verification record](docs/prebuilt-installation-verification.md) for tested
@@ -82,24 +82,20 @@ For CI, create a named project/environment-scoped key through the dashboard or
 The `bootstrap` command remains an explicit machine-credential recovery/development
 tool. Dashboard sign-in uses human accounts.
 
-## Install on a Linux server
+## Build release artifacts
 
-The [interactive installer](installer/README.md) supports Linux amd64 and arm64.
-It asks for your domains, node address, dashboard access, certificates, storage
-and resource limits, then shows the plan before making changes. The first person
-to complete setup chooses the administrator account.
+Developers can build the server, dashboard and installer kit locally:
 
 ```sh
 python3 release/build.py
 python3 release/build-installer.py
-sudo bash scripts/install.sh --artifact-dir .local/installer-artifacts/0.1.0-dev
 ```
 
-Run the installation step on a dedicated supported Linux host. Use `--dry-run`
-to review configuration and artifact checksums, or a reviewed `--config` for
-unattended input. No public download service is assumed; build or transfer the
-local release artifacts first. Read the installer guide for Linux prerequisites,
-SSH/HTTPS access, DNS, firewall rules, resume and the host-verification boundary.
+Transfer the resulting kit to a fresh dedicated Linux server and use the
+[installer guide](installer/README.md) to review its configuration and checksums.
+The public installation command above downloads the verified release instead.
+
+## Cloud deployments
 
 AWS, GCP and Azure provisioning for the planned Bring Your Own Cloud managed
 service lives in the private `hakopod/hakopod-cloud` repository, linked at
@@ -113,6 +109,10 @@ and private service networking. Public SMTP, SFTP and other custom TCP listeners
 stay on self-hosted installations, whether Free or licensed. See
 [product modes](docs/product-modes.md) for the enforced boundary and remaining
 Cloud launch requirements.
+
+The initial private Cloud beta supplies a control dashboard for one node you
+bring. It includes no compute and is limited to allowlisted testers. Its service
+and GCP deployment root remain in `private/cloud`; real GCP acceptance is pending.
 
 ## Accounts, licensing and components
 
