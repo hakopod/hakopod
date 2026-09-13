@@ -24,6 +24,16 @@ export function parentNavigation(
     label: includeService && service ? 'Back to service' : 'Back to application',
     search: { tab, ...(includeService && service ? { service } : {}) },
   })
+  if (parts[0] === 'alarms' && parts[1])
+    return {
+      to: '/alarms',
+      label: 'Back to alarms',
+      search: Object.fromEntries(
+        ['project', 'environment', 'application_id'].flatMap((key) =>
+          typeof search[key] === 'string' ? [[key, search[key] as string]] : [],
+        ),
+      ),
+    }
   if (parts[0] === 'projects') return { to: '/', label: 'Back to projects' }
   if (parts[0] === 'applications' && parts[1]) {
     if (['new', 'import'].includes(parts[1])) return applications

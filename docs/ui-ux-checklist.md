@@ -85,3 +85,7 @@ Local evidence is under `work/ui-migration/global-review/`: `routes.json`, `resu
 ## Project navigation review
 
 The next pass is recorded in [the project navigation checklist](project-navigation-checklist.md). The completed global-layout review above remains historical evidence.
+
+## Runtime and alarms review
+
+The completed runtime-health and alarm pass is recorded in [the runtime and alarms checklist](runtime-alarms-review.md), including scoped evidence, resolved visual findings and verification limits.

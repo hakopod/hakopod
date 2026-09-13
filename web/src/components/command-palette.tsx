@@ -5,6 +5,7 @@ import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { Input } from '@hakopod/hatch-ui/components/input'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
+import { applicationRuntimeHealth } from '../lib/runtime-health'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Loading, Status } from './shared'
@@ -80,6 +81,7 @@ export default function CommandPalette({
       { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
       ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
       { to: '/settings', icon: 'settings', label: 'Settings' },
+      { to: '/alarms', icon: 'alert', label: 'Alarms' },
     ].map(({ to, icon, label }) => ({
       id: to,
       label,
@@ -105,7 +107,7 @@ export default function CommandPalette({
       group: 'Applications',
       action: () =>
         void navigate({ to: '/applications/$applicationId', params: { applicationId: app.id } }),
-      detail: <Status value={app.observed?.status || 'not observed'} small />,
+      detail: <Status value={applicationRuntimeHealth(app).status} small />,
     })),
   ]
   const query = search.trim().toLowerCase()

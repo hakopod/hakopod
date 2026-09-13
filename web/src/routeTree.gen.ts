@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AlarmsRouteImport } from './routes/alarms'
 import { Route as BackupsRouteImport } from './routes/backups'
 import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
@@ -17,6 +18,7 @@ import { Route as NetworksRouteImport } from './routes/networks'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
+import { Route as AlarmsSettingsRouteImport } from './routes/alarms.settings'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as ApplicationsApplicationIdRouteImport } from './routes/applications.$applicationId'
 import { Route as ApplicationsImportRouteImport } from './routes/applications.import'
@@ -61,6 +63,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AlarmsRoute = AlarmsRouteImport.update({
+  id: '/alarms',
+  path: '/alarms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BackupsRoute = BackupsRouteImport.update({
   id: '/backups',
   path: '/backups',
@@ -95,6 +102,11 @@ const TemplatesRoute = TemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AlarmsSettingsRoute = AlarmsSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AlarmsRoute,
 } as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
@@ -302,6 +314,7 @@ const InfrastructureNodesNodeTerminalRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
@@ -309,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
@@ -350,6 +364,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
@@ -357,6 +372,7 @@ export interface FileRoutesByTo {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
@@ -399,6 +415,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
@@ -406,6 +423,7 @@ export interface FileRoutesById {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
@@ -449,6 +467,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/alarms'
     | '/backups'
     | '/builds'
     | '/infrastructure'
@@ -456,6 +475,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
@@ -497,6 +517,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/alarms'
     | '/backups'
     | '/builds'
     | '/infrastructure'
@@ -504,6 +525,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
@@ -545,6 +567,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/alarms'
     | '/backups'
     | '/builds'
     | '/infrastructure'
@@ -552,6 +575,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
@@ -594,6 +618,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlarmsRoute: typeof AlarmsRouteWithChildren
   BackupsRoute: typeof BackupsRouteWithChildren
   BuildsRoute: typeof BuildsRouteWithChildren
   InfrastructureRoute: typeof InfrastructureRouteWithChildren
@@ -623,6 +648,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alarms': {
+      id: '/alarms'
+      path: '/alarms'
+      fullPath: '/alarms'
+      preLoaderRoute: typeof AlarmsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/backups': {
@@ -673,6 +705,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/templates'
       preLoaderRoute: typeof TemplatesRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/alarms/settings': {
+      id: '/alarms/settings'
+      path: '/settings'
+      fullPath: '/alarms/settings'
+      preLoaderRoute: typeof AlarmsSettingsRouteImport
+      parentRoute: typeof AlarmsRoute
     }
     '/api/$': {
       id: '/api/$'
@@ -943,6 +982,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AlarmsRouteChildren {
+  AlarmsSettingsRoute: typeof AlarmsSettingsRoute
+}
+
+const AlarmsRouteChildren: AlarmsRouteChildren = {
+  AlarmsSettingsRoute: AlarmsSettingsRoute,
+}
+
+const AlarmsRouteWithChildren =
+  AlarmsRoute._addFileChildren(AlarmsRouteChildren)
+
 interface BackupsRouteChildren {
   BackupsJobIdRoute: typeof BackupsJobIdRoute
   BackupsNewRoute: typeof BackupsNewRoute
@@ -1098,6 +1148,7 @@ const ApplicationsApplicationIdRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlarmsRoute: AlarmsRouteWithChildren,
   BackupsRoute: BackupsRouteWithChildren,
   BuildsRoute: BuildsRouteWithChildren,
   InfrastructureRoute: InfrastructureRouteWithChildren,

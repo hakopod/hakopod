@@ -276,6 +276,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/alarms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAlarms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alarms/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acknowledgeAlarm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alarms/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["readAlarm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alarm-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAlarmSettings"];
+        put: operations["putAlarmSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/status": {
         parameters: {
             query?: never;
@@ -2220,6 +2284,7 @@ export interface components {
             /** Format: date-time */
             observed_at?: string;
             services?: components["schemas"]["ServiceStatus"][];
+            revision?: number;
         };
         Deployment: {
             id: string;
@@ -2388,6 +2453,66 @@ export interface components {
             created_at: string;
             started_at?: string | null;
             finished_at?: string | null;
+        };
+        Alarm: {
+            id: string;
+            rule: string;
+            /** @enum {string} */
+            resource_type: "application" | "service" | "node";
+            resource_id: string;
+            resource_name: string;
+            project: string;
+            environment: string;
+            application_id: string;
+            service: string;
+            /** @enum {string} */
+            status: "active" | "recovered";
+            summary: string;
+            /** Format: date-time */
+            first_observed_at: string;
+            /** Format: date-time */
+            fired_at: string;
+            recovered_at: string | null;
+            /** Format: date-time */
+            last_observed_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            last_event_id: number;
+            read: boolean;
+            acknowledged: boolean;
+            /** @enum {string} */
+            observation_status: "healthy" | "unhealthy" | "unknown";
+        };
+        AlarmList: {
+            items: components["schemas"]["Alarm"][];
+            next_cursor: string;
+            summary: {
+                active: number;
+                unread: number;
+            };
+        };
+        AlarmSettings: {
+            project: string;
+            environment: string;
+            application_id: string;
+            enabled: boolean;
+            hold_seconds: number;
+            email_enabled: boolean;
+            revision: number;
+            inherited: boolean;
+            /** @enum {string} */
+            source: "default" | "installation" | "project" | "environment" | "application";
+            email_available: boolean;
+            can_manage: boolean;
+        };
+        AlarmSettingsInput: {
+            enabled: boolean;
+            hold_seconds: number;
+            email_enabled: boolean;
+            expected_revision: number;
+        };
+        AlarmReadInput: {
+            expected_event_id?: number;
         };
         ProjectRole: {
             project: string;
@@ -3984,6 +4109,182 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAlarms: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application_id?: string;
+                cursor?: string;
+                limit?: number;
+                status?: "active" | "recovered";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlarmList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    acknowledgeAlarm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AlarmReadInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alarm"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    readAlarm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AlarmReadInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alarm"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAlarmSettings: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlarmSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putAlarmSettings: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlarmSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlarmSettings"];
                 };
             };
             /** @description Error */

@@ -8,6 +8,7 @@ import { relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { ScopeContext, canAccess, useScope } from '../lib/scope'
 import type { Project } from '../lib/types'
+import { applicationRuntimeHealth } from '../lib/runtime-health'
 import { Button } from './ui/button'
 import { Icon } from './icons'
 import { Copy, Empty, ErrorState, Loading, PageHeader, Status } from './shared'
@@ -67,23 +68,18 @@ export function ApplicationList({
     gcTime: 0,
   })
   const items = applications.data?.items || []
-  const healthy = items.filter((app) =>
-    ['healthy', 'ready'].includes(app.observed?.status || ''),
-  ).length
-  const observed = items.filter((app) => Boolean(app.observed)).length
+  const healthByID = new Map(items.map((app) => [app.id, applicationRuntimeHealth(app)]))
+  const healthy = items.filter((app) => healthByID.get(app.id)?.status === 'healthy').length
+  const observed = items.filter((app) => healthByID.get(app.id)?.ready !== undefined).length
   const services = items.reduce((sum, app) => sum + Object.keys(app.spec.services).length, 0)
-  const replicas = items.reduce(
-    (sum, app) =>
-      sum + (app.observed?.services?.reduce((count, service) => count + service.ready, 0) || 0),
-    0,
-  )
+  const replicas = items.reduce((sum, app) => sum + (healthByID.get(app.id)?.ready || 0), 0)
   const filtered = items.filter(
     (app) =>
       app.name.toLowerCase().includes(search.toLowerCase()) &&
       (health === 'all' ||
         (health === 'healthy'
-          ? ['healthy', 'ready'].includes(app.observed?.status || '')
-          : !['healthy', 'ready'].includes(app.observed?.status || ''))),
+          ? healthByID.get(app.id)?.status === 'healthy'
+          : healthByID.get(app.id)?.status !== 'healthy')),
   )
   const next = applications.data?.next_cursor
   return (
@@ -210,7 +206,7 @@ export function ApplicationList({
                           <ServiceImageIcon key={index} image={service.image} />
                         ))}
                     </div>
-                    <Status value={app.observed?.status || 'not observed'} small />
+                    <Status value={healthByID.get(app.id)?.status} small />
                     <div className="ops-card-actions">
                       <Menu
                         trigger={
@@ -285,12 +281,26 @@ export function ApplicationList({
                     <div>
                       <dt>Ready replicas</dt>
                       <dd>
-                        {app.observed
-                          ? app.observed.services?.reduce((n, service) => n + service.ready, 0) || 0
-                          : 'Not observed'}
+                        {healthByID.get(app.id)?.ready === undefined
+                          ? healthByID.get(app.id)?.observed
+                            ? 'Unavailable'
+                            : 'Not observed'
+                          : `${healthByID.get(app.id)!.ready} / ${healthByID.get(app.id)!.desired}`}
                       </dd>
                     </div>
                   </dl>
+                  {healthByID.get(app.id)?.issues[0] && (
+                    <p
+                      className="ops-card-message"
+                      title={healthByID.get(app.id)!.issues[0].message}
+                    >
+                      {healthByID.get(app.id)!.issues[0].service}:{' '}
+                      {healthByID.get(app.id)!.issues[0].message}
+                    </p>
+                  )}
+                  {healthByID.get(app.id)?.note && (
+                    <p className="ops-card-message">{healthByID.get(app.id)!.note}</p>
+                  )}
                   <div className="ops-card-footer">
                     <Badge>r{app.revision}</Badge>
                     <time title={app.updated_at} dateTime={app.updated_at}>

@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { Badge, Card } from './ui/surfaces'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import type { Application } from '../lib/types'
+import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-health'
 import { Icon } from './icons'
 import { HeadingHelp, Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
@@ -11,6 +12,7 @@ export default function ApplicationTopology({ application: app }: { application:
   const name = names.includes(selected) ? selected : names[0]
   const service = app.spec.services[name]
   const observed = app.observed?.services?.find((item) => item.name === name)
+  const selectedHealth = serviceRuntimeHealth(observed, app.observed?.observed_at)
   const positions = new Map(
     names.map((name, index) => [
       name,
@@ -77,6 +79,7 @@ export default function ApplicationTopology({ application: app }: { application:
               const at = positions.get(item)!
               const config = app.spec.services[item]
               const state = app.observed?.services?.find((entry) => entry.name === item)
+              const health = serviceRuntimeHealth(state, app.observed?.observed_at)
               return (
                 <button
                   type="button"
@@ -87,7 +90,7 @@ export default function ApplicationTopology({ application: app }: { application:
                   onClick={() => setSelected(item)}
                 >
                   <Brackets />
-                  <Status value={state?.status || 'not observed'} small />
+                  <Status value={health.status} small />
                   <div>
                     <Icon
                       name={config.public ? 'globe' : config.port ? 'box' : 'terminal'}
@@ -97,10 +100,8 @@ export default function ApplicationTopology({ application: app }: { application:
                     <Icon name="chevron" size={13} />
                   </div>
                   <small>
-                    {state
-                      ? `${state.ready}/${state.desired} ready`
-                      : `${config.replicas || 1} desired`}{' '}
-                    · {config.public ? 'Public HTTP' : config.port ? 'Private' : 'Worker'}
+                    {runtimeReplicaSummary(health)} ·{' '}
+                    {config.public ? 'Public HTTP' : config.port ? 'Private' : 'Worker'}
                     {config.volume ? ' · Volume' : ''}
                   </small>
                 </button>
@@ -115,17 +116,17 @@ export default function ApplicationTopology({ application: app }: { application:
         {service && (
           <Card className="topology-inspector inspector-card">
             <div className="inspector-heading">
-              <Status value={observed?.status || 'not observed'} small />
+              <Status value={selectedHealth.status} small />
               <h2>{name}</h2>
               <Copy value={name} label="Copy service slug" />
             </div>
-            {observed?.message && <p className="inspector-summary">{observed.message}</p>}
+            {observed?.message && !selectedHealth.note && (
+              <p className="inspector-summary">{observed.message}</p>
+            )}
             <div className="inspector-facts">
               <div>
                 <span>Replicas</span>
-                <strong>
-                  {observed ? `${observed.ready}/${observed.desired}` : 'Not observed'}
-                </strong>
+                <strong>{runtimeReplicaSummary(selectedHealth)}</strong>
               </div>
               <div>
                 <span>Profile</span>

@@ -8,6 +8,7 @@
 @import './styles/networks.css';
 @import './styles/settings.css';
 @import './styles/code.css';
+@import './styles/alarms.css';
 
 /* Match the source set for browser and server builds. */
 @source './';

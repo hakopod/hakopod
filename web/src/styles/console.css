@@ -261,7 +261,7 @@
 .application-metadata code {
   font-size: 12px;
 }
-.application-metadata > .button {
+.application-metadata > .button-icon {
   margin-left: -9px;
   height: 18px;
   width: 18px;
@@ -1524,7 +1524,9 @@ a.resource-note:focus-visible {
   flex-wrap: wrap;
 }
 .inspector-heading > h2 {
-  flex: 1;
+  flex: 1 1 8ch;
+  min-width: 8ch;
+  max-width: 100%;
   overflow-wrap: anywhere;
   font-size: 14px;
 }

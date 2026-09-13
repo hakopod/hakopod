@@ -7,6 +7,12 @@ import { APIError, message, relative } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
+import {
+  applicationRuntimeHealth,
+  runtimeReplicaSummary,
+  serviceRuntimeHealth,
+} from '../lib/runtime-health'
+import { ApplicationAlarmLinks, RuntimeNotice } from '../components/runtime-notice'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
@@ -90,6 +96,7 @@ function ApplicationDetail() {
   if (application.error || !application.data)
     return <ErrorState error={application.error} retry={() => void application.refetch()} />
   const app = application.data
+  const health = applicationRuntimeHealth(app)
   const serviceNames = Object.keys(app.spec.services)
   const observed = app.observed?.services || []
   const endpoint = observed.find((service) => service.url)?.url
@@ -113,15 +120,13 @@ function ApplicationDetail() {
       <div className="application-heading">
         <div>
           <div className="title-row hako-page-heading-title">
-            <Status value={app.observed?.status || 'not observed'} />
+            <Status value={health.status} />
             <h1>{app.name}</h1>
           </div>
           <div className="application-metadata">
             <code>{app.id}</code>
             <Copy value={app.id} />
-            <span>
-              Revision {app.revision} · {app.status}
-            </span>
+            <span>Revision {app.revision}</span>
             <span>
               {serviceNames.length} {serviceNames.length === 1 ? 'service' : 'services'}
             </span>
@@ -151,6 +156,12 @@ function ApplicationDetail() {
           </Button>
         )}
       </div>
+      <RuntimeNotice
+        health={health}
+        applicationId={app.id}
+        canInspectNodes={scope.can('admin')}
+        canInspectLogs={scope.can('logs:read')}
+      />
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="tab-list application-tabs" aria-label="Application sections">
           {[
@@ -191,12 +202,13 @@ function ApplicationDetail() {
           <div className="ops-catalog-grid ops-service-catalog" aria-label="Service cards">
             {Object.entries(app.spec.services).map(([name, service]) => {
               const runtime = observed.find((status) => status.name === name)
+              const serviceHealth = serviceRuntimeHealth(runtime, app.observed?.observed_at)
               return (
                 <article key={name} className="ops-catalog-card interactive">
                   <Brackets />
                   <div className="ops-card-heading">
                     <ServiceImageIcon image={runtime?.image || service.image} />
-                    <Status value={runtime?.status || 'not observed'} small />
+                    <Status value={serviceHealth.status} small />
                     <div className="ops-card-actions">
                       <Menu
                         trigger={
@@ -278,11 +290,7 @@ function ApplicationDetail() {
                   <dl className="ops-card-facts">
                     <div>
                       <dt>Replicas</dt>
-                      <dd>
-                        {runtime
-                          ? `${runtime.ready} / ${runtime.desired} ready`
-                          : `${service.replicas || 1} desired`}
-                      </dd>
+                      <dd>{runtimeReplicaSummary(serviceHealth)}</dd>
                     </div>
                     <div>
                       <dt>Exposure</dt>
@@ -305,7 +313,9 @@ function ApplicationDetail() {
                       </dd>
                     </div>
                   </dl>
-                  {runtime?.message && <p className="ops-card-message">{runtime.message}</p>}
+                  {runtime?.message && !serviceHealth.note && (
+                    <p className="ops-card-message">{runtime.message}</p>
+                  )}
                   <div className="ops-card-footer">
                     <span>Inspect service</span>
                     <Icon name="arrow" size={15} />
@@ -331,6 +341,7 @@ function ApplicationDetail() {
             </div>
             <Icon name="arrow" size={18} />
           </Link>
+          <ApplicationAlarmLinks application={app} />
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">
           <DeploymentHistory application={app} />
@@ -517,6 +528,7 @@ function DeploymentHistory({ application }: { application: Application }) {
   const scope = useScope()
   const navigate = useNavigate()
   const deployments = application.deployments || []
+  const health = applicationRuntimeHealth(application)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const rollbackRequest = useRef<{
@@ -572,8 +584,8 @@ function DeploymentHistory({ application }: { application: Application }) {
           <div className="hako-section-heading-title">
             <h2>Deployment history</h2>
             <HeadingHelp title="Deployment history">
-              Immutable revisions, most recent first. Open a release for events and its
-              configuration diff.
+              Recorded deployment outcomes, most recent first. Runtime health can change after a
+              deployment finishes. Open a release for events and its configuration diff.
             </HeadingHelp>
           </div>
         </div>
@@ -594,7 +606,7 @@ function DeploymentHistory({ application }: { application: Application }) {
           <table>
             <thead>
               <tr>
-                <th>Revision / state</th>
+                <th>Revision / deployment outcome</th>
                 <th>Deployment</th>
                 <th>Created</th>
                 <th>
@@ -619,9 +631,15 @@ function DeploymentHistory({ application }: { application: Application }) {
                           r{deployment.revision}
                         </Link>
                         {deployment.revision === application.revision && (
-                          <span className="current-label">Current</span>
+                          <span className="current-label">Current revision</span>
                         )}
                       </div>
+                      {deployment.revision === application.revision && (
+                        <div className="ops-table-sub runtime-summary">
+                          <span>Runtime now</span>
+                          <Status value={health.status} small />
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="ops-object-id">

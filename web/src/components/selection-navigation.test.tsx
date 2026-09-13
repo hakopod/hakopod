@@ -135,6 +135,19 @@ test('parent navigation uses route context without relying on browser history', 
     label: 'Back to integrations',
   })
   assert.deepEqual(
+    parentNavigation('/alarms/settings', {
+      project: 'team-a',
+      environment: 'staging',
+      application_id: 'example',
+      token: 'omit',
+    }),
+    {
+      to: '/alarms',
+      label: 'Back to alarms',
+      search: { project: 'team-a', environment: 'staging', application_id: 'example' },
+    },
+  )
+  assert.deepEqual(
     parentNavigation('/templates/database', { q: 'data', category: 'database', token: 'omit' }),
     {
       to: '/templates',

@@ -1,0 +1,165 @@
+.runtime-notice > div,
+.runtime-issue,
+.alarm-row-main {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.runtime-notice[data-state='blocked'],
+.runtime-notice[data-state='failed'] {
+  border-left: 2px solid var(--warn);
+}
+.runtime-issue p {
+  margin: 6px 0;
+}
+.runtime-issue-actions,
+.runtime-summary,
+.alarm-toolbar,
+.alarm-filters,
+.alarm-row-title,
+.alarm-row-meta,
+.alarm-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.runtime-summary {
+  gap: 6px;
+}
+.runtime-summary > time {
+  overflow-wrap: anywhere;
+}
+.runtime-summary > .button {
+  flex-shrink: 0;
+}
+.alarm-toolbar {
+  justify-content: space-between;
+  padding-block: 8px;
+}
+.alarm-filters > .select-field-wrap {
+  width: auto;
+  min-width: 130px;
+  max-width: 240px;
+}
+.alarm-counts,
+.alarm-row-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.alarm-list {
+  display: grid;
+  gap: 8px;
+}
+.alarm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: var(--radius-md);
+}
+.alarm-row[data-unread] {
+  box-shadow: inset 2px 0 var(--action-text);
+}
+.alarm-row-main > p {
+  margin: 6px 0;
+}
+.alarm-row-title strong {
+  font-size: 14px;
+}
+.alarm-row-meta {
+  gap: 4px 12px;
+}
+.alarm-unread-label {
+  color: var(--action-text);
+  font-size: 12px;
+}
+.alarm-row-actions {
+  justify-content: flex-end;
+  max-width: 360px;
+}
+.alarm-observation-warning {
+  color: var(--warn);
+  font-size: 13px;
+}
+.alarm-notification-button {
+  position: relative;
+}
+.alarm-notification-button[data-active],
+.alarm-notification-button[data-active]:hover {
+  color: var(--action-text);
+  border-bottom-color: var(--action-text);
+  background: transparent;
+}
+.alarm-unread-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--action-text);
+}
+.alarm-notification-error {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  color: var(--warn);
+  font-size: 11px;
+}
+.alarm-scope-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.alarm-scope-fields label,
+.alarm-hold {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.alarm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alarm-save-error {
+  padding-block: 8px;
+  overflow-wrap: anywhere;
+}
+.hako-form-page .alarm-settings-footer {
+  position: static;
+}
+@media (min-width: 1280px) and (max-width: 1439px) {
+  .hako-global-header {
+    gap: 10px;
+  }
+  .hako-global-nav {
+    gap: 12px;
+  }
+  .hako-docs-link {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  .alarm-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .alarm-row-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .alarm-scope-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .hako-command-trigger.button {
+    display: none;
+  }
+  .hako-header-tools {
+    gap: 2px;
+  }
+}

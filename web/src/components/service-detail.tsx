@@ -8,6 +8,8 @@ import { message, relative, timestamp } from '../lib/api'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
+import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-health'
+import { ApplicationAlarmLinks, RuntimeNotice } from './runtime-notice'
 import {
   metricSampleAge,
   metricsStaleAfter,
@@ -83,6 +85,7 @@ export function ServiceDetail({
   const cache = useQueryClient()
   const service = application.spec.services[serviceName]
   const observed = application.observed?.services?.find((item) => item.name === serviceName)
+  const health = serviceRuntimeHealth(observed, application.observed?.observed_at)
   const [tab, setTab] = useState(
     initialTab && serviceTabs.includes(initialTab) ? initialTab : 'overview',
   )
@@ -181,7 +184,7 @@ export function ServiceDetail({
       <div className="application-heading">
         <div>
           <div className="title-row hako-page-heading-title">
-            <Status value={observed?.status || 'not observed'} />
+            <Status value={health.status} />
             <h1>{serviceName}</h1>
           </div>
           <div className="application-metadata">
@@ -216,7 +219,15 @@ export function ServiceDetail({
           </div>
         )}
       </div>
-      {observed?.message && <Note>{observed.message}</Note>}
+      <RuntimeNotice
+        health={health}
+        applicationId={application.id}
+        canInspectNodes={scope.can('admin')}
+        canInspectLogs={scope.can('logs:read')}
+      />
+      {observed?.message && !health.issues.length && !health.note && (
+        <Note>{observed.message}</Note>
+      )}
       <Tabs.Root
         value={tab}
         onValueChange={(value) => {
@@ -260,11 +271,7 @@ export function ServiceDetail({
               <dl className="service-definition-list">
                 <div>
                   <dt>Replicas</dt>
-                  <dd>
-                    {observed
-                      ? `${observed.ready} / ${observed.desired} ready`
-                      : `${service.replicas || 1} desired · not observed`}
-                  </dd>
+                  <dd>{runtimeReplicaSummary(health)}</dd>
                 </div>
                 <div>
                   <dt>Readiness</dt>
@@ -286,9 +293,10 @@ export function ServiceDetail({
                 </div>
                 <div>
                   <dt>Observed</dt>
-                  <dd>{timestamp(runtime.data?.observed_at)}</dd>
+                  <dd>{timestamp(health.observedAt)}</dd>
                 </div>
               </dl>
+              <ApplicationAlarmLinks application={application} />
             </section>
             <section
               className="panel service-summary-panel node-runtime service-runtime"

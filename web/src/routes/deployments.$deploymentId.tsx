@@ -8,6 +8,8 @@ import type { Plan } from '../lib/types'
 import { activeDeployment, message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
+import { currentDeploymentRuntime } from '../lib/runtime-health'
+import { RuntimeNotice } from '../components/runtime-notice'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -64,6 +66,10 @@ function DeploymentDetail() {
   if (deployment.error || !deployment.data)
     return <ErrorState error={deployment.error} retry={() => void deployment.refetch()} />
   const release = deployment.data
+  const runtimeHealth = currentDeploymentRuntime(
+    application.error ? undefined : application.data,
+    release.revision,
+  )
   const previous = previousDeployment.data
   const recentRevisions = [...(application.data?.deployments || [])]
   if (!recentRevisions.some((run) => run.id === release.id)) recentRevisions.push(release)
@@ -168,7 +174,6 @@ function DeploymentDetail() {
       <div className="application-heading">
         <div>
           <div className="title-row hako-page-heading-title">
-            <Status value={release.status} />
             <h1>
               Deployment <span className="muted-text">r{release.revision}</span>
             </h1>
@@ -176,6 +181,8 @@ function DeploymentDetail() {
           <div className="application-metadata">
             <code>{release.id}</code>
             <Copy value={release.id} />
+            <span>Deployment outcome</span>
+            <Status value={release.status} small />
             <time dateTime={release.created_at} title={release.created_at}>
               {relative(release.created_at)}
             </time>
@@ -200,6 +207,38 @@ function DeploymentDetail() {
           <Icon name="refresh" size={16} className={deployment.isFetching ? 'spin' : ''} />
         </Button>
       </div>
+      {runtimeHealth && (
+        <>
+          <div className="application-metadata runtime-summary">
+            <span>Last observed runtime</span>
+            <Status value={runtimeHealth.status} small />
+            {runtimeHealth.observedAt && (
+              <time dateTime={runtimeHealth.observedAt}>
+                Observed {timestamp(runtimeHealth.observedAt)}
+              </time>
+            )}
+            <Button size="sm" variant="ghost" asChild>
+              <Link
+                to="/applications/$applicationId"
+                params={{ applicationId: release.application_id }}
+              >
+                Inspect application
+              </Link>
+            </Button>
+          </div>
+          <RuntimeNotice
+            health={runtimeHealth}
+            applicationId={release.application_id}
+            canInspectNodes={scope.can('admin')}
+            canInspectLogs={scope.can('logs:read')}
+          />
+        </>
+      )}
+      {(application.error || !application.data) && (
+        <Note>
+          Current application runtime is unavailable. The deployment outcome is a recorded result.
+        </Note>
+      )}
       {release.error && (
         <div className="deployment-failure" role="alert">
           <Icon name="alert" size={21} />
@@ -214,7 +253,7 @@ function DeploymentDetail() {
       )}
       <div className="ops-run-layout">
         <aside className="ops-run-list" aria-label="Deployment history">
-          <div className="ops-list-heading">Recent revisions</div>
+          <div className="ops-list-heading">Recorded deployment outcomes</div>
           {recentRevisions.map((run) => (
             <Link
               key={run.id}
@@ -355,9 +394,10 @@ function DeploymentDetail() {
               <div className="section-toolbar">
                 <div>
                   <div className="hako-section-heading-title">
-                    <h2>Service results</h2>
-                    <HeadingHelp title="Service results">
-                      Requested configuration and observations recorded for this revision.
+                    <h2>Recorded service results</h2>
+                    <HeadingHelp title="Recorded service results">
+                      Observations saved with this deployment. Open a service to inspect its current
+                      runtime health.
                     </HeadingHelp>
                   </div>
                 </div>
@@ -366,9 +406,9 @@ function DeploymentDetail() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Service / state</th>
+                      <th>Service / recorded state</th>
                       <th>Image</th>
-                      <th>Replicas</th>
+                      <th>Recorded replicas</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -30,6 +30,7 @@ import { ParentBackLink } from './parent-navigation'
 import { Bot } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { AuthScreen } from './auth-screen'
+import { NotificationButton } from './notification-button'
 
 const CommandPalette = lazy(() => import('./command-palette'))
 const ProjectWizard = lazy(() => import('./project-wizard'))
@@ -474,6 +475,7 @@ function Workspace({
                 <Bot size={19} strokeWidth={1.75} aria-hidden="true" />
               </Button>
             </Tooltip>
+            <NotificationButton />
             <Menu
               className="hako-account-menu"
               trigger={
@@ -554,6 +556,7 @@ function Workspace({
           ) : !project &&
             !projects.error &&
             !location.pathname.startsWith('/settings') &&
+            !location.pathname.startsWith('/alarms') &&
             !location.pathname.startsWith('/login/') ? (
             <Empty
               icon="box"
@@ -606,6 +609,20 @@ function Workspace({
               aria-label="Workspace navigation"
             >
               {links(true)}
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setMobileOpen(false)
+                  setCommandOpen(true)
+                }}
+              >
+                Quick navigation
+              </Button>
+              <Button asChild variant="ghost">
+                <Link to="/alarms" onClick={() => setMobileOpen(false)}>
+                  Alarms
+                </Link>
+              </Button>
               <a
                 className="hako-nav-link interactive"
                 href="https://github.com/hakopod/hakopod/blob/main/docs/cockpit.md"

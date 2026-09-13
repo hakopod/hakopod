@@ -36,9 +36,16 @@ export function Status({ value, small }: { value?: string; small?: boolean }) {
             status,
           )
         ? 'running'
-        : ['pending', 'partial', 'degraded', 'expiring', 'pending dns', 'incomplete'].includes(
-              status,
-            )
+        : [
+              'pending',
+              'partial',
+              'degraded',
+              'blocked',
+              'stale',
+              'expiring',
+              'pending dns',
+              'incomplete',
+            ].includes(status)
           ? 'warning'
           : 'neutral'
   return (
