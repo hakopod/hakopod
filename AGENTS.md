@@ -1,5 +1,7 @@
 # Hakopod contributor instructions
 
+Always use rebase and merge for pull requests (`gh pr merge --rebase`). Preserve individual commits; do not use merge commits or squash merges. Rebase feature branches when updating them from main.
+
 Build complete, tested vertical slices. Never show invented cluster state, logs, or metrics. Go owns orchestration and authorization; dashboard and CLI share `/api/v1`. Keep the API and reconciler in one process by default, backed by PostgreSQL durable operations. Bound concurrency, list sizes, stream buffers, caches, and timeouts. Do not introduce extra infrastructure without a measured reason.
 
 Use strict versioned TOML, immutable revisions, optimistic concurrency, digest-pinned images, scoped bearer keys, and owned Kubernetes resources. Never log credentials or secret bodies. No application may receive cluster credentials. Preserve other contributors' work. Record implemented versus verified behavior accurately.
