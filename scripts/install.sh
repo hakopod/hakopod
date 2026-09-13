@@ -6,7 +6,7 @@ umask 077
 
 bundle_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 helper="$bundle_root/installer/host.py"
-config_path='' artifact_dir='' target_arch='' release_version='' dry_run=false assume_yes=false resume=false input_tmp=''
+config_path='' artifact_dir='' target_arch='' release_version='' dry_run=false assume_yes=false resume=false input_tmp='' database_input_tmp=''
 die() { printf 'Installer: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'EOF'
@@ -38,7 +38,7 @@ case "$target_arch" in ''|amd64|arm64) ;; *) die '--arch must be amd64 or arm64'
 command -v python3 >/dev/null || die 'Python3.10+ is required for strict configuration and archive validation'
 python3 -c 'import sys; assert sys.version_info >= (3,10), "Python3.10+ required"'
 [ -f "$helper" ] || die 'Use the complete repository or extracted installer bundle, not install.sh alone'
-cleanup() { if [ -n "$input_tmp" ]; then rm -f -- "$input_tmp"; fi; }
+cleanup() { if [ -n "$input_tmp" ]; then rm -f -- "$input_tmp"; fi; if [ -n "$database_input_tmp" ]; then rm -f -- "$database_input_tmp"; fi; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -84,6 +84,25 @@ if [ -z "$config_path" ]; then
   else
     printf 'Managed-cloud mode keeps TCP service ports private; public TCP is unavailable.\n' >&2
   fi
+  prompt database_mode 'PostgreSQL: managed K3s pod, existing local, or external/RDS' 'managed'
+  database_url_file='' database_ca_file=''
+  case "$database_mode" in
+    managed) ;;
+    local|external)
+      prompt database_url_file 'Protected PostgreSQL URL file (mode 0600), or leave empty for hidden input' ''
+      if [ -z "$database_url_file" ]; then
+        database_input_tmp=$(mktemp "${TMPDIR:-/tmp}/hakopod-database.XXXXXXXX")
+        printf 'PostgreSQL URL (hidden): ' >&2
+        IFS= read -r -s database_url || die 'Database URL input ended'
+        printf '\n' >&2
+        printf '%s\n' "$database_url" > "$database_input_tmp"
+        unset database_url
+        database_url_file=$database_input_tmp
+      fi
+      prompt database_ca_file 'Optional absolute PEM CA bundle path for verified TLS' '';;
+    *) die 'database_mode must be managed, local or external';;
+  esac
+  prompt install_docker 'Also install Docker Engine (K3s already includes containerd): true or false' 'false'
   prompt storage 'Enable optional node-local application volumes: true or false' 'false'
   prompt k3s_memory_mib 'K3s hard memory cap in MiB' '2048'
   prompt api_memory_mib 'API hard memory cap in MiB' '256'
@@ -94,14 +113,16 @@ if [ -z "$config_path" ]; then
   python3 - "$input_tmp" "$version" "$app_domain" "$node_ip" "$node_name" "$supervisor_host" \
     "$dashboard_mode" "$dashboard_origin" "$dashboard_port" "$tls_cert_file" "$tls_key_file" \
     "$acme" "$acme_email" "$storage" "$k3s_memory_mib" "$api_memory_mib" "$dashboard_memory_mib" \
-    "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" "$deployment_mode" <<'PY'
+    "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" "$deployment_mode" \
+    "$database_mode" "$database_url_file" "$database_ca_file" "$install_docker" <<'PY'
 import json, sys
 from pathlib import Path
-keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports deployment_mode'.split()
+keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports deployment_mode database_mode database_url_file database_ca_file install_docker'.split()
 c=dict(zip(keys,sys.argv[2:]),schema_version=1)
 for key in ('dashboard_port','k3s_memory_mib','api_memory_mib','dashboard_memory_mib','postgres_memory_mib','max_pods'): c[key]=int(c[key])
-if c['storage'] not in ('true','false'): raise SystemExit('storage must be true or false')
-c['storage']=c['storage']=='true'
+for key in ('storage', 'install_docker'):
+    if c[key] not in ('true', 'false'): raise SystemExit(key + ' must be true or false')
+    c[key] = c[key] == 'true'
 c['public_tcp_ports']=[int(port.strip()) for port in c['public_tcp_ports'].split(',')] if c['public_tcp_ports'] else []
 Path(sys.argv[1]).write_text(json.dumps(c)+'\n')
 PY
@@ -120,15 +141,19 @@ args=(--config "$config_path" --artifact-dir "$artifact_dir")
 if [ -n "$target_arch" ]; then args+=(--arch "$target_arch"); fi
 if "$resume"; then args+=(--resume); fi
 python3 "$helper" plan "${args[@]}"
+python3 "$bundle_root/installer/prerequisites.py" plan --config "$config_path"
 if "$dry_run"; then exit 0; fi
-# Preflight must pass before creating any installation directories or secrets.
-python3 "$helper" preflight "${args[@]}"
+# Reject unsupported hosts before package installation; then confirm the one plan.
+python3 "$helper" platform-preflight "${args[@]}"
 if ! "$assume_yes"; then
   [ -t 0 ] || die 'Read the plan, then pass --yes for an unattended install'
   printf 'Type install to accept this concrete plan: ' >&2
   IFS= read -r accepted
   [ "$accepted" = install ] || die 'Installation cancelled without host changes'
 fi
+python3 "$bundle_root/installer/prerequisites.py" install --config "$config_path"
+# Full preflight runs after missing host tools become available.
+python3 "$helper" preflight "${args[@]}"
 exec 9>/run/lock/hakopod-install.lock
 flock -n 9 || die 'Another Hakopod installer is running'
 # Recheck under the lock, so concurrent installers cannot both claim a fresh host.
@@ -144,7 +169,7 @@ for name in ('/opt/hakopod/tools','/opt/hakopod/releases','/var/lib/hakopod/down
 PY
 # Populated by the validated allowlist below; these are not shell-evaluated values.
 cfg_version='' cfg_dashboard_mode='' cfg_tls_cert_file='' cfg_tls_key_file='' cfg_node_name=''
-cfg_acme='' cfg_storage='' cfg_dashboard_port='' cfg_dashboard_origin='' cfg_node_ip='' cfg_supervisor_host=''
+cfg_database_mode='' cfg_acme='' cfg_storage='' cfg_dashboard_port='' cfg_dashboard_origin='' cfg_node_ip='' cfg_supervisor_host=''
 while IFS=$'\t' read -r key value; do printf -v "cfg_$key" '%s' "$value"; done < <(python3 "$helper" config "${args[@]}")
 if [ -z "$target_arch" ]; then
   case "$(uname -m)" in x86_64) target_arch=amd64;; aarch64|arm64) target_arch=arm64;; *) die 'Unsupported architecture';; esac
@@ -231,8 +256,8 @@ for unit in hakopod-k3s hakopod-api hakopod-dashboard; do
   fi
   install -m 0644 "$rendered/$unit.service" "$unit_path"
 done
-chown hakopod-api:hakopod-api /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key
-chmod 0400 /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key
+chown hakopod-api:hakopod-api /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key /etc/hakopod/secrets/database-url
+chmod 0400 /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key /etc/hakopod/secrets/database-url
 if [ "$cfg_dashboard_mode" = https ]; then
   # Resuming preserves the installed certificate, including an operator renewal.
   if ! "$resume" || [ ! -f /etc/hakopod/dashboard.crt ] || [ ! -f /etc/hakopod/dashboard.key ]; then
@@ -240,7 +265,7 @@ if [ "$cfg_dashboard_mode" = https ]; then
     install -m 0400 -o hakopod-dashboard -g hakopod-dashboard "$cfg_tls_key_file" /etc/hakopod/dashboard.key
   fi
 fi
-chown 70:70 /var/lib/hakopod/postgres
+if [ "$cfg_database_mode" = managed ]; then chown 70:70 /var/lib/hakopod/postgres; fi
 systemctl daemon-reload
 systemctl enable --now hakopod-k3s
 export KUBECONFIG=/etc/hakopod/admin-kubeconfig
@@ -259,13 +284,15 @@ owned() {
   kubectl "${query[@]}" > "$stage/object.json"
   if [ -s "$stage/object.json" ]; then python3 "$helper" owned --source "$stage/object.json" --id "$installation"; fi
 }
-owned namespace hakopod-system
-owned persistentvolume hakopod-postgres
-for kind_name in secret/postgres service/postgres persistentvolumeclaim/postgres deployment/postgres networkpolicy/postgres-private; do
-  owned "${kind_name%/*}" "${kind_name#*/}" hakopod-system
-done
-kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/postgres.json" >/dev/null
-kubectl -n hakopod-system rollout status deployment/postgres --timeout=180s
+if [ "$cfg_database_mode" = managed ]; then
+  owned namespace hakopod-system
+  owned persistentvolume hakopod-postgres
+  for kind_name in secret/postgres service/postgres persistentvolumeclaim/postgres deployment/postgres networkpolicy/postgres-private; do
+    owned "${kind_name%/*}" "${kind_name#*/}" hakopod-system
+  done
+  kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/postgres.json" >/dev/null
+  kubectl -n hakopod-system rollout status deployment/postgres --timeout=180s
+fi
 # Namespace ownership is checked before Helm; Helm also refuses foreign releases.
 ensure_namespace() {
   local namespace=$1
