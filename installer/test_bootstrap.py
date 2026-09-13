@@ -112,6 +112,17 @@ urllib.request.build_opener = lambda *args: Opener()
                    BOOTSTRAP=str(SCRIPT), PATH=str(bin_dir) + os.pathsep + os.environ['PATH'])
         return assets, env
 
+    def test_extended_tar_header_cannot_bypass_decompression_bound(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'kit.tar.gz'
+            info = tarfile.TarInfo('pax'); info.type = tarfile.XHDTYPE; info.size = 41 * bootstrap.MIB
+            with gzip.open(source, 'wb') as stream:
+                stream.write(info.tobuf())
+                for _ in range(41): stream.write(b'\0' * bootstrap.MIB)
+            with self.assertRaisesRegex(ValueError, 'decompression bounds'):
+                bootstrap.extract_kit(source, Path(temporary) / 'out', 'kit')
+
     def test_pipe_without_terminal_requires_explicit_inputs_before_download(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
