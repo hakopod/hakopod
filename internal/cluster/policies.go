@@ -100,6 +100,7 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
 			})
 		}
+		publicTCPPolicy(svc, policy)
 		virtualNetworkRules(t, svc, policy)
 		policies = append(policies, policy)
 	}

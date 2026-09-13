@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -24,15 +25,17 @@ const (
 )
 
 type Options struct {
-	SupervisorURL      string
-	ProxyNamespace     string
-	ProxyConfigMap     string
-	ProxyRelease       string
-	RegistrySecretName func(context.Context, string, string, string) (string, error)
-	VirtualNetworks    func(context.Context, string, string, spec.Application) (map[string]string, error)
-	AppDomain          string
-	IngressClass       string
-	RolloutTimeout     time.Duration
+	PublicTCPPorts      []int32
+	AWSIdentityBindings []AWSIdentityBinding
+	SupervisorURL       string
+	ProxyNamespace      string
+	ProxyConfigMap      string
+	ProxyRelease        string
+	RegistrySecretName  func(context.Context, string, string, string) (string, error)
+	VirtualNetworks     func(context.Context, string, string, spec.Application) (map[string]string, error)
+	AppDomain           string
+	IngressClass        string
+	RolloutTimeout      time.Duration
 	// TLSIssuer must identify an operator-provisioned cert-manager ClusterIssuer.
 	// Empty leaves HTTP explicit; the local development cluster uses this mode.
 	TLSIssuer       string
@@ -44,11 +47,14 @@ type Options struct {
 }
 
 type Client struct {
-	execConfig *rest.Config
-	clusterCA  []byte
-	kube       kubernetes.Interface
-	options    Options
-	http       *http.Client
+	// publicTCPAck is injected by unit tests; real clients always inspect HAProxy.
+	publicTCPAck func(context.Context, Target, []any, map[string]string) error
+	execConfig   *rest.Config
+	clusterCA    []byte
+	kube         kubernetes.Interface
+	dynamic      dynamic.Interface
+	options      Options
+	http         *http.Client
 }
 
 type Target struct {
@@ -120,6 +126,10 @@ func (c *Client) restClient() rest.Interface {
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
+	if err := ValidateAWSIdentityBindings(options.AWSIdentityBindings); err != nil {
+		return nil, err
+	}
+	options.AWSIdentityBindings = append([]AWSIdentityBinding(nil), options.AWSIdentityBindings...)
 	var config *rest.Config
 	var err error
 	if kubeconfig != "" {
@@ -138,6 +148,10 @@ func New(kubeconfig string, options Options) (*Client, error) {
 	kube, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes client: %w", err)
+	}
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes resource client: %w", err)
 	}
 	if options.RolloutTimeout <= 0 {
 		options.RolloutTimeout = 180 * time.Second
@@ -172,7 +186,7 @@ func New(kubeconfig string, options Options) (*Client, error) {
 	}
 	execConfig := rest.CopyConfig(config)
 	execConfig.Timeout = 0 // Interactive exec is bounded by its session context.
-	return &Client{kube: kube, options: options, http: client, clusterCA: ca, execConfig: execConfig}, nil
+	return &Client{kube: kube, dynamic: dynamicClient, options: options, http: client, clusterCA: ca, execConfig: execConfig}, nil
 }
 
 // Namespace is independent of display names, so application renames cannot

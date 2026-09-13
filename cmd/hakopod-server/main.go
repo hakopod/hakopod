@@ -21,6 +21,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/hakopod/hakopod/internal/worker"
 )
@@ -115,8 +116,16 @@ func run() error {
 	if domain == "" || len(domain) > 190 || len(validation.IsDNS1123Subdomain(domain)) > 0 {
 		return fmt.Errorf("HAKOPOD_APP_DOMAIN must be an operator-owned DNS domain (local-up configures a development domain)")
 	}
+	awsIdentities, err := cluster.ReadAWSIdentityBindingsFile(os.Getenv("HAKOPOD_AWS_IDENTITIES_FILE"))
+	if err != nil {
+		return err
+	}
 	ingress := env("HAKOPOD_INGRESS_CLASS", "haproxy")
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
+	publicTCPPorts, err := cluster.ParsePublicTCPPorts(os.Getenv("HAKOPOD_PUBLIC_TCP_PORTS"))
+	if err != nil {
+		return err
+	}
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{PublicTCPPorts: publicTCPPorts, AWSIdentityBindings: awsIdentities, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
 	}
@@ -136,6 +145,9 @@ func run() error {
 	identityConfig, err := authConfig()
 	if err != nil {
 		return err
+	}
+	db.ValidateDeployment = func(ctx context.Context, app store.Application, next spec.Application) error {
+		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
 	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig}
 	db.ProtectedDomains = []string{domain}

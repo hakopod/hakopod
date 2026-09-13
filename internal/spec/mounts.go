@@ -55,8 +55,8 @@ func validateMountControls(s Service) error {
 	if s.TerminationGraceSeconds < 0 || s.TerminationGraceSeconds > 300 {
 		return fmt.Errorf("termination_grace_seconds must be 1–300 or omitted for 30 seconds")
 	}
-	if len(s.Mounts)+len(s.TemporaryMounts) > 16 {
-		return fmt.Errorf("at most 16 named and temporary mounts per service")
+	if len(s.Mounts)+len(s.TemporaryMounts)+len(s.CertificateMounts) > 16 {
+		return fmt.Errorf("at most 16 named, temporary and certificate mounts per service")
 	}
 	paths := []string{}
 	if s.Volume != nil {
@@ -69,6 +69,9 @@ func validateMountControls(s Service) error {
 		if m.SubPath != "" && (path.IsAbs(m.SubPath) || path.Clean(m.SubPath) != m.SubPath || m.SubPath == "." || m.SubPath == ".." || strings.HasPrefix(m.SubPath, "../") || len(m.SubPath) > 200 || strings.ContainsAny(m.SubPath, "\x00\r\n")) {
 			return fmt.Errorf("mounts.sub_path must be a clean relative directory without traversal")
 		}
+		paths = append(paths, m.MountPath)
+	}
+	for _, m := range s.CertificateMounts {
 		paths = append(paths, m.MountPath)
 	}
 	var temporarySize int64

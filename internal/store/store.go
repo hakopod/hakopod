@@ -31,6 +31,9 @@ type Store struct {
 	Pool             *pgxpool.Pool
 	ShowcaseEnabled  bool
 	ProtectedDomains []string
+	// Read-only runtime checks run for every acceptance path, including source
+	// sync and rollback. Reconciliation repeats checks before changing workloads.
+	ValidateDeployment func(context.Context, Application, spec.Application) error
 	// Trusted embedding/test configuration; never supplied by a request.
 	LicenseVerifier *license.Verifier
 }

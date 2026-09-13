@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pelletier/go-toml/v2"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -33,6 +34,7 @@ type operatorConfig struct {
 		RolloutTimeout   *string `toml:"rollout_timeout"`
 		PublicPort       *int    `toml:"public_port"`
 		PublicHTTPSPort  *int    `toml:"public_https_port"`
+		PublicTCPPorts   *[]int  `toml:"public_tcp_ports"`
 		TLSIssuer        *string `toml:"tls_issuer"`
 		TLSCertFile      *string `toml:"tls_cert_file"`
 		TLSKeyFile       *string `toml:"tls_key_file"`
@@ -59,6 +61,9 @@ type operatorConfig struct {
 		Username     *string `toml:"username"`
 		PasswordFile *string `toml:"password_file"`
 	} `toml:"smtp"`
+	AWS struct {
+		IdentitiesFile *string `toml:"identities_file"`
+	} `toml:"aws"`
 	Backups struct {
 		PGDumpPath      *string `toml:"pg_dump_path"`
 		StateDir        *string `toml:"state_dir"`
@@ -89,6 +94,18 @@ func intSetting(value *int) *string {
 		return nil
 	}
 	out := strconv.Itoa(*value)
+	return &out
+}
+
+func portsSetting(value *[]int) *string {
+	if value == nil {
+		return nil
+	}
+	ports := make([]string, 0, len(*value))
+	for _, port := range *value {
+		ports = append(ports, strconv.Itoa(port))
+	}
+	out := strings.Join(ports, ",")
 	return &out
 }
 
@@ -154,6 +171,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"server.rollout_timeout", "HAKOPOD_ROLLOUT_TIMEOUT", c.Server.RolloutTimeout, false, false, false},
 		{"server.public_port", "HAKOPOD_PUBLIC_PORT", intSetting(c.Server.PublicPort), false, false, false},
 		{"server.public_https_port", "HAKOPOD_PUBLIC_HTTPS_PORT", intSetting(c.Server.PublicHTTPSPort), false, false, false},
+		{"server.public_tcp_ports", "HAKOPOD_PUBLIC_TCP_PORTS", portsSetting(c.Server.PublicTCPPorts), false, false, false},
 		{"server.tls_issuer", "HAKOPOD_TLS_ISSUER", c.Server.TLSIssuer, false, false, false},
 		{"server.tls_cert_file", "HAKOPOD_TLS_CERT", c.Server.TLSCertFile, true, false, false},
 		{"server.tls_key_file", "HAKOPOD_TLS_KEY", c.Server.TLSKeyFile, true, true, false},
@@ -176,6 +194,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"smtp.from", "HAKOPOD_SMTP_FROM", c.SMTP.From, false, false, false},
 		{"smtp.username", "HAKOPOD_SMTP_USERNAME", c.SMTP.Username, false, false, false},
 		{"smtp.password_file", "HAKOPOD_SMTP_PASSWORD_FILE", c.SMTP.PasswordFile, true, true, true},
+		{"aws.identities_file", "HAKOPOD_AWS_IDENTITIES_FILE", c.AWS.IdentitiesFile, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
 		{"backups.state_dir", "HAKOPOD_BACKUP_STATE_DIR", c.Backups.StateDir, false, false, false},
 		{"backups.managed_postgres", "HAKOPOD_MANAGED_POSTGRES", boolSetting(c.Backups.ManagedPostgres), false, false, false},
@@ -266,6 +285,9 @@ func validateOperatorValue(field, value string) error {
 		return nil
 	}
 	switch field {
+	case "server.public_tcp_ports":
+		_, err := cluster.ParsePublicTCPPorts(value)
+		return err
 	case "server.public_port", "server.public_https_port":
 		port, err := strconv.Atoi(value)
 		if err != nil || port < 1 || port > 65535 {

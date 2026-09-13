@@ -93,6 +93,10 @@ func run() error {
 	query := fs.String("query", "", "SQL-like log predicate; returns sampled entries and histogram as JSON")
 	since := fs.Duration("since", time.Hour, "log search window, maximum 24h")
 	previous := fs.Bool("previous", false, "search the previous container instance")
+	hostname := fs.String("hostname", "", "certificate DNS hostname")
+	certificateFile := fs.String("certificate-file", "", "PEM certificate chain file, maximum 256 KiB")
+	privateKeyFile := fs.String("private-key-file", "", "PEM private key file, maximum 32 KiB")
+	fromIngress := fs.Bool("from-ingress", false, "snapshot this service's existing HTTP ingress certificate")
 	commandJSON := fs.String("command-json", "", "terminal executable and arguments as a JSON array, defaults to /bin/sh")
 	// Standard flags accept options before an identifier. Move ordinary positionals
 	// to the end so `status APP --json` and `--json APP` behave consistently.
@@ -349,12 +353,37 @@ func run() error {
 			}
 		}
 		return deploymentOutput(d, *outputJSON)
-	case "status", "logs", "rollback", "services", "networks", "terminal":
+	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery":
 		a, err := findApp(ctx, c, cfg, arg, *file)
 		if err != nil {
 			return err
 		}
 		switch command {
+		case "certificates":
+			out, err := serviceCertificates(ctx, c, a, *service)
+			if err != nil {
+				return err
+			}
+			return printJSON(out)
+		case "certificate-upload":
+			if _, err := serviceDeliveryPath(a, *service); err != nil {
+				return err
+			}
+			input, err := readCertificateInput(*hostname, *certificateFile, *privateKeyFile, *fromIngress)
+			if err != nil {
+				return err
+			}
+			out, err := uploadServiceCertificate(ctx, c, a, *service, input)
+			if err != nil {
+				return err
+			}
+			return printJSON(out)
+		case "delivery":
+			out, err := serviceDelivery(ctx, c, a, *service)
+			if err != nil {
+				return err
+			}
+			return printJSON(out)
 		case "terminal":
 			return terminal(ctx, c, a.ID, *service, *pod, *container, *commandJSON)
 		case "status":
@@ -605,7 +634,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -637,6 +666,10 @@ func help() {
   hakopod logs shop --service api --query "severity >= ERROR" --since 1h
   hakopod terminal shop --service api --pod POD_NAME
   hakopod terminal shop --service db --pod POD_NAME --command-json '["psql", "-U", "postgres"]'
+  hakopod certificates mail --service smtp
+  hakopod certificate-upload mail --service smtp --hostname mail.example.com --certificate-file fullchain.pem --private-key-file privkey.pem
+  hakopod certificate-upload mail --service smtp --hostname mail.example.com --from-ingress
+  hakopod delivery mail --service smtp
   hakopod rollback shop --revision 1 --wait
   hakopod services|networks [APPLICATION]
   hakopod projects|nodes|keys|audit

@@ -78,6 +78,9 @@ func (s *Server) Handler() http.Handler {
 	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
+	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
+	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
+	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/delivery", s.serviceDelivery)
 	s.registerTerminalRoutes(routes)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
@@ -494,6 +497,9 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 	}
 	if _, err := s.Store.ResolveVirtualNetworks(r.Context(), in.Project, in.Environment, next); err != nil {
 		problem(w, 400, "invalid_network", err.Error())
+		return next, existing, false
+	}
+	if !s.validateDeliveryPlan(w, r, in.Project, in.Environment, next, existing) {
 		return next, existing, false
 	}
 	return next, existing, true

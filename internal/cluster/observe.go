@@ -46,8 +46,17 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 					return result, err
 				}
 				if ready {
-					status.Status = "ready"
-					healthy++
+					deliveryReady, message, err := c.serviceDeliveryHealthy(ctx, t, name, current)
+					if err != nil {
+						return result, err
+					}
+					status.Message = message
+					if deliveryReady {
+						status.Status = "ready"
+						healthy++
+					} else {
+						status.Status = "failed"
+					}
 				} else {
 					status.Message = "waiting for ready pods running the current service configuration"
 				}

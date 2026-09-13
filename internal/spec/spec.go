@@ -36,10 +36,12 @@ type Service struct {
 	ReadOnlyRootFilesystem  bool                 `json:"read_only_root_filesystem,omitempty" toml:"read_only_root_filesystem"`
 	WorkingDir              string               `json:"working_dir,omitempty" toml:"working_dir"`
 	TerminationGraceSeconds int64                `json:"termination_grace_seconds,omitempty" toml:"termination_grace_seconds"`
+	CertificateMounts       []CertificateMount   `json:"certificate_mounts,omitempty" toml:"certificate_mounts"`
 	Mounts                  []Mount              `json:"mounts,omitempty" toml:"mounts"`
 	TemporaryMounts         []TemporaryMount     `json:"temporary_mounts,omitempty" toml:"temporary_mounts"`
 	Image                   string               `json:"image" toml:"image"`
 	Port                    int32                `json:"port,omitempty" toml:"port"`
+	PublicTCP               []PublicTCPListener  `json:"public_tcp,omitempty" toml:"public_tcp"`
 	Ports                   []Port               `json:"ports,omitempty" toml:"ports"`
 	NetworkAccess           *NetworkAccess       `json:"network_access,omitempty" toml:"network_access"`
 	Public                  bool                 `json:"public" toml:"public"`
@@ -55,6 +57,7 @@ type Service struct {
 	Autoscaling             *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
 	RestartNonce            string               `json:"restart_nonce,omitempty" toml:"restart_nonce"`
 	RegistryCredential      string               `json:"registry_credential,omitempty" toml:"registry_credential"`
+	AWSIdentity             string               `json:"aws_identity,omitempty" toml:"aws_identity"`
 	TLS                     *TLSConfig           `json:"tls,omitempty" toml:"tls"`
 }
 
@@ -183,6 +186,12 @@ func Normalize(input Application) (Application, error) {
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		field := "services." + name
+		if err := validateCertificateMounts(svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
+		if err := validateAWSIdentity(svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if err := validateRuntimeService(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
@@ -280,6 +289,9 @@ func Normalize(input Application) (Application, error) {
 		return Application{}, err
 	}
 	if err := validateNetworkAccess(app); err != nil {
+		return Application{}, err
+	}
+	if err := validatePublicTCP(app); err != nil {
 		return Application{}, err
 	}
 	if _, err := Order(app); err != nil {
@@ -410,6 +422,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "image", a.Image, b.Image, false)
 		add(name, "port", a.Port, b.Port, false)
 		add(name, "ports", a.Ports, b.Ports, false)
+		add(name, "public_tcp", a.PublicTCP, b.PublicTCP, false)
 		add(name, "network_access", a.NetworkAccess, b.NetworkAccess, false)
 		add(name, "public", a.Public, b.Public, false)
 		add(name, "size", a.Size, b.Size, false)
@@ -425,6 +438,8 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "restart_nonce", a.RestartNonce, b.RestartNonce, false)
 		add(name, "registry_credential", a.RegistryCredential, b.RegistryCredential, false)
 		add(name, "tls", a.TLS, b.TLS, false)
+		add(name, "aws_identity", a.AWSIdentity, b.AWSIdentity, false)
+		add(name, "certificate_mounts", a.CertificateMounts, b.CertificateMounts, false)
 		add(name, "volume", a.Volume, b.Volume, false)
 		add(name, "mounts", a.Mounts, b.Mounts, false)
 		add(name, "temporary_mounts", a.TemporaryMounts, b.TemporaryMounts, false)

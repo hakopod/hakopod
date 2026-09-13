@@ -82,6 +82,9 @@ func (s *Server) planBuildRun(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
+	if !s.validateDeliveryPlan(w, r, c.Project, c.Environment, next, current) {
+		return
+	}
 	var old *spec.Application
 	var revision int64
 	id := ""

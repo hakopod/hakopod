@@ -4949,6 +4949,184 @@
         }
       }
     },
+    "/applications/{id}/services/{service}/delivery": {
+      "get": {
+        "operationId": "getServiceDelivery",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDelivery"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/certificates": {
+      "get": {
+        "operationId": "listBackendCertificates",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BackendCertificate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "uploadBackendCertificate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendCertificate"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackendCertificateInput"
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/domains": {
       "get": {
         "operationId": "listApplicationDomains",
@@ -8833,6 +9011,21 @@
           "autoscaling": {
             "$ref": "#/components/schemas/Autoscaling"
           },
+          "public_tcp": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicTCPListener"
+            }
+          },
+          "certificate_mounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CertificateMount"
+            }
+          },
+          "aws_identity": {
+            "type": "string"
+          },
           "restart_nonce": {
             "type": "string"
           },
@@ -11329,6 +11522,203 @@
           "changes",
           "warnings",
           "expected_config_revision"
+        ]
+      },
+      "PublicTCPListener": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer"
+          },
+          "target_port": {
+            "type": "integer"
+          },
+          "source_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "port",
+          "target_port",
+          "source_cidrs"
+        ]
+      },
+      "CertificateMount": {
+        "type": "object",
+        "properties": {
+          "certificate": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "mount_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "certificate",
+          "hostname",
+          "mount_path"
+        ]
+      },
+      "PublicTCPStatus": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer"
+          },
+          "target_port": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "port",
+          "target_port",
+          "status",
+          "message"
+        ]
+      },
+      "AWSIdentityState": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "string"
+          },
+          "role_arn": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "service_account": {
+            "type": "string"
+          },
+          "token_audience": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "aws_verified": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "role_arn",
+          "region",
+          "service_account",
+          "token_audience",
+          "status",
+          "aws_verified"
+        ]
+      },
+      "ServiceDelivery": {
+        "type": "object",
+        "properties": {
+          "public_tcp": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicTCPStatus"
+            }
+          },
+          "aws_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AWSIdentityState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "public_tcp",
+          "aws_identity",
+          "observed_at"
+        ]
+      },
+      "BackendCertificate": {
+        "type": "object",
+        "properties": {
+          "certificate": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "mount_path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "certificate",
+          "hostname",
+          "source",
+          "ready"
+        ]
+      },
+      "BackendCertificateInput": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "certificate_pem": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "private_key_pem": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "from_ingress": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hostname"
         ]
       },
       "Domain": {
