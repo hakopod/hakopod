@@ -14,7 +14,7 @@ Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state,
 ## Prebuilt releases
 
 `scripts/installer.sh` is the POSIX bootstrap for prebuilt releases. The first
-planned release is `0.1.0-alpha.1`. The bootstrap pins that version by default;
+planned release is `0.1.0-alpha.2`. The bootstrap pins that version by default;
 it does not use GitHub's `latest` endpoint, which excludes prereleases. A tag,
 successful release workflow and published assets are required before downloads
 work. The `hakopod.com` endpoint also requires separate website deployment.
@@ -33,11 +33,11 @@ running it:
 
 ```sh
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.1/installer.sh \
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.2/installer.sh \
   -o installer.sh
 sh installer.sh --help
-sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json --dry-run
-sudo sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json
+sh installer.sh --version 0.1.0-alpha.2 --config /path/to/install.json --dry-run
+sudo sh installer.sh --version 0.1.0-alpha.2 --config /path/to/install.json
 ```
 
 The bootstrap supports Linux amd64 and arm64. If Python, Bash, curl or system CA

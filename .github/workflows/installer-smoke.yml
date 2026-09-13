@@ -1,0 +1,52 @@
+name: Native packaged installer smoke
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: .local/installer-artifacts/${{ inputs.version }}
+      - name: Verify and smoke exact packaged bytes on native Linux
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          python3 release/publication.py verify ".local/installer-artifacts/$RELEASE_VERSION"
+          python3 release/smoke-installer.py --version "$RELEASE_VERSION" --arch "$RELEASE_ARCH"
+          cp ".local/installer-artifacts/$RELEASE_VERSION/installer-smoke.json" "installer-smoke-$RELEASE_ARCH.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-smoke-${{ matrix.arch }}
+          path: installer-smoke-${{ matrix.arch }}.json
+          if-no-files-found: error
+      - name: Retain failed smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-smoke-log-${{ matrix.arch }}
+          path: .local/installer-smoke/${{ matrix.arch }}/last-smoke.log
+          if-no-files-found: warn
+          retention-days: 7

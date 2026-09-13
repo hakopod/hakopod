@@ -59,6 +59,7 @@ if [ -z "$config_path" ]; then
   version='' app_domain='' node_ip='' node_name='' supervisor_host='' dashboard_mode=''
   dashboard_port='' acme='' storage='' k3s_memory_mib='' api_memory_mib=''
   dashboard_memory_mib='' postgres_memory_mib='' max_pods='' deployment_mode='' public_tcp_ports=''
+  database_mode='' install_docker=''
   prompt deployment_mode 'Deployment mode: self-hosted or managed-cloud' 'self-hosted'
   case "$deployment_mode" in self-hosted|managed-cloud) ;; *) die 'deployment_mode must be self-hosted or managed-cloud';; esac
   if [ -n "$release_version" ]; then version=$release_version; else prompt version 'Hakopod release version' '0.1.0-dev'; fi

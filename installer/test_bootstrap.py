@@ -75,7 +75,7 @@ class BootstrapTest(unittest.TestCase):
 
     def fixtures(self, directory, arch='amd64'):
         assets = directory / 'assets'; assets.mkdir()
-        version = '0.1.0-alpha.1'
+        version = bootstrap.DEFAULT_VERSION
         kit = 'hakopod_' + version + '_installer'
         installer = b'''#!/usr/bin/env bash
 set -eu
@@ -139,11 +139,11 @@ urllib.request.build_opener = lambda *args: Opener()
                 directory = Path(temporary)
                 assets, env = self.fixtures(directory, arch)
                 env['FIXTURE_ARCH'] = 'x86_64' if arch == 'amd64' else 'aarch64'
-                config = directory / 'config.json'; config.write_text(json.dumps({'version': '0.1.0-alpha.1'}))
+                config = directory / 'config.json'; config.write_text(json.dumps({'version': bootstrap.DEFAULT_VERSION}))
                 args = ['sh', str(SCRIPT), '--config', str(config), '--dry-run', '--resume', '--yes']
                 result = subprocess.run(args, env=env, capture_output=True, text=True, start_new_session=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                for flag in ('<--resume>', '<--dry-run>', '<--yes>', '<--version> <0.1.0-alpha.1>', '<--arch> <' + arch + '>'):
+                for flag in ('<--resume>', '<--dry-run>', '<--yes>', '<--version> <' + bootstrap.DEFAULT_VERSION + '>', '<--arch> <' + arch + '>'):
                     self.assertIn(flag, result.stdout)
                 next(assets.glob('*_linux_*.tar.gz')).write_bytes(b'corrupt')
                 result = subprocess.run(args, env=env, capture_output=True, text=True, start_new_session=True, timeout=10)

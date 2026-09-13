@@ -35,6 +35,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test ./...
+      - name: Check signup build policies
+        run: |
+          go test -tags=hakopod_cloud ./cmd/hakopod-server
+          go test -tags=hakopod_cloud,hakopod_selfhosted ./cmd/hakopod-server
       - run: go vet ./...
       - run: go build ./cmd/...
       - name: Check scripts
