@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,11 +7,11 @@ import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
-import { specToTOML } from '../lib/toml'
 import { Button } from './ui/button'
 import { ErrorState, Note } from './shared'
 import { DiffTable } from './deploy-dialog'
-import { SecretForm } from './application-secrets'
+import { TemplateSecretField } from './template-secret-field'
+import { TOMLCode } from './toml-code'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { ServiceIcon } from './service-icon'
 
@@ -34,14 +34,18 @@ export default function TemplateForm({
   const [siteURL, setSiteURL] = useState('')
   const [provider, setProvider] = useState('openai')
   const [providerURL, setProviderURL] = useState('')
+  const [databaseName, setDatabaseName] = useState('app')
+  const [databaseUser, setDatabaseUser] = useState('hakopod')
+  const [useModelToken, setUseModelToken] = useState(false)
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
   const [plan, setPlan] = useState<components['schemas']['TemplatePlan'] | null>(null)
   const [key, setKey] = useState('')
   const [saveSecret, setSaveSecret] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const query = {
-    project: scope.project,
-    environment: scope.environment,
+    project: plan?.configuration.project || scope.project,
+    environment: plan?.configuration.environment || scope.environment,
     application: plan?.spec.name || name,
   }
   const secrets = useQuery({
@@ -68,7 +72,10 @@ export default function TemplateForm({
             public: isPublic,
             storage_gib: storage,
             architecture,
-            ...(template.site_url_required ? { site_url: siteURL } : {}),
+            ...(template.site_url_supported ? { site_url: siteURL } : {}),
+            ...(template.database_config
+              ? { database_name: databaseName, database_user: databaseUser }
+              : {}),
             ...(template.id === 'open-webui'
               ? {
                   provider,
@@ -76,7 +83,9 @@ export default function TemplateForm({
                   model,
                 }
               : {}),
-            ...(template.id === 'vllm' ? { model, model_revision: revision } : {}),
+            ...(template.id === 'vllm'
+              ? { model, model_revision: revision, use_model_token: useModelToken }
+              : {}),
           },
         }),
       )
@@ -98,12 +107,11 @@ export default function TemplateForm({
     setError('')
     try {
       const result = await unwrap(
-        client.POST('/deployments', {
-          params: { header: { 'Idempotency-Key': key } },
+        client.POST('/templates/{id}/deploy', {
+          params: { path: { id: template.id }, header: { 'Idempotency-Key': key } },
           body: {
-            project: scope.project,
-            environment: scope.environment,
-            spec: plan.spec,
+            configuration: plan.configuration,
+            toml: plan.toml,
             expected_revision: plan.expected_revision,
           },
         }),
@@ -149,25 +157,36 @@ export default function TemplateForm({
       breadcrumbs={[{ label: 'Templates', to: '/templates' }, { label: template.name }]}
       icon="box"
       help={
-        <>
-          <div className="template-identity">
-            <ServiceIcon name={template.id} size={42} />
-            <h2>{template.name}</h2>
-            <p>{template.description}</p>
-            <small>{template.license}</small>
-          </div>
-          <FormHint title="Your own installation">
-            This creates a regular Hakopod application with an immutable image and an explicit
-            configuration.
-          </FormHint>
-          <FormHint title="Resources">{template.resource_summary}</FormHint>
-          <FormHint title="Image verification">{template.verification}</FormHint>
-          {template.requirements.map((item) => (
-            <FormHint key={item} title="Requirement">
-              {item}
+        plan ? null : (
+          <>
+            <div className="template-identity">
+              <ServiceIcon name={template.id} size={42} />
+              <h2>{template.name}</h2>
+              <p>{template.description}</p>
+              <small>{template.license}</small>
+            </div>
+            <FormHint title="Your own installation">
+              This creates a regular Hakopod application with an immutable image and an explicit
+              configuration.
             </FormHint>
-          ))}
-        </>
+            <FormHint title="Resources">{template.resource_summary}</FormHint>
+            <FormHint title="Image verification">{template.verification}</FormHint>
+            {template.requirements.map((item) => (
+              <FormHint key={item} title="Requirement">
+                {item}
+              </FormHint>
+            ))}
+            <FormHint title="Official setup references">
+              {template.sources.map((source, index) => (
+                <p key={source}>
+                  <a href={source} target="_blank" rel="noreferrer">
+                    {index ? 'Additional requirements' : 'Upstream setup guide'}
+                  </a>
+                </p>
+              ))}
+            </FormHint>
+          </>
+        )
       }
       title={plan ? `Review ${plan.spec.name}` : `Configure ${template.name}`}
       description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
@@ -189,25 +208,40 @@ export default function TemplateForm({
               <section className="panel service-summary-panel">
                 <h3>Required secrets</h3>
                 {secrets.error && <ErrorState error={secrets.error} />}
-                {plan.required_secrets.map((required) => (
-                  <div className="settings-list-row" key={required}>
-                    <div>
-                      <strong className="mono">{required}</strong>
-                      <small>
-                        {missing.includes(required) ? 'Required before deployment' : 'Saved'}
-                      </small>
+                {template.secret_fields
+                  .filter((field) => plan.required_secrets.includes(field.name))
+                  .map((field) => (
+                    <div className="settings-list-row" key={field.name}>
+                      <div>
+                        <strong className="mono">{field.name}</strong>
+                        <small>
+                          {missing.includes(field.name)
+                            ? 'Required before deployment'
+                            : 'Saved; checked again when you deploy'}
+                        </small>
+                        <p className="field-help">{field.description}</p>
+                      </div>
+                      <Button size="sm" disabled={busy} onClick={() => setSaveSecret(field.name)}>
+                        {missing.includes(field.name) ? 'Set value' : 'Replace'}
+                      </Button>
                     </div>
-                    <Button size="sm" onClick={() => setSaveSecret(required)}>
-                      {missing.includes(required) ? 'Set value' : 'Replace'}
-                    </Button>
-                  </div>
-                ))}
+                  ))}
                 {saveSecret && (
-                  <SecretForm
+                  <TemplateSecretField
                     key={saveSecret}
+                    templateId={template.id}
+                    field={template.secret_fields.find((field) => field.name === saveSecret)!}
                     query={query}
-                    initialName={saveSecret}
+                    value={secretDrafts[saveSecret] || ''}
+                    onChange={(value) =>
+                      setSecretDrafts((drafts) => ({ ...drafts, [saveSecret]: value }))
+                    }
+                    replacing={!missing.includes(saveSecret)}
+                    busy={busy}
+                    onBusy={setBusy}
+                    onCancel={() => setSaveSecret('')}
                     onSaved={() => {
+                      setSecretDrafts((drafts) => ({ ...drafts, [saveSecret]: '' }))
                       setSaveSecret('')
                       void secrets.refetch()
                     }}
@@ -217,7 +251,7 @@ export default function TemplateForm({
             )}
             <details className="config-details">
               <summary>Canonical configuration</summary>
-              <pre>{specToTOML(plan.spec)}</pre>
+              <TOMLCode code={plan.toml} />
             </details>
           </>
         ) : (
@@ -233,42 +267,69 @@ export default function TemplateForm({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Choose a name"
                 pattern="[a-z][a-z0-9-]*"
-                maxLength={48}
+                maxLength={40}
                 required
               />
             </label>
             <label>
-              Persistent storage (GiB)
+              Persistent storage per service (GiB)
               <Input
                 type="number"
                 min={1}
-                max={1024}
+                max={200}
                 value={storage}
                 onChange={(e) => setStorage(Number(e.target.value))}
               />
             </label>
-            <label>
-              Target architecture
-              <Select
-                value={architecture}
-                onChange={(event) => setArchitecture(event.target.value)}
-              >
-                <option value="">Infer from a uniform cluster</option>
-                {template.architectures.map((value) => (
-                  <option key={value} value={value}>
-                    Linux {value.toUpperCase()}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            {template.site_url_required && (
+            <SelectField
+              label="Target architecture"
+              value={architecture}
+              onValueChange={setArchitecture}
+              options={[
+                { value: '', label: 'Infer from a uniform cluster' },
+                ...template.architectures.map((value) => ({
+                  value,
+                  label: `Linux ${value.toUpperCase()}`,
+                })),
+              ]}
+            />
+            {template.database_config && (
+              <>
+                <label>
+                  Database name
+                  <Input
+                    value={databaseName}
+                    onChange={(event) => setDatabaseName(event.target.value)}
+                    pattern="[a-z][a-z0-9_]*"
+                    maxLength={32}
+                    required
+                  />
+                </label>
+                <label>
+                  Database user
+                  <Input
+                    value={databaseUser}
+                    onChange={(event) => setDatabaseUser(event.target.value)}
+                    pattern="[a-z][a-z0-9_]*"
+                    maxLength={32}
+                    required
+                  />
+                </label>
+                <p className="field-help">
+                  These values initialize a new volume. Existing database users and passwords
+                  require a database migration. PostgreSQL creates this initial user with
+                  administrator rights.
+                </p>
+              </>
+            )}
+            {template.site_url_supported && (
               <label>
-                Canonical site URL
+                Canonical site URL{template.site_url_required ? '' : ' (optional)'}
                 <Input
                   type="url"
                   value={siteURL}
                   onChange={(event) => setSiteURL(event.target.value)}
-                  required
+                  required={template.site_url_required}
                   maxLength={512}
                   placeholder="https://service.example.com"
                 />
@@ -277,14 +338,21 @@ export default function TemplateForm({
                 </span>
               </label>
             )}
-            <label className="checkbox-row">
-              <Input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setPublic(e.target.checked)}
-              />
-              Expose supported HTTP service publicly
-            </label>
+            {template.category !== 'database' && (
+              <label className="checkbox-row">
+                <Input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setPublic(e.target.checked)}
+                />
+                Expose supported HTTP service publicly
+              </label>
+            )}
+            {template.category === 'database' && (
+              <p className="field-help">
+                This database uses a private service endpoint. Public exposure is disabled.
+              </p>
+            )}
             {template.id === 'vllm' && (
               <>
                 <label>
@@ -298,7 +366,7 @@ export default function TemplateForm({
                   />
                 </label>
                 <label>
-                  Model revision (optional)
+                  Model revision{useModelToken ? '' : ' (optional)'}
                   <Input
                     value={revision}
                     onChange={(e) => setRevision(e.target.value)}
@@ -306,6 +374,20 @@ export default function TemplateForm({
                     maxLength={64}
                   />
                 </label>
+                <label className="checkbox-row">
+                  <Input
+                    type="checkbox"
+                    checked={useModelToken}
+                    onChange={(event) => setUseModelToken(event.target.checked)}
+                  />
+                  Use a Hugging Face token for a private or gated model
+                </label>
+                {useModelToken && (
+                  <p className="field-help">
+                    Provide the exact 40-character model revision. Save a read token with approved
+                    model access during review.
+                  </p>
+                )}
                 <Note>
                   Requires an NVIDIA GPU, compatible device plugin, storage, and enough GPU memory
                   for the selected model. Remote model code is disabled.
@@ -314,20 +396,20 @@ export default function TemplateForm({
             )}
             {template.id === 'open-webui' && (
               <>
-                <label>
-                  Model provider
-                  <Select value={provider} onChange={(event) => setProvider(event.target.value)}>
-                    {template.providers.map((value) => (
-                      <option key={value} value={value}>
-                        {value === 'openai'
-                          ? 'OpenAI'
-                          : value === 'openai-compatible'
-                            ? 'OpenAI-compatible endpoint'
-                            : value}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+                <SelectField
+                  label="Model provider"
+                  value={provider}
+                  onValueChange={setProvider}
+                  options={template.providers.map((value) => ({
+                    value,
+                    label:
+                      value === 'openai'
+                        ? 'OpenAI'
+                        : value === 'openai-compatible'
+                          ? 'OpenAI-compatible endpoint'
+                          : value,
+                  }))}
+                />
                 {provider === 'openai-compatible' && (
                   <label>
                     Provider API URL
@@ -382,6 +464,10 @@ export default function TemplateForm({
             !name ||
             !Number.isFinite(storage) ||
             storage < 1 ||
+            storage > 200 ||
+            !Number.isInteger(storage) ||
+            (template.database_config && (!databaseName || !databaseUser)) ||
+            (template.id === 'vllm' && useModelToken && !/^[a-f0-9]{40}$/.test(revision)) ||
             (template.site_url_required && !siteURL) ||
             (template.id === 'open-webui' && provider === 'openai-compatible' && !providerURL) ||
             (['vllm', 'open-webui'].includes(template.id) && !model.trim()) ||

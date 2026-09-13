@@ -35,7 +35,7 @@ function ConfigureTemplate() {
     )
   return (
     <TemplateForm
-      key={template.id}
+      key={`${template.id}:${scope.project}:${scope.environment}`}
       template={template}
       onClose={() => void navigate({ to: '/templates' })}
     />
