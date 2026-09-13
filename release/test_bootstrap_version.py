@@ -64,6 +64,12 @@ class BootstrapVersionTests(unittest.TestCase):
             'DEFAULT_VERSION = OTHER = "1.0.0"\n',
             'if True:\n    DEFAULT_VERSION = "1.0.0"\n',
             'DEFAULT_VERSION = "1.0.0"; OTHER = 1\n',
+            'OTHER = 1; DEFAULT_VERSION = "1.0.0"\n',
+            'DEFAULT_VERSION = "1.0.0"\ndef DEFAULT_VERSION(): pass\n',
+            'DEFAULT_VERSION = "1.0.0"\nclass DEFAULT_VERSION: pass\n',
+            'DEFAULT_VERSION = "1.0.0"\nimport other as DEFAULT_VERSION\n',
+            'DEFAULT_VERSION = "1.0.0"\nfrom other import DEFAULT_VERSION\n',
+            'DEFAULT_VERSION = "1.0.0"\ntry: pass\nexcept Exception as DEFAULT_VERSION: pass\n',
         ):
             with self.subTest(body=body), self.assertRaises(ValueError):
                 bootstrap.render(script(body), VERSION)
@@ -72,6 +78,8 @@ class BootstrapVersionTests(unittest.TestCase):
         valid = script('DEFAULT_VERSION = "1.0.0"\n')
         for text in ('DEFAULT_VERSION = "1.0.0"\n', valid + valid,
                      valid.replace(bootstrap.END, ''), valid.replace(bootstrap.START, ''),
+                     valid.replace(bootstrap.END, '\nHAKOPOD_BOOTSTRAP_PY_INVALID\n'),
+                     valid.replace(bootstrap.END, '\nHAKOPOD_BOOTSTRAP_PY # invalid\n'),
                      valid + '#' * bootstrap.LIMIT):
             with self.subTest(length=len(text)), self.assertRaises(ValueError):
                 bootstrap.render(text, VERSION)
