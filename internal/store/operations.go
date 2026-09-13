@@ -162,7 +162,7 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	if _, err = tx.Exec(ctx, "INSERT INTO deployments(id,application_id,identity_id,key_id,idempotency_key,request_hash,revision,spec,resolved_spec) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", id, a.ID, p.ID, p.KeyID, idem, hash[:], revision, JSON(next), resolvedJSON); err != nil {
 		return Deployment{}, err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE applications SET revision=$2,spec=$3,updated_at=now(),status='queued' WHERE id=$1", a.ID, revision, JSON(next)); err != nil {
+	if _, err = tx.Exec(ctx, "UPDATE applications SET revision=$2,spec=$3,observed='{}'::jsonb,updated_at=now(),status='queued' WHERE id=$1", a.ID, revision, JSON(next)); err != nil {
 		return Deployment{}, err
 	}
 	if initialSource != nil {
@@ -343,7 +343,7 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 	if status == "succeeded" {
 		appStatus = "healthy"
 	}
-	if _, err = tx.Exec(ctx, "UPDATE applications SET observed=$2,status=CASE WHEN revision=$3 THEN $4 ELSE 'queued' END,updated_at=now() WHERE id=$1", d.ApplicationID, JSON(result), d.Revision, appStatus); err != nil {
+	if _, err = tx.Exec(ctx, "UPDATE applications SET observed=CASE WHEN revision=$3 THEN $2 ELSE observed END,status=CASE WHEN revision=$3 THEN $4 ELSE 'queued' END,updated_at=now() WHERE id=$1", d.ApplicationID, JSON(result), d.Revision, appStatus); err != nil {
 		return err
 	}
 	return nil

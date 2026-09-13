@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
@@ -15,7 +16,7 @@ import (
 )
 
 func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
-	result := Observation{Status: "pending", Services: make([]ServiceStatus, 0, len(t.Spec.Services)), ObservedAt: time.Now().UTC()}
+	result := Observation{Revision: t.Revision, Status: "pending", Services: make([]ServiceStatus, 0, len(t.Spec.Services)), ObservedAt: time.Now().UTC()}
 	healthy := 0
 	for _, name := range spec.Names(t.Spec) {
 		svc := t.Spec.Services[name]
@@ -115,8 +116,13 @@ func (c *Client) podMessage(ctx context.Context, t Target, service string) strin
 }
 
 func boundedMessage(message string) string {
+	message = strings.ToValidUTF8(message, "�")
 	if len(message) > 1024 {
-		return message[:1024] + "…"
+		end := 1024
+		for end > 0 && !utf8.RuneStart(message[end]) {
+			end--
+		}
+		return message[:end] + "…"
 	}
 	return message
 }

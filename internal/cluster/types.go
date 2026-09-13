@@ -79,6 +79,7 @@ type Event struct {
 }
 
 type Observation struct {
+	Revision   int64           `json:"revision,omitempty"`
 	Status     string          `json:"status"`
 	Services   []ServiceStatus `json:"services"`
 	ObservedAt time.Time       `json:"observed_at"`

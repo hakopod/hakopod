@@ -300,9 +300,9 @@ func (w *Worker) Resync(ctx context.Context) {
 				o, err := w.Cluster.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})
 				cancel()
 				if err != nil {
-					continue
+					o = cluster.Observation{Revision: a.Revision, Status: "unknown", Services: []cluster.ServiceStatus{}, ObservedAt: time.Now().UTC()}
 				}
-				_, err = w.Store.Pool.Exec(ctx, "UPDATE applications SET observed=$2 WHERE id=$1", id, store.JSON(o))
+				_, err = w.Store.Pool.Exec(ctx, "UPDATE applications SET observed=$2 WHERE id=$1 AND revision=$3", id, store.JSON(o), a.Revision)
 				if err != nil {
 					slog.Debug(fmt.Sprintf("runtime observation for %s deferred", id))
 				}
