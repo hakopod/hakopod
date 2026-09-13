@@ -1,6 +1,12 @@
 name: Installer acceptance
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate package version
+        required: false
+        default: 0.1.0-alpha.3
+        type: string
   pull_request:
     paths:
       - 'installer/**'
@@ -21,6 +27,7 @@ jobs:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
       NODE_OPTIONS: --max-old-space-size=512
+      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.3' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -34,16 +41,17 @@ jobs:
           node-version: '24'
       - name: Build exact candidate packages
         run: |
+          python3 release/publication.py version "v$RELEASE_VERSION"
           python3 scripts/ui-source.py restore
           pnpm --dir web install --frozen-lockfile
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
-          python3 release/build.py --version 0.1.0-alpha.2
-          python3 release/build-installer.py --version 0.1.0-alpha.2
+          python3 release/build.py --version "$RELEASE_VERSION"
+          python3 release/build-installer.py --version "$RELEASE_VERSION"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: installer-candidate
-          path: .local/installer-artifacts/0.1.0-alpha.2/*
+          path: .local/installer-artifacts/${{ env.RELEASE_VERSION }}/*
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
@@ -51,11 +59,11 @@ jobs:
     needs: build
     uses: ./.github/workflows/installer-hosts.yml
     with:
-      version: 0.1.0-alpha.2
+      version: ${{ inputs.version || '0.1.0-alpha.3' }}
       artifact_name: installer-candidate
   smoke:
     needs: build
     uses: ./.github/workflows/installer-smoke.yml
     with:
-      version: 0.1.0-alpha.2
+      version: ${{ inputs.version || '0.1.0-alpha.3' }}
       artifact_name: installer-candidate

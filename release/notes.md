@@ -1,6 +1,10 @@
 Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target. Missing distro prerequisites are installed automatically. PostgreSQL defaults to an owned K3s pod, with explicit existing local or verified-TLS external database options. Docker is optional; K3s uses bundled containerd.
 
-Public self-hosted binaries disable open signup, including email and OAuth enrollment, even when environment or TOML settings request it. First-administrator setup and explicit invitations under an active Teams license remain available. Existing users can still sign in and recover their accounts.
+Public self-hosted binaries disable open signup, including email and OAuth enrollment, even when environment or TOML settings request it. First-administrator setup and explicit invitations remain available. Free self-hosted installations include teams, invitations and shared projects; audit history and higher host limits retain their paid gates. Existing users can still sign in and recover their accounts.
+
+Administrators can configure Vault/OpenBao KV v2 and Infisical providers in Settings, grant project/environment access and review credential or access changes before saving. Applications reference provider names, relative paths and keys in version-1 TOML. Deployments and service restarts read a fresh snapshot; provider failures preserve the last good workload secrets. There is no background polling. Other external providers are not implemented, and real upstream Vault/Infisical account credentials were not part of verification.
+
+Cloud builds also enforce their configured node and workload limits at the engine; the distributed self-hosted binaries retain their separate capability policy.
 
 Download and review `installer.sh` from this release, then run `sh installer.sh --help`. Use a fresh dedicated Linux server and review the printed plan before accepting installation. The installer guide in this tag describes supported distributions, required packages, DNS, memory limits and resume behavior. The `hakopod.com/scripts/installer.sh` endpoint must be deployed separately; publication here does not activate that domain.
 
