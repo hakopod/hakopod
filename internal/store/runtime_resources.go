@@ -51,6 +51,13 @@ func (s *Store) PutRuntimeResource(ctx context.Context, p Principal, kind, proje
 	if !runtimeAllowed(p, kind, project, environment) {
 		return RuntimeResource{}, ErrForbidden
 	}
+	if kind == "virtual-network" {
+		value, err := validateVirtualNetworkMetadata(metadata, name)
+		if err != nil {
+			return RuntimeResource{}, err
+		}
+		metadata = value
+	}
 	data, err := json.Marshal(metadata)
 	if err != nil || len(data) > 64<<10 {
 		return RuntimeResource{}, errors.New("runtime metadata exceeds bounds")
@@ -79,6 +86,21 @@ func (s *Store) PutRuntimeResource(ctx context.Context, p Principal, kind, proje
 	if old.Revision != expected {
 		return RuntimeResource{}, ErrConflict
 	}
+	if kind == "virtual-network" {
+		value := metadata.(VirtualNetworkMetadata)
+		if old.Revision > 0 {
+			var previous VirtualNetworkMetadata
+			if json.Unmarshal(old.Metadata, &previous) != nil || previous.ID == "" {
+				return RuntimeResource{}, errors.New("virtual network configuration is unavailable")
+			}
+			if previous.ID != value.ID {
+				return RuntimeResource{}, ErrConflict
+			}
+		}
+		if err = validateVirtualNetworkChange(ctx, tx, project, environment, name, &value.Spec); err != nil {
+			return RuntimeResource{}, err
+		}
+	}
 	if old.Revision == 0 {
 		var count int
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM runtime_resources WHERE kind=$1 AND project=$2 AND environment=$3", kind, project, environment).Scan(&count); err != nil {
@@ -104,8 +126,15 @@ func (s *Store) PutRuntimeResource(ctx context.Context, p Principal, kind, proje
 	return next, tx.Commit(ctx)
 }
 func (s *Store) DeleteRuntimeResource(ctx context.Context, p Principal, kind, project, environment, name string, expected int64) error {
+	return s.deleteRuntimeResource(ctx, p, kind, project, environment, name, expected, "")
+}
+
+func (s *Store) deleteRuntimeResource(ctx context.Context, p Principal, kind, project, environment, name string, expected int64, expectedID string) error {
 	if !runtimeAllowed(p, kind, project, environment) {
 		return ErrForbidden
+	}
+	if kind == "virtual-network" && (len(expectedID) != 32 || expected < 1) {
+		return ErrConflict
 	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -114,6 +143,19 @@ func (s *Store) DeleteRuntimeResource(ctx context.Context, p Principal, kind, pr
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,31))", kind+":"+project+":"+environment); err != nil {
 		return err
+	}
+	if kind == "virtual-network" {
+		var currentID string
+		err := tx.QueryRow(ctx, "SELECT metadata->>'id' FROM runtime_resources WHERE kind=$1 AND project=$2 AND environment=$3 AND name=$4 AND revision=$5 FOR UPDATE", kind, project, environment, name, expected).Scan(&currentID)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && currentID != expectedID {
+			return ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		if err = validateVirtualNetworkChange(ctx, tx, project, environment, name, nil); err != nil {
+			return err
+		}
 	}
 	row, err := tx.Exec(ctx, "DELETE FROM runtime_resources WHERE kind=$1 AND project=$2 AND environment=$3 AND name=$4 AND revision=$5", kind, project, environment, name, expected)
 	if err != nil {
@@ -131,6 +173,9 @@ func (s *Store) DeleteRuntimeResource(ctx context.Context, p Principal, kind, pr
 	return tx.Commit(ctx)
 }
 func runtimeAllowed(p Principal, kind, project, environment string) bool {
+	if kind == "virtual-network" {
+		return project != "" && environment != "" && p.CanManageVirtualNetworks(project, environment)
+	}
 	if kind == "registry" {
 		return project != "" && environment != "" && p.Allows("deployments:write", project, environment, "")
 	}

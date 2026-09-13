@@ -101,6 +101,13 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, err
 	}
+	// Serialize network membership acceptance with grants being edited or removed.
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,31))", "virtual-network:"+project+":"+env); err != nil {
+		return Deployment{}, err
+	}
+	if _, err = resolveVirtualNetworks(ctx, tx, project, env, next); err != nil {
+		return Deployment{}, err
+	}
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,2))", project+":"+env+":"+next.Name); err != nil {
 		return Deployment{}, err
 	}
