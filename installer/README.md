@@ -91,3 +91,10 @@ Back up PostgreSQL consistently (`pg_dump` or a tested physical backup), `/etc/h
 ## Verification record
 
 Automated checks live in `installer/test_installer.py`. The separate `release/smoke-installer.py` runs the actual packaged dashboard/Go CLI on a disposable memory-limited Linux container, on both architectures when emulation is available. It never mounts the host Docker socket or runs installation on macOS. Test reports distinguish archive/config/runtime verification from full host installation. **A full systemd/K3s host install, reboot/recovery drill and public ACME issuance must be verified on disposable supported Linux hosts before claiming production support.** Cross-compilation and a container smoke are not evidence of those behaviors.
+
+For public TCP applications, set `public_tcp_ports` to an explicit JSON array
+such as `[587]`, or use the interactive prompt. Empty is the default. The plan
+shows these ports and preflight checks host conflicts. The installer provisions
+matching HAProxy ports and the API allowlist; firewall rules remain operator-owned.
+Applications still need their own reviewed `public_tcp` listeners. See
+[SMTP migration](../docs/smtp-migration.md).

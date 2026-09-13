@@ -25,7 +25,7 @@ DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip=''
     dashboard_origin='http://localhost:3000', dashboard_port=3000,
     tls_cert_file='', tls_key_file='', acme='production', acme_email='', storage=False,
     k3s_memory_mib=2048, api_memory_mib=256, dashboard_memory_mib=320,
-    postgres_memory_mib=256, max_pods=50)
+    postgres_memory_mib=256, max_pods=50, public_tcp_ports=[])
 LABEL = 'hakopod.com/installation'
 ROOTS = ('/etc/hakopod', '/opt/hakopod', '/var/lib/hakopod')
 UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard')
@@ -71,6 +71,12 @@ def config(path):
             ('api_memory_mib', 256, 4096), ('dashboard_memory_mib', 256, 4096),
             ('postgres_memory_mib', 192, 4096), ('max_pods', 20, 250)]:
         if not low <= c[key] <= high: fail(f'{key} must be {low}–{high}')
+    ports = c['public_tcp_ports']
+    reserved = {22, 53, 80, 443, 1024, 1042, 2379, 2380, 6060, 6443, 8080, 8443, 10250, c['dashboard_port']}
+    if len(ports) > 16 or any(type(port) is not int or not 1 <= port <= 65535 or port in reserved for port in ports):
+        fail('public_tcp_ports requires at most 16 non-platform TCP ports')
+    if len(set(ports)) != len(ports): fail('public_tcp_ports must not contain duplicates')
+    c['public_tcp_ports'] = sorted(ports)
     if c['dashboard_port'] in (6443, 10250, 8080): fail('dashboard_port conflicts with a platform port')
     origin = urlsplit(c['dashboard_origin'])
     try: port = origin.port
@@ -183,6 +189,7 @@ def plan(c, arch, directory):
     print('Data: /var/lib/hakopod; configuration/secrets: /etc/hakopod; binaries: /opt/hakopod')
     print('K3s encryption at rest; Traefik, ServiceLB and default storage disabled. No adoption of another cluster.')
     print('HAProxy: one controller pinned to this node; host ports80/443; private administration/metrics.')
+    if c['public_tcp_ports']: print('Additional TCP host ports: ' + ', '.join(map(str, c['public_tcp_ports'])) + '; firewall remains operator-managed; applications must claim listeners explicitly.')
     print('Application DNS: *.' + c['app_domain'] + ' → operator-managed public IP/NAT; DNS/firewall unchanged.')
     print('Dashboard: ' + c['dashboard_origin'] + (' via SSH tunnel; API127.0.0.1:8080' if c['dashboard_mode'] == 'ssh' else '; supplied certificate; API127.0.0.1:8080'))
     print('PostgreSQL: dedicated namespace, static20Gi local PV (Retain), service10.43.0.20:5432; no host PostgreSQL reuse.')
@@ -235,7 +242,7 @@ def preflight(c, arch, resume):
             if state and state != 'not-found': fail('Refusing existing service: ' + unit)
         for user in ('hakopod-api', 'hakopod-dashboard'):
             if subprocess.run(['getent', 'passwd', user], stdout=subprocess.DEVNULL).returncode == 0: fail('Refusing existing service account: ' + user)
-        for port in (80, 443, 6443, 8080, 10250, c['dashboard_port']):
+        for port in (80, 443, 6443, 8080, 10250, c['dashboard_port'], *c['public_tcp_ports']):
             for family, address in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
                 try:
                     with socket.socket(family, socket.SOCK_STREAM) as s:
@@ -337,7 +344,7 @@ def render(c, arch, installation, out):
         'strategy': {'type': 'Recreate'},
         'deployment': {'useHostPort': True, 'useHostNetwork': False,
                        'hostPorts': {'http': 80, 'https': 443, 'stat': 0}},
-        'service': {'type': 'ClusterIP', 'nodePorts': {'http': None, 'https': None}},
+        'service': {'type': 'ClusterIP', 'nodePorts': {'http': None, 'https': None}, 'tcpPorts': [{'name': 'tcp-' + str(port), 'port': port, 'targetPort': port} for port in c['public_tcp_ports']]},
     }}}, indent=2) + '\n')
     ns = 'hakopod-system'; selector = {'app': 'hakopod-postgres'}
     password = regular('/etc/hakopod/secrets/postgres-password', True).read_text().strip()
@@ -397,6 +404,7 @@ def render(c, arch, installation, out):
         'HAKOPOD_DATABASE_URL': 'postgres://hakopod:' + password + '@10.43.0.20:5432/hakopod?sslmode=disable',
         'HAKOPOD_KUBECONFIG': '/etc/hakopod/api-kubeconfig',
         'HAKOPOD_APP_DOMAIN': c['app_domain'], 'HAKOPOD_INGRESS_CLASS': 'haproxy',
+        'HAKOPOD_PUBLIC_TCP_PORTS': ','.join(map(str, c['public_tcp_ports'])),
         'HAKOPOD_PUBLIC_PORT': '80', 'HAKOPOD_PUBLIC_HTTPS_PORT': '443',
         'HAKOPOD_K3S_SUPERVISOR_URL': 'https://' + c['supervisor_host'] + ':6443',
         'HAKOPOD_LISTEN': '127.0.0.1:8080', 'HAKOPOD_WEB_ORIGIN': c['dashboard_origin'],
