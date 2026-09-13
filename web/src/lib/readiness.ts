@@ -1,0 +1,10 @@
+import type { Service } from './types'
+
+export function readinessLabel(service: Service): string {
+  const check = service.readiness
+  if (!check) return service.healthcheck || (service.port ? 'TCP probe' : 'Process health')
+  const protocol =
+    check.protocol === 'smtp_starttls' ? 'SMTP STARTTLS' : check.protocol.toUpperCase()
+  const listener = `${protocol} :${check.port}`
+  return service.healthcheck ? `${service.healthcheck} + ${listener}` : listener
+}

@@ -5,6 +5,7 @@ import * as Tabs from '@radix-ui/react-tabs'
 import type { Application, DeploymentSummary } from '../lib/types'
 import { APIError, message, relative } from '../lib/api'
 import { client, unwrap } from '../lib/client'
+import { readinessLabel } from '../lib/readiness'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
@@ -323,9 +324,7 @@ function ApplicationDetail() {
                     </div>
                     <div>
                       <dt>Readiness</dt>
-                      <dd>
-                        {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
-                      </dd>
+                      <dd>{readinessLabel(service)}</dd>
                     </div>
                   </dl>
                   {runtime?.message && !serviceHealth.note && (

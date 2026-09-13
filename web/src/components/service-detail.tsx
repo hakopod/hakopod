@@ -6,6 +6,7 @@ import type { Application, Service, Spec } from '../lib/types'
 import { client, unwrap } from '../lib/client'
 import { message, relative, timestamp } from '../lib/api'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
+import { readinessLabel } from '../lib/readiness'
 import { specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
@@ -284,7 +285,7 @@ export function ServiceDetail({
                 </div>
                 <div>
                   <dt>Readiness</dt>
-                  <dd>{service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}</dd>
+                  <dd>{readinessLabel(service)}</dd>
                 </div>
                 <div>
                   <dt>Configured exposure</dt>

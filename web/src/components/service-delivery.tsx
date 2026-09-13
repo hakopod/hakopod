@@ -29,6 +29,10 @@ export function ServiceDelivery({
     queryKey: ['backend-certificates', application.id, serviceName, application.revision],
     queryFn: ({ signal }) =>
       unwrap(client.GET('/applications/{id}/services/{service}/certificates', { signal, params })),
+    refetchInterval: service.certificate_mounts?.some((mount) => mount.source === 'ingress')
+      ? 15000
+      : false,
+    refetchIntervalInBackground: false,
     gcTime: 0,
   })
   return (
@@ -133,8 +137,8 @@ export function ServiceDelivery({
       <div className="delivery-title">
         <h3>Backend certificates</h3>
         <HeadingHelp title="Backend certificates">
-          Only mounted certificates are listed here. Uploads stay separate from deployment. Rotation
-          requires a new reference and reviewed deployment.
+          Only mounted certificates are listed here. Uploaded references stay pinned until you
+          deploy a replacement. Ingress sources renew automatically on self-hosted installations.
         </HeadingHelp>
       </div>
       {certificates.isPending ? (
@@ -144,8 +148,12 @@ export function ServiceDelivery({
       ) : service.certificate_mounts?.length ? (
         <ul className="delivery-list" aria-label="Mounted certificates">
           {service.certificate_mounts.map((mount) => {
-            const status = certificates.data?.items.find(
-              (item) => item.certificate === mount.certificate,
+            const status = certificates.data?.items.find((item) =>
+              mount.source === 'ingress'
+                ? item.source === 'ingress-auto' &&
+                  item.mount_path === mount.mount_path &&
+                  item.hostname === mount.hostname
+                : item.certificate === mount.certificate,
             )
             return (
               <li key={mount.mount_path}>
@@ -160,7 +168,8 @@ export function ServiceDelivery({
                   <Copy value={mount.mount_path} />
                 </div>
                 <p className="muted-text">
-                  Read-only · tls.crt and tls.key · expires {timestamp(status?.expires_at)}
+                  Read-only · {mount.source === 'ingress' ? 'Automatic renewal' : 'Pinned upload'} ·
+                  expires {timestamp(status?.expires_at)}
                 </p>
                 {status?.message && <Note>{status.message}</Note>}
                 {!status && <Note>The referenced certificate is unavailable.</Note>}
