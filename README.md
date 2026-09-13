@@ -115,6 +115,8 @@ private repositories. See [submodule development](docs/submodules.md).
 
 The [logs and terminals guide](docs/observability.md) explains SQL-style filters,
 live resource observations, terminal permissions and bounds, and GitLab source sync.
+[Runtime alarms](docs/alarms.md) covers the dashboard inbox, unhealthy-resource
+and recovery notifications, scoped settings, and optional SMTP delivery.
 The [template catalog](docs/templates.md) records each preset's credentials,
 storage, memory and verification limits. [Backups](docs/backups.md) explains
 S3-compatible destinations, schedules, recovery keys and restores into fresh

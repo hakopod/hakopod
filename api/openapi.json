@@ -905,6 +905,286 @@
         }
       }
     },
+    "/alarms": {
+      "get": {
+        "operationId": "listAlarms",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 25
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "recovered"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlarmList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alarms/{id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledgeAlarm",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alarm"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlarmReadInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alarms/{id}/read": {
+      "post": {
+        "operationId": "readAlarm",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alarm"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlarmReadInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alarm-settings": {
+      "get": {
+        "operationId": "getAlarmSettings",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlarmSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putAlarmSettings",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlarmSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlarmSettingsInput"
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/status": {
       "get": {
         "operationId": "getAuthStatus",
@@ -8737,6 +9017,9 @@
             "items": {
               "$ref": "#/components/schemas/ServiceStatus"
             }
+          },
+          "revision": {
+            "type": "integer"
           }
         },
         "required": []
@@ -9418,6 +9701,247 @@
           "error",
           "created_at"
         ]
+      },
+      "Alarm": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "application",
+              "service",
+              "node"
+            ]
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "recovered"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "first_observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fired_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recovered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_event_id": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "observation_status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "rule",
+          "resource_type",
+          "resource_id",
+          "resource_name",
+          "project",
+          "environment",
+          "application_id",
+          "service",
+          "status",
+          "summary",
+          "first_observed_at",
+          "fired_at",
+          "recovered_at",
+          "last_observed_at",
+          "updated_at",
+          "last_event_id",
+          "read",
+          "acknowledged",
+          "observation_status"
+        ]
+      },
+      "AlarmList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alarm"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "active": {
+                "type": "integer"
+              },
+              "unread": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "active",
+              "unread"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "summary"
+        ]
+      },
+      "AlarmSettings": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hold_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "email_enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "inherited": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "default",
+              "installation",
+              "project",
+              "environment",
+              "application"
+            ]
+          },
+          "email_available": {
+            "type": "boolean"
+          },
+          "can_manage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "application_id",
+          "enabled",
+          "hold_seconds",
+          "email_enabled",
+          "revision",
+          "inherited",
+          "source",
+          "email_available",
+          "can_manage"
+        ]
+      },
+      "AlarmSettingsInput": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "hold_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "email_enabled": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "hold_seconds",
+          "email_enabled",
+          "expected_revision"
+        ]
+      },
+      "AlarmReadInput": {
+        "type": "object",
+        "properties": {
+          "expected_event_id": {
+            "type": "integer"
+          }
+        },
+        "required": []
       },
       "ProjectRole": {
         "type": "object",

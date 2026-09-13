@@ -146,7 +146,7 @@ func run() error {
 	srv := &http.Server{Addr: listen, Handler: management.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	w := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	wg.Add(7)
+	wg.Add(8)
 	go func() { defer wg.Done(); w.Run(ctx) }()
 	go func() { defer wg.Done(); w.Resync(ctx) }()
 	go func() { defer wg.Done(); management.RunSources(ctx) }()
@@ -154,6 +154,7 @@ func run() error {
 	go func() { defer wg.Done(); management.RunBuilds(ctx) }()
 	go func() { defer wg.Done(); management.RunBackups(ctx) }()
 	go func() { defer wg.Done(); management.RunShowcase(ctx) }()
+	go func() { defer wg.Done(); management.RunAlarms(ctx) }()
 	serverErr := make(chan error, 1)
 	go func() {
 		if cert != "" {

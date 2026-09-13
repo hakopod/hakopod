@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerProfileRoutes(routes)
 	s.registerDomainRoutes(routes)
 	s.registerBackupRoutes(routes)
+	s.registerAlarmRoutes(routes)
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
