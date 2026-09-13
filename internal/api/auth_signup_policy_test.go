@@ -26,7 +26,7 @@ func TestPublicSignupPolicyFailsClosed(t *testing.T) {
 	}
 }
 
-func TestSelfHostedSignupBlocksEmailButPreservesSetupAndLicensedInvites(t *testing.T) {
+func TestSelfHostedSignupBlocksEmailButPreservesSetupAndFreeInvites(t *testing.T) {
 	for _, mode := range []string{cluster.DeploymentSelfHosted, cluster.DeploymentManagedCloud} {
 		t.Run(mode, func(t *testing.T) {
 			h := newAuthHarness(t, func(c *api.AuthConfig) {
@@ -36,6 +36,9 @@ func TestSelfHostedSignupBlocksEmailButPreservesSetupAndLicensedInvites(t *testi
 			status := h.call("GET", "/auth/status", "", nil, 200)
 			if status["setup_required"] != true || status["signup_enabled"] != false {
 				t.Fatal("self-hosted installation did not expose only first-owner setup")
+			}
+			if _, err := h.db.Pool.Exec(context.Background(), "UPDATE installation_license SET token='',token_digest=NULL,highest_sequence=0"); err != nil {
+				t.Fatal(err)
 			}
 			owner := h.owner()
 			status = h.call("GET", "/auth/status", "", nil, 200)
@@ -133,11 +136,14 @@ func policyOAuthFlow(h *authHarness, provider string, query url.Values, beforeCa
 	return result
 }
 
-func TestSelfHostedOAuthRequiresLiveLicensedInvite(t *testing.T) {
+func TestSelfHostedOAuthRequiresLiveInvite(t *testing.T) {
 	base := signupPolicyProvider(t)
 	for _, provider := range []string{"github", "gitlab", "google"} {
 		t.Run(provider, func(t *testing.T) {
 			h := newAuthHarness(t, func(c *api.AuthConfig) { configurePolicyProviders(c, base) })
+			if _, err := h.db.Pool.Exec(context.Background(), "UPDATE installation_license SET token='',token_digest=NULL,highest_sequence=0"); err != nil {
+				t.Fatal(err)
+			}
 			owner := h.owner()
 			h.call("GET", "/auth/oauth/"+provider+"/start?intent=register", "", nil, 403)
 			policyOAuthFlow(h, provider, url.Values{"intent": {"login"}}, nil, 403)
@@ -145,13 +151,15 @@ func TestSelfHostedOAuthRequiresLiveLicensedInvite(t *testing.T) {
 			invite := h.call("POST", "/teams/"+team["id"].(string)+"/invites", owner, map[string]string{"email": "policy@example.test", "role": "member"}, 201)
 			u, _ := url.Parse(invite["invite_url"].(string))
 			query := url.Values{"intent": {"register"}, "invite_token": {u.Query().Get("token")}}
-			// Recheck license entitlements after provider consent, not only at the start.
+			// Provider consent does not extend the lifetime of an invitation.
 			policyOAuthFlow(h, provider, query, func() {
-				if _, err := h.db.Pool.Exec(context.Background(), "UPDATE installation_license SET token='',token_digest=NULL"); err != nil {
+				if _, err := h.db.Pool.Exec(context.Background(), "UPDATE invites SET expires_at=now()-interval '1 minute' WHERE id=$1", invite["invite"].(map[string]any)["id"]); err != nil {
 					t.Fatal(err)
 				}
 			}, 403)
-			testProLicense(t, h.db)
+			invite = h.call("POST", "/teams/"+team["id"].(string)+"/invites", owner, map[string]string{"email": "policy@example.test", "role": "member"}, 201)
+			u, _ = url.Parse(invite["invite_url"].(string))
+			query.Set("invite_token", u.Query().Get("token"))
 			registered := policyOAuthFlow(h, provider, query, nil, 200)
 			user := registered["user"].(map[string]any)
 			if user["admin"] == true || user["owner"] == true {

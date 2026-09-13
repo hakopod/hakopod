@@ -8,14 +8,14 @@ Public release binaries keep public registration closed, even when an operator
 sets `HAKOPOD_SIGNUP_ENABLED=true`, `[auth] signup_enabled = true`, or switches
 deployment mode. First-owner setup stays available until the installation is
 claimed. Existing accounts can sign in, and explicit invitations can enroll
-members when their signed paid entitlements and invitation proofs are valid.
+members when their invitation proofs are valid, including on Free.
 
 Cloud builds require the `hakopod_cloud` build tag, `managed-cloud` deployment
 mode, and `HAKOPOD_SIGNUP_ENABLED=true` (or its operator TOML equivalent) to enable
 public registration. The `hakopod_selfhosted` tag always disables that capability,
 even if both tags are supplied. Public archives use the self-hosted tag. This is
 a policy of the built artifact; someone rebuilding modified source controls their
-own binary. It does not replace paid invitation or team license checks.
+own binary. Invitation validation and project authorization remain enforced.
 
 The same policy controls email signup, verification and OAuth account creation.
 Changing to a self-hosted build, changing deployment mode, or turning registration
@@ -39,13 +39,13 @@ the same response; the person can retry after a minute or contact the operator.
 The new account chooses an invitation addressed to its verified email, or a
 personal workspace. A personal workspace is one private project with a
 development environment. It grants project administration only to that account;
-it cannot be shared, invited into, or attached to a team. Paid team creation,
-invitations and shared project roles retain their license checks. Installation
+it cannot be shared, invited into, or attached to a team. Team creation,
+invitations and fixed shared project roles are included in Free. Installation
 administrators retain their existing installation-wide access.
 
 GitHub, GitLab and Google use the same configured OAuth clients for sign-in and
 registration. Provider email verification, browser-bound state and PKCE are
-required. New accounts require the Cloud signup policy above or a valid licensed
+required. New accounts require the Cloud signup policy above or a valid
 invitation for that verified email. A provider account never gains an installation role.
 After authenticating through an invitation link, the person confirms the choice
 to join that workspace or create a separate personal workspace.

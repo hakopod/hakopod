@@ -103,6 +103,8 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("DELETE /api/v1/keys/{id}", s.revokeKey)
 	routes.HandleFunc("POST /api/v1/keys/{id}/rotate", s.rotateKey)
 	routes.HandleFunc("GET /api/v1/audit", s.audit)
+	routes.HandleFunc("GET /api/v1/audit/history", s.auditHistory)
+	routes.HandleFunc("GET /api/v1/audit/export", s.auditHistory)
 	routes.HandleFunc("GET /api/v1/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(contract.OpenAPI)

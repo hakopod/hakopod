@@ -57,6 +57,20 @@ func TestSignedInstallationEntitlements(t *testing.T) {
 			t.Fatal("invalid entitlement feature set accepted")
 		}
 	}
+	// Original signed v1 tokens remain valid, without enabling advanced features.
+	for _, feature := range Catalog(claims.Features) {
+		if feature.Plan != "free" && feature.Enabled {
+			t.Fatalf("legacy token enabled advanced feature %s", feature.ID)
+		}
+	}
+	advanced := claims
+	advanced.Features = []string{"custom_roles", "audit_history", "team_mfa"}
+	if _, err := v.Verify(sign(advanced), claims.InstallationID, now); err != nil {
+		t.Fatal("explicit advanced entitlements rejected", err)
+	}
+	if _, err := v.Verify(sign(advanced), claims.InstallationID, time.Unix(claims.ExpiresAt, 0)); State(err) != "expired" {
+		t.Fatal("expired advanced entitlements accepted")
+	}
 	changed := claims
 	changed.Plan = "free"
 	if _, err = v.Verify(sign(changed), claims.InstallationID, now); err == nil {
@@ -68,5 +82,17 @@ func TestSignedInstallationEntitlements(t *testing.T) {
 	}
 	if _, err = NewVerifier(nil).Verify(token, claims.InstallationID, now); State(err) != "issuer_not_configured" {
 		t.Fatal("unconfigured issuer accepted paid entitlements")
+	}
+}
+
+func TestFreeCollaborationCatalog(t *testing.T) {
+	features := map[string]Feature{}
+	for _, feature := range Catalog(nil) {
+		features[feature.ID] = feature
+	}
+	for _, id := range []string{"teams", "invitations", "project_rbac"} {
+		if !features[id].Enabled || features[id].Plan != "free" {
+			t.Fatalf("%s is not Free", id)
+		}
 	}
 }

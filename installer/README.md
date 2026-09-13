@@ -107,7 +107,7 @@ Dashboard access is explicit:
 * `dashboard_mode=ssh` (default): binds 127.0.0.1:3000, origin `http://localhost:3000`. Open the printed SSH tunnel and then that exact localhost origin. API binds 127.0.0.1:8080. Use a corresponding SSH tunnel for remote CLI access.
 * `dashboard_mode=https`: supply `dashboard_origin=https://console.your-company.example:8443`, `dashboard_port=8443`, and absolute PEM certificate/key paths. The dashboard binds `node_ip` directly with TLS on that separate port. Allow it only to intended operators. The origin must be outside the application domain; the private key must have mode 0600/0400 and match a certificate valid for that hostname. Certificate validity and key matching are checked before installation, and HTTPS readiness uses system trust. The installer does not obtain or renew this operator-supplied dashboard certificate. Renew the copied `/etc/hakopod/dashboard.crt` and `.key` atomically, retain dashboard-user ownership/mode 0400, then restart `hakopod-dashboard`.
 
-There is no public API listener or implicitly trusted reverse proxy. Untrusted application origins receive no dashboard credentials. SMTP and OAuth are disabled unless separately configured with explicit operator credentials after installation.
+There is no public API listener or implicitly trusted reverse proxy. Untrusted application origins receive no dashboard credentials. SMTP is disabled unless separately configured. The installer offers optional Google, GitHub and GitLab OAuth inputs before starting services; without credentials those providers stay disabled.
 
 The interactive installer defaults to `acme=production` for Let's Encrypt application HTTPS and asks for a contact `acme_email`; it requires public DNS and reachable port 80. The included example deliberately sets `off` for a safe review/test configuration: that choice keeps cert-manager off and public applications initially use HTTP until TLS is configured. `staging` installs pinned cert-manager plus a staging ClusterIssuer; its test certificates are **not browser-trusted**. The email is an ACME contact, not a Hakopod owner identity. HTTP-01 handles individual names; no wildcard DNS-01 automation is installed. Inspect actual issuer/certificate Ready conditions in Hakopod. cert-manager renews application certificates it manages. Local automated tests explicitly disable issuance.
 
@@ -223,3 +223,35 @@ Public SMTP servers, SFTP and custom public protocols belong on self-hosted
 installations, including customer-owned BYOC. A shared SMTP gateway is outside
 Hakopod Cloud's scope. See [product modes](../docs/product-modes.md),
 [public TCP](../docs/public-tcp.md) and [SMTP migration](../docs/smtp-migration.md).
+
+## Optional OAuth login before startup
+
+Interactive installation asks whether to configure Google, GitHub and GitLab
+login. For each selected provider, enter its client ID and either a protected
+client-secret file or hidden client-secret input. The prompt displays the exact
+callback URL to register with the provider. These clients serve existing users
+and invited users; configuring them does not open public self-hosted signup.
+
+For unattended installation, add provider entries to the installer JSON:
+
+```json
+{
+  "oauth": {
+    "google": {"client_id": "your-client-id", "client_secret_file": "/root/google-oauth-secret"},
+    "github": {"client_id": "your-client-id", "client_secret_file": "/root/github-oauth-secret"},
+    "gitlab": {"client_id": "your-client-id", "client_secret_file": "/root/gitlab-oauth-secret"}
+  }
+}
+```
+
+Each input secret file must be an absolute regular file with mode 0400 or 0600.
+Existing `HAKOPOD_GOOGLE_CLIENT_ID`, `HAKOPOD_GOOGLE_CLIENT_SECRET_FILE` (or
+`HAKOPOD_GOOGLE_CLIENT_SECRET`) environment values are also supported; substitute
+`GITHUB` or `GITLAB` for the other providers. Do not specify both a secret and its
+file. Preconfigured providers are not prompted again. Secrets never appear in
+process arguments, the printed plan or installer JSON. Provider secrets are
+copied into `/etc/hakopod/secrets/oauth-<provider>-secret`, readable only by the
+API service account, and referenced by root-private `/etc/hakopod/oauth.env`.
+The dashboard service receives no OAuth client secrets. Resume preserves this
+installed OAuth environment and secret files, including operator rotations.
+Use `/etc/hakopod/config.json` to resume after temporary prompt files are removed.

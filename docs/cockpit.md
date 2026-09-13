@@ -29,7 +29,7 @@ key when backing up or restoring the installation.
 
 Public signup is available only in Cloud-capable builds with managed-cloud mode
 and `HAKOPOD_SIGNUP_ENABLED=true`. Self-hosted binaries keep signup closed while
-allowing first-owner setup and licensed invitations. Email registration verifies
+allowing first-owner setup and explicit invitations. Email registration verifies
 the address before creating an account. New accounts can accept an
 invitation or create one private personal workspace without paid sharing. The
 forgot-password flow sends a single-use email link and keeps two-factor

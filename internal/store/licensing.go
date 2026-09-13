@@ -75,7 +75,7 @@ func (s *Store) licenseStatus(record licenseRecord) LicenseStatus {
 	}
 	status.Catalog = license.Catalog(status.Features)
 	for _, feature := range status.Catalog {
-		if feature.Plan == "free" {
+		if feature.Plan == "free" && !contains(status.Features, feature.ID) {
 			status.Features = append(status.Features, feature.ID)
 		}
 	}

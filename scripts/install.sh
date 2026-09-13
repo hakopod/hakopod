@@ -6,7 +6,7 @@ umask 077
 
 bundle_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 helper="$bundle_root/installer/host.py"
-config_path='' artifact_dir='' target_arch='' release_version='' dry_run=false assume_yes=false resume=false input_tmp='' database_input_tmp=''
+config_path='' artifact_dir='' target_arch='' release_version='' dry_run=false assume_yes=false resume=false input_tmp='' database_input_tmp='' oauth_input_dir=''
 die() { printf 'Installer: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'EOF'
@@ -38,7 +38,7 @@ case "$target_arch" in ''|amd64|arm64) ;; *) die '--arch must be amd64 or arm64'
 command -v python3 >/dev/null || die 'Python3.10+ is required for strict configuration and archive validation'
 python3 -c 'import sys; assert sys.version_info >= (3,10), "Python3.10+ required"'
 [ -f "$helper" ] || die 'Use the complete repository or extracted installer bundle, not install.sh alone'
-cleanup() { if [ -n "$input_tmp" ]; then rm -f -- "$input_tmp"; fi; if [ -n "$database_input_tmp" ]; then rm -f -- "$database_input_tmp"; fi; }
+cleanup() { if [ -n "$oauth_input_dir" ]; then rm -rf -- "$oauth_input_dir"; fi; if [ -n "$input_tmp" ]; then rm -f -- "$input_tmp"; fi; if [ -n "$database_input_tmp" ]; then rm -f -- "$database_input_tmp"; fi; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -128,6 +128,8 @@ c['public_tcp_ports']=[int(port.strip()) for port in c['public_tcp_ports'].split
 Path(sys.argv[1]).write_text(json.dumps(c)+'\n')
 PY
   config_path=$input_tmp
+  oauth_input_dir=$(mktemp -d "${TMPDIR:-/tmp}/hakopod-oauth.XXXXXXXX")
+  python3 "$bundle_root/installer/oauth.py" --config "$config_path" --directory "$oauth_input_dir"
 fi
 if [ -n "$release_version" ]; then
   python3 - "$config_path" "$release_version" <<'PY'
@@ -259,6 +261,14 @@ for unit in hakopod-k3s hakopod-api hakopod-dashboard; do
 done
 chown hakopod-api:hakopod-api /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key /etc/hakopod/secrets/database-url
 chmod 0400 /etc/hakopod/secrets/setup-token /etc/hakopod/secrets/auth-encryption-key /etc/hakopod/secrets/database-url
+for provider in google github gitlab; do
+  oauth_secret="/etc/hakopod/secrets/oauth-$provider-secret"
+  if [ -f "$oauth_secret" ]; then
+    [ ! -L "$oauth_secret" ] || die 'Refusing OAuth secret symlink'
+    chown hakopod-api:hakopod-api "$oauth_secret"
+    chmod 0400 "$oauth_secret"
+  fi
+done
 if [ "$cfg_dashboard_mode" = https ]; then
   # Resuming preserves the installed certificate, including an operator renewal.
   if ! "$resume" || [ ! -f /etc/hakopod/dashboard.crt ] || [ ! -f /etc/hakopod/dashboard.key ]; then

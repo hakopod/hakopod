@@ -5,7 +5,7 @@ a Go API and reconciler, a small CLI, PostgreSQL durable state, and a TanStack
 Start dashboard over K3s and HAProxy.
 
 This repository includes the deployment engine and an expanded cockpit with
-human accounts, paid team roles, source builds, templates, live service monitoring,
+human accounts, team roles, source builds, templates, live service monitoring,
 searchable logs, container and host terminals, custom domains, encrypted backups,
 registry credentials, TLS controls and worker enrollment. See the
 [cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
@@ -117,13 +117,14 @@ Cloud launch requirements.
 ## Accounts, licensing and components
 
 Deployment and operational tools stay available in Free. Team creation,
-invitations and shared project role management require signed Pro entitlements. The
+invitations and fixed shared project roles are included in Free. Advanced paid
+capabilities require explicit signed entitlements. The
 dashboard shows the feature catalog and activation state; the Go API and durable
 workers enforce it. Expiry preserves accounts, application data and running
 workloads. See [paid features](docs/paid-features.md) for the exact behavior.
 
 Public self-hosted binaries keep signup closed; the installer claims the first
-owner and licensed invitations enroll other members. Cloud builds require
+owner and explicit invitations enroll other members. Cloud builds require
 managed-cloud mode and `HAKOPOD_SIGNUP_ENABLED=true` to open public registration.
 Email verification and password recovery use configured SMTP; GitHub, GitLab and
 Google use the configured OAuth clients. See [accounts](docs/accounts.md).

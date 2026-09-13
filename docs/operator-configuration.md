@@ -67,7 +67,7 @@ rollout timeouts are 15 seconds through 15 minutes. Omit a setting to keep its
 existing default. Email delivery remains off by default. `auth.signup_enabled`
 only enables public enrollment in a Cloud-capable build running `managed-cloud`
 mode. Public self-hosted binaries ignore attempts to enable public signup, even
-with a deployment-mode override. First-owner setup and licensed invitations use
+with a deployment-mode override. First-owner setup and explicit invitations use
 their own checks. See [accounts](accounts.md).
 
 Application networks, mounts, security settings and deployment revisions belong

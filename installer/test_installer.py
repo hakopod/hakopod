@@ -148,7 +148,7 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 answers = [mode, '', 'apps.example.test', '192.0.2.10', '', '', '', '', 'off']
                 if mode == 'self-hosted': answers.append('12345,587')
-                answers.extend([''] * 8)
+                answers.extend([''] * 8 + ['no'] * 3)
                 master, slave = pty.openpty()
                 try:
                     os.write(master, ('\n'.join(answers) + '\n').encode())

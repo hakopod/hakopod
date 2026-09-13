@@ -8,26 +8,39 @@ service operations, registries, secrets and TLS. GitLab.com login is supported
 alongside GitHub and Google. GitLab build-provider support is described separately
 from authentication and source synchronization.
 
-The implemented Pro feature identifiers are `teams`, `invitations` and
-`project_rbac`. They cover team creation/membership, creating and accepting member
-invitations, and granting or using shared project roles for people and teams. These
-features are explicit signed entitlements; a `pro` label alone does not grant them.
+Teams, member invitations and fixed project roles are included in Free. The
+capability identifiers `teams`, `invitations` and `project_rbac` remain stable, but
+no paid activation is required. Team roles are owner, administrator and member;
+project roles are administrator, developer and viewer. These fixed roles do not
+allow custom permissions or installation administration through an invitation.
 The authenticated `GET /api/v1/license` catalog is the UI's source of feature state.
 
-Public signup is optional in Cloud-capable builds running managed-cloud mode.
-Self-hosted binaries allow first-owner setup and licensed invitation enrollment,
-not open registration. A verified account can create one private personal
-workspace without shared project entitlements. Its ownership is separate from shared project grants: it
-cannot accept members or team assignments. See [accounts](accounts.md).
+Advanced custom roles, user audit history/export and team-wide MFA enforcement
+are paid capabilities: `custom_roles`, `audit_history` and `team_mfa`. User audit history and CSV export are implemented in Settings → Audit events and
+`GET /api/v1/audit/history` / `GET /api/v1/audit/export`. They require installation
+administration and an explicit `audit_history` entitlement, with pages capped
+at 100 history events or 1000 export rows. Core `/audit` remains Free. Custom
+roles and team MFA enforcement are planned and unsupported. Only
+implemented capabilities appear in the catalog. The verifier reserves these
+explicit entitlement names; accepting a name is not evidence of implemented UI
+or authorization. Core security event recording and recent installation audit
+inspection remain Free, as do personal passkeys and TOTP.
 
-On expiry, removal, invalid signature or a signed downgrade, paid mutations stop.
-Existing users can still authenticate and manage their own security. Direct and
-team-derived shared project roles stop authorizing new requests and durable worker
-execution. Global administrators retain Free operations and recovery access;
-they may revoke memberships and role grants or delete a team to clean up safely.
-Existing global administrators are not demoted by license changes. Running
-workloads and stored data are not deleted. Renewing the required entitlements
-restores retained roles, unless an administrator removed them.
+Existing v1 tokens with `teams`, `invitations` and `project_rbac` remain valid.
+They do not imply any advanced entitlement. Newly issued licenses must name the
+advanced capability explicitly. A Pro plan label alone never enables a feature.
+
+Public signup is optional in Cloud-capable builds running managed-cloud mode.
+Self-hosted binaries allow first-owner setup and explicit invitation enrollment,
+including Google, GitHub and GitLab OAuth with a verified matching email. A
+verified account can create one private personal workspace. Its ownership is
+separate from shared project grants: it cannot accept members or team assignments.
+See [accounts](accounts.md).
+
+Expiry, removal, invalid signatures and signed downgrades remove paid capability
+authority. Free team membership, invitations, fixed project roles, existing
+sessions, worker authorization and core audit logging continue to work. No
+users, workloads, roles or stored data are deleted by a license change.
 
 # Verification and activation
 
@@ -96,7 +109,7 @@ https://YOUR_DASHBOARD_ORIGIN/api/v1/auth/oauth/gitlab/callback
 
 The callback uses an HttpOnly browser state binding, one-use state, S256 PKCE and
 the GitLab.com token/userinfo endpoints. It requires `email_verified:true` and an
-existing enabled local account; it does not auto-enroll an unknown provider email.
+existing enabled local account, a matching live invitation, or the Cloud signup policy.
 TOTP continuation applies in the same way as other provider logins. OAuth login
 credentials and source-integration tokens are separate. No GitLab self-hosted
 issuer URL can be supplied by an API caller.
