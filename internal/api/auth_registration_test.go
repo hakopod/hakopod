@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/api"
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -33,6 +34,8 @@ func TestProviderRegistrationCallbackCreatesOnlyVerifiedMember(t *testing.T) {
 	}))
 	defer provider.Close()
 	h := newAuthHarness(t, func(c *api.AuthConfig) {
+		c.CloudSignupAvailable = true
+		c.DeploymentMode = cluster.DeploymentManagedCloud
 		c.SignupEnabled = true
 		c.GoogleClientID = "local-client"
 		c.GoogleClientSecret = "local-secret"
@@ -178,6 +181,8 @@ func authMailToken(t *testing.T, received <-chan string, path string) string {
 }
 func enabledRegistration(address string) func(*api.AuthConfig) {
 	return func(c *api.AuthConfig) {
+		c.CloudSignupAvailable = true
+		c.DeploymentMode = cluster.DeploymentManagedCloud
 		c.SignupEnabled = true
 		c.SMTPAllowDelivery = true
 		c.SMTPAllowInsecure = true

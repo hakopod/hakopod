@@ -64,7 +64,11 @@ The available settings map to the same environment options used by the server:
 Production dashboard origins require HTTPS. A non-loopback API listener requires
 TLS files or explicit trust in an HTTPS reverse proxy. Public ports are 1–65535;
 rollout timeouts are 15 seconds through 15 minutes. Omit a setting to keep its
-existing default. Public signup and email delivery remain off by default.
+existing default. Email delivery remains off by default. `auth.signup_enabled`
+only enables public enrollment in a Cloud-capable build running `managed-cloud`
+mode. Public self-hosted binaries ignore attempts to enable public signup, even
+with a deployment-mode override. First-owner setup and licensed invitations use
+their own checks. See [accounts](accounts.md).
 
 Application networks, mounts, security settings and deployment revisions belong
 in each application’s `hakopod.toml`. This operator file configures the server

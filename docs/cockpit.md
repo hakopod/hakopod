@@ -27,8 +27,10 @@ client credentials are configured. Passkeys require a secure browser origin
 database; recovery codes are hashed and consumed once. Never lose the encryption
 key when backing up or restoring the installation.
 
-Public signup is opt-in with `HAKOPOD_SIGNUP_ENABLED=true`. Email registration
-verifies the address before creating an account. New accounts can accept an
+Public signup is available only in Cloud-capable builds with managed-cloud mode
+and `HAKOPOD_SIGNUP_ENABLED=true`. Self-hosted binaries keep signup closed while
+allowing first-owner setup and licensed invitations. Email registration verifies
+the address before creating an account. New accounts can accept an
 invitation or create one private personal workspace without paid sharing. The
 forgot-password flow sends a single-use email link and keeps two-factor
 authentication enabled. See [account setup and recovery](accounts.md).

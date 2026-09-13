@@ -101,8 +101,9 @@ dashboard shows the feature catalog and activation state; the Go API and durable
 workers enforce it. Expiry preserves accounts, application data and running
 workloads. See [paid features](docs/paid-features.md) for the exact behavior.
 
-Public signup is disabled by default. Enable it with `HAKOPOD_SIGNUP_ENABLED=true`
-to let verified accounts choose an invitation or a private personal workspace.
+Public self-hosted binaries keep signup closed; the installer claims the first
+owner and licensed invitations enroll other members. Cloud builds require
+managed-cloud mode and `HAKOPOD_SIGNUP_ENABLED=true` to open public registration.
 Email verification and password recovery use configured SMTP; GitHub, GitLab and
 Google use the configured OAuth clients. See [accounts](docs/accounts.md).
 

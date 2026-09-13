@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/subtle"
 	"errors"
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"net"
 	"net/http"
@@ -12,16 +13,19 @@ import (
 )
 
 type AuthConfig struct {
-	SignupEnabled      bool
-	PublicURL          string
-	SetupSecret        string
-	EncryptionKey      string
-	GitHubClientID     string
-	GitHubClientSecret string
-	GoogleClientID     string
-	GoogleClientSecret string
-	GitLabClientID     string
-	GitLabClientSecret string
+	// CloudSignupAvailable is set by the server build, never operator configuration.
+	CloudSignupAvailable bool
+	DeploymentMode       string
+	SignupEnabled        bool
+	PublicURL            string
+	SetupSecret          string
+	EncryptionKey        string
+	GitHubClientID       string
+	GitHubClientSecret   string
+	GoogleClientID       string
+	GoogleClientSecret   string
+	GitLabClientID       string
+	GitLabClientSecret   string
 	// Provider endpoints are overridden only by trusted in-process integration tests.
 	GitHubAuthURL, GitHubTokenURL, GitHubAPIURL       string
 	GoogleAuthURL, GoogleTokenURL, GoogleUserInfoURL  string
@@ -29,6 +33,12 @@ type AuthConfig struct {
 	SMTPAddress, SMTPUsername, SMTPPassword, SMTPFrom string
 	SMTPAllowInsecure                                 bool
 	SMTPAllowDelivery                                 bool
+}
+
+// PublicSignupEnabled applies the installation policy to every enrollment path.
+// Initial owner setup and licensed invitations have separate authorization.
+func (c AuthConfig) PublicSignupEnabled() bool {
+	return c.CloudSignupAvailable && c.DeploymentMode == cluster.DeploymentManagedCloud && c.SignupEnabled
 }
 
 func (s *Server) authenticateToken(r *http.Request) (string, error) {
@@ -152,7 +162,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		providers = append(providers, "gitlab")
 	}
 	_, passkeyErr := s.webAuthn()
-	write(w, 200, map[string]any{"setup_required": needed, "signup_enabled": s.Auth.SignupEnabled && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
+	write(w, 200, map[string]any{"setup_required": needed, "signup_enabled": s.Auth.PublicSignupEnabled() && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
 }
 func (s *Server) sessionResponse(w http.ResponseWriter, r *http.Request, session store.Session) {
 	http.SetCookie(w, &http.Cookie{Name: "hakopod_session", Value: session.Token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Auth.PublicURL, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: int(time.Until(session.ExpiresAt).Seconds()), Expires: session.ExpiresAt})

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/api"
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"io"
 	"net"
@@ -40,6 +41,10 @@ func secretSettingFrom(name string, get func(string) string) (string, error) {
 
 func authConfig() (api.AuthConfig, error) { return authConfigFrom(os.Getenv) }
 func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
+	mode, err := cluster.ParseDeploymentMode(get("HAKOPOD_DEPLOYMENT_MODE"))
+	if err != nil {
+		return api.AuthConfig{}, err
+	}
 	setup, err := secretSettingFrom("HAKOPOD_SETUP_SECRET", get)
 	if err != nil {
 		return api.AuthConfig{}, err
@@ -60,7 +65,7 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 	if origin == "" {
 		origin = "http://127.0.0.1:4173"
 	}
-	c := api.AuthConfig{SignupEnabled: get("HAKOPOD_SIGNUP_ENABLED") == "true", PublicURL: origin, SetupSecret: setup, EncryptionKey: encryption,
+	c := api.AuthConfig{CloudSignupAvailable: cloudSignupAvailable, DeploymentMode: mode, SignupEnabled: get("HAKOPOD_SIGNUP_ENABLED") == "true", PublicURL: origin, SetupSecret: setup, EncryptionKey: encryption,
 		GitHubClientID: get("HAKOPOD_GITHUB_CLIENT_ID"), GitHubClientSecret: secrets["HAKOPOD_GITHUB_CLIENT_SECRET"], GoogleClientID: get("HAKOPOD_GOOGLE_CLIENT_ID"), GoogleClientSecret: secrets["HAKOPOD_GOOGLE_CLIENT_SECRET"],
 		GitLabClientID: get("HAKOPOD_GITLAB_CLIENT_ID"), GitLabClientSecret: secrets["HAKOPOD_GITLAB_CLIENT_SECRET"],
 		SMTPAddress: get("HAKOPOD_SMTP_ADDRESS"), SMTPUsername: get("HAKOPOD_SMTP_USERNAME"), SMTPPassword: secrets["HAKOPOD_SMTP_PASSWORD"], SMTPFrom: get("HAKOPOD_SMTP_FROM"), SMTPAllowDelivery: get("HAKOPOD_SMTP_ENABLED") == "true"}

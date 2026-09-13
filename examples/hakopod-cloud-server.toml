@@ -20,6 +20,7 @@ rollout_timeout = "2m"
 # kubeconfig_file = "/etc/hakopod/kubeconfig"
 
 [auth]
+# Requires a Cloud-capable build; public self-hosted binaries cannot enable it.
 # Keep signup off until account admission, plan quotas and abuse controls are ready.
 signup_enabled = false
 # setup_secret_file = "/etc/hakopod/secrets/setup"

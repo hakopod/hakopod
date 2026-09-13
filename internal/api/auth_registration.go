@@ -22,7 +22,7 @@ func (s *Server) signupOpen(w http.ResponseWriter, r *http.Request) bool {
 		authFailure(w, err)
 		return false
 	}
-	if !s.Auth.SignupEnabled || needed {
+	if !s.Auth.PublicSignupEnabled() || needed {
 		problem(w, 403, "signup_disabled", "account registration is disabled; use an invitation from your administrator")
 		return false
 	}

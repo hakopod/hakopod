@@ -14,8 +14,10 @@ invitations, and granting or using shared project roles for people and teams. Th
 features are explicit signed entitlements; a `pro` label alone does not grant them.
 The authenticated `GET /api/v1/license` catalog is the UI's source of feature state.
 
-Public signup is optional. A verified account can create one private personal
-workspace in Free. Its ownership is separate from shared project grants: it
+Public signup is optional in Cloud-capable builds running managed-cloud mode.
+Self-hosted binaries allow first-owner setup and licensed invitation enrollment,
+not open registration. A verified account can create one private personal
+workspace without shared project entitlements. Its ownership is separate from shared project grants: it
 cannot accept members or team assignments. See [accounts](accounts.md).
 
 On expiry, removal, invalid signature or a signed downgrade, paid mutations stop.
