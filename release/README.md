@@ -13,9 +13,14 @@ do not replace GitHub's latest stable release. All action references are pinned
 to commits. No private submodule or private token is needed; public UI sources
 come from the checked-in verified bundle.
 
-The next planned tag is `v0.1.0-alpha.2`. The earlier `v0.1.0-alpha.1` tag remains immutable; its release was blocked by a root-run test-fixture failure before publication. Create the next tag only after the fix is reviewed, merged, and all candidate smoke and host jobs pass.
-Hosting `hakopod.com/scripts/installer.sh` is a separate website deployment;
-adding the bootstrap here does not make that domain command live.
+The first published prerelease is `v0.1.0-alpha.2`. The earlier
+`v0.1.0-alpha.1` tag remains immutable; its release was blocked by a root-run
+test-fixture failure before publication. Future tags require reviewed, merged
+source and passing candidate smoke and host checks.
+The [verification record](../docs/prebuilt-installation-verification.md) links
+the published release, exact source and website bootstrap verification.
+Hosting `hakopod.com/scripts/installer.sh` remains a separate website deployment;
+future releases do not change that endpoint automatically.
 
 Release assets include `installer.sh`, the installer kit, the actual dashboard
 runtime, all four platform archives, `SHA256SUMS`, SPDX/CycloneDX/Syft inventories,
