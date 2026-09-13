@@ -1,0 +1,55 @@
+name: Installer acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'installer/**'
+      - 'release/**'
+      - 'scripts/install*.sh'
+      - '.github/workflows/installer-*.yml'
+      - '.github/workflows/release.yml'
+permissions:
+  contents: read
+concurrency:
+  group: installer-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=512
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Build exact candidate packages
+        run: |
+          python3 scripts/ui-source.py restore
+          pnpm --dir web install --frozen-lockfile
+          python3 -m unittest discover -s installer -p 'test_*.py'
+          python3 -m unittest discover -s release -p 'test_*.py'
+          python3 release/build.py --version 0.1.0-alpha.1
+          python3 release/build-installer.py --version 0.1.0-alpha.1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-candidate
+          path: .local/installer-artifacts/0.1.0-alpha.1/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+  hosts:
+    needs: build
+    uses: ./.github/workflows/installer-hosts.yml
+    with:
+      version: 0.1.0-alpha.1
+      artifact_name: installer-candidate

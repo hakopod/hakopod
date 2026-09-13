@@ -1,0 +1,60 @@
+name: Native installer hosts
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            mode: managed
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            mode: managed
+          - runner: ubuntu-24.04
+            arch: amd64
+            mode: local
+          - runner: ubuntu-24.04
+            arch: amd64
+            mode: external
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: .local/host-artifacts
+      - name: Install, resume and recover on a disposable native VM
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          DATABASE_MODE: ${{ matrix.mode }}
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            GITHUB_SHA="$GITHUB_SHA" HAKOPOD_DISPOSABLE_HOST=yes \
+            DEBIAN_FRONTEND=noninteractive python3 release/host-acceptance.py \
+            --version "$RELEASE_VERSION" --mode "$DATABASE_MODE" \
+            --artifact-dir .local/host-artifacts --report .local/host-report.json
+      - name: Upload redacted host evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-host-${{ matrix.arch }}-${{ matrix.mode }}
+          path: .local/host-report.json
+          if-no-files-found: error
+          retention-days: 14

@@ -112,8 +112,14 @@ jobs:
           name: installer-smoke-${{ matrix.arch }}
           path: installer-smoke-${{ matrix.arch }}.json
           if-no-files-found: error
+  hosts:
+    needs: build
+    uses: ./.github/workflows/installer-hosts.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
+      artifact_name: release-assets
   publish:
-    needs: [build, smoke]
+    needs: [build, smoke, hosts]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -135,6 +141,27 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: python3 release/publication.py finalize ".local/publication/$RELEASE_VERSION"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: installer-host-*
+          path: .local/host-evidence
+      - name: Retain native host acceptance evidence
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, runpy
+          from pathlib import Path
+          reports = sorted(Path('.local/host-evidence').glob('*/host-report.json'))
+          values = [json.loads(path.read_text()) for path in reports]
+          directory = Path('.local/publication') / os.environ['RELEASE_VERSION']
+          runpy.run_path('release/host-acceptance.py')['verify_reports'](directory, values, os.environ['RELEASE_VERSION'], os.environ['GITHUB_SHA'])
+          target = directory / 'host-acceptance.json'
+          target.write_text(json.dumps(values, indent=2) + '\n')
+          publication = runpy.run_path('release/publication.py')
+          (directory / 'SHA256SUMS').write_text(publication['manifest'](directory))
+          publication['verify'](directory)
+          PY
       - name: Attest release archives, SBOMs and checksum manifest
         id: attest
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3.0.0
