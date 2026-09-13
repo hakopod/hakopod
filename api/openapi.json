@@ -10305,6 +10305,14 @@
           },
           "password_recovery": {
             "type": "boolean"
+          },
+          "deployment_mode": {
+            "type": "string",
+            "enum": [
+              "self-hosted",
+              "managed-cloud"
+            ],
+            "description": "Effective validated deployment mode, including before first-owner setup. This does not enable public signup."
           }
         },
         "required": [
@@ -10315,7 +10323,8 @@
           "totp",
           "email_delivery",
           "signup_enabled",
-          "password_recovery"
+          "password_recovery",
+          "deployment_mode"
         ]
       },
       "HumanSessionCreated": {

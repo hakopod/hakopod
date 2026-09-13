@@ -34,7 +34,7 @@ func TestSelfHostedSignupBlocksEmailButPreservesSetupAndFreeInvites(t *testing.T
 				c.DeploymentMode = mode
 			})
 			status := h.call("GET", "/auth/status", "", nil, 200)
-			if status["setup_required"] != true || status["signup_enabled"] != false {
+			if status["setup_required"] != true || status["signup_enabled"] != false || status["deployment_mode"] != mode {
 				t.Fatal("self-hosted installation did not expose only first-owner setup")
 			}
 			if _, err := h.db.Pool.Exec(context.Background(), "UPDATE installation_license SET token='',token_digest=NULL,highest_sequence=0"); err != nil {
@@ -42,7 +42,7 @@ func TestSelfHostedSignupBlocksEmailButPreservesSetupAndFreeInvites(t *testing.T
 			}
 			owner := h.owner()
 			status = h.call("GET", "/auth/status", "", nil, 200)
-			if status["setup_required"] != false || status["signup_enabled"] != false {
+			if status["setup_required"] != false || status["signup_enabled"] != false || status["deployment_mode"] != mode {
 				t.Fatal("claiming the owner enabled public enrollment")
 			}
 			request := map[string]string{"name": "Blocked", "email": "blocked@example.test", "password": "blocked user password strong"}

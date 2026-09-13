@@ -36,7 +36,7 @@ type AuthConfig struct {
 }
 
 // PublicSignupEnabled applies the installation policy to every enrollment path.
-// Initial owner setup and licensed invitations have separate authorization.
+// Initial owner setup and explicit invitations have separate authorization.
 func (c AuthConfig) PublicSignupEnabled() bool {
 	return c.CloudSignupAvailable && c.DeploymentMode == cluster.DeploymentManagedCloud && c.SignupEnabled
 }
@@ -162,7 +162,12 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		providers = append(providers, "gitlab")
 	}
 	_, passkeyErr := s.webAuthn()
-	write(w, 200, map[string]any{"setup_required": needed, "signup_enabled": s.Auth.PublicSignupEnabled() && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
+	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+	if err != nil {
+		problem(w, 503, "configuration_unavailable", "deployment mode is unavailable")
+		return
+	}
+	write(w, 200, map[string]any{"deployment_mode": mode, "setup_required": needed, "signup_enabled": s.Auth.PublicSignupEnabled() && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
 }
 func (s *Server) sessionResponse(w http.ResponseWriter, r *http.Request, session store.Session) {
 	http.SetCookie(w, &http.Cookie{Name: "hakopod_session", Value: session.Token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Auth.PublicURL, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: int(time.Until(session.ExpiresAt).Seconds()), Expires: session.ExpiresAt})
