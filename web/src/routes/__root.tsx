@@ -31,7 +31,7 @@ export const Route = createRootRoute({
       description="This address doesn’t match a page in this console."
       action={
         <Button variant="primary" asChild>
-          <a href="/">Return to applications</a>
+          <a href="/">Return to all projects</a>
         </Button>
       }
     />

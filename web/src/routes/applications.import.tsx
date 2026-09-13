@@ -38,7 +38,7 @@ function ImportRepository() {
       title={plan ? `Review ${plan.spec.name}` : 'Import an application from Git'}
       description={`${scope.project} / ${scope.environment} · Create the application from one committed TOML configuration.`}
       breadcrumbs={[
-        { label: 'Applications', to: '/' },
+        { label: 'Applications', to: `/projects/${encodeURIComponent(scope.project)}` },
         { label: 'New application', to: '/applications/new' },
         { label: 'Repository import' },
       ]}
@@ -247,9 +247,9 @@ function ImportRepository() {
               Back to repository
             </Button>
           ) : (
-            <Link className="button" to="/applications/new">
-              Cancel
-            </Link>
+            <Button asChild>
+              <Link to="/applications/new">Cancel</Link>
+            </Button>
           )}
           <Button
             variant="primary"

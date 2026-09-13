@@ -27,7 +27,15 @@ function NewApplication() {
   return (
     <DeploymentForm
       initialMode={mode === 'toml' ? 'toml' : 'form'}
-      onClose={() => void navigate({ to: '/' })}
+      onClose={() =>
+        scope.project
+          ? void navigate({
+              to: '/projects/$project',
+              params: { project: scope.project },
+              search: { environment: scope.environment || undefined },
+            })
+          : void navigate({ to: '/' })
+      }
     />
   )
 }

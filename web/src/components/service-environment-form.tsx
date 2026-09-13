@@ -146,7 +146,7 @@ export function ServiceEnvironmentForm({
       description={`${application.name} · Plain variables passed to this service’s containers.`}
       icon="code"
       breadcrumbs={[
-        { label: 'Applications', to: '/' },
+        { label: 'Applications', to: `/projects/${encodeURIComponent(application.project)}` },
         { label: application.name, to: `/applications/${application.id}` },
         { label: `${serviceName} environment` },
       ]}

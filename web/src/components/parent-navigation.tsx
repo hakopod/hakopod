@@ -2,6 +2,7 @@ import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { parentNavigation, type ParentNavigation } from '../lib/navigation'
+import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Tooltip } from './ui/surfaces'
 import { Icon } from './icons'
@@ -33,10 +34,11 @@ function DeploymentParent({ id }: { id: string }) {
 
 export function ParentBackLink() {
   const location = useLocation()
+  const scope = useScope()
   const deployment = /^\/deployments\/([^/]+)$/.exec(location.pathname)
   return deployment ? (
     <DeploymentParent id={deployment[1]} />
   ) : (
-    <ParentLink parent={parentNavigation(location.pathname, location.search)} />
+    <ParentLink parent={parentNavigation(location.pathname, location.search, undefined, scope)} />
   )
 }

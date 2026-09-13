@@ -67,14 +67,32 @@ export default function WorkspaceGuidance({
               </span>
               <Icon name="chevron" size={15} />
             </Link>
-            <Link to="/" onClick={() => onOpenChange(false)} className="interactive">
-              <Icon name="activity" />
-              <span>
-                <strong>Inspect applications</strong>
-                <small>Open an application to review health, deployments, and logs.</small>
-              </span>
-              <Icon name="chevron" size={15} />
-            </Link>
+            <Button variant="ghost" asChild>
+              {scope.project ? (
+                <Link
+                  to="/projects/$project"
+                  params={{ project: scope.project }}
+                  search={{ environment: scope.environment || undefined }}
+                  onClick={() => onOpenChange(false)}
+                >
+                  <Icon name="activity" />
+                  <span>
+                    <strong>Inspect applications</strong>
+                    <small>Open an application to review health, deployments, and logs.</small>
+                  </span>
+                  <Icon name="chevron" size={15} />
+                </Link>
+              ) : (
+                <Link to="/" onClick={() => onOpenChange(false)}>
+                  <Icon name="grid" />
+                  <span>
+                    <strong>Choose a project</strong>
+                    <small>Open a project to inspect its applications and environments.</small>
+                  </span>
+                  <Icon name="chevron" size={15} />
+                </Link>
+              )}
+            </Button>
             <Link
               to="/settings"
               search={{ tab: scope.identity.admin ? 'teams' : 'account' }}

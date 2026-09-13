@@ -1,332 +1,208 @@
-import { Input } from '../components/ui/input'
-import { SelectField } from '../components/ui/select'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { Badge, Tooltip } from '../components/ui/surfaces'
-import { relative, timestamp } from '../lib/api'
-import { client, unwrap } from '../lib/client'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { useProjects } from '../lib/projects'
 import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Badge, Tooltip } from '../components/ui/surfaces'
 import { Icon } from '../components/icons'
-import { Copy, Empty, ErrorState, Loading, PageHeader, Status } from '../components/shared'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
-import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
-import { ServiceImageIcon } from '../components/service-image-icon'
+import { Copy, Empty, ErrorState, Loading, PageHeader } from '../components/shared'
 
-const SampleBanner = lazy(() => import('../components/sample-banner'))
+const ProjectWizard = lazy(() => import('../components/project-wizard'))
 
-export const Route = createFileRoute('/')({ component: Applications })
-function Applications() {
+export const Route = createFileRoute('/')({ component: Projects })
+
+function Projects() {
   const scope = useScope()
-  const [search, setSearch] = useState('')
-  const [health, setHealth] = useState('all')
+  const projects = useProjects()
   const navigate = useNavigate()
-  const scopeKey = `${scope.project}/${scope.environment}`
-  const [page, setPage] = useState({
-    scope: scopeKey,
-    cursor: '',
-    previous: [] as string[],
-    number: 1,
-  })
-  const currentPage =
-    page.scope === scopeKey ? page : { scope: scopeKey, cursor: '', previous: [], number: 1 }
-  const applications = useQuery({
-    queryKey: ['applications', scope.project, scope.environment, currentPage.cursor],
-    queryFn: ({ signal }) =>
-      unwrap(
-        client.GET('/applications', {
-          signal,
-          params: {
-            query: {
-              project: scope.project,
-              environment: scope.environment,
-              cursor: currentPage.cursor,
-              limit: 25,
-            },
-          },
-        }),
-      ),
-    enabled: Boolean(scope.project && scope.environment),
-    refetchInterval: 15000,
-    gcTime: 0,
-  })
-  const items = applications.data?.items || []
-  const healthy = items.filter((app) =>
-    ['healthy', 'ready'].includes(app.observed?.status || ''),
-  ).length
-  const observed = items.filter((app) => Boolean(app.observed)).length
-  const services = items.reduce((sum, app) => sum + Object.keys(app.spec.services).length, 0)
-  const replicas = items.reduce(
-    (sum, app) =>
-      sum + (app.observed?.services?.reduce((count, service) => count + service.ready, 0) || 0),
-    0,
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [projectOpen, setProjectOpen] = useState(false)
+  const items = projects.data?.items || []
+  const needle = search.trim().toLowerCase()
+  const filtered = items.filter((project) =>
+    `${project.name} ${project.display_name || ''} ${project.description || ''}`
+      .toLowerCase()
+      .includes(needle),
   )
-  const filtered = items.filter(
-    (app) =>
-      app.name.toLowerCase().includes(search.toLowerCase()) &&
-      (health === 'all' ||
-        (health === 'healthy'
-          ? ['healthy', 'ready'].includes(app.observed?.status || '')
-          : !['healthy', 'ready'].includes(app.observed?.status || ''))),
-  )
-  const next = applications.data?.next_cursor
+  const pages = Math.max(1, Math.ceil(filtered.length / 24))
+  const currentPage = Math.min(page, pages)
+  const visible = filtered.slice((currentPage - 1) * 24, currentPage * 24)
   return (
-    <div className="ops-page application-list-page">
-      <Suspense fallback={null}>
-        <SampleBanner />
-      </Suspense>
+    <div className="ops-page projects-page">
       <PageHeader
-        title="Applications"
+        title="Projects"
+        description="Choose a project to open its applications and environments."
         action={
-          scope.can('deployments:write') && (
-            <div className="toolbar-actions">
-              <Button asChild>
-                <Link to="/builds" aria-label="Deploy from source" title="Deploy from source">
-                  <Icon name="branch" size={14} />
-                  <span className="app-action-label">From source</span>
-                </Link>
-              </Button>
-              <Button
-                variant="primary"
-                aria-label="New application"
-                onClick={() => void navigate({ to: '/applications/new' })}
-              >
-                <Icon name="plus" size={15} />
-                <span className="app-action-label">New application</span>
-                <span className="app-action-short-label">New</span>
-              </Button>
-            </div>
+          scope.identity.admin && (
+            <Button variant="primary" onClick={() => setProjectOpen(true)}>
+              <Icon name="plus" size={15} />
+              New project
+            </Button>
           )
         }
       />
-      <dl className="application-summary" aria-label="Application summary on this page">
-        <div title="Applications on this page">
-          <dt>Applications</dt>
-          <dd>{applications.data ? items.length : '—'}</dd>
+      <dl className="application-summary" aria-label="Project summary">
+        <div>
+          <dt>Projects</dt>
+          <dd>{projects.data ? items.length : '—'}</dd>
         </div>
-        <div title={`${observed} applications observed on this page`}>
-          <dt>Healthy</dt>
-          <dd>{applications.data && observed ? `${healthy} / ${items.length}` : '—'}</dd>
-        </div>
-        <div title="Services in current application revisions on this page">
-          <dt>Services</dt>
-          <dd>{applications.data ? services : '—'}</dd>
-        </div>
-        <div title="Ready replicas in observed services on this page">
-          <dt>Ready replicas</dt>
-          <dd>{applications.data && observed ? replicas : '—'}</dd>
+        <div>
+          <dt>Environments</dt>
+          <dd>
+            {projects.data
+              ? items.reduce((total, project) => total + project.environments.length, 0)
+              : '—'}
+          </dd>
         </div>
       </dl>
-      <section className="ops-resource-list" aria-label="Applications">
+      <section className="projects-catalog" aria-label="Projects">
         <div className="resource-toolbar">
           <div className="ops-search-input">
             <Icon name="search" size={15} />
             <Input
-              aria-label="Filter applications on this page"
-              placeholder="Find application…"
+              aria-label="Filter projects"
+              placeholder="Find project…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setPage(1)
+              }}
             />
           </div>
-          <SelectField
-            compact
-            label="Filter application health"
-            value={health}
-            onValueChange={setHealth}
-            options={[
-              { value: 'all', label: 'All states' },
-              { value: 'healthy', label: 'Healthy' },
-              { value: 'attention', label: 'Needs inspection' },
-            ]}
-          />
           <span className="form-spacer" />
-          <Tooltip content="Refresh observations" side="bottom">
+          <Tooltip content="Refresh projects" side="bottom">
             <Button
-              size="icon"
               variant="ghost"
-              aria-label="Refresh applications"
-              onClick={() => void applications.refetch()}
+              size="icon"
+              aria-label="Refresh projects"
+              onClick={() => void projects.refetch()}
             >
-              <Icon name="refresh" size={15} className={applications.isFetching ? 'spin' : ''} />
+              <Icon name="refresh" size={15} className={projects.isFetching ? 'spin' : ''} />
             </Button>
           </Tooltip>
         </div>
-        {applications.isPending ? (
+        {projects.isPending ? (
           <Loading />
-        ) : applications.error ? (
-          <ErrorState error={applications.error} retry={() => void applications.refetch()} />
-        ) : !items.length && !currentPage.cursor ? (
-          <div className="ops-empty-grid">
-            <Empty
-              title="Your next application starts here"
-              description="Deploy an image, build from a repository, or start with a template."
-              action={
-                <div className="toolbar-actions">
-                  {scope.can('deployments:write') && (
-                    <Button onClick={() => void navigate({ to: '/applications/new' })}>
-                      Deploy application
-                    </Button>
-                  )}
-                  <Link to="/templates" className="button button-secondary">
-                    Browse templates
-                  </Link>
-                </div>
-              }
-            />
-          </div>
+        ) : projects.error ? (
+          <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+        ) : !items.length ? (
+          <Empty
+            title="No projects yet"
+            description={
+              scope.identity.admin
+                ? 'Create a project to organize your applications and environments.'
+                : 'Projects appear here when your administrator gives you access.'
+            }
+            action={
+              scope.identity.admin && (
+                <Button onClick={() => setProjectOpen(true)}>Create project</Button>
+              )
+            }
+          />
         ) : !filtered.length ? (
           <Empty
-            icon="search"
-            title="No matching applications"
-            description="Change the name or health filter, or move to another page."
+            title="No matching projects"
+            description="Try another project name or description."
           />
         ) : (
-          <div className="ops-catalog-grid" aria-label="Application cards">
-            {filtered.map((app) => (
-              <article key={app.id} className="ops-catalog-card interactive">
-                <Brackets />
-                <div className="ops-card-heading">
-                  <div className="ops-card-icons" aria-hidden="true">
-                    {Object.values(app.spec.services)
-                      .slice(0, 3)
-                      .map((service, index) => (
-                        <ServiceImageIcon key={index} image={service.image} />
-                      ))}
-                  </div>
-                  <Status value={app.observed?.status || 'not observed'} small />
-                  <div className="ops-card-actions">
-                    <Menu
-                      trigger={
-                        <Button variant="ghost" size="icon" aria-label={`Actions for ${app.name}`}>
-                          <span aria-hidden="true">···</span>
-                        </Button>
-                      }
+          <div className="ops-catalog-grid project-catalog-grid" aria-label="Project cards">
+            {visible.map((project) => {
+              const name = project.display_name || project.name
+              return (
+                <article className="ops-catalog-card project-card interactive" key={project.id}>
+                  <Brackets />
+                  {project.personal !== undefined && (
+                    <div className="ops-card-heading">
+                      <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
+                    </div>
+                  )}
+                  <h2>
+                    <Link
+                      className="ops-card-link"
+                      to="/projects/$project"
+                      params={{ project: project.name }}
+                      search={{ environment: project.environments[0]?.name }}
+                      aria-label={`Open ${name} project`}
                     >
-                      <MenuItem
-                        onSelect={() =>
-                          void navigate({
-                            to: '/applications/$applicationId',
-                            params: { applicationId: app.id },
-                          })
-                        }
-                      >
-                        <Icon name="box" size={14} />
-                        Inspect application
-                      </MenuItem>
-                      <MenuItem
-                        onSelect={() =>
-                          void navigate({
-                            to: '/applications/$applicationId',
-                            params: { applicationId: app.id },
-                            search: { tab: 'deployments' },
-                          })
-                        }
-                      >
-                        <Icon name="branch" size={14} />
-                        Deployment history
-                      </MenuItem>
-                      {scope.can('deployments:write') && (
-                        <MenuItem
-                          onSelect={() =>
-                            void navigate({
-                              to: '/applications/$applicationId/configure',
-                              params: { applicationId: app.id },
-                              search: { mode: 'form' },
-                            })
-                          }
-                        >
-                          <Icon name="settings" size={14} />
-                          Configure application
-                        </MenuItem>
+                      {name}
+                    </Link>
+                  </h2>
+                  <div className="ops-object-id">
+                    <code title={project.name}>{project.name}</code>
+                    <Copy value={project.name} />
+                  </div>
+                  {project.description && (
+                    <p className="project-card-description">{project.description}</p>
+                  )}
+                  {project.environments.length > 0 && (
+                    <ul className="project-card-environments" aria-label={`${name} environments`}>
+                      {project.environments.slice(0, 3).map((environment) => (
+                        <li key={environment.name}>{environment.name}</li>
+                      ))}
+                      {project.environments.length > 3 && (
+                        <li>
+                          <span aria-hidden="true">+{project.environments.length - 3}</span>
+                          <span className="sr-only">
+                            {project.environments.length - 3} more environments:{' '}
+                            {project.environments
+                              .slice(3)
+                              .map((item) => item.name)
+                              .join(', ')}
+                          </span>
+                        </li>
                       )}
-                    </Menu>
+                    </ul>
+                  )}
+                  <div className="ops-card-footer">
+                    <span>
+                      {project.environments.length}{' '}
+                      {project.environments.length === 1 ? 'environment' : 'environments'}
+                    </span>
+                    <Icon name="arrow" size={15} />
                   </div>
-                </div>
-                <h2>
-                  <Link
-                    to="/applications/$applicationId"
-                    params={{ applicationId: app.id }}
-                    className="ops-card-link"
-                    aria-label={`Open ${app.name}`}
-                  >
-                    {app.name}
-                  </Link>
-                </h2>
-                <div className="ops-object-id">
-                  <code title={app.id}>{app.id}</code>
-                  <Copy value={app.id} />
-                </div>
-                <dl className="ops-card-facts">
-                  <div>
-                    <dt>Services</dt>
-                    <dd>{Object.keys(app.spec.services).length}</dd>
-                  </div>
-                  <div>
-                    <dt>Ready replicas</dt>
-                    <dd>
-                      {app.observed
-                        ? app.observed.services?.reduce((n, service) => n + service.ready, 0) || 0
-                        : 'Not observed'}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="ops-card-footer">
-                  <Badge>r{app.revision}</Badge>
-                  <time title={app.updated_at} dateTime={app.updated_at}>
-                    {relative(app.updated_at)}
-                  </time>
-                  <Icon name="arrow" size={15} />
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         )}
-        <div className="resource-footnote">
-          <span>
-            {items.length} applications on page {currentPage.number}
-          </span>
-          <span>
-            {applications.dataUpdatedAt
-              ? `Observed ${timestamp(new Date(applications.dataUpdatedAt).toISOString())}`
-              : 'Waiting for API'}
-          </span>
-        </div>
-        {(next || currentPage.cursor) && (
+        {pages > 1 && !projects.error && (
           <div className="list-pagination">
-            <Button
-              size="sm"
-              disabled={!currentPage.previous.length || applications.isFetching}
-              onClick={() =>
-                setPage({
-                  scope: scopeKey,
-                  cursor: currentPage.previous.at(-1) || '',
-                  previous: currentPage.previous.slice(0, -1),
-                  number: currentPage.number - 1,
-                })
-              }
-            >
+            <Button size="sm" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
               Previous
             </Button>
+            <span className="muted-text" role="status">
+              Page {currentPage} of {pages}
+            </span>
             <Button
               size="sm"
-              disabled={!next || applications.isFetching}
-              onClick={() => {
-                if (next)
-                  setPage({
-                    scope: scopeKey,
-                    cursor: next,
-                    previous: [...currentPage.previous, currentPage.cursor].slice(-20),
-                    number: currentPage.number + 1,
-                  })
-              }}
+              disabled={currentPage === pages}
+              onClick={() => setPage(currentPage + 1)}
             >
               Next
-              <Icon name="chevron" size={13} />
             </Button>
           </div>
         )}
       </section>
+      {scope.identity.admin && projectOpen && (
+        <Suspense fallback={null}>
+          <ProjectWizard
+            open={projectOpen}
+            onOpenChange={setProjectOpen}
+            onCreated={(project, environment) => {
+              void projects.refetch().then(() =>
+                navigate({
+                  to: '/projects/$project',
+                  params: { project },
+                  search: { environment },
+                }),
+              )
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

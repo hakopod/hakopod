@@ -77,7 +77,7 @@ test('parent navigation uses route context without relying on browser history', 
     assert.deepEqual(parentNavigation(`/applications/example/${route}`, { service: 'worker' }), {
       to: '/applications/example',
       label: 'Back to service',
-      search: { tab: 'settings', service: 'worker' },
+      search: { tab: route === 'environment' ? 'environment' : 'settings', service: 'worker' },
     })
   }
   assert.deepEqual(parentNavigation('/applications/example/domains', { service: 'web' }), {
@@ -102,7 +102,7 @@ test('parent navigation uses route context without relying on browser history', 
   })
   assert.deepEqual(parentNavigation('/deployments/release'), {
     to: '/',
-    label: 'Back to applications',
+    label: 'Back to projects',
   })
   assert.deepEqual(parentNavigation('/networks/private/connect'), {
     to: '/networks/private',
@@ -142,6 +142,24 @@ test('parent navigation uses route context without relying on browser history', 
       search: { q: 'data', category: 'database' },
     },
   )
+})
+
+test('project navigation returns to its URL scope and has a safe unscoped fallback', () => {
+  assert.deepEqual(parentNavigation('/projects/production', { environment: 'staging' }), {
+    to: '/',
+    label: 'Back to projects',
+  })
+  for (const path of ['/applications/example', '/applications/new', '/applications/import']) {
+    assert.deepEqual(
+      parentNavigation(path, {}, undefined, { project: 'team/a', environment: 'staging' }),
+      {
+        to: '/projects/team%2Fa',
+        label: 'Back to applications',
+        search: { environment: 'staging' },
+      },
+    )
+    assert.deepEqual(parentNavigation(path), { to: '/', label: 'Back to projects' })
+  }
 })
 
 test('environment creation is available to project owners but never scoped viewers or developers', () => {

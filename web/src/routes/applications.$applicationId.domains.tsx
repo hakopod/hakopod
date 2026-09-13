@@ -83,7 +83,7 @@ function ApplicationDomains() {
       title={plan ? 'Review domain changes' : `${app.name} domains`}
       description="Prove domain ownership, review the application revision, then activate routing."
       breadcrumbs={[
-        { label: 'Applications', to: '/' },
+        { label: 'Applications', to: `/projects/${encodeURIComponent(app.project)}` },
         { label: app.name, to: `/applications/${applicationId}` },
         { label: 'Custom domains' },
       ]}

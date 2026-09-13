@@ -54,7 +54,10 @@ under Administration. The dashboard never fabricates a first owner.
 
 ## Implemented workflows
 
-- Project/environment selection and project creation for administrators.
+- Projects is the default view, with searchable cards and 24 projects per page.
+  Opening a project shows its applications; the header switches to Applications.
+  Project URLs preserve the environment, and unavailable scopes show an explicit
+  state without falling back to another project. Administrators can create projects.
 - Real application overview, grouped services, desired versus observed state,
   deployment history, public URLs, private addresses, and network membership.
 - Compact application and node table/card views with selectable inspectors;

@@ -4,6 +4,29 @@ Verified locally on 2026-09-12 and 2026-09-13. This record covers the Hatch
 migration, account and runtime changes, compact dashboard, and virtual networks.
 It distinguishes checks against real services from isolated browser fixtures.
 
+## Project overview and navigation
+
+The default route lists accessible projects in pages of 24 cards. Cards show
+actual project metadata and up to three environment names, without application
+queries or invented health totals. Opening a project uses
+`/projects/{project}?environment={environment}` and changes the first header link
+to Applications. Invalid scopes show an unavailable state. Detail navigation
+shares existing resource queries so a pending or failed deep link cannot inherit
+another project's context.
+
+Page headings have balanced vertical padding. Tabs and navigation use the chosen
+accent for text and an indicator line without a filled active background. Deploy
+changes uses the primary accent, the resource-metrics callout is a native link,
+and variable removal uses a named trash icon. Long build status labels no longer
+squeeze narrow titles, and horizontal Settings navigation reveals the active
+section on selection, resize and font load without scrolling the page.
+
+The Go suite, 18 server tests, 28 UI tests, typecheck, formatting and production
+build passed. Additional read-only checks exercised 22 navigation cases and 12
+actual shell-render scenarios with saved scope differing from the loaded resource.
+The independent browser review is recorded in
+[the project navigation checklist](../docs/project-navigation-checklist.md).
+
 ## Global layout and independent UI review
 
 Page wrappers now fill their available width without outer horizontal padding
@@ -291,11 +314,11 @@ level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 104 | 1,360,655 | 431,416 |
-| CSS | 3 | 148,717 | 27,385 |
+| JavaScript | 105 | 1,372,432 | 435,214 |
+| CSS | 3 | 150,222 | 27,634 |
 | Fonts | 2 | 236,032 | 109,697 |
 
-The main JavaScript entry is 401,528 bytes. The 331,178-byte xterm chunk loads only
+The main JavaScript entry is 404,666 bytes. The 331,178-byte xterm chunk loads only
 after Connect. Project creation, appearance and guidance panels load on demand.
 Network routes, environment editors and the new service secrets panel also load
 separately. The secrets panel is 5.68 kB raw, 2.44 kB gzipped, and adds no polling.
@@ -303,19 +326,19 @@ This pass adds no
 chart library, network daemon or model runtime. The portable UI source archive
 remains 135,846 bytes and contains only the consumer library.
 
-After restart and HTTP smoke checks, a process sample showed 21,536 KiB API RSS
-and 112,592 KiB dashboard RSS. These are point-in-time observations, not peak or
+After restart and HTTP smoke checks, a process sample showed 26,672 KiB API RSS
+and 117,696 KiB dashboard RSS. These are point-in-time observations, not peak or
 capacity guarantees. Go retains its 192 MiB soft memory target, and Node its
 192 MiB old-space cap. Neither setting caps total process memory.
 
-Bounds remain: 25 applications per page, 24 metric samples, at most 1,000 matched
+Bounds remain: 24 projects or 25 applications per page, 24 metric samples, at most 1,000 matched
 log entries, live logs limited to 1,000 lines/256 KiB, 500 terminal scrollback lines
 and a 16 KiB input queue. Service metrics poll every 15 seconds only in the active
 foreground view, with cancellation on exit. TOML highlighting scans at most
 65,536 UTF-16 units and emits at most 512 colored spans, keeping the complete
 remaining source visible without highlighting.
 
-The restarted production preview returned HTTP 200 for applications, networks,
+The restarted production preview returned HTTP 200 for projects, applications, networks,
 network creation, catalog, settings and proxied auth status. Existing
 administrator setup and both application revisions remained unchanged.
 See [the dashboard README](README.md#authentication-and-limits) for further limits.

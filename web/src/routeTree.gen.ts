@@ -35,6 +35,7 @@ import { Route as LoginSignupRouteImport } from './routes/login.signup'
 import { Route as LoginVerifyRouteImport } from './routes/login.verify'
 import { Route as NetworksNetworkNameRouteImport } from './routes/networks.$networkName'
 import { Route as NetworksNewRouteImport } from './routes/networks.new'
+import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
 import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
@@ -186,6 +187,11 @@ const NetworksNewRoute = NetworksNewRouteImport.update({
   path: '/new',
   getParentRoute: () => NetworksRoute,
 } as any)
+const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
+  id: '/projects/$project',
+  path: '/projects/$project',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsHostAccessRoute = SettingsHostAccessRouteImport.update({
   id: '/host-access',
   path: '/host-access',
@@ -321,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/projects/$project': typeof ProjectsProjectRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -368,6 +375,7 @@ export interface FileRoutesByTo {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/projects/$project': typeof ProjectsProjectRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -416,6 +424,7 @@ export interface FileRoutesById {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/projects/$project': typeof ProjectsProjectRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -465,6 +474,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/projects/$project'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -512,6 +522,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/projects/$project'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -559,6 +570,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/projects/$project'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -601,6 +613,7 @@ export interface RootRouteChildren {
   LoginResetRoute: typeof LoginResetRoute
   LoginSignupRoute: typeof LoginSignupRoute
   LoginVerifyRoute: typeof LoginVerifyRoute
+  ProjectsProjectRoute: typeof ProjectsProjectRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -786,6 +799,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/networks/new'
       preLoaderRoute: typeof NetworksNewRouteImport
       parentRoute: typeof NetworksRoute
+    }
+    '/projects/$project': {
+      id: '/projects/$project'
+      path: '/projects/$project'
+      fullPath: '/projects/$project'
+      preLoaderRoute: typeof ProjectsProjectRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/settings/host-access': {
       id: '/settings/host-access'
@@ -1097,6 +1117,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginResetRoute: LoginResetRoute,
   LoginSignupRoute: LoginSignupRoute,
   LoginVerifyRoute: LoginVerifyRoute,
+  ProjectsProjectRoute: ProjectsProjectRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

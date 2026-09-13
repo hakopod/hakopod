@@ -269,7 +269,7 @@ export function SourceForm({
   return (
     <FormPage
       breadcrumbs={[
-        { label: 'Applications', to: '/' },
+        { label: 'Applications', to: `/projects/${encodeURIComponent(application.project)}` },
         { label: application.name, to: `/applications/${application.id}` },
         { label: 'Repository source' },
       ]}

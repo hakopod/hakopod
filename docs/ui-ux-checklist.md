@@ -19,6 +19,10 @@ Copy this standing checklist into each UI review. The blank boxes are a reusable
 - [ ] Page and form-section headings have no decorative icon or visible description. One title carries the context; necessary actions remain aligned. Status and data needed for decisions stay visible; explanatory prose moves to help.
 - [ ] Help is short, named, keyboard reachable and available on touch. Focus/hover or activation reveals it; Escape dismisses it; it stays inside the viewport. It is not the sole home for essential warnings or field instructions.
 - [ ] Pages have one h1, sensible subordinate heading order and no duplicate headings or breadcrumbs. Nested back navigation uses the global header.
+- [ ] Projects is the default home regardless of saved scope. Application lists are URL-scoped to a valid project and environment; invalid or unavailable scopes never fall back silently or display another project’s cached data.
+- [ ] Page-heading vertical padding is balanced above and below at every responsive layout.
+- [ ] Active tabs use accent text, icons and underline only. Active, hover and focus states do not add a background fill; keyboard focus stays visible.
+- [ ] The active section remains visible inside scrollable navigation after deep links, selection changes, font loading and resizing, without scrolling the document.
 - [ ] Desktop navigation is one compact row. Mobile reflow and long names do not cause document overflow or clipped actions.
 - [ ] Summaries are inline and compact. Catalog lists have no outer panel border. Cards keep restrained surfaces, readable spacing and meaningful hover/focus states.
 - [ ] Application/service grids use at most four normal desktop columns and five wide columns. Sparse grids retain card widths.
@@ -77,3 +81,7 @@ The review found and resolved overflowing Hatch corner brackets, mobile tooltip 
 Screenshot inspection also caught lazy-tab placeholders and incomplete fixture records that geometry assertions missed. Those early captures were discarded as evidence. The final run exercised loaded content with complete artificial records.
 
 Local evidence is under `work/ui-migration/global-review/`: `routes.json`, `results.json`, `edge-results.json`, `help-results.json`, the review scripts and full-page screenshots. Files use case IDs from the matrix, theme and viewport width. These ignored fixtures support UI review; they do not claim new end-to-end verification of backup, deployment or authentication operations.
+
+## Project navigation review
+
+The next pass is recorded in [the project navigation checklist](project-navigation-checklist.md). The completed global-layout review above remains historical evidence.

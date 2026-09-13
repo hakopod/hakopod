@@ -8,16 +8,25 @@ export function parentNavigation(
   pathname: string,
   search: Record<string, unknown> = {},
   deploymentApplication?: string,
+  scope?: { project: string; environment: string },
 ): ParentNavigation | null {
   const parts = pathname.split('/').filter(Boolean)
+  const applications: ParentNavigation = scope?.project
+    ? {
+        to: `/projects/${encodeURIComponent(scope.project)}`,
+        label: 'Back to applications',
+        search: scope.environment ? { environment: scope.environment } : {},
+      }
+    : { to: '/', label: 'Back to projects' }
   const service = typeof search.service === 'string' ? search.service : ''
   const application = (id: string, tab: string, includeService = false): ParentNavigation => ({
     to: `/applications/${id}`,
     label: includeService && service ? 'Back to service' : 'Back to application',
     search: { tab, ...(includeService && service ? { service } : {}) },
   })
+  if (parts[0] === 'projects') return { to: '/', label: 'Back to projects' }
   if (parts[0] === 'applications' && parts[1]) {
-    if (['new', 'import'].includes(parts[1])) return { to: '/', label: 'Back to applications' }
+    if (['new', 'import'].includes(parts[1])) return applications
     if (parts[2]) {
       if (parts[2] === 'source') return application(parts[1], 'source')
       const tab =
@@ -26,16 +35,18 @@ export function parentNavigation(
             ? 'network'
             : 'networking'
           : service
-            ? 'settings'
+            ? parts[2] === 'environment'
+              ? 'environment'
+              : 'settings'
             : 'configuration'
       return application(parts[1], tab, true)
     }
-    return service ? application(parts[1], 'services') : { to: '/', label: 'Back to applications' }
+    return service ? application(parts[1], 'services') : applications
   }
   if (parts[0] === 'deployments' && parts[1])
     return deploymentApplication
       ? application(encodeURIComponent(deploymentApplication), 'deployments')
-      : { to: '/', label: 'Back to applications' }
+      : applications
   if (parts[0] === 'builds' && parts[1]) {
     if (parts[2] === 'edit') return { to: `/builds/${parts[1]}`, label: 'Back to build' }
     if (parts[1] === 'new' && typeof search.application === 'string' && search.application)

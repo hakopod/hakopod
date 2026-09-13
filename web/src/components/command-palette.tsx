@@ -50,8 +50,30 @@ export default function CommandPalette({
     gcTime: 0,
   })
   const destinations: Destination[] = [
+    {
+      id: '/',
+      label: 'All projects',
+      icon: 'grid',
+      group: 'Navigate',
+      action: () => void navigate({ to: '/' }),
+    },
+    ...(project
+      ? [
+          {
+            id: 'project-applications',
+            label: 'Applications',
+            icon: 'box',
+            group: 'Navigate',
+            action: () =>
+              void navigate({
+                to: '/projects/$project',
+                params: { project },
+                search: { environment: environment || undefined },
+              }),
+          },
+        ]
+      : []),
     ...[
-      { to: '/', icon: 'grid', label: 'Applications' },
       { to: '/templates', icon: 'box', label: 'Catalog' },
       { to: '/builds', icon: 'branch', label: 'Builds' },
       { to: '/networks', icon: 'network', label: 'Networks' },

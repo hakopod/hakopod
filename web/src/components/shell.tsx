@@ -17,7 +17,9 @@ import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { Identity } from '../lib/types'
 import { ScopeContext, canAccess, canCreateEnvironment, resolveWorkspaceScope } from '../lib/scope'
+import { resolveProjectRouteScope, useProjects } from '../lib/projects'
 import { useTheme } from '../lib/appearance'
+import { useActiveSection } from '../lib/use-active-section'
 import { Avatar } from './avatar'
 import { Logo, Icon } from './icons'
 import { Button } from './ui/button'
@@ -138,10 +140,46 @@ function Workspace({
   toggleTheme: () => void
 }) {
   const location = useLocation()
-  const projects = useQuery({
-    queryKey: ['projects'],
-    queryFn: ({ signal }) => unwrap(client.GET('/projects', { signal })),
-    staleTime: 60000,
+  const projects = useProjects()
+  // Share detail caches so a deep link never inherits another project's navigation.
+  const deploymentId = /^\/deployments\/([^/]+)$/.exec(location.pathname)?.[1]
+  const deployment = useQuery({
+    queryKey: ['deployment', deploymentId],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/deployments/{id}', { signal, params: { path: { id: deploymentId! } } })),
+    enabled: Boolean(deploymentId),
+    select: (item) => item.application_id,
+    staleTime: 5000,
+    gcTime: 0,
+  })
+  const applicationPath = /^\/applications\/([^/]+)/.exec(location.pathname)?.[1]
+  const buildPath = /^\/builds\/([^/]+)/.exec(location.pathname)?.[1]
+  const buildId = buildPath && buildPath !== 'new' ? buildPath : undefined
+  const build = useQuery({
+    queryKey: ['build', buildId],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/builds/{id}', { signal, params: { path: { id: buildId! } } })),
+    enabled: Boolean(buildId),
+    select: (item) => ({ project: item.project, environment: item.environment }),
+    staleTime: 5000,
+    gcTime: 0,
+  })
+  const applicationId =
+    applicationPath && !['new', 'import'].includes(applicationPath)
+      ? applicationPath
+      : buildPath === 'new' && typeof location.search.application === 'string'
+        ? location.search.application
+        : deployment.data
+  const resource = useQuery({
+    queryKey: ['application', applicationId],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/applications/{id}', { signal, params: { path: { id: applicationId! } } }),
+      ),
+    enabled: Boolean(applicationId),
+    select: (item) => ({ project: item.project, environment: item.environment }),
+    staleTime: 5000,
+    gcTime: 0,
   })
   const [selected, setSelected] = useState(() => {
     try {
@@ -197,20 +235,56 @@ function Workspace({
   }, [commandOpen])
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { project: currentProject, environment } = resolveWorkspaceScope(projects.data?.items, {
+  const preferredScope = resolveWorkspaceScope(projects.data?.items, {
     project: identity.project || selected.project,
     environment: identity.environment || selected.environment,
   })
+  const overview = location.pathname === '/'
+  const projectPath = /^\/projects\/([^/]+)\/?$/.exec(location.pathname)
+  let routeProject = ''
+  try {
+    routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
+  } catch {}
+  const routeScope = projectPath
+    ? resolveProjectRouteScope(projects.data?.items, routeProject, location.search.environment)
+    : undefined
+  const resourcePage = Boolean(applicationId || deploymentId || buildId)
+  const resourceData = buildId
+    ? build.isError
+      ? undefined
+      : build.data
+    : resource.isError
+      ? undefined
+      : resource.data
+  const resourceScope = resourcePage
+    ? resolveProjectRouteScope(
+        projects.data?.items,
+        resourceData?.project || '',
+        resourceData?.environment,
+      )
+    : undefined
+  const { project: currentProject, environment } = overview
+    ? { project: undefined, environment: '' }
+    : routeScope || resourceScope || preferredScope
   const project = currentProject?.name || ''
   const createEnvironmentAllowed = canCreateEnvironment(identity, project)
   const can = (permission: string) => canAccess(identity, project, permission)
   const changeScope = (next: { project: string; environment: string }) => {
     syncScope(next.project, next.environment)
-    void navigate({ to: '/' })
+    void navigate({
+      to: '/projects/$project',
+      params: { project: next.project },
+      search: { environment: next.environment },
+    })
     setMobileOpen(false)
   }
   const navigation = [
-    { to: '/', icon: 'grid', label: 'Applications' },
+    {
+      to: project ? `/projects/${encodeURIComponent(project)}` : '/',
+      search: project && environment ? { environment } : undefined,
+      icon: 'grid',
+      label: project ? 'Applications' : 'Projects',
+    },
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
     { to: '/networks', icon: 'network', label: 'Networks' },
@@ -219,8 +293,9 @@ function Workspace({
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ]
   const isActive = (to: string) =>
-    to === '/'
-      ? location.pathname === '/' || /^\/(applications|deployments)(\/|$)/.test(location.pathname)
+    to === '/' || to.startsWith('/projects/')
+      ? location.pathname === '/' ||
+        /^\/(projects|applications|deployments)(\/|$)/.test(location.pathname)
       : location.pathname === to || location.pathname.startsWith(to + '/')
   const accountRole = identity.owner
     ? 'Super admin'
@@ -239,10 +314,11 @@ function Workspace({
     }
   }
   const links = (mobile = false) =>
-    navigation.map(({ to, icon, label }) => (
+    navigation.map(({ to, search, icon, label }) => (
       <Link
         key={to}
         to={to}
+        search={search}
         className="hako-nav-link interactive"
         data-active={isActive(to) || undefined}
         aria-current={isActive(to) ? 'page' : undefined}
@@ -274,7 +350,7 @@ function Workspace({
             >
               <Icon name="menu" />
             </Button>
-            <Link to="/" className="hako-wordmark" aria-label="Hakopod applications">
+            <Link to="/" className="hako-wordmark" aria-label="Hakopod projects">
               <img
                 className="hako-wordmark-dark"
                 src="/brand/hakopod-horizontal-paper.svg"
@@ -294,19 +370,23 @@ function Workspace({
               <SelectField
                 compact
                 label="Project"
-                title={currentProject?.display_name || project || 'Select a project'}
+                title={currentProject?.display_name || project || 'All projects'}
                 value={project}
-                disabled={Boolean(identity.project)}
-                onValueChange={(value) =>
+                disabled={Boolean(identity.project) && !overview}
+                onValueChange={(value) => {
+                  if (!value) {
+                    void navigate({ to: '/' })
+                    return
+                  }
                   changeScope({
                     project: value,
                     environment:
                       projects.data?.items.find((item) => item.name === value)?.environments?.[0]
                         ?.name || '',
                   })
-                }
+                }}
                 options={[
-                  ...(!project ? [{ value: '', label: 'Select a project' }] : []),
+                  { value: '', label: 'All projects' },
                   ...(project && !currentProject ? [{ value: project, label: project }] : []),
                   ...(projects.data?.items.map((item) => ({
                     value: item.name,
@@ -315,35 +395,37 @@ function Workspace({
                 ]}
               />
             </div>
-            <Icon name="chevron" size={12} />
-            <div className="hako-scope-select hako-environment-select">
-              <SelectField
-                compact
-                ref={environmentTrigger}
-                label="Environment"
-                title={environment || 'Select an environment'}
-                value={environment}
-                disabled={Boolean(identity.environment) || !project}
-                onValueChange={(value) => {
-                  if (value === '__create_environment__') setEnvironmentOpen(true)
-                  else changeScope({ project, environment: value })
-                }}
-                options={[
-                  ...(!environment ? [{ value: '', label: 'Select an environment' }] : []),
-                  ...(environment &&
-                  !currentProject?.environments.some((item) => item.name === environment)
-                    ? [{ value: environment, label: environment }]
-                    : []),
-                  ...(currentProject?.environments.map((item) => ({
-                    value: item.name,
-                    label: item.name,
-                  })) || []),
-                  ...(createEnvironmentAllowed && currentProject
-                    ? [{ value: '__create_environment__', label: 'Create environment…' }]
-                    : []),
-                ]}
-              />
-            </div>
+            {!overview && <Icon name="chevron" size={12} />}
+            {!overview && (
+              <div className="hako-scope-select hako-environment-select">
+                <SelectField
+                  compact
+                  ref={environmentTrigger}
+                  label="Environment"
+                  title={environment || 'Select an environment'}
+                  value={environment}
+                  disabled={Boolean(identity.environment) || !project}
+                  onValueChange={(value) => {
+                    if (value === '__create_environment__') setEnvironmentOpen(true)
+                    else changeScope({ project, environment: value })
+                  }}
+                  options={[
+                    ...(!environment ? [{ value: '', label: 'Select an environment' }] : []),
+                    ...(environment &&
+                    !currentProject?.environments.some((item) => item.name === environment)
+                      ? [{ value: environment, label: environment }]
+                      : []),
+                    ...(currentProject?.environments.map((item) => ({
+                      value: item.name,
+                      label: item.name,
+                    })) || []),
+                    ...(createEnvironmentAllowed && currentProject
+                      ? [{ value: '__create_environment__', label: 'Create environment…' }]
+                      : []),
+                  ]}
+                />
+              </div>
+            )}
             {identity.admin && (
               <Tooltip content="Create a project">
                 <Button
@@ -462,10 +544,12 @@ function Workspace({
               {sessionError}
             </div>
           )}
-          {projects.error && (
+          {projects.error && !overview && !projectPath && (
             <ErrorState error={projects.error} retry={() => void projects.refetch()} />
           )}
-          {!project && projects.isPending ? (
+          {overview || projectPath || resourcePage ? (
+            children
+          ) : !project && projects.isPending ? (
             <Loading />
           ) : !project &&
             !projects.error &&
@@ -513,7 +597,7 @@ function Workspace({
         >
           <SheetHeader>
             <SheetTitle>Navigation</SheetTitle>
-            <SheetDescription>Applications and installation controls.</SheetDescription>
+            <SheetDescription>Projects, applications and installation controls.</SheetDescription>
           </SheetHeader>
           <SheetBody>
             <nav
@@ -561,8 +645,8 @@ function Workspace({
           <ProjectWizard
             open={projectOpen}
             onOpenChange={setProjectOpen}
-            onCreated={(name, env) => {
-              void queryClient.invalidateQueries({ queryKey: ['projects'] })
+            onCreated={async (name, env) => {
+              await queryClient.invalidateQueries({ queryKey: ['projects'] })
               changeScope({ project: name, environment: env })
             }}
           />
@@ -623,6 +707,7 @@ function Preferences({
   restoreFocus: () => void
 }) {
   const [section, setSection] = useState('profile')
+  const navigationRoot = useActiveSection(section)
   return (
     <Dialog
       open={open}
@@ -635,7 +720,7 @@ function Preferences({
       }}
       wide
     >
-      <div className="hako-preferences">
+      <div className="hako-preferences" ref={navigationRoot}>
         <SettingsLayout
           sections={[
             { id: 'profile', label: 'Profile', group: 'Personal' },
