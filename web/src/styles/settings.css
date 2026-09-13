@@ -1,12 +1,6 @@
 .settings-page,
 .catalog-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-}
-.hako-shell .hako-settings-main {
-  padding: 0;
-  max-width: none;
+  @apply grid grid-cols-1 content-start;
 }
 .hako-settings-header {
   display: flex;
@@ -397,7 +391,11 @@
     display: flex;
     flex-wrap: nowrap;
     overflow: auto;
-    padding: 12px;
+    @apply -mx-4 px-4 py-3;
+
+    @variant sm {
+      @apply -mx-6 px-6;
+    }
     border-right: 0;
     border-bottom: 1px solid var(--hairline);
   }
@@ -410,12 +408,6 @@
   }
   .settings-page .settings-content {
     padding: 16px 0 24px;
-  }
-  .settings-page .settings-nav button[data-active='true']::after {
-    display: block;
-    inset: auto 0 0;
-    width: auto;
-    height: 2px;
   }
 }
 @media (max-width: 800px) {

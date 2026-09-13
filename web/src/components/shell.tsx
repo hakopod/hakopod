@@ -536,11 +536,7 @@ function Workspace({
             </Menu>
           </div>
         </header>
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className={`page-content hako-page-content${location.pathname === '/settings' ? ' hako-settings-main' : ''}`}
-        >
+        <main id="main-content" tabIndex={-1} className="page-content hako-page-content">
           {sessionError && (
             <div className="hako-session-error" role="alert">
               {sessionError}

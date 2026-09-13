@@ -1,7 +1,5 @@
 .ops-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
+  @apply grid min-w-0 grid-cols-1;
 }
 .ops-page > *,
 .ops-run-detail > *,
@@ -37,6 +35,12 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+.ops-page .application-heading > div {
+  @apply min-w-0 max-w-full;
+}
+.ops-page .application-heading h1 {
+  overflow-wrap: anywhere;
+}
 .ops-page .application-heading .app-symbol {
   display: none;
 }
@@ -46,6 +50,15 @@
 }
 .ops-page .application-metadata code {
   overflow-wrap: anywhere;
+}
+.application-metadata .application-endpoint-link {
+  @apply inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap;
+}
+.application-metadata .application-endpoint-text {
+  @apply block min-w-0 max-w-80 truncate;
+}
+.application-endpoint-link > svg {
+  @apply shrink-0;
 }
 .ops-page .application-context-strip {
   border-radius: 0;

@@ -33,6 +33,10 @@
 .runtime-summary > .button {
   flex-shrink: 0;
 }
+.application-alarm-links {
+  @apply mt-4;
+}
+
 .alarm-toolbar {
   justify-content: space-between;
   padding-block: 8px;

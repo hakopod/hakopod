@@ -7,6 +7,7 @@ import { APIError, message, relative } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import {
   applicationRuntimeHealth,
   runtimeReplicaSummary,
@@ -73,6 +74,7 @@ function ApplicationDetail() {
   const scope = useScope()
   const navigate = useNavigate()
   const [tab, setTab] = useState(selectedTab || 'services')
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   useEffect(() => {
     if (selectedTab) setTab(selectedTab)
   }, [selectedTab])
@@ -132,8 +134,17 @@ function ApplicationDetail() {
             </span>
             <span>Updated {relative(app.updated_at)}</span>
             {endpoint && /^https?:\/\//.test(endpoint) && (
-              <a href={endpoint} target="_blank" rel="noreferrer">
-                {endpoint.replace(/^https?:\/\//, '')}
+              <a
+                className="application-endpoint-link"
+                href={endpoint}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`${endpoint} (opens in a new tab)`}
+                title={endpoint}
+              >
+                <span className="application-endpoint-text">
+                  {endpoint.replace(/^https?:\/\//, '')}
+                </span>
                 <Icon name="external" size={12} />
               </a>
             )}
@@ -163,7 +174,11 @@ function ApplicationDetail() {
         canInspectLogs={scope.can('logs:read')}
       />
       <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="tab-list application-tabs" aria-label="Application sections">
+        <Tabs.List
+          ref={navigationRoot}
+          className="tab-list application-tabs"
+          aria-label="Application sections"
+        >
           {[
             ['services', 'box', 'Services'],
             ['topology', 'network', 'Topology'],

@@ -3,6 +3,7 @@
 .light {
   --error-surface: color-mix(in srgb, var(--destructive) 9%, var(--card));
   --warning-surface: color-mix(in srgb, var(--warn) 9%, var(--card));
+  --navigation-active: var(--destructive);
   --font-sans: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'Space Mono', ui-monospace, monospace;
 }
@@ -179,8 +180,10 @@ input[type='radio']:focus-visible {
   outline-offset: 3px;
 }
 .field-stack {
-  display: grid;
-  gap: 20px;
+  @apply grid min-w-0 grid-cols-1 gap-5;
+}
+.field-stack > * {
+  @apply min-w-0;
 }
 .field-help {
   font-size: 13px;
@@ -277,35 +280,33 @@ input[type='radio']:focus-visible {
   align-items: center;
   gap: 8px;
   border: 0;
-  border-bottom: 2px solid transparent;
   margin: 0;
   padding: 14px 0;
   font-size: 15px;
   background: transparent;
 }
 .tab-trigger:is([data-state='active'], .selected, [aria-current='page']) {
-  color: var(--action-text);
-  border-bottom-color: var(--action-text);
+  color: var(--navigation-active);
 }
 .tab-trigger:is(:hover, :focus-visible) {
   background: transparent;
 }
 .tab-trigger:focus-visible {
-  outline: 2px solid var(--action-text);
+  outline: 2px solid var(--navigation-active);
   outline-offset: -2px;
 }
 .settings-nav button:is(:hover, :focus-visible, [data-active='true']) {
   background: transparent;
 }
 .settings-nav button:is(:focus-visible, [data-active='true']) {
-  color: var(--action-text);
+  color: var(--navigation-active);
 }
 .settings-nav button:focus-visible {
-  outline: 2px solid var(--action-text);
+  outline: 2px solid var(--navigation-active);
   outline-offset: -2px;
 }
 .settings-nav button[data-active='true']::after {
-  background: var(--action-text);
+  content: none;
 }
 .tab-content {
   min-width: 0;

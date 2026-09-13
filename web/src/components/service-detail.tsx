@@ -8,6 +8,7 @@ import { message, relative, timestamp } from '../lib/api'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-health'
 import { ApplicationAlarmLinks, RuntimeNotice } from './runtime-notice'
 import {
@@ -93,6 +94,7 @@ export function ServiceDetail({
     initialTab && serviceTabs.includes(initialTab) ? initialTab : 'overview',
   )
   const [terminalPod, setTerminalPod] = useState(initialPod || '')
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   useEffect(() => {
     if (initialTab && serviceTabs.includes(initialTab)) setTab(initialTab)
   }, [initialTab])
@@ -247,7 +249,11 @@ export function ServiceDetail({
           })
         }}
       >
-        <Tabs.List className="tab-list application-tabs" aria-label="Service sections">
+        <Tabs.List
+          ref={navigationRoot}
+          className="tab-list application-tabs"
+          aria-label="Service sections"
+        >
           {[
             ['overview', 'activity', 'Overview'],
             ['pods', 'box', 'Pods'],

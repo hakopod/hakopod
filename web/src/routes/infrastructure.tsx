@@ -5,6 +5,7 @@ import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Dialog } from '../components/ui/dialog'
 import * as Tabs from '@radix-ui/react-tabs'
 import { useScope, canOpenHostTerminal } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import type { Node } from '../lib/types'
 import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -53,6 +54,7 @@ function gib(bytes: number) {
 function Infrastructure() {
   const scope = useScope()
   const { tab } = Route.useSearch()
+  const navigationRoot = useActiveSection(tab || 'nodes', '.tab-list')
   const navigate = Route.useNavigate()
   return (
     <div className="ops-page">
@@ -85,7 +87,7 @@ function Infrastructure() {
         value={tab || 'nodes'}
         onValueChange={(value) => void navigate({ search: { tab: value } })}
       >
-        <Tabs.List className="tab-list" aria-label="Infrastructure sections">
+        <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Infrastructure sections">
           <Tabs.Trigger className="tab-trigger" value="nodes">
             Nodes
           </Tabs.Trigger>

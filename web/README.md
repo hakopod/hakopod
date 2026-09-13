@@ -8,6 +8,17 @@ Keep the interface compact: one desktop header row, narrow workspace selectors,
 short page headings and closely grouped controls. Use inspection panels for
 secondary detail. Preserve readable type, keyboard access and usable touch targets.
 
+The shared page container supplies 24px horizontal padding, reduced to 16px below
+640px. Nested pages inherit that content area without adding another inset.
+Page-heading and page-level tab dividers reach the viewport edges while their
+content stays inset. Active navigation and tabs use the shared theme-aware red
+without a selected underline or background; primary buttons retain the chosen accent.
+Use Tailwind v4 utilities for layout and spacing, either in JSX or with `@apply`
+inside semantic CSS classes. Shared responsive rules use `@variant`; the Vite
+plugin compiles them at build time. See the
+[Tailwind directives reference](https://tailwindcss.com/docs/functions-and-directives#apply)
+and the [UI review checklist](../docs/ui-ux-checklist.md).
+
 ## Run
 
 Use Node.js 22.12 or newer and pnpm 10.7.1:
