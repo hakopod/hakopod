@@ -420,9 +420,20 @@
   line-height: 1.7;
   margin-top: 3px;
 }
-.resource-note > a {
+.resource-note > svg:last-child {
   margin-left: auto;
-  color: var(--state);
+  flex-shrink: 0;
+  color: var(--action-text);
+}
+a.resource-note {
+  text-decoration: none;
+}
+a.resource-note:hover {
+  border-color: var(--action-text);
+}
+a.resource-note:focus-visible {
+  outline: 2px solid var(--action-text);
+  outline-offset: -2px;
 }
 .table-container {
   border: 1px solid var(--hairline);

@@ -277,14 +277,35 @@ input[type='radio']:focus-visible {
   align-items: center;
   gap: 8px;
   border: 0;
+  border-bottom: 2px solid transparent;
   margin: 0;
-  padding: 16px 0;
+  padding: 14px 0;
   font-size: 15px;
-}
-.tab-trigger[data-state='active'] {
-  color: var(--state);
-  border: 0;
   background: transparent;
+}
+.tab-trigger:is([data-state='active'], .selected, [aria-current='page']) {
+  color: var(--action-text);
+  border-bottom-color: var(--action-text);
+}
+.tab-trigger:is(:hover, :focus-visible) {
+  background: transparent;
+}
+.tab-trigger:focus-visible {
+  outline: 2px solid var(--action-text);
+  outline-offset: -2px;
+}
+.settings-nav button:is(:hover, :focus-visible, [data-active='true']) {
+  background: transparent;
+}
+.settings-nav button:is(:focus-visible, [data-active='true']) {
+  color: var(--action-text);
+}
+.settings-nav button:focus-visible {
+  outline: 2px solid var(--action-text);
+  outline-offset: -2px;
+}
+.settings-nav button[data-active='true']::after {
+  background: var(--action-text);
 }
 .tab-content {
   min-width: 0;

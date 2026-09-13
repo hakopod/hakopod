@@ -32,13 +32,10 @@
   font-size: 16px;
 }
 .ops-page .application-heading {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+  padding-block: 12px;
   gap: 16px;
   flex-wrap: wrap;
-}
-.button-deploy {
-  --action: var(--destructive);
-  --action-fg: var(--destructive-fg);
 }
 .ops-page .application-heading .app-symbol {
   display: none;
@@ -64,12 +61,6 @@
 }
 .ops-page .tab-trigger {
   flex-shrink: 0;
-}
-.ops-page .application-tabs .tab-trigger[data-state='active'] {
-  color: var(--destructive);
-  border-bottom: 2px solid var(--destructive);
-  padding-bottom: 14px;
-  background: color-mix(in srgb, var(--destructive) 5%, transparent);
 }
 .ops-summary {
   display: grid;
@@ -222,8 +213,7 @@
   display: none;
 }
 .application-list-page > .hako-page-heading {
-  min-height: 44px;
-  padding-bottom: 10px;
+  min-height: 56px;
 }
 .application-list-page .heading-action .toolbar-actions {
   gap: 8px;
@@ -269,13 +259,62 @@
 .application-list-page .ops-catalog-grid {
   padding: 0;
 }
+.projects-catalog > .resource-toolbar {
+  padding: 0 0 12px;
+  border: 0;
+  background: transparent;
+  flex-wrap: nowrap;
+}
+.projects-page .ops-search-input {
+  flex: 0 1 340px;
+  min-width: 0;
+}
+.projects-page .ops-search-input,
+.projects-page .ops-search-input input {
+  height: 36px;
+}
+.projects-catalog .ops-catalog-grid {
+  padding: 0;
+}
+.projects-catalog .list-pagination {
+  padding: 12px 0 0;
+  border: 0;
+}
+.project-card-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-card-environments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  font: 11px/1.5 var(--font-mono);
+  color: var(--muted);
+}
+.project-card-environments li {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 2px 6px;
+  background: var(--surface-2);
+}
 .application-list-page .ops-search-input,
 .application-list-page .ops-search-input input,
 .application-list-page .resource-toolbar .select-trigger {
   height: 36px;
 }
 @media (max-width: 767px) {
-  .application-list-page > .hako-page-heading {
+  .application-list-page > .hako-page-heading,
+  .projects-page > .hako-page-heading {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
   }
@@ -1776,6 +1815,13 @@
   }
   .ops-page .application-heading h1 {
     font-size: 20px;
+  }
+  .ops-page .application-heading .title-row {
+    flex-wrap: wrap;
+  }
+  .ops-page .application-heading .title-row h1 {
+    min-width: min(16ch, 100%);
+    flex: 1 1 16ch;
   }
   .ops-resource-list .resource-toolbar {
     padding: 16px;

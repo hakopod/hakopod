@@ -148,7 +148,7 @@ export function DeploymentForm({
   return (
     <FormPage
       breadcrumbs={[
-        { label: 'Applications', to: '/' },
+        { label: 'Applications', to: `/projects/${encodeURIComponent(project)}` },
         ...(application
           ? [{ label: application.name, to: `/applications/${application.id}` }]
           : []),
@@ -338,7 +338,8 @@ export function DeploymentForm({
                           <Button
                             size="icon"
                             variant="ghost"
-                            aria-label={`Remove ${name}`}
+                            aria-label={`Remove service ${name}`}
+                            disabled={busy}
                             onClick={() =>
                               setSpec((previous) => ({
                                 ...previous,
@@ -348,7 +349,7 @@ export function DeploymentForm({
                               }))
                             }
                           >
-                            <Icon name="x" size={14} />
+                            <Icon name="trash" size={14} />
                           </Button>
                         )}
                       </div>

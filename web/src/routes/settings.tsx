@@ -8,6 +8,7 @@ import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { APIKey } from '../lib/types'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -67,8 +68,9 @@ function Administration() {
       : []),
   ]
   const tab = sections.some((section) => section.id === selected) ? selected : 'account'
+  const navigationRoot = useActiveSection(tab)
   return (
-    <div className="settings-page">
+    <div className="settings-page" ref={navigationRoot}>
       <PageHeader title="Workspace settings" />
       <SettingsLayout
         sections={sections}

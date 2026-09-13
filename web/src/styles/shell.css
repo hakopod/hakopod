@@ -75,13 +75,19 @@
   white-space: nowrap;
   margin-block: 12px;
   padding-block: 4px;
+  border-bottom: 2px solid transparent;
 }
 .hako-nav-link:hover {
   color: var(--foreground);
 }
 .hako-nav-link[data-active] {
-  --state: var(--destructive);
-  color: var(--destructive);
+  color: var(--action-text);
+  border-bottom-color: var(--action-text);
+  background: transparent;
+}
+.hako-nav-link:focus-visible {
+  outline: 2px solid var(--action-text);
+  outline-offset: 2px;
 }
 .hako-header-tools {
   grid-area: tools;
@@ -154,7 +160,7 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 16px 0 24px;
+  padding: 0 0 24px;
 }
 .hako-page-content .brackets,
 .hako-auth-page .brackets,
@@ -237,7 +243,7 @@
   font-size: 16px;
 }
 .hako-mobile-links .hako-nav-link[data-active] {
-  background: var(--surface-2);
+  background: transparent;
 }
 .hako-preferences {
   overflow-y: auto;
@@ -599,6 +605,8 @@ html[data-accent] .button-primary:hover {
   background: transparent;
   color: var(--foreground);
   text-align: left;
+  height: auto;
+  white-space: normal;
 }
 .hako-guidance-actions strong {
   display: block;
@@ -872,7 +880,8 @@ html[data-accent] .button-primary:hover {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
-  padding-bottom: 12px;
+  padding-block: 12px;
+  min-height: 56px;
   border-bottom: 1px solid var(--hairline);
 }
 .hako-page-heading.page-heading h1 {
@@ -1153,7 +1162,10 @@ html[data-accent] .button-primary:hover {
     padding: 8px;
   }
   .hako-preferences .settings-nav button[data-active='true']::after {
-    display: none;
+    display: block;
+    inset: auto 0 0;
+    width: auto;
+    height: 2px;
   }
   .hako-preferences .settings-content {
     padding: 24px;
@@ -1189,7 +1201,7 @@ html[data-accent] .button-primary:hover {
     padding-left: 4px;
   }
   .hako-shell .hako-page-content {
-    padding: 12px 0 24px;
+    padding: 0 0 24px;
   }
   .hako-footer {
     padding: 12px 16px;

@@ -138,7 +138,6 @@ function ApplicationDetail() {
         {scope.can('deployments:write') && (
           <Button
             variant="primary"
-            className="button-deploy"
             onClick={() =>
               void navigate({
                 to: '/applications/$applicationId/configure',
@@ -321,7 +320,7 @@ function ApplicationDetail() {
               mean the services are running.
             </Note>
           )}
-          <div className="resource-note">
+          <Link className="resource-note interactive" to="/infrastructure">
             <Icon name="activity" size={18} />
             <div>
               <strong>Resource metrics</strong>
@@ -330,10 +329,8 @@ function ApplicationDetail() {
                 available in Infrastructure.
               </p>
             </div>
-            <Link to="/infrastructure">
-              <Icon name="arrow" size={18} />
-            </Link>
-          </div>
+            <Icon name="arrow" size={18} />
+          </Link>
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">
           <DeploymentHistory application={app} />
@@ -359,14 +356,12 @@ function ApplicationDetail() {
                 </HeadingHelp>
               </div>
             </div>
-            <Link
-              className="button button-secondary"
-              to="/applications/$applicationId/domains"
-              params={{ applicationId }}
-            >
-              Manage custom domains
-              <Icon name="globe" size={14} />
-            </Link>
+            <Button asChild>
+              <Link to="/applications/$applicationId/domains" params={{ applicationId }}>
+                Manage custom domains
+                <Icon name="globe" size={14} />
+              </Link>
+            </Button>
           </div>
           <div className="table-container">
             <table>
