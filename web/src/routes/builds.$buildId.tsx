@@ -62,10 +62,6 @@ function BuildDetail() {
   const runId = selected || runs.data?.items[0]?.id || ''
   return (
     <div className="ops-page ops-build-page">
-      <Link to="/builds" className="back-link">
-        <Icon name="back" size={14} />
-        All source builds
-      </Link>
       <div className="section-toolbar">
         <div>
           <div className="eyebrow">

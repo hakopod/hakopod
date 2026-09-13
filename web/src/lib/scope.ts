@@ -39,6 +39,18 @@ export function canAccess(identity: Identity, project: string, permission: strin
   }
   return identity.permissions.includes(permission)
 }
+
+export function canCreateEnvironment(identity: Identity, project: string) {
+  return Boolean(
+    project &&
+    identity.credential_type === 'browser' &&
+    (!identity.project || identity.project === project) &&
+    !identity.environment &&
+    !identity.application &&
+    (identity.admin ||
+      identity.project_roles?.some((entry) => entry.project === project && entry.role === 'admin')),
+  )
+}
 export function useScope() {
   const context = useContext(ScopeContext)
   if (!context) throw new Error('Workspace context is unavailable. Reload the dashboard.')

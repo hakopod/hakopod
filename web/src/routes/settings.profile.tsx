@@ -1,6 +1,6 @@
 import { Input } from '../components/ui/input'
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
@@ -138,9 +138,6 @@ function ProfileForm({ profile }: { profile: components['schemas']['Profile'] })
           {error && <ErrorState error={error} />} {saved && <Note>Profile saved.</Note>}
         </div>
         <div className="form-footer">
-          <Link className="button" to="/settings">
-            Back to account
-          </Link>
           <Button type="submit" variant="primary" disabled={busy}>
             {busy ? 'Saving…' : 'Save profile'}
           </Button>

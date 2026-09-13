@@ -1,12 +1,10 @@
 import { useId, type ReactNode } from 'react'
-import { Link } from '@tanstack/react-router'
 import { Card } from '@hakopod/hatch-ui/components/card'
 import { Icon } from './icons'
 
 export function FormPage({
   title,
   description,
-  breadcrumbs,
   children,
   help,
   icon = 'settings',
@@ -20,22 +18,6 @@ export function FormPage({
 }) {
   return (
     <div className="form-page hako-form-page">
-      <nav className="breadcrumbs" aria-label="Breadcrumb">
-        <ol>
-          {breadcrumbs.map((item, index) => (
-            <li key={`${item.label}-${index}`}>
-              {index > 0 && <Icon name="chevron" size={12} />}
-              {item.to ? (
-                <Link to={item.to}>{item.label}</Link>
-              ) : (
-                <span aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}>
-                  {item.label}
-                </span>
-              )}
-            </li>
-          ))}
-        </ol>
-      </nav>
       <header className="form-page-heading">
         <div className="form-page-symbol">
           <Icon name={icon} size={24} />

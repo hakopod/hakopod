@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import PodTerminal from '../components/pod-terminal'
@@ -23,11 +23,6 @@ function HostTerminal() {
         icon="lock"
         title="Host terminal access required"
         description="The super admin must grant explicit authority for this node."
-        action={
-          <Link className="button" to="/infrastructure">
-            Back to infrastructure
-          </Link>
-        }
       />
     )
   return (

@@ -54,6 +54,7 @@ export default function CommandPalette({
       { to: '/', icon: 'grid', label: 'Applications' },
       { to: '/templates', icon: 'box', label: 'Catalog' },
       { to: '/builds', icon: 'branch', label: 'Builds' },
+      { to: '/networks', icon: 'network', label: 'Networks' },
       { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
       ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
       { to: '/settings', icon: 'settings', label: 'Settings' },

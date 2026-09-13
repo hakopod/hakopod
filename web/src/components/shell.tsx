@@ -16,19 +16,22 @@ import { useLicense } from '../lib/license'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { Identity } from '../lib/types'
-import { ScopeContext, canAccess, resolveWorkspaceScope } from '../lib/scope'
+import { ScopeContext, canAccess, canCreateEnvironment, resolveWorkspaceScope } from '../lib/scope'
 import { useTheme } from '../lib/appearance'
 import { Avatar } from './avatar'
 import { Logo, Icon } from './icons'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { SelectField } from './ui/select'
 import { Tooltip } from './ui/surfaces'
+import { ParentBackLink } from './parent-navigation'
 import { Bot } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { AuthScreen } from './auth-screen'
 
 const CommandPalette = lazy(() => import('./command-palette'))
 const ProjectWizard = lazy(() => import('./project-wizard'))
+const ProjectEnvironment = lazy(() => import('./project-environment'))
 const WorkspaceGuidance = lazy(() => import('./workspace-guidance'))
 const AppearanceSettings = lazy(() =>
   import('./appearance-settings').then((module) => ({ default: module.AppearanceSettings })),
@@ -162,6 +165,7 @@ function Workspace({
     } catch {}
   }, [])
   const [projectOpen, setProjectOpen] = useState(false)
+  const [environmentOpen, setEnvironmentOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
@@ -169,6 +173,7 @@ function Workspace({
   const navigationTrigger = useRef<HTMLButtonElement>(null)
   const desktopNavigation = useRef<HTMLElement>(null)
   const accountTrigger = useRef<HTMLButtonElement>(null)
+  const environmentTrigger = useRef<HTMLButtonElement>(null)
   const [sessionError, setSessionError] = useState('')
   const license = useLicense()
   useEffect(() => {
@@ -179,7 +184,7 @@ function Workspace({
         setCommandOpen((open) => !open)
       }
     }
-    const desktop = window.matchMedia('(min-width: 1200px)')
+    const desktop = window.matchMedia('(min-width: 1280px)')
     const onResize = () => {
       if (desktop.matches) setMobileOpen(false)
     }
@@ -197,6 +202,7 @@ function Workspace({
     environment: identity.environment || selected.environment,
   })
   const project = currentProject?.name || ''
+  const createEnvironmentAllowed = canCreateEnvironment(identity, project)
   const can = (permission: string) => canAccess(identity, project, permission)
   const changeScope = (next: { project: string; environment: string }) => {
     syncScope(next.project, next.environment)
@@ -207,6 +213,7 @@ function Workspace({
     { to: '/', icon: 'grid', label: 'Applications' },
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
+    { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
     ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
     { to: '/settings', icon: 'settings', label: 'Settings' },
@@ -254,6 +261,7 @@ function Workspace({
       <div className="hako-shell">
         <header className="hako-global-header">
           <div className="hako-brand-group">
+            <ParentBackLink />
             <Button
               variant="ghost"
               size="icon"
@@ -282,52 +290,59 @@ function Workspace({
             </Link>
           </div>
           <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
-            <div className="hako-scope-select hako-project-select interactive">
-              <select
-                aria-label="Project"
+            <div className="hako-scope-select hako-project-select">
+              <SelectField
+                compact
+                label="Project"
                 title={currentProject?.display_name || project || 'Select a project'}
                 value={project}
                 disabled={Boolean(identity.project)}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   changeScope({
-                    project: event.target.value,
+                    project: value,
                     environment:
-                      projects.data?.items.find((item) => item.name === event.target.value)
-                        ?.environments?.[0]?.name || '',
+                      projects.data?.items.find((item) => item.name === value)?.environments?.[0]
+                        ?.name || '',
                   })
                 }
-              >
-                {!project && <option value="">Select a project</option>}
-                {project && !currentProject && <option value={project}>{project}</option>}
-                {projects.data?.items?.map((item) => (
-                  <option key={item.id} value={item.name}>
-                    {item.display_name || item.name}
-                  </option>
-                ))}
-              </select>
-              <Brackets />
+                options={[
+                  ...(!project ? [{ value: '', label: 'Select a project' }] : []),
+                  ...(project && !currentProject ? [{ value: project, label: project }] : []),
+                  ...(projects.data?.items.map((item) => ({
+                    value: item.name,
+                    label: item.display_name || item.name,
+                  })) || []),
+                ]}
+              />
             </div>
             <Icon name="chevron" size={12} />
-            <div className="hako-scope-select hako-environment-select interactive">
-              <select
-                aria-label="Environment"
+            <div className="hako-scope-select hako-environment-select">
+              <SelectField
+                compact
+                ref={environmentTrigger}
+                label="Environment"
                 title={environment || 'Select an environment'}
                 value={environment}
                 disabled={Boolean(identity.environment) || !project}
-                onChange={(event) => changeScope({ project, environment: event.target.value })}
-              >
-                {!environment && <option value="">Select an environment</option>}
-                {environment &&
-                  !currentProject?.environments?.some((item) => item.name === environment) && (
-                    <option value={environment}>{environment}</option>
-                  )}
-                {currentProject?.environments?.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <Brackets />
+                onValueChange={(value) => {
+                  if (value === '__create_environment__') setEnvironmentOpen(true)
+                  else changeScope({ project, environment: value })
+                }}
+                options={[
+                  ...(!environment ? [{ value: '', label: 'Select an environment' }] : []),
+                  ...(environment &&
+                  !currentProject?.environments.some((item) => item.name === environment)
+                    ? [{ value: environment, label: environment }]
+                    : []),
+                  ...(currentProject?.environments.map((item) => ({
+                    value: item.name,
+                    label: item.name,
+                  })) || []),
+                  ...(createEnvironmentAllowed && currentProject
+                    ? [{ value: '__create_environment__', label: 'Create environment…' }]
+                    : []),
+                ]}
+              />
             </div>
             {identity.admin && (
               <Tooltip content="Create a project">
@@ -549,6 +564,35 @@ function Workspace({
             onCreated={(name, env) => {
               void queryClient.invalidateQueries({ queryKey: ['projects'] })
               changeScope({ project: name, environment: env })
+            }}
+          />
+        </Suspense>
+      )}
+      {createEnvironmentAllowed && environmentOpen && currentProject && (
+        <Suspense fallback={null}>
+          <ProjectEnvironment
+            project={currentProject}
+            onClose={() => setEnvironmentOpen(false)}
+            restoreFocus={() => environmentTrigger.current?.focus()}
+            onCreated={(nextEnvironment) => {
+              queryClient.setQueryData<typeof projects.data>(
+                ['projects'],
+                (current) =>
+                  current && {
+                    ...current,
+                    items: current.items.map((item) =>
+                      item.name === project &&
+                      !item.environments.some((entry) => entry.name === nextEnvironment)
+                        ? {
+                            ...item,
+                            environments: [...item.environments, { name: nextEnvironment }],
+                          }
+                        : item,
+                    ),
+                  },
+              )
+              void queryClient.invalidateQueries({ queryKey: ['projects'] })
+              changeScope({ project, environment: nextEnvironment })
             }}
           />
         </Suspense>

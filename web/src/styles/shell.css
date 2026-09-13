@@ -9,7 +9,7 @@
 }
 .hako-global-header {
   display: grid;
-  grid-template-columns: 124px auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   grid-template-areas: 'brand scope nav tools';
   min-height: 56px;
   align-items: center;
@@ -32,6 +32,9 @@
 .hako-brand-group {
   grid-area: brand;
   gap: 8px;
+}
+.hako-parent-back {
+  flex-shrink: 0;
 }
 .hako-wordmark {
   display: block;
@@ -117,11 +120,12 @@
 .hako-environment-select {
   width: 116px;
 }
-.hako-scope-select select {
+.hako-scope-select .select-trigger {
   border: 0;
   border-radius: 2px;
   background: transparent;
-  padding: 6px 24px 6px 8px;
+  padding: 0 8px;
+  gap: 6px;
   margin: 0;
   height: 32px;
   width: 100%;
@@ -132,13 +136,15 @@
   color: var(--foreground);
   cursor: pointer;
 }
-.hako-scope-select:focus-within > .brackets {
-  opacity: 1;
-}
-.hako-scope-select select:disabled {
+.hako-scope-select .select-trigger:disabled {
   color: var(--muted);
   cursor: default;
   opacity: 1;
+}
+.hako-environment-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .hako-shell .hako-page-content {
   display: grid;
@@ -1108,7 +1114,7 @@ html[data-accent] .button-primary:hover {
     opacity: 1;
   }
 }
-@media (max-width: 1199px) {
+@media (max-width: 1279px) {
   .hako-global-header {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: 'brand scope tools';
@@ -1186,7 +1192,7 @@ html[data-accent] .button-primary:hover {
     min-height: 40px;
     border-top: 1px solid var(--hairline);
   }
-  .hako-scope-select select {
+  .hako-scope-select .select-trigger {
     font-size: 12px;
     padding-left: 4px;
   }
@@ -1258,6 +1264,15 @@ html[data-accent] .button-primary:hover {
   }
   .hako-command-result > .ui-status {
     max-width: 100px;
+  }
+}
+@media (max-width: 359px) {
+  .hako-wordmark {
+    flex-basis: 84px;
+    width: 84px;
+  }
+  .hako-wordmark img {
+    width: 84px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
