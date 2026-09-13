@@ -14,11 +14,17 @@ func (c *Client) ValidateDelivery(ctx context.Context, t Target) error {
 	if err := c.ValidateReadiness(t.Spec); err != nil {
 		return err
 	}
-	if !spec.HasDeliveryCapabilities(t.Spec) {
-		return nil
-	}
 	if policy := c.PublicTCPPolicy(); spec.HasPublicTCP(t.Spec) && !policy.Allowed {
 		return fmt.Errorf("%w: %s", ErrPublicTCPDisabled, policy.Message)
+	}
+	if err := c.ValidateCloudSpec(t.Spec); err != nil {
+		return err
+	}
+	if err := c.ValidateCloudCapacity(ctx); err != nil {
+		return err
+	}
+	if !spec.HasDeliveryCapabilities(t.Spec) {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

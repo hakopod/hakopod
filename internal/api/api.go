@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerTerminalRoutes(routes)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
+	routes.HandleFunc("GET /api/v1/cloud/capabilities", s.cloudCapabilities)
 	routes.HandleFunc("POST /api/v1/projects", s.createProject)
 	routes.HandleFunc("POST /api/v1/projects/{project}/environments", s.createEnvironment)
 	routes.HandleFunc("GET /api/v1/applications", s.applications)

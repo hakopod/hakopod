@@ -147,12 +147,17 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	if a.Revision != expected {
 		return Deployment{}, fmt.Errorf("%w: expected %d, current revision is %d; plan again", ErrConflict, expected, a.Revision)
 	}
-	if spec.HasDeliveryCapabilities(next) {
-		if s.ValidateDeployment == nil {
-			return Deployment{}, errors.New("public TCP, backend certificates and AWS identities require a configured runtime validator")
-		}
+	if s.ValidateDeployment == nil && (spec.HasDeliveryCapabilities(next) || seed != nil && spec.HasDeliveryCapabilities(*seed)) {
+		return Deployment{}, errors.New("public TCP, backend certificates and AWS identities require a configured runtime validator")
+	}
+	if s.ValidateDeployment != nil {
 		if err = s.ValidateDeployment(ctx, a, next); err != nil {
 			return Deployment{}, err
+		}
+		if seed != nil {
+			if err = s.ValidateDeployment(ctx, a, *seed); err != nil {
+				return Deployment{}, err
+			}
 		}
 	}
 	if err = s.reserveDomains(ctx, tx, a.ID, next); err != nil {

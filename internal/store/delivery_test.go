@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -50,5 +51,48 @@ func TestDeliveryAcceptanceCannotBypassRuntimeValidation(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("expected 3 validations, got %d", calls)
+	}
+}
+
+func TestEveryAcceptedRevisionChecksRuntimePolicy(t *testing.T) {
+	db := isolatedDatabase(t)
+	p := bootstrapPrincipal(t, db)
+	ctx := context.Background()
+	app := emptyTestSpec()
+	denied := errors.New("managed-cloud resource limit")
+	db.ValidateDeployment = func(context.Context, Application, spec.Application) error { return denied }
+	if _, err := db.Accept(ctx, p, "demo", "development", app, 0, "ordinary-policy-denied"); !errors.Is(err, denied) {
+		t.Fatal("ordinary spec bypassed runtime validator", err)
+	}
+	var count int
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM applications WHERE name=$1", app.Name).Scan(&count); err != nil || count != 0 {
+		t.Fatal("failed acceptance left application", err)
+	}
+}
+
+func TestResolvedRollbackRevisionAlsoChecksRuntimePolicy(t *testing.T) {
+	db := isolatedDatabase(t)
+	p := bootstrapPrincipal(t, db)
+	ctx := context.Background()
+	app := emptyTestSpec()
+	resolved := emptyTestSpec()
+	svc := resolved.Services["api"]
+	svc.Image = "docker.io/library/nginx@sha256:" + strings.Repeat("a", 64)
+	svc.Size = "compute"
+	resolved.Services["api"] = svc
+	denied := errors.New("resolved revision exceeds cloud limits")
+	calls := 0
+	db.ValidateDeployment = func(_ context.Context, _ Application, next spec.Application) error {
+		calls++
+		if next.Services["api"].Size == "compute" {
+			return denied
+		}
+		return nil
+	}
+	if _, err := db.Accept(ctx, p, "demo", "development", app, 0, "seed-policy-denied", resolved); !errors.Is(err, denied) {
+		t.Fatal("seed revision bypassed policy", err)
+	}
+	if calls != 2 {
+		t.Fatal("both desired and resolved revisions must be validated", calls)
 	}
 }
