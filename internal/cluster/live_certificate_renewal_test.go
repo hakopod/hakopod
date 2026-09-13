@@ -36,7 +36,7 @@ func TestLiveAutomaticBackendCertificateRenewal(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := Target{ApplicationID: fmt.Sprintf("certificate-renewal-%d", time.Now().UnixNano()), Project: "renewal-fixture", Environment: "test", Revision: 1, OperationID: "renewal-fixture"}
-	target.Spec, err = spec.Normalize(spec.Application{Name: "renewal-fixture", Services: map[string]spec.Service{"smtp": {Image: "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a", Port: 2525, Public: true, UpdateStrategy: "recreate", RunAsUser: 12345, RunAsGroup: 23456, FSGroup: 23456, ReadOnlyRootFilesystem: true, Command: []string{"python", "-B", "-c", smtpFixturePython}}}})
+	target.Spec, err = spec.Normalize(spec.Application{Name: "renewal-fixture", Services: map[string]spec.Service{"smtp": {Image: "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a", Port: 2525, Public: true, UpdateStrategy: "recreate", TerminationGraceSeconds: 1, RunAsUser: 12345, RunAsGroup: 23456, FSGroup: 23456, ReadOnlyRootFilesystem: true, Command: []string{"python", "-B", "-c", smtpFixturePython}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ client.quit()
 	}
 	previous := d.Generation
 	source.Data[corev1.TLSPrivateKeyKey] = []byte("invalid fixture replacement")
-	_, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{})
+	source, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,5 +137,25 @@ client.quit()
 		t.Fatal("invalid source caused rollout")
 	}
 	probe(cert2)
+	// Replacing an uploaded ingress reference must finish its backend restart
+	// within the same reviewed deployment, rather than report premature success.
+	source.Data = map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: key2}
+	if source, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	cert3, key3 := testTLSCertificate(t, host, time.Now().Add(3*time.Hour))
+	ingressReference, err := c.PutTLSCertificate(ctx, target, "smtp", cert3, key3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc = target.Spec.Services["smtp"]
+	svc.TLS = &spec.TLSConfig{Certificate: ingressReference}
+	target.Spec.Services["smtp"] = svc
+	target.Revision++
+	observed, err := c.Deploy(ctx, target, nil)
+	if err != nil || observed.Status != "healthy" {
+		t.Fatal("reviewed ingress replacement did not finish renewal", observed.Status, err)
+	}
+	probe(cert3)
 	t.Log("Automatic ingress renewal rolled non-root SMTP pods at the same application revision; verified STARTTLS served the new certificate and invalid source retained the working certificate. No email sent.")
 }
