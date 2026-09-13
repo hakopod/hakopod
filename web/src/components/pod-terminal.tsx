@@ -333,8 +333,7 @@ export default function PodTerminal({
   return (
     <section className="terminal-panel ops-terminal">
       <div className="explorer-heading">
-        <div>
-          <Icon name="terminal" size={18} />
+        <div className="hako-section-heading-title">
           <h2>{hostNode ? `Host terminal · ${hostNode}` : 'Pod terminal'}</h2>
           <Badge tone={connected ? 'success' : 'neutral'}>{state}</Badge>
         </div>

@@ -119,8 +119,7 @@ export function Logs({
   return (
     <section className="log-explorer ops-logs">
       <div className="explorer-heading">
-        <div>
-          <Icon name="terminal" size={18} />
+        <div className="hako-section-heading-title">
           <h2>Log explorer</h2>
           <Badge>CONTAINER OUTPUT</Badge>
         </div>

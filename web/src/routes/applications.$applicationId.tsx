@@ -12,7 +12,7 @@ import { Button } from '../components/ui/button'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { ServiceImageIcon } from '../components/service-image-icon'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
-import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { Logs } from '../components/logs'
 import { TOMLCode } from '../components/toml-code'
 const ServiceDetail = lazy(() =>
@@ -111,11 +111,8 @@ function ApplicationDetail() {
         <SampleBanner applicationId={app.id} />
       </Suspense>
       <div className="application-heading">
-        <div className="app-symbol app-symbol-large">
-          <Icon name="box" size={27} />
-        </div>
         <div>
-          <div className="title-row">
+          <div className="title-row hako-page-heading-title">
             <Status value={app.observed?.status || 'not observed'} />
             <h1>{app.name}</h1>
           </div>
@@ -123,11 +120,9 @@ function ApplicationDetail() {
             <code>{app.id}</code>
             <Copy value={app.id} />
             <span>
-              <Icon name="branch" size={13} />
               Revision {app.revision} · {app.status}
             </span>
             <span>
-              <Icon name="box" size={13} />
               {serviceNames.length} {serviceNames.length === 1 ? 'service' : 'services'}
             </span>
             <span>Updated {relative(app.updated_at)}</span>
@@ -357,8 +352,12 @@ function ApplicationDetail() {
         <Tabs.Content value="networking" className="tab-content">
           <div className="section-toolbar">
             <div>
-              <h2>Networking</h2>
-              <p>Service discovery, private networks, and public domains.</p>
+              <div className="hako-section-heading-title">
+                <h2>Networking</h2>
+                <HeadingHelp title="Networking">
+                  Service discovery, private networks, and public domains.
+                </HeadingHelp>
+              </div>
             </div>
             <Link
               className="button button-secondary"
@@ -575,11 +574,13 @@ function DeploymentHistory({ application }: { application: Application }) {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Deployment history</h2>
-          <p>
-            Immutable revisions, most recent first. Open a release for events and its configuration
-            diff.
-          </p>
+          <div className="hako-section-heading-title">
+            <h2>Deployment history</h2>
+            <HeadingHelp title="Deployment history">
+              Immutable revisions, most recent first. Open a release for events and its
+              configuration diff.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {error && (

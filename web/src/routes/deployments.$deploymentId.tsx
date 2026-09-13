@@ -11,7 +11,7 @@ import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { Copy, ErrorState, Loading, Note, Status } from '../components/shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
 
 export const Route = createFileRoute('/deployments/$deploymentId')({ component: DeploymentDetail })
@@ -167,7 +167,7 @@ function DeploymentDetail() {
     <div className="ops-page ops-deployment-page">
       <div className="application-heading">
         <div>
-          <div className="title-row">
+          <div className="title-row hako-page-heading-title">
             <Status value={release.status} />
             <h1>
               Deployment <span className="muted-text">r{release.revision}</span>
@@ -354,8 +354,12 @@ function DeploymentDetail() {
             <Tabs.Content className="tab-content" value="services">
               <div className="section-toolbar">
                 <div>
-                  <h2>Service results</h2>
-                  <p>Requested configuration and observations recorded for this revision.</p>
+                  <div className="hako-section-heading-title">
+                    <h2>Service results</h2>
+                    <HeadingHelp title="Service results">
+                      Requested configuration and observations recorded for this revision.
+                    </HeadingHelp>
+                  </div>
                 </div>
               </div>
               <div className="table-container ops-table">

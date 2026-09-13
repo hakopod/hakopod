@@ -19,7 +19,7 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
-import { Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
 import { Logs } from './logs'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 
@@ -179,11 +179,8 @@ export function ServiceDetail({
   return (
     <div className="ops-page ops-service-page">
       <div className="application-heading">
-        <div className="app-symbol app-symbol-large">
-          <Icon name={service.public ? 'globe' : hasPorts ? 'box' : 'terminal'} size={27} />
-        </div>
         <div>
-          <div className="title-row">
+          <div className="title-row hako-page-heading-title">
             <Status value={observed?.status || 'not observed'} />
             <h1>{serviceName}</h1>
           </div>
@@ -388,8 +385,10 @@ export function ServiceDetail({
           </div>
           <div className="section-toolbar">
             <div>
-              <h2>Pods</h2>
-              <p>Live workloads owned by this service.</p>
+              <div className="hako-section-heading-title">
+                <h2>Pods</h2>
+                <HeadingHelp title="Pods">Live workloads owned by this service.</HeadingHelp>
+              </div>
             </div>
             <Button size="sm" onClick={() => setTab('pods')}>
               Inspect all pods
@@ -406,8 +405,12 @@ export function ServiceDetail({
         <Tabs.Content value="pods" className="tab-content">
           <div className="section-toolbar">
             <div>
-              <h2>Pods and events</h2>
-              <p>Container state, allocations, readiness conditions, and Kubernetes events.</p>
+              <div className="hako-section-heading-title">
+                <h2>Pods and events</h2>
+                <HeadingHelp title="Pods and events">
+                  Container state, allocations, readiness conditions, and Kubernetes events.
+                </HeadingHelp>
+              </div>
             </div>
             <Button size="sm" onClick={() => void runtime.refetch()}>
               <Icon name="refresh" size={14} />
@@ -561,8 +564,12 @@ export function ServiceDetail({
             <section className="service-private-ports">
               <div className="section-toolbar">
                 <div>
-                  <h2>Additional private ports</h2>
-                  <p>Configured endpoints for permitted services on shared networks.</p>
+                  <div className="hako-section-heading-title">
+                    <h2>Additional private ports</h2>
+                    <HeadingHelp title="Additional private ports">
+                      Configured endpoints for permitted services on shared networks.
+                    </HeadingHelp>
+                  </div>
                 </div>
               </div>
               <div className="table-container">
@@ -608,8 +615,12 @@ export function ServiceDetail({
         <Tabs.Content value="environment" className="tab-content service-environment-tab">
           <div className="section-toolbar">
             <div>
-              <h2>Environment variables</h2>
-              <p>Plain values passed to this service’s containers.</p>
+              <div className="hako-section-heading-title">
+                <h2>Environment variables</h2>
+                <HeadingHelp title="Environment variables">
+                  Plain values passed to this service’s containers.
+                </HeadingHelp>
+              </div>
             </div>
             {scope.can('deployments:write') && (
               <Button asChild variant="primary">
@@ -669,8 +680,12 @@ export function ServiceDetail({
         <Tabs.Content value="settings" className="tab-content">
           <div className="section-toolbar">
             <div>
-              <h2>Applied service configuration</h2>
-              <p>Changes create a reviewed, immutable revision for this application.</p>
+              <div className="hako-section-heading-title">
+                <h2>Applied service configuration</h2>
+                <HeadingHelp title="Applied service configuration">
+                  Changes create a reviewed, immutable revision for this application.
+                </HeadingHelp>
+              </div>
             </div>
             {scope.can('deployments:write') && (
               <Button variant="primary" onClick={() => edit('toml')}>

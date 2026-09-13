@@ -11,7 +11,15 @@ import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { Copy, Empty, ErrorState, Loading, Note } from '../components/shared'
+import {
+  PageHeader,
+  HeadingHelp,
+  Copy,
+  Empty,
+  ErrorState,
+  Loading,
+  Note,
+} from '../components/shared'
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
 )
@@ -61,9 +69,7 @@ function Administration() {
   const tab = sections.some((section) => section.id === selected) ? selected : 'account'
   return (
     <div className="settings-page">
-      <header className="hako-settings-header">
-        <h1>Workspace settings</h1>
-      </header>
+      <PageHeader title="Workspace settings" />
       <SettingsLayout
         sections={sections}
         active={tab}
@@ -106,8 +112,12 @@ function Keys() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>API keys</h2>
-          <p>Give each workflow its own identity, scope, and expiration.</p>
+          <div className="hako-section-heading-title">
+            <h2>API keys</h2>
+            <HeadingHelp title="API keys">
+              Give each workflow its own identity, scope, and expiration.
+            </HeadingHelp>
+          </div>
         </div>
         <Button
           variant="primary"
@@ -518,8 +528,12 @@ function AuditLog() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Audit events</h2>
-          <p>Recent management actions and their attribution.</p>
+          <div className="hako-section-heading-title">
+            <h2>Audit events</h2>
+            <HeadingHelp title="Audit events">
+              Recent management actions and their attribution.
+            </HeadingHelp>
+          </div>
         </div>
         <Button size="sm" onClick={() => void audit.refetch()}>
           <Icon name="refresh" size={14} />

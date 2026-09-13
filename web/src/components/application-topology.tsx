@@ -4,7 +4,7 @@ import { Badge, Card } from './ui/surfaces'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import type { Application } from '../lib/types'
 import { Icon } from './icons'
-import { Copy, Status, Note } from './shared'
+import { HeadingHelp, Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
   const names = Object.keys(app.spec.services).slice(0, 32)
   const [selected, setSelected] = useState(names[0] || '')
@@ -27,10 +27,12 @@ export default function ApplicationTopology({ application: app }: { application:
     <div className="ops-topology">
       <div className="section-toolbar">
         <div>
-          <h2>Service topology</h2>
-          <p>
-            Applied services and declared readiness dependencies. Select a service to inspect it.
-          </p>
+          <div className="hako-section-heading-title">
+            <h2>Service topology</h2>
+            <HeadingHelp title="Service topology">
+              Applied services and declared readiness dependencies. Select a service to inspect it.
+            </HeadingHelp>
+          </div>
         </div>
         <Badge>
           {names.length} services · {edges.length} dependencies

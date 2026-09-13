@@ -6,7 +6,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, ErrorState, Loading, Note, Status } from './shared'
 
 type ProxyStatus = components['schemas']['ProxyStatus']
 export default function ProxySettings() {
@@ -22,8 +22,12 @@ export default function ProxySettings() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>HAProxy configuration</h2>
-          <p>Review supported controller settings before applying a durable change.</p>
+          <div className="hako-section-heading-title">
+            <h2>HAProxy configuration</h2>
+            <HeadingHelp title="HAProxy configuration">
+              Review supported controller settings before applying a durable change.
+            </HeadingHelp>
+          </div>
         </div>
         <Button
           variant="primary"

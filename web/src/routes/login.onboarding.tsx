@@ -5,7 +5,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { submitSession } from '../components/auth-screen'
 import { Button } from '../components/ui/button'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { PageHeader, Empty, ErrorState, Loading } from '../components/shared'
 
 export const Route = createFileRoute('/login/onboarding')({ component: Onboarding })
 
@@ -48,12 +48,10 @@ function Onboarding() {
     )
   return (
     <section className="onboarding-page">
-      <header className="page-heading">
-        <div>
-          <h1>Choose your workspace</h1>
-          <p>Join a team that invited you, or start in a private workspace of your own.</p>
-        </div>
-      </header>
+      <PageHeader
+        title="Choose your workspace"
+        description="Join a team that invited you, or start in a private workspace of your own."
+      />
       {error && (
         <p role="alert" className="inline-error">
           {error}

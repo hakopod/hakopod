@@ -18,7 +18,16 @@ import { Button } from '../components/ui/button'
 import { RowActions } from '../components/ui/row-actions'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
-import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import {
+  HeadingHelp,
+  Copy,
+  Empty,
+  ErrorState,
+  Loading,
+  Note,
+  PageHeader,
+  Status,
+} from '../components/shared'
 
 export const Route = createFileRoute('/backups')({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -136,8 +145,12 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>{artifacts ? 'Stored database backups' : 'Backup and restore jobs'}</h2>
-          <p>Up to 100 records per page.</p>
+          <div className="hako-section-heading-title">
+            <h2>{artifacts ? 'Stored database backups' : 'Backup and restore jobs'}</h2>
+            <HeadingHelp title={artifacts ? 'Stored database backups' : 'Backup and restore jobs'}>
+              Up to 100 records per page.
+            </HeadingHelp>
+          </div>
         </div>
         <Button size="sm" onClick={() => void active.refetch()}>
           <Icon name="refresh" size={14} />
@@ -395,8 +408,12 @@ function Destinations() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Object storage</h2>
-          <p>Connect and test the buckets used by backups. Credentials stay on the server.</p>
+          <div className="hako-section-heading-title">
+            <h2>Object storage</h2>
+            <HeadingHelp title="Object storage">
+              Connect and test the buckets used by backups. Credentials stay on the server.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {destinations.isPending ? (
@@ -509,8 +526,12 @@ function Schedules() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Backup schedules</h2>
-          <p>Review the next run, source, and retained backup count.</p>
+          <div className="hako-section-heading-title">
+            <h2>Backup schedules</h2>
+            <HeadingHelp title="Backup schedules">
+              Review the next run, source, and retained backup count.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {schedules.isPending ? (

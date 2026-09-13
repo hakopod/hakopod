@@ -7,7 +7,7 @@ import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Copy, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from './shared'
 
 export function NodeAction({
   node,
@@ -223,8 +223,12 @@ export default function NodeEnrollments() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Worker enrollment</h2>
-          <p>Short-lived credentials for a compatible K3s worker.</p>
+          <div className="hako-section-heading-title">
+            <h2>Worker enrollment</h2>
+            <HeadingHelp title="Worker enrollment">
+              Short-lived credentials for a compatible K3s worker.
+            </HeadingHelp>
+          </div>
         </div>
         <Button variant="primary" disabled={!list.data?.configured} onClick={() => setCreate(true)}>
           Create enrollment token

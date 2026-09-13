@@ -13,7 +13,7 @@ import { useScope } from '../lib/scope'
 import type { components } from '../lib/api.generated'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Copy, Empty, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note } from './shared'
 
 export default function TeamSettings() {
   const scope = useScope()
@@ -88,8 +88,12 @@ export default function TeamSettings() {
       {license.data && !hasFeature('teams') && <FeatureLock />}
       <div className="section-toolbar">
         <div>
-          <h2>Your teams</h2>
-          <p>Manage people together, then grant teams access to projects.</p>
+          <div className="hako-section-heading-title">
+            <h2>Your teams</h2>
+            <HeadingHelp title="Your teams">
+              Manage people together, then grant teams access to projects.
+            </HeadingHelp>
+          </div>
         </div>
         <Button
           disabled={!scope.identity.admin || !hasFeature('teams')}
@@ -206,8 +210,13 @@ export default function TeamSettings() {
       )}
       <div className="section-toolbar">
         <div>
-          <h2>Project access</h2>
-          <p>{scope.project || 'Select a project'} · Role changes take effect on new requests.</p>
+          <div className="hako-section-heading-title">
+            <h2>Project access</h2>
+            <HeadingHelp title="Project access">
+              Role changes take effect on new requests.
+            </HeadingHelp>
+          </div>
+          <span className="muted-text">{scope.project || 'Select a project'}</span>
         </div>
         {canShareProject && scope.project && (
           <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('project')}>
@@ -821,8 +830,12 @@ export function InstallationUsers() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Installation accounts</h2>
-          <p>Administrators have access across projects. The owner account is protected.</p>
+          <div className="hako-section-heading-title">
+            <h2>Installation accounts</h2>
+            <HeadingHelp title="Installation accounts">
+              Administrators have access across projects. The owner account is protected.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {users.isPending ? (

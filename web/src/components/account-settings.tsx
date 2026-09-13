@@ -9,7 +9,7 @@ import { passkeyCredential } from '../lib/webauthn'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Copy, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from './shared'
 
 export default function AccountSettings() {
   const { identity } = useScope()
@@ -50,9 +50,9 @@ export default function AccountSettings() {
           <Status
             value={identity.owner ? 'super admin' : identity.admin ? 'administrator' : 'member'}
           />
-          <Link className="button button-sm" to="/settings/profile">
-            Edit profile
-          </Link>
+          <Button asChild size="sm">
+            <Link to="/settings/profile">Edit profile</Link>
+          </Button>
         </div>
       </div>
       {security.isPending ? (
@@ -70,11 +70,16 @@ export default function AccountSettings() {
             )}
             <div className="security-grid">
               <section className="panel service-summary-panel">
-                <h2>Two-factor authentication</h2>
+                <div className="hako-section-heading-title">
+                  <h2>Two-factor authentication</h2>
+                  <HeadingHelp title="Two-factor authentication">
+                    Protect sign-in with an authenticator app.
+                  </HeadingHelp>
+                </div>
                 <p className="muted-text">
                   {security.data.totp_enabled
                     ? `Enabled · ${security.data.recovery_codes_remaining} recovery codes remaining`
-                    : 'Protect sign-in with an authenticator app.'}
+                    : 'Not enabled'}
                 </p>
                 <Button
                   disabled={!security.data.password_enabled}
@@ -86,8 +91,10 @@ export default function AccountSettings() {
               <section className="panel service-summary-panel">
                 <div className="section-toolbar">
                   <div>
-                    <h2>Passkeys</h2>
-                    <p>Use your device or a security key.</p>
+                    <div className="hako-section-heading-title">
+                      <h2>Passkeys</h2>
+                      <HeadingHelp title="Passkeys">Use your device or a security key.</HeadingHelp>
+                    </div>
                   </div>
                   <Button
                     disabled={!security.data.password_enabled}
@@ -146,8 +153,12 @@ export default function AccountSettings() {
       )}
       <div className="section-toolbar">
         <div>
-          <h2>Active sessions</h2>
-          <p>Browser and CLI sessions issued to your account.</p>
+          <div className="hako-section-heading-title">
+            <h2>Active sessions</h2>
+            <HeadingHelp title="Active sessions">
+              Browser and CLI sessions issued to your account.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {sessions.isPending ? (

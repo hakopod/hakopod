@@ -9,7 +9,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Empty, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Empty, ErrorState, Loading, Note, Status } from './shared'
 
 export function ServiceTLS({
   application,
@@ -37,8 +37,12 @@ export function ServiceTLS({
     <>
       <div className="section-toolbar">
         <div>
-          <h2>TLS certificate</h2>
-          <p>Certificate readiness observed from the cluster.</p>
+          <div className="hako-section-heading-title">
+            <h2>TLS certificate</h2>
+            <HeadingHelp title="TLS certificate">
+              Certificate readiness observed from the cluster.
+            </HeadingHelp>
+          </div>
         </div>
         {application.spec.services[service].public && scope.can('deployments:write') && (
           <Button onClick={() => setEdit(true)}>
@@ -350,8 +354,12 @@ export default function IssuerSettings() {
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Certificate issuers</h2>
-          <p>Managed ACME issuance through the installed cert-manager controller.</p>
+          <div className="hako-section-heading-title">
+            <h2>Certificate issuers</h2>
+            <HeadingHelp title="Certificate issuers">
+              Managed ACME issuance through the installed cert-manager controller.
+            </HeadingHelp>
+          </div>
         </div>
         {scope.identity.admin && (
           <Button

@@ -12,7 +12,7 @@ import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
-import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
 
 type Build = components['schemas']['BuildConfig']
@@ -62,12 +62,12 @@ function BuildDetail() {
   const runId = selected || runs.data?.items[0]?.id || ''
   return (
     <div className="ops-page ops-build-page">
-      <div className="section-toolbar">
+      <header className="application-heading">
         <div>
-          <div className="eyebrow">
+          <div className="sr-only">
             SOURCE BUILD / {build.project} / {build.environment}
           </div>
-          <div className="title-row">
+          <div className="title-row hako-page-heading-title">
             <Status
               value={
                 build.installed_revision === build.revision ? 'installed' : 'installation required'
@@ -77,19 +77,21 @@ function BuildDetail() {
               {build.name} / {build.service}
             </h1>
           </div>
-          <div className="ops-object-id">
+          <div className="application-metadata">
             <code>{build.id}</code>
             <Copy value={build.id} />
+            <span>
+              {providerLabel} · {build.repository} · {build.branch}
+            </span>
           </div>
-          <p>
-            {providerLabel} · {build.repository} · {build.branch}
-          </p>
         </div>
         {scope.can('deployments:write') && (
           <div className="toolbar-actions">
-            <Link className="button" to="/builds/$buildId/edit" params={{ buildId }}>
-              Edit build
-            </Link>
+            <Button asChild>
+              <Link to="/builds/$buildId/edit" params={{ buildId }}>
+                Edit build
+              </Link>
+            </Button>
             <Button
               variant={runId || tab === 'configuration' ? 'secondary' : 'primary'}
               disabled={build.installed_revision !== build.revision}
@@ -99,7 +101,7 @@ function BuildDetail() {
             </Button>
           </div>
         )}
-      </div>
+      </header>
       {error && (
         <div className="inline-error" role="alert">
           {error}
@@ -229,8 +231,12 @@ function BuildDetail() {
         <Tabs.Content value="runs" className="tab-content">
           <div className="section-toolbar">
             <div>
-              <h2>Recent build runs</h2>
-              <p>Up to 20 runs. Select a run to observe its current {providerLabel} status.</p>
+              <div className="hako-section-heading-title">
+                <h2>Recent build runs</h2>
+                <HeadingHelp title="Recent build runs">
+                  Up to 20 runs. Select a run to observe its current {providerLabel} status.
+                </HeadingHelp>
+              </div>
             </div>
             <Button size="sm" onClick={() => void runs.refetch()}>
               Refresh history

@@ -10,7 +10,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Copy, Empty, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { DiffTable } from './deploy-dialog'
 
 import { FormPage, FormHint, FormSection } from './form-page'
@@ -44,8 +44,12 @@ export default function ApplicationSource({ application }: { application: Applic
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Repository configuration source</h2>
-          <p>Fetch a committed Hakopod TOML file, review it, and deploy an immutable revision.</p>
+          <div className="hako-section-heading-title">
+            <h2>Repository configuration source</h2>
+            <HeadingHelp title="Repository configuration source">
+              Fetch a committed Hakopod TOML file, review it, and deploy an immutable revision.
+            </HeadingHelp>
+          </div>
         </div>
         {scope.can('deployments:write') && (
           <Button
@@ -152,10 +156,12 @@ export default function ApplicationSource({ application }: { application: Applic
         <section className="panel service-summary-panel">
           <div className="section-toolbar">
             <div>
-              <h2>Build this application from code</h2>
-              <p>
-                Use a Dockerfile or Cloud Native Buildpacks to produce a verified service image.
-              </p>
+              <div className="hako-section-heading-title">
+                <h2>Build this application from code</h2>
+                <HeadingHelp title="Build this application from code">
+                  Use a Dockerfile or Cloud Native Buildpacks to produce a verified service image.
+                </HeadingHelp>
+              </div>
             </div>
             <Button
               onClick={() =>
@@ -401,8 +407,12 @@ export function GitHubSettings() {
   return (
     <>
       <div className="provider-section-title">
-        <h2>Git providers</h2>
-        <p>Connect repository access and signed webhooks for automatic deployments.</p>
+        <div className="hako-section-heading-title">
+          <h2>Git providers</h2>
+          <HeadingHelp title="Git providers">
+            Connect repository access and signed webhooks for automatic deployments.
+          </HeadingHelp>
+        </div>
       </div>
       <div className="integration-grid">
         {(['github', 'gitlab'] as const).map((provider) => (
@@ -470,8 +480,12 @@ export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitl
     <>
       <div className="section-toolbar">
         <div>
-          <h2>{label} integration</h2>
-          <p>Repository access and authenticated push events for connected applications.</p>
+          <div className="hako-section-heading-title">
+            <h2>{label} integration</h2>
+            <HeadingHelp title={`${label} integration`}>
+              Repository access and authenticated push events for connected applications.
+            </HeadingHelp>
+          </div>
         </div>
       </div>
       {connection.isPending ? (

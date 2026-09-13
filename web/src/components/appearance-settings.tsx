@@ -1,3 +1,4 @@
+import { HeadingHelp } from './shared'
 import { useEffect, useId, useState } from 'react'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { useAccent, useTheme } from '../lib/appearance'
@@ -36,8 +37,12 @@ export function AppearanceSettings() {
   return (
     <section className="hako-appearance" aria-labelledby={titleId}>
       <div>
-        <h2 id={titleId}>Appearance</h2>
-        <p>Choose the theme for this browser. Changes are saved automatically.</p>
+        <div className="hako-section-heading-title">
+          <h2 id={titleId}>Appearance</h2>
+          <HeadingHelp title="Appearance">
+            Choose the theme for this browser. Changes are saved automatically.
+          </HeadingHelp>
+        </div>
       </div>
       <div className="hako-theme-options" role="group" aria-label="Color theme">
         {(['dark', 'light'] as const).map((value) => (

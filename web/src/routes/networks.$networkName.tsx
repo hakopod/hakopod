@@ -6,7 +6,7 @@ import { APIError, message, relative } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { downloadNetworkTOML } from '../lib/virtual-networks'
 import { Icon } from '../components/icons'
-import { Copy, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, PageHeader } from '../components/shared'
 import { TOMLCode } from '../components/toml-code'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
 import { Button } from '../components/ui/button'
@@ -138,8 +138,12 @@ function NetworkDetail() {
       <section className="network-connections" aria-labelledby="network-connections-title">
         <div className="section-toolbar">
           <div>
-            <h2 id="network-connections-title">Declared connections</h2>
-            <p>Accepted application revisions. Open a service to inspect its live state.</p>
+            <div className="hako-section-heading-title">
+              <h2 id="network-connections-title">Declared connections</h2>
+              <HeadingHelp title="Declared connections">
+                Accepted application revisions. Open a service to inspect its live state.
+              </HeadingHelp>
+            </div>
           </div>
           <span className="label-chip">{detail.connections.length} connections</span>
         </div>

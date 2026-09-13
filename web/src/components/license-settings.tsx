@@ -10,7 +10,7 @@ import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { Copy, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note } from './shared'
 export function FeatureLock({
   title = 'Team collaboration requires Hakopod Pro',
 }: {
@@ -167,8 +167,12 @@ export default function LicenseSettings() {
       )}
       <div className="section-toolbar">
         <div>
-          <h2>Feature catalog</h2>
-          <p>Availability is verified by the management API.</p>
+          <div className="hako-section-heading-title">
+            <h2>Feature catalog</h2>
+            <HeadingHelp title="Feature catalog">
+              Availability is verified by the management API.
+            </HeadingHelp>
+          </div>
         </div>
         <Badge>{current.catalog.filter((feature) => feature.enabled).length} available</Badge>
       </div>
