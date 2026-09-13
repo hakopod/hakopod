@@ -189,11 +189,14 @@ def main():
     kit = stage / f'hakopod_{args.version}_installer'; kit.mkdir()
     for folder in ('installer', 'deploy'):
         shutil.copytree(ROOT / folder, kit / folder, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    (kit / 'scripts').mkdir(); shutil.copyfile(ROOT / 'scripts/install.sh', kit / 'scripts/install.sh')
+    (kit / 'scripts').mkdir()
+    for script in ('install.sh', 'installer.sh'):
+        shutil.copyfile(ROOT / 'scripts' / script, kit / 'scripts' / script)
     for name in ('LICENSE', 'NOTICE'): shutil.copyfile(ROOT / name, kit / name)
     after = source_fingerprint()
     if before != after and not args.use_existing_dist: raise ValueError('Source changed while packaging; retry after edits finish')
     for source in (dashboard, kit): archive(source, destination / (source.name + '.tar.gz'))
+    shutil.copyfile(ROOT / 'scripts/installer.sh', destination / 'installer.sh')
     for arch in ('amd64', 'arm64'):
         name = f'hakopod_{args.version}_linux_{arch}.tar.gz'; shutil.copyfile(release_dir / name, destination / name)
     for name in ('provenance.json', 'hakopod.spdx.json', 'hakopod.cyclonedx.json', 'hakopod.syft.json', 'dependency-license-inventory.json', notices_name):
@@ -208,6 +211,6 @@ def main():
     (destination / 'installer-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
     (destination / 'SHA256SUMS').write_text(''.join(host.digest(path) + '  ' + path.name + '\n'
         for path in sorted(destination.iterdir()) if path.is_file() and not path.name.startswith('.') and path.name != 'SHA256SUMS'))
-    print(f'Packaged{count} actual SSR runtime packages; local installer artifacts: {destination}')
+    print(f'Packaged {count} actual SSR runtime packages; local installer artifacts: {destination}')
 
 if __name__ == '__main__': main()

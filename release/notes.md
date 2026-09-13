@@ -1,0 +1,7 @@
+Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target.
+
+Download and review `installer.sh` from this release, then run `sh installer.sh --help`. Use a fresh dedicated Linux server and review the printed plan before accepting installation. The installer guide in this tag describes supported distributions, required packages, DNS, memory limits and resume behavior. The `hakopod.com/scripts/installer.sh` endpoint must be deployed separately; publication here does not activate that domain.
+
+`SHA256SUMS` covers the release assets and native amd64/arm64 container smoke reports. GitHub build-provenance attestations are attached as `build-provenance.intoto.jsonl`; verify an asset with `gh attestation verify FILE --repo hakopod/hakopod`. Checksums alone establish consistency, not publisher identity. The attestation bundle is excluded from SHA256SUMS to avoid a circular digest; its signatures bind the other artifact hashes.
+
+SPDX, CycloneDX, source provenance and dependency notices describe their inventory scope. Native container smoke verifies the packaged runtime and permissions. It does not verify a full systemd/K3s host installation, reboot recovery, public DNS or ACME issuance. This prerelease is for evaluation on disposable infrastructure.

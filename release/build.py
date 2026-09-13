@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Build local development release archives and real SBOMs without Docker.
+"""Build release archives and real SBOMs without Docker.
 
 No upload, tagging, signing, repository creation or publication is performed.
 Go compilation and Syft are bounded to two logical processors and a 256 MiB
 Go soft-memory target each; targets are built sequentially.
 """
 import gzip
+import argparse
 import hashlib
 import json
 import os
@@ -67,9 +68,13 @@ def normalize_sbom_paths(destination,scan,go_cache,prefix='hakopod'):
         path.write_text(json.dumps(normalize(json.loads(path.read_text())),separators=(',',':'))+'\n')
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version',default='0.1.0-dev',help='Release tag version without v; injected into the CLI')
+    args=parser.parse_args()
+    version=args.version
+    if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?',version) or len(version)>64:
+        raise SystemExit('Version must be a release number without v, for example 0.1.0-alpha.1')
     run([str(ROOT/'release/install-syft.sh')])
-    version=output(['go','run','./cmd/hakopod','version'])
-    if not re.fullmatch(r'[A-Za-z0-9._-]+',version):raise SystemExit('CLI returned an unsafe release version')
     stage=ROOT/'.local/release-stage'/version
     destination=ROOT/'.local/releases'/version
     # Both are purpose-owned generated directories. Rebuilds replace only their
@@ -108,15 +113,16 @@ def main():
         commands=['hakopod','hakopod-server'] if system=='linux' else ['hakopod']
         for command in commands:
             print(f'Building {command} for {system}/{arch}',flush=True)
-            run(['go','build','-p','2','-trimpath','-buildvcs=false','-ldflags=-s -w','-o',str(directory/command),'./cmd/'+command],env=env,cwd=source)
+            flags='-s -w'+(' -X main.version='+version if command=='hakopod' else '')
+            run(['go','build','-p','2','-trimpath','-buildvcs=false','-ldflags='+flags,'-o',str(directory/command),'./cmd/'+command],env=env,cwd=source)
         for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,directory/filename)
         shutil.copytree(notices/'go',directory/'third-party-licenses')
         if system=='linux':
             (directory/'api').mkdir()
             shutil.copyfile(source/'api/openapi.json',directory/'api/openapi.json')
         (directory/'README.txt').write_text(
-            f'Hakopod {version} — {system}/{arch}\n\n'
-            'Development artifact; no production installer or support guarantee.\n'
+            f'Hakopod {version} - {system}/{arch}\n\n'
+            'See installer/README.md in the repository for host installation requirements.\n'
             'Run hakopod version/help to inspect the CLI.\n'
             + ('The OpenAPI contract is embedded in the server; api/openapi.json is also\nincluded for external tooling. The server requires an existing configured\nPostgreSQL database, Kubernetes credentials and explicit environment\nconfiguration; see the repository docs.\n' if system=='linux' else '')
             + '\nLicense and third-party notices accompany this archive.\n')
@@ -131,7 +137,7 @@ def main():
     print('Cataloging actual Go binaries and the dashboard lockfile',flush=True)
     run([str(syft),'scan','dir:'+str(scan),'--config',str(ROOT/'release/syft.yaml'),
          '--override-default-catalogers','go-module-binary-cataloger,javascript-lock-cataloger',
-         '--parallelism','2','--base-path',str(scan),'--source-name','hakopod-development-release','--source-version',version,
+         '--parallelism','2','--base-path',str(scan),'--source-name','hakopod-release','--source-version',version,
          '-o','spdx-json='+str(destination/'hakopod.spdx.json'),
          '-o','cyclonedx-json='+str(destination/'hakopod.cyclonedx.json'),
          '-o','syft-json='+str(destination/'hakopod.syft.json')],env=sbom_env)
@@ -141,7 +147,9 @@ def main():
     shutil.copyfile(notices/'inventory.json',destination/'dependency-license-inventory.json')
     try:revision=subprocess.check_output(['git','rev-parse','--verify','HEAD'],cwd=ROOT,env=ENV,text=True,stderr=subprocess.DEVNULL).strip()
     except subprocess.CalledProcessError:revision=None
-    status=output(['git','status','--porcelain'])
+    # Public UI sources are restored from the tracked, checksum-verified bundle
+    # in CI without submodule credentials. Their bytes have a separate fingerprint.
+    status=output(['git','status','--porcelain','--ignore-submodules=all'])
     provenance={'version':version,'built_at':datetime.now(timezone.utc).isoformat(),'go_version':output(['go','version']),
                 'syft_version':'1.51.1','source_revision':revision,'source_dirty':bool(status),'source_fingerprint_sha256':before,
                 'source_changed_during_build':after!=before,

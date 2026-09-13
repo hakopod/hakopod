@@ -24,7 +24,8 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
-const version = "0.1.0-dev"
+// Release builds inject the tag version with -X main.version.
+var version = "0.1.0-dev"
 
 type config struct {
 	URL         string `json:"url"`
