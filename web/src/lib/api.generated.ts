@@ -2799,6 +2799,10 @@ export interface components {
             change: components["schemas"]["ProxyChange"];
             drift: boolean;
         };
+        /** @description Changed HAProxy Technologies Kubernetes Ingress ConfigMap fields. Read the observed field catalog for supported names, types and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected. */
+        ProxySettingsPatch: {
+            [key: string]: string;
+        };
         TLSConfig: {
             certificate?: string;
             issuer?: string;
@@ -7110,9 +7114,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    settings: {
-                        [key: string]: string;
-                    };
+                    settings: components["schemas"]["ProxySettingsPatch"];
                     expected_revision: number;
                     expected_resource_version: string;
                 };

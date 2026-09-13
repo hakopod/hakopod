@@ -93,8 +93,9 @@ export default function ProxySettings() {
         )
       )}
       <Note>
-        Settings apply to installation ingress. Raw directives are unavailable. Only supported
-        fields are changed; unrelated controller configuration is preserved.
+        Settings apply to installation ingress. Services and ingresses can override backend
+        defaults. A change can reload HAProxy; existing connections drain until the configured
+        deadline. Only reviewed fields change, and unrelated controller configuration is preserved.
       </Note>
       {editing && (
         <ProxyEditor
@@ -175,9 +176,25 @@ function ProxyEditor({
               />
             </label>
             <p className="field-help">
-              Supported names: {snapshot.observed.fields.map((field) => field.name).join(', ')}.
-              Omitted fields remain unchanged.
+              Write every value as a string, including numbers and true or false. Durations use one
+              integer with ms, s, m or h. Omitted and unchanged fields remain untouched.
             </p>
+            <details>
+              <summary>Setting reference and limits</summary>
+              <dl className="service-definition-list">
+                {snapshot.observed.fields.map((field) => (
+                  <div key={field.name}>
+                    <dt>
+                      <code>{field.name}</code>
+                    </dt>
+                    <dd>
+                      {field.description}
+                      <p className="field-help">Example: &quot;{field.example}&quot;</p>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           </>
         )}
         {error && (
@@ -222,7 +239,7 @@ function ProxyEditor({
               await unwrap(
                 client.PATCH('/settings/haproxy', {
                   body: {
-                    settings: review,
+                    settings: Object.fromEntries(changed),
                     expected_revision: snapshot.revision,
                     expected_resource_version: snapshot.observed.resource_version,
                   },
