@@ -4,6 +4,51 @@ Verified locally on 2026-09-12 and 2026-09-13. This record covers the Hatch
 migration, account and runtime changes, compact dashboard, and virtual networks.
 It distinguishes checks against real services from isolated browser fixtures.
 
+## September 13 layout and service settings follow-up
+
+Application lists now have no outer box or resting card outlines. Summary counts
+sit on one compact row and wrap on small screens. The heading actions use the
+same Button component. Application and service grids use explicit responsive
+columns, with four on desktop and five from 1680 pixels upward.
+
+Sixteen isolated browser checks passed at widths from 320 to 2560 pixels with
+no browser errors. Both grids used 1/1/2/4/5/5 columns at
+320/390/768/1447/1800/2560 pixels. The summary measured 28 pixels on desktop and
+46 pixels when wrapped on mobile. Both action buttons measured 32 pixels on
+desktop and 36 pixels on mobile, with matching top alignment. Two-card lists
+kept their column widths. Native links, copy buttons, action menus and keyboard
+focus remained independent. The fixture used artificial records and intercepted
+requests; it did not change live applications.
+
+Services now have direct Environment and Secrets tabs with persistent URLs.
+Environment shows only the selected service's plain values and opens its
+reviewed editor. Secrets lists its bound references and saved metadata, groups
+aliases, and names other services sharing a reference before a value is changed.
+Values remain write-only. New secret values require a separate reviewed binding
+change; saving a value does not deploy or attach it automatically. Viewer roles
+have no write controls. Secret dialogs block dismissal during saving and preserve
+failed drafts. Name validation matches the Go slug rules, including Chrome's
+current HTML pattern syntax.
+
+Fourteen isolated service checks passed without browser errors or external
+requests. They verified service context through editing and reloads, exact
+reviewed binding payloads, shared and missing references, write-only saves,
+invalid names, metadata failures, viewer controls and retained failed drafts.
+Long values, names and dialogs fit a 390-pixel viewport without page overflow.
+Both the service and application secret dialogs resisted dismissal while saving.
+
+The full Go suite passed again with two workers and disposable test databases.
+Dashboard TypeScript, formatting, all 43 tests and the production build passed.
+No backend or Kubernetes behavior changed in this follow-up.
+
+The refreshed production preview returned HTTP 200 for applications, both new
+service tab URLs, settings and proxied auth status. The existing administrator
+setup and both application revisions were preserved. These HTTP checks verify
+route availability; the isolated browser checks verify interactive behavior.
+
+The checklist is in [dashboard feedback](../docs/dashboard-checklist.md). The
+sections below also retain evidence from earlier feature and migration passes.
+
 ## What changed
 
 The dashboard consumes `@hakopod/hatch-ui` from the public
@@ -207,18 +252,20 @@ level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 104 | 1,350,897 | 428,472 |
-| CSS | 3 | 148,264 | 27,301 |
+| JavaScript | 105 | 1,358,114 | 431,342 |
+| CSS | 3 | 148,913 | 27,395 |
 | Fonts | 2 | 236,032 | 109,697 |
 
-The main JavaScript entry is 401,689 bytes. The 331,178-byte xterm chunk loads only
+The main JavaScript entry is 401,703 bytes. The 331,178-byte xterm chunk loads only
 after Connect. Project creation, appearance and guidance panels load on demand.
-Network routes and environment editors also load separately. This pass adds no
+Network routes, environment editors and the new service secrets panel also load
+separately. The secrets panel is 5.68 kB raw, 2.44 kB gzipped, and adds no polling.
+This pass adds no
 chart library, network daemon or model runtime. The portable UI source archive
 remains 135,846 bytes and contains only the consumer library.
 
-After restart and HTTP smoke checks, a process sample showed 25,168 KiB API RSS
-and 100,704 KiB dashboard RSS. These are point-in-time observations, not peak or
+After restart and HTTP smoke checks, a process sample showed 26,800 KiB API RSS
+and 109,952 KiB dashboard RSS. These are point-in-time observations, not peak or
 capacity guarantees. Go retains its 192 MiB soft memory target, and Node its
 192 MiB old-space cap. Neither setting caps total process memory.
 
