@@ -24,6 +24,9 @@ database_spec = importlib.util.spec_from_file_location('installer_database', HER
 database = importlib.util.module_from_spec(database_spec)
 sys.modules[database_spec.name] = database
 database_spec.loader.exec_module(database)
+oauth_spec = importlib.util.spec_from_file_location('installer_oauth', HERE / 'oauth.py')
+oauth = importlib.util.module_from_spec(oauth_spec)
+oauth_spec.loader.exec_module(oauth)
 PINS = json.loads((HERE / 'pins.json').read_text())
 DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip='',
     node_name='hakopod-server', supervisor_host='', dashboard_mode='ssh',
@@ -31,7 +34,7 @@ DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip=''
     tls_cert_file='', tls_key_file='', acme='production', acme_email='', storage=False,
     k3s_memory_mib=2048, api_memory_mib=256, dashboard_memory_mib=320,
     database_mode='managed', database_url_file='', database_ca_file='', install_docker=False,
-    postgres_memory_mib=256, max_pods=50, deployment_mode='self-hosted', public_tcp_ports=[])
+    postgres_memory_mib=256, max_pods=50, deployment_mode='self-hosted', public_tcp_ports=[], oauth={})
 LABEL = 'hakopod.com/installation'
 ROOTS = ('/etc/hakopod', '/opt/hakopod', '/var/lib/hakopod')
 UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard')
@@ -109,6 +112,7 @@ def config(path):
     if c['acme'] not in ('off', 'staging', 'production'): fail('acme must be off, staging or production')
     if c['acme'] != 'off' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', c['acme_email']):
         fail('ACME needs an operator-provided acme_email')
+    c['oauth'] = oauth.configured(c['oauth'])
     database.validate_config(c, inspect_files=False)
     return c
 
@@ -126,7 +130,8 @@ def digest(path):
 
 def fingerprint(c, arch, artifacts):
     # Moving the same verified input bytes does not invalidate a resume.
-    return hashlib.sha256(json.dumps(dict(config=c, arch=arch, artifacts=artifacts,
+    canonical = dict(c, oauth=oauth.canonical(c.get('oauth', {})))
+    return hashlib.sha256(json.dumps(dict(config=canonical, arch=arch, artifacts=artifacts,
         pins=PINS), sort_keys=True).encode()).hexdigest()
 
 def regular(path, private=False):
@@ -214,6 +219,7 @@ def plan(c, arch, directory):
     database_cap = f', PostgreSQL {c["postgres_memory_mib"]} MiB' if c['database_mode'] == 'managed' else ''
     print(f'Hard memory limits: K3s {c["k3s_memory_mib"]} MiB, API {c["api_memory_mib"]} MiB, dashboard {c["dashboard_memory_mib"]} MiB{database_cap}, HAProxy 256 MiB.')
     print('API: GOMEMLIMIT192MiB /2 processors; dashboard JS heap192MiB. At least4GiB RAM and30GiB free disk; workload capacity is additional.')
+    print('OAuth login: ' + (', '.join(c.get('oauth', {})) or 'not configured') + '; self-hosted enrollment still requires first-owner setup or an explicit invitation.')
     print('Only a random setup token is generated. Choose your own name, email and password in the dashboard.')
     print('Upstream binaries use checked-in hashes. Local SHA256SUMS must come from your trusted build; they are not signatures.')
     print('Config/artifact fingerprint: ' + fingerprint(c, arch, verified))
@@ -366,7 +372,8 @@ def prepare(c, arch, directory, resume):
         for root in ROOTS: Path(root).mkdir(mode=0o711)
         write(marker, json.dumps(dict(schema_version=1, id=installation, fingerprint=fp, completed=False)) + '\n')
     for root in ROOTS: os.chmod(root, 0o711)
-    write('/etc/hakopod/config.json', json.dumps(c, indent=2) + '\n')
+    saved_config = dict(c, oauth=oauth.canonical(c.get('oauth', {})))
+    write('/etc/hakopod/config.json', json.dumps(saved_config, indent=2) + '\n')
     secret_dir = Path('/etc/hakopod/secrets'); secret_dir.mkdir(mode=0o711, exist_ok=True); secret_dir.chmod(0o711)
     names = ['setup-token', 'auth-encryption-key', 'session-secret']
     if c['database_mode'] == 'managed': names.append('postgres-password')
@@ -378,6 +385,7 @@ def prepare(c, arch, directory, resume):
         else:
             if resume and old.get('secrets_created'): fail('Missing preserved secret; restore from backup: ' + name)
             write(path, secrets.token_hex(32) + '\n')
+    oauth.preserve(c.get('oauth', {}), Path('/etc/hakopod'))
     state = read_json(marker)
     preserve_database(c, state)
     state['secrets_created'] = True
@@ -543,6 +551,7 @@ User=hakopod-{name}
 Group=hakopod-{name}
 WorkingDirectory=/opt/hakopod/current
 EnvironmentFile=/etc/hakopod/{name}.env
+{'EnvironmentFile=-/etc/hakopod/oauth.env' if name == 'api' else ''}
 ExecStart={command}
 Restart=on-failure
 RestartSec=5

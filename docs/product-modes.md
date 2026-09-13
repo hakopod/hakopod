@@ -19,7 +19,7 @@ create a production-ready shared hosting platform.
 | Public TCP, including SMTP and SFTP | Administrator-provisioned ports | Rejected by installation policy |
 | Node access, host terminals and shared ingress configuration | Authorized installation operators | Platform operations only |
 | Resource capacity | Operator-owned capacity and workload profiles | Plan limits; account-level enforcement is still required |
-| Public signup | Disabled in public release binaries; setup and licensed invites remain available | Cloud build plus explicit operator opt-in |
+| Public signup | Disabled in public release binaries; setup and explicit invites remain available | Cloud build plus explicit operator opt-in |
 | Team features | Signed Pro entitlements | Commercial packaging; no exception to networking policy |
 
 Customer-owned Bring Your Own Cloud is a dedicated self-hosted installation on

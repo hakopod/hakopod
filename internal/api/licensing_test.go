@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestLicensePaidGatesDowngradeAndRecovery(t *testing.T) {
+func TestLicenseFreeCollaborationDowngradeAndRecovery(t *testing.T) {
 	h := newAuthHarness(t, nil)
 	ctx := context.Background()
 	if _, err := h.db.Pool.Exec(ctx, "UPDATE installation_license SET token='',token_digest=NULL,highest_sequence=0,revision=0 WHERE singleton"); err != nil {
@@ -21,8 +21,8 @@ func TestLicensePaidGatesDowngradeAndRecovery(t *testing.T) {
 	if status["plan"] != "free" || status["valid"] != false {
 		t.Fatal("empty installation was not Free")
 	}
-	h.call("POST", "/teams", owner, map[string]string{"name": "Must be licensed"}, 402)
-	h.call("POST", "/projects/demo/invites", owner, map[string]string{"email": "blocked@example.test", "role": "developer"}, 402)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Free team"}, 201)
+	h.call("POST", "/projects/demo/invites", owner, map[string]string{"email": "free@example.test", "role": "developer"}, 201)
 	claims := testLicenseClaims(installation, 1)
 	pro := testSignedLicense(h.licenseKey, claims)
 	h.call("PUT", "/license", owner, map[string]any{"license": pro, "expected_revision": 0}, 200)
@@ -52,18 +52,18 @@ func TestLicensePaidGatesDowngradeAndRecovery(t *testing.T) {
 	if free["plan"] != "free" {
 		t.Fatal("signed downgrade retained Pro")
 	}
-	h.call("POST", "/teams", owner, map[string]string{"name": "Blocked after downgrade"}, 402)
-	h.call("POST", "/teams/"+teamID+"/invites", owner, map[string]string{"email": "denied@example.test", "role": "member"}, 402)
-	h.call("PUT", "/teams/"+teamID+"/members/"+memberID, owner, map[string]string{"role": "admin"}, 402)
-	h.call("PUT", "/projects/demo/members", owner, map[string]string{"identity_id": memberID, "role": "developer"}, 402)
-	h.call("PUT", "/projects/demo/members", owner, map[string]string{"team_id": teamID, "role": "developer"}, 402)
-	h.call("POST", "/auth/invites/accept", "", map[string]string{"token": pendingURL.Query().Get("token"), "name": "Pending Member", "password": "pending member password"}, 402)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Free after downgrade"}, 201)
+	h.call("POST", "/teams/"+teamID+"/invites", owner, map[string]string{"email": "free-again@example.test", "role": "member"}, 201)
+	h.call("PUT", "/teams/"+teamID+"/members/"+memberID, owner, map[string]string{"role": "admin"}, 200)
+	h.call("PUT", "/projects/demo/members", owner, map[string]string{"identity_id": memberID, "role": "developer"}, 200)
+	h.call("PUT", "/projects/demo/members", owner, map[string]string{"team_id": teamID, "role": "developer"}, 200)
+	h.call("POST", "/auth/invites/accept", "", map[string]string{"token": pendingURL.Query().Get("token"), "name": "Pending Member", "password": "pending member password"}, 200)
 	current, err := h.db.Authenticate(ctx, memberToken)
-	if err != nil || current.Allows("deployments:write", "demo", "development", "test") {
-		t.Fatal("downgrade retained team authority or blocked ordinary authentication")
+	if err != nil || !current.Allows("deployments:write", "demo", "development", "test") {
+		t.Fatal("downgrade removed Free team authority or blocked ordinary authentication")
 	}
-	if err = h.db.Reauthorize(ctx, principal.KeyID, "demo", "development", "test"); err == nil {
-		t.Fatal("durable work retained paid authorization after downgrade")
+	if err = h.db.Reauthorize(ctx, principal.KeyID, "demo", "development", "test"); err != nil {
+		t.Fatal("durable work lost Free authorization after downgrade")
 	}
 	h.call("PUT", "/license", owner, map[string]any{"license": pro, "expected_revision": 2}, 409)
 	for _, kind := range []string{"wrong installation", "expired", "tampered"} {
@@ -83,7 +83,7 @@ func TestLicensePaidGatesDowngradeAndRecovery(t *testing.T) {
 		}
 		h.call("PUT", "/license", owner, map[string]any{"license": raw, "expected_revision": 2}, 400)
 	}
-	// Safe removal of existing grants remains available while paid features lock.
+	// Membership revocation remains available after downgrade.
 	h.call("PUT", "/teams/"+teamID+"/members/"+memberID, owner, map[string]string{"role": ""}, 200)
 	h.call("PUT", "/projects/demo/members", owner, map[string]string{"team_id": teamID, "role": ""}, 200)
 	h.call("GET", "/auth/security", owner, nil, 200)
@@ -107,11 +107,11 @@ func TestLicensePaidGatesDowngradeAndRecovery(t *testing.T) {
 	if h.call("GET", "/license", owner, nil, 200)["state"] != "expired" {
 		t.Fatal("stored signed expiry was not enforced")
 	}
-	h.call("POST", "/teams", owner, map[string]string{"name": "Expired blocked"}, 402)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Free after expiry"}, 201)
 	h.call("DELETE", "/teams/"+teamID, owner, nil, 200)
 	h.call("DELETE", "/license", owner, map[string]int64{"expected_revision": 3}, 200)
 	h.call("PUT", "/license", owner, map[string]any{"license": renewal, "expected_revision": 4}, 409)
 	claims.Sequence = 4
 	h.call("PUT", "/license", owner, map[string]any{"license": testSignedLicense(h.licenseKey, claims), "expected_revision": 4}, 200)
-	t.Log("real PostgreSQL: Free gates, paid teams/invites/role grants, signed downgrade, active-session and worker reauthorization, tamper/wrong installation/expiry, anti-replay sequence and recovery cleanup passed")
+	t.Log("real PostgreSQL: Free teams/invites/fixed role grants survive downgrade and expiry; tamper/wrong installation/expiry, anti-replay sequence and recovery cleanup passed")
 }
