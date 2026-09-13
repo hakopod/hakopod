@@ -4,14 +4,24 @@ The person installing Hakopod chooses the first owner’s name, email and passwo
 The setup credential only authorizes that first claim. Public registration never
 creates an installation administrator.
 
-These startup options can also use [operator TOML](operator-configuration.md).
-For example, set `signup_enabled = true` under `[auth]` to enable public registration.
+Public release binaries keep public registration closed, even when an operator
+sets `HAKOPOD_SIGNUP_ENABLED=true`, `[auth] signup_enabled = true`, or switches
+deployment mode. First-owner setup stays available until the installation is
+claimed. Existing accounts can sign in, and explicit invitations can enroll
+members when their signed paid entitlements and invitation proofs are valid.
 
-Set `HAKOPOD_SIGNUP_ENABLED=true` on the management server to enable public
-registration. It is disabled by default. Existing accounts can always sign in,
-and a valid paid invitation can create an account while public registration is
-closed. Turning registration off also prevents unfinished public verification
-links from creating accounts.
+Cloud builds require the `hakopod_cloud` build tag, `managed-cloud` deployment
+mode, and `HAKOPOD_SIGNUP_ENABLED=true` (or its operator TOML equivalent) to enable
+public registration. The `hakopod_selfhosted` tag always disables that capability,
+even if both tags are supplied. Public archives use the self-hosted tag. This is
+a policy of the built artifact; someone rebuilding modified source controls their
+own binary. It does not replace paid invitation or team license checks.
+
+The same policy controls email signup, verification and OAuth account creation.
+Changing to a self-hosted build, changing deployment mode, or turning registration
+off prevents unfinished public verification links and provider callbacks from
+creating accounts. `/api/v1/auth/status` reports the effective policy so the
+dashboard does not offer public signup when the backend disallows it.
 
 Email registration and password recovery use the existing SMTP configuration:
 `HAKOPOD_SMTP_ENABLED=true`, `HAKOPOD_SMTP_ADDRESS`, `HAKOPOD_SMTP_FROM`, and any
@@ -35,8 +45,8 @@ administrators retain their existing installation-wide access.
 
 GitHub, GitLab and Google use the same configured OAuth clients for sign-in and
 registration. Provider email verification, browser-bound state and PKCE are
-required. Registration requires the environment switch or a valid invitation
-for that verified email. A provider account never gains an installation role.
+required. New accounts require the Cloud signup policy above or a valid licensed
+invitation for that verified email. A provider account never gains an installation role.
 After authenticating through an invitation link, the person confirms the choice
 to join that workspace or create a separate personal workspace.
 

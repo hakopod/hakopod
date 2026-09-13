@@ -225,7 +225,7 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
-	id, err := s.Store.ResolveOAuthAccount(ctx, provider, verified.Subject, verified.Email, verified.Name, s.Auth.SignupEnabled && pending["intent"] == "register", pending["invite_token"])
+	id, err := s.Store.ResolveOAuthAccount(ctx, provider, verified.Subject, verified.Email, verified.Name, s.Auth.PublicSignupEnabled() && pending["intent"] == "register", pending["invite_token"])
 	if err != nil {
 		authFailure(w, err)
 		return

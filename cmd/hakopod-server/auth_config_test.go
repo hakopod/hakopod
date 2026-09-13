@@ -61,16 +61,37 @@ func TestAuthOriginAndProviderConfiguration(t *testing.T) {
 	}
 }
 
-func TestRegistrationEnvironmentIsOptIn(t *testing.T) {
-	t.Setenv("HAKOPOD_WEB_ORIGIN", "http://127.0.0.1:4173")
-	for _, name := range []string{"HAKOPOD_SETUP_SECRET", "HAKOPOD_SETUP_SECRET_FILE", "HAKOPOD_AUTH_ENCRYPTION_KEY", "HAKOPOD_AUTH_ENCRYPTION_KEY_FILE", "HAKOPOD_GITHUB_CLIENT_ID", "HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_ID", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_ID", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_SMTP_ENABLED"} {
-		t.Setenv(name, "")
+func TestRegistrationRequiresCloudBuildAndConfiguredPolicy(t *testing.T) {
+	for _, mode := range []string{"", "self-hosted", "managed-cloud"} {
+		for _, value := range []string{"", "false", "TRUE", "1", "true"} {
+			settings := map[string]string{"HAKOPOD_DEPLOYMENT_MODE": mode, "HAKOPOD_SIGNUP_ENABLED": value}
+			config, err := authConfigFrom(func(key string) string { return settings[key] })
+			want := cloudSignupAvailable && mode == "managed-cloud" && value == "true"
+			if err != nil || config.PublicSignupEnabled() != want {
+				t.Fatalf("signup configuration mode=%q enabled=%q: %v", mode, value, err)
+			}
+		}
 	}
-	for _, value := range []string{"", "false", "TRUE", "1", "true"} {
-		t.Setenv("HAKOPOD_SIGNUP_ENABLED", value)
-		config, err := authConfig()
-		if err != nil || config.SignupEnabled != (value == "true") {
-			t.Fatalf("signup configuration %q: %v", value, err)
+	if _, err := authConfigFrom(func(key string) string {
+		if key == "HAKOPOD_DEPLOYMENT_MODE" {
+			return "unknown"
+		}
+		return ""
+	}); err == nil {
+		t.Fatal("invalid deployment mode accepted by auth configuration")
+	}
+}
+
+func TestRegistrationOperatorPolicyCannotEnableSelfHostedBuild(t *testing.T) {
+	for _, mode := range []string{"self-hosted", "managed-cloud"} {
+		input := []byte("schema_version=1\n[server]\ndeployment_mode='" + mode + "'\n[auth]\nsignup_enabled=true")
+		settings, err := operatorSettings(input, t.TempDir(), noOperatorEnvironment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config, err := authConfigFrom(func(key string) string { return settings[key] })
+		if err != nil || config.PublicSignupEnabled() != (cloudSignupAvailable && mode == "managed-cloud") {
+			t.Fatalf("operator signup policy escaped build restriction: %v", err)
 		}
 	}
 }

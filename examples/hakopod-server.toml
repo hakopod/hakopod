@@ -36,6 +36,8 @@ rollout_timeout = "2m"
 # haproxy_release = "hakopod-ingress"
 
 [auth]
+# Public self-hosted binaries keep signup closed even if this is true.
+# Initial owner setup and licensed invitations remain available.
 signup_enabled = false
 # setup_secret_file = "/etc/hakopod/secrets/setup"
 # encryption_key_file = "/etc/hakopod/secrets/auth-encryption"

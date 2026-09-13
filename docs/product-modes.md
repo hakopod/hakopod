@@ -19,6 +19,7 @@ create a production-ready shared hosting platform.
 | Public TCP, including SMTP and SFTP | Administrator-provisioned ports | Rejected by installation policy |
 | Node access, host terminals and shared ingress configuration | Authorized installation operators | Platform operations only |
 | Resource capacity | Operator-owned capacity and workload profiles | Plan limits; account-level enforcement is still required |
+| Public signup | Disabled in public release binaries; setup and licensed invites remain available | Cloud build plus explicit operator opt-in |
 | Team features | Signed Pro entitlements | Commercial packaging; no exception to networking policy |
 
 Customer-owned Bring Your Own Cloud is a dedicated self-hosted installation on
@@ -39,6 +40,12 @@ Self-hosted applications can use only the public ports an administrator has
 already provisioned and enabled. No deployment changes host ports or cloud
 firewalls automatically. See [public TCP](public-tcp.md) for limits, source
 restrictions and switching an existing installation to managed-cloud mode.
+
+Public self-hosted binaries cannot enable public signup through environment or
+operator TOML settings, including a mode override. A Cloud build must separately
+opt in to managed-cloud mode and signup. Initial owner setup and licensed
+invitations remain available under their existing authorization checks. See
+[accounts](accounts.md) for the build policy and enrollment paths.
 
 Private TCP remains available in both modes. Applications can use databases,
 queues and private APIs through declared ports and peers. Custom domains and
