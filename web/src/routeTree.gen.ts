@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BackupsRouteImport } from './routes/backups'
 import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
+import { Route as NetworksRouteImport } from './routes/networks'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
@@ -32,18 +33,22 @@ import { Route as LoginOnboardingRouteImport } from './routes/login.onboarding'
 import { Route as LoginResetRouteImport } from './routes/login.reset'
 import { Route as LoginSignupRouteImport } from './routes/login.signup'
 import { Route as LoginVerifyRouteImport } from './routes/login.verify'
+import { Route as NetworksNetworkNameRouteImport } from './routes/networks.$networkName'
+import { Route as NetworksNewRouteImport } from './routes/networks.new'
 import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates.$templateId'
 import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
 import { Route as ApplicationsApplicationIdDomainsRouteImport } from './routes/applications.$applicationId.domains'
+import { Route as ApplicationsApplicationIdEnvironmentRouteImport } from './routes/applications.$applicationId.environment'
 import { Route as ApplicationsApplicationIdSourceRouteImport } from './routes/applications.$applicationId.source'
 import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.destinations.new'
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
 import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
+import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
@@ -68,6 +73,11 @@ const BuildsRoute = BuildsRouteImport.update({
 const InfrastructureRoute = InfrastructureRouteImport.update({
   id: '/infrastructure',
   path: '/infrastructure',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NetworksRoute = NetworksRouteImport.update({
+  id: '/networks',
+  path: '/networks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SessionRoute = SessionRouteImport.update({
@@ -166,6 +176,16 @@ const LoginVerifyRoute = LoginVerifyRouteImport.update({
   path: '/login/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NetworksNetworkNameRoute = NetworksNetworkNameRouteImport.update({
+  id: '/$networkName',
+  path: '/$networkName',
+  getParentRoute: () => NetworksRoute,
+} as any)
+const NetworksNewRoute = NetworksNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => NetworksRoute,
+} as any)
 const SettingsHostAccessRoute = SettingsHostAccessRouteImport.update({
   id: '/host-access',
   path: '/host-access',
@@ -196,6 +216,12 @@ const ApplicationsApplicationIdDomainsRoute =
   ApplicationsApplicationIdDomainsRouteImport.update({
     id: '/domains',
     path: '/domains',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
+const ApplicationsApplicationIdEnvironmentRoute =
+  ApplicationsApplicationIdEnvironmentRouteImport.update({
+    id: '/environment',
+    path: '/environment',
     getParentRoute: () => ApplicationsApplicationIdRoute,
   } as any)
 const ApplicationsApplicationIdSourceRoute =
@@ -230,6 +256,12 @@ const InfrastructureRegistriesNewRoute =
     id: '/registries/new',
     path: '/registries/new',
     getParentRoute: () => InfrastructureRoute,
+  } as any)
+const NetworksNetworkNameConnectRoute =
+  NetworksNetworkNameConnectRouteImport.update({
+    id: '/connect',
+    path: '/connect',
+    getParentRoute: () => NetworksNetworkNameRoute,
   } as any)
 const SettingsIntegrationsProviderRoute =
   SettingsIntegrationsProviderRouteImport.update({
@@ -267,6 +299,7 @@ export interface FileRoutesByFullPath {
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
+  '/networks': typeof NetworksRouteWithChildren
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -286,18 +319,22 @@ export interface FileRoutesByFullPath {
   '/login/reset': typeof LoginResetRoute
   '/login/signup': typeof LoginSignupRoute
   '/login/verify': typeof LoginVerifyRoute
+  '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
+  '/networks/new': typeof NetworksNewRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -309,6 +346,7 @@ export interface FileRoutesByTo {
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
+  '/networks': typeof NetworksRouteWithChildren
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -328,18 +366,22 @@ export interface FileRoutesByTo {
   '/login/reset': typeof LoginResetRoute
   '/login/signup': typeof LoginSignupRoute
   '/login/verify': typeof LoginVerifyRoute
+  '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
+  '/networks/new': typeof NetworksNewRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -352,6 +394,7 @@ export interface FileRoutesById {
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
+  '/networks': typeof NetworksRouteWithChildren
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -371,18 +414,22 @@ export interface FileRoutesById {
   '/login/reset': typeof LoginResetRoute
   '/login/signup': typeof LoginSignupRoute
   '/login/verify': typeof LoginVerifyRoute
+  '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
+  '/networks/new': typeof NetworksNewRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
+  '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
+  '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -396,6 +443,7 @@ export interface FileRouteTypes {
     | '/backups'
     | '/builds'
     | '/infrastructure'
+    | '/networks'
     | '/session'
     | '/settings'
     | '/templates'
@@ -415,18 +463,22 @@ export interface FileRouteTypes {
     | '/login/reset'
     | '/login/signup'
     | '/login/verify'
+    | '/networks/$networkName'
+    | '/networks/new'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/environment'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
+    | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -438,6 +490,7 @@ export interface FileRouteTypes {
     | '/backups'
     | '/builds'
     | '/infrastructure'
+    | '/networks'
     | '/session'
     | '/settings'
     | '/templates'
@@ -457,18 +510,22 @@ export interface FileRouteTypes {
     | '/login/reset'
     | '/login/signup'
     | '/login/verify'
+    | '/networks/$networkName'
+    | '/networks/new'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/environment'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
+    | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -480,6 +537,7 @@ export interface FileRouteTypes {
     | '/backups'
     | '/builds'
     | '/infrastructure'
+    | '/networks'
     | '/session'
     | '/settings'
     | '/templates'
@@ -499,18 +557,22 @@ export interface FileRouteTypes {
     | '/login/reset'
     | '/login/signup'
     | '/login/verify'
+    | '/networks/$networkName'
+    | '/networks/new'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
+    | '/applications/$applicationId/environment'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
+    | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -523,6 +585,7 @@ export interface RootRouteChildren {
   BackupsRoute: typeof BackupsRouteWithChildren
   BuildsRoute: typeof BuildsRouteWithChildren
   InfrastructureRoute: typeof InfrastructureRouteWithChildren
+  NetworksRoute: typeof NetworksRouteWithChildren
   SessionRoute: typeof SessionRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   TemplatesRoute: typeof TemplatesRouteWithChildren
@@ -568,6 +631,13 @@ declare module '@tanstack/react-router' {
       path: '/infrastructure'
       fullPath: '/infrastructure'
       preLoaderRoute: typeof InfrastructureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/networks': {
+      id: '/networks'
+      path: '/networks'
+      fullPath: '/networks'
+      preLoaderRoute: typeof NetworksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/session': {
@@ -703,6 +773,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/networks/$networkName': {
+      id: '/networks/$networkName'
+      path: '/$networkName'
+      fullPath: '/networks/$networkName'
+      preLoaderRoute: typeof NetworksNetworkNameRouteImport
+      parentRoute: typeof NetworksRoute
+    }
+    '/networks/new': {
+      id: '/networks/new'
+      path: '/new'
+      fullPath: '/networks/new'
+      preLoaderRoute: typeof NetworksNewRouteImport
+      parentRoute: typeof NetworksRoute
+    }
     '/settings/host-access': {
       id: '/settings/host-access'
       path: '/host-access'
@@ -743,6 +827,13 @@ declare module '@tanstack/react-router' {
       path: '/domains'
       fullPath: '/applications/$applicationId/domains'
       preLoaderRoute: typeof ApplicationsApplicationIdDomainsRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
+    '/applications/$applicationId/environment': {
+      id: '/applications/$applicationId/environment'
+      path: '/environment'
+      fullPath: '/applications/$applicationId/environment'
+      preLoaderRoute: typeof ApplicationsApplicationIdEnvironmentRouteImport
       parentRoute: typeof ApplicationsApplicationIdRoute
     }
     '/applications/$applicationId/source': {
@@ -786,6 +877,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/infrastructure/registries/new'
       preLoaderRoute: typeof InfrastructureRegistriesNewRouteImport
       parentRoute: typeof InfrastructureRoute
+    }
+    '/networks/$networkName/connect': {
+      id: '/networks/$networkName/connect'
+      path: '/connect'
+      fullPath: '/networks/$networkName/connect'
+      preLoaderRoute: typeof NetworksNetworkNameConnectRouteImport
+      parentRoute: typeof NetworksNetworkNameRoute
     }
     '/settings/integrations/$provider': {
       id: '/settings/integrations/$provider'
@@ -891,6 +989,31 @@ const InfrastructureRouteWithChildren = InfrastructureRoute._addFileChildren(
   InfrastructureRouteChildren,
 )
 
+interface NetworksNetworkNameRouteChildren {
+  NetworksNetworkNameConnectRoute: typeof NetworksNetworkNameConnectRoute
+}
+
+const NetworksNetworkNameRouteChildren: NetworksNetworkNameRouteChildren = {
+  NetworksNetworkNameConnectRoute: NetworksNetworkNameConnectRoute,
+}
+
+const NetworksNetworkNameRouteWithChildren =
+  NetworksNetworkNameRoute._addFileChildren(NetworksNetworkNameRouteChildren)
+
+interface NetworksRouteChildren {
+  NetworksNetworkNameRoute: typeof NetworksNetworkNameRouteWithChildren
+  NetworksNewRoute: typeof NetworksNewRoute
+}
+
+const NetworksRouteChildren: NetworksRouteChildren = {
+  NetworksNetworkNameRoute: NetworksNetworkNameRouteWithChildren,
+  NetworksNewRoute: NetworksNewRoute,
+}
+
+const NetworksRouteWithChildren = NetworksRoute._addFileChildren(
+  NetworksRouteChildren,
+)
+
 interface SettingsIntegrationsRouteChildren {
   SettingsIntegrationsProviderRoute: typeof SettingsIntegrationsProviderRoute
 }
@@ -933,6 +1056,7 @@ const TemplatesRouteWithChildren = TemplatesRoute._addFileChildren(
 interface ApplicationsApplicationIdRouteChildren {
   ApplicationsApplicationIdConfigureRoute: typeof ApplicationsApplicationIdConfigureRoute
   ApplicationsApplicationIdDomainsRoute: typeof ApplicationsApplicationIdDomainsRoute
+  ApplicationsApplicationIdEnvironmentRoute: typeof ApplicationsApplicationIdEnvironmentRoute
   ApplicationsApplicationIdSourceRoute: typeof ApplicationsApplicationIdSourceRoute
 }
 
@@ -942,6 +1066,8 @@ const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChil
       ApplicationsApplicationIdConfigureRoute,
     ApplicationsApplicationIdDomainsRoute:
       ApplicationsApplicationIdDomainsRoute,
+    ApplicationsApplicationIdEnvironmentRoute:
+      ApplicationsApplicationIdEnvironmentRoute,
     ApplicationsApplicationIdSourceRoute: ApplicationsApplicationIdSourceRoute,
   }
 
@@ -955,6 +1081,7 @@ const rootRouteChildren: RootRouteChildren = {
   BackupsRoute: BackupsRouteWithChildren,
   BuildsRoute: BuildsRouteWithChildren,
   InfrastructureRoute: InfrastructureRouteWithChildren,
+  NetworksRoute: NetworksRouteWithChildren,
   SessionRoute: SessionRoute,
   SettingsRoute: SettingsRouteWithChildren,
   TemplatesRoute: TemplatesRouteWithChildren,

@@ -1,0 +1,195 @@
+.virtual-network-description {
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.virtual-network-segment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.virtual-network-segment-tags .label-chip {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.network-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+.network-detail-meta > button {
+  margin-left: auto;
+}
+.network-segment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.network-segment-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+}
+.network-segment-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.network-segment-card > span {
+  font-size: 12px;
+}
+.network-segment-card .virtual-network-segment-tags {
+  margin: 14px 0 0;
+  max-height: 200px;
+  overflow: auto;
+}
+.network-segment-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.network-connections,
+.network-configuration {
+  min-width: 0;
+  margin-bottom: 24px;
+}
+.network-connections .table-container {
+  max-height: 520px;
+  overflow: auto;
+}
+.network-connections .copyable-address {
+  max-width: 48ch;
+}
+.network-connections td {
+  vertical-align: top;
+}
+.network-configuration > .toml-code,
+.virtual-network-toml > .toml-code {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  padding: 16px;
+}
+.network-delete-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.network-delete-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.virtual-network-form {
+  display: grid;
+  gap: 16px;
+}
+.virtual-network-form .field-stack {
+  min-width: 0;
+}
+.virtual-network-form .form-card-content > .field-stack + .field-stack {
+  margin-top: 16px;
+}
+.network-segment-editor {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.network-segment-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(180px, 2fr) 36px;
+  gap: 12px;
+  align-items: start;
+}
+.network-segment-row > button {
+  margin-top: 25px;
+}
+.network-segment-row textarea {
+  min-height: 86px;
+  font: 12px/1.6 var(--font-mono);
+}
+.network-grant-review {
+  max-height: 480px;
+  overflow: auto;
+}
+.network-grant-review td {
+  max-width: 36ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.virtual-network-description-review strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.virtual-network-description-review p,
+.virtual-network-description-review small {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.virtual-network-toml > summary {
+  margin-bottom: 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.network-connect-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.network-connection-context {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.network-connection-context p {
+  margin: 0 0 8px;
+}
+.network-connection-context a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .network-connect-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .network-segment-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+  .network-segment-row > label:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .network-segment-row > button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
