@@ -72,6 +72,7 @@ jobs:
         run: |
           python3 release/build.py --version "$RELEASE_VERSION"
           python3 release/build-installer.py --version "$RELEASE_VERSION"
+          python3 release/bootstrap-version.py ".local/installer-artifacts/$RELEASE_VERSION" "$RELEASE_VERSION"
           python3 release/publication.py assemble "$RELEASE_TAG"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -155,6 +156,7 @@ jobs:
           directory=".local/publication/$RELEASE_VERSION"
           cp "$ATTESTATION_BUNDLE" "$directory/build-provenance.intoto.jsonl"
           python3 release/publication.py verify "$directory"
+          python3 release/bootstrap-version.py "$directory" "$RELEASE_VERSION"
           flags=()
           if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease --latest=false); else flags+=(--latest); fi
           gh release create "$RELEASE_TAG" "$directory"/* --verify-tag --draft "${flags[@]}" \

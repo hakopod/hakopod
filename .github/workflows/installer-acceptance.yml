@@ -5,7 +5,7 @@ on:
       version:
         description: Candidate package version
         required: false
-        default: 0.1.0-alpha.3
+        default: 0.1.0-alpha.4
         type: string
   pull_request:
     paths:
@@ -27,7 +27,7 @@ jobs:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
       NODE_OPTIONS: --max-old-space-size=512
-      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.3' }}
+      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.4' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -48,6 +48,7 @@ jobs:
           python3 -m unittest discover -s release -p 'test_*.py'
           python3 release/build.py --version "$RELEASE_VERSION"
           python3 release/build-installer.py --version "$RELEASE_VERSION"
+          python3 release/bootstrap-version.py ".local/installer-artifacts/$RELEASE_VERSION" "$RELEASE_VERSION"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: installer-candidate
@@ -59,11 +60,11 @@ jobs:
     needs: build
     uses: ./.github/workflows/installer-hosts.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.3' }}
+      version: ${{ inputs.version || '0.1.0-alpha.4' }}
       artifact_name: installer-candidate
   smoke:
     needs: build
     uses: ./.github/workflows/installer-smoke.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.3' }}
+      version: ${{ inputs.version || '0.1.0-alpha.4' }}
       artifact_name: installer-candidate

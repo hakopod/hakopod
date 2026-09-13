@@ -45,6 +45,7 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
           DATABASE_MODE: ${{ matrix.mode }}
         run: |
+          python3 release/bootstrap-version.py .local/host-artifacts "$RELEASE_VERSION"
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
             GITHUB_SHA="$GITHUB_SHA" HAKOPOD_DISPOSABLE_HOST=yes \
             DEBIAN_FRONTEND=noninteractive python3 release/host-acceptance.py \

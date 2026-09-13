@@ -26,6 +26,7 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends python3 shellcheck systemd ca-certificates curl openssl kmod >/tmp/packages.log
 mkdir -m 0755 /work
 (cd /artifacts && sha256sum --check SHA256SUMS)
+python3 /repo/release/bootstrap-version.py /artifacts "$VERSION"
 python3 /repo/installer/host.py unpack --source "/artifacts/hakopod_${VERSION}_installer.tar.gz" --destination /work/kit --root "hakopod_${VERSION}_installer"
 export KIT_ROOT="/work/kit/hakopod_${VERSION}_installer"
 python3 -m unittest discover -s "$KIT_ROOT/installer" -p 'test_*.py'
