@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import './toml-code.test'
 import './shell-behavior.test'
+import './selection-navigation.test'
 import '../lib/runtime-metrics.test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy } from './shared'
@@ -153,3 +154,5 @@ test('host terminal controls require owner or explicit node authority, never adm
   )
   assert.equal(canOpenHostTerminal({ ...delegated, credential_type: 'machine' }, 'node-a'), false)
 })
+import '../lib/service-environment.test'
+import '../lib/virtual-networks.test'

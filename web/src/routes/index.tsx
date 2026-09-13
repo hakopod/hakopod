@@ -1,5 +1,5 @@
 import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -10,6 +10,9 @@ import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
 import { Copy, Empty, ErrorState, Loading, PageHeader, Status } from '../components/shared'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
+import { ServiceImageIcon } from '../components/service-image-icon'
 
 const SampleBanner = lazy(() => import('../components/sample-banner'))
 
@@ -133,16 +136,17 @@ function Applications() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select
-            className="compact-select"
-            aria-label="Filter application health"
+          <SelectField
+            compact
+            label="Filter application health"
             value={health}
-            onChange={(e) => setHealth(e.target.value)}
-          >
-            <option value="all">All states</option>
-            <option value="healthy">Healthy</option>
-            <option value="attention">Needs inspection</option>
-          </Select>
+            onValueChange={setHealth}
+            options={[
+              { value: 'all', label: 'All states' },
+              { value: 'healthy', label: 'Healthy' },
+              { value: 'attention', label: 'Needs inspection' },
+            ]}
+          />
           <span className="form-spacer" />
           <Tooltip content="Refresh observations" side="bottom">
             <Button
@@ -185,62 +189,104 @@ function Applications() {
             description="Change the name or health filter, or move to another page."
           />
         ) : (
-          <div className="table-container ops-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Application</th>
-                  <th>Services / replicas</th>
-                  <th>Revision</th>
-                  <th>Updated</th>
-                  <th>
-                    <span className="sr-only">Open</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((app) => (
-                  <tr key={app.id} className="ops-linked-row">
-                    <td>
-                      <div className="ops-object">
-                        <Status value={app.observed?.status || 'not observed'} small />
-                        <Link
-                          to="/applications/$applicationId"
-                          params={{ applicationId: app.id }}
-                          className="ops-object-name ops-row-link"
-                          aria-label={`Open ${app.name}`}
+          <div className="ops-catalog-grid" aria-label="Application cards">
+            {filtered.map((app) => (
+              <article key={app.id} className="ops-catalog-card interactive">
+                <Brackets />
+                <div className="ops-card-heading">
+                  <div className="ops-card-icons" aria-hidden="true">
+                    {Object.values(app.spec.services)
+                      .slice(0, 3)
+                      .map((service, index) => (
+                        <ServiceImageIcon key={index} image={service.image} />
+                      ))}
+                  </div>
+                  <Status value={app.observed?.status || 'not observed'} small />
+                  <div className="ops-card-actions">
+                    <Menu
+                      trigger={
+                        <Button variant="ghost" size="icon" aria-label={`Actions for ${app.name}`}>
+                          <span aria-hidden="true">···</span>
+                        </Button>
+                      }
+                    >
+                      <MenuItem
+                        onSelect={() =>
+                          void navigate({
+                            to: '/applications/$applicationId',
+                            params: { applicationId: app.id },
+                          })
+                        }
+                      >
+                        <Icon name="box" size={14} />
+                        Inspect application
+                      </MenuItem>
+                      <MenuItem
+                        onSelect={() =>
+                          void navigate({
+                            to: '/applications/$applicationId',
+                            params: { applicationId: app.id },
+                            search: { tab: 'deployments' },
+                          })
+                        }
+                      >
+                        <Icon name="branch" size={14} />
+                        Deployment history
+                      </MenuItem>
+                      {scope.can('deployments:write') && (
+                        <MenuItem
+                          onSelect={() =>
+                            void navigate({
+                              to: '/applications/$applicationId/configure',
+                              params: { applicationId: app.id },
+                              search: { mode: 'form' },
+                            })
+                          }
                         >
-                          {app.name}
-                        </Link>
-                      </div>
-                      <div className="ops-object-id">
-                        <code>{app.id}</code>
-                        <Copy value={app.id} />
-                      </div>
-                    </td>
-                    <td>
-                      <span className="mono">{Object.keys(app.spec.services).length} services</span>
-                      <small className="ops-table-sub">
-                        {app.observed
-                          ? `${app.observed.services?.reduce((n, service) => n + service.ready, 0) || 0} ready replicas`
-                          : 'Awaiting observation'}
-                      </small>
-                    </td>
-                    <td>
-                      <Badge>r{app.revision}</Badge>
-                    </td>
-                    <td>
-                      <time title={app.updated_at} dateTime={app.updated_at}>
-                        {relative(app.updated_at)}
-                      </time>
-                    </td>
-                    <td>
-                      <Icon name="chevron" size={16} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          <Icon name="settings" size={14} />
+                          Configure application
+                        </MenuItem>
+                      )}
+                    </Menu>
+                  </div>
+                </div>
+                <h2>
+                  <Link
+                    to="/applications/$applicationId"
+                    params={{ applicationId: app.id }}
+                    className="ops-card-link"
+                    aria-label={`Open ${app.name}`}
+                  >
+                    {app.name}
+                  </Link>
+                </h2>
+                <div className="ops-object-id">
+                  <code title={app.id}>{app.id}</code>
+                  <Copy value={app.id} />
+                </div>
+                <dl className="ops-card-facts">
+                  <div>
+                    <dt>Services</dt>
+                    <dd>{Object.keys(app.spec.services).length}</dd>
+                  </div>
+                  <div>
+                    <dt>Ready replicas</dt>
+                    <dd>
+                      {app.observed
+                        ? app.observed.services?.reduce((n, service) => n + service.ready, 0) || 0
+                        : 'Not observed'}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="ops-card-footer">
+                  <Badge>r{app.revision}</Badge>
+                  <time title={app.updated_at} dateTime={app.updated_at}>
+                    {relative(app.updated_at)}
+                  </time>
+                  <Icon name="arrow" size={15} />
+                </div>
+              </article>
+            ))}
           </div>
         )}
         <div className="resource-footnote">

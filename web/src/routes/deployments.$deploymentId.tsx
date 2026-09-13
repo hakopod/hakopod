@@ -165,15 +165,6 @@ function DeploymentDetail() {
   }
   return (
     <div className="ops-page ops-deployment-page">
-      <Link
-        to="/applications/$applicationId"
-        params={{ applicationId: release.application_id }}
-        search={{ tab: 'deployments' }}
-        className="back-link"
-      >
-        <Icon name="back" size={14} />
-        {application.data?.name || 'Application'} / Deployments
-      </Link>
       <div className="application-heading">
         <div>
           <div className="title-row">
@@ -264,15 +255,12 @@ function DeploymentDetail() {
               </Tabs.Trigger>
             </Tabs.List>
             <Tabs.Content className="tab-content" value="events">
-              <div className="section-toolbar">
-                <div>
-                  <h2>Recorded events</h2>
-                  <p>
-                    {activeDeployment(release.status)
-                      ? 'Observing the reconciler every 2.5 seconds.'
-                      : 'Events retained with this release.'}
-                  </p>
-                </div>
+              <div className="ops-event-toolbar">
+                <p>
+                  {activeDeployment(release.status)
+                    ? 'Observing the reconciler every 2.5 seconds.'
+                    : 'Events retained with this release.'}
+                </p>
                 <Copy
                   value={(release.events || [])
                     .slice(-200)
@@ -284,9 +272,16 @@ function DeploymentDetail() {
                   label="Copy events"
                 />
               </div>
-              <div className="ops-deployment-events" role="log" aria-live="off">
+              <div
+                className="ops-deployment-events"
+                role="log"
+                aria-label="Recorded deployment events"
+                aria-live="off"
+              >
                 <div className="ops-deployment-event">
-                  <time title={release.created_at}>{timestamp(release.created_at)}</time>
+                  <time dateTime={release.created_at} title={release.created_at}>
+                    {timestamp(release.created_at)}
+                  </time>
                   <span className="ops-event-type">
                     <Icon name="check" size={14} />
                     accepted
@@ -298,7 +293,9 @@ function DeploymentDetail() {
                     className={`ops-deployment-event ${/fail|error/.test(event.type) ? 'ops-event-error' : ''}`}
                     key={event.id || index}
                   >
-                    <time title={event.time}>{timestamp(event.time)}</time>
+                    <time dateTime={event.time} title={event.time}>
+                      {timestamp(event.time)}
+                    </time>
                     <span className="ops-event-type">
                       <Icon
                         name={

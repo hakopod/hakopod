@@ -3,12 +3,14 @@ import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tansta
 import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import type { Application, DeploymentSummary } from '../lib/types'
-import { APIError, message, relative, timestamp } from '../lib/api'
+import { APIError, message, relative } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { ServiceImageIcon } from '../components/service-image-icon'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
 import { Logs } from '../components/logs'
@@ -107,10 +109,6 @@ function ApplicationDetail() {
       <Suspense fallback={null}>
         <SampleBanner applicationId={app.id} />
       </Suspense>
-      <Link to="/" className="back-link">
-        <Icon name="back" size={14} />
-        All applications
-      </Link>
       <div className="application-heading">
         <div className="app-symbol app-symbol-large">
           <Icon name="box" size={27} />
@@ -132,6 +130,12 @@ function ApplicationDetail() {
               {serviceNames.length} {serviceNames.length === 1 ? 'service' : 'services'}
             </span>
             <span>Updated {relative(app.updated_at)}</span>
+            {endpoint && /^https?:\/\//.test(endpoint) && (
+              <a href={endpoint} target="_blank" rel="noreferrer">
+                {endpoint.replace(/^https?:\/\//, '')}
+                <Icon name="external" size={12} />
+              </a>
+            )}
           </div>
         </div>
         <div className="form-spacer" />
@@ -151,30 +155,6 @@ function ApplicationDetail() {
             Deploy changes
           </Button>
         )}
-      </div>
-      <div className="application-context-strip">
-        <span>
-          <Icon name="box" size={14} />
-          {app.project}
-          <span className="context-slash">/</span>
-          {app.environment}
-        </span>
-        <span className="context-strip-divider" />
-        <span>
-          <Icon name={endpoint ? 'globe' : 'lock'} size={14} />
-          {endpoint && /^https?:\/\//.test(endpoint) ? (
-            <a href={endpoint} target="_blank" rel="noreferrer">
-              {endpoint.replace(/^https?:\/\//, '')}
-              <Icon name="external" size={12} />
-            </a>
-          ) : (
-            'No public endpoint observed'
-          )}
-        </span>
-        <div className="form-spacer" />
-        <span className="observed-time">
-          Refreshed {timestamp(new Date(application.dataUpdatedAt).toISOString())}
-        </span>
       </div>
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="tab-list application-tabs" aria-label="Application sections">
@@ -206,130 +186,138 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
-          <div className="section-toolbar">
-            <div>
-              <h2>Services</h2>
-              <p>
-                Observed state and desired configuration. Open a service for pods, logs, and
-                resource usage.
-              </p>
-            </div>
+          <div className="ops-section-description">
+            <p>Open a service for pods, logs, resource usage, and configuration.</p>
             <span className="label-chip">
               <Icon name="network" size={12} />
               Application private network
             </span>
           </div>
-          <div className="table-container ops-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Image</th>
-                  <th>Replicas</th>
-                  <th>Exposure</th>
-                  <th>Profile</th>
-                  <th>
-                    <span className="sr-only">Service actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(app.spec.services).map(([name, service]) => {
-                  const runtime = observed.find((status) => status.name === name)
-                  return (
-                    <tr key={name}>
-                      <td>
-                        <div className="ops-object">
-                          <Status value={runtime?.status || 'not observed'} small />
-                          <Link
-                            className="ops-object-name"
-                            to="/applications/$applicationId"
-                            params={{ applicationId: app.id }}
-                            search={{ service: name }}
-                          >
-                            {name}
-                          </Link>
-                        </div>
-                        <div className="ops-object-id">
-                          <code>{name}</code>
-                          <Copy value={name} />
-                        </div>
-                        {runtime?.message && (
-                          <small className="ops-table-sub">{runtime.message}</small>
-                        )}
-                      </td>
-                      <td>
-                        <code className="ops-image" title={runtime?.image || service.image}>
-                          {runtime?.image || service.image}
-                        </code>
-                        <small className="ops-table-sub">
-                          {runtime?.image ? 'Observed image' : 'Requested image'}
-                        </small>
-                      </td>
-                      <td className="mono">
-                        {runtime
-                          ? `${runtime.ready} / ${runtime.desired} ready`
-                          : `${service.replicas || 1} desired`}
-                      </td>
-                      <td>
-                        {service.public
-                          ? 'Public HTTP'
-                          : service.port || service.ports?.length
-                            ? 'Private'
-                            : 'Worker'}
-                        <small className="ops-table-sub mono">
-                          {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
-                        </small>
-                      </td>
-                      <td className="mono">{service.size || 'small'}</td>
-                      <td>
-                        <Menu
-                          trigger={
-                            <Button variant="ghost" size="icon" aria-label={`Actions for ${name}`}>
-                              <span aria-hidden="true">···</span>
-                            </Button>
+          <div className="ops-catalog-grid ops-service-catalog" aria-label="Service cards">
+            {Object.entries(app.spec.services).map(([name, service]) => {
+              const runtime = observed.find((status) => status.name === name)
+              return (
+                <article key={name} className="ops-catalog-card interactive">
+                  <Brackets />
+                  <div className="ops-card-heading">
+                    <ServiceImageIcon image={runtime?.image || service.image} />
+                    <Status value={runtime?.status || 'not observed'} small />
+                    <div className="ops-card-actions">
+                      <Menu
+                        trigger={
+                          <Button variant="ghost" size="icon" aria-label={`Actions for ${name}`}>
+                            <span aria-hidden="true">···</span>
+                          </Button>
+                        }
+                      >
+                        <MenuItem
+                          onSelect={() =>
+                            void navigate({
+                              to: '/applications/$applicationId',
+                              params: { applicationId: app.id },
+                              search: { service: name },
+                            })
                           }
                         >
+                          <Icon name="box" size={14} />
+                          Inspect service
+                        </MenuItem>
+                        {scope.can('logs:read') && (
+                          <MenuItem
+                            onSelect={() => {
+                              setLogService(name)
+                              setTab('logs')
+                            }}
+                          >
+                            <Icon name="terminal" size={14} />
+                            View logs
+                          </MenuItem>
+                        )}
+                        {scope.can('deployments:write') && (
                           <MenuItem
                             onSelect={() =>
                               void navigate({
-                                to: '/applications/$applicationId',
+                                to: '/applications/$applicationId/environment',
                                 params: { applicationId: app.id },
                                 search: { service: name },
                               })
                             }
                           >
-                            <Icon name="box" size={14} />
-                            Inspect service
+                            <Icon name="code" size={14} />
+                            Environment variables
                           </MenuItem>
-                          {scope.can('logs:read') && (
-                            <MenuItem
-                              onSelect={() => {
-                                setLogService(name)
-                                setTab('logs')
-                              }}
-                            >
-                              <Icon name="terminal" size={14} />
-                              View logs
-                            </MenuItem>
-                          )}
-                          {runtime?.url && /^https?:\/\//.test(runtime.url) && (
-                            <MenuItem
-                              onSelect={() =>
-                                window.open(runtime.url, '_blank', 'noopener,noreferrer')
-                              }
-                            >
-                              <Icon name="external" size={14} />
-                              Open endpoint
-                            </MenuItem>
-                          )}
-                        </Menu>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                        )}
+                        {runtime?.url && /^https?:\/\//.test(runtime.url) && (
+                          <MenuItem
+                            onSelect={() =>
+                              window.open(runtime.url, '_blank', 'noopener,noreferrer')
+                            }
+                          >
+                            <Icon name="external" size={14} />
+                            Open endpoint
+                          </MenuItem>
+                        )}
+                      </Menu>
+                    </div>
+                  </div>
+                  <h2>
+                    <Link
+                      className="ops-card-link"
+                      to="/applications/$applicationId"
+                      params={{ applicationId: app.id }}
+                      search={{ service: name }}
+                      aria-label={`Open ${name} service`}
+                    >
+                      {name}
+                    </Link>
+                  </h2>
+                  <div className="ops-object-id">
+                    <code title={runtime?.image || service.image}>
+                      {runtime?.image || service.image}
+                    </code>
+                    <Copy value={runtime?.image || service.image} />
+                  </div>
+                  <small className="ops-card-caption">
+                    {runtime?.image ? 'Observed image' : 'Requested image'}
+                  </small>
+                  <dl className="ops-card-facts">
+                    <div>
+                      <dt>Replicas</dt>
+                      <dd>
+                        {runtime
+                          ? `${runtime.ready} / ${runtime.desired} ready`
+                          : `${service.replicas || 1} desired`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Exposure</dt>
+                      <dd>
+                        {service.public
+                          ? 'Public HTTP'
+                          : service.port || service.ports?.length
+                            ? 'Private'
+                            : 'Worker'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Profile</dt>
+                      <dd>{service.size || 'small'}</dd>
+                    </div>
+                    <div>
+                      <dt>Readiness</dt>
+                      <dd>
+                        {service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}
+                      </dd>
+                    </div>
+                  </dl>
+                  {runtime?.message && <p className="ops-card-message">{runtime.message}</p>}
+                  <div className="ops-card-footer">
+                    <span>Inspect service</span>
+                    <Icon name="arrow" size={15} />
+                  </div>
+                </article>
+              )
+            })}
           </div>
           {!observed.length && (
             <Note>

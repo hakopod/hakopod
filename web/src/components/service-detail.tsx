@@ -12,6 +12,7 @@ import {
   metricSampleAge,
   metricsStaleAfter,
   retainMetricSample,
+  retainedMetricSamples,
   type MetricSample,
 } from '../lib/runtime-metrics'
 import { Button } from './ui/button'
@@ -20,6 +21,7 @@ import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
 import { Logs } from './logs'
+import { ResourceMetric, validMetricUsage } from './resource-metric'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
 const ServiceTLS = lazy(() => import('./tls-settings').then((m) => ({ default: m.ServiceTLS })))
@@ -50,44 +52,6 @@ function memory(bytes?: number) {
   return bytes >= 1024 ** 3
     ? `${(bytes / 1024 ** 3).toFixed(2)} GiB`
     : `${(bytes / 1024 ** 2).toFixed(1)} MiB`
-}
-
-function MetricChart({
-  samples,
-  field,
-  label,
-}: {
-  samples: MetricSample[]
-  field: 'cpu' | 'memory'
-  label: string
-}) {
-  if (samples.length < 2) return <p className="metric-wait">Collecting a second observed sample…</p>
-  const maximum = Math.max(1, ...samples.map((sample) => sample[field]))
-  const start = Date.parse(samples[0].at)
-  const duration = Math.max(1, Date.parse(samples[samples.length - 1].at) - start)
-  const path = samples
-    .map(
-      (sample, index) =>
-        `${index ? 'L' : 'M'}${8 + ((Date.parse(sample.at) - start) / duration) * 304},${72 - (sample[field] / maximum) * 58}`,
-    )
-    .join(' ')
-  return (
-    <svg
-      className="metric-chart"
-      viewBox="0 0 320 80"
-      role="img"
-      aria-label={`${label}, ${samples.length} actual samples from ${timestamp(samples[0].at)} to ${timestamp(samples[samples.length - 1].at)}`}
-    >
-      <path d="M8 73H312" className="metric-baseline" />
-      <path
-        d={path}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  )
 }
 
 export function ServiceDetail({
@@ -161,25 +125,13 @@ export function ServiceDetail({
         queryKey: ['service-runtime', application.id, serviceName],
         exact: true,
       })
-  }, [polling, cache, application.id, serviceName])
+  }, [polling, visible, runtimeTab, cache, application.id, serviceName])
   useEffect(() => {
     setSamples((previous) => retainMetricSample(previous, runtime.data?.metrics))
   }, [runtime.data])
-  const back = (
-    <Link
-      to="/applications/$applicationId"
-      params={{ applicationId: application.id }}
-      search={{}}
-      className="back-link"
-    >
-      <Icon name="back" size={14} />
-      {application.name} / Services
-    </Link>
-  )
   if (!service)
     return (
       <>
-        {back}
         <Empty
           icon="box"
           title="Service not found"
@@ -195,16 +147,22 @@ export function ServiceDetail({
     runtime.dataUpdatedAt,
     now,
   )
-  const fresh = metrics?.available && sampleAge !== null && sampleAge <= metricsStaleAfter
+  const available =
+    metrics?.available &&
+    validMetricUsage(metrics.cpu_millicores) &&
+    validMetricUsage(metrics.memory_bytes)
+  const fresh = available && sampleAge !== null && sampleAge <= metricsStaleAfter
   const freshness = runtime.error
     ? 'Check failed'
-    : !metrics?.available
+    : !available
       ? 'No sample'
-      : !fresh
-        ? 'Stale sample'
-        : polling
-          ? 'Live'
-          : 'Paused'
+      : sampleAge === null
+        ? 'Freshness unknown'
+        : !fresh
+          ? 'Stale sample'
+          : polling
+            ? 'Live'
+            : 'Paused'
   const edit = (mode: 'form' | 'toml') => {
     void navigate({
       to: '/applications/$applicationId/configure',
@@ -214,7 +172,6 @@ export function ServiceDetail({
   }
   return (
     <div className="ops-page ops-service-page">
-      {back}
       <div className="application-heading">
         <div className="app-symbol app-symbol-large">
           <Icon name={service.public ? 'globe' : hasPorts ? 'box' : 'terminal'} size={27} />
@@ -225,11 +182,7 @@ export function ServiceDetail({
             <h1>{serviceName}</h1>
           </div>
           <div className="application-metadata">
-            <code>{serviceName}</code>
-            <Copy value={serviceName} />
-            <span>
-              {application.project} / {application.environment} / {application.name}
-            </span>
+            <span>{application.name}</span>
             <span>Revision {application.revision}</span>
           </div>
         </div>
@@ -313,68 +266,56 @@ export function ServiceDetail({
                 </div>
               </dl>
             </section>
-            <section className="panel service-summary-panel">
-              <div className="panel-heading">
-                <h2>Resource usage</h2>
-                <Badge tone={fresh && !runtime.error ? 'success' : 'warning'}>{freshness}</Badge>
-              </div>
-              <div className="runtime-controls">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-pressed={paused}
-                  onClick={() => setPaused((value) => !value)}
-                >
-                  <Icon name={paused ? 'play' : 'pause'} size={14} />
-                  {paused ? 'Resume live' : 'Pause live'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={runtime.isFetching}
-                  onClick={() => void runtime.refetch({ cancelRefetch: false })}
-                >
-                  <Icon name="refresh" size={14} className={runtime.isFetching ? 'spin' : ''} />
-                  {runtime.isFetching ? 'Probing…' : 'Probe now'}
-                </Button>
+            <section
+              className="panel service-summary-panel node-runtime service-runtime"
+              aria-label="Service resource usage"
+            >
+              <div className="node-runtime-heading">
+                <div className="node-runtime-title">
+                  <h2>Resource usage</h2>
+                  <Badge>{freshness}</Badge>
+                </div>
+                <div className="node-runtime-controls">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={paused}
+                    onClick={() => setPaused((value) => !value)}
+                  >
+                    <Icon name={paused ? 'play' : 'pause'} size={14} />
+                    {paused ? 'Resume live' : 'Pause live'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={runtime.isFetching || !visible}
+                    onClick={() => void runtime.refetch({ cancelRefetch: false })}
+                  >
+                    <Icon name="refresh" size={14} className={runtime.isFetching ? 'spin' : ''} />
+                    {runtime.isFetching ? 'Probing…' : 'Probe now'}
+                  </Button>
+                </div>
               </div>
               {runtime.error && (
-                <ErrorState
-                  error={runtime.error}
-                  retry={() => void runtime.refetch({ cancelRefetch: false })}
-                />
+                <p className="node-runtime-error" role="alert">
+                  {message(runtime.error)}
+                </p>
               )}
-              {runtime.isPending ? (
-                <Loading rows={2} />
-              ) : !metrics?.available ? (
-                <Empty
-                  icon="activity"
-                  title="Metrics unavailable"
-                  description={
-                    metrics?.reason || 'The cluster has not returned a current resource sample.'
-                  }
+              <div className="node-runtime-values">
+                <ResourceMetric
+                  label="CPU"
+                  field="cpu"
+                  used={available ? metrics.cpu_millicores : undefined}
+                  samples={samples}
                 />
-              ) : (
-                <>
-                  <div className="service-metrics">
-                    <div>
-                      <span>CPU</span>
-                      <strong>
-                        {metrics.cpu_millicores === undefined
-                          ? 'Unavailable'
-                          : `${metrics.cpu_millicores.toFixed(1)} mCPU`}
-                      </strong>
-                      <MetricChart samples={samples} field="cpu" label="CPU usage" />
-                    </div>
-                    <div>
-                      <span>Memory</span>
-                      <strong>{memory(metrics.memory_bytes)}</strong>
-                      <MetricChart samples={samples} field="memory" label="Memory usage" />
-                    </div>
-                  </div>
-                </>
-              )}
-              <dl className="runtime-freshness">
+                <ResourceMetric
+                  label="Memory"
+                  field="memory"
+                  used={available ? metrics.memory_bytes : undefined}
+                  samples={samples}
+                />
+              </div>
+              <dl className="node-runtime-freshness">
                 <div>
                   <dt>Source sample</dt>
                   <dd>
@@ -396,24 +337,26 @@ export function ServiceDetail({
                         {sampleTimestamp(runtime.data.observed_at)}
                       </time>
                     ) : (
-                      'Waiting for cluster'
+                      'Not checked'
                     )}
                   </dd>
                 </div>
               </dl>
-              <p className="field-help runtime-help">
-                {paused
-                  ? 'Automatic checks paused.'
-                  : 'Checks every 15 seconds while this view is active.'}{' '}
-                Probe reads the latest sample available from the cluster.
+              <p className="node-runtime-help">
+                Every 15s while visible · {samples.length} / {retainedMetricSamples} source samples.
                 {metrics && (
                   <>
                     {' '}
                     {metrics.pods_sampled} / {metrics.pods_expected} pods sampled.
                   </>
                 )}{' '}
-                {samples.length} / 24 samples retained in this view.
+                Usage totals the sampled pods; each chart scales to its recorded values.
               </p>
+              {!available && (
+                <Note>
+                  {metrics?.reason || 'The cluster has not returned a current resource sample.'}
+                </Note>
+              )}
             </section>
           </div>
           <div className="section-toolbar">
@@ -655,6 +598,31 @@ export function ServiceDetail({
           {service.autoscaling && (
             <Note>Replica count is managed by this service's autoscaling configuration.</Note>
           )}
+          <section className="panel service-environment-summary">
+            <div className="panel-heading">
+              <div>
+                <h2>Environment variables</h2>
+                <p>
+                  {Object.keys(service.env || {}).length} plain variables ·{' '}
+                  {Object.keys(service.secrets || {}).length} secret references
+                </p>
+              </div>
+              {scope.can('deployments:write') && (
+                <Link
+                  className="button button-secondary"
+                  to="/applications/$applicationId/environment"
+                  params={{ applicationId: application.id }}
+                  search={{ service: serviceName }}
+                >
+                  <Icon name="code" size={14} />
+                  Edit variables
+                </Link>
+              )}
+            </div>
+            <p className="field-help">
+              Plain variables are part of this revision. Credentials stay in application secrets.
+            </p>
+          </section>
           <div className="service-settings-grid">
             <section className="panel service-summary-panel">
               <div className="panel-heading">
