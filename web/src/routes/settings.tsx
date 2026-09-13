@@ -1,3 +1,4 @@
+import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { lazy, Suspense, useState } from 'react'
@@ -542,6 +543,7 @@ function AuditLog() {
           Refresh
         </Button>
       </div>
+      <AuditHistory />
       {audit.isPending ? (
         <Loading />
       ) : audit.error ? (

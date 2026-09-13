@@ -149,3 +149,29 @@ test('delivery and certificate routes preserve session and CSRF boundaries', asy
   )
   assert.equal(calls, 3)
 })
+
+test('audit export preserves bounded pagination and sealed authorization', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new URL(String(url)).pathname, '/api/v1/audit/export')
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return new Response('id,action\n1,fixture\n', {
+      headers: { 'Content-Type': 'text/csv', 'X-Hakopod-Next-Cursor': '42' },
+    })
+  })
+  const signedOut = await proxy({
+    request: request('audit/export', 'GET', undefined, false),
+    params: { _splat: 'audit/export' },
+  })
+  assert.equal(signedOut.status, 401)
+  assert.equal(calls, 0)
+  const result = await proxy({
+    request: request('audit/export?identity_id=' + 'a'.repeat(32)),
+    params: { _splat: 'audit/export' },
+  })
+  assert.equal(result.headers.get('Content-Type'), 'text/csv')
+  assert.equal(result.headers.get('X-Hakopod-Next-Cursor'), '42')
+  assert.equal(await result.text(), 'id,action\n1,fixture\n')
+  assert.equal(calls, 1)
+})
