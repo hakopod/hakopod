@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/pelletier/go-toml/v2"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,21 +16,18 @@ func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
 	s.registerShowcaseRoutes(routes)
 	routes.HandleFunc("GET /api/v1/templates", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]any{"items": spec.Templates()}) })
 	routes.HandleFunc("POST /api/v1/templates/{id}/plan", s.planTemplate)
+	routes.HandleFunc("POST /api/v1/templates/{id}/deploy", s.deployTemplate)
+	routes.HandleFunc("PUT /api/v1/templates/{id}/secrets/{name}", s.putTemplateSecret)
 }
+
+type templateConfiguration struct {
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	spec.TemplateOptions
+}
+
 func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Project       string `json:"project"`
-		Environment   string `json:"environment"`
-		Name          string `json:"name"`
-		Public        bool   `json:"public"`
-		StorageGiB    int64  `json:"storage_gib"`
-		Model         string `json:"model"`
-		ModelRevision string `json:"model_revision"`
-		Architecture  string `json:"architecture"`
-		SiteURL       string `json:"site_url"`
-		Provider      string `json:"provider"`
-		ProviderURL   string `json:"provider_url"`
-	}
+	var in templateConfiguration
 	if !decode(w, r, &in) {
 		return
 	}
@@ -42,6 +40,10 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.PathValue("id") == "vllm" && in.ModelRevision == "" {
+		if in.UseModelToken {
+			problem(w, 400, "model_revision_required", "provide the immutable model revision for a private or gated model, then save its Hugging Face token during review")
+			return
+		}
 		// Resolve public model metadata only; never execute repository code or load
 		// model weights in the management process. No trust_remote_code option.
 		if !repositoryPattern.MatchString(in.Model) {
@@ -71,12 +73,12 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if gated, ok := model.Gated.(bool); (!ok && model.Gated != nil) || (ok && gated) {
-			problem(w, 400, "model_gated", "this model requires upstream access approval; configure its HF_TOKEN secret reference manually after obtaining access")
+			problem(w, 400, "model_gated", "obtain model access upstream, enable a model access token and provide its immutable revision")
 			return
 		}
 		in.ModelRevision = model.SHA
 	}
-	next, err := spec.PlanTemplate(r.PathValue("id"), spec.TemplateOptions{Name: in.Name, Public: in.Public, StorageGiB: in.StorageGiB, Model: in.Model, ModelRevision: in.ModelRevision, Architecture: in.Architecture, SiteURL: in.SiteURL, Provider: in.Provider, ProviderURL: in.ProviderURL})
+	next, err := spec.PlanTemplate(r.PathValue("id"), in.TemplateOptions)
 	if err != nil {
 		problem(w, 400, "invalid_template", err.Error())
 		return
@@ -104,7 +106,12 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 	if len(required) > 0 {
 		warnings = append(warnings, fmt.Sprintf("Before deployment, save these secret references for %s/%s/%s: %s", in.Project, in.Environment, in.Name, strings.Join(required, ", ")))
 	}
-	write(w, 200, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "changes": spec.Diff(before, next), "warnings": warnings, "required_secrets": required, "model_source": func() string {
+	canonical, err := toml.Marshal(next)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "toml": string(canonical), "configuration": in, "changes": spec.Diff(before, next), "warnings": warnings, "resource_profiles": spec.Profiles, "required_secrets": required, "model_source": func() string {
 		if in.Model == "" || r.PathValue("id") != "vllm" {
 			return ""
 		}

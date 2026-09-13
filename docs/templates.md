@@ -2,6 +2,8 @@
 
 Templates produce the same versioned application specification, review, optimistic revision check, scoped secret references, durable queue and reconciler as hand-written TOML. They do not start a second orchestrator, builder, database, or model runner in the management process. Optional application resources are charged to the application pods.
 
+The [setup requirements review](template-requirements.md) records official sources for all 14 entries. The form shows these sources, credential formats and runtime prerequisites. It keeps entered values after failed requests.
+
 All deployable image references are pinned to immutable upstream OCI index digests in `internal/spec/templates.go`. Each index was checked for Linux AMD64 and ARM64 manifests on 12 September 2026. Manifest availability does not establish runtime compatibility. The catalog's `verification` field records the narrower checks actually performed. Updating a pinned version requires a new review; mutable upstream tags cannot silently change an accepted deployment.
 
 ## Presets
@@ -16,7 +18,7 @@ Memory values below are Kubernetes request / limit. These are small starting con
 | MySQL 8.4.11 | Database: 256 / 512 MiB | Private 3306; separate `database-password` and `database-root-password`; 32 MiB InnoDB buffer, 12 connections, Performance Schema disabled. |
 | CockroachDB 25.4.16 | Database: 512 / 1024 MiB | Private TLS SQL 26257; operator CA and node certificates; 128 MiB cache and SQL budgets. Secure single node, no HA. Review CockroachDB Software License eligibility. |
 | ClickHouse 26.3.33.24 | Database: 512 / 1024 MiB | Private HTTP 8123; `database-password`; 256 MiB query and 640 MiB server memory budgets; bounded background pools. Native TCP is not exposed. |
-| Metabase 0.63.17 | Workspace: 2 / 4 GiB; PostgreSQL: 256 / 512 MiB | `database-password`; 1 GiB Java heap. PostgreSQL stores application metadata, dashboards and users. AGPL open-source image. |
+| Metabase 0.63.17 | Workspace: 2 / 4 GiB; PostgreSQL: 256 / 512 MiB | `database-password`, `credential-encryption-key`; 1 GiB Java heap. PostgreSQL stores application metadata, dashboards and users. AGPL open-source image. |
 | Infisical 0.165.10 | Workspace: 2 / 4 GiB; PostgreSQL: 256 / 512 MiB; Redis: 128 / 256 MiB | See connection and encryption requirements below. MIT core; enterprise features have separate terms. |
 | Open WebUI 0.11.3 slim | Workspace: 2 / 4 GiB | `provider-key`, `session-secret`; select provider and model. No local Ollama service or embedding weight download. Preserve upstream branding under its license. |
 | Flowise 3.1.4 | Agent workspace: 2 / 4 GiB | Five explicit application secrets; 1 GiB Node heap. Choose provider, model and credentials in the installed workspace. |
@@ -27,7 +29,13 @@ Memory values below are Kubernetes request / limit. These are small starting con
 
 Database templates force private exposure even if the plan request asks for public access. Their readiness gates are TCP for PostgreSQL, Redis/Valkey, MySQL and CockroachDB, and `/ping` for ClickHouse. These gates show a listening process; they do not establish recovery guarantees, replication, backup correctness, or production sizing. Set up backups before placing important data in a database. Redis/Valkey's no-eviction policy returns write failures when its explicit data budget is full.
 
-A `storage_gib` setting applies to each persistent service, defaulting to 5 GiB. vLLM's default model cache is 30 GiB. Storage-class availability and free capacity are operator prerequisites; a pending PVC is reported as real deployment state. Secrets are provided through the application's scoped secret references, never literal password fields in a template plan or deployment history.
+A `storage_gib` setting applies to each persistent service, accepts 1–200 GiB and defaults to 5 GiB. vLLM's default model cache is 30 GiB. Storage-class availability and free capacity are operator prerequisites; a pending PVC is reported as real deployment state. Secrets are provided through the application's scoped secret references, never literal password fields in a template plan or deployment history.
+
+PostgreSQL and MySQL expose initial database and user names. They default to `app` and `hakopod`; changing initialization variables does not change an existing database. PostgreSQL's initial user has administrator rights. MySQL uses separate application and root passwords. Create narrower database accounts inside the database when needed.
+
+During review, generate or supply each required credential. Browser generation uses `crypto.getRandomValues`; copying a generated value is available before saving. The write-only secret API validates formats, and generation through the API uses Go's cryptographic random source. Existing references are preserved unless explicitly replaced. Infisical connection URLs can be built directly from the saved password references without returning those passwords to the browser. Provider keys and certificate material must come from their actual provider or issuer.
+
+The template deployment endpoint parses the reviewed TOML, compares it with the current template and chosen options, then reads the scoped secret references and checks their formats and relationships before durable acceptance. A changed catalog or TOML requires another review. Failed validation queues no deployment. These checks apply to the guided template endpoint; ordinary TOML deployment remains available for custom specifications. Secret values remain mutable references and are not revision-pinned by this check.
 
 ## Application setup
 
@@ -35,13 +43,15 @@ Infisical requires `encryption-key` (32 hexadecimal characters), `auth-secret`, 
 
 Infisical and Flowise require a stable HTTPS `site_url` origin. After the application exists, open Custom domains, verify that hostname, and apply the route and TLS before using login or callbacks. Domain proof belongs to the real application ID, so template planning does not claim an unverified hostname. An uploaded certificate must cover the generated and custom names used by the service, or use the configured managed issuer.
 
+Gitea, Metabase and Open WebUI also accept an optional HTTPS site origin. It sets `ROOT_URL`, `MB_SITE_URL` or `WEBUI_URL` respectively. It configures generated links and callbacks; it does not create a DNS record, claim a hostname or install a certificate. Metabase's generated credential encryption key is for a new application database; an existing Metabase requires upstream's migration or key-rotation procedure.
+
 Open WebUI accepts `provider=openai` with the normal OpenAI endpoint, or `provider=openai-compatible` with an explicit HTTPS `provider_url`. The model is an external provider model ID, not a Hugging Face download. Inference and enabled provider features use the operator's provider account. The first administrator must complete setup before sharing the URL; later users start pending. Optional document/audio features need matching upstream provider configuration and capability. The slim image is still roughly 1.4 GB compressed, so it is optional and is never pulled by Hakopod merely for browsing the catalog.
 
 Flowise installs the real upstream visual agent/workflow runtime. It requires `credential-encryption-key`, `session-secret`, `token-hash-secret`, `token-refresh-secret`, and `token-signing-secret`. Create the administrator, then select model/provider nodes, save provider credentials in Flowise, and create or import an agent flow. Protect a published prediction API with an API key. No ready-made autonomous flow, provider balance or model weights are assumed. Its image is roughly 1.5 GB compressed; tools run inside the restricted application container.
 
 CockroachDB requires `database-ca`, `database-node-cert` and `database-node-key` PEM secrets. The node certificate must identify the `node` principal and cover `main` and `localhost` (plus any client-facing internal DNS names you use). The process writes them under a private `/tmp` directory and starts with TLS enabled; the admin HTTP listener is loopback-only. Keep the CA private key outside the application. Use a client certificate to initialize SQL users and database grants. No plaintext/insecure startup option is offered.
 
-vLLM has an authenticated API and does not enable remote repository code. Public Hugging Face metadata may be resolved to an immutable model revision during planning; private or gated models require explicit access preparation and a manually configured `HF_TOKEN` reference. Its AMD64 and ARM64 images require a compatible NVIDIA GPU, CUDA 13 driver and device plugin. ARM64 refers to NVIDIA SBSA hardware, not an ordinary ARM CPU node. The image is about 10 GB compressed and is never downloaded by the control plane for catalog browsing.
+vLLM has an authenticated API and does not enable remote repository code. Public Hugging Face metadata may be resolved to an immutable model revision during planning. For a private or gated model, enable the model-token option, provide its immutable revision and save an approved Hugging Face read token as `model-token`; the workload receives it as `HF_TOKEN`. Its AMD64 and ARM64 images require a compatible NVIDIA GPU, CUDA 13 driver and device plugin. ARM64 refers to NVIDIA SBSA hardware, not an ordinary ARM CPU node. GPU workloads receive a private 1 GiB memory-backed `/dev/shm`. The image is about 10 GB compressed and is never downloaded by the control plane for catalog browsing.
 
 ## Verification
 

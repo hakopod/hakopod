@@ -11,21 +11,25 @@ import (
 // Templates are ordinary bounded application specifications. Catalog metadata
 // distinguishes registry architecture support from actual runtime verification.
 type Template struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Category        string   `json:"category"`
-	Description     string   `json:"description"`
-	License         string   `json:"license"`
-	Upstream        string   `json:"upstream"`
-	RequiredSecrets []string `json:"required_secrets"`
-	Requirements    []string `json:"requirements"`
-	Architectures   []string `json:"architectures"`
-	ResourceSummary string   `json:"resource_summary"`
-	Verification    string   `json:"verification"`
-	Providers       []string `json:"providers"`
-	Configuration   string   `json:"configuration"`
-	SiteURLRequired bool     `json:"site_url_required"`
-	Deployable      bool     `json:"deployable"`
+	ID               string                `json:"id"`
+	Name             string                `json:"name"`
+	Category         string                `json:"category"`
+	Description      string                `json:"description"`
+	License          string                `json:"license"`
+	Upstream         string                `json:"upstream"`
+	RequiredSecrets  []string              `json:"required_secrets"`
+	Requirements     []string              `json:"requirements"`
+	Architectures    []string              `json:"architectures"`
+	ResourceSummary  string                `json:"resource_summary"`
+	Verification     string                `json:"verification"`
+	Providers        []string              `json:"providers"`
+	Configuration    string                `json:"configuration"`
+	SiteURLRequired  bool                  `json:"site_url_required"`
+	Deployable       bool                  `json:"deployable"`
+	SiteURLSupported bool                  `json:"site_url_supported"`
+	DatabaseConfig   bool                  `json:"database_config"`
+	SecretFields     []TemplateSecretField `json:"secret_fields"`
+	Sources          []string              `json:"sources"`
 }
 
 const (
@@ -52,11 +56,11 @@ func Templates() []Template {
 		{ID: "mysql", Name: "MySQL", Category: "database", Description: "Private MySQL 8.4 LTS database with persistent storage.", License: "GPL-2.0", Upstream: "https://www.mysql.com", RequiredSecrets: []string{"database-password", "database-root-password"}, ResourceSummary: "256 MiB requested; 512 MiB limit; 32 MiB InnoDB buffer; 12 connections", Verification: "ARM64 non-root startup, SQL dump and fresh-database restore verified", Requirements: []string{"Separate application and root password references", "Persistent storage; one replica; configure backups"}},
 		{ID: "cockroachdb", Name: "CockroachDB", Category: "database", Description: "Secure single-node SQL database with operator-supplied TLS certificates.", License: "CockroachDB Software License", Upstream: "https://www.cockroachlabs.com", RequiredSecrets: []string{"database-ca", "database-node-cert", "database-node-key"}, ResourceSummary: "512 MiB requested; 1 GiB limit; 128 MiB cache and SQL budgets", Verification: "ARM64 TLS SQL rejects missing credentials; data survives persistent restart", Requirements: []string{"Review upstream license eligibility and registration", "Provide CA, node certificate and key; certificate SAN must include main and localhost", "Use a client certificate to initialize SQL users; admin HTTP is loopback only", "Single node is not highly available"}},
 		{ID: "clickhouse", Name: "ClickHouse", Category: "database", Description: "Private authenticated HTTP analytics database with persistent data.", License: "Apache-2.0", Upstream: "https://clickhouse.com", RequiredSecrets: []string{"database-password"}, ResourceSummary: "512 MiB requested; 1 GiB limit; query memory capped at 256 MiB", Verification: "ARM64 authenticated HTTP queries and data survive persistent restart", Requirements: []string{"HTTP port 8123 only; native TCP is not exposed", "Persistent storage; one replica; background pools bounded"}},
-		{ID: "metabase", Name: "Metabase", Category: "application", Description: "Analytics workspace with its own private PostgreSQL application database.", License: "AGPL-3.0", Upstream: "https://www.metabase.com", RequiredSecrets: []string{"database-password"}, ResourceSummary: "2.25 GiB requested; 4.5 GiB total limits; 1 GiB Java heap", Requirements: []string{"Complete administrator setup before sharing its URL", "PostgreSQL holds dashboards and settings; back it up", "Uses the open-source edition"}},
+		{ID: "metabase", Name: "Metabase", Category: "application", Description: "Analytics workspace with its own private PostgreSQL application database.", License: "AGPL-3.0", Upstream: "https://www.metabase.com", RequiredSecrets: []string{"database-password", "credential-encryption-key"}, ResourceSummary: "2.25 GiB requested; 4.5 GiB total limits; 1 GiB Java heap", Requirements: []string{"Complete administrator setup before sharing its URL", "Back up PostgreSQL and the credential encryption key together", "Uses the open-source edition"}},
 		{ID: "infisical", Name: "Infisical", Category: "application", Description: "Self-hosted secrets workspace with private PostgreSQL and Redis.", License: "MIT core; enterprise extensions have separate terms", Upstream: "https://infisical.com", RequiredSecrets: []string{"auth-secret", "database-password", "database-url", "encryption-key", "redis-password", "redis-url"}, SiteURLRequired: true, ResourceSummary: "2.375 GiB requested; 4.75 GiB total limits; 1 GiB Node heap", Requirements: []string{"Use a stable HTTPS site URL; complete administrator setup", "encryption-key must be 32 hexadecimal characters; back it up securely", "database-url must target db:5432/app; redis-url must target redis:6379 with matching passwords", "Back up PostgreSQL and encryption keys together", "This is the Infisical server; Hakopod's optional operator integration is configured separately"}},
 		{ID: "open-webui", Name: "Open WebUI", Category: "agent", Description: "Self-hosted chat and tool workspace using an explicit external model provider.", License: "Open WebUI License (branding clause)", Upstream: "https://github.com/open-webui/open-webui", RequiredSecrets: []string{"provider-key", "session-secret"}, Providers: []string{"openai", "openai-compatible"}, ResourceSummary: "2 GiB requested; 4 GiB limit; no local model service", Requirements: []string{"Choose a provider, model and provider-key; inference is billed by that provider", "Complete the first administrator account before sharing its URL", "Local Ollama and local embedding downloads are disabled", "Retain upstream branding as required by its license", "Workspace and attachments use persistent storage"}},
 		{ID: "flowise", Name: "Flowise", Category: "agent", Description: "Self-hosted visual agent and workflow builder with selectable model nodes.", License: "Apache-2.0 core; enterprise extensions have separate terms", Upstream: "https://github.com/FlowiseAI/Flowise", RequiredSecrets: []string{"credential-encryption-key", "session-secret", "token-hash-secret", "token-refresh-secret", "token-signing-secret"}, Providers: []string{"OpenAI", "Anthropic", "Google", "OpenAI-compatible"}, Configuration: "workspace", SiteURLRequired: true, ResourceSummary: "2 GiB requested; 4 GiB limit; 1 GiB Node heap", Requirements: []string{"Create the first administrator, then select provider/model nodes and save their credentials in Flowise", "Create or import an agent flow and protect its prediction API with an API key", "No model weights or ready-made autonomous flow are installed", "Persist SQLite, uploaded files and credential encryption keys together", "Tool execution uses this service's restricted container"}},
-		{ID: "uptime-kuma", Name: "Uptime Kuma", Category: "application", Description: "Self-hosted status and uptime monitoring.", License: "MIT", Upstream: "https://github.com/louislam/uptime-kuma", ResourceSummary: "256 MiB requested; 512 MiB limit", Verification: "ARM64 startup and administrator setup page verified", Requirements: []string{"Persistent storage", "Complete administrator setup before sharing its URL"}},
+		{ID: "uptime-kuma", Name: "Uptime Kuma", Category: "application", Description: "Self-hosted status and uptime monitoring.", License: "MIT", Upstream: "https://github.com/louislam/uptime-kuma", ResourceSummary: "256 MiB requested; 512 MiB limit", Verification: "ARM64 startup and administrator setup page verified", Requirements: []string{"Persistent local or block storage; upstream does not support NFS", "Complete administrator setup before sharing its URL"}},
 		{ID: "gitea", Name: "Gitea", Category: "application", Description: "Private Git hosting with a persistent SQLite database.", License: "MIT", Upstream: "https://github.com/go-gitea/gitea", ResourceSummary: "256 MiB requested; 512 MiB limit", Verification: "ARM64 administrator setup and login survive persistent restart", Requirements: []string{"Persistent storage; HTTP Git only", "Complete administrator setup before sharing its URL"}},
 		{ID: "vllm", Name: "vLLM", Category: "ai", Description: "GPU model serving through an authenticated OpenAI-compatible endpoint.", License: "Apache-2.0 engine; model license varies", Upstream: "https://github.com/vllm-project/vllm", RequiredSecrets: []string{"inference-api-key"}, ResourceSummary: "8 GiB requested; 16 GiB RAM limit; VRAM depends on model", Requirements: []string{"Compatible NVIDIA GPU, CUDA 13 driver and device plugin", "ARM64 image requires NVIDIA SBSA hardware; ordinary ARM CPU nodes are unsupported", "Review model license and access terms", "Persistent model cache; image download is about 10 GB", "GPU execution has not been verified on the local development host"}},
 		{ID: "xem", Name: "xem.email", Category: "application", Description: "Email marketing workspace; requires a frontend built for your API origin.", License: "GPL-3.0", Upstream: "https://github.com/mailxem/devops", Configuration: "guide", SiteURLRequired: true, ResourceSummary: "Four services: web, API, PostgreSQL and Redis", Verification: "Official AMD64/ARM64 manifests checked; deployment blocked by build-time frontend URL", Requirements: []string{"The upstream frontend embeds NEXT_PUBLIC_API_URL at image build time", "Build and pin your frontend with your own API origin before deployment", "Provide database, Redis, JWT, session, encryption and administrator credentials", "SMTP sending needs your own provider setup; no hosted Xem or AI credentials are assumed", "See docs/templates-xem.md for the reviewed upstream pins and requirements"}},
@@ -65,6 +69,10 @@ func Templates() []Template {
 		t := &items[i]
 		t.Architectures = []string{"amd64", "arm64"}
 		t.Deployable = t.ID != "xem"
+		t.SiteURLSupported = t.SiteURLRequired || t.ID == "gitea" || t.ID == "metabase" || t.ID == "open-webui"
+		t.DatabaseConfig = t.ID == "postgresql" || t.ID == "mysql"
+		t.SecretFields = TemplateSecretFields(t.ID)
+		t.Sources = templateSources[t.ID]
 		if t.RequiredSecrets == nil {
 			t.RequiredSecrets = []string{}
 		}
@@ -89,15 +97,18 @@ var modelRevisionPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var providerModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,199}$`)
 
 type TemplateOptions struct {
-	Name          string
-	Public        bool
-	StorageGiB    int64
-	Architecture  string
-	Model         string
-	ModelRevision string
-	SiteURL       string
-	Provider      string
-	ProviderURL   string
+	Name          string `json:"name"`
+	Public        bool   `json:"public"`
+	StorageGiB    int64  `json:"storage_gib"`
+	Architecture  string `json:"architecture"`
+	Model         string `json:"model"`
+	ModelRevision string `json:"model_revision"`
+	SiteURL       string `json:"site_url"`
+	Provider      string `json:"provider"`
+	ProviderURL   string `json:"provider_url"`
+	DatabaseName  string `json:"database_name"`
+	DatabaseUser  string `json:"database_user"`
+	UseModelToken bool   `json:"use_model_token"`
 }
 
 // FromTemplate preserves the small Go caller interface. Templates requiring a
@@ -126,7 +137,27 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	if !template.Deployable {
 		return Application{}, fmt.Errorf("xem requires a frontend built and pinned for your own API origin; follow docs/templates-xem.md")
 	}
-	if template.SiteURLRequired {
+	if o.UseModelToken && id != "vllm" {
+		return Application{}, fmt.Errorf("model access tokens are supported by the vLLM template")
+	}
+	if o.DatabaseName != "" || o.DatabaseUser != "" {
+		if !template.DatabaseConfig {
+			return Application{}, fmt.Errorf("database identity settings are available for PostgreSQL and MySQL")
+		}
+	}
+	if o.DatabaseName == "" {
+		o.DatabaseName = "app"
+	}
+	if o.DatabaseUser == "" {
+		o.DatabaseUser = "hakopod"
+	}
+	if !databaseIdentifier.MatchString(o.DatabaseName) || !databaseIdentifier.MatchString(o.DatabaseUser) || id == "mysql" && o.DatabaseUser == "root" {
+		return Application{}, fmt.Errorf("database and user names must start with a lowercase letter and contain up to 32 lowercase letters, numbers or underscores; MySQL application users cannot be root")
+	}
+	if o.SiteURL != "" && !template.SiteURLSupported {
+		return Application{}, fmt.Errorf("this template does not use a canonical site URL")
+	}
+	if template.SiteURLRequired || o.SiteURL != "" {
 		var err error
 		o.SiteURL, err = templateURL(o.SiteURL)
 		if err != nil {
@@ -142,6 +173,8 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	switch id {
 	case "postgresql":
 		main = templatePostgres(o.StorageGiB, "database-password")
+		main.Env["POSTGRES_USER"] = o.DatabaseUser
+		main.Env["POSTGRES_DB"] = o.DatabaseName
 	case "valkey", "redis":
 		main = templateRedis(id, o.StorageGiB, "database-password")
 	case "mysql":
@@ -151,7 +184,7 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 		main.Size = "medium"
 		main.RunAsUser = 999
 		main.Volume.MountPath = "/var/lib/mysql"
-		main.Env = map[string]string{"MYSQL_USER": "hakopod", "MYSQL_DATABASE": "app"}
+		main.Env = map[string]string{"MYSQL_USER": o.DatabaseUser, "MYSQL_DATABASE": o.DatabaseName}
 		main.Secrets = map[string]SecretRef{"MYSQL_PASSWORD": {Ref: "database-password"}, "MYSQL_ROOT_PASSWORD": {Ref: "database-root-password"}}
 		main.Args = []string{"--socket=/tmp/mysql.sock", "--pid-file=/tmp/mysql.pid", "--innodb-buffer-pool-size=32M", "--innodb-log-buffer-size=4M", "--max-connections=12", "--performance-schema=OFF", "--key-buffer-size=8M", "--temptable-max-ram=16M", "--mysqlx=0"}
 	case "cockroachdb":
@@ -185,7 +218,10 @@ exec /cockroach/cockroach start-single-node --certs-dir=/tmp/hakopod-certs --lis
 		main.Healthcheck = "/api/health"
 		main.RunAsUser = 2000
 		main.Env = map[string]string{"MB_DB_TYPE": "postgres", "MB_DB_HOST": "db", "MB_DB_PORT": "5432", "MB_DB_DBNAME": "app", "MB_DB_USER": "hakopod", "MB_PLUGINS_DIR": "/data/plugins", "JAVA_TOOL_OPTIONS": "-Xmx1024m -XX:ActiveProcessorCount=2"}
-		main.Secrets = map[string]SecretRef{"MB_DB_PASS": {Ref: "database-password"}}
+		main.Secrets = map[string]SecretRef{"MB_DB_PASS": {Ref: "database-password"}, "MB_ENCRYPTION_SECRET_KEY": {Ref: "credential-encryption-key"}}
+		if o.SiteURL != "" {
+			main.Env["MB_SITE_URL"] = o.SiteURL
+		}
 		main.DependsOn = []string{"db"}
 		services["db"] = templatePostgres(o.StorageGiB, "database-password")
 	case "infisical":
@@ -230,6 +266,9 @@ exec /cockroach/cockroach start-single-node --certs-dir=/tmp/hakopod-certs --lis
 		main.Volume.MountPath = "/app/backend/data"
 		main.Env = map[string]string{"HOME": "/tmp", "DATA_DIR": "/app/backend/data", "ENABLE_OLLAMA_API": "false", "ENABLE_OPENAI_API": "true", "OPENAI_API_BASE_URL": endpoint, "DEFAULT_MODELS": o.Model, "DEFAULT_USER_ROLE": "pending", "RAG_EMBEDDING_ENGINE": "openai", "AUDIO_STT_ENGINE": "openai", "HF_HUB_OFFLINE": "1", "DO_NOT_TRACK": "true", "ANONYMIZED_TELEMETRY": "false"}
 		main.Secrets = map[string]SecretRef{"WEBUI_SECRET_KEY": {Ref: "session-secret"}, "OPENAI_API_KEY": {Ref: "provider-key"}}
+		if o.SiteURL != "" {
+			main.Env["WEBUI_URL"] = o.SiteURL
+		}
 	case "flowise":
 		main.Image = flowiseImage
 		main.Port = 3000
@@ -253,6 +292,9 @@ exec /cockroach/cockroach start-single-node --certs-dir=/tmp/hakopod-certs --lis
 		main.Volume.MountPath = "/var/lib/gitea"
 		main.Healthcheck = "/api/healthz"
 		main.Env = map[string]string{"GITEA__server__DISABLE_SSH": "true", "GITEA__database__DB_TYPE": "sqlite3", "GITEA_APP_INI": "/var/lib/gitea/custom/conf/app.ini"}
+		if o.SiteURL != "" {
+			main.Env["GITEA__server__ROOT_URL"] = o.SiteURL + "/"
+		}
 	case "vllm":
 		if !modelPattern.MatchString(o.Model) || !modelRevisionPattern.MatchString(o.ModelRevision) {
 			return Application{}, fmt.Errorf("a Hugging Face owner/model and immutable 40-character model revision are required")
@@ -268,6 +310,9 @@ exec /cockroach/cockroach start-single-node --certs-dir=/tmp/hakopod-certs --lis
 		}
 		main.Env = map[string]string{"HF_HOME": "/model-cache", "HOME": "/tmp"}
 		main.Secrets = map[string]SecretRef{"VLLM_API_KEY": {Ref: "inference-api-key"}}
+		if o.UseModelToken {
+			main.Secrets["HF_TOKEN"] = SecretRef{Ref: "model-token"}
+		}
 		main.Args = []string{o.Model, "--revision", o.ModelRevision, "--download-dir", "/model-cache", "--host", "0.0.0.0", "--port", "8000", "--max-model-len", "4096", "--gpu-memory-utilization", "0.85"}
 	}
 	services["main"] = main
