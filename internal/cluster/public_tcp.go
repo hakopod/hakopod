@@ -24,6 +24,7 @@ var publicTCPResource = schema.GroupVersionResource{Group: "ingress.v3.haproxy.o
 
 const publicTCPName = "hakopod-public-tcp"
 const publicTCPClaimLabel = "hakopod.io/public-tcp-claim"
+const publicTCPMaxIngressPods = 8
 
 type PublicTCPStatus struct {
 	Port       int32    `json:"port"`
@@ -175,6 +176,9 @@ func (c *Client) publicTCPController(ctx context.Context) (map[int32]bool, error
 	}
 	if !c.ownsProxy(dep) || dep.Spec.Template.Spec.HostNetwork || dep.Spec.Replicas == nil || *dep.Spec.Replicas < 1 || dep.Status.ObservedGeneration < dep.Generation || dep.Status.ReadyReplicas != *dep.Spec.Replicas || dep.Status.UpdatedReplicas != *dep.Spec.Replicas || dep.Status.Replicas != *dep.Spec.Replicas {
 		return nil, fmt.Errorf("public TCP requires the ready owned HAProxy deployment without host networking")
+	}
+	if *dep.Spec.Replicas > publicTCPMaxIngressPods {
+		return nil, fmt.Errorf("public TCP requires 1–%d ingress replicas for bounded reload acknowledgement", publicTCPMaxIngressPods)
 	}
 	svc, err := c.kube.CoreV1().Services(c.options.ProxyNamespace).Get(ctx, c.options.ProxyConfigMap, metav1.GetOptions{})
 	if err != nil {

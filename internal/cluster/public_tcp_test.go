@@ -105,6 +105,46 @@ func TestPublicTCPRuntimeOutputBound(t *testing.T) {
 		t.Fatal("runtime output exceeded its memory bound")
 	}
 }
+
+func TestPublicTCPPreflightIngressReplicaBound(t *testing.T) {
+	for _, replicas := range []int32{1, 8, 9} {
+		t.Run(fmt.Sprint(replicas), func(t *testing.T) {
+			c, target := publicTCPTestClient(t)
+			ctx := context.Background()
+			api := c.kube.AppsV1().Deployments(c.options.ProxyNamespace)
+			dep, err := api.Get(ctx, c.options.ProxyConfigMap, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			dep.Spec.Replicas = ptr(replicas)
+			dep.Status.ReadyReplicas, dep.Status.UpdatedReplicas, dep.Status.Replicas = replicas, replicas, replicas
+			if _, err = api.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			kube := c.kube.(*fake.Clientset)
+			kube.ClearActions()
+			err = c.ValidatePublicTCP(ctx, target)
+			if replicas <= 8 {
+				if err != nil {
+					t.Fatal("supported ingress rejected", err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), "1–8") {
+					t.Fatal("preflight did not explain the ingress replica limit", err)
+				}
+				if err = c.PreparePublicTCP(ctx, target); err == nil {
+					t.Fatal("preparation accepted an unsupported ingress")
+				}
+			}
+			for _, action := range append(kube.Actions(), c.dynamic.(*dynamicfake.FakeDynamicClient).Actions()...) {
+				if action.GetVerb() != "get" && action.GetVerb() != "list" {
+					t.Fatalf("preflight changed %s with %s", action.GetResource().Resource, action.GetVerb())
+				}
+			}
+		})
+	}
+}
+
 func TestPublicTCPRejectsUnsupportedIngressAndConflicts(t *testing.T) {
 	tests := []struct {
 		name   string

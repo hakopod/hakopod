@@ -28,12 +28,12 @@ func (c *Client) publicTCPPoke(ctx context.Context, t Target) (map[string]public
 	if c.execConfig == nil || c.restClient() == nil {
 		return nil, fmt.Errorf("public TCP requires access to the owned ingress runtime for reload acknowledgement")
 	}
-	list, err := c.kube.CoreV1().Pods(c.options.ProxyNamespace).List(ctx, metav1.ListOptions{FieldSelector: "status.phase=Running", LabelSelector: "app.kubernetes.io/name=kubernetes-ingress,app.kubernetes.io/instance=" + c.options.ProxyRelease, Limit: 8})
+	list, err := c.kube.CoreV1().Pods(c.options.ProxyNamespace).List(ctx, metav1.ListOptions{FieldSelector: "status.phase=Running", LabelSelector: "app.kubernetes.io/name=kubernetes-ingress,app.kubernetes.io/instance=" + c.options.ProxyRelease, Limit: publicTCPMaxIngressPods})
 	if err != nil {
 		return nil, err
 	}
-	if len(list.Items) == 0 || list.Continue != "" || len(list.Items) > 8 {
-		return nil, fmt.Errorf("public TCP requires 1–8 ingress pods for bounded reload acknowledgement")
+	if len(list.Items) == 0 || list.Continue != "" || len(list.Items) > publicTCPMaxIngressPods {
+		return nil, fmt.Errorf("public TCP requires 1–%d ingress pods for bounded reload acknowledgement", publicTCPMaxIngressPods)
 	}
 	result := map[string]publicTCPRuntime{}
 	for _, pod := range list.Items {
