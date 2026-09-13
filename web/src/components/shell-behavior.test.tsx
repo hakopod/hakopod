@@ -50,7 +50,7 @@ test('switching accounts discards saved projects and environments outside the cu
   }
 })
 
-test('personal deployment and paid team creation never grant personal workspace sharing', () => {
+test('personal deployment and Free team creation never grant personal workspace sharing', () => {
   const personal: Identity = {
     id: 'personal-owner',
     name: 'Personal owner',
@@ -74,7 +74,7 @@ test('personal deployment and paid team creation never grant personal workspace 
         const scenario = `admin=${admin} Pro=${pro} personal=${personalProject}`
         const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
         cache.setQueryData(['license'], {
-          catalog: ['teams', 'invitations', 'project_rbac'].map((id) => ({ id, enabled: pro })),
+          catalog: ['teams', 'invitations', 'project_rbac'].map((id) => ({ id, enabled: true })),
         })
         cache.setQueryData(['teams'], {
           items: [{ id: 'fixture-team', name: 'Fixture team', role: 'member' }],
@@ -111,11 +111,11 @@ test('personal deployment and paid team creation never grant personal workspace 
           )
           const create = buttons.find((button) => button.includes('Create team'))
           assert.ok(create, 'team settings renders its creation control')
-          assert.equal(/\bdisabled=""/.test(create), !(admin && pro), scenario)
+          assert.equal(/\bdisabled=""/.test(create), !admin, scenario)
           const invitation = buttons.find((button) => button.includes('Invite to project'))
           assert.equal(Boolean(invitation), !personalProject, scenario)
-          if (invitation) assert.equal(/\bdisabled=""/.test(invitation), !pro, scenario)
-          assert.equal(html.includes('Grant a team access'), !personalProject && pro, scenario)
+          if (invitation) assert.equal(/\bdisabled=""/.test(invitation), false, scenario)
+          assert.equal(html.includes('Grant a team access'), !personalProject, scenario)
           assert.equal(
             html.includes('Personal workspaces cannot be shared'),
             personalProject,

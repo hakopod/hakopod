@@ -12,7 +12,7 @@ import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { HeadingHelp, Copy, ErrorState, Loading, Note } from './shared'
 export function FeatureLock({
-  title = 'Team collaboration requires Hakopod Pro',
+  title = 'This capability requires Hakopod Pro',
 }: {
   title?: string
 }) {
@@ -27,8 +27,8 @@ export function FeatureLock({
           <Badge tone="accent">PRO</Badge>
         </div>
         <p>
-          Teams, invitations, and project role grants are licensed features. Existing access can
-          still be removed.
+          Advanced capabilities require explicit signed entitlements. Teams, invitations and fixed
+          project roles are included in Free.
         </p>
       </div>
       <Link to="/settings" search={{ tab: 'license' }} className="button button-secondary">
@@ -203,7 +203,7 @@ export default function LicenseSettings() {
           if (!busy) setRemove(open)
         }}
         title="Remove this license?"
-        description="The installation returns to Free. Teams, invitations, and project role grants will stop authorizing paid actions."
+        description="The installation returns to Free. Paid capabilities stop authorizing actions. Teams, invitations and fixed project roles remain available."
       >
         <div className="dialog-body">
           <p>

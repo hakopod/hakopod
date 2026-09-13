@@ -4,6 +4,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^audit\/(?:history|export)$/,
   /^alarms(?:\/[A-Za-z0-9_-]+\/(?:read|acknowledge))?$/,
   /^alarm-settings$/,
   /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
@@ -106,6 +107,9 @@ export async function proxy({
         ...privateHeaders,
         'Content-Type': response.headers.get('content-type') || 'application/json',
         ...(streaming ? { 'X-Accel-Buffering': 'no' } : {}),
+        ...(path === 'audit/export' && response.headers.has('X-Hakopod-Next-Cursor')
+          ? { 'X-Hakopod-Next-Cursor': response.headers.get('X-Hakopod-Next-Cursor')! }
+          : {}),
       },
     })
   } catch {

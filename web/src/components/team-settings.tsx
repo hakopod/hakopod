@@ -2,7 +2,6 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Avatar } from './avatar'
 import { useLicense } from '../lib/license'
-import { FeatureLock } from './license-settings'
 import { useState } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
@@ -85,7 +84,6 @@ export default function TeamSettings() {
   return (
     <>
       {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
-      {license.data && !hasFeature('teams') && <FeatureLock />}
       <div className="section-toolbar">
         <div>
           <div className="hako-section-heading-title">
@@ -101,7 +99,7 @@ export default function TeamSettings() {
             !scope.identity.admin
               ? 'Requires installation administrator access'
               : !hasFeature('teams')
-                ? 'Requires Hakopod Pro'
+                ? 'Loading team access'
                 : undefined
           }
           onClick={() => {
@@ -149,7 +147,7 @@ export default function TeamSettings() {
             )}
             {canTeam && (
               <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('team')}>
-                Invite member{!hasFeature('invitations') && ' · Pro'}
+                Invite member
               </Button>
             )}
           </div>
@@ -220,7 +218,7 @@ export default function TeamSettings() {
         </div>
         {canShareProject && scope.project && (
           <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('project')}>
-            Invite to project{!hasFeature('invitations') && ' · Pro'}
+            Invite to project
           </Button>
         )}
       </div>
