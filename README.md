@@ -22,7 +22,7 @@ arm64 and at least 4 GiB RAM and 30 GiB free disk:
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
 
-Already root? Use `| sh`. This installs the `0.1.0-alpha.2` prerelease for
+Already root? Use `| sh`. This installs the `0.1.0-alpha.4` prerelease for
 evaluation. The script asks for your settings and shows a plan before installing
 Hakopod. It installs missing prerequisites, K3s and prebuilt binaries. Choose
 managed PostgreSQL or supply a dedicated existing database; external connections
