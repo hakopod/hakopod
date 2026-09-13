@@ -950,6 +950,15 @@
   max-height: 520px;
   overflow: auto;
 }
+.service-environment-tab table {
+  table-layout: fixed;
+}
+.service-environment-tab th {
+  text-align: left;
+}
+.service-environment-tab th:first-child {
+  width: 40%;
+}
 .env-review-table td,
 .env-review-table th {
   vertical-align: top;

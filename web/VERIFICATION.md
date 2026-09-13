@@ -36,6 +36,8 @@ reviewed binding payloads, shared and missing references, write-only saves,
 invalid names, metadata failures, viewer controls and retained failed drafts.
 Long values, names and dialogs fit a 390-pixel viewport without page overflow.
 Both the service and application secret dialogs resisted dismissal while saving.
+The environment table uses dedicated column widths instead of action-table
+styling, and variable names and secret references wrap within their cells.
 
 The full Go suite passed again with two workers and disposable test databases.
 Dashboard TypeScript, formatting, all 43 tests and the production build passed.
@@ -252,8 +254,8 @@ level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 105 | 1,358,114 | 431,342 |
-| CSS | 3 | 148,913 | 27,395 |
+| JavaScript | 105 | 1,358,150 | 431,369 |
+| CSS | 3 | 149,057 | 27,426 |
 | Fonts | 2 | 236,032 | 109,697 |
 
 The main JavaScript entry is 401,703 bytes. The 331,178-byte xterm chunk loads only

@@ -124,7 +124,7 @@ export function ServiceSecrets({
                   </strong>
                   <span className="copyable-address">
                     <Icon name="lock" size={13} />
-                    <code>{reference}</code>
+                    <code className="break-text">{reference}</code>
                     <Copy value={reference} />
                   </span>
                   <small>

@@ -625,7 +625,7 @@ export function ServiceDetail({
             )}
           </div>
           {Object.keys(service.env || {}).length ? (
-            <div className="table-container ops-table env-review-table">
+            <div className="table-container env-review-table">
               <table>
                 <thead>
                   <tr>
@@ -639,7 +639,7 @@ export function ServiceDetail({
                     .map(([name, value]) => (
                       <tr key={name}>
                         <th scope="row">
-                          <code>{name}</code>
+                          <code className="break-text">{name}</code>
                         </th>
                         <td>
                           <pre>{value === '' ? '(empty string)' : value}</pre>
