@@ -1,4 +1,4 @@
-Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target.
+Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target. Missing distro prerequisites are installed automatically. PostgreSQL defaults to an owned K3s pod, with explicit existing local or verified-TLS external database options. Docker is optional; K3s uses bundled containerd.
 
 Download and review `installer.sh` from this release, then run `sh installer.sh --help`. Use a fresh dedicated Linux server and review the printed plan before accepting installation. The installer guide in this tag describes supported distributions, required packages, DNS, memory limits and resume behavior. The `hakopod.com/scripts/installer.sh` endpoint must be deployed separately; publication here does not activate that domain.
 

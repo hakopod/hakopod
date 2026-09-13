@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import ipaddress
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -19,12 +20,17 @@ import tarfile
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
+database_spec = importlib.util.spec_from_file_location('installer_database', HERE / 'database.py')
+database = importlib.util.module_from_spec(database_spec)
+sys.modules[database_spec.name] = database
+database_spec.loader.exec_module(database)
 PINS = json.loads((HERE / 'pins.json').read_text())
 DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip='',
     node_name='hakopod-server', supervisor_host='', dashboard_mode='ssh',
     dashboard_origin='http://localhost:3000', dashboard_port=3000,
     tls_cert_file='', tls_key_file='', acme='production', acme_email='', storage=False,
     k3s_memory_mib=2048, api_memory_mib=256, dashboard_memory_mib=320,
+    database_mode='managed', database_url_file='', database_ca_file='', install_docker=False,
     postgres_memory_mib=256, max_pods=50, deployment_mode='self-hosted', public_tcp_ports=[])
 LABEL = 'hakopod.com/installation'
 ROOTS = ('/etc/hakopod', '/opt/hakopod', '/var/lib/hakopod')
@@ -103,6 +109,7 @@ def config(path):
     if c['acme'] not in ('off', 'staging', 'production'): fail('acme must be off, staging or production')
     if c['acme'] != 'off' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', c['acme_email']):
         fail('ACME needs an operator-provided acme_email')
+    database.validate_config(c, inspect_files=False)
     return c
 
 def architecture(value=None):
@@ -197,10 +204,15 @@ def plan(c, arch, directory):
     if c['public_tcp_ports']: print('Additional TCP host ports: ' + ', '.join(map(str, c['public_tcp_ports'])) + '; firewall remains operator-managed; applications must claim listeners explicitly.')
     print('Application DNS: *.' + c['app_domain'] + ' → operator-managed public IP/NAT; DNS/firewall unchanged.')
     print('Dashboard: ' + c['dashboard_origin'] + (' via SSH tunnel; API127.0.0.1:8080' if c['dashboard_mode'] == 'ssh' else '; supplied certificate; API127.0.0.1:8080'))
-    print('PostgreSQL: dedicated namespace, static20Gi local PV (Retain), service10.43.0.20:5432; no host PostgreSQL reuse.')
+    if c['database_mode'] == 'managed':
+        print('PostgreSQL: installer-owned K3s pod, static 20 GiB local PV (Retain), private service 10.43.0.20:5432.')
+    else:
+        print('PostgreSQL: existing ' + c['database_mode'] + ' dedicated database from a protected URL file; ownership, permissions and empty schema checked before installation.')
+        if c['database_mode'] == 'external': print('External database requires verified TLS; the installer never creates or changes cloud resources.')
     print('Local application storage: ' + ('enabled, node-local Delete reclaim' if c['storage'] else 'off'))
     print('ACME: ' + c['acme'] + ('; staging certificates are untrusted by browsers' if c['acme'] == 'staging' else ''))
-    print(f'Hard memory limits: K3s{c["k3s_memory_mib"]}MiB, API{c["api_memory_mib"]}MiB, dashboard{c["dashboard_memory_mib"]}MiB, PostgreSQL{c["postgres_memory_mib"]}MiB, HAProxy256MiB.')
+    database_cap = f', PostgreSQL {c["postgres_memory_mib"]} MiB' if c['database_mode'] == 'managed' else ''
+    print(f'Hard memory limits: K3s {c["k3s_memory_mib"]} MiB, API {c["api_memory_mib"]} MiB, dashboard {c["dashboard_memory_mib"]} MiB{database_cap}, HAProxy 256 MiB.')
     print('API: GOMEMLIMIT192MiB /2 processors; dashboard JS heap192MiB. At least4GiB RAM and30GiB free disk; workload capacity is additional.')
     print('Only a random setup token is generated. Choose your own name, email and password in the dashboard.')
     print('Upstream binaries use checked-in hashes. Local SHA256SUMS must come from your trusted build; they are not signatures.')
@@ -210,7 +222,7 @@ def no_symlink_ancestors(path):
     for p in (Path(path), *Path(path).parents):
         if p.is_symlink(): fail('Refusing symlink in installation path: ' + str(p))
 
-def preflight(c, arch, resume):
+def platform_preflight(c, arch):
     if platform.system() != 'Linux': fail('Installation requires a supported Linux host; use --dry-run for cross-platform review')
     if os.geteuid() != 0: fail('Installation requires root; --dry-run does not')
     if architecture() != arch: fail('Target architecture differs from this Linux host')
@@ -221,21 +233,29 @@ def preflight(c, arch, resume):
     supported = (os_info.get('ID') == 'ubuntu' and os_info.get('VERSION_ID') in ('24.04', '26.04')) or (os_info.get('ID') == 'debian' and os_info.get('VERSION_ID') in ('12', '13'))
     if not supported: fail('Supported host OS: Ubuntu24.04/26.04 or Debian12/13 with systemd and cgroupv2')
     if not Path('/run/systemd/system').is_dir() or not Path('/sys/fs/cgroup/cgroup.controllers').is_file(): fail('A running systemd host with cgroupv2 is required; ordinary containers are only suitable for dry-run tests')
-    for command in ('systemctl', 'curl', 'ip', 'openssl', 'flock', 'useradd', 'getent', 'mount', 'modprobe', 'swapon', 'sha256sum'):
-        if not shutil.which(command): fail('Install this prerequisite with your OS package manager: ' + command)
-    if subprocess.check_output(['swapon', '--noheadings', '--show'], text=True).strip(): fail('Disable swap explicitly before installation; installer does not change swap configuration')
+    if len(Path('/proc/swaps').read_text().splitlines()) > 1:
+        fail('Disable swap explicitly before installation; installer does not change swap configuration')
     memory = int(re.search(r'^MemTotal:\s+(\d+)', Path('/proc/meminfo').read_text(), re.M)[1]) // 1024
-    required = max(3900, c['k3s_memory_mib'] + c['api_memory_mib'] + c['dashboard_memory_mib'] + c['postgres_memory_mib'] + 768 + (384 if c['acme'] != 'off' else 0))
-    if memory < required: fail(f'Host has{memory}MiB RAM; this configuration requires at least{required}MiB plus application capacity')
-    if shutil.disk_usage('/var/lib').free < 30 * 1024 ** 3: fail('At least30GiB free disk is required under /var/lib')
+    database_memory = c['postgres_memory_mib'] if c['database_mode'] == 'managed' else 0
+    required = max(3900, c['k3s_memory_mib'] + c['api_memory_mib'] + c['dashboard_memory_mib'] + database_memory + 768 + (384 if c['acme'] != 'off' else 0))
+    if memory < required: fail(f'Host has {memory} MiB RAM; this configuration requires at least {required} MiB plus application capacity')
+    if shutil.disk_usage('/var/lib').free < 30 * 1024 ** 3: fail('At least 30 GiB free disk is required under /var/lib')
+
+
+def preflight(c, arch, resume, directory):
+    platform_preflight(c, arch)
+    for command in ('systemctl', 'curl', 'ip', 'openssl', 'flock', 'useradd', 'getent', 'mount', 'modprobe', 'sha256sum'):
+        if not shutil.which(command): fail('Prerequisite package did not provide: ' + command)
     addresses = json.loads(subprocess.check_output(['ip', '-j', 'address', 'show'], text=True))
     if not any(x.get('local') == c['node_ip'] for item in addresses for x in item.get('addr_info', [])):
         fail('node_ip is not assigned to a local interface')
     for root in ROOTS: no_symlink_ancestors(root)
     marker = Path('/etc/hakopod/installation.json')
+    saved_database = False
     if marker.exists():
         regular(marker, True)
         if not resume: fail('An installation marker exists; use --resume with the original inputs')
+        saved_database = verify_resume(c, arch, directory).get('secrets_created', False)
     else:
         if resume: fail('--resume requires the original installation marker')
         for root in ROOTS:
@@ -272,6 +292,9 @@ def preflight(c, arch, resume):
         cert_pub = subprocess.check_output(['openssl', 'x509', '-in', str(cert), '-pubkey', '-noout'])
         key_pub = subprocess.check_output(['openssl', 'pkey', '-in', str(key), '-pubout', '-passin', 'pass:'], stderr=subprocess.DEVNULL)
         if cert_pub != key_pub: fail('TLS certificate and key do not match')
+    if c['database_mode'] != 'managed':
+        result = database.preflight(c, resume=saved_database, installed_url_path='/etc/hakopod/database-url' if saved_database else None)
+        print('Existing PostgreSQL preflight passed: ' + result['endpoint'] + '; server ' + result['server_version'])
     print('Linux host preflight passed. DNS, firewall reachability and certificate trust still require operator verification.')
 
 def write(path, content, mode=0o600):
@@ -284,14 +307,58 @@ def write(path, content, mode=0o600):
         stream.write(content); stream.flush(); os.fsync(stream.fileno())
     os.chmod(temp, mode); os.replace(temp, path)
 
+def verify_database_state(state):
+    expected = state.get('database_files', {})
+    if not expected or '/etc/hakopod/database-url' not in expected or '/etc/hakopod/secrets/database-url' not in expected:
+        fail('Missing saved database state; restore the installation metadata and credentials from backup')
+    allowed = {'/etc/hakopod/database-url', '/etc/hakopod/secrets/database-url', '/etc/hakopod/database-ca.pem'}
+    for name, checksum in expected.items():
+        if name not in allowed: fail('Invalid database state path')
+        no_symlink_ancestors(name)
+        if digest(regular(name, private=name != '/etc/hakopod/database-ca.pem')) != checksum:
+            fail('Saved database credentials or CA changed; restore the matching installation state')
+
+
+def verify_resume(c, arch, directory):
+    old = read_json(regular('/etc/hakopod/installation.json', True))
+    if old.get('fingerprint') != fingerprint(c, arch, artifacts(directory, c, arch)):
+        fail('Resume inputs or artifact bytes changed; this installer does not perform upgrades')
+    if old.get('schema_version') != 1 or not re.fullmatch(r'[0-9a-f]{32}', old.get('id', '')):
+        fail('Invalid installation marker')
+    if old.get('secrets_created'): verify_database_state(old)
+    return old
+
+
+def preserve_database(c, state):
+    if state.get('secrets_created'):
+        verify_database_state(state)
+        return
+    ca = None
+    if c['database_mode'] == 'managed':
+        password = regular('/etc/hakopod/secrets/postgres-password', True).read_text().strip()
+        uri = 'postgresql://hakopod:' + password + '@10.43.0.20:5432/hakopod?sslmode=disable'
+    else:
+        connection = database.parse_url(database.read_url_file(c['database_url_file']), c['database_mode'], c['database_ca_file'])
+        if connection.ca_file:
+            ca = '/etc/hakopod/database-ca.pem'
+            pem = database._read_file(connection.ca_file, secret=False, maximum=1024 * 1024)
+            try: write(ca, pem.decode('ascii'), 0o644)
+            except UnicodeError: fail('Database CA must be a PEM certificate bundle')
+        uri = connection.uri(ca_path=ca)
+    # The root copy is needed for resume checks; the separate runtime copy is
+    # readable only by the API service account after the installer assigns it.
+    paths = ['/etc/hakopod/database-url', '/etc/hakopod/secrets/database-url']
+    for path in paths: write(path, uri + '\n')
+    if ca: paths.append(ca)
+    state['database_files'] = {path: digest(path) for path in paths}
+
+
 def prepare(c, arch, directory, resume):
     verified = artifacts(directory, c, arch)
     fp = fingerprint(c, arch, verified)
     marker = Path('/etc/hakopod/installation.json')
     if marker.exists():
-        old = read_json(marker)
-        if old.get('fingerprint') != fp: fail('Resume inputs or artifact bytes changed; this installer does not perform upgrades')
-        if old.get('schema_version') != 1 or not re.fullmatch(r'[0-9a-f]{32}', old.get('id', '')): fail('Invalid installation marker')
+        old = verify_resume(c, arch, directory)
         installation = old['id']
     else:
         if resume: fail('Missing resume marker')
@@ -301,7 +368,9 @@ def prepare(c, arch, directory, resume):
     for root in ROOTS: os.chmod(root, 0o711)
     write('/etc/hakopod/config.json', json.dumps(c, indent=2) + '\n')
     secret_dir = Path('/etc/hakopod/secrets'); secret_dir.mkdir(mode=0o711, exist_ok=True); secret_dir.chmod(0o711)
-    for name in ('setup-token', 'auth-encryption-key', 'postgres-password', 'session-secret'):
+    names = ['setup-token', 'auth-encryption-key', 'session-secret']
+    if c['database_mode'] == 'managed': names.append('postgres-password')
+    for name in names:
         path = secret_dir / name
         if path.exists():
             regular(path, True)
@@ -309,9 +378,11 @@ def prepare(c, arch, directory, resume):
         else:
             if resume and old.get('secrets_created'): fail('Missing preserved secret; restore from backup: ' + name)
             write(path, secrets.token_hex(32) + '\n')
-    state = read_json(marker); state['secrets_created'] = True
+    state = read_json(marker)
+    preserve_database(c, state)
+    state['secrets_created'] = True
     write(marker, json.dumps(state) + '\n')
-    Path('/var/lib/hakopod/postgres').mkdir(mode=0o700, exist_ok=True)
+    if c['database_mode'] == 'managed': Path('/var/lib/hakopod/postgres').mkdir(mode=0o700, exist_ok=True)
     print(installation)
 
 def owned(path, installation):
@@ -351,50 +422,51 @@ def render(c, arch, installation, out):
                        'hostPorts': {'http': 80, 'https': 443, 'stat': 0}},
         'service': {'type': 'ClusterIP', 'nodePorts': {'http': None, 'https': None}, 'tcpPorts': [{'name': 'tcp-' + str(port), 'port': port, 'targetPort': port} for port in c['public_tcp_ports']]},
     }}}, indent=2) + '\n')
-    ns = 'hakopod-system'; selector = {'app': 'hakopod-postgres'}
-    password = regular('/etc/hakopod/secrets/postgres-password', True).read_text().strip()
     session_secret = regular('/etc/hakopod/secrets/session-secret', True).read_text().strip()
-    pg = [obj('Namespace', ns), obj('Secret', 'postgres', ns, type='Opaque',
-        data={'password': base64.b64encode(password.encode()).decode()}),
-        obj('PersistentVolume', 'hakopod-postgres', spec={
-            'capacity': {'storage': '20Gi'}, 'volumeMode': 'Filesystem', 'accessModes': ['ReadWriteOnce'],
-            'persistentVolumeReclaimPolicy': 'Retain', 'storageClassName': '',
-            'claimRef': {'namespace': ns, 'name': 'postgres'},
-            'local': {'path': '/var/lib/hakopod/postgres'},
-            'nodeAffinity': {'required': {'nodeSelectorTerms': [{'matchExpressions': [{
-                'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': [c['node_name']]}]}]}}}),
-        obj('PersistentVolumeClaim', 'postgres', ns, spec={'accessModes': ['ReadWriteOnce'],
-            'storageClassName': '', 'volumeName': 'hakopod-postgres', 'resources': {'requests': {'storage': '20Gi'}}}),
-        obj('Service', 'postgres', ns, spec={'clusterIP': '10.43.0.20', 'selector': selector,
-            'ports': [{'port': 5432, 'targetPort': 5432, 'protocol': 'TCP'}]}),
-        obj('NetworkPolicy', 'postgres-private', ns, spec={'podSelector': {'matchLabels': selector},
-            'policyTypes': ['Ingress', 'Egress'], 'ingress': [{'from': [{'ipBlock': {'cidr': c['node_ip'] + '/32'}}],
-                'ports': [{'port': 5432, 'protocol': 'TCP'}]}], 'egress': []}),
-        obj('Deployment', 'postgres', ns, spec={'replicas': 1, 'strategy': {'type': 'Recreate'},
-            'selector': {'matchLabels': selector}, 'template': {
-                'metadata': {'labels': {**selector, LABEL: installation}}, 'spec': {
-                    'automountServiceAccountToken': False,
-                    'nodeSelector': {'kubernetes.io/hostname': c['node_name']},
-                    'securityContext': {'runAsUser': 70, 'runAsGroup': 70, 'fsGroup': 70, 'runAsNonRoot': True,
-                        'seccompProfile': {'type': 'RuntimeDefault'}},
-                    'terminationGracePeriodSeconds': 60,
-                    'containers': [{'name': 'postgres', 'image': PINS['postgres'],
-                        'args': ['-c', 'shared_buffers=32MB', '-c', 'max_connections=30', '-c', 'work_mem=2MB',
-                            '-c', 'maintenance_work_mem=32MB', '-c', 'wal_buffers=4MB', '-c', 'password_encryption=scram-sha-256',
-                            '-c', 'log_statement=none', '-c', 'log_min_error_statement=panic'],
-                        'securityContext': {'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}},
-                        'env': [{'name': 'POSTGRES_USER', 'value': 'hakopod'}, {'name': 'POSTGRES_DB', 'value': 'hakopod'},
-                            {'name': 'PGDATA', 'value': '/var/lib/postgresql/data/pgdata'},
-                            {'name': 'POSTGRES_PASSWORD', 'valueFrom': {'secretKeyRef': {'name': 'postgres', 'key': 'password'}}},
-                            {'name': 'POSTGRES_INITDB_ARGS', 'value': '--auth-host=scram-sha-256 --auth-local=trust'}],
-                        'ports': [{'containerPort': 5432}],
-                        'resources': {'requests': {'cpu': '50m', 'memory': '96Mi'},
-                            'limits': {'cpu': '500m', 'memory': str(c['postgres_memory_mib']) + 'Mi'}},
-                        'startupProbe': {'exec': {'command': ['pg_isready', '-U', 'hakopod']}, 'periodSeconds': 3, 'failureThreshold': 40},
-                        'readinessProbe': {'exec': {'command': ['pg_isready', '-U', 'hakopod']}, 'periodSeconds': 5},
-                        'volumeMounts': [{'name': 'data', 'mountPath': '/var/lib/postgresql/data'}]}],
-                    'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': 'postgres'}}]}}})]
-    emit('postgres.json', json.dumps({'apiVersion': 'v1', 'kind': 'List', 'items': pg}, indent=2) + '\n')
+    if c['database_mode'] == 'managed':
+        ns = 'hakopod-system'; selector = {'app': 'hakopod-postgres'}
+        password = regular('/etc/hakopod/secrets/postgres-password', True).read_text().strip()
+        pg = [obj('Namespace', ns), obj('Secret', 'postgres', ns, type='Opaque',
+            data={'password': base64.b64encode(password.encode()).decode()}),
+            obj('PersistentVolume', 'hakopod-postgres', spec={
+                'capacity': {'storage': '20Gi'}, 'volumeMode': 'Filesystem', 'accessModes': ['ReadWriteOnce'],
+                'persistentVolumeReclaimPolicy': 'Retain', 'storageClassName': '',
+                'claimRef': {'namespace': ns, 'name': 'postgres'},
+                'local': {'path': '/var/lib/hakopod/postgres'},
+                'nodeAffinity': {'required': {'nodeSelectorTerms': [{'matchExpressions': [{
+                    'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': [c['node_name']]}]}]}}}),
+            obj('PersistentVolumeClaim', 'postgres', ns, spec={'accessModes': ['ReadWriteOnce'],
+                'storageClassName': '', 'volumeName': 'hakopod-postgres', 'resources': {'requests': {'storage': '20Gi'}}}),
+            obj('Service', 'postgres', ns, spec={'clusterIP': '10.43.0.20', 'selector': selector,
+                'ports': [{'port': 5432, 'targetPort': 5432, 'protocol': 'TCP'}]}),
+            obj('NetworkPolicy', 'postgres-private', ns, spec={'podSelector': {'matchLabels': selector},
+                'policyTypes': ['Ingress', 'Egress'], 'ingress': [{'from': [{'ipBlock': {'cidr': c['node_ip'] + '/32'}}],
+                    'ports': [{'port': 5432, 'protocol': 'TCP'}]}], 'egress': []}),
+            obj('Deployment', 'postgres', ns, spec={'replicas': 1, 'strategy': {'type': 'Recreate'},
+                'selector': {'matchLabels': selector}, 'template': {
+                    'metadata': {'labels': {**selector, LABEL: installation}}, 'spec': {
+                        'automountServiceAccountToken': False,
+                        'nodeSelector': {'kubernetes.io/hostname': c['node_name']},
+                        'securityContext': {'runAsUser': 70, 'runAsGroup': 70, 'fsGroup': 70, 'runAsNonRoot': True,
+                            'seccompProfile': {'type': 'RuntimeDefault'}},
+                        'terminationGracePeriodSeconds': 60,
+                        'containers': [{'name': 'postgres', 'image': PINS['postgres'],
+                            'args': ['-c', 'shared_buffers=32MB', '-c', 'max_connections=30', '-c', 'work_mem=2MB',
+                                '-c', 'maintenance_work_mem=32MB', '-c', 'wal_buffers=4MB', '-c', 'password_encryption=scram-sha-256',
+                                '-c', 'log_statement=none', '-c', 'log_min_error_statement=panic'],
+                            'securityContext': {'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}},
+                            'env': [{'name': 'POSTGRES_USER', 'value': 'hakopod'}, {'name': 'POSTGRES_DB', 'value': 'hakopod'},
+                                {'name': 'PGDATA', 'value': '/var/lib/postgresql/data/pgdata'},
+                                {'name': 'POSTGRES_PASSWORD', 'valueFrom': {'secretKeyRef': {'name': 'postgres', 'key': 'password'}}},
+                                {'name': 'POSTGRES_INITDB_ARGS', 'value': '--auth-host=scram-sha-256 --auth-local=trust'}],
+                            'ports': [{'containerPort': 5432}],
+                            'resources': {'requests': {'cpu': '50m', 'memory': '96Mi'},
+                                'limits': {'cpu': '500m', 'memory': str(c['postgres_memory_mib']) + 'Mi'}},
+                            'startupProbe': {'exec': {'command': ['pg_isready', '-U', 'hakopod']}, 'periodSeconds': 3, 'failureThreshold': 40},
+                            'readinessProbe': {'exec': {'command': ['pg_isready', '-U', 'hakopod']}, 'periodSeconds': 5},
+                            'volumeMounts': [{'name': 'data', 'mountPath': '/var/lib/postgresql/data'}]}],
+                        'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': 'postgres'}}]}}})]
+        emit('postgres.json', json.dumps({'apiVersion': 'v1', 'kind': 'List', 'items': pg}, indent=2) + '\n')
     if c['acme'] != 'off':
         endpoint = 'https://acme-staging-v02.api.letsencrypt.org/directory' if c['acme'] == 'staging' else 'https://acme-v02.api.letsencrypt.org/directory'
         emit('issuer.json', json.dumps(obj('ClusterIssuer', 'hakopod-acme', spec={'acme': {
@@ -406,7 +478,7 @@ def render(c, arch, installation, out):
         return ''.join(key + '=' + json.dumps(str(value)) + '\n' for key, value in values.items())
     emit('api.env', environment({
         'GOMEMLIMIT': '192MiB', 'GOMAXPROCS': '2',
-        'HAKOPOD_DATABASE_URL': 'postgres://hakopod:' + password + '@10.43.0.20:5432/hakopod?sslmode=disable',
+        'HAKOPOD_DATABASE_URL_FILE': '/etc/hakopod/secrets/database-url',
         'HAKOPOD_KUBECONFIG': '/etc/hakopod/api-kubeconfig',
         'HAKOPOD_APP_DOMAIN': c['app_domain'], 'HAKOPOD_INGRESS_CLASS': 'haproxy',
         'HAKOPOD_DEPLOYMENT_MODE': c['deployment_mode'],
@@ -417,7 +489,7 @@ def render(c, arch, installation, out):
         'HAKOPOD_SETUP_SECRET_FILE': '/etc/hakopod/secrets/setup-token',
         'HAKOPOD_AUTH_ENCRYPTION_KEY_FILE': '/etc/hakopod/secrets/auth-encryption-key',
 
-        'HAKOPOD_MANAGED_POSTGRES': 'true',
+        'HAKOPOD_MANAGED_POSTGRES': str(c['database_mode'] == 'managed').lower(),
         'HAKOPOD_BACKUP_STATE_DIR': '/var/lib/hakopod/backups',
         'HAKOPOD_TLS_ISSUER': 'hakopod-acme' if c['acme'] != 'off' else '',
     }))
@@ -500,7 +572,7 @@ WantedBy=multi-user.target
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action', choices=('plan', 'config', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'complete'))
+    p.add_argument('action', choices=('plan', 'config', 'platform-preflight', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'complete'))
     p.add_argument('--config'); p.add_argument('--arch'); p.add_argument('--artifact-dir'); p.add_argument('--resume', action='store_true')
     p.add_argument('--source'); p.add_argument('--destination'); p.add_argument('--root'); p.add_argument('--name'); p.add_argument('--id')
     a = p.parse_args()
@@ -515,7 +587,8 @@ def main():
     if a.action == 'config':
         for key, value in c.items(): print(key + '\t' + (str(value).lower() if isinstance(value, bool) else str(value)))
     elif a.action == 'plan': plan(c, arch, a.artifact_dir)
-    elif a.action == 'preflight': preflight(c, arch, a.resume)
+    elif a.action == 'platform-preflight': platform_preflight(c, arch)
+    elif a.action == 'preflight': preflight(c, arch, a.resume, a.artifact_dir)
     elif a.action == 'prepare': prepare(c, arch, a.artifact_dir, a.resume)
     elif a.action == 'render': render(c, arch, a.id, Path(a.destination))
 

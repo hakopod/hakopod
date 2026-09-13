@@ -1,14 +1,15 @@
 # Linux installer
 
-Management backups use the exact owned PostgreSQL container and its pinned
-client tools. The installer creates a private restore staging directory at
+Managed-database backups use the exact owned PostgreSQL container and its pinned
+client tools. Existing local or external databases use host PostgreSQL clients;
+`pg_dump` must be at least the server major version before enabling backups. The installer creates a private restore staging directory at
 `/var/lib/hakopod/backups` and allows only the API service to write there.
 Configure an S3-compatible destination in the dashboard after setup. Preserve
 `/etc/hakopod`, cluster state and application volumes separately.
 
-This installer installs a dedicated, single-server Hakopod on **Ubuntu 24.04/26.04 or Debian 12/13, amd64 or arm64**, with systemd, cgroup v2, Python 3.10+, and swap disabled. It is implementation scope, not a claim that every host/architecture combination has passed a full installation. Read the verification record below. At least 4 GiB RAM and 30 GiB free disk are required; allow additional capacity for application pods, rollouts, and optional modules. Runtime caps are conservative, configurable bounds, not measured idle usage or a guarantee that every workload fits.
+This installer installs a dedicated, single-server Hakopod on **Ubuntu 24.04/26.04 or Debian 12/13, amd64 or arm64**, with systemd, cgroup v2 and swap disabled. Missing Python 3.10+ and other distro prerequisites are installed automatically. It is implementation scope, not a claim that every host/architecture combination has passed a full installation. Read the verification record below. At least 4 GiB RAM and 30 GiB free disk are required; allow additional capacity for application pods, rollouts, and optional modules. Runtime caps are conservative, configurable bounds, not measured idle usage or a guarantee that every workload fits.
 
-Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state, conflicting ports, service accounts or installer paths are refused. An existing installation can be resumed only with its original configuration, ownership marker and artifact bytes. The installer does not adopt another PostgreSQL database, cluster, or Helm installation. It does not change DNS, your firewall, swap configuration, SSH access, or OS package repositories. No uninstaller or automatic data deletion is provided.
+Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state, conflicting ports, service accounts or installer paths are refused. An existing installation can be resumed only with its original configuration, ownership marker and artifact bytes. The installer does not adopt another cluster or Helm installation. Existing PostgreSQL is an explicit option: provide a dedicated empty database owned by its connection role; unrelated databases and services remain untouched. It does not change DNS, your firewall, swap configuration, SSH access, or OS package repositories. No uninstaller or automatic data deletion is provided.
 
 ## Prebuilt releases
 
@@ -39,13 +40,17 @@ sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json --dry-run
 sudo sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json
 ```
 
-The bootstrap requires Linux amd64 or arm64, Python 3.10+, Bash and system CA
-certificates. It downloads only the selected architecture, the dashboard and
+The bootstrap supports Linux amd64 and arm64. If Python, Bash, curl or system CA
+certificates are missing, it first installs their missing packages from the
+configured distro repositories. This small prerequisite phase precedes the
+Python configuration review; `--dry-run` prints it without installing anything.
+If even curl is absent, download the script from another machine and run it
+with the existing POSIX shell. It downloads only the selected architecture, the dashboard and
 the small installer kit. Downloads are sequential with size/time bounds; the
 SHA256 manifest is verified before extracting or executing the kit. All
 redirects stay on HTTPS. The extractor rejects traversal, links, special files
 and oversized kits. Temporary downloads are removed when the installer exits.
-No compiler or package manager is used on the target to build Hakopod.
+No compiler or language package manager is used on the target to build Hakopod.
 
 Interactive input comes from `/dev/tty`, so the script pipe is never consumed
 as answers. Without a terminal, pass an explicit `--config` and `--dry-run` or
@@ -87,7 +92,7 @@ bash scripts/install.sh --artifact-dir /path/to/artifacts --config /path/to/inst
 sudo bash scripts/install.sh --artifact-dir /path/to/artifacts --config /path/to/install.json
 ```
 
-`--dry-run` is safe on macOS and on disposable Linux containers; it validates input and both local archive checksums and prints the intended paths, routing, modules and memory limits. It does not create installation state, credentials or services. Interactive review may use a temporary input file that is removed at exit. A real install rejects non-Linux, non-root, ordinary non-systemd containers, unsupported distributions, overlapping cluster routes and insufficient resources before host mutation. Install prerequisites explicitly with your OS package manager: Bash, Python 3, curl, CA certificates, OpenSSL, iproute2, util-linux, passwd, kmod and coreutils. No unattended package upgrade occurs.
+`--dry-run` is safe on macOS and on disposable Linux containers; it validates input and both local archive checksums and prints the intended paths, routing, modules and memory limits. It does not create installation state, credentials or services. Interactive review may use a temporary input file that is removed at exit. A real install rejects unsupported distributions, insufficient resources and ordinary non-systemd containers before installing the remaining OS packages. The full preflight then checks ports, cluster ownership and routes before creating Hakopod state. Missing Bash, Python 3, curl, CA certificates, OpenSSL, iproute2, util-linux, passwd, kmod and coreutils are installed from existing distro repositories. No global package upgrade or repository change occurs. K3s supplies containerd. `install_docker=true` optionally installs Docker Engine when no existing daemon or client installation would be replaced; the default is false.
 
 The final prompt requires typing `install`. `--yes` accepts that printed plan for an unattended run with explicit config. It never supplies a user identity, owner email, password or OAuth account. Root must trust and review the installer code it executes. Root-controlled local files are outside the hostile-tenant boundary.
 
@@ -108,7 +113,54 @@ There is no public API listener or implicitly trusted reverse proxy. Untrusted a
 
 The interactive installer defaults to `acme=production` for Let's Encrypt application HTTPS and asks for a contact `acme_email`; it requires public DNS and reachable port 80. The included example deliberately sets `off` for a safe review/test configuration: that choice keeps cert-manager off and public applications initially use HTTP until TLS is configured. `staging` installs pinned cert-manager plus a staging ClusterIssuer; its test certificates are **not browser-trusted**. The email is an ACME contact, not a Hakopod owner identity. HTTP-01 handles individual names; no wildcard DNS-01 automation is installed. Inspect actual issuer/certificate Ready conditions in Hakopod. cert-manager renews application certificates it manages. Local automated tests explicitly disable issuance.
 
-`storage=false` is the default. When enabled, the separately pinned local-path module supplies node-local application volumes under `/var/lib/hakopod/application-volumes`; these use Delete reclaim and are not replicated backups. The platform PostgreSQL uses its own static 20 GiB PV with Retain regardless of this option. The static PV's declared size is scheduling metadata, not a filesystem quota. Database data stays under `/var/lib/hakopod/postgres` on the initial node.
+`storage=false` is the default. When enabled, the separately pinned local-path module supplies node-local application volumes under `/var/lib/hakopod/application-volumes`; these use Delete reclaim and are not replicated backups. In managed database mode, platform PostgreSQL uses its own static 20 GiB PV with Retain regardless of this option. The static PV's declared size is scheduling metadata, not a filesystem quota. Database data stays under `/var/lib/hakopod/postgres` on the initial node.
+
+## PostgreSQL selection
+
+`database_mode` defaults to `managed`: install one dedicated PostgreSQL 17 pod
+inside the new K3s cluster. Its data, namespace, password and storage remain
+installer-owned. No PostgreSQL server package is installed on the host.
+
+Choose `local` for an existing server reachable by loopback TCP, or `external`
+for a remote PostgreSQL service such as RDS. These modes install only missing
+PostgreSQL client tools and create no PostgreSQL pod, namespace, PV or host
+server. The operator supplies an existing dedicated database and a password
+for its owner role. Supported server majors are 14 through 18. First-install
+checks require a writable primary, CONNECT and public-schema USAGE/CREATE,
+the public default schema, and an empty public schema. System databases and
+unrelated application schemas are refused. No database, role or existing
+application data is deleted or overwritten.
+
+Store the connection URI in a root-owned mode 0600 or 0400 file, then set:
+
+```json
+{
+  "database_mode": "external",
+  "database_url_file": "/root/hakopod-database-url",
+  "database_ca_file": "/root/rds-ca-bundle.pem",
+  "install_docker": false
+}
+```
+
+These are additions to the normal installer JSON, not a complete configuration.
+The interactive flow also accepts hidden URI input and immediately writes it
+to a private temporary file. Percent-encode reserved characters in the username
+and password. Never put a connection URI or password in a shell command or
+JSON field; the installer accepts only the protected file path.
+
+External connections require `sslmode=verify-full`; the hostname must match
+the server certificate. Supply `database_ca_file` for a private/RDS CA, or use
+system trust roots. The installer copies a supplied CA into its own state and
+rewrites the protected runtime URI. Local mode requires an explicit password
+and a loopback TCP endpoint such as `127.0.0.1`; Unix-socket and OS peer-auth
+connections are not supported by the isolated API service. Remote IAM token
+rotation, automatic RDS creation, replica management and existing-schema
+migration are outside this installer.
+
+Database probes are read-only, time-bounded and redact server diagnostics.
+Connection success does not prove that a host `pg_dump` is new enough for
+backups: install a compatible client from a trusted distro repository and run
+a restore drill before enabling management backups against an external server.
 
 ## Runtime limits and credentials
 
@@ -121,9 +173,9 @@ The interactive installer defaults to `acme=production` for Let's Encrypt applic
 | HAProxy | 256 MiB | 2 threads, max 1024 connections, Go soft target 160 MiB |
 | Optional cert-manager | 384 MiB total controllers | 2 concurrent challenges; solver 64 MiB each |
 
-systemd limits are hard limits on each service cgroup; pod limits apply separately. Go/Node soft targets are not RSS promises. OOM events cause restarts and require reducing load or increasing the reviewed caps. The installer does not run builders, Prometheus, Grafana, Redis, a queue service or a Docker daemon. Optional application images have their own explicit resource requirements.
+systemd limits are hard limits on each service cgroup; pod limits apply separately. Go/Node soft targets are not RSS promises. OOM events cause restarts and require reducing load or increasing the reviewed caps. The installer does not run builders, Prometheus, Grafana, Redis or a queue service. Docker Engine is installed only when explicitly requested. Optional application images have their own explicit resource requirements.
 
-API and dashboard run under separate non-login users. Only the API receives the protected Kubernetes admin kubeconfig; the management process is privileged within its dedicated cluster. Applications receive no cluster credentials. Root-owned EnvironmentFiles supply database and cookie-encryption secrets; setup/auth keys use the server's protected-file inputs. Files are never written into the dashboard client bundle or printed by the installer. Logs do not include generated secret bodies; the dashboard launcher does not log request URLs that might contain OAuth codes.
+API and dashboard run under separate non-login users. Only the API receives the protected Kubernetes admin kubeconfig; the management process is privileged within its dedicated cluster. Applications receive no cluster credentials. Database credentials and setup/auth keys use the server's protected-file inputs. A root-only canonical database URL supports resume; the API receives a separate mode 0400 copy. Root-owned EnvironmentFiles supply cookie-encryption secrets. Files are never written into the dashboard client bundle or printed by the installer. Logs do not include generated secret bodies; the dashboard launcher does not log request URLs that might contain OAuth codes.
 
 After health checks pass, the installer prints the dashboard address and a command to privately read `/etc/hakopod/secrets/setup-token`. Enter this proof in setup and choose your own name, email and password. The installer never runs legacy machine-owner bootstrap, selects an owner email or invents a password. After the first owner exists, the API enforces completed setup. Keep the token private even then.
 
@@ -134,7 +186,7 @@ sudo bash scripts/install.sh --artifact-dir /path/to/original-artifacts \
   --config /etc/hakopod/config.json --resume
 ```
 
-A lock prevents concurrent installation. The marker records a random installation ID and a fingerprint of configuration, pins and verified artifact bytes. Moving identical artifacts does not change their identity. Changed config, versions or artifacts are refused; **resume is not an upgrade or configuration-management command**. Each external step checks its own result and owned resources. Incomplete Kubernetes/Helm creation is retried; Helm refuses foreign resource ownership. An established secret set is never regenerated during resume. Restore missing secrets from backup. The installed dashboard certificate/key are preserved on resume, including operator renewals; original temporary input files are no longer required once those copies exist. A failure retains diagnostics/state and says what to inspect; it does not roll back by deleting data.
+A lock prevents concurrent installation. The marker records a random installation ID and a fingerprint of configuration, pins and verified artifact bytes. Moving identical artifacts does not change their identity. Changed config, versions or artifacts are refused; **resume is not an upgrade or configuration-management command**. Each external step checks its own result and owned resources. Incomplete Kubernetes/Helm creation is retried; Helm refuses foreign resource ownership. An established secret set is never regenerated during resume. Restore missing secrets from backup. The installed dashboard certificate/key are preserved on resume, including operator renewals; original temporary input files are no longer required once those copies exist. Database URL and CA copies are bound to the marker by SHA256; their saved copies are used on resume and their original input paths may be gone. Editing saved database credentials or trust roots requires a separate reviewed rotation procedure, not `--resume`. A failure retains diagnostics/state and says what to inspect; it does not roll back by deleting data.
 
 Use `systemctl status hakopod-k3s hakopod-api hakopod-dashboard` and `journalctl -u <service>` locally. A management outage does not put existing application traffic through the API/database. API writes and new reconciliation stop if PostgreSQL fails; existing K3s workloads continue subject to node/network health. K3s/node loss on this single server affects both apps and management. The database is single-node and does not become highly available merely by adding workers.
 

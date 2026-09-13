@@ -4,8 +4,71 @@ set -eu
 set +x
 umask 077
 
+hakopod_prerequisites() {
+  bootstrap_dry_run=false
+  bootstrap_help=false
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --dry-run) bootstrap_dry_run=true; shift;;
+      --help|-h) bootstrap_help=true; shift;;
+      --resume|--yes) shift;;
+      --config|--version)
+        [ "$#" -ge 2 ] && [ -n "$2" ] || { printf '%s requires a value\n' "$1" >&2; return 1; }
+        case "$2" in --*) printf '%s requires a value\n' "$1" >&2; return 1;; esac
+        if [ "$1" = --version ]; then
+          case "$2" in *[!A-Za-z0-9.-]*|v*|[!0-9]*) printf '%s\n' 'Use an explicit release version without v.' >&2; return 1;; esac
+        fi
+        shift 2;;
+      *) printf 'Unknown installer argument: %s\n' "$1" >&2; return 1;;
+    esac
+  done
+  if "$bootstrap_help"; then
+    printf '%s\n' 'Usage: sh installer.sh [--version VERSION] [--config FILE] [--dry-run] [--resume] [--yes]'
+    printf '%s\n' 'Installs missing Linux prerequisites, verifies prebuilt Hakopod, then reviews the host plan.'
+    return 2
+  fi
+  # Prepared hosts skip package management. This phase can run before Python,
+  # Bash or system CA certificates exist on a minimal cloud image.
+  if command -v python3 >/dev/null 2>&1 && command -v bash >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    if [ "$(uname -s)" != Linux ] || [ -s /etc/ssl/certs/ca-certificates.crt ]; then return 0; fi
+  fi
+  [ "$(uname -s)" = Linux ] || { printf '%s\n' 'Hakopod host installation requires Linux.' >&2; return 1; }
+  case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) printf '%s\n' 'Hakopod requires amd64 or arm64.' >&2; return 1;; esac
+  bootstrap_os='' bootstrap_os_version=''
+  while IFS= read -r bootstrap_line; do
+    case "$bootstrap_line" in
+      ID=*) bootstrap_os=${bootstrap_line#ID=};;
+      VERSION_ID=*) bootstrap_os_version=${bootstrap_line#VERSION_ID=};;
+    esac
+  done < /etc/os-release
+  bootstrap_os=${bootstrap_os#\"}; bootstrap_os=${bootstrap_os%\"}
+  bootstrap_os_version=${bootstrap_os_version#\"}; bootstrap_os_version=${bootstrap_os_version%\"}
+  case "$bootstrap_os:$bootstrap_os_version" in ubuntu:24.04|ubuntu:26.04|debian:12|debian:13) ;;
+    *) printf '%s\n' 'Supported hosts: Ubuntu 24.04/26.04 or Debian 12/13.' >&2; return 1;;
+  esac
+  printf '%s\n' 'Prerequisite plan: install missing Python 3, Bash, curl and system CA certificates from the configured distro repositories.'
+  if "$bootstrap_dry_run"; then
+    printf '%s\n' 'Dry run: no packages installed. Detailed configuration review needs these prerequisites.'
+    return 2
+  fi
+  [ "$(id -u)" = 0 ] || { printf '%s\n' 'Run as root to install missing prerequisites, or use --dry-run.' >&2; return 1; }
+  command -v apt-get >/dev/null 2>&1 || { printf '%s\n' 'The supported distro package manager apt-get is missing.' >&2; return 1; }
+  # Package names are a fixed allowlist; install only missing packages.
+  set --
+  for bootstrap_package in python3 bash curl ca-certificates; do
+    bootstrap_installed=$(dpkg-query -W '-f=${db:Status-Status}' "$bootstrap_package" 2>/dev/null) || bootstrap_installed=''
+    if [ "$bootstrap_installed" != installed ]; then set -- "$@" "$bootstrap_package"; fi
+  done
+  [ "$#" -gt 0 ] || { printf '%s\n' 'Installed prerequisite packages are damaged; repair them with the OS package manager.' >&2; return 1; }
+  DEBIAN_FRONTEND=noninteractive timeout 600 apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
+  DEBIAN_FRONTEND=noninteractive timeout 1200 apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 --no-install-recommends install -y "$@"
+
+}
+
 hakopod_bootstrap() {
-  command -v python3 >/dev/null 2>&1 || { printf '%s\n' 'Hakopod requires Python 3.10+, Bash, curl and system CA certificates.' >&2; return 1; }
+  bootstrap_status=0
+  hakopod_prerequisites "$@" || bootstrap_status=$?
+  case "$bootstrap_status" in 0) ;; 2) return 0;; *) return "$bootstrap_status";; esac
   python3 - "$@" <<'HAKOPOD_BOOTSTRAP_PY'
 import argparse
 import gzip
