@@ -92,6 +92,19 @@ func TestPublicTCPReservationAndRouting(t *testing.T) {
 		t.Fatal("rollback port reservation disappeared")
 	}
 }
+
+func TestPublicTCPRuntimeOutputBound(t *testing.T) {
+	output := &tcpBoundedWriter{limit: 256 << 10}
+	chunk := []byte(strings.Repeat("x", 128<<10))
+	for i := 0; i < 2; i++ {
+		if n, err := output.Write(chunk); err != nil || n != len(chunk) {
+			t.Fatalf("bounded runtime output rejected: n=%d err=%v", n, err)
+		}
+	}
+	if _, err := output.Write([]byte("x")); err == nil || output.Len() != 256<<10 {
+		t.Fatal("runtime output exceeded its memory bound")
+	}
+}
 func TestPublicTCPRejectsUnsupportedIngressAndConflicts(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -206,3 +206,60 @@ func TestAuthConfigReadsProviderAndSMTPSecretFiles(t *testing.T) {
 		t.Fatal("two credential sources were accepted")
 	}
 }
+
+func TestOperatorDeploymentModeConfiguration(t *testing.T) {
+	for _, mode := range []string{"self-hosted", "managed-cloud"} {
+		input := []byte("schema_version=1\n[server]\ndeployment_mode='" + mode + "'\n")
+		settings, err := operatorSettings(input, t.TempDir(), noOperatorEnvironment)
+		if err != nil || settings["HAKOPOD_DEPLOYMENT_MODE"] != mode {
+			t.Fatal("deployment mode mapping failed", err)
+		}
+	}
+	for _, mode := range []string{"managed_cloud", "cloud", "SELF-HOSTED", " managed-cloud"} {
+		input := []byte("schema_version=1\n[server]\ndeployment_mode='" + mode + "'\n")
+		if _, err := operatorSettings(input, t.TempDir(), noOperatorEnvironment); err == nil {
+			t.Fatal("invalid deployment mode accepted")
+		}
+	}
+	input := []byte("schema_version=1\n[server]\ndeployment_mode='self-hosted'\n")
+	lookup := func(key string) (string, bool) {
+		if key == "HAKOPOD_DEPLOYMENT_MODE" {
+			return "managed-cloud", true
+		}
+		return "", false
+	}
+	settings, err := operatorSettings(input, t.TempDir(), lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := settings["HAKOPOD_DEPLOYMENT_MODE"]; exists {
+		t.Fatal("operator file replaced a deployment mode environment override")
+	}
+	invalidEnvironment := func(key string) (string, bool) {
+		if key == "HAKOPOD_DEPLOYMENT_MODE" {
+			return "invalid", true
+		}
+		return "", false
+	}
+	if _, err := operatorSettings(input, t.TempDir(), invalidEnvironment); err == nil {
+		t.Fatal("invalid effective environment mode accepted")
+	}
+	for _, input := range []string{
+		"schema_version=1\n[server]\ndeployment_mode='managed-cloud'\npublic_tcp_ports=[587]",
+		"schema_version=1\n[server]\ndeployment_mode='self-hosted'\npublic_tcp_ports=[587]",
+	} {
+		if _, err := operatorSettings([]byte(input), t.TempDir(), lookup); err == nil || !strings.Contains(err.Error(), "cannot configure public TCP") {
+			t.Fatal("managed cloud effective config accepted public ports", err)
+		}
+	}
+}
+
+func TestServerRejectsMalformedModeBeforeDatabaseAccess(t *testing.T) {
+	t.Setenv("HAKOPOD_CONFIG_FILE", "")
+	t.Setenv("HAKOPOD_DEPLOYMENT_MODE", "managed_cloud")
+	t.Setenv("HAKOPOD_DATABASE_URL", "")
+	t.Setenv("HAKOPOD_DATABASE_URL_FILE", "")
+	if err := run(); err == nil || !strings.Contains(err.Error(), "HAKOPOD_DEPLOYMENT_MODE") {
+		t.Fatal("server did not reject malformed mode before database startup", err)
+	}
+}

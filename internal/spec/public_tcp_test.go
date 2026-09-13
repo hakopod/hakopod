@@ -1,9 +1,53 @@
 package spec
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestPublicTCPAcceptsArbitraryPortsWithinListenerBudgets(t *testing.T) {
+	app := tcpTestApp()
+	base := app.Services["smtp"]
+	app.Services = map[string]Service{}
+	for service := 0; service < 4; service++ {
+		svc := base
+		svc.PublicTCP = nil
+		for listener := 0; listener < 16; listener++ {
+			svc.PublicTCP = append(svc.PublicTCP, PublicTCPListener{Port: int32(40000 + service*16 + listener), TargetPort: 2525, SourceCIDRs: []string{"0.0.0.0/0"}})
+		}
+		app.Services[fmt.Sprintf("service-%d", service)] = svc
+	}
+	if _, err := Normalize(app); err != nil {
+		t.Fatalf("64 custom ports across four services were rejected: %v", err)
+	}
+	extra := base
+	extra.PublicTCP = []PublicTCPListener{{Port: 50000, TargetPort: 2525, SourceCIDRs: []string{"0.0.0.0/0"}}}
+	app.Services["extra"] = extra
+	if _, err := Normalize(app); err == nil || !strings.Contains(err.Error(), "64 listeners") {
+		t.Fatalf("application listener budget not enforced: %v", err)
+	}
+	delete(app.Services, "extra")
+	svc := app.Services["service-0"]
+	svc.PublicTCP = append(svc.PublicTCP, extra.PublicTCP[0])
+	app.Services["service-0"] = svc
+	if _, err := Normalize(app); err == nil || !strings.Contains(err.Error(), "16 listeners") {
+		t.Fatalf("service listener budget not enforced: %v", err)
+	}
+	for _, port := range []int32{1, 25, 465, 587, 3306, 5432, 6379, 4222, 61234, 65535} {
+		if !ValidPublicTCPPort(port) {
+			t.Fatalf("ordinary TCP port %d rejected", port)
+		}
+	}
+}
+
+func TestApplicationTOMLCannotOverrideInstallationMode(t *testing.T) {
+	for _, extra := range []string{"deployment_mode='self-hosted'\n", "[server]\ndeployment_mode='self-hosted'\n"} {
+		if _, err := Parse([]byte("name='mode-test'\n" + extra + "[services.web]\nimage='python:3.13-alpine'\n")); err == nil {
+			t.Fatal("application TOML accepted an installation policy override")
+		}
+	}
+}
 
 func tcpTestApp() Application {
 	return Application{SchemaVersion: 1, Name: "mail", Services: map[string]Service{"smtp": {Image: "example.org/smtp:latest", Port: 2525, PublicTCP: []PublicTCPListener{{Port: 587, TargetPort: 2525, SourceCIDRs: []string{"192.0.2.9/24"}}}}}}

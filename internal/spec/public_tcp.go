@@ -21,8 +21,8 @@ func validatePublicTCP(app Application) error {
 		if len(svc.PublicTCP) > 0 && svc.Port == 0 {
 			return fmt.Errorf("services.%s.public_tcp: declare a primary port for readiness before publishing TCP listeners", name)
 		}
-		if len(svc.PublicTCP) > 4 {
-			return fmt.Errorf("services.%s.public_tcp: at most four listeners", name)
+		if len(svc.PublicTCP) > 16 {
+			return fmt.Errorf("services.%s.public_tcp: at most 16 listeners", name)
 		}
 		for i := range svc.PublicTCP {
 			listener := &svc.PublicTCP[i]
@@ -66,8 +66,8 @@ func validatePublicTCP(app Application) error {
 		sort.Slice(svc.PublicTCP, func(i, j int) bool { return svc.PublicTCP[i].Port < svc.PublicTCP[j].Port })
 		app.Services[name] = svc
 	}
-	if len(ports) > 16 {
-		return fmt.Errorf("public_tcp: at most 16 listeners per application")
+	if len(ports) > 64 {
+		return fmt.Errorf("public_tcp: at most 64 listeners per application")
 	}
 	return nil
 }

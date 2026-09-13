@@ -71,6 +71,9 @@ func (c *Client) ValidatePublicTCP(ctx context.Context, t Target) error {
 	if !spec.HasPublicTCP(t.Spec) {
 		return nil
 	}
+	if policy := c.PublicTCPPolicy(); !policy.Allowed {
+		return fmt.Errorf("%w: %s", ErrPublicTCPDisabled, policy.Message)
+	}
 	if c.dynamic == nil {
 		return fmt.Errorf("public TCP requires the HAProxy v3 TCP API")
 	}
@@ -402,6 +405,12 @@ func (c *Client) ObservePublicTCP(ctx context.Context, t Target, service string)
 	statuses := []PublicTCPStatus{}
 	svc, ok := t.Spec.Services[service]
 	if !ok || len(svc.PublicTCP) == 0 {
+		return statuses, nil
+	}
+	if policy := c.PublicTCPPolicy(); !policy.Allowed {
+		for _, listener := range svc.PublicTCP {
+			statuses = append(statuses, PublicTCPStatus{Port: listener.Port, TargetPort: listener.TargetPort, Status: "disabled", Message: policy.Message})
+		}
 		return statuses, nil
 	}
 	if c.dynamic == nil {

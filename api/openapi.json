@@ -11632,6 +11632,29 @@
           "aws_verified"
         ]
       },
+      "PublicTCPPolicy": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "self-hosted",
+              "managed-cloud"
+            ]
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "allowed",
+          "message"
+        ]
+      },
       "ServiceDelivery": {
         "type": "object",
         "properties": {
@@ -11640,6 +11663,9 @@
             "items": {
               "$ref": "#/components/schemas/PublicTCPStatus"
             }
+          },
+          "public_tcp_policy": {
+            "$ref": "#/components/schemas/PublicTCPPolicy"
           },
           "aws_identity": {
             "anyOf": [
@@ -11658,6 +11684,7 @@
         },
         "required": [
           "public_tcp",
+          "public_tcp_policy",
           "aws_identity",
           "observed_at"
         ]

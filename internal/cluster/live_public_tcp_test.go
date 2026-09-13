@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -109,6 +110,16 @@ func TestLivePublicTCPSTARTTLS(t *testing.T) {
 		}
 	}
 	deploy()
+	cloud, err := New(path, Options{DeploymentMode: DeploymentManagedCloud, ProxyNamespace: "haproxy-controller", ProxyConfigMap: "hakopod-ingress-kubernetes-ingress", ProxyRelease: "hakopod-ingress"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cloud.ValidatePublicTCPInstallation(ctx); err == nil {
+		t.Fatal("managed-cloud startup accepted a live self-hosted listener")
+	}
+	if _, err = cloud.Deploy(ctx, target, func(Event) { t.Error("managed-cloud deployment reached a mutation stage") }); !errors.Is(err, ErrPublicTCPDisabled) {
+		t.Fatalf("managed-cloud accepted live public TCP: %v", err)
+	}
 	other := target
 	other.ApplicationID = "smtp-other-app"
 	if err = c.ValidatePublicTCP(ctx, other); err == nil {
@@ -177,6 +188,10 @@ func TestLivePublicTCPSTARTTLS(t *testing.T) {
 	if err = handshake(); err == nil {
 		t.Fatal("removed listener still accepts SMTP connections")
 	}
+	if err = cloud.ValidatePublicTCPInstallation(ctx); err != nil {
+		t.Fatalf("managed-cloud startup rejected acknowledged listener removal: %v", err)
+	}
+	t.Log("Managed-cloud refused an active self-hosted listener and accepted the inventory only after acknowledged removal.")
 	t.Log("Healthy returned observations and acknowledged listener status verified for initial deployment, source restriction, rollback and listener removal.")
 	t.Log("Real HAProxy TCP forwarding, backend STARTTLS certificate/hostname verification, source denial, atomic port conflict and rollback passed. Cloud firewall/NAT and public SMTP delivery remain external acceptance.")
 }

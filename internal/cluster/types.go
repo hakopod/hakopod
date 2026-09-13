@@ -25,6 +25,7 @@ const (
 )
 
 type Options struct {
+	DeploymentMode      string
 	PublicTCPPorts      []int32
 	AWSIdentityBindings []AWSIdentityBinding
 	SupervisorURL       string
@@ -126,12 +127,19 @@ func (c *Client) restClient() rest.Interface {
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
+	mode, err := ParseDeploymentMode(options.DeploymentMode)
+	if err != nil {
+		return nil, err
+	}
+	options.DeploymentMode = mode
+	if mode == DeploymentManagedCloud && len(options.PublicTCPPorts) > 0 {
+		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
+	}
 	if err := ValidateAWSIdentityBindings(options.AWSIdentityBindings); err != nil {
 		return nil, err
 	}
 	options.AWSIdentityBindings = append([]AWSIdentityBinding(nil), options.AWSIdentityBindings...)
 	var config *rest.Config
-	var err error
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {

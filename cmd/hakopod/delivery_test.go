@@ -86,7 +86,7 @@ func TestDeliveryCLIUsesServiceScopeAndReturnsOnlyMetadata(t *testing.T) {
 				t.Error("unexpected certificate method")
 			}
 		case "/api/v1/applications/app-id/services/smtp/delivery":
-			_, _ = w.Write([]byte(`{"public_tcp":[{"port":587,"target_port":1587,"status":"configured","message":"External probe required"}],"aws_identity":{"binding":"sender","role_arn":"arn:aws:iam::123456789012:role/sender","region":"ap-south-1","service_account":"hp-aws-fixture","token_audience":"sts.amazonaws.com","status":"prepared","aws_verified":false,"token":"never-output-this"},"observed_at":"2026-09-13T12:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"public_tcp_policy":{"mode":"self-hosted","allowed":true,"message":"Administrator provisioning required"},"public_tcp":[{"port":587,"target_port":1587,"status":"configured","message":"External probe required"}],"aws_identity":{"binding":"sender","role_arn":"arn:aws:iam::123456789012:role/sender","region":"ap-south-1","service_account":"hp-aws-fixture","token_audience":"sts.amazonaws.com","status":"prepared","aws_verified":false,"token":"never-output-this"},"observed_at":"2026-09-13T12:00:00Z"}`))
 		default:
 			t.Errorf("request escaped selected application/service: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -116,7 +116,7 @@ func TestDeliveryCLIUsesServiceScopeAndReturnsOnlyMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	delivery, err := serviceDelivery(ctx, c, app, "smtp")
-	if err != nil || delivery.AWSIdentity == nil || delivery.AWSIdentity.AWSVerified || delivery.PublicTCP[0].Port != 587 {
+	if err != nil || delivery.AWSIdentity == nil || delivery.AWSIdentity.AWSVerified || delivery.PublicTCP[0].Port != 587 || delivery.PublicTCPPolicy == nil || !delivery.PublicTCPPolicy.Allowed || delivery.PublicTCPPolicy.Mode != "self-hosted" {
 		t.Fatal("delivery observation lost unverified status", err)
 	}
 	for _, value := range []any{upload, certificates, delivery} {

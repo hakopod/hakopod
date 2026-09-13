@@ -25,6 +25,7 @@ const operatorConfigLimit = 64 << 10
 type operatorConfig struct {
 	SchemaVersion int `toml:"schema_version"`
 	Server        struct {
+		DeploymentMode   *string `toml:"deployment_mode"`
 		Listen           *string `toml:"listen"`
 		WebOrigin        *string `toml:"web_origin"`
 		DatabaseURLFile  *string `toml:"database_url_file"`
@@ -162,6 +163,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		return nil, fmt.Errorf("operator configuration requires schema_version = 1")
 	}
 	settings := []operatorSetting{
+		{"server.deployment_mode", "HAKOPOD_DEPLOYMENT_MODE", c.Server.DeploymentMode, false, false, false},
 		{"server.listen", "HAKOPOD_LISTEN", c.Server.Listen, false, false, false},
 		{"server.web_origin", "HAKOPOD_WEB_ORIGIN", c.Server.WebOrigin, false, false, false},
 		{"server.database_url_file", "HAKOPOD_DATABASE_URL_FILE", c.Server.DatabaseURLFile, true, true, true},
@@ -246,6 +248,13 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		}
 		return result[key]
 	}
+	mode, err := cluster.ParseDeploymentMode(get("HAKOPOD_DEPLOYMENT_MODE"))
+	if err != nil {
+		return nil, err
+	}
+	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_PUBLIC_TCP_PORTS") != "" {
+		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
+	}
 	if _, err := authConfigFrom(get); err != nil {
 		return nil, err
 	}
@@ -285,6 +294,9 @@ func validateOperatorValue(field, value string) error {
 		return nil
 	}
 	switch field {
+	case "server.deployment_mode":
+		_, err := cluster.ParseDeploymentMode(value)
+		return err
 	case "server.public_tcp_ports":
 		_, err := cluster.ParsePublicTCPPorts(value)
 		return err

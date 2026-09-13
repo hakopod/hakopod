@@ -31,6 +31,11 @@ type certificateMetadata struct {
 }
 
 type deliveryMetadata struct {
+	PublicTCPPolicy *struct {
+		Mode    string `json:"mode"`
+		Allowed bool   `json:"allowed"`
+		Message string `json:"message"`
+	} `json:"public_tcp_policy,omitempty"`
 	PublicTCP []struct {
 		Port       int32    `json:"port"`
 		TargetPort int32    `json:"target_port"`
