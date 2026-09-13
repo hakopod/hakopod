@@ -5,6 +5,8 @@ schemas["ProjectRole"] = obj({"project": S, "role": S}, ["project", "role"])
 schemas["Principal"]["properties"].update({"email": S, "owner": B, "credential_type": {"type":"string","enum":["machine","browser","cli","integration"]}, "project_roles": array(ref("ProjectRole"))})
 schemas["Principal"]["required"] += ["owner", "credential_type"]
 schemas["AuthStatus"] = obj({"setup_required":B,"password":B,"providers":array(S),"passkeys":B,"totp":B,"email_delivery":B,"signup_enabled":B,"password_recovery":B},["setup_required","password","providers","passkeys","totp","email_delivery","signup_enabled","password_recovery"])
+schemas["AuthStatus"]["properties"]["deployment_mode"] = {"type": "string", "enum": ["self-hosted", "managed-cloud"], "description": "Effective validated deployment mode, including before first-owner setup. This does not enable public signup."}
+schemas["AuthStatus"]["required"].append("deployment_mode")
 schemas["HumanSessionCreated"] = obj({"token":S,"user":ref("Principal"),"expires_at":T,"onboarding_required":B},["token","user","expires_at","onboarding_required"])
 schemas["HumanSession"] = obj({"id":S,"kind":S,"current":B,"created_at":T,"expires_at":T,"last_used_at":{"anyOf":[T,{"type":"null"}]}},["id","kind","current","created_at","expires_at","last_used_at"])
 schemas["User"] = obj({"id":S,"name":S,"email":S,"admin":B,"owner":B,"disabled":B,"email_verified":B,"totp_enabled":B,"created_at":T},["id","name","email","admin","owner","disabled","email_verified","totp_enabled","created_at"])

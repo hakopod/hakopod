@@ -88,3 +88,8 @@ Public TLS issuance and renewal, recovery, upgrades, capacity exhaustion and
 external reachability require production acceptance. Local TCP and policy tests
 do not establish those service guarantees. Keep these launch requirements
 separate from features already implemented in the engine.
+
+The public `GET /api/v1/auth/status` response includes `deployment_mode` as
+`self-hosted` or `managed-cloud`, including before first-owner setup. It reports
+the validated startup mode and does not enable public signup or bypass signed
+entitlements. Cloud connections can use it to reject self-hosted installations.
