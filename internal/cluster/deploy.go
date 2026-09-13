@@ -198,7 +198,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	return nil
 }
 
-func deployment(t Target, name string, svc spec.Service, deadline time.Duration) *appsv1.Deployment {
+func deployment(t Target, name string, svc spec.Service, deadline time.Duration, readinessImages ...string) *appsv1.Deployment {
 	labels := labelsFor(t, name)
 	podLabels := labelsFor(t, name)
 	podLabels[applicationNameKey] = t.Spec.Name
@@ -253,6 +253,11 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 	}
 	configureWorkload(result, svc)
 	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
+	image := ""
+	if len(readinessImages) > 0 {
+		image = readinessImages[0]
+	}
+	configureReadiness(svc, &result.Spec.Template.Spec, image)
 	return result
 }
 
@@ -266,11 +271,13 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if err := c.prepareWorkloadSecrets(ctx, t, name, svc); err != nil {
 		return 0, err
 	}
-	if err := c.prepareBackendCertificates(ctx, t, name, svc); err != nil {
+	resolved, err := c.resolveBackendCertificates(ctx, t, name, svc, true)
+	if err != nil {
 		return 0, err
 	}
+	svc = resolved
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
-	wanted := deployment(t, name, svc, c.options.RolloutTimeout)
+	wanted := deployment(t, name, svc, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
 	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}

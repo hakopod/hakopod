@@ -25,25 +25,26 @@ const operatorConfigLimit = 64 << 10
 type operatorConfig struct {
 	SchemaVersion int `toml:"schema_version"`
 	Server        struct {
-		DeploymentMode   *string `toml:"deployment_mode"`
-		Listen           *string `toml:"listen"`
-		WebOrigin        *string `toml:"web_origin"`
-		DatabaseURLFile  *string `toml:"database_url_file"`
-		KubeconfigFile   *string `toml:"kubeconfig_file"`
-		AppDomain        *string `toml:"app_domain"`
-		IngressClass     *string `toml:"ingress_class"`
-		RolloutTimeout   *string `toml:"rollout_timeout"`
-		PublicPort       *int    `toml:"public_port"`
-		PublicHTTPSPort  *int    `toml:"public_https_port"`
-		PublicTCPPorts   *[]int  `toml:"public_tcp_ports"`
-		TLSIssuer        *string `toml:"tls_issuer"`
-		TLSCertFile      *string `toml:"tls_cert_file"`
-		TLSKeyFile       *string `toml:"tls_key_file"`
-		TrustProxy       *bool   `toml:"trust_proxy"`
-		SupervisorURL    *string `toml:"k3s_supervisor_url"`
-		HAProxyNamespace *string `toml:"haproxy_namespace"`
-		HAProxyConfigMap *string `toml:"haproxy_configmap"`
-		HAProxyRelease   *string `toml:"haproxy_release"`
+		DeploymentMode      *string `toml:"deployment_mode"`
+		Listen              *string `toml:"listen"`
+		WebOrigin           *string `toml:"web_origin"`
+		DatabaseURLFile     *string `toml:"database_url_file"`
+		KubeconfigFile      *string `toml:"kubeconfig_file"`
+		AppDomain           *string `toml:"app_domain"`
+		IngressClass        *string `toml:"ingress_class"`
+		RolloutTimeout      *string `toml:"rollout_timeout"`
+		PublicPort          *int    `toml:"public_port"`
+		PublicHTTPSPort     *int    `toml:"public_https_port"`
+		PublicTCPPorts      *[]int  `toml:"public_tcp_ports"`
+		ReadinessProbeImage *string `toml:"readiness_probe_image"`
+		TLSIssuer           *string `toml:"tls_issuer"`
+		TLSCertFile         *string `toml:"tls_cert_file"`
+		TLSKeyFile          *string `toml:"tls_key_file"`
+		TrustProxy          *bool   `toml:"trust_proxy"`
+		SupervisorURL       *string `toml:"k3s_supervisor_url"`
+		HAProxyNamespace    *string `toml:"haproxy_namespace"`
+		HAProxyConfigMap    *string `toml:"haproxy_configmap"`
+		HAProxyRelease      *string `toml:"haproxy_release"`
 	} `toml:"server"`
 	Auth struct {
 		SignupEnabled     *bool   `toml:"signup_enabled"`
@@ -174,6 +175,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"server.public_port", "HAKOPOD_PUBLIC_PORT", intSetting(c.Server.PublicPort), false, false, false},
 		{"server.public_https_port", "HAKOPOD_PUBLIC_HTTPS_PORT", intSetting(c.Server.PublicHTTPSPort), false, false, false},
 		{"server.public_tcp_ports", "HAKOPOD_PUBLIC_TCP_PORTS", portsSetting(c.Server.PublicTCPPorts), false, false, false},
+		{"server.readiness_probe_image", "HAKOPOD_READINESS_PROBE_IMAGE", c.Server.ReadinessProbeImage, false, false, false},
 		{"server.tls_issuer", "HAKOPOD_TLS_ISSUER", c.Server.TLSIssuer, false, false, false},
 		{"server.tls_cert_file", "HAKOPOD_TLS_CERT", c.Server.TLSCertFile, true, false, false},
 		{"server.tls_key_file", "HAKOPOD_TLS_KEY", c.Server.TLSKeyFile, true, true, false},
@@ -294,6 +296,8 @@ func validateOperatorValue(field, value string) error {
 		return nil
 	}
 	switch field {
+	case "server.readiness_probe_image":
+		return cluster.ValidateReadinessProbeImage(value)
 	case "server.deployment_mode":
 		_, err := cluster.ParseDeploymentMode(value)
 		return err

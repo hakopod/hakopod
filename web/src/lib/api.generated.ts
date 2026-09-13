@@ -2262,6 +2262,9 @@ export interface components {
             public_tcp?: components["schemas"]["PublicTCPListener"][];
             certificate_mounts?: components["schemas"]["CertificateMount"][];
             aws_identity?: string;
+            readiness?: components["schemas"]["Readiness"];
+            /** @enum {string} */
+            update_strategy?: "rolling" | "recreate";
             restart_nonce?: string;
             registry_credential?: string;
             tls?: components["schemas"]["TLSConfig"];
@@ -2927,10 +2930,12 @@ export interface components {
             source_cidrs: string[];
         };
         CertificateMount: {
-            certificate: string;
+            certificate?: string;
+            /** @enum {string} */
+            source?: "ingress";
             hostname: string;
             mount_path: string;
-        };
+        } & (unknown | unknown);
         PublicTCPStatus: {
             port: number;
             target_port: number;
@@ -3134,6 +3139,16 @@ export interface components {
         /** @description Changed HAProxy Technologies Kubernetes Ingress ConfigMap fields. Read the observed field catalog for supported names, types and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected. */
         ProxySettingsPatch: {
             [key: string]: string;
+        };
+        Readiness: {
+            /** @enum {string} */
+            protocol: "tcp" | "smtp" | "smtp_starttls";
+            port: number;
+            tls_server_name?: string;
+            tls_ca_file?: string;
+            period_seconds?: number;
+            timeout_seconds?: number;
+            failure_threshold?: number;
         };
         TLSConfig: {
             certificate?: string;

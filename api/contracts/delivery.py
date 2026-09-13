@@ -1,5 +1,6 @@
 schemas["PublicTCPListener"] = obj({"port": I, "target_port": I, "source_cidrs": array(S)}, ["port", "target_port", "source_cidrs"])
-schemas["CertificateMount"] = obj({"certificate": S, "hostname": S, "mount_path": S}, ["certificate", "hostname", "mount_path"])
+schemas["CertificateMount"] = obj({"certificate": S, "source": {"type": "string", "enum": ["ingress"]}, "hostname": S, "mount_path": S}, ["hostname", "mount_path"])
+schemas["CertificateMount"]["oneOf"] = [{"required": ["certificate"], "not": {"required": ["source"]}}, {"required": ["source"], "not": {"required": ["certificate"]}}]
 schemas["Service"]["properties"].update({"public_tcp": array(ref("PublicTCPListener")), "certificate_mounts": array(ref("CertificateMount")), "aws_identity": S})
 schemas["PublicTCPStatus"] = obj({"port": I, "target_port": I, "status": S, "message": S, "addresses": array(S)}, ["port", "target_port", "status", "message"])
 schemas["AWSIdentityState"] = obj({"binding": S, "role_arn": S, "region": S, "service_account": S, "token_audience": S, "status": S, "aws_verified": B, "message": S}, ["binding", "role_arn", "region", "service_account", "token_audience", "status", "aws_verified"])

@@ -37,6 +37,8 @@ DNS routing and certificate coverage are separate checks.
 | `size` | small; centrally defined resources below |
 | `replicas` | 1; allowed 1–20; no scale-to-zero |
 | `healthcheck` | Optional HTTP readiness path; a port otherwise gets TCP readiness |
+| `readiness` | Optional declared-listener check: tcp, smtp or smtp_starttls; combined with healthcheck when present |
+| `update_strategy` | rolling by default; recreate stops the old revision before starting its replacement |
 | `env` | Explicit nonsecret variables, max128, each value max4KiB |
 | `command`, `args` | Container entrypoint/arguments; not shell strings unless the image runs a shell |
 | `depends_on` | Names of services that must become ready first, bounded by rollout timeout |
@@ -240,3 +242,10 @@ public TCP listeners regardless of roles or licenses; private TCP ports remain
 available. Self-hosted administrators may provision any available non-platform
 port from 1 through 65535, up to 256 per installation. Application TOML can use
 only those provisioned ports and never opens host ports or firewalls itself.
+
+## Listener readiness
+
+Services may add a `readiness` table to check a declared TCP listener, SMTP
+greeting and commands, or verified STARTTLS. If `healthcheck` is also set, both
+checks must pass. See [listener readiness](readiness.md) for configuration, helper
+installation, resource limits and the distinction from email deliverability.

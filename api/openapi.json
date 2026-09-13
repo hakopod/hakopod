@@ -9026,6 +9026,16 @@
           "aws_identity": {
             "type": "string"
           },
+          "readiness": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "update_strategy": {
+            "type": "string",
+            "enum": [
+              "rolling",
+              "recreate"
+            ]
+          },
           "restart_nonce": {
             "type": "string"
           },
@@ -11552,6 +11562,12 @@
           "certificate": {
             "type": "string"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ingress"
+            ]
+          },
           "hostname": {
             "type": "string"
           },
@@ -11560,9 +11576,30 @@
           }
         },
         "required": [
-          "certificate",
           "hostname",
           "mount_path"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "certificate"
+            ],
+            "not": {
+              "required": [
+                "source"
+              ]
+            }
+          },
+          {
+            "required": [
+              "source"
+            ],
+            "not": {
+              "required": [
+                "certificate"
+              ]
+            }
+          }
         ]
       },
       "PublicTCPStatus": {
@@ -12332,6 +12369,41 @@
         "minProperties": 1,
         "maxProperties": 20,
         "description": "Changed HAProxy Technologies Kubernetes Ingress ConfigMap fields. Read the observed field catalog for supported names, types and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected."
+      },
+      "Readiness": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "tcp",
+              "smtp",
+              "smtp_starttls"
+            ]
+          },
+          "port": {
+            "type": "integer"
+          },
+          "tls_server_name": {
+            "type": "string"
+          },
+          "tls_ca_file": {
+            "type": "string"
+          },
+          "period_seconds": {
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "failure_threshold": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol",
+          "port"
+        ]
       },
       "TLSConfig": {
         "type": "object",

@@ -53,3 +53,22 @@ certificate_mounts=[{certificate='hp-cert-smtp-abc', hostname='mail.example.com'
 		t.Fatal("revision contains key material fields")
 	}
 }
+
+func TestAutomaticCertificateMountSchema(t *testing.T) {
+	input := `name='mail'
+[services.smtp]
+image='example/smtp:1'
+port=8080
+public=true
+certificate_mounts=[{source='ingress',hostname='mail.example.com',mount_path='/certificates/smtp'}]
+`
+	app, err := Parse([]byte(input))
+	if err != nil || !HasAutomaticCertificates(app) {
+		t.Fatal("automatic source rejected", err)
+	}
+	for _, body := range []string{strings.ReplaceAll(input, "public=true", "public=false"), strings.ReplaceAll(input, "source='ingress'", "source='arbitrary'"), strings.ReplaceAll(input, "source='ingress'", "source='ingress',certificate='manual'"), strings.ReplaceAll(input, "source='ingress'", "certificate='hp-auto-cert-reserved'")} {
+		if _, err := Parse([]byte(body)); err == nil {
+			t.Fatal("invalid source accepted")
+		}
+	}
+}

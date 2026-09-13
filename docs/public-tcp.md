@@ -28,8 +28,10 @@ source_cidrs = ["0.0.0.0/0"]
 
 `target_port` must match exactly one declared TCP container port (`port` or an
 entry in `ports`). A primary `port` is required for workload readiness. If a
-separate HTTP port provides the readiness check, that endpoint must also report
-whether the SMTP listener is ready. Hakopod resolves the target to the
+separate HTTP port provides the readiness check, configure `readiness` to require
+the SMTP listener as well; HTTP health alone can miss a failed listener. See
+[listener readiness](readiness.md) for TCP, SMTP and verified STARTTLS checks.
+Hakopod resolves the target to the
 corresponding private Kubernetes Service port. Public HTTP and TCP cannot target
 the same backend port because HAProxy requires different backend modes. Use
 distinct container ports. For restricted submission, replace `0.0.0.0/0` with

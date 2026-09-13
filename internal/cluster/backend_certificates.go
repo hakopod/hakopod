@@ -101,7 +101,7 @@ func (c *Client) putBackendCertificate(ctx context.Context, t Target, service, h
 		if !apierrors.IsNotFound(getErr) {
 			return BackendCertificateStatus{}, fmt.Errorf("backend certificate storage is unavailable")
 		}
-		items, listErr := api.List(ctx, metav1.ListOptions{LabelSelector: backendCertificateSelector(t, service), Limit: 64})
+		items, listErr := api.List(ctx, metav1.ListOptions{LabelSelector: backendCertificateSelector(t, service) + "," + automaticCertificateKey + "!=true", Limit: 64})
 		if listErr != nil {
 			return BackendCertificateStatus{}, fmt.Errorf("backend certificate storage is unavailable")
 		}
@@ -128,35 +128,45 @@ func backendCertificateSelector(t Target, service string) string {
 // ImportBackendIngressCertificate snapshots this service's active ingress
 // certificate. Callers cannot name arbitrary namespaces, Secrets or services.
 func (c *Client) ImportBackendIngressCertificate(ctx context.Context, t Target, service, hostname string) (BackendCertificateStatus, error) {
+	secret, err := c.backendIngressSource(ctx, t, service, hostname)
+	if err != nil {
+		return BackendCertificateStatus{}, err
+	}
+	return c.putBackendCertificate(ctx, t, service, hostname, secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], "ingress")
+}
+
+// The owned ingress chooses the source; callers never name arbitrary Secrets.
+func (c *Client) backendIngressSource(ctx context.Context, t Target, service, hostname string) (*corev1.Secret, error) {
 	svc, ok := t.Spec.Services[service]
 	if !ok || !svc.Public || !spec.ValidHostname(hostname) {
-		return BackendCertificateStatus{}, fmt.Errorf("ingress import requires this service's public HTTP certificate")
+		return nil, fmt.Errorf("ingress import requires this service's public HTTP certificate")
 	}
 	ingress, err := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID)).Get(ctx, service, metav1.GetOptions{})
 	if err != nil {
-		return BackendCertificateStatus{}, fmt.Errorf("service ingress is unavailable")
+		return nil, fmt.Errorf("service ingress is unavailable")
 	}
 	if err = owned(ingress, t); err != nil {
-		return BackendCertificateStatus{}, err
+		return nil, err
 	}
 	if ingress.Labels[serviceKey] != service {
-		return BackendCertificateStatus{}, fmt.Errorf("ingress is not owned by this service")
+		return nil, fmt.Errorf("ingress is not owned by this service")
 	}
 	for _, tls := range ingress.Spec.TLS {
 		for _, host := range tls.Hosts {
 			if host != hostname || tls.SecretName == "" {
 				continue
 			}
-			secret, getErr := c.kube.CoreV1().Secrets(ingress.Namespace).Get(ctx, tls.SecretName, metav1.GetOptions{})
-			if getErr != nil || secret.Type != corev1.SecretTypeTLS {
-				return BackendCertificateStatus{}, fmt.Errorf("ingress certificate has not been issued or uploaded")
+			secret, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, tls.SecretName, metav1.GetOptions{})
+			if err != nil || secret.Type != corev1.SecretTypeTLS {
+				return nil, fmt.Errorf("ingress certificate has not been issued or uploaded")
 			}
-			// Only the owned ingress may choose this source. Copying into a new
-			// service-owned immutable Secret pins renewals to reviewed revisions.
-			return c.putBackendCertificate(ctx, t, service, hostname, secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], "ingress")
+			if _, err = validateTLSCertificate(secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], hostname, time.Now()); err != nil {
+				return nil, err
+			}
+			return secret, nil
 		}
 	}
-	return BackendCertificateStatus{}, fmt.Errorf("hostname is not covered by this service's configured ingress TLS")
+	return nil, fmt.Errorf("hostname is not covered by this service's configured ingress TLS")
 }
 
 func (c *Client) BackendCertificates(ctx context.Context, t Target, service string) ([]BackendCertificateStatus, error) {
@@ -164,7 +174,7 @@ func (c *Client) BackendCertificates(ctx context.Context, t Target, service stri
 	if !ok {
 		return nil, fmt.Errorf("service not found")
 	}
-	items, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: backendCertificateSelector(t, service), Limit: 64})
+	items, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: backendCertificateSelector(t, service) + "," + automaticCertificateKey + "!=true", Limit: 64})
 	if err != nil {
 		return nil, fmt.Errorf("backend certificate observations are unavailable")
 	}
@@ -188,6 +198,19 @@ func (c *Client) BackendCertificates(ctx context.Context, t Target, service stri
 		seen[secret.Name] = true
 	}
 	for _, mount := range svc.CertificateMounts {
+		if mount.Source == "ingress" {
+			value := BackendCertificateStatus{Hostname: mount.Hostname, MountPath: mount.MountPath, Source: "ingress-auto"}
+			secret, sourceErr := c.backendIngressSource(ctx, t, service, mount.Hostname)
+			if sourceErr != nil {
+				value.Message = sourceErr.Error()
+			} else {
+				value = backendCertificateView(secret, mount.Hostname)
+				value.Certificate = automaticCertificateName(service, mount.Hostname, secret.Data[corev1.TLSCertKey])
+				value.Source, value.MountPath = "ingress-auto", mount.MountPath
+			}
+			result = append(result, value)
+			continue
+		}
 		if !seen[mount.Certificate] {
 			value := BackendCertificateStatus{Certificate: mount.Certificate, Hostname: mount.Hostname, MountPath: mount.MountPath, Source: "unknown", Message: "Certificate is missing or is not owned by this service."}
 			// A concurrent upload can cross the list page boundary. Inspect at
@@ -218,19 +241,8 @@ func (c *Client) ValidateBackendCertificates(ctx context.Context, t Target) erro
 }
 
 func (c *Client) prepareBackendCertificates(ctx context.Context, t Target, service string, svc spec.Service) error {
-	for _, mount := range svc.CertificateMounts {
-		if t.ApplicationID == "" {
-			return fmt.Errorf("certificate references require an existing application")
-		}
-		secret, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, mount.Certificate, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("backend certificate is unavailable; upload a certificate for this service first")
-		}
-		if err = checkBackendCertificate(secret, t, service, mount.Hostname); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := c.resolveBackendCertificates(ctx, t, service, svc, false)
+	return err
 }
 
 func applyBackendCertificateMounts(svc spec.Service, pod *corev1.PodSpec) {
