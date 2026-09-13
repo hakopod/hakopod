@@ -9,6 +9,7 @@ import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
 import { APIError, activeDeployment, message, relative, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
@@ -34,6 +35,7 @@ function BuildDetail() {
   const scope = useScope()
   const [start, setStart] = useState(false)
   const [tab, setTab] = useState('runs')
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   const [preview, setPreview] = useState<components['schemas']['BuildPreview'] | null>(null)
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(false)
@@ -108,7 +110,7 @@ function BuildDetail() {
         </div>
       )}
       <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="tab-list" aria-label="Source build sections">
+        <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Source build sections">
           <Tabs.Trigger className="tab-trigger" value="runs">
             Runs
           </Tabs.Trigger>

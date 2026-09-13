@@ -7,7 +7,7 @@ These rules apply to every dashboard route, shared layout and reusable component
 - [Hakopod contributor rules](../AGENTS.md).
 - [Hatch contributor rules](../packages/ui/AGENTS.md) and [public package guidance](../packages/ui/README.md).
 - [Hatch tokens](../packages/ui/packages/ui/src/styles/tokens.css), [Button](../packages/ui/packages/ui/src/components/button.tsx), [Card](../packages/ui/packages/ui/src/components/card.tsx), and [Tooltip](../packages/ui/packages/ui/src/components/tooltip.tsx).
-- User direction: simple and compact; no outer horizontal page gutters or width caps; headings contain the title and necessary actions only. Descriptions belong in accessible help. Decorative heading icons are omitted. Internal input/card padding remains necessary for readability and touch access.
+- User direction: simple and compact; a shared 24px horizontal page inset, reduced to 16px below 640px, with no nested duplicate insets or page width caps. Page-heading and page-level tab dividers reach the viewport edges; their content remains inset. Headings contain the title and necessary actions only. Descriptions belong in accessible help. Decorative heading icons are omitted. Internal input/card padding remains necessary for readability and touch access.
 
 ## Required checks
 
@@ -15,18 +15,21 @@ Copy this standing checklist into each UI review. The blank boxes are a reusable
 
 ### Layout and hierarchy
 
-- [ ] Root content and every nested page fill their available width with zero outer horizontal padding, margin or width cap. Settings fill the area beside their navigation.
+- [ ] The shared page container supplies 24px horizontal padding at 640px and above, 16px below. Nested pages fill its content box without duplicate insets, centered margins or width caps. Headings, summaries and lists align. Settings fill the area beside their navigation; embedded auth does not double its parent's inset.
+- [ ] Page-heading and page-level tab-row bottom dividers reach both viewport edges. Full-width row backgrounds and borders do not shift their labels outside the content inset or cause document overflow. Internal card/inspector dividers stay within their component.
+- [ ] Shared layout/spacing uses Tailwind utilities in JSX or `@apply` within semantic CSS classes. Responsive rules use the shared breakpoint; raw CSS remains for component-specific behavior. There are no competing page padding overrides.
 - [ ] Page and form-section headings have no decorative icon or visible description. One title carries the context; necessary actions remain aligned. Status and data needed for decisions stay visible; explanatory prose moves to help.
 - [ ] Help is short, named, keyboard reachable and available on touch. Focus/hover or activation reveals it; Escape dismisses it; it stays inside the viewport. It is not the sole home for essential warnings or field instructions.
 - [ ] Pages have one h1, sensible subordinate heading order and no duplicate headings or breadcrumbs. Nested back navigation uses the global header.
 - [ ] Projects is the default home regardless of saved scope. Application lists are URL-scoped to a valid project and environment; invalid or unavailable scopes never fall back silently or display another project’s cached data.
 - [ ] Page-heading vertical padding is balanced above and below at every responsive layout.
-- [ ] Active tabs use accent text, icons and underline only. Active, hover and focus states do not add a background fill; keyboard focus stays visible.
+- [ ] Active main navigation, tabs and Settings/preferences sections use the shared theme-aware red for text and icons, with no selected underline, border or background fill. Hover/focus preserve the selected color and visible keyboard focus; ordinary row dividers remain visible.
 - [ ] The active section remains visible inside scrollable navigation after deep links, selection changes, font loading and resizing, without scrolling the document.
 - [ ] Desktop navigation is one compact row. Mobile reflow and long names do not cause document overflow or clipped actions.
 - [ ] Summaries are inline and compact. Catalog lists have no outer panel border. Cards keep restrained surfaces, readable spacing and meaningful hover/focus states.
 - [ ] Application/service grids use at most four normal desktop columns and five wide columns. Sparse grids retain card widths.
 - [ ] Action links use shared Button with asChild. Sibling actions have equal height and vertical alignment; labels remain readable and targets usable.
+- [ ] Application endpoint text and external-link icon stay on one line; long labels truncate without hiding the destination from assistive technology. Alarm links have visible separation from the preceding content.
 
 ### Components and interaction
 
@@ -47,7 +50,11 @@ Copy this standing checklist into each UI review. The blank boxes are a reusable
 
 ## Coverage for 2026-09-13
 
-The current pass covers global page gutters and compact headers. The broader checklist remains the standing review gate; unrelated behaviors are not represented as newly retested.
+This section records the earlier zero-gutter review. The current user direction
+supersedes that spacing rule; see [the page inset review](page-inset-ui-review.md)
+for the updated layout. Historical screenshots remain evidence of that earlier pass.
+
+That earlier pass covered zero gutters and compact headers. The broader checklist remains the standing review gate; unrelated behaviors are not represented as newly retested.
 
 | Route family | Route source coverage | Layout/header | Rendered evidence |
 | --- | --- | --- | --- |

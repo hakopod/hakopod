@@ -6,6 +6,7 @@ import { client, unwrap } from '../lib/client'
 import type { components } from '../lib/api.generated'
 import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import {
   byteSize,
   sourceLabel,
@@ -52,6 +53,7 @@ function BackupsRoute() {
 }
 function Backups() {
   const { tab = 'jobs' } = Route.useSearch()
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   const navigate = Route.useNavigate()
   return (
     <>
@@ -84,7 +86,7 @@ function Backups() {
           )
         }
       />
-      <nav className="tab-list" aria-label="Backup sections">
+      <nav ref={navigationRoot} className="tab-list" aria-label="Backup sections">
         {[
           ['jobs', 'Job history'],
           ['artifacts', 'Stored backups'],

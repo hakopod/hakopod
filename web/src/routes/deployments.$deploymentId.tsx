@@ -8,6 +8,7 @@ import type { Plan } from '../lib/types'
 import { activeDeployment, message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
+import { useActiveSection } from '../lib/use-active-section'
 import { currentDeploymentRuntime } from '../lib/runtime-health'
 import { RuntimeNotice } from '../components/runtime-notice'
 import { Icon } from '../components/icons'
@@ -23,6 +24,7 @@ function DeploymentDetail() {
   const queryClient = useQueryClient()
   const [stage, setStage] = useState('reconcile')
   const [tab, setTab] = useState('events')
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -282,7 +284,7 @@ function DeploymentDetail() {
             {stageContext[stage]}
           </div>
           <Tabs.Root value={tab} onValueChange={setTab}>
-            <Tabs.List className="tab-list" aria-label="Deployment inspection">
+            <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Deployment inspection">
               <Tabs.Trigger className="tab-trigger" value="events">
                 Events
               </Tabs.Trigger>

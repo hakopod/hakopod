@@ -762,7 +762,7 @@ a.resource-note:focus-visible {
   border-color: var(--state-dim);
 }
 .segmented-control {
-  display: flex;
+  @apply flex flex-wrap gap-1;
   border: 1px solid var(--hairline);
   border-radius: 4px;
   padding: 3px;
@@ -783,9 +783,11 @@ a.resource-note:focus-visible {
   background: transparent;
 }
 .segmented-control .selected {
-  background: var(--surface-3);
-  color: var(--foreground);
-  border-color: var(--hairline);
+  color: var(--navigation-active);
+}
+.segmented-control button:focus-visible {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: -2px;
 }
 .form-section-heading {
   display: flex;
