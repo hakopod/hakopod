@@ -5755,6 +5755,73 @@
         }
       }
     },
+    "/projects/{project}/environments": {
+      "post": {
+        "operationId": "createEnvironment",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "name"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/settings/haproxy": {
       "get": {
         "operationId": "getProxy",
@@ -7463,47 +7530,184 @@
           "content": {
             "application/json": {
               "schema": {
+                "$ref": "#/components/schemas/TemplateConfiguration"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{id}/deploy": {
+      "post": {
+        "operationId": "deployTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
                 "type": "object",
                 "properties": {
-                  "project": {
+                  "configuration": {
+                    "$ref": "#/components/schemas/TemplateConfiguration"
+                  },
+                  "toml": {
                     "type": "string"
                   },
-                  "environment": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "public": {
-                    "type": "boolean"
-                  },
-                  "storage_gib": {
+                  "expected_revision": {
                     "type": "integer"
-                  },
-                  "architecture": {
-                    "type": "string"
-                  },
-                  "site_url": {
-                    "type": "string"
-                  },
-                  "provider": {
-                    "type": "string"
-                  },
-                  "provider_url": {
-                    "type": "string"
-                  },
-                  "model": {
-                    "type": "string"
-                  },
-                  "model_revision": {
-                    "type": "string"
                   }
                 },
                 "required": [
-                  "project",
-                  "environment",
-                  "name"
+                  "configuration",
+                  "toml",
+                  "expected_revision"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{id}/secrets/{name}": {
+      "put": {
+        "operationId": "putTemplateSecret",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "saved": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "saved"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 65536
+                  },
+                  "generate": {
+                    "type": "boolean"
+                  },
+                  "replace": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
               }
             }
           }
@@ -7594,6 +7798,402 @@
                   "expected_application_id",
                   "expected_application_revision"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/virtual-networks": {
+      "get": {
+        "operationId": "listVirtualNetworks",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VirtualNetworkSummary"
+                      }
+                    },
+                    "can_manage": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "can_manage"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createVirtualNetwork",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VirtualNetworkCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/virtual-networks/{name}": {
+      "get": {
+        "operationId": "getVirtualNetwork",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateVirtualNetwork",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VirtualNetworkUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteVirtualNetwork",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "expected_id": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer"
+                  },
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "project",
+                  "environment",
+                  "expected_id",
+                  "expected_revision",
+                  "confirmation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/virtual-networks/{name}/candidates": {
+      "get": {
+        "operationId": "listVirtualNetworkCandidates",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "services": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "revision",
+                          "services"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/virtual-networks/plan": {
+      "post": {
+        "operationId": "planVirtualNetwork",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VirtualNetworkInput"
               }
             }
           }
@@ -7857,6 +8457,12 @@
         "properties": {
           "internal": {
             "type": "boolean"
+          },
+          "virtual_network": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
           }
         },
         "required": []
@@ -11647,6 +12253,33 @@
           "expires_at"
         ]
       },
+      "TemplateSecretField": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "generate": {
+            "type": "boolean"
+          },
+          "optional": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "format",
+          "generate",
+          "optional"
+        ]
+      },
       "Template": {
         "type": "object",
         "properties": {
@@ -11704,6 +12337,24 @@
           "site_url_required": {
             "type": "boolean"
           },
+          "site_url_supported": {
+            "type": "boolean"
+          },
+          "database_config": {
+            "type": "boolean"
+          },
+          "secret_fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateSecretField"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "deployable": {
             "type": "boolean"
           }
@@ -11723,7 +12374,63 @@
           "providers",
           "configuration",
           "site_url_required",
+          "site_url_supported",
+          "database_config",
+          "secret_fields",
+          "sources",
           "deployable"
+        ]
+      },
+      "TemplateConfiguration": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "storage_gib": {
+            "type": "integer"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "site_url": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_url": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "model_revision": {
+            "type": "string"
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "database_user": {
+            "type": "string"
+          },
+          "use_model_token": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "name"
         ]
       },
       "TemplatePlan": {
@@ -11779,6 +12486,12 @@
           },
           "model_source": {
             "type": "string"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/TemplateConfiguration"
           }
         },
         "required": [
@@ -11787,7 +12500,9 @@
           "spec",
           "changes",
           "warnings",
-          "required_secrets"
+          "required_secrets",
+          "toml",
+          "configuration"
         ]
       },
       "Showcase": {
@@ -11843,6 +12558,291 @@
           "deployment_status",
           "message",
           "removable"
+        ]
+      },
+      "NetworkSegment": {
+        "type": "object",
+        "properties": {
+          "applications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64
+          }
+        },
+        "required": [
+          "applications"
+        ]
+      },
+      "VirtualNetworkSpec": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "segments": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NetworkSegment"
+            }
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "description",
+          "segments"
+        ]
+      },
+      "VirtualNetworkSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "project",
+          "environment",
+          "description",
+          "segments",
+          "revision",
+          "updated_at"
+        ]
+      },
+      "VirtualNetworkConnection": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "application": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrivatePort"
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "application",
+          "service",
+          "network",
+          "segment",
+          "address",
+          "ports",
+          "revision",
+          "status"
+        ]
+      },
+      "VirtualNetworkDetail": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "$ref": "#/components/schemas/VirtualNetworkSummary"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/VirtualNetworkSpec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VirtualNetworkConnection"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "can_manage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "network",
+          "spec",
+          "toml",
+          "connections",
+          "truncated",
+          "can_manage"
+        ]
+      },
+      "VirtualNetworkInput": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/VirtualNetworkSpec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "expected_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "environment"
+        ]
+      },
+      "VirtualNetworkCreate": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/VirtualNetworkSpec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "expected_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "expected_revision"
+        ]
+      },
+      "VirtualNetworkUpdate": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/VirtualNetworkSpec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "expected_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "expected_id",
+          "expected_revision"
+        ]
+      },
+      "VirtualNetworkPlan": {
+        "type": "object",
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/VirtualNetworkSpec"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VirtualNetworkSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toml": {
+            "type": "string"
+          },
+          "expected_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "spec",
+          "previous",
+          "toml",
+          "expected_id",
+          "expected_revision"
         ]
       },
       "Volume": {
@@ -11967,6 +12967,12 @@
         "type": "object",
         "properties": {
           "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "from_applications": {
             "type": "array",
             "items": {
               "type": "string"

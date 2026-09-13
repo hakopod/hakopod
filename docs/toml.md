@@ -38,7 +38,8 @@ DNS routing and certificate coverage are separate checks.
 | `command`, `args` | Container entrypoint/arguments; not shell strings unless the image runs a shell |
 | `depends_on` | Names of services that must become ready first, bounded by rollout timeout |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
-| `network_access.from` | Optional service allowlist within shared networks; an empty list denies all peer traffic |
+| `network_access.from` | Optional allowlist of services in this application; an empty list denies local peer traffic |
+| `network_access.from_applications` | Up to32 exact application/service peers within a granted virtual network segment |
 | `autoscaling` | Optional CPU HPA; min_replicas defaults1, target_cpu defaults70, max_replicas required <=20 |
 | `architecture` | Optional amd64/arm64 image selection and node scheduling restriction |
 | `run_as_user` | Default UID/GID10001; optional positive non-root UID, also used for volume group ownership |
@@ -139,6 +140,13 @@ protocol = "UDP"
 The first endpoint is `api:9090`, routed to container port 9091. Target port
 defaults to port, and protocol defaults to TCP. Private policies apply to the
 target ports and cover both service addresses and direct pod connections.
+
+To share a private segment across applications, add `virtual_network` and
+`segment` to an internal network definition. A project administrator must first
+grant this application access in the separate network TOML. Attach selected
+services, then use `network_access.from_applications` to restrict remote peers.
+Network grants and connections are isolated by project and environment. See
+[virtual network configuration and examples](virtual-networks.md).
 
 ## Named volumes and filesystem permissions
 

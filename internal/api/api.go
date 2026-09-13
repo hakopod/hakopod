@@ -74,12 +74,14 @@ func (s *Server) Handler() http.Handler {
 	s.registerWorkloadSecretRoutes(routes)
 	s.registerTemplateRoutes(routes)
 	s.registerProxyRoutes(routes)
+	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
 	s.registerTerminalRoutes(routes)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
 	routes.HandleFunc("POST /api/v1/projects", s.createProject)
+	routes.HandleFunc("POST /api/v1/projects/{project}/environments", s.createEnvironment)
 	routes.HandleFunc("GET /api/v1/applications", s.applications)
 	routes.HandleFunc("GET /api/v1/applications/{id}", s.application)
 	routes.HandleFunc("POST /api/v1/plan", s.plan)
@@ -321,6 +323,19 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		err = tx.QueryRow(r.Context(), "SELECT COALESCE(NULLIF(display_name,''),name),description FROM projects WHERE name=$1", in.Name).Scan(&displayName, &description)
 	}
 	if err == nil {
+		var locked string
+		err = tx.QueryRow(r.Context(), "SELECT name FROM projects WHERE name=$1 FOR UPDATE", in.Name).Scan(&locked)
+	}
+	if err == nil {
+		var count int
+		var exists bool
+		err = tx.QueryRow(r.Context(), "SELECT count(*),COALESCE(bool_or(name=$2),false) FROM environments WHERE project=$1", in.Name, in.Environment).Scan(&count, &exists)
+		if err == nil && count >= 32 && !exists {
+			problem(w, 400, "environment_limit", "A project supports at most 32 environments.")
+			return
+		}
+	}
+	if err == nil {
 		_, err = tx.Exec(r.Context(), "INSERT INTO environments(project,name) VALUES($1,$2) ON CONFLICT DO NOTHING", in.Name, in.Environment)
 	}
 	if err == nil {
@@ -475,6 +490,10 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			problem(w, 400, "invalid_spec", err.Error())
 			return next, nil, false
 		}
+	}
+	if _, err := s.Store.ResolveVirtualNetworks(r.Context(), in.Project, in.Environment, next); err != nil {
+		problem(w, 400, "invalid_network", err.Error())
+		return next, existing, false
 	}
 	return next, existing, true
 }
