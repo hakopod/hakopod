@@ -8,6 +8,7 @@ hakopod_bootstrap() {
   command -v python3 >/dev/null 2>&1 || { printf '%s\n' 'Hakopod requires Python 3.10+, Bash, curl and system CA certificates.' >&2; return 1; }
   python3 - "$@" <<'HAKOPOD_BOOTSTRAP_PY'
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -93,7 +94,18 @@ def checksums(path):
 def extract_kit(source, destination, root):
     # Only the small installer kit is extracted here. The verified kit validates
     # its larger server/dashboard bundles with installer/host.py.
-    with tarfile.open(source, mode='r|gz') as archive:
+    class BoundedTar:
+        def __init__(self, stream):
+            self.stream, self.used = stream, 0
+        def read(self, size):
+            data = self.stream.read(min(size, 40 * MIB - self.used + 1))
+            self.used += len(data)
+            if self.used > 40 * MIB:
+                raise ValueError('Installer kit headers or payload exceed decompression bounds')
+            return data
+    # Bound the decompressed stream as well as ordinary members: tar PAX headers
+    # are processed internally before the member iterator exposes their sizes.
+    with gzip.open(source, 'rb') as stream, tarfile.open(fileobj=BoundedTar(stream), mode='r|') as archive:
         total, count, seen = 0, 0, set()
         for member in archive:
             count += 1
