@@ -4,7 +4,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import pty
 import subprocess
 import tarfile
 import tempfile
@@ -76,7 +78,7 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum mismatch'): host.artifacts(self.root, self.config, 'arm64')
     def test_resume_fingerprint_binds_config_pins_and_bytes(self):
         first = host.fingerprint(self.config, 'arm64', {'archive': 'a' * 64})
-        for config, arch, artifacts in [(dict(self.config, max_pods=60), 'arm64', {'archive': 'a' * 64}), (self.config, 'amd64', {'archive': 'a' * 64}), (self.config, 'arm64', {'archive': 'b' * 64})]:
+        for config, arch, artifacts in [(dict(self.config, max_pods=60), 'arm64', {'archive': 'a' * 64}), (dict(self.config, deployment_mode='managed-cloud'), 'arm64', {'archive': 'a' * 64}), (self.config, 'amd64', {'archive': 'a' * 64}), (self.config, 'arm64', {'archive': 'b' * 64})]:
             self.assertNotEqual(host.fingerprint(config, arch, artifacts), first)
     def test_foreign_kubernetes_objects_are_refused(self):
         path = self.root / 'object.json'
@@ -99,21 +101,70 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('MemoryMax=256M', (rendered / 'hakopod-api.service').read_text())
         self.assertIn('127.0.0.1:8080', (rendered / 'api.env').read_text())
         self.assertIn('HAKOPOD_MANAGED_POSTGRES="true"', (rendered / 'api.env').read_text())
+        self.assertIn('HAKOPOD_DEPLOYMENT_MODE="self-hosted"', (rendered / 'api.env').read_text())
         self.assertIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-api.service').read_text())
         self.assertNotIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-dashboard.service').read_text())
         self.assertFalse((rendered / 'api.env').stat().st_mode & 0o077)
     def test_public_tcp_ports_are_explicit_bounded_and_rendered(self):
-        for value in ([587, 587], [80], [8080], [3000], [True], [0], [65536], list(range(20000, 20017))):
+        for value in ([587, 587], [80], [8080], [3000], [True], ['587'], [0], [65536], list(range(20000, 20257))):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 host.config(self.config_file({'public_tcp_ports': value}))
-        c = host.config(self.config_file({'public_tcp_ports': [587, 465]}))
-        self.assertEqual(c['public_tcp_ports'], [465, 587])
+        c = host.config(self.config_file({'public_tcp_ports': [65535, 587, 12345, 1, 465]}))
+        self.assertEqual(c['public_tcp_ports'], [1, 465, 587, 12345, 65535])
+        provisioned = list(range(20000, 20256))
+        self.assertEqual(host.config(self.config_file({'public_tcp_ports': list(reversed(provisioned))}))['public_tcp_ports'], provisioned)
         secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
         with patch.object(host, 'regular', return_value=secret): host.render(c, 'arm64', 'b' * 32, self.root / 'render')
         rendered = self.root / 'render'
         ingress = json.loads((rendered / 'haproxy.json').read_text())['kubernetes-ingress']['controller']
-        self.assertEqual(ingress['service']['tcpPorts'], [{'name': 'tcp-465', 'port': 465, 'targetPort': 465}, {'name': 'tcp-587', 'port': 587, 'targetPort': 587}])
-        self.assertIn('HAKOPOD_PUBLIC_TCP_PORTS="465,587"', (rendered / 'api.env').read_text())
+        self.assertEqual(ingress['service']['tcpPorts'], [{'name': 'tcp-' + str(port), 'port': port, 'targetPort': port} for port in [1, 465, 587, 12345, 65535]])
+        self.assertIn('HAKOPOD_PUBLIC_TCP_PORTS="1,465,587,12345,65535"', (rendered / 'api.env').read_text())
+
+    def test_deployment_mode_defaults_and_managed_cloud_rejects_public_tcp(self):
+        omitted = dict(self.config); omitted.pop('deployment_mode')
+        path = self.root / 'legacy.json'; path.write_text(json.dumps(omitted))
+        self.assertEqual(host.config(path)['deployment_mode'], 'self-hosted')
+        for value in ('', 'cloud', 'managed_cloud', 'SELF-HOSTED', True):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'deployment_mode'):
+                host.config(self.config_file({'deployment_mode': value}))
+        with self.assertRaisesRegex(ValueError, 'managed-cloud does not support public_tcp_ports'):
+            host.config(self.config_file({'deployment_mode': 'managed-cloud', 'public_tcp_ports': [587]}))
+        c = host.config(self.config_file({'deployment_mode': 'managed-cloud'}))
+        secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
+        with patch.object(host, 'regular', return_value=secret): host.render(c, 'amd64', 'b' * 32, self.root / 'render')
+        rendered = self.root / 'render'
+        ingress = json.loads((rendered / 'haproxy.json').read_text())['kubernetes-ingress']['controller']
+        self.assertEqual(ingress['service']['tcpPorts'], [])
+        self.assertEqual(ingress['deployment']['hostPorts'], {'http': 80, 'https': 443, 'stat': 0})
+        environment = (rendered / 'api.env').read_text()
+        self.assertIn('HAKOPOD_DEPLOYMENT_MODE="managed-cloud"', environment)
+        self.assertIn('HAKOPOD_PUBLIC_TCP_PORTS=""', environment)
+
+    def test_interactive_mode_selects_public_tcp_prompt_without_host_changes(self):
+        for suffix in ('linux_arm64', 'dashboard'):
+            (self.root / ('hakopod_0.1.0-dev_' + suffix + '.tar.gz')).write_bytes(b'fixture only')
+        (self.root / 'SHA256SUMS').write_text(''.join(host.digest(p) + '  ' + p.name + '\n' for p in sorted(self.root.glob('*.tar.gz'))))
+        for mode in ('self-hosted', 'managed-cloud'):
+            with self.subTest(mode=mode):
+                answers = [mode, '', 'apps.example.test', '192.0.2.10', '', '', '', '', 'off']
+                if mode == 'self-hosted': answers.append('12345,587')
+                answers.extend([''] * 6)
+                master, slave = pty.openpty()
+                try:
+                    os.write(master, ('\n'.join(answers) + '\n').encode())
+                    result = subprocess.run(['bash', str(HERE.parent / 'scripts/install.sh'), '--artifact-dir', str(self.root), '--dry-run', '--arch', 'arm64'], stdin=slave, capture_output=True, text=True, timeout=20)
+                finally:
+                    os.close(slave); os.close(master)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Deployment mode: ' + mode, result.stdout)
+                self.assertIn('No host paths, services, credentials or cluster resources are changed', result.stdout)
+                if mode == 'managed-cloud':
+                    self.assertNotIn('Public TCP ports to provision', result.stderr)
+                    self.assertNotIn('Additional TCP host ports:', result.stdout)
+                    self.assertIn('public TCP is unavailable', result.stdout)
+                else:
+                    self.assertIn('Public TCP ports to provision', result.stderr)
+                    self.assertIn('Additional TCP host ports: 587, 12345', result.stdout)
 
     def test_secret_file_symlink_and_permissions_rejected(self):
         path = self.root / 'secret'; path.write_text('never print this'); path.chmod(0o644)

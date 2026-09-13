@@ -31,7 +31,7 @@ DNS routing and certificate coverage are separate checks.
 | `port` | Main private TCP port, 1–65535; used for readiness and optional public HTTP |
 | `ports` | Up to 15 extra private TCP/UDP endpoints, with a name, port and optional target_port |
 | `public` | false; true adds public HTTP ingress and needs a port |
-| `public_tcp` | Explicit public TCP listeners: port, target_port and source_cidrs; requires operator-provisioned ingress ports |
+| `public_tcp` | Up to 16 explicit TCP listeners per service, 64 per application: port, target_port and up to 16 source_cidrs; self-hosted only, using administrator-provisioned ingress ports |
 | `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS |
 | `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
 | `size` | small; centrally defined resources below |
@@ -232,3 +232,11 @@ logs themselves can still contain sensitive data.
 See the [SMTP migration guide](smtp-migration.md) for public TCP, backend certificate
 mounts and AWS workload identity. These optional fields preserve existing schema
 v1 behavior: extra ports remain private, and `public`/`tls` still control HTTP.
+
+Public TCP requires server deployment mode `self-hosted`. The administrator
+selects this through `HAKOPOD_DEPLOYMENT_MODE` or `[server] deployment_mode` in
+operator configuration, not an application file. Managed-cloud mode rejects
+public TCP listeners regardless of roles or licenses; private TCP ports remain
+available. Self-hosted administrators may provision any available non-platform
+port from 1 through 65535, up to 256 per installation. Application TOML can use
+only those provisioned ports and never opens host ports or firewalls itself.

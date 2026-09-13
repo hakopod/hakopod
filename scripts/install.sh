@@ -57,7 +57,9 @@ if [ -z "$config_path" ]; then
   [ -t 0 ] || die 'Noninteractive input requires --config'
   version='' app_domain='' node_ip='' node_name='' supervisor_host='' dashboard_mode=''
   dashboard_port='' acme='' storage='' k3s_memory_mib='' api_memory_mib=''
-  dashboard_memory_mib='' postgres_memory_mib='' max_pods=''
+  dashboard_memory_mib='' postgres_memory_mib='' max_pods='' deployment_mode='' public_tcp_ports=''
+  prompt deployment_mode 'Deployment mode: self-hosted or managed-cloud' 'self-hosted'
+  case "$deployment_mode" in self-hosted|managed-cloud) ;; *) die 'deployment_mode must be self-hosted or managed-cloud';; esac
   prompt version 'Local Hakopod release version' '0.1.0-dev'
   prompt app_domain 'Operator-owned application DNS domain (for example apps.example.com)' ''
   prompt node_ip 'This server IPv4 address, reachable by future workers' ''
@@ -76,7 +78,11 @@ if [ -z "$config_path" ]; then
   prompt acme 'Application certificates: production (public DNS/port80 required), staging, or off' 'production'
   acme_email=
   if [ "$acme" != off ]; then prompt acme_email 'ACME account contact email (does not create your Hakopod account)' ''; fi
-  prompt public_tcp_ports 'Additional public TCP ports, comma-separated; leave empty to disable' ''
+  if [ "$deployment_mode" = self-hosted ]; then
+    prompt public_tcp_ports 'Public TCP ports to provision, comma-separated (up to 256); leave empty to disable' ''
+  else
+    printf 'Managed-cloud mode keeps TCP service ports private; public TCP is unavailable.\n' >&2
+  fi
   prompt storage 'Enable optional node-local application volumes: true or false' 'false'
   prompt k3s_memory_mib 'K3s hard memory cap in MiB' '2048'
   prompt api_memory_mib 'API hard memory cap in MiB' '256'
@@ -87,10 +93,10 @@ if [ -z "$config_path" ]; then
   python3 - "$input_tmp" "$version" "$app_domain" "$node_ip" "$node_name" "$supervisor_host" \
     "$dashboard_mode" "$dashboard_origin" "$dashboard_port" "$tls_cert_file" "$tls_key_file" \
     "$acme" "$acme_email" "$storage" "$k3s_memory_mib" "$api_memory_mib" "$dashboard_memory_mib" \
-    "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" <<'PY'
+    "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" "$deployment_mode" <<'PY'
 import json, sys
 from pathlib import Path
-keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports'.split()
+keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports deployment_mode'.split()
 c=dict(zip(keys,sys.argv[2:]),schema_version=1)
 for key in ('dashboard_port','k3s_memory_mib','api_memory_mib','dashboard_memory_mib','postgres_memory_mib','max_pods'): c[key]=int(c[key])
 if c['storage'] not in ('true','false'): raise SystemExit('storage must be true or false')
