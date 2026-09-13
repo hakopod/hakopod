@@ -71,9 +71,9 @@ func TestProxyDurableAcceptanceAndRevocation(t *testing.T) {
 	}
 	server := &Server{Store: db, Cluster: c}
 	handler := server.Handler()
-	patch := func(revision int64, version, value string, want int) {
+	patch := func(revision int64, version string, settings map[string]string, want int) {
 		t.Helper()
-		input := map[string]any{"settings": map[string]string{"timeout-client": value}, "expected_revision": revision, "expected_resource_version": version}
+		input := map[string]any{"settings": settings, "expected_revision": revision, "expected_resource_version": version}
 		r := httptest.NewRequest("PATCH", "http://localhost/api/v1/settings/haproxy", bytes.NewReader(store.JSON(input)))
 		r.Header.Set("Authorization", "Bearer "+raw)
 		out := httptest.NewRecorder()
@@ -82,8 +82,10 @@ func TestProxyDurableAcceptanceAndRevocation(t *testing.T) {
 			t.Fatalf("PATCH got %d: %s", out.Code, out.Body.String())
 		}
 	}
-	patch(0, "100", "31s", 202)
-	patch(1, "100", "32s", 409)
+	settings := map[string]string{"timeout-client": "31s", "load-balance": "leastconn", "dontlognull": "false", "check-interval": "10s", "pod-maxconn": "128"}
+	patch(0, "100", map[string]string{"load-balance": "leastconn", "check-interval": "1ms"}, 400)
+	patch(0, "100", settings, 202)
+	patch(1, "100", settings, 409)
 	mu.Lock()
 	initialWrites := writes
 	mu.Unlock()
@@ -100,6 +102,20 @@ func TestProxyDurableAcceptanceAndRevocation(t *testing.T) {
 	if result.Status != "applied" {
 		t.Fatalf("change did not reconcile: %s", result.Error)
 	}
+	mu.Lock()
+	for name, value := range settings {
+		if cm.Data[name] != value {
+			t.Errorf("accepted setting %s did not reach Kubernetes", name)
+		}
+	}
+	mu.Unlock()
+	var audits, history int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM audit_events WHERE action='proxy.configured' AND identity_id=$1 AND key_id=$2", p.ID, p.KeyID).Scan(&audits); err != nil || audits != 1 {
+		t.Fatal("accepted proxy change did not record exactly one attributed audit event", err)
+	}
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM runtime_resource_history WHERE kind='proxy' AND revision=1 AND identity_id=$1", p.ID).Scan(&history); err != nil || history != 1 {
+		t.Fatal("accepted proxy change did not retain its reviewed revision", err)
+	}
 	_, _ = db.Pool.Exec(ctx, `UPDATE runtime_resources SET metadata=jsonb_set(metadata,'{status}','"queued"') WHERE kind='proxy'`)
 	server.reconcileProxy(ctx)
 	mu.Lock()
@@ -108,7 +124,7 @@ func TestProxyDurableAcceptanceAndRevocation(t *testing.T) {
 	if afterReplay != 1 {
 		t.Fatal("crash recovery duplicated ConfigMap mutation")
 	}
-	patch(1, "101", "32s", 202)
+	patch(1, "101", map[string]string{"timeout-client": "32s", "dontlognull": ""}, 202)
 	_, _ = db.Pool.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE id=$1", p.KeyID)
 	server.reconcileProxy(ctx)
 	row, _ = db.RuntimeResource(ctx, "proxy", "", "", "haproxy")

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var ErrProxyConflict = errors.New("HAProxy configuration changed after review")
@@ -28,62 +30,117 @@ type ProxyConfiguration struct {
 }
 
 func ProxyFields() []ProxyField {
+	// ConfigMap keys supported by HAProxy Technologies Kubernetes Ingress 3.2.
+	// Keep this allowlist separate from arbitrary controller annotations/snippets.
 	return []ProxyField{
-		{"maxconn", "Maximum concurrent connections; larger values increase memory use.", "1024"},
+		{"maxconn", "Maximum concurrent connections, 16–65536; larger values increase memory use.", "1024"},
 		{"nbthread", "HAProxy threads, bounded to 1–8.", "2"},
-		{"timeout-connect", "Backend connection deadline.", "5s"},
-		{"timeout-client", "Client inactivity timeout.", "30s"},
-		{"timeout-server", "Backend inactivity timeout.", "30s"},
-		{"timeout-tunnel", "WebSocket and upgraded-connection inactivity timeout.", "1h"},
-		{"timeout-http-request", "Maximum time to receive an HTTP request.", "10s"},
-		{"timeout-http-keep-alive", "Idle HTTP keep-alive connection timeout.", "5s"},
+		{"timeout-connect", "Backend connection deadline, 1ms–24h.", "5s"},
+		{"timeout-client", "Client inactivity timeout, 1ms–24h.", "30s"},
+		{"timeout-server", "Backend inactivity timeout, 1ms–24h.", "30s"},
+		{"timeout-tunnel", "WebSocket and upgraded-connection inactivity timeout, 1ms–24h.", "1h"},
+		{"timeout-http-request", "Maximum time to receive an HTTP request, 1ms–24h.", "10s"},
+		{"timeout-http-keep-alive", "Idle HTTP keep-alive connection timeout, 1ms–24h.", "5s"},
+		{"timeout-check", "Health-check response deadline, 100ms–5m. Service or ingress settings can override it.", "5s"},
+		{"timeout-queue", "Maximum wait for an available backend connection, 1ms–1h.", "5s"},
+		{"timeout-client-fin", "Client half-closed connection timeout, 1ms–1h.", "30s"},
+		{"timeout-server-fin", "Backend half-closed connection timeout, 1ms–1h.", "30s"},
+		{"hard-stop-after", "Reload drain deadline, 1s–24h. Remaining connections close at this deadline; longer drains retain old processes and memory.", "30m"},
+		{"check-interval", "Time between enabled backend health checks, 1s–10m. Short intervals increase probe traffic.", "10s"},
+		{"pod-maxconn", "Backend connection cap, 16–65536, divided across ingress replicas. Keep it above the replica count; excess requests queue.", "128"},
+		{"load-balance", "Default backend algorithm: roundrobin, static-rr, leastconn, first, source or random. Service or ingress settings can override it.", "leastconn"},
+		{"http-connection-mode", "HTTP connection reuse: http-keep-alive, http-server-close or httpclose. Closing connections increases connection setup work.", "http-keep-alive"},
+		{"dontlognull", "Use true to omit connections that send no data; false records them and can increase log volume.", "true"},
+		{"logasap", "Use true to log when response headers arrive. Final response size and duration are unavailable in these early logs; false waits for completion.", "false"},
+		{"abortonclose", "Use true to cancel pending backend work after a client disconnects; false lets it finish. Service or ingress settings can override it.", "false"},
 	}
 }
 func ValidateProxySettings(values map[string]string) error {
-	if len(values) == 0 || len(values) > len(ProxyFields()) {
-		return fmt.Errorf("provide between 1 and %d supported HAProxy settings", len(ProxyFields()))
+	fields := ProxyFields()
+	if len(values) == 0 || len(values) > len(fields) {
+		return fmt.Errorf("provide between 1 and %d supported HAProxy settings", len(fields))
 	}
-	supported := map[string]bool{}
-	for _, f := range ProxyFields() {
+	supported := make(map[string]bool, len(fields))
+	for _, f := range fields {
 		supported[f.Name] = true
 	}
 	for k, v := range values {
 		if !supported[k] || len(v) > 32 || strings.TrimSpace(v) != v {
 			return fmt.Errorf("unsupported HAProxy field or invalid value: %s", k)
 		}
+		// An explicit empty value resets this controller setting.
 		if v == "" {
 			continue
-		} // An explicit empty value resets this controller setting.
-		if k == "maxconn" || k == "nbthread" {
-			n, e := strconv.Atoi(v)
-			min, max := 16, 65536
+		}
+		switch k {
+		case "maxconn", "nbthread", "pod-maxconn":
+			n, e := strconv.ParseUint(v, 10, 32)
+			min, max := uint64(16), uint64(65536)
 			if k == "nbthread" {
 				min, max = 1, 8
 			}
 			if e != nil || n < min || n > max {
 				return fmt.Errorf("%s must be %d–%d", k, min, max)
 			}
-		} else {
-			duration, e := time.ParseDuration(v)
-			if e != nil || duration < time.Millisecond || duration > 24*time.Hour {
-				return fmt.Errorf("%s must be a duration between 1ms and 24h", k)
+		case "dontlognull", "logasap", "abortonclose":
+			if err := validateProxyChoice(k, v, "true", "false"); err != nil {
+				return err
 			}
-			// HAProxy accepts one integer+unit, while time.ParseDuration also accepts
-			// compound and fractional units that this controller should not receive.
-			unit := ""
-			for _, suffix := range []string{"ms", "s", "m", "h"} {
-				if strings.HasSuffix(v, suffix) {
-					unit = suffix
-					break
-				}
+		case "load-balance":
+			if err := validateProxyChoice(k, v, "roundrobin", "static-rr", "leastconn", "first", "source", "random"); err != nil {
+				return err
 			}
-			if unit == "" {
-				return fmt.Errorf("%s requires an integer with ms, s, m or h", k)
+		case "http-connection-mode":
+			if err := validateProxyChoice(k, v, "http-keep-alive", "http-server-close", "httpclose"); err != nil {
+				return err
 			}
-			if _, e = strconv.ParseUint(strings.TrimSuffix(v, unit), 10, 32); e != nil {
-				return fmt.Errorf("%s requires an integer duration", k)
+		default:
+			min, max := "1ms", "24h"
+			switch k {
+			case "timeout-check":
+				min, max = "100ms", "5m"
+			case "timeout-queue", "timeout-client-fin", "timeout-server-fin":
+				max = "1h"
+			case "hard-stop-after":
+				min = "1s"
+			case "check-interval":
+				min, max = "1s", "10m"
+			}
+			if err := validateProxyDuration(k, v, min, max); err != nil {
+				return err
 			}
 		}
+	}
+	return nil
+}
+
+func validateProxyChoice(name, value string, choices ...string) error {
+	if !slices.Contains(choices, value) {
+		return fmt.Errorf("%s must be one of: %s", name, strings.Join(choices, ", "))
+	}
+	return nil
+}
+
+func validateProxyDuration(name, value, minimum, maximum string) error {
+	// HAProxy accepts one integer and unit; Go also accepts compound/fractional durations.
+	unit := ""
+	for _, suffix := range []string{"ms", "s", "m", "h"} {
+		if strings.HasSuffix(value, suffix) {
+			unit = suffix
+			break
+		}
+	}
+	if unit == "" {
+		return fmt.Errorf("%s requires an integer with ms, s, m or h", name)
+	}
+	if _, err := strconv.ParseUint(strings.TrimSuffix(value, unit), 10, 32); err != nil {
+		return fmt.Errorf("%s requires an integer duration", name)
+	}
+	duration, err := time.ParseDuration(value)
+	min, _ := time.ParseDuration(minimum)
+	max, _ := time.ParseDuration(maximum)
+	if err != nil || duration < min || duration > max {
+		return fmt.Errorf("%s must be a duration between %s and %s", name, minimum, maximum)
 	}
 	return nil
 }

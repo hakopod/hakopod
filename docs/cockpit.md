@@ -210,8 +210,10 @@ are not single-use. Revocation takes time to propagate through K3s authenticatio
 caches (about 10 seconds observed locally). Cordon/drain expose resource-version
 conflicts and PDB/local-data blockers and preserve unrelated workloads.
 
-The HAProxy editor manages a validated set of timeouts, thread count and connection
-limits. It preserves other controller settings, reviews the observed Kubernetes
+The HAProxy editor manages 20 validated settings, including timeouts, connection
+limits, backend health checks, load balancing, connection reuse and logging.
+Its [field reference](haproxy.md) lists supported values and operating limits.
+It preserves other controller settings, reviews the observed Kubernetes
 version, stores durable intent and checks administrator authority again before
 applying. Stale operator edits cause a conflict. Existing application traffic
 does not depend on this worker. Arbitrary HAProxy snippets and public admin sockets
