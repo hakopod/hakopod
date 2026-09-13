@@ -194,10 +194,15 @@ export default function TemplateForm({
       <div className="form-body auth-form">
         {plan ? (
           <>
-            {plan.warnings.map((warning) => (
-              <Note key={warning}>{warning}</Note>
-            ))}
-            <DiffTable changes={plan.changes} />
+            {!!plan.warnings.length && (
+              <Note>
+                <ul className="template-review-notes" aria-label="Deployment notes">
+                  {plan.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </Note>
+            )}
             {plan.model_source && (
               <Note>
                 Model revision: <code>{plan.model_source}</code>. Model weights load in the
@@ -249,6 +254,7 @@ export default function TemplateForm({
                 )}
               </section>
             )}
+            <DiffTable changes={plan.changes} />
             <details className="config-details">
               <summary>Canonical configuration</summary>
               <TOMLCode code={plan.toml} />

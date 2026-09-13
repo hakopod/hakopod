@@ -2409,6 +2409,12 @@
   border-radius: 4px;
   background: var(--card);
 }
+.template-review-notes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 16px;
+}
 .template-identity h2 {
   margin: 13px 0 8px;
   font-size: 18px;
