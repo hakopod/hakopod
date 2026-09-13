@@ -66,6 +66,22 @@ details. Metrics come from metrics-server. Missing/stale samples remain missing;
 the dashboard retains only a small rolling sample buffer. This is live monitoring,
 not a retained historical metrics database.
 
+Applications and services use compact cards with separate copy and action
+controls. Nested pages put their parent link before the header logo. Project
+administrators can create development, staging and production environments from
+the environment menu; each has independent configuration and network scope.
+
+Each service has an environment editor for ordinary variables and secret
+references. It reviews an immutable application revision before deployment,
+preserves unrelated settings and keeps the draft when a request fails. Concurrent
+edits to the same variable require an explicit choice. Ordinary variables appear
+in TOML and history; use secret references for credentials.
+
+[Virtual networks](virtual-networks.md) connect selected services across
+applications, with environment-scoped segments, application grants, private
+ports and explicit peer allowlists. The dashboard and TOML use the same reviewed
+configuration and Go authorization checks.
+
 Edit the canonical TOML, review the diff, then deploy using the expected revision.
 Restart, manual scale and TLS attachment also create auditable deployment revisions.
 Manual scale refuses a service owned by an HPA. Rollback restores the immutable
@@ -139,6 +155,12 @@ The catalog includes database, monitoring, development, analytics, secret-manage
 and AI presets. See [template requirements and verification](templates.md).
 Templates produce ordinary reviewable specifications, with resource limits,
 required secret references, upstream/license links and prerequisites.
+
+The setup form identifies required variables and credentials before review.
+Generate or save required secrets in the target application scope; only their
+references appear in TOML. Read the [upstream requirement review](template-requirements.md)
+for initialization behavior, key formats and configuration still needed inside
+each application.
 
 Persistent services have one replica, no HPA and a Recreate update strategy. An
 owned PVC survives service restarts and ordinary service removal. Data updates

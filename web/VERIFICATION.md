@@ -1,7 +1,7 @@
 # Dashboard and runtime verification
 
 Verified locally on 2026-09-12 and 2026-09-13. This record covers the Hatch
-migration, account and runtime changes, and the compact dashboard follow-up.
+migration, account and runtime changes, compact dashboard, and virtual networks.
 It distinguishes checks against real services from isolated browser fixtures.
 
 ## What changed
@@ -29,7 +29,7 @@ sessions. Paid team and shared-project permissions remain enforced in Go.
 
 The compact follow-up merges desktop navigation into a 56-pixel header, narrows
 scope selectors, and keeps the application heading and its actions on one row.
-Application rows are native links with independent copy controls. Provider cards
+Application cards use native links with independent copy and menu controls. Provider cards
 share borders and guidance actions have horizontal padding. Secondary page help
 is available from a keyboard-accessible tooltip.
 
@@ -43,6 +43,23 @@ timeouts, drain deadlines, load balancing and connection behavior. The editor
 submits only changed fields. Go validates bounds and choices, preserves unrelated
 configuration, and retains authorization, revision checks and audit records.
 
+The latest pass uses one `SelectField` API throughout the dashboard. It preserves
+empty/disabled choices, native required validation and keyboard interaction.
+Nested-page parent links sit before the logo. Application and service headings
+avoid repeated scope, cards match the catalog, deployment events use consistent
+spacing, and service charts share the node resource component.
+
+Project administrators can add environments from the header. Service environment
+editing separates ordinary values from secret references, merges unrelated
+concurrent edits and requires explicit conflict resolution. Failed requests keep
+the draft. Catalog setup now guides required variables and credentials using a
+[review of all 14 upstream templates](../docs/template-requirements.md).
+
+[Virtual networks](../docs/virtual-networks.md) provide environment-scoped shared
+segments, application grants, service membership and private peer rules. Forms
+and TOML use the same Go validation, revision checks and audit records. Updates
+and deletes also check network identity to reject stale reviews after recreation.
+
 ## Automated checks
 
 - `go test ./...`, `go vet ./...` and both Go binary builds passed. Database
@@ -53,20 +70,33 @@ configuration, and retains authorization, revision checks and audit records.
   services in these tests were local fixtures.
 - Project tests covered metadata, duplicate-ID safety, legacy environment
   creation, scoped listing beyond 200 unrelated projects and the personal marker.
+  New environment tests covered project-admin authority, cross-project denial,
+  duplicates, capacity bounds and audit records.
 - Operator tests covered strict TOML fields, environment precedence, invalid
   inputs, secret-file limits and permissions. Application tests covered network,
   mount and filesystem rules, retained fields and shared configuration review.
-- Dashboard TypeScript, formatting, production build and all 33 tests passed:
-  18 server boundary tests and 15 UI regressions. Tests include account response
+- Dashboard TypeScript, formatting, production build and all 43 tests passed:
+  18 server boundary tests and 25 UI regressions. Tests include account response
   handling, personal/paid permissions, account-switch scope, accent contrast,
-  draft preservation, TOML rendering and bounded metric history/freshness.
+  draft preservation, TOML rendering, SelectField semantics, parent navigation,
+  environment merging, network connection preservation and bounded metrics.
+- Network database/API tests cover grant scope, queued/partial deployments,
+  successful detach, recreated identities, stale reviews and bounded connection
+  metadata without environment values. Focused network and shared runtime tests
+  also passed with the race detector.
+- Template tests cover credential formats, generation without replacement,
+  certificate/key matching, derived URL/password consistency and reviewed
+  deployment acceptance. Showcase cancellation now checks retry deadlines using
+  PostgreSQL's clock; immediate cancellation and retry tests passed.
+- The three repository script tests and nine installer tests passed; generated
+  API contract modules passed Python syntax checks.
 
 The unchanged pinned Hatch source previously passed its build, TypeScript and
 25 tests. Public source snapshot tests checked deterministic restoration, safe
 archive extraction and consumer-only packaging. A clean dashboard copy restored
 that snapshot and built without local credentials or private repositories.
 Those checks belong to the migration; the UI dependency did not change in this
-follow-up.
+follow-up. The dashboard now declares the existing Radix Select version directly.
 
 ## Real cluster acceptance
 
@@ -88,6 +118,13 @@ controller 3.2.15 (chart 1.54.0) and HAProxy 3.2.23. It verified all 12 newly
 supported properties in the generated HAProxy configuration, checked the result
 with `haproxy -c`, restored the original ConfigMap data and annotations, and
 verified the restored generated configuration. No test settings remain applied.
+
+`TestLiveVirtualNetworksAcrossApplications` passed in 29.79 seconds on the same
+development cluster. Four isolated applications verified cross-application DNS,
+private TCP/UDP port mappings, denied unlisted peers, denied other segments and
+environments, and removal of peer permission. Owned fixture namespaces were
+cleaned up. This is IPv4 K3s NetworkPolicy acceptance; it does not establish
+cross-cluster routing, traffic encryption, subnet allocation or other CNI behavior.
 
 ## Browser checks
 
@@ -136,6 +173,26 @@ Ambiguous retries retained their original key/revision; definitive conflicts
 required a fresh plan. TOML highlighting retained exact canonical text and
 bounded colored output without a new dependency.
 
+The latest isolated dashboard suite passed 26 browser checks: header widths
+320/768/1280/1342, keyboard and required-field focus, empty/disabled options,
+FormData, scope switching, environment permissions/retries and eight parent
+routes. The operations suite passed 23 checks covering cards and separate
+actions, service chart colors/cancellation, environment merge conflicts, network
+TOML/forms, reviewed retries and explicit reload after network recreation.
+Both used disposable Chrome profiles with external requests blocked and no
+live-account or configuration writes. Their fixture servers and browsers closed.
+
+Fourteen additional catalog browser checks used the actual template components
+and Go-generated plans with an intercepted credential API. They covered required
+references, invalid/failed draft retention, saved-secret reuse, explicit
+replacement, generated connection URLs, PEM limits, provider-supplied keys,
+exact reviewed deployment payloads, retries and a 390-pixel layout. No real
+credentials or deployments were created by these fixtures. Review hides the
+configuration help sidebar to avoid repeating guidance already present in the
+warnings. All warning text remains in one compact list, and required secrets
+appear before the full deployment diff. The fixture server, exporter and browser
+processes were removed.
+
 Live email delivery and GitHub/GitLab/Google client setup were not exercised.
 The local installation still has signup disabled and no SMTP or OAuth clients.
 Provider, backup, TLS, licensing and terminal operations need their own external
@@ -144,23 +201,24 @@ systems are provisioned.
 
 ## Resource measurements
 
-These totals cover all emitted client assets, including lazy routes. They are
-not initial page transfer sizes. Gzip was calculated separately per file at
+These totals cover emitted JavaScript, CSS and fonts, including lazy routes. They
+are not initial page transfer sizes. Gzip was calculated separately per file at
 level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 91 | 1,276,538 | 401,203 |
-| CSS | 3 | 140,105 | 26,009 |
+| JavaScript | 104 | 1,350,897 | 428,472 |
+| CSS | 3 | 148,264 | 27,301 |
 | Fonts | 2 | 236,032 | 109,697 |
 
-The main JavaScript entry is 377,524 bytes. The 331,178-byte xterm chunk loads only
+The main JavaScript entry is 401,689 bytes. The 331,178-byte xterm chunk loads only
 after Connect. Project creation, appearance and guidance panels load on demand.
-This follow-up adds no runtime package dependency. The portable UI source archive
+Network routes and environment editors also load separately. This pass adds no
+chart library, network daemon or model runtime. The portable UI source archive
 remains 135,846 bytes and contains only the consumer library.
 
-After restart and HTTP smoke checks, a process sample showed 35,424 KiB API RSS
-and 106,784 KiB dashboard RSS. These are point-in-time observations, not peak or
+After restart and HTTP smoke checks, a process sample showed 25,168 KiB API RSS
+and 100,704 KiB dashboard RSS. These are point-in-time observations, not peak or
 capacity guarantees. Go retains its 192 MiB soft memory target, and Node its
 192 MiB old-space cap. Neither setting caps total process memory.
 
@@ -171,7 +229,8 @@ foreground view, with cancellation on exit. TOML highlighting scans at most
 65,536 UTF-16 units and emits at most 512 colored spans, keeping the complete
 remaining source visible without highlighting.
 
-The restarted production preview returned HTTP 200 for its account pages,
-settings and proxied auth status. Existing administrator setup remained complete.
+The restarted production preview returned HTTP 200 for applications, networks,
+network creation, catalog, settings and proxied auth status. Existing
+administrator setup and both application revisions remained unchanged.
 See [the dashboard README](README.md#authentication-and-limits) for further limits.
 Long-running browser memory and large-cluster load tests were not performed.
