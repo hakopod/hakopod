@@ -1,10 +1,17 @@
 # Prebuilt installation verification
 
-The prebuilt installer passed native host acceptance on September 13, 2026 in
-[GitHub Actions run 34772511894](https://github.com/hakopod/hakopod/actions/runs/34772511894).
-The tested candidate was `0.1.0-alpha.1`, from branch commit
-`150d2bce1ab02740b65a92740f1685f509dbebdd` in PR #11. GitHub tested the corresponding
-PR merge revision `830c046f4fc0d2938e35e6fbb2a82b60b4ebfb5b`.
+The first published prerelease is
+[`v0.1.0-alpha.2`](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.2),
+from source `0c9a46e3c0fde76251ab62f0b7bf9db09f785d8f`.
+[Release run 34776648368](https://github.com/hakopod/hakopod/actions/runs/34776648368)
+passed the build, packaged smoke on both architectures, all four native host
+checks and publication. It published on September 13, 2026 UTC
+(September 14 in Asia/Kolkata).
+
+The candidate also passed
+[run 34776024042](https://github.com/hakopod/hakopod/actions/runs/34776024042)
+before PR #13 was rebased onto main. Release acceptance rebuilt and checked the
+exact tagged source, including the dashboard favicon change.
 
 | Host | PostgreSQL mode | Result |
 | --- | --- | --- |
@@ -15,7 +22,8 @@ PR merge revision `830c046f4fc0d2938e35e6fbb2a82b60b4ebfb5b`.
 
 Each job installed the exact downloaded, checksum-verified archives on a fresh
 GitHub-hosted VM with systemd and cgroup v2. Both the API and dashboard became
-healthy, the Kubernetes node reached Ready, and first-user setup remained open.
+healthy, the Kubernetes node reached Ready, first-user setup remained open,
+and the public signup status remained disabled.
 Resume retained the installation identity and every saved secret. Restarting the
 API and dashboard services recovered without creating an account.
 
@@ -40,8 +48,27 @@ existing-database modes on arm64. The bootstrap's missing-prerequisite and pipe
 handoff cases are covered by isolated tests; these host jobs ran the verified
 installer kit directly and do not prove the public website download endpoint.
 
-The release workflow rebuilds tagged source and repeats native host acceptance
-and container smoke checks before publication. It verifies that the reports
-match the release revision and artifact hashes, then includes them with the
-checksummed and attested release assets. A passing candidate run is not itself
-a published release.
+The release includes `host-acceptance.json`, both native smoke reports,
+`SHA256SUMS` and GitHub build-provenance attestations. Reports are bound to the
+release revision and artifact hashes. The public binaries carry the explicit
+`hakopod_selfhosted` build tag; environment variables and operator TOML cannot
+enable public signup in them. First-owner setup and licensed invitations remain
+available through their separate authorization paths.
+
+## Website bootstrap
+
+The website serves the release's exact `installer.sh` at
+<https://hakopod.com/scripts/installer.sh>. Its SHA-256 is:
+
+```text
+d2241f2d8be7a280430b08a095ff4023d08f347fe522c0965e766d0198e0a49d
+```
+
+This endpoint is deployed separately from GitHub releases and pins
+`0.1.0-alpha.2`. A future tag does not update it automatically. The served script
+is checked against the published manifest and signed provenance before website
+deployment. HTTPS, the response type and exact bytes are checked after deployment.
+
+The public endpoint check proves download identity and the bootstrap handoff;
+the native runner evidence above covers full installation. It does not imply a
+production deployment on a customer's server.

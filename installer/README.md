@@ -13,23 +13,21 @@ Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state,
 
 ## Prebuilt releases
 
-`scripts/installer.sh` is the POSIX bootstrap for prebuilt releases. The first
-planned release is `0.1.0-alpha.2`. The bootstrap pins that version by default;
-it does not use GitHub's `latest` endpoint, which excludes prereleases. A tag,
-successful release workflow and published assets are required before downloads
-work. The `hakopod.com` endpoint also requires separate website deployment.
+`scripts/installer.sh` is the POSIX bootstrap for prebuilt releases. It pins
+[`0.1.0-alpha.2`](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.2)
+by default, rather than using GitHub's `latest` endpoint, which excludes
+prereleases. This release is for evaluation on dedicated infrastructure.
 
-Once those publication steps are complete, the intended command on a fresh,
-root-owned Linux server is:
+On a fresh dedicated Linux server:
 
 ```sh
-curl -fsSL https://hakopod.com/scripts/installer.sh | sh
+curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
 
-This URL is a deployment target, not a claim that the domain currently serves
-the installer. Until then, use the checked-out script with a published release,
-or the local artifact workflow below. To inspect a published bootstrap before
-running it:
+Use `| sh` when already running as root. The website serves the same bootstrap
+bytes as the release. See the [verification record](../docs/prebuilt-installation-verification.md)
+for the source revision, checksum and native host evidence. To inspect the
+bootstrap before running it:
 
 ```sh
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \

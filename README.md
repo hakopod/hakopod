@@ -11,8 +11,29 @@ registry credentials, TLS controls and worker enrollment. See the
 [cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
 It remains a development release; production installation and operational recovery
 have separate acceptance gates.
-The intended project name/domain is Hakopod / hakopod.com; no domain ownership
-or public infrastructure is assumed.
+The website and guides are at [hakopod.com](https://hakopod.com).
+
+## Install on a Linux server
+
+On a fresh dedicated Ubuntu 24.04/26.04 or Debian 12/13 server, with amd64 or
+arm64 and at least 4 GiB RAM and 30 GiB free disk:
+
+```sh
+curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
+```
+
+Already root? Use `| sh`. This installs the `0.1.0-alpha.2` prerelease for
+evaluation. The script asks for your settings and shows a plan before installing
+Hakopod. It installs missing prerequisites, K3s and prebuilt binaries. Choose
+managed PostgreSQL or supply a dedicated existing database; external connections
+require verified TLS. No Go or frontend compilation runs on the server.
+
+First setup lets you choose the administrator. Public signup stays disabled in
+self-hosted binaries; licensed teams can enroll explicitly invited members.
+See the [installer guide](installer/README.md) for reviewing the script,
+requirements and noninteractive configuration, and the
+[verification record](docs/prebuilt-installation-verification.md) for tested
+behavior and remaining limits.
 
 ## Run locally
 
