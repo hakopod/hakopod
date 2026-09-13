@@ -281,7 +281,7 @@ export function ServiceDetail({
                   <dd>{service.healthcheck || (service.port ? 'TCP probe' : 'Process health')}</dd>
                 </div>
                 <div>
-                  <dt>Exposure</dt>
+                  <dt>Configured exposure</dt>
                   <dd>
                     {service.public
                       ? service.public_tcp?.length
@@ -485,7 +485,7 @@ export function ServiceDetail({
             </div>
             <dl className="service-definition-list">
               <div>
-                <dt>Exposure</dt>
+                <dt>Configured exposure</dt>
                 <dd>
                   {service.public
                     ? service.public_tcp?.length

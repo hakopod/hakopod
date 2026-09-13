@@ -59,6 +59,9 @@ export function ServiceDelivery({
         <ErrorState error={delivery.error} />
       ) : (
         <>
+          {delivery.data?.public_tcp_policy && (
+            <p className="muted-text">{delivery.data.public_tcp_policy.message}</p>
+          )}
           {delivery.data?.public_tcp.length ? (
             <ul className="delivery-list" aria-label="Public TCP listeners">
               {delivery.data.public_tcp.map((listener) => (
@@ -75,7 +78,9 @@ export function ServiceDelivery({
                       ?.find((item) => item.port === listener.port)
                       ?.source_cidrs.join(', ')}
                   </span>
-                  <p>{listener.message}</p>
+                  {listener.message !== delivery.data.public_tcp_policy?.message && (
+                    <p>{listener.message}</p>
+                  )}
                   {listener.addresses?.map((address) => (
                     <span className="copyable-address" key={address}>
                       <code>{address}</code>
@@ -85,11 +90,11 @@ export function ServiceDelivery({
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : delivery.data?.public_tcp_policy?.allowed !== false ? (
             <p className="muted-text">
               No public TCP listeners. Extra service ports remain private.
             </p>
-          )}
+          ) : null}
           {service.aws_identity && (
             <dl className="service-definition-list">
               <div>
