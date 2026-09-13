@@ -75,7 +75,7 @@ func (s *Server) RunShowcase(ctx context.Context) {
 
 func (s *Server) processShowcase(ctx context.Context) error {
 	item, err := s.Store.Showcase(ctx)
-	if err != nil || (item.State != "queued" && item.State != "removing") || time.Now().Before(item.NextAttempt) {
+	if err != nil || (item.State != "queued" && item.State != "removing") || !item.Ready {
 		return err
 	}
 	finish := func(state, message string) error {
@@ -130,7 +130,7 @@ func (s *Server) processShowcase(ctx context.Context) error {
 		}
 	}()
 	item, err = s.Store.Showcase(ctx)
-	if err != nil || item.State != "removing" {
+	if err != nil || item.State != "removing" || !item.Ready {
 		return err
 	}
 	if item.ApplicationID == "" {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
@@ -31,7 +30,7 @@ type Showcase struct {
 	Spec                spec.Application `json:"-"`
 	RemoveRevision      int64            `json:"-"`
 	Attempts            int              `json:"-"`
-	NextAttempt         time.Time        `json:"-"`
+	Ready               bool             `json:"-"`
 }
 
 // ScheduleShowcase runs in the first-owner transaction. Existing installations,
@@ -62,7 +61,8 @@ func (s *Store) ScheduleShowcase(ctx context.Context, tx pgx.Tx, ownerID string)
 
 func (s *Store) Showcase(ctx context.Context) (Showcase, error) {
 	item := Showcase{Name: "shop", Project: "demo", Environment: "development", State: "absent", Message: "This installation has no bootstrap sample."}
-	err := s.Pool.QueryRow(ctx, `SELECT x.id,x.grant_id,x.spec,x.state,x.revision,x.application_id,COALESCE(a.revision,0),x.deployment_id,COALESCE(d.status,''),x.message,x.remove_application_revision,x.attempts,x.next_attempt_at FROM showcase x LEFT JOIN applications a ON a.id=x.application_id LEFT JOIN deployments d ON d.id=x.deployment_id WHERE x.singleton`).Scan(&item.ID, &item.GrantID, &item.Spec, &item.State, &item.Revision, &item.ApplicationID, &item.ApplicationRevision, &item.DeploymentID, &item.DeploymentStatus, &item.Message, &item.RemoveRevision, &item.Attempts, &item.NextAttempt)
+	// Retry deadlines are written by PostgreSQL, so evaluate them on its clock.
+	err := s.Pool.QueryRow(ctx, `SELECT x.id,x.grant_id,x.spec,x.state,x.revision,x.application_id,COALESCE(a.revision,0),x.deployment_id,COALESCE(d.status,''),x.message,x.remove_application_revision,x.attempts,x.next_attempt_at <= now() FROM showcase x LEFT JOIN applications a ON a.id=x.application_id LEFT JOIN deployments d ON d.id=x.deployment_id WHERE x.singleton`).Scan(&item.ID, &item.GrantID, &item.Spec, &item.State, &item.Revision, &item.ApplicationID, &item.ApplicationRevision, &item.DeploymentID, &item.DeploymentStatus, &item.Message, &item.RemoveRevision, &item.Attempts, &item.Ready)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return item, nil
 	}

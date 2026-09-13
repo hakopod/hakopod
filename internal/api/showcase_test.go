@@ -172,6 +172,41 @@ func TestShowcaseDoesNotRetrofitExistingInstallations(t *testing.T) {
 	})
 }
 
+func TestShowcaseHonorsDatabaseRetryDeadline(t *testing.T) {
+	db := sourceDatabase(t)
+	db.ShowcaseEnabled = true
+	owner := showcaseOwner(t, db)
+	ctx := context.Background()
+	item, err := db.Showcase(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.RequestShowcaseRemoval(ctx, owner, item.Revision, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE showcase SET next_attempt_at=now()+interval '1 hour' WHERE singleton"); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Store: db}
+	if err = server.processShowcase(ctx); err != nil {
+		t.Fatal(err)
+	}
+	item, err = db.Showcase(ctx)
+	if err != nil || item.State != "removing" || item.Ready {
+		t.Fatal("worker ignored the database retry deadline", item.State, item.Ready, err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE showcase SET next_attempt_at=now() WHERE singleton"); err != nil {
+		t.Fatal(err)
+	}
+	if err = server.processShowcase(ctx); err != nil {
+		t.Fatal(err)
+	}
+	item, err = db.Showcase(ctx)
+	if err != nil || item.State != "removed" || item.ApplicationID != "" {
+		t.Fatal("due cancellation did not complete", item.State, item.ApplicationID, err)
+	}
+}
+
 func TestShowcaseAcceptanceMarkerFailureRollsBackAllDesiredState(t *testing.T) {
 	db := sourceDatabase(t)
 	db.ShowcaseEnabled = true
