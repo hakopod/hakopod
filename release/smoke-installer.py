@@ -120,7 +120,9 @@ def main():
         print(result.stdout, end=''); print(result.stderr, end='')
         if result.returncode: raise SystemExit('Linux smoke failed; inspect ' + str(upstream / 'last-smoke.log'))
         observation = next(json.loads(line) for line in result.stdout.splitlines() if line.startswith('{"result": "PASS"'))
-        report['checks'].append(dict(architecture=arch, passed=True, observed_dashboard_rss_kib=observation['dashboard_rss_kib'],
+        host_arch = 'arm64' if platform.machine() in ('arm64', 'aarch64') else 'amd64'
+        report['checks'].append(dict(architecture=arch, execution='native' if arch == host_arch else 'emulated',
+            passed=True, observed_dashboard_rss_kib=observation['dashboard_rss_kib'],
             tested=['strict inputs and malicious archives', 'dry-run without service mutation', 'umask077 with separate unprivileged users',
                     'actual Go CLI/K3s/Helm/Node binaries', 'systemd unit verification', 'HAProxy host-port template',
                     'packaged dashboard SSR/static/auth boundaries and observed RSS', 'resume preserves secrets and refuses missing established keys']))

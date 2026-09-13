@@ -37,7 +37,7 @@ class PublicationTest(unittest.TestCase):
             (directory / 'SHA256SUMS').write_text(publication.manifest(directory))
             report = {'artifact_sha256': {'artifact.tar.gz': hashlib.sha256(b'fixture').hexdigest()}}
             for arch in ('amd64', 'arm64'):
-                report['checks'] = [{'architecture': arch, 'passed': True}]
+                report['checks'] = [{'architecture': arch, 'passed': True, 'execution': 'native'}]
                 (directory / ('installer-smoke-' + arch + '.json')).write_text(json.dumps(report))
             publication.finalize(directory)
             publication.verify(directory)
@@ -47,6 +47,12 @@ class PublicationTest(unittest.TestCase):
             # itself, rather than the ordinary checksum test, must reject it.
             (directory / 'SHA256SUMS').write_text(publication.manifest(directory))
             with self.assertRaisesRegex(ValueError, 'Smoke evidence'):
+                publication.finalize(directory)
+            report['artifact_sha256']['artifact.tar.gz'] = hashlib.sha256(b'fixture').hexdigest()
+            report['checks'][0]['execution'] = 'emulated'
+            (directory / 'installer-smoke-arm64.json').write_text(json.dumps(report))
+            (directory / 'SHA256SUMS').write_text(publication.manifest(directory))
+            with self.assertRaisesRegex(ValueError, 'native Linux/arm64'):
                 publication.finalize(directory)
 
 
