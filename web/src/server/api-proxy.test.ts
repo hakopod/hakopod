@@ -105,3 +105,47 @@ test('alarm proxy paths retain authentication, CSRF and exact endpoint boundarie
   }
   assert.equal(calls, 0)
 })
+
+test('delivery and certificate routes preserve session and CSRF boundaries', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return Response.json({ items: [] })
+  })
+  for (const suffix of ['delivery', 'certificates']) {
+    const path = `applications/app-a/services/smtp/${suffix}`
+    const response = await proxy({ request: request(path), params: { _splat: path } })
+    assert.equal(response.status, 200)
+    assert.equal(
+      (await proxy({ request: request(path, 'GET', undefined, false), params: { _splat: path } }))
+        .status,
+      401,
+    )
+  }
+  const path = 'applications/app-a/services/smtp/certificates'
+  assert.equal(
+    (
+      await proxy({
+        request: request(path, 'POST', { hostname: 'mail.example.test', from_ingress: true }),
+        params: { _splat: path },
+      })
+    ).status,
+    200,
+  )
+  assert.equal(
+    (
+      await proxy({
+        request: request(path, 'POST', {}, true, 'https://unrelated.test'),
+        params: { _splat: path },
+      })
+    ).status,
+    403,
+  )
+  assert.equal(
+    (await proxy({ request: request(path + '/raw-key'), params: { _splat: path + '/raw-key' } }))
+      .status,
+    404,
+  )
+  assert.equal(calls, 3)
+})

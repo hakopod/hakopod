@@ -39,6 +39,9 @@ const serviceTabs = [
   'network',
   'settings',
 ]
+const ServiceDelivery = lazy(() =>
+  import('./service-delivery').then((m) => ({ default: m.ServiceDelivery })),
+)
 const ServiceTLS = lazy(() => import('./tls-settings').then((m) => ({ default: m.ServiceTLS })))
 
 const readRuntime = (applicationId: string, service: string, signal: AbortSignal) =>
@@ -281,10 +284,14 @@ export function ServiceDetail({
                   <dt>Exposure</dt>
                   <dd>
                     {service.public
-                      ? 'Public HTTP'
-                      : hasPorts
-                        ? 'Application private network'
-                        : 'No inbound port'}
+                      ? service.public_tcp?.length
+                        ? 'Public HTTP and TCP'
+                        : 'Public HTTP'
+                      : service.public_tcp?.length
+                        ? 'Public TCP'
+                        : hasPorts
+                          ? 'Application private network'
+                          : 'No inbound port'}
                   </dd>
                 </div>
                 <div>
@@ -481,10 +488,14 @@ export function ServiceDetail({
                 <dt>Exposure</dt>
                 <dd>
                   {service.public
-                    ? 'Public HTTP'
-                    : hasPorts
-                      ? 'Private service'
-                      : 'Background worker'}
+                    ? service.public_tcp?.length
+                      ? 'Public HTTP and TCP'
+                      : 'Public HTTP'
+                    : service.public_tcp?.length
+                      ? 'Public TCP'
+                      : hasPorts
+                        ? 'Private service'
+                        : 'Background worker'}
                 </dd>
               </div>
               <div>
@@ -618,6 +629,9 @@ export function ServiceDetail({
           </Note>
           <Suspense fallback={<Loading rows={2} />}>
             <ServiceTLS application={application} service={serviceName} />
+          </Suspense>
+          <Suspense fallback={<Loading rows={2} />}>
+            <ServiceDelivery application={application} serviceName={serviceName} />
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="environment" className="tab-content service-environment-tab">
