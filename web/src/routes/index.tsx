@@ -4,7 +4,6 @@ import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Badge, Tooltip } from '../components/ui/surfaces'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
@@ -70,24 +69,32 @@ function Applications() {
   )
   const next = applications.data?.next_cursor
   return (
-    <div className="ops-page">
+    <div className="ops-page application-list-page">
       <Suspense fallback={null}>
         <SampleBanner />
       </Suspense>
       <PageHeader
-        eyebrow="WORKSPACE / APPLICATIONS"
         title="Applications"
-        description={`${scope.project} / ${scope.environment} · Observed workloads and current revisions.`}
         action={
           scope.can('deployments:write') && (
             <div className="toolbar-actions">
-              <Link to="/builds" className="button button-secondary">
+              <Link
+                to="/builds"
+                className="button button-secondary"
+                aria-label="Deploy from source"
+                title="Deploy from source"
+              >
                 <Icon name="branch" size={14} />
-                From source
+                <span className="app-action-label">From source</span>
               </Link>
-              <Button variant="primary" onClick={() => void navigate({ to: '/applications/new' })}>
+              <Button
+                variant="primary"
+                aria-label="New application"
+                onClick={() => void navigate({ to: '/applications/new' })}
+              >
                 <Icon name="plus" size={15} />
-                New application
+                <span className="app-action-label">New application</span>
+                <span className="app-action-short-label">New</span>
               </Button>
             </div>
           )
@@ -193,16 +200,16 @@ function Applications() {
               </thead>
               <tbody>
                 {filtered.map((app) => (
-                  <tr key={app.id}>
+                  <tr key={app.id} className="ops-linked-row">
                     <td>
                       <div className="ops-object">
                         <Status value={app.observed?.status || 'not observed'} small />
                         <Link
                           to="/applications/$applicationId"
                           params={{ applicationId: app.id }}
-                          className="ops-object-name interactive"
+                          className="ops-object-name ops-row-link"
+                          aria-label={`Open ${app.name}`}
                         >
-                          <Brackets />
                           {app.name}
                         </Link>
                       </div>
@@ -228,15 +235,7 @@ function Applications() {
                       </time>
                     </td>
                     <td>
-                      <Button asChild size="icon" variant="ghost">
-                        <Link
-                          to="/applications/$applicationId"
-                          params={{ applicationId: app.id }}
-                          aria-label={`Open ${app.name}`}
-                        >
-                          <Icon name="chevron" size={16} />
-                        </Link>
-                      </Button>
+                      <Icon name="chevron" size={16} />
                     </td>
                   </tr>
                 ))}

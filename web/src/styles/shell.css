@@ -9,13 +9,13 @@
 }
 .hako-global-header {
   display: grid;
-  grid-template-columns: 140px minmax(240px, 360px) minmax(0, 1fr) auto;
+  grid-template-columns: 124px auto minmax(0, 1fr) auto;
   grid-template-areas: 'brand scope nav tools';
   min-height: 56px;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
-  padding: 0 24px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--hairline);
   background: var(--card);
   position: relative;
@@ -31,17 +31,17 @@
 }
 .hako-brand-group {
   grid-area: brand;
-  gap: 12px;
+  gap: 8px;
 }
 .hako-wordmark {
   display: block;
-  flex: 0 0 140px;
-  width: 140px;
+  flex: 0 0 124px;
+  width: 124px;
   padding: 2px 0;
 }
 .hako-wordmark img {
   display: block;
-  width: 140px;
+  width: 124px;
   height: 24px;
   object-fit: contain;
 }
@@ -59,8 +59,8 @@
 }
 .hako-global-nav {
   grid-area: nav;
-  justify-content: center;
-  gap: 18px;
+  justify-content: flex-start;
+  gap: 16px;
   align-self: stretch;
 }
 .hako-nav-link {
@@ -68,7 +68,7 @@
   align-items: center;
   gap: 12px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
   margin-block: 12px;
   padding-block: 4px;
@@ -83,7 +83,7 @@
 .hako-header-tools {
   grid-area: tools;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 6px;
 }
 .hako-docs-link {
   font-size: 13px;
@@ -101,16 +101,21 @@
 }
 .hako-scope-fields {
   grid-area: scope;
-  gap: 8px;
+  gap: 4px;
 }
 .hako-scope-fields > svg {
   flex-shrink: 0;
   color: var(--muted);
 }
 .hako-scope-select {
-  flex: 1 1 0;
-  max-width: 200px;
+  flex: 0 1 auto;
   min-width: 0;
+}
+.hako-project-select {
+  width: 128px;
+}
+.hako-environment-select {
+  width: 116px;
 }
 .hako-scope-select select {
   border: 0;
@@ -121,6 +126,7 @@
   height: 32px;
   width: 100%;
   max-width: 100%;
+  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--foreground);
@@ -571,7 +577,7 @@ html[data-accent] .button-primary:hover {
   grid-template-columns: 18px minmax(0, 1fr) 15px;
   align-items: center;
   gap: 14px;
-  padding: 20px 0;
+  padding: 14px 16px;
   border: 0;
   border-bottom: 1px solid var(--hairline);
   background: transparent;
@@ -580,7 +586,7 @@ html[data-accent] .button-primary:hover {
 }
 .hako-guidance-actions strong {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 14px;
   font-weight: 500;
 }
@@ -847,33 +853,45 @@ html[data-accent] .button-primary:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 24px;
-  padding-bottom: 24px;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--hairline);
 }
 .hako-page-heading.page-heading h1 {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.045em;
 }
+.hako-page-heading-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hako-page-heading .hako-heading-help.button {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  color: var(--muted);
+}
 .hako-page-heading.page-heading p {
-  font-size: 14px;
-  line-height: 1.6;
-  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
 }
 .hako-page-heading.page-heading .eyebrow {
   font: 11px var(--font-mono);
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .hako-page-heading.page-heading .heading-action {
   align-self: center;
   padding: 0;
 }
 .hako-page-heading.page-heading .button {
-  height: 36px;
+  height: 32px;
 }
 .hako-note.note {
   border: 1px solid var(--hairline);
@@ -1090,42 +1108,22 @@ html[data-accent] .button-primary:hover {
     opacity: 1;
   }
 }
-@media (max-width: 1439px) {
-  .hako-shell {
-    --hako-header-height: 96px;
-  }
+@media (max-width: 1199px) {
   .hako-global-header {
-    grid-template-columns: 140px minmax(0, 1fr) auto;
-    grid-template-areas: 'brand scope tools' 'nav nav nav';
-    grid-template-rows: 52px 44px;
-    gap: 0 24px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'brand scope tools';
   }
   .hako-global-nav {
-    justify-content: flex-start;
-    gap: 28px;
-    border-top: 1px solid var(--hairline);
+    display: none;
   }
-  .hako-nav-link {
-    margin-block: 6px;
-  }
-  .hako-header-tools {
-    gap: 8px;
-  }
-}
-@media (max-width: 1023px) {
-  .hako-global-header {
-    padding-inline: 16px;
-    gap: 16px;
-  }
-  .hako-global-nav {
-    gap: 24px;
-  }
-  .hako-nav-link {
-    font-size: 13px;
+  .hako-mobile-toggle.button {
+    display: inline-flex;
   }
   .hako-docs-link {
     display: none;
   }
+}
+@media (max-width: 1023px) {
   .hako-form-page .form-page-layout.with-help {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1165,37 +1163,28 @@ html[data-accent] .button-primary:hover {
 }
 @media (max-width: 767px) {
   .hako-shell {
-    --hako-header-height: 100px;
+    --hako-header-height: 88px;
   }
   .hako-global-header {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: 'brand tools' 'scope scope';
-    grid-template-rows: 52px 48px;
-    gap: 0 12px;
-    padding: 0 16px;
-  }
-  .hako-global-nav {
-    display: none;
-  }
-  .hako-mobile-toggle.button {
-    display: inline-flex;
+    grid-template-rows: 48px 40px;
+    gap: 0 8px;
+    padding: 0 12px;
   }
   .hako-brand-group {
-    gap: 8px;
+    gap: 6px;
   }
-  .hako-command-trigger.button {
-    display: none;
+  .hako-wordmark {
+    flex-basis: 108px;
+    width: 108px;
+  }
+  .hako-wordmark img {
+    width: 108px;
   }
   .hako-scope-fields {
-    gap: 8px;
-    min-height: 48px;
+    min-height: 40px;
     border-top: 1px solid var(--hairline);
-  }
-  .hako-scope-fields > svg:first-child {
-    display: none;
-  }
-  .hako-scope-select {
-    max-width: none;
   }
   .hako-scope-select select {
     font-size: 12px;

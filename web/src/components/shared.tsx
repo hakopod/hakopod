@@ -4,6 +4,7 @@ import { Skeleton } from '@hakopod/hatch-ui/components/skeleton'
 import { Status as HatchStatus, type StatusTone } from '@hakopod/hatch-ui/components/status'
 import { Icon } from './icons'
 import { Button } from './ui/button'
+import { Tooltip } from './ui/surfaces'
 import { APIError, message } from '../lib/api'
 
 export function Status({ value, small }: { value?: string; small?: boolean }) {
@@ -137,10 +138,21 @@ export function PageHeader({
 }) {
   return (
     <header className="page-heading hako-page-heading">
-      <div>
-        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+      <div className="hako-page-heading-title">
+        {eyebrow && <span className="sr-only">{eyebrow}</span>}
         <h1>{title}</h1>
-        {description && <p>{description}</p>}
+        {description && (
+          <Tooltip content={description} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hako-heading-help"
+              aria-label={`About ${title}`}
+            >
+              <Icon name="info" size={14} />
+            </Button>
+          </Tooltip>
+        )}
       </div>
       {action && <div className="heading-action">{action}</div>}
     </header>

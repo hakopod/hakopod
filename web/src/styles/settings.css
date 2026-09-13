@@ -136,7 +136,7 @@
   height: 32px;
 }
 .provider-section-title {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .provider-section-title h2 {
   margin-bottom: 6px;
@@ -145,6 +145,30 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.settings-content .integration-grid {
+  gap: 0;
+  border: 1px solid var(--hairline);
+}
+.settings-content .integration-card {
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.settings-content .integration-card:last-child {
+  border-bottom: 0;
+}
+.settings-content .integration-card > div {
+  min-width: 0;
+}
+.settings-content .integration-card h2 {
+  margin-bottom: 4px;
+}
+.settings-content .integration-card p {
+  font-size: 13px;
+  line-height: 1.4;
 }
 .git-connection-panel .auth-form {
   margin-top: 28px;

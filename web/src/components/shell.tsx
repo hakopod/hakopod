@@ -166,6 +166,8 @@ function Workspace({
   const [commandOpen, setCommandOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const navigationTrigger = useRef<HTMLButtonElement>(null)
+  const desktopNavigation = useRef<HTMLElement>(null)
   const accountTrigger = useRef<HTMLButtonElement>(null)
   const [sessionError, setSessionError] = useState('')
   const license = useLicense()
@@ -177,7 +179,7 @@ function Workspace({
         setCommandOpen((open) => !open)
       }
     }
-    const desktop = window.matchMedia('(min-width: 768px)')
+    const desktop = window.matchMedia('(min-width: 1200px)')
     const onResize = () => {
       if (desktop.matches) setMobileOpen(false)
     }
@@ -256,6 +258,7 @@ function Workspace({
               variant="ghost"
               size="icon"
               className="hako-mobile-toggle"
+              ref={navigationTrigger}
               aria-label="Open navigation"
               aria-controls="workspace-navigation"
               aria-expanded={mobileOpen}
@@ -268,21 +271,21 @@ function Workspace({
                 className="hako-wordmark-dark"
                 src="/brand/hakopod-horizontal-paper.svg"
                 alt=""
-                width="140"
+                width="124"
               />
               <img
                 className="hako-wordmark-light"
                 src="/brand/hakopod-horizontal-ink.svg"
                 alt=""
-                width="140"
+                width="124"
               />
             </Link>
           </div>
           <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
-            <Icon name="box" size={17} />
-            <div className="hako-scope-select interactive">
+            <div className="hako-scope-select hako-project-select interactive">
               <select
                 aria-label="Project"
+                title={currentProject?.display_name || project || 'Select a project'}
                 value={project}
                 disabled={Boolean(identity.project)}
                 onChange={(event) =>
@@ -305,9 +308,10 @@ function Workspace({
               <Brackets />
             </div>
             <Icon name="chevron" size={12} />
-            <div className="hako-scope-select interactive">
+            <div className="hako-scope-select hako-environment-select interactive">
               <select
                 aria-label="Environment"
+                title={environment || 'Select an environment'}
                 value={environment}
                 disabled={Boolean(identity.environment) || !project}
                 onChange={(event) => changeScope({ project, environment: event.target.value })}
@@ -338,7 +342,7 @@ function Workspace({
               </Tooltip>
             )}
           </div>
-          <nav className="hako-global-nav" aria-label="Main navigation">
+          <nav className="hako-global-nav" aria-label="Main navigation" ref={desktopNavigation}>
             {links()}
           </nav>
           <div className="hako-header-tools">
@@ -477,7 +481,21 @@ function Workspace({
         </footer>
       </div>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent className="hako-mobile-sheet">
+        <SheetContent
+          className="hako-mobile-sheet"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            if (navigationTrigger.current?.getClientRects().length)
+              navigationTrigger.current.focus()
+            else {
+              const link =
+                desktopNavigation.current?.querySelector<HTMLAnchorElement>(
+                  'a[aria-current="page"]',
+                ) || desktopNavigation.current?.querySelector<HTMLAnchorElement>('a')
+              link?.focus()
+            }
+          }}
+        >
           <SheetHeader>
             <SheetTitle>Navigation</SheetTitle>
             <SheetDescription>Applications and installation controls.</SheetDescription>
@@ -486,9 +504,20 @@ function Workspace({
             <nav
               id="workspace-navigation"
               className="hako-mobile-links"
-              aria-label="Mobile navigation"
+              aria-label="Workspace navigation"
             >
               {links(true)}
+              <a
+                className="hako-nav-link interactive"
+                href="https://github.com/hakopod/hakopod/blob/main/docs/cockpit.md"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMobileOpen(false)}
+              >
+                <Icon name="book" size={18} />
+                <span>Documentation</span>
+                <Brackets />
+              </a>
             </nav>
           </SheetBody>
         </SheetContent>

@@ -12,9 +12,11 @@
   justify-self: start;
 }
 .ops-page > .hako-page-heading {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
-.ops-page > .hako-page-heading h1,
+.ops-page > .hako-page-heading h1 {
+  font-size: 20px;
+}
 .ops-page .application-heading h1 {
   font-size: 24px;
 }
@@ -199,6 +201,10 @@
 .ops-table .ops-linked-row:has(.ops-row-link:focus-visible) {
   background: var(--surface-2);
 }
+.ops-table .ops-linked-row:has(.ops-row-link:focus-visible) {
+  outline: 2px solid var(--foreground);
+  outline-offset: -2px;
+}
 .ops-table .ops-row-link {
   position: static;
 }
@@ -211,6 +217,60 @@
 .ops-table .ops-linked-row button {
   position: relative;
   z-index: 2;
+}
+.application-list-page .app-action-short-label {
+  display: none;
+}
+.application-list-page > .hako-page-heading {
+  min-height: 44px;
+  padding-bottom: 10px;
+}
+.application-list-page .heading-action .toolbar-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.application-list-page .ops-summary {
+  margin-bottom: 16px;
+}
+.application-list-page .ops-summary > div {
+  padding: 12px 16px;
+}
+.application-list-page .ops-summary dd {
+  font-size: 20px;
+  margin: 4px 0;
+}
+.application-list-page .ops-resource-list .resource-toolbar {
+  padding: 10px 12px;
+}
+.application-list-page .resource-footnote {
+  padding: 10px 16px;
+}
+.application-list-page .ops-search-input,
+.application-list-page .ops-search-input input,
+.application-list-page .resource-toolbar .compact-select {
+  height: 36px;
+}
+@media (max-width: 767px) {
+  .application-list-page > .hako-page-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+}
+@media (max-width: 600px) {
+  .application-list-page > .hako-page-heading h1 {
+    font-size: 18px;
+  }
+  .application-list-page .app-action-label {
+    display: none;
+  }
+  .application-list-page .app-action-short-label {
+    display: inline;
+  }
+  .application-list-page .heading-action .button {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+  }
 }
 .ops-object {
   display: flex;

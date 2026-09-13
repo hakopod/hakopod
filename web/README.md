@@ -4,6 +4,10 @@ TanStack Start presentation layer for the Go management API. Go owns authorizati
 validation, plans, deployments, and reconciliation. The dashboard never connects to
 Kubernetes or PostgreSQL.
 
+Keep the interface compact: one desktop header row, narrow workspace selectors,
+short page headings and closely grouped controls. Use inspection panels for
+secondary detail. Preserve readable type, keyboard access and usable touch targets.
+
 ## Run
 
 Use Node.js 22.12 or newer and pnpm 10.7.1:
