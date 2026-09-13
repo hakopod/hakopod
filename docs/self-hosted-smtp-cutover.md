@@ -30,6 +30,8 @@ The isolated `k3d-hakopod-dev` fixtures verified:
 - STARTTLS validates certificates and rejects a wrong hostname.
 - Ingress certificate renewal changes the certificate actually served by SMTP
   without changing the accepted application revision.
+- A reviewed ingress certificate replacement completes its backend restart
+  before the deployment reports success.
 - Invalid replacement key data keeps the previous working mount and reports
   unhealthy delivery state.
 - Both rolling and Recreate renewal paths preserve nonroot, read-only certificate

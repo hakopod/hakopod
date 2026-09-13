@@ -106,6 +106,24 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 			if err := c.applyIngress(ctx, target, name, svc); err != nil {
 				return c.observationAfterFailure(target), err
 			}
+			// A reviewed ingress certificate change can select a new source.
+			// Finish its backend restart before declaring this release ready.
+			automatic := false
+			for _, mount := range svc.CertificateMounts {
+				automatic = automatic || mount.Source == "ingress"
+			}
+			if automatic {
+				if err := c.RenewBackendCertificates(ctx, target, emit, name); err != nil {
+					return c.observationAfterFailure(target), err
+				}
+				current, err := c.kube.AppsV1().Deployments(Namespace(target.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
+				if err != nil {
+					return c.observationAfterFailure(target), err
+				}
+				if err = c.waitReady(ctx, target, name, current.Generation); err != nil {
+					return c.observationAfterFailure(target), err
+				}
+			}
 		}
 		emit(Event{Type: "ready", Service: name, Message: "All desired replicas are ready on the new revision"})
 	}
@@ -118,7 +136,11 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
-	return c.Observe(ctx, target)
+	observed, err := c.Observe(ctx, target)
+	if err == nil && observed.Status != "healthy" {
+		err = fmt.Errorf("release did not remain healthy at final observation")
+	}
+	return observed, err
 }
 
 func (c *Client) observationAfterFailure(target Target) Observation {
