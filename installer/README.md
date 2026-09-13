@@ -10,13 +10,65 @@ This installer installs a dedicated, single-server Hakopod on **Ubuntu 24.04/26.
 
 Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state, conflicting ports, service accounts or installer paths are refused. An existing installation can be resumed only with its original configuration, ownership marker and artifact bytes. The installer does not adopt another PostgreSQL database, cluster, or Helm installation. It does not change DNS, your firewall, swap configuration, SSH access, or OS package repositories. No uninstaller or automatic data deletion is provided.
 
+## Prebuilt releases
+
+`scripts/installer.sh` is the POSIX bootstrap for prebuilt releases. The first
+planned release is `0.1.0-alpha.1`. The bootstrap pins that version by default;
+it does not use GitHub's `latest` endpoint, which excludes prereleases. A tag,
+successful release workflow and published assets are required before downloads
+work. The `hakopod.com` endpoint also requires separate website deployment.
+
+Once those publication steps are complete, the intended command on a fresh,
+root-owned Linux server is:
+
+```sh
+curl -fsSL https://hakopod.com/scripts/installer.sh | sh
+```
+
+This URL is a deployment target, not a claim that the domain currently serves
+the installer. Until then, use the checked-out script with a published release,
+or the local artifact workflow below. To inspect a published bootstrap before
+running it:
+
+```sh
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.1/installer.sh \
+  -o installer.sh
+sh installer.sh --help
+sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json --dry-run
+sudo sh installer.sh --version 0.1.0-alpha.1 --config /path/to/install.json
+```
+
+The bootstrap requires Linux amd64 or arm64, Python 3.10+, Bash and system CA
+certificates. It downloads only the selected architecture, the dashboard and
+the small installer kit. Downloads are sequential with size/time bounds; the
+SHA256 manifest is verified before extracting or executing the kit. All
+redirects stay on HTTPS. The extractor rejects traversal, links, special files
+and oversized kits. Temporary downloads are removed when the installer exits.
+No compiler or package manager is used on the target to build Hakopod.
+
+Interactive input comes from `/dev/tty`, so the script pipe is never consumed
+as answers. Without a terminal, pass an explicit `--config` and `--dry-run` or
+`--yes`. The config version must match `--version`; when omitted, the bootstrap
+uses the version in the config. `--resume --config /etc/hakopod/config.json`
+downloads that same version and delegates to the existing ownership checks.
+Resume does not upgrade or replace installation inputs.
+
+Checksums downloaded with the archive establish consistency, not publisher
+identity. Releases also publish GitHub provenance attestations. For an
+independent provenance check, download an asset and run
+`gh attestation verify FILE --repo hakopod/hakopod` on an operator machine.
+The small bootstrap does not install GitHub CLI. See
+[release preparation](../release/README.md) for the workflow and remaining host
+acceptance requirements.
+
 ## Build and review local artifacts
 
-No release has been published and no `hakopod.com` infrastructure is assumed. Build the Go release first, then the dashboard/installer kit from stable source:
+Build the Go release first, then the dashboard/installer kit from stable source:
 
 ```sh
 pnpm --dir web install --frozen-lockfile
-python3 release/build.py
+python3 release/build.py --version 0.1.0-dev
 python3 release/build-installer.py --version 0.1.0-dev
 ```
 

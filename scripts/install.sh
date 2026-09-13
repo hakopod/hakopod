@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
-# A dedicated Linux host installer. Never pipe an unreviewed remote script to root.
+# A dedicated Linux host installer, also used by the verified release bootstrap.
 set -euo pipefail
 set +x
 umask 077
 
 bundle_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 helper="$bundle_root/installer/host.py"
-config_path='' artifact_dir='' target_arch='' dry_run=false assume_yes=false resume=false input_tmp=''
+config_path='' artifact_dir='' target_arch='' release_version='' dry_run=false assume_yes=false resume=false input_tmp=''
 die() { printf 'Installer: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'EOF'
 Usage: bash scripts/install.sh --artifact-dir DIR [--config FILE] [--dry-run]
-       [--arch amd64|arm64] [--resume] [--yes]
+       [--arch amd64|arm64] [--version VERSION] [--resume] [--yes]
 
 Without --config, prompts for operator-owned domains, addresses and options.
 --dry-run validates configuration and local release checksums without installation.
 --yes accepts the printed plan for unattended installs; it never supplies identity.
 --resume requires the original config, artifact bytes and ownership marker.
-No released download URL is assumed. See installer/README.md for prerequisites.
+--version selects the already verified release and must match explicit config.
+See installer/README.md for prerequisites and the prebuilt release bootstrap.
 EOF
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --config|--artifact-dir|--arch)
+    --config|--artifact-dir|--arch|--version)
       [ "$#" -ge 2 ] || die "$1 requires a value"
-      case "$1" in --config) config_path=$2;; --artifact-dir) artifact_dir=$2;; --arch) target_arch=$2;; esac
+      case "$1" in --config) config_path=$2;; --artifact-dir) artifact_dir=$2;; --arch) target_arch=$2;; --version) release_version=$2;; esac
       shift 2;;
     --dry-run) dry_run=true; shift;;
     --yes) assume_yes=true; shift;;
@@ -60,7 +61,7 @@ if [ -z "$config_path" ]; then
   dashboard_memory_mib='' postgres_memory_mib='' max_pods='' deployment_mode='' public_tcp_ports=''
   prompt deployment_mode 'Deployment mode: self-hosted or managed-cloud' 'self-hosted'
   case "$deployment_mode" in self-hosted|managed-cloud) ;; *) die 'deployment_mode must be self-hosted or managed-cloud';; esac
-  prompt version 'Local Hakopod release version' '0.1.0-dev'
+  if [ -n "$release_version" ]; then version=$release_version; else prompt version 'Hakopod release version' '0.1.0-dev'; fi
   prompt app_domain 'Operator-owned application DNS domain (for example apps.example.com)' ''
   prompt node_ip 'This server IPv4 address, reachable by future workers' ''
   prompt node_name 'Kubernetes node name' 'hakopod-server'
@@ -105,6 +106,15 @@ c['public_tcp_ports']=[int(port.strip()) for port in c['public_tcp_ports'].split
 Path(sys.argv[1]).write_text(json.dumps(c)+'\n')
 PY
   config_path=$input_tmp
+fi
+if [ -n "$release_version" ]; then
+  python3 - "$config_path" "$release_version" <<'PY'
+import json, sys
+from pathlib import Path
+if Path(sys.argv[1]).stat().st_size > 65536: raise SystemExit('Configuration exceeds 64 KiB')
+with open(sys.argv[1]) as file: config = json.load(file)
+if config.get('version', '0.1.0-dev') != sys.argv[2]: raise SystemExit('Installer version does not match configuration')
+PY
 fi
 args=(--config "$config_path" --artifact-dir "$artifact_dir")
 if [ -n "$target_arch" ]; then args+=(--arch "$target_arch"); fi
