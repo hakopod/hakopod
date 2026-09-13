@@ -43,3 +43,20 @@ before service guarantees can be offered.
 The private toolkit has its own commercial license. Product Pro entitlements and
 the private license issuer remain separate; no issuer secrets are distributed
 with cloud provisioning code.
+
+## Private Cloud control service
+
+The same private repository now also contains `hosted/`, a separate control
+service for two or three allowlisted testers, and `deploy/hosted-gcp/`, its GCP
+deployment root. This beta connects one project/environment on a node the
+customer supplies. Free includes one owned workspace, one node connection and
+one team with up to five members; the tester allowlist is tighter. No compute is
+included, and application traffic goes directly to that node.
+
+The dashboard, scoped gateway, local Firestore integration, independent UI and
+access reviews, Terraform mock tests and private production-image build have
+passed. Real Firebase accounts, IAM/Secret Manager access, Cloud Run memory and
+a remote connected-node deployment remain unverified. No real GCP plan or apply
+has run. The private repository's `docs/hosted-cloud-beta.md` records the exact
+scope and setup requirements. Public releases contain neither this service nor
+its frontend.

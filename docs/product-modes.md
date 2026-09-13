@@ -3,7 +3,9 @@
 Hakopod Cloud focuses on deploying small applications from Git, serving them
 over HTTP/HTTPS, attaching custom domains and connecting private services.
 Customers choose predictable resource limits without managing ingress ports or
-nodes. Public SMTP servers, SFTP and other custom public protocols belong on
+nodes in the planned managed-compute offering. The initial private beta instead
+connects one customer-provided node and includes no compute. Public SMTP servers,
+SFTP and other custom public protocols belong on
 self-hosted installations. A shared SMTP gateway is outside Cloud's scope.
 
 The public repository implements the deployment engine and the installation
@@ -18,9 +20,9 @@ create a production-ready shared hosting platform.
 | Private service ports and scoped virtual networks | Available | Core offering |
 | Public TCP, including SMTP and SFTP | Administrator-provisioned ports | Rejected by installation policy |
 | Node access, host terminals and shared ingress configuration | Authorized installation operators | Platform operations only |
-| Resource capacity | Operator-owned capacity and workload profiles | Plan limits; account-level enforcement is still required |
-| Public signup | Disabled in public release binaries; setup and explicit invites remain available | Cloud build plus explicit operator opt-in |
-| Team features | Signed Pro entitlements | Commercial packaging; no exception to networking policy |
+| Resource capacity | Operator-owned capacity and workload profiles | Initial node/profile/replica limits enforced; managed-compute accounting remains planned |
+| Public signup | Disabled in public release binaries; setup and explicit invites remain available | Private beta accepts allowlisted, verified accounts only |
+| Team features | Basic teams, invitations and fixed roles are Free; actor audit history is paid | Initial Free beta includes one team with up to five members; tester allowlist is tighter |
 
 Customer-owned Bring Your Own Cloud is a dedicated self-hosted installation on
 AWS, GCP or Azure. Paid operations do not turn it into the shared Hakopod Cloud
@@ -43,7 +45,7 @@ restrictions and switching an existing installation to managed-cloud mode.
 
 Public self-hosted binaries cannot enable public signup through environment or
 operator TOML settings, including a mode override. A Cloud build must separately
-opt in to managed-cloud mode and signup. Initial owner setup and licensed
+opt in to managed-cloud mode and signup. Initial owner setup and Free team
 invitations remain available under their existing authorization checks. See
 [accounts](accounts.md) for the build policy and enrollment paths.
 
@@ -54,10 +56,11 @@ backend for arbitrary TCP traffic. Backend certificate mounts and approved AWS
 identities retain their service scope and do not grant public exposure.
 
 The engine applies fixed [CPU and memory profiles](toml.md), replica bounds and
-per-application Kubernetes quotas. Those quotas are technical ceilings, not
-account subscriptions or capacity reservations. Separate applications receive
-separate quotas, and GPU workloads use higher ceilings. Selecting managed-cloud
-mode currently does not restrict those profiles or enforce an account budget.
+per-application Kubernetes quotas. Managed-cloud mode restricts profiles and
+replicas as described below, and rejects GPU workloads. Separate applications
+receive separate quotas. These are technical ceilings, not account subscriptions
+or capacity reservations; managed-compute metering and account budgets remain
+planned.
 
 Use the [self-hosted operator example](../examples/hakopod-server.toml) or the
 [managed-cloud operator example](../examples/hakopod-cloud-server.toml).

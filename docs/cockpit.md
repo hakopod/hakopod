@@ -13,7 +13,7 @@ For local development, `scripts/local-auth.py` creates this proof and a separate
 MFA encryption key under `.local`, without creating a user. `local-up.sh` calls it.
 Existing bootstrap administrators can migrate through the same setup screen.
 
-Team creation and email invitations require a valid paid license. Team membership and
+Team creation, email invitations and fixed roles are included in Free. Team membership and
 project grants are separate: project roles are administrator, developer and
 viewer. Role reductions, disabled accounts and revoked sessions affect current
 API requests and queued deployments. Browser sessions, CLI sessions and CI keys
@@ -31,7 +31,7 @@ Public signup is available only in Cloud-capable builds with managed-cloud mode
 and `HAKOPOD_SIGNUP_ENABLED=true`. Self-hosted binaries keep signup closed while
 allowing first-owner setup and explicit invitations. Email registration verifies
 the address before creating an account. New accounts can accept an
-invitation or create one private personal workspace without paid sharing. The
+invitation or create one private personal workspace, which cannot be shared. The
 forgot-password flow sends a single-use email link and keeps two-factor
 authentication enabled. See [account setup and recovery](accounts.md).
 
