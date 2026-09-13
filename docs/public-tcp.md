@@ -48,7 +48,8 @@ This is an installation setting, not an application TOML field, dashboard
 permission or license feature. A paid license does not enable public TCP in
 managed-cloud mode. Self-hosted Hakopod can run on an AWS, GCP or Azure VM when
 its administrator controls the ingress ports; the hosting provider's name does
-not select the mode.
+not select the mode. This includes customer-owned BYOC installations. See
+[product modes](product-modes.md) for the distinction from Hakopod Cloud.
 
 In self-hosted mode, administrators may provision any available TCP port from
 1 through 65535 except reserved platform ports. The installation allowlist holds
@@ -79,7 +80,9 @@ variable does not close host ports, alter cloud firewalls or retire an external
 SMTP deployment.
 
 The supported controller is HAProxy Technologies Kubernetes Ingress 3.2.15,
-installed as `hakopod-ingress` in `haproxy-controller`. TCP-services ConfigMaps and
+installed as `hakopod-ingress` in `haproxy-controller`, with one to eight ready
+replicas. Larger deployments are rejected during preflight because runtime
+reload inspection is bounded to eight ingress pods. TCP-services ConfigMaps and
 custom namespace filters are incompatible with this owned ingress profile. Existing
 v1 and v3 TCP resources are checked for port conflicts. Resource inventories are
 bounded; excessive counts require operator review rather than a partial scan.
@@ -121,6 +124,7 @@ certificate hostname and chain, authenticated delivery, disallowed sources,
 rollback, and long-session behavior. Keep the existing SMTP deployment until
 certificate mounts and AWS permissions have also passed their acceptance checks.
 
-A shared SMTP gateway that routes by authenticated account or domain would need
-to understand SMTP. It is future work; the current raw TCP proxy does not share
-one public SMTP port between unrelated applications.
+Public SMTP servers, SFTP and other custom public protocols belong on
+self-hosted installations. Hakopod Cloud does not offer a shared SMTP gateway
+or public TCP mappings. The raw TCP proxy assigns each public port to one
+application; it does not route by hostname or SMTP recipient.

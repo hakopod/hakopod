@@ -86,6 +86,13 @@ service lives in the private `hakopod/hakopod-cloud` repository, linked at
 amd64 or arm64. See [cloud deployments](docs/cloud-deployments.md) for scope,
 access and the remaining cloud acceptance tests.
 
+Customer-owned BYOC uses the self-hosted feature set. Hakopod Cloud is the
+planned shared hosting service for Git deployments, HTTP/HTTPS, custom domains
+and private service networking. Public SMTP, SFTP and other custom TCP listeners
+stay on self-hosted installations, whether Free or licensed. See
+[product modes](docs/product-modes.md) for the enforced boundary and remaining
+Cloud launch requirements.
+
 ## Accounts, licensing and components
 
 Deployment and operational tools stay available in Free. Team creation,

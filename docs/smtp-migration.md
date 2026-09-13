@@ -7,8 +7,9 @@ service running until the destination passes the checks below.
 
 Managed-cloud installations do not publish public TCP, including SMTP. Private
 TCP service ports remain available, but this guide is not a public SMTP cutover
-path for that mode. A shared, protocol-aware SMTP gateway is future work and is
-not provided by the current raw TCP proxy.
+path for that mode. Public SMTP hosting belongs on self-hosted installations;
+a shared SMTP gateway is outside Hakopod Cloud's scope. Applications can use
+an external email provider. See [product modes](product-modes.md).
 
 ## Prepare the destination
 

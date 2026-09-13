@@ -5,6 +5,10 @@ Namespaces and NetworkPolicies are authorization boundaries for ordinary
 container traffic; they are not a guarantee against hostile tenants, kernel
 exploits, host-network bypasses, or compromised cluster administrators.
 
+`managed-cloud` mode disables public TCP exposure; it does not change this
+trust boundary or supply account-level resource budgets. See
+[product modes](product-modes.md) for the shared Cloud service's launch requirements.
+
 ## Credential boundaries
 
 API keys contain a random 256-bit secret and lookup ID. PostgreSQL stores a

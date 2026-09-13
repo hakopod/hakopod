@@ -76,6 +76,12 @@ The setting belongs to the server operator. Applications and dashboard roles
 cannot change it, and licenses do not override it. Self-hosted installations may
 run on cloud VMs when the administrator controls their ingress configuration.
 
+Use the [self-hosted example](../examples/hakopod-server.toml) for your own
+installation, including dedicated customer-owned BYOC. The
+[managed-cloud example](../examples/hakopod-cloud-server.toml) explicitly disables
+public TCP for Hakopod Cloud. See [product modes](product-modes.md) for the
+offering boundaries; the mode setting alone is not a complete Cloud service.
+
 Public TCP is unavailable in managed-cloud mode; private TCP ports still work.
 In self-hosted mode, administrators can provision any available non-platform
 TCP port from 1 through 65535, with at most 256 ports in the installation

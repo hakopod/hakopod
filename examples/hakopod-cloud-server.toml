@@ -1,0 +1,30 @@
+# Operator settings for the shared Hakopod Cloud service.
+# Set HAKOPOD_CONFIG_FILE to this file. Environment values override it, so keep
+# HAKOPOD_DEPLOYMENT_MODE=managed-cloud in the service's deployment configuration.
+# See docs/product-modes.md for the remaining Cloud launch requirements.
+schema_version = 1
+
+[server]
+deployment_mode = "managed-cloud"
+public_tcp_ports = []
+listen = "127.0.0.1:8080"
+web_origin = "https://dashboard.example.com"
+app_domain = "apps.example.com"
+ingress_class = "haproxy"
+rollout_timeout = "2m"
+
+# Provision HTTPS and the cert-manager issuer before serving public traffic.
+# tls_issuer = "letsencrypt"
+# Supply credentials in restricted files or the process environment.
+# database_url_file = "/etc/hakopod/secrets/database-url"
+# kubeconfig_file = "/etc/hakopod/kubeconfig"
+
+[auth]
+# Keep signup off until account admission, plan quotas and abuse controls are ready.
+signup_enabled = false
+# setup_secret_file = "/etc/hakopod/secrets/setup"
+# encryption_key_file = "/etc/hakopod/secrets/auth-encryption"
+
+# Account and alarm email uses an external provider, not a public SMTP listener.
+[smtp]
+enabled = false

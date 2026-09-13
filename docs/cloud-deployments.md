@@ -12,10 +12,20 @@ Public builds do not need that repository or its credentials. The parent stores
 only a Git reference; release archives and container builds exclude private source.
 The open-source Linux installer remains available in this repository.
 
+Customer-owned BYOC is a dedicated self-hosted installation, even when Hakopod
+provides paid operations. Use `HAKOPOD_DEPLOYMENT_MODE=self-hosted` or
+`[server] deployment_mode = "self-hosted"`. This differs from Hakopod Cloud,
+the planned shared application-hosting service, which uses `managed-cloud`
+and does not expose public TCP. Licensing does not change that boundary. See
+[product modes](product-modes.md).
+
 The initial toolkit provisions one Ubuntu 24.04 server on AWS, GCP or Azure,
 with amd64 and arm64 presets. Small has 2 vCPU, 8 GiB RAM and a 100 GiB encrypted
 disk. The customer owns the cloud account, Terraform state, data and cloud bill.
 The dashboard is private over SSH, while application ports 80/443 are public.
+The toolkit does not provision custom public TCP ports. Self-hosted mode alone
+does not open them: an administrator must separately provision the ingress,
+allowlist and cloud firewall before using a [public TCP listener](public-tcp.md).
 
 The workflow prepares a separate customer workspace, creates a saved Terraform
 plan for review, requires that plan's digest before applying, then installs

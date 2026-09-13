@@ -3,11 +3,18 @@
 schema_version = 1
 
 [server]
+deployment_mode = "self-hosted"
+public_tcp_ports = []
 listen = "127.0.0.1:8080"
 web_origin = "https://dashboard.example.com"
 app_domain = "apps.example.com"
 ingress_class = "haproxy"
 rollout_timeout = "2m"
+
+# Free, licensed and customer-owned BYOC installations use self-hosted mode.
+# Administrators must provision HAProxy and firewall ports before adding them
+# to public_tcp_ports. Application deployments never provision host ports.
+# For Hakopod Cloud, use hakopod-cloud-server.toml instead.
 
 # Store the database connection string in a 0600 file, or set
 # HAKOPOD_DATABASE_URL through the process environment.

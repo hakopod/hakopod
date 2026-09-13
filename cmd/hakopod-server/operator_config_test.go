@@ -162,29 +162,39 @@ func TestOperatorConfigRejectsWholeFileBeforeEnvironmentMutation(t *testing.T) {
 }
 
 func TestOperatorExampleAndValidatedDefaultApplication(t *testing.T) {
-	example, err := os.ReadFile("../../examples/hakopod-server.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings, err := operatorSettings(example, t.TempDir(), noOperatorEnvironment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings["HAKOPOD_SIGNUP_ENABLED"] != "false" || settings["HAKOPOD_SMTP_ENABLED"] != "false" {
-		t.Fatal("example must leave registration and mail opt-in")
+	for _, example := range []struct{ file, mode string }{
+		{"hakopod-server.toml", "self-hosted"},
+		{"hakopod-cloud-server.toml", "managed-cloud"},
+	} {
+		t.Run(example.file, func(t *testing.T) {
+			data, err := os.ReadFile("../../examples/" + example.file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings, err := operatorSettings(data, t.TempDir(), noOperatorEnvironment)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings["HAKOPOD_SIGNUP_ENABLED"] != "false" || settings["HAKOPOD_SMTP_ENABLED"] != "false" {
+				t.Fatal("example must leave registration and mail opt-in")
+			}
+			if settings["HAKOPOD_DEPLOYMENT_MODE"] != example.mode || settings["HAKOPOD_PUBLIC_TCP_PORTS"] != "" {
+				t.Fatal("example must select its installation mode without provisioning public TCP")
+			}
+		})
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.toml")
-	if err = os.WriteFile(path, []byte("schema_version=1\n[server]\nrollout_timeout='5m'\n[auth]\nsignup_enabled=true"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("schema_version=1\n[server]\nrollout_timeout='5m'\n[auth]\nsignup_enabled=true"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HAKOPOD_CONFIG_FILE", path)
 	t.Setenv("HAKOPOD_ROLLOUT_TIMEOUT", "")
-	if err = os.Unsetenv("HAKOPOD_ROLLOUT_TIMEOUT"); err != nil {
+	if err := os.Unsetenv("HAKOPOD_ROLLOUT_TIMEOUT"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HAKOPOD_SIGNUP_ENABLED", "false")
-	if err = loadOperatorConfig(); err != nil {
+	if err := loadOperatorConfig(); err != nil {
 		t.Fatal(err)
 	}
 	if os.Getenv("HAKOPOD_ROLLOUT_TIMEOUT") != "5m" || os.Getenv("HAKOPOD_SIGNUP_ENABLED") != "false" {

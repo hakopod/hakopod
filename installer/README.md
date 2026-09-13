@@ -117,5 +117,7 @@ unacknowledged removals. Changing an environment variable does not itself close
 host ports or cloud firewalls. The installer's `--resume` continues to require
 the original configuration; it is not a way to change deployment mode.
 
-A shared SMTP gateway is future work. See [public TCP](../docs/public-tcp.md) and
-[SMTP migration](../docs/smtp-migration.md) for supported routing and cutover checks.
+Public SMTP servers, SFTP and custom public protocols belong on self-hosted
+installations, including customer-owned BYOC. A shared SMTP gateway is outside
+Hakopod Cloud's scope. See [product modes](../docs/product-modes.md),
+[public TCP](../docs/public-tcp.md) and [SMTP migration](../docs/smtp-migration.md).
