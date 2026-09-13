@@ -1,18 +1,19 @@
 import { Input } from '../components/ui/input'
-import { lazy, Suspense, useState } from 'react'
-import { Badge, Tooltip } from '../components/ui/surfaces'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { Badge } from '../components/ui/surfaces'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { Dialog } from '../components/ui/dialog'
 import * as Tabs from '@radix-ui/react-tabs'
 import { useScope, canOpenHostTerminal } from '../lib/scope'
 import type { Node } from '../lib/types'
 import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { NodeMetrics } from '../components/node-metrics'
 
 const NodeEnrollments = lazy(() => import('../components/node-controls'))
 const NodeAction = lazy(() =>
@@ -138,16 +139,33 @@ function Infrastructure() {
 }
 function Nodes() {
   const scope = useScope()
+  const cache = useQueryClient()
   const [action, setAction] = useState<{ node: Node; action: 'cordon' | 'drain' } | null>(null)
   const [search, setSearch] = useState('')
   const [selectedNode, setSelectedNode] = useState('')
+  const [paused, setPaused] = useState(false)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const change = () => setVisible(!document.hidden)
+    document.addEventListener('visibilitychange', change)
+    change()
+    return () => document.removeEventListener('visibilitychange', change)
+  }, [])
+  const polling = visible && !paused
   const nodes = useQuery({
     queryKey: ['nodes'],
     queryFn: ({ signal }) => unwrap(client.GET('/nodes', { signal })),
-    refetchInterval: 30000,
+    enabled: polling,
+    refetchInterval: polling ? (selectedNode ? 15000 : 30000) : false,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    retry: false,
     gcTime: 0,
   })
+  useEffect(() => {
+    if (!polling) void cache.cancelQueries({ queryKey: ['nodes'], exact: true })
+  }, [polling, cache])
+  const probe = () => void nodes.refetch({ cancelRefetch: false })
   const items = nodes.data?.items || []
   const filtered = items.filter((node) => node.name.toLowerCase().includes(search.toLowerCase()))
   const inspector = items.find((node) => node.name === selectedNode)
@@ -191,15 +209,19 @@ function Nodes() {
           </div>
           <span className="muted-text">{items.length} nodes</span>
           <span className="form-spacer" />
-          <Button variant="ghost" size="sm" onClick={() => void nodes.refetch()}>
+          <Button variant="ghost" size="sm" onClick={() => setPaused((value) => !value)}>
+            <Icon name={paused ? 'play' : 'pause'} size={15} />
+            {paused ? 'Resume live' : 'Pause live'}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={nodes.isFetching || !visible} onClick={probe}>
             <Icon name="refresh" size={15} className={nodes.isFetching ? 'spin' : ''} />
-            Refresh
+            {nodes.isFetching ? 'Probing…' : 'Probe now'}
           </Button>
         </div>
         {nodes.isPending ? (
           <Loading />
         ) : nodes.error ? (
-          <ErrorState error={nodes.error} retry={() => void nodes.refetch()} />
+          <ErrorState error={nodes.error} retry={probe} />
         ) : !items.length ? (
           <Empty
             icon="server"
@@ -318,7 +340,11 @@ function Nodes() {
               ? `Refreshed ${timestamp(new Date(nodes.dataUpdatedAt).toISOString())}`
               : 'Waiting for cluster observation'}
           </span>
-          <span>Capacity and usage are separate observations</span>
+          <span>
+            {paused
+              ? 'Live updates paused'
+              : `Checks every ${selectedNode ? 15 : 30} seconds while this page is visible`}
+          </span>
         </div>
       </section>
       <Dialog
@@ -338,6 +364,20 @@ function Nodes() {
                 <Badge>{inspector.control_plane ? 'Control plane' : 'Worker'}</Badge>
                 <Copy value={inspector.name} label="Copy node name" />
               </div>
+              <NodeMetrics
+                key={inspector.name}
+                metrics={inspector.metrics}
+                cpuCapacity={cpu(inspector.allocatable_cpu) * 1000}
+                memoryCapacity={memory(inspector.allocatable_memory)}
+                observedAt={nodes.data?.observed_at}
+                receivedAt={nodes.dataUpdatedAt}
+                paused={paused}
+                visible={visible}
+                fetching={nodes.isFetching}
+                error={nodes.error}
+                onPause={() => setPaused((value) => !value)}
+                onProbe={probe}
+              />
               <dl className="service-definition-list">
                 <div>
                   <dt>Architecture</dt>
@@ -365,24 +405,7 @@ function Nodes() {
                     {inspector.pods} / {inspector.allocatable_gpu}
                   </dd>
                 </div>
-                <div>
-                  <dt>Metrics sampled</dt>
-                  <dd>{timestamp(inspector.metrics.sampled_at)}</dd>
-                </div>
               </dl>
-              <UsageBar
-                label="CPU"
-                used={inspector.metrics.available ? inspector.metrics.cpu_millicores : undefined}
-                total={cpu(inspector.allocatable_cpu) * 1000}
-              />
-              <UsageBar
-                label="Memory"
-                used={inspector.metrics.available ? inspector.metrics.memory_bytes : undefined}
-                total={memory(inspector.allocatable_memory)}
-              />
-              {!inspector.metrics.available && (
-                <Note>{inspector.metrics.reason || 'Metrics are unavailable for this node.'}</Note>
-              )}
               {inspector.control_plane && (
                 <Note>
                   Control plane scheduling is operator managed. Worker operations appear on worker
@@ -434,37 +457,10 @@ function Nodes() {
             node={action.node}
             action={action.action}
             onClose={() => setAction(null)}
-            onChanged={() => void nodes.refetch()}
+            onChanged={probe}
           />
         </Suspense>
       )}
     </>
-  )
-}
-
-function UsageBar({ label, used, total }: { label: string; used?: number; total: number }) {
-  const ratio =
-    used !== undefined && Number.isFinite(total) && total > 0 ? (used / total) * 100 : null
-  return (
-    <div className="usage-bar-row">
-      <span>{label}</span>
-      <div
-        className="usage-bar-track"
-        role="meter"
-        aria-label={`${label} usage against allocatable capacity`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={ratio === null ? undefined : Math.min(100, ratio)}
-        aria-valuetext={ratio === null ? 'Unavailable' : `${ratio.toFixed(1)} percent`}
-      >
-        <i
-          style={{ width: ratio === null ? 0 : `${Math.min(100, ratio)}%` }}
-          className={ratio !== null && ratio > 85 ? 'usage-high' : ''}
-        />
-      </div>
-      <Tooltip side="top" content="Usage compared with allocatable node capacity">
-        <small>{ratio === null ? '—' : `${Math.round(ratio)}%`}</small>
-      </Tooltip>
-    </div>
   )
 }

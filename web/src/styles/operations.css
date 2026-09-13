@@ -530,14 +530,160 @@
   color: var(--muted);
   font: 11px var(--font-mono);
 }
-.ops-node-inspector .usage-bar-row {
+.node-runtime {
+  --node-cpu: #71bcff;
+  --node-memory: #d6a5ff;
+  --node-track: #26362f;
+  --node-warning: #ffd28a;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+[data-theme='light'] .node-runtime {
+  --node-cpu: #175d9d;
+  --node-memory: #813eb4;
+  --node-track: #e1e8df;
+  --node-warning: #9a5100;
+}
+.node-runtime-heading,
+.node-runtime-title,
+.node-runtime-controls,
+.node-runtime-metric-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.node-runtime-heading h3 {
   margin: 0;
+  font-size: 15px;
+  font-weight: 500;
 }
-.ops-node-inspector .usage-bar-track i {
-  background: var(--action);
+.node-runtime-controls {
+  justify-content: flex-end;
+  gap: 4px;
 }
-.ops-node-inspector .usage-bar-track .usage-high {
-  background: var(--warn);
+.node-runtime-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.node-runtime-metric {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+}
+.node-runtime-cpu {
+  --node-metric: var(--node-cpu);
+}
+.node-runtime-memory {
+  --node-metric: var(--node-memory);
+}
+.node-runtime-metric-heading > span {
+  color: var(--node-metric);
+  font-size: 13px;
+  font-weight: 500;
+}
+.node-runtime-metric > strong {
+  color: var(--foreground);
+  font: 19px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.node-runtime-high {
+  color: var(--node-warning);
+  font-size: 11px;
+}
+.node-runtime-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.node-runtime-meter-row > span {
+  min-width: 45px;
+  text-align: right;
+  color: var(--foreground);
+  font: 11px var(--font-mono);
+}
+.node-runtime-meter {
+  flex: 1;
+  height: 7px;
+  overflow: hidden;
+  background: var(--node-track);
+}
+.node-runtime-meter i {
+  display: block;
+  height: 100%;
+  background: var(--node-metric);
+}
+.node-runtime-chart {
+  display: block;
+  width: 100%;
+  height: 54px;
+  color: var(--node-metric);
+}
+.node-runtime-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.node-runtime-memory .node-runtime-line {
+  stroke-dasharray: 5 3;
+}
+.node-runtime-baseline {
+  stroke: var(--node-track);
+  stroke-width: 1px;
+}
+.node-runtime-wait {
+  min-height: 54px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.node-runtime-freshness {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.node-runtime-freshness > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+.node-runtime-freshness dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.node-runtime-freshness dd {
+  margin: 0;
+  color: var(--foreground);
+  font: 11px/1.6 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.node-runtime-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.node-runtime-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 13px;
+}
+@media (max-width: 520px) {
+  .node-runtime-values {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .ops-page .infrastructure-notes {
   margin-top: 20px;
