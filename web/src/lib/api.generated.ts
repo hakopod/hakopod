@@ -2597,6 +2597,11 @@ export interface components {
             email_delivery: boolean;
             signup_enabled: boolean;
             password_recovery: boolean;
+            /**
+             * @description Effective validated deployment mode, including before first-owner setup. This does not enable public signup.
+             * @enum {string}
+             */
+            deployment_mode: "self-hosted" | "managed-cloud";
         };
         HumanSessionCreated: {
             token: string;
