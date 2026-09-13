@@ -10,4 +10,6 @@ Use plain human English in product copy, documentation and comments. Do not use 
 
 Keep the dashboard simple and compact. Use one desktop header row, narrow scope selectors, short page-heading rows and closely grouped controls. Avoid repeated context, decorative hero spacing and oversized cards. Keep text readable and touch targets usable; move secondary details into inspection panels or concise help.
 
+Keep catalog-style lists free of outer panel borders and use compact inline summaries. Cap application/service grids at four desktop columns and five on wider displays. Navigation actions should use the shared Button with asChild so links and buttons keep matching sizes. Make service variables and secret bindings directly discoverable on the service page.
+
 Use the centralized `SelectField` from `web/src/components/ui/select.tsx` for dashboard selection controls. Supply `label`, `value`, `onValueChange`, and declarative `options`; preserve empty values, disabled choices, required fields, and accessible labels. Do not add native selects or a second select wrapper.

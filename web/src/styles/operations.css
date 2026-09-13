@@ -229,21 +229,45 @@
   gap: 8px;
   flex-wrap: nowrap;
 }
-.application-list-page .ops-summary {
-  margin-bottom: 16px;
+.application-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 24px;
+  margin: 0 0 12px;
+  padding: 0;
+  min-height: 28px;
 }
-.application-list-page .ops-summary > div {
-  padding: 12px 16px;
+.application-summary > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
-.application-list-page .ops-summary dd {
-  font-size: 20px;
-  margin: 4px 0;
+.application-summary dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.application-summary dd {
+  margin: 0;
+  font: 13px var(--font-mono);
+  color: var(--foreground);
+}
+.application-list-page .ops-resource-list {
+  border: 0;
+  background: transparent;
 }
 .application-list-page .ops-resource-list .resource-toolbar {
-  padding: 10px 12px;
+  padding: 0 0 12px;
+  border: 0;
+  background: transparent;
 }
-.application-list-page .resource-footnote {
-  padding: 10px 16px;
+.application-list-page .resource-footnote,
+.application-list-page .list-pagination {
+  padding: 12px 0 0;
+  border: 0;
+}
+.application-list-page .ops-catalog-grid {
+  padding: 0;
 }
 .application-list-page .ops-search-input,
 .application-list-page .ops-search-input input,
@@ -315,9 +339,29 @@
 }
 .ops-catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 16px;
+}
+@media (min-width: 640px) {
+  .ops-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1000px) {
+  .ops-catalog-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .ops-catalog-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1680px) {
+  .ops-catalog-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 .ops-service-catalog {
   padding: 0;
@@ -329,7 +373,7 @@
   flex-direction: column;
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--hairline);
+  border: 1px solid transparent;
   background: var(--card);
   text-align: left;
   transition:

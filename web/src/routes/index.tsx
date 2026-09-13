@@ -81,15 +81,12 @@ function Applications() {
         action={
           scope.can('deployments:write') && (
             <div className="toolbar-actions">
-              <Link
-                to="/builds"
-                className="button button-secondary"
-                aria-label="Deploy from source"
-                title="Deploy from source"
-              >
-                <Icon name="branch" size={14} />
-                <span className="app-action-label">From source</span>
-              </Link>
+              <Button asChild>
+                <Link to="/builds" aria-label="Deploy from source" title="Deploy from source">
+                  <Icon name="branch" size={14} />
+                  <span className="app-action-label">From source</span>
+                </Link>
+              </Button>
               <Button
                 variant="primary"
                 aria-label="New application"
@@ -103,26 +100,22 @@ function Applications() {
           )
         }
       />
-      <dl className="ops-summary" aria-label="Application summary on this page">
-        <div>
+      <dl className="application-summary" aria-label="Application summary on this page">
+        <div title="Applications on this page">
           <dt>Applications</dt>
           <dd>{applications.data ? items.length : '—'}</dd>
-          <small>On this page</small>
         </div>
-        <div>
+        <div title={`${observed} applications observed on this page`}>
           <dt>Healthy</dt>
-          <dd>{applications.data ? `${healthy} / ${items.length}` : '—'}</dd>
-          <small>{observed} observed</small>
+          <dd>{applications.data && observed ? `${healthy} / ${items.length}` : '—'}</dd>
         </div>
-        <div>
+        <div title="Services in current application revisions on this page">
           <dt>Services</dt>
           <dd>{applications.data ? services : '—'}</dd>
-          <small>In current revisions</small>
         </div>
-        <div>
+        <div title="Ready replicas in observed services on this page">
           <dt>Ready replicas</dt>
-          <dd>{applications.data ? replicas : '—'}</dd>
-          <small>Observed services</small>
+          <dd>{applications.data && observed ? replicas : '—'}</dd>
         </div>
       </dl>
       <section className="ops-resource-list" aria-label="Applications">
