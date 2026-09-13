@@ -41,6 +41,7 @@ export const Route = createFileRoute('/applications/$applicationId')({
         'configuration',
         'source',
         'secrets',
+        'environment',
         'pods',
         'overview',
         'network',

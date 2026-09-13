@@ -45,7 +45,7 @@ export function ServiceEnvironmentForm({
     void navigate({
       to: '/applications/$applicationId',
       params: { applicationId: application.id },
-      search: { service: serviceName, tab: 'settings' },
+      search: { service: serviceName, tab: 'environment' },
     })
   async function review(keepDraft = false) {
     setBusy(true)
@@ -341,15 +341,16 @@ export function ServiceEnvironmentForm({
               ) : (
                 <p className="field-help">No secret references attached to this service.</p>
               )}
-              <Link
-                to="/applications/$applicationId"
-                params={{ applicationId: application.id }}
-                search={{ tab: 'secrets' }}
-                className="button button-secondary"
-              >
-                Manage application secrets
-                <Icon name="arrow" size={14} />
-              </Link>
+              <Button asChild>
+                <Link
+                  to="/applications/$applicationId"
+                  params={{ applicationId: application.id }}
+                  search={{ service: serviceName, tab: 'secrets' }}
+                >
+                  Manage service secrets
+                  <Icon name="arrow" size={14} />
+                </Link>
+              </Button>
             </FormSection>
             {conflict && (
               <div className="env-conflict" role="alert">

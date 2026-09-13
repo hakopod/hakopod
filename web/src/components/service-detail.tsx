@@ -24,6 +24,19 @@ import { Logs } from './logs'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
+const ServiceSecrets = lazy(() =>
+  import('./service-secrets').then((m) => ({ default: m.ServiceSecrets })),
+)
+const serviceTabs = [
+  'overview',
+  'pods',
+  'logs',
+  'environment',
+  'secrets',
+  'terminal',
+  'network',
+  'settings',
+]
 const ServiceTLS = lazy(() => import('./tls-settings').then((m) => ({ default: m.ServiceTLS })))
 
 const readRuntime = (applicationId: string, service: string, signal: AbortSignal) =>
@@ -71,18 +84,11 @@ export function ServiceDetail({
   const service = application.spec.services[serviceName]
   const observed = application.observed?.services?.find((item) => item.name === serviceName)
   const [tab, setTab] = useState(
-    initialTab &&
-      ['overview', 'pods', 'logs', 'terminal', 'network', 'settings'].includes(initialTab)
-      ? initialTab
-      : 'overview',
+    initialTab && serviceTabs.includes(initialTab) ? initialTab : 'overview',
   )
   const [terminalPod, setTerminalPod] = useState(initialPod || '')
   useEffect(() => {
-    if (
-      initialTab &&
-      ['overview', 'pods', 'logs', 'terminal', 'network', 'settings'].includes(initialTab)
-    )
-      setTab(initialTab)
+    if (initialTab && serviceTabs.includes(initialTab)) setTab(initialTab)
   }, [initialTab])
   const [restartOpen, setRestartOpen] = useState(false)
   const [requestKey, setRequestKey] = useState('')
@@ -200,7 +206,11 @@ export function ServiceDetail({
               Restart
             </Button>
             <Button
-              variant={['logs', 'terminal', 'settings'].includes(tab) ? 'secondary' : 'primary'}
+              variant={
+                ['logs', 'environment', 'secrets', 'terminal', 'settings'].includes(tab)
+                  ? 'secondary'
+                  : 'primary'
+              }
               onClick={() => edit('form')}
             >
               <Icon name="settings" size={14} />
@@ -210,12 +220,29 @@ export function ServiceDetail({
         )}
       </div>
       {observed?.message && <Note>{observed.message}</Note>}
-      <Tabs.Root value={tab} onValueChange={setTab}>
+      <Tabs.Root
+        value={tab}
+        onValueChange={(value) => {
+          setTab(value)
+          void navigate({
+            to: '/applications/$applicationId',
+            params: { applicationId: application.id },
+            search: {
+              service: serviceName,
+              tab: value,
+              ...(value === 'terminal' && terminalPod ? { pod: terminalPod } : {}),
+            },
+            replace: true,
+          })
+        }}
+      >
         <Tabs.List className="tab-list application-tabs" aria-label="Service sections">
           {[
             ['overview', 'activity', 'Overview'],
             ['pods', 'box', 'Pods'],
             ['logs', 'activity', 'Logs'],
+            ['environment', 'code', 'Environment'],
+            ['secrets', 'lock', 'Secrets'],
             ['terminal', 'terminal', 'Terminal'],
             ['network', 'network', 'Networking'],
             ['settings', 'settings', 'Settings'],
@@ -578,6 +605,67 @@ export function ServiceDetail({
             <ServiceTLS application={application} service={serviceName} />
           </Suspense>
         </Tabs.Content>
+        <Tabs.Content value="environment" className="tab-content service-environment-tab">
+          <div className="section-toolbar">
+            <div>
+              <h2>Environment variables</h2>
+              <p>Plain values passed to this service’s containers.</p>
+            </div>
+            {scope.can('deployments:write') && (
+              <Button asChild variant="primary">
+                <Link
+                  to="/applications/$applicationId/environment"
+                  params={{ applicationId: application.id }}
+                  search={{ service: serviceName }}
+                >
+                  <Icon name="code" size={14} />
+                  Edit variables
+                </Link>
+              </Button>
+            )}
+          </div>
+          {Object.keys(service.env || {}).length ? (
+            <div className="table-container ops-table env-review-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(service.env || {})
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([name, value]) => (
+                      <tr key={name}>
+                        <th scope="row">
+                          <code>{name}</code>
+                        </th>
+                        <td>
+                          <pre>{value === '' ? '(empty string)' : value}</pre>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty
+              icon="code"
+              title="No plain variables"
+              description="Add variables through a reviewed deployment for this service."
+            />
+          )}
+          <p className="field-help">
+            Plain values are stored in application revisions. Keep passwords and tokens in the
+            Secrets tab.
+          </p>
+        </Tabs.Content>
+        <Tabs.Content value="secrets" className="tab-content">
+          <Suspense fallback={<Loading rows={2} />}>
+            <ServiceSecrets application={application} serviceName={serviceName} />
+          </Suspense>
+        </Tabs.Content>
         <Tabs.Content value="settings" className="tab-content">
           <div className="section-toolbar">
             <div>
@@ -598,31 +686,6 @@ export function ServiceDetail({
           {service.autoscaling && (
             <Note>Replica count is managed by this service's autoscaling configuration.</Note>
           )}
-          <section className="panel service-environment-summary">
-            <div className="panel-heading">
-              <div>
-                <h2>Environment variables</h2>
-                <p>
-                  {Object.keys(service.env || {}).length} plain variables ·{' '}
-                  {Object.keys(service.secrets || {}).length} secret references
-                </p>
-              </div>
-              {scope.can('deployments:write') && (
-                <Link
-                  className="button button-secondary"
-                  to="/applications/$applicationId/environment"
-                  params={{ applicationId: application.id }}
-                  search={{ service: serviceName }}
-                >
-                  <Icon name="code" size={14} />
-                  Edit variables
-                </Link>
-              )}
-            </div>
-            <p className="field-help">
-              Plain variables are part of this revision. Credentials stay in application secrets.
-            </p>
-          </section>
           <div className="service-settings-grid">
             <section className="panel service-summary-panel">
               <div className="panel-heading">

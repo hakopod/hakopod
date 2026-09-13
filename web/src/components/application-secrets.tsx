@@ -45,7 +45,7 @@ export default function ApplicationSecrets({
           </p>
         </div>
         {scope.can('deployments:write') && (
-          <Button variant="primary" onClick={() => setEdit('')}>
+          <Button variant="primary" disabled={busy} onClick={() => setEdit('')}>
             Add secret
           </Button>
         )}
@@ -110,7 +110,7 @@ export default function ApplicationSecrets({
         <Dialog
           open
           onOpenChange={(open) => {
-            if (!open) setEdit(null)
+            if (!busy && !open) setEdit(null)
           }}
           title={edit ? `Replace ${edit}` : 'Save an application secret'}
           description="The value is stored only in this application’s secret scope."
@@ -119,6 +119,7 @@ export default function ApplicationSecrets({
             <SecretForm
               query={query}
               initialName={edit}
+              onBusyChange={setBusy}
               onSaved={() => {
                 setEdit(null)
                 refresh()
@@ -188,10 +189,12 @@ export function SecretForm({
   query,
   initialName = '',
   onSaved,
+  onBusyChange,
 }: {
   query: { project: string; environment: string; application: string }
   initialName?: string
   onSaved: () => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const [name, setName] = useState(initialName)
   const [value, setValue] = useState('')
@@ -204,6 +207,7 @@ export function SecretForm({
         e.preventDefault()
         if (busy) return
         setBusy(true)
+        onBusyChange?.(true)
         setError('')
         try {
           await unwrap(
@@ -215,6 +219,7 @@ export function SecretForm({
           setError(message(err))
         } finally {
           setBusy(false)
+          onBusyChange?.(false)
         }
       }}
     >
@@ -223,9 +228,10 @@ export function SecretForm({
         <Input
           value={name}
           readOnly={Boolean(initialName)}
+          disabled={busy}
           onChange={(e) => setName(e.target.value)}
-          pattern="[A-Za-z0-9_-]+"
-          maxLength={80}
+          pattern="[a-z](([a-z0-9]|-){0,38}[a-z0-9])?"
+          maxLength={40}
           required
         />
       </label>
@@ -233,6 +239,7 @@ export function SecretForm({
         Value
         <Textarea
           value={value}
+          disabled={busy}
           onChange={(e) => setValue(e.target.value)}
           rows={3}
           maxLength={65536}
