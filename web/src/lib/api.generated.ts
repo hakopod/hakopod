@@ -1912,6 +1912,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/secret-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List provider configuration for administrators, or names and kinds granted to a deployment scope */
+        get: operations["listSecretProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/secret-providers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read provider configuration without credentials (administrator only) */
+        get: operations["getSecretProvider"];
+        /** Create or update an external secret provider (administrator only) */
+        put: operations["putSecretProvider"];
+        post?: never;
+        /** Delete an unreferenced provider (administrator only) */
+        delete: operations["deleteSecretProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/appearance": {
         parameters: {
             query?: never;
@@ -2261,42 +2297,6 @@ export interface paths {
         put: operations["putWorkloadSecret"];
         post?: never;
         delete: operations["deleteWorkloadSecret"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/secret-providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List provider configuration for administrators, or names and kinds granted to a deployment scope */
-        get: operations["listSecretProviders"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/secret-providers/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read provider configuration without credentials (administrator only) */
-        get: operations["getSecretProvider"];
-        /** Create or update an external secret provider (administrator only) */
-        put: operations["putSecretProvider"];
-        post?: never;
-        /** Delete an unreferenced provider (administrator only) */
-        delete: operations["deleteSecretProvider"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3415,6 +3415,81 @@ export interface components {
             message?: string;
             items: components["schemas"]["Enrollment"][];
         };
+        SecretProviderScope: {
+            project: string;
+            /** @description Empty means all environments of this project. */
+            environments?: string[];
+        };
+        SecretProvider: {
+            name: string;
+            /** @enum {string} */
+            kind: "vault" | "infisical";
+            /**
+             * Format: uri
+             * @description Immutable HTTPS origin. Only installation administrators can configure providers.
+             */
+            endpoint: string;
+            /** @description Vault/OpenBao KV v2 mount. */
+            mount?: string;
+            root_path: string;
+            /** @description Infisical project ID. */
+            project_id?: string;
+            /** @description Infisical environment slug. */
+            environment?: string;
+            /** @description Optional Vault namespace. */
+            namespace?: string;
+            /** @description Optional PEM certificate authority; TLS verification remains enabled. */
+            ca_cert?: string;
+            /** @description Explicit private network allowlist; loopback, link-local and metadata endpoints are always denied. */
+            private_cidrs?: string[];
+            scopes: components["schemas"]["SecretProviderScope"][];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        SecretProviderSummary: {
+            name: string;
+            /** @enum {string} */
+            kind: "vault" | "infisical";
+        };
+        SecretProviderInput: {
+            name?: string;
+            /** @enum {string} */
+            kind: "vault" | "infisical";
+            /**
+             * Format: uri
+             * @description Immutable HTTPS origin. Only installation administrators can configure providers.
+             */
+            endpoint: string;
+            /** @description Vault/OpenBao KV v2 mount. */
+            mount?: string;
+            root_path?: string;
+            /** @description Infisical project ID. */
+            project_id?: string;
+            /** @description Infisical environment slug. */
+            environment?: string;
+            /** @description Optional Vault namespace. */
+            namespace?: string;
+            /** @description Optional PEM certificate authority; TLS verification remains enabled. */
+            ca_cert?: string;
+            /** @description Explicit private network allowlist; loopback, link-local and metadata endpoints are always denied. */
+            private_cidrs?: string[];
+            scopes: components["schemas"]["SecretProviderScope"][];
+            /**
+             * Format: int64
+             * @description Zero creates; current revision updates access or credentials. Source location and network trust are immutable.
+             */
+            expected_revision: number;
+            /** @description Required on create; omit on update to retain credentials. Vault requires token, Infisical requires client_id and client_secret. */
+            credentials?: {
+                token?: string;
+                client_id?: string;
+                client_secret?: string;
+            };
+        };
         Appearance: {
             accent_color: string;
         };
@@ -3688,81 +3763,6 @@ export interface components {
             name: string;
             /** Format: date-time */
             updated_at: string;
-        };
-        SecretProviderScope: {
-            project: string;
-            /** @description Empty means all environments of this project. */
-            environments?: string[];
-        };
-        SecretProvider: {
-            name: string;
-            /** @enum {string} */
-            kind: "vault" | "infisical";
-            /**
-             * Format: uri
-             * @description Immutable HTTPS origin. Only installation administrators can configure providers.
-             */
-            endpoint: string;
-            /** @description Vault/OpenBao KV v2 mount. */
-            mount?: string;
-            root_path: string;
-            /** @description Infisical project ID. */
-            project_id?: string;
-            /** @description Infisical environment slug. */
-            environment?: string;
-            /** @description Optional Vault namespace. */
-            namespace?: string;
-            /** @description Optional PEM certificate authority; TLS verification remains enabled. */
-            ca_cert?: string;
-            /** @description Explicit private network allowlist; loopback, link-local and metadata endpoints are always denied. */
-            private_cidrs?: string[];
-            scopes: components["schemas"]["SecretProviderScope"][];
-            /** Format: int64 */
-            readonly revision: number;
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
-        };
-        SecretProviderSummary: {
-            name: string;
-            /** @enum {string} */
-            kind: "vault" | "infisical";
-        };
-        SecretProviderInput: {
-            name?: string;
-            /** @enum {string} */
-            kind: "vault" | "infisical";
-            /**
-             * Format: uri
-             * @description Immutable HTTPS origin. Only installation administrators can configure providers.
-             */
-            endpoint: string;
-            /** @description Vault/OpenBao KV v2 mount. */
-            mount?: string;
-            root_path?: string;
-            /** @description Infisical project ID. */
-            project_id?: string;
-            /** @description Infisical environment slug. */
-            environment?: string;
-            /** @description Optional Vault namespace. */
-            namespace?: string;
-            /** @description Optional PEM certificate authority; TLS verification remains enabled. */
-            ca_cert?: string;
-            /** @description Explicit private network allowlist; loopback, link-local and metadata endpoints are always denied. */
-            private_cidrs?: string[];
-            scopes: components["schemas"]["SecretProviderScope"][];
-            /**
-             * Format: int64
-             * @description Zero creates; current revision updates access or credentials. Source location and network trust are immutable.
-             */
-            expected_revision: number;
-            /** @description Required on create; omit on update to retain credentials. Vault requires token, Infisical requires client_id and client_secret. */
-            credentials?: {
-                token?: string;
-                client_id?: string;
-                client_secret?: string;
-            };
         };
     };
     responses: never;
@@ -8803,6 +8803,134 @@ export interface operations {
             };
         };
     };
+    listSecretProviders: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: (components["schemas"]["SecretProvider"] | components["schemas"]["SecretProviderSummary"])[];
+                    };
+                };
+            };
+        };
+    };
+    getSecretProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretProvider"];
+                };
+            };
+        };
+    };
+    putSecretProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretProviderInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretProvider"];
+                };
+            };
+            /** @description Successful response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretProvider"];
+                };
+            };
+            /** @description Revision conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteSecretProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Provider is referenced or its revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     getAppearance: {
         parameters: {
             query?: never;
@@ -9880,134 +10008,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
-            };
-        };
-    };
-    listSecretProviders: {
-        parameters: {
-            query?: {
-                project?: string;
-                environment?: string;
-                application?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: (components["schemas"]["SecretProvider"] | components["schemas"]["SecretProviderSummary"])[];
-                    };
-                };
-            };
-        };
-    };
-    getSecretProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SecretProvider"];
-                };
-            };
-        };
-    };
-    putSecretProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SecretProviderInput"];
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SecretProvider"];
-                };
-            };
-            /** @description Successful response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SecretProvider"];
-                };
-            };
-            /** @description Revision conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    deleteSecretProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** Format: int64 */
-                    expected_revision: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        deleted: boolean;
-                    };
-                };
-            };
-            /** @description Provider is referenced or its revision changed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
