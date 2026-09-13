@@ -13,7 +13,9 @@ hakopod_prerequisites() {
       --help|-h) bootstrap_help=true; shift;;
       --resume|--yes) shift;;
       --config|--version)
-        [ "$#" -ge 2 ] && [ -n "$2" ] || { printf '%s requires a value\n' "$1" >&2; return 1; }
+        if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+          printf '%s requires a value\n' "$1" >&2; return 1
+        fi
         case "$2" in --*) printf '%s requires a value\n' "$1" >&2; return 1;; esac
         if [ "$1" = --version ]; then
           case "$2" in *[!A-Za-z0-9.-]*|v*|[!0-9]*) printf '%s\n' 'Use an explicit release version without v.' >&2; return 1;; esac
@@ -89,14 +91,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_VERSION = '0.1.0-alpha.1'
+DEFAULT_VERSION = '0.1.0-alpha.2'
 RELEASES = 'https://github.com/hakopod/hakopod/releases/download'
 VERSION = re.compile(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*)?')
 MIB = 1024 * 1024
 
 def version(value):
     if not isinstance(value, str) or len(value) > 64 or not VERSION.fullmatch(value):
-        raise ValueError('Version must be an explicit release number, such as 0.1.0-alpha.1 (without v)')
+        raise ValueError('Version must be an explicit release number, such as 0.1.0-alpha.2 (without v)')
     return value
 
 def architecture(system, machine):

@@ -155,6 +155,8 @@ def health():
             status = http_json('/api/v1/auth/status')
             if status.get('setup_required') is not True:
                 raise RuntimeError('Installer unexpectedly created an account')
+            if status.get('signup_enabled') is not False:
+                raise RuntimeError('Public self-hosted binary exposed public signup')
             with urllib.request.urlopen('http://127.0.0.1:3000', timeout=10) as response:
                 if response.status == 200:
                     return
@@ -255,7 +257,7 @@ def main():
                      for p in Path('/etc/hakopod/secrets').iterdir() if p.is_file()}
         if not protected.get('setup-token'):
             raise RuntimeError('Setup token missing')
-        report['checks'].append('API and dashboard healthy; first-user setup remains open')
+        report['checks'].append('API and dashboard healthy; first-user setup remains open; public signup is closed')
         # Resume must retain secrets and installation identity.
         run(install + ['--resume'], timeout=1200)
         if json.loads(marker_path.read_text()) != marker:

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -91,10 +92,21 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'UTF-8'):
             database.read_url_file(self.url_file)
         self.url_file.write_text(LOCAL)
-        with patch.object(database.os, 'geteuid', return_value=os.geteuid() + 10000):
-            if os.geteuid() != 0:
-                with self.assertRaisesRegex(ValueError, 'owned'):
-                    database.read_url_file(self.url_file)
+
+    def test_secret_ownership_under_root_and_service_user(self):
+        actual = self.url_file.stat()
+        cases = ((0, 0, True), (1000, 0, True), (1000, 1000, True),
+                 (0, 1001, False), (1000, 1001, False))
+        for current_uid, owner_uid, allowed in cases:
+            info = SimpleNamespace(st_mode=actual.st_mode, st_size=actual.st_size, st_uid=owner_uid)
+            with self.subTest(current_uid=current_uid, owner_uid=owner_uid), \
+                    patch.object(database.os, 'geteuid', return_value=current_uid), \
+                    patch.object(database.os, 'fstat', return_value=info):
+                if allowed:
+                    self.assertEqual(database.read_url_file(self.url_file), LOCAL)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'owned'):
+                        database.read_url_file(self.url_file)
 
     def test_url_file_allows_only_one_trailing_line_ending(self):
         for suffix in ('', '\n', '\r\n'):
