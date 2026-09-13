@@ -152,9 +152,19 @@
   align-content: start;
   min-width: 0;
   width: 100%;
-  max-width: 1920px;
-  margin: 0 auto;
-  padding: 24px 24px 40px;
+  max-width: none;
+  margin: 0;
+  padding: 16px 0 24px;
+}
+.hako-page-content .brackets,
+.hako-auth-page .brackets,
+.hako-connection-page .brackets {
+  inset: 0;
+}
+.hako-tooltip {
+  max-width: min(360px, calc(100vw - 16px));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .hako-footer {
   display: flex;
@@ -298,7 +308,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 24px;
-  max-width: 640px;
+  min-width: 0;
 }
 .hako-appearance h2 {
   font-size: 20px;
@@ -646,13 +656,14 @@ html[data-accent] .button-primary:hover {
   align-content: center;
   justify-items: start;
   gap: 20px;
-  max-width: 760px;
+  width: 100%;
+  max-width: none;
   min-height: 100dvh;
-  padding: 32px;
-  margin: 0 auto;
+  padding: 32px 0;
+  margin: 0;
 }
 .hako-connection-page h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 500;
 }
 .hako-connection-page > p {
@@ -681,7 +692,7 @@ html[data-accent] .button-primary:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 48px 24px;
+  padding: 32px 0;
 }
 .hako-auth-card.auth-card {
   width: 540px;
@@ -694,7 +705,7 @@ html[data-accent] .button-primary:hover {
 }
 .hako-auth-card.auth-card h1 {
   font-weight: 500;
-  font-size: 24px;
+  font-size: 20px;
 }
 .hako-auth-card.auth-card footer {
   justify-content: center;
@@ -770,17 +781,17 @@ html[data-accent] .button-primary:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 60px 24px;
-  min-height: 320px;
+  padding: 24px 0;
+  min-height: 160px;
 }
 .hako-empty-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  gap: 16px;
+  gap: 8px;
   position: relative;
   width: min(100%, 540px);
-  padding: 32px;
+  padding: 16px;
   border: 1px solid var(--hairline);
   border-radius: 3px;
   background: var(--card);
@@ -791,7 +802,7 @@ html[data-accent] .button-primary:hover {
 }
 .hako-empty-card h2 {
   font-weight: 500;
-  font-size: 24px;
+  font-size: 18px;
   letter-spacing: -0.035em;
   line-height: 1.25;
 }
@@ -869,15 +880,18 @@ html[data-accent] .button-primary:hover {
   font-weight: 500;
   letter-spacing: -0.045em;
 }
-.hako-page-heading-title {
+.hako-page-heading-title,
+.hako-section-heading-title {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.hako-page-heading .hako-heading-help.button {
+.hako-heading-help.button {
   width: 32px;
   min-width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   padding: 0;
   color: var(--muted);
 }
@@ -915,33 +929,13 @@ html[data-accent] .button-primary:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   width: 100%;
-  max-width: 1280px;
+  max-width: none;
+  margin: 0;
   padding-bottom: 24px;
 }
 .hako-form-page .breadcrumbs {
   font-size: 13px;
   margin-bottom: 20px;
-}
-.hako-form-page .form-page-heading {
-  border-bottom: 1px solid var(--hairline);
-  padding-bottom: 24px;
-  margin-bottom: 0;
-}
-.hako-form-page .form-page-heading h1 {
-  font-size: 28px;
-  font-weight: 500;
-  letter-spacing: -0.045em;
-}
-.hako-form-page .form-page-heading p {
-  font-size: 14px;
-}
-.hako-form-page .form-page-symbol {
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 0;
-  color: var(--state);
-  background: transparent;
 }
 .hako-form-page .form-page-layout {
   grid-template-columns: minmax(0, 1fr);
@@ -949,12 +943,10 @@ html[data-accent] .button-primary:hover {
 }
 .hako-form-page .form-page-layout.with-help {
   grid-template-columns: minmax(0, 1fr) 280px;
+  column-gap: 16px;
 }
 .hako-form-page .form-page-main {
-  padding-top: 24px;
-}
-.hako-form-page .form-page-layout.with-help .form-page-main {
-  padding-right: 24px;
+  padding-top: 0;
 }
 .hako-form-page .form-page-help {
   border-left: 1px solid var(--hairline);
@@ -970,18 +962,15 @@ html[data-accent] .button-primary:hover {
   padding: 0;
 }
 .hako-form-section.form-card > header {
-  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--hairline);
-}
-.hako-form-section.form-card > header > svg {
-  color: var(--state);
 }
 .hako-form-section.form-card h2 {
   font-size: 16px;
   font-weight: 500;
-}
-.hako-form-section.form-card header p {
-  font-size: 13px;
 }
 .hako-form-section .form-card-content {
   padding: 24px;
@@ -999,6 +988,9 @@ html[data-accent] .button-primary:hover {
   background: var(--card);
   padding: 16px 24px;
   margin-top: 24px;
+}
+.form-footer:empty {
+  display: none;
 }
 .hako-form-hint.form-hint {
   border: 0;
@@ -1197,7 +1189,7 @@ html[data-accent] .button-primary:hover {
     padding-left: 4px;
   }
   .hako-shell .hako-page-content {
-    padding: 20px 16px 32px;
+    padding: 12px 0 24px;
   }
   .hako-footer {
     padding: 12px 16px;
@@ -1205,21 +1197,20 @@ html[data-accent] .button-primary:hover {
   }
   .hako-page-heading.page-heading {
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    gap: 8px;
   }
   .hako-page-heading.page-heading .heading-action {
     justify-self: start;
     flex-wrap: wrap;
   }
-  .hako-page-heading.page-heading h1,
-  .hako-form-page .form-page-heading h1 {
-    font-size: 24px;
+  .hako-page-heading.page-heading h1 {
+    font-size: 20px;
   }
   .hako-empty-canvas {
-    padding: 36px 8px;
+    padding: 20px 0;
   }
   .hako-empty-card {
-    padding: 28px 20px;
+    padding: 16px;
   }
   .hako-error-state {
     grid-template-columns: auto minmax(0, 1fr);
@@ -1231,21 +1222,17 @@ html[data-accent] .button-primary:hover {
   .hako-form-page .form-page-help {
     grid-template-columns: minmax(0, 1fr);
   }
-  .hako-form-page .form-page-heading {
-    gap: 12px;
-  }
-  .hako-form-section.form-card > header,
   .hako-form-section .form-card-content {
     padding: 20px;
   }
   .hako-auth-main {
-    padding: 32px 20px;
+    padding: 24px 0;
   }
   .hako-auth-card.auth-card .auth-body {
     padding: 24px 20px;
   }
   .hako-auth-embedded .hako-auth-main {
-    padding: 16px 4px;
+    padding: 16px 0;
   }
   .hako-profile-details > div {
     grid-template-columns: minmax(0, 1fr);

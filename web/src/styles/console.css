@@ -1362,7 +1362,7 @@
   padding: 0 22px;
 }
 .settings-narrow {
-  max-width: 720px;
+  min-width: 0;
 }
 .secret-once {
   display: flex;
@@ -2248,8 +2248,8 @@
   }
 }
 .form-page {
-  max-width: 1160px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding-bottom: 24px;
 }
 .breadcrumbs {
@@ -2342,6 +2342,7 @@
 }
 .form-card,
 .form-page-main > .form-body {
+  min-width: 0;
   background: var(--card);
   border: 1px solid var(--hairline);
   border-radius: 4px;
@@ -2371,10 +2372,12 @@
 .form-card-content {
   padding: 22px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
 .form-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 .form-page-main > .form-body {

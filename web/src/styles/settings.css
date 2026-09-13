@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   min-height: 56px;
-  padding: 0 24px;
+  padding: 0;
   border-bottom: 1px solid var(--hairline);
 }
 .hako-settings-header h1 {
@@ -34,6 +34,7 @@
 }
 .settings-page > .settings-layout {
   grid-template-columns: 220px minmax(0, 1fr);
+  column-gap: 16px;
   border: 0;
   background: transparent;
   min-height: calc(100dvh - var(--hako-header-height, 96px) - 96px);
@@ -55,9 +56,9 @@
   width: 100%;
 }
 .settings-page .settings-content {
-  max-width: 1040px;
+  max-width: none;
   min-width: 0;
-  padding: 28px 32px 48px;
+  padding: 16px 0 24px;
 }
 .settings-page .settings-content > .section-toolbar:first-child {
   margin-top: 0;
@@ -408,7 +409,7 @@
     padding: 10px 12px;
   }
   .settings-page .settings-content {
-    padding: 24px;
+    padding: 16px 0 24px;
   }
   .settings-page .settings-nav button[data-active='true']::after {
     display: none;
@@ -427,7 +428,7 @@
     width: 100%;
   }
   .settings-page .settings-content {
-    padding: 20px 16px;
+    padding: 16px 0 24px;
   }
   .integration-card {
     grid-template-columns: auto minmax(0, 1fr);

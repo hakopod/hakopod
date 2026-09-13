@@ -35,8 +35,8 @@
   text-decoration: underline;
 }
 .onboarding-page {
-  max-width: 1000px;
-  margin: 32px auto;
+  width: 100%;
+  margin: 0;
 }
 .onboarding-options {
   display: grid;

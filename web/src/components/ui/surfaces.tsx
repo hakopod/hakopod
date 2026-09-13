@@ -26,16 +26,22 @@ export function Tooltip({
   children,
   content,
   side = 'top',
+  open,
+  onOpenChange,
 }: {
   children: ReactNode
   content: ReactNode
   side?: 'top' | 'right' | 'bottom' | 'left'
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   return (
     <TooltipProvider delayDuration={250}>
-      <HatchTooltip>
+      <HatchTooltip open={open} onOpenChange={onOpenChange}>
         <TooltipTrigger asChild>{children}</TooltipTrigger>
-        <TooltipContent side={side}>{content}</TooltipContent>
+        <TooltipContent className="hako-tooltip" side={side} collisionPadding={8}>
+          {content}
+        </TooltipContent>
       </HatchTooltip>
     </TooltipProvider>
   )

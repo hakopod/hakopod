@@ -18,7 +18,7 @@
   font-size: 20px;
 }
 .ops-page .application-heading h1 {
-  font-size: 24px;
+  font-size: 20px;
 }
 .ops-page > .hako-page-heading p {
   font-size: 13px;
@@ -1775,7 +1775,7 @@
     align-items: flex-start;
   }
   .ops-page .application-heading h1 {
-    font-size: 24px;
+    font-size: 20px;
   }
   .ops-resource-list .resource-toolbar {
     padding: 16px;

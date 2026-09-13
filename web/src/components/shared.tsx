@@ -125,6 +125,36 @@ export function Copy({ value, label }: { value: string; label?: string }) {
     </Button>
   )
 }
+export function HeadingHelp({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const activationOpen = useRef<boolean | null>(null)
+  return (
+    <Tooltip content={children} side="bottom" open={open} onOpenChange={setOpen}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="hako-heading-help"
+        aria-label={`About ${title}`}
+        onPointerDownCapture={() => {
+          activationOpen.current = open
+        }}
+        onPointerDown={(event) => event.preventDefault()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') activationOpen.current = open
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          setOpen(!(activationOpen.current ?? open))
+          activationOpen.current = null
+        }}
+      >
+        <Icon name="info" size={14} />
+      </Button>
+    </Tooltip>
+  )
+}
+
 export function PageHeader({
   eyebrow,
   title,
@@ -141,18 +171,7 @@ export function PageHeader({
       <div className="hako-page-heading-title">
         {eyebrow && <span className="sr-only">{eyebrow}</span>}
         <h1>{title}</h1>
-        {description && (
-          <Tooltip content={description} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hako-heading-help"
-              aria-label={`About ${title}`}
-            >
-              <Icon name="info" size={14} />
-            </Button>
-          </Tooltip>
-        )}
+        {description && <HeadingHelp title={title}>{description}</HeadingHelp>}
       </div>
       {action && <div className="heading-action">{action}</div>}
     </header>
