@@ -73,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
+	s.registerSecretProviderRoutes(routes)
 	s.registerTemplateRoutes(routes)
 	s.registerProxyRoutes(routes)
 	s.registerVirtualNetworkRoutes(routes)

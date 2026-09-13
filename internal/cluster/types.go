@@ -34,6 +34,7 @@ type Options struct {
 	ProxyConfigMap      string
 	ProxyRelease        string
 	RegistrySecretName  func(context.Context, string, string, string) (string, error)
+	ExternalSecrets     func(context.Context, string, string, spec.Application) (map[string]map[string][]byte, error)
 	VirtualNetworks     func(context.Context, string, string, spec.Application) (map[string]string, error)
 	AppDomain           string
 	IngressClass        string
@@ -65,6 +66,7 @@ type Target struct {
 	Spec                                             spec.Application
 	Previous                                         *spec.Application
 	SharedNetworks                                   map[string]string
+	secretValues                                     map[string]map[string][]byte
 	// BeforeStep revalidates operation authority immediately before each
 	// privileged reconciliation stage. A cancelled hook prevents new effects.
 	BeforeStep func(context.Context) error

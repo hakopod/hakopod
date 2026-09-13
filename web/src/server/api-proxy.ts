@@ -38,6 +38,7 @@ const allowed = [
   /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
   /^templates(?:\/[A-Za-z0-9_-]+\/(?:plan|deploy|secrets\/[A-Za-z0-9_-]+))?$/,
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
+  /^secret-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
 ]
 
 export async function proxy({

@@ -53,6 +53,12 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
 		return Observation{}, err
 	}
+	if err := beforeStep(ctx, target); err != nil {
+		return Observation{}, err
+	}
+	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
+		return Observation{}, err
+	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
 	}

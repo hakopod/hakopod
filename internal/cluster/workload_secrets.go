@@ -75,11 +75,24 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 	data := map[string][]byte{}
 	total := 0
 	for key, reference := range s.Secrets {
-		secret, err := c.GetPlatformSecret(ctx, workloadSecretName(t.Project, t.Environment, t.Spec.Name, reference.Ref))
-		if err != nil {
-			return fmt.Errorf("secret reference %s is unavailable for this application", reference.Ref)
+		if t.secretValues != nil {
+			value, found := t.secretValues[name][key]
+			if !found {
+				return fmt.Errorf("secret snapshot is incomplete")
+			}
+			data[key] = value
+		} else {
+			// Internal native-secret helpers can run outside Deploy; external
+			// reads require the complete preflight snapshot.
+			if reference.Provider != "" {
+				return fmt.Errorf("external secret snapshot is unavailable")
+			}
+			secret, err := c.GetPlatformSecret(ctx, workloadSecretName(t.Project, t.Environment, t.Spec.Name, reference.Ref))
+			if err != nil {
+				return fmt.Errorf("secret reference %s is unavailable for this application", reference.Ref)
+			}
+			data[key] = secret.Data["value"]
 		}
-		data[key] = secret.Data["value"]
 		total += len(key) + len(data[key])
 		if total > 512<<10 {
 			return fmt.Errorf("service secret values exceed 512 KiB")

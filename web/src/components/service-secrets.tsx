@@ -11,6 +11,7 @@ import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
 import { Copy, Empty, ErrorState, Note } from './shared'
 import { Icon } from './icons'
+import { secretReference } from '../lib/secret-reference'
 
 export function ServiceSecrets({
   application,
@@ -43,11 +44,13 @@ export function ServiceSecrets({
   const bindings = Object.entries(application.spec.services[serviceName]?.secrets || {}).sort(
     ([left], [right]) => left.localeCompare(right),
   )
-  const references = [...new Set(bindings.map(([, secret]) => secret.ref))]
+  const references = [...new Set(bindings.map(([, secret]) => secretReference(secret)))]
   const users = (reference: string) =>
     Object.entries(application.spec.services)
       .filter(([, service]) =>
-        Object.values(service.secrets || {}).some((secret) => secret.ref === reference),
+        Object.values(service.secrets || {}).some(
+          (secret) => secretReference(secret) === reference,
+        ),
       )
       .map(([name]) => name)
       .sort()
@@ -71,7 +74,7 @@ export function ServiceSecrets({
         <div>
           <h2>Secret references</h2>
           <p>
-            {bindings.length} variables bound to {references.length} application secrets.
+            {bindings.length} variables bound to {references.length} secret references.
           </p>
         </div>
         {canWrite && (
@@ -111,6 +114,9 @@ export function ServiceSecrets({
       {bindings.length ? (
         <div className="panel settings-session-list">
           {references.map((reference) => {
+            const external = bindings.some(
+              ([, secret]) => secret.provider && secretReference(secret) === reference,
+            )
             const metadata = secrets.data?.items.find((secret) => secret.name === reference)
             const shared = users(reference).filter((name) => name !== serviceName)
             return (
@@ -118,7 +124,7 @@ export function ServiceSecrets({
                 <div>
                   <strong className="mono">
                     {bindings
-                      .filter(([, secret]) => secret.ref === reference)
+                      .filter(([, secret]) => secretReference(secret) === reference)
                       .map(([name]) => name)
                       .join(', ')}
                   </strong>
@@ -128,17 +134,19 @@ export function ServiceSecrets({
                     <Copy value={reference} />
                   </span>
                   <small>
-                    {secrets.isPending
-                      ? 'Checking saved value…'
-                      : secrets.error
-                        ? 'Saved status unavailable'
-                        : metadata
-                          ? `Saved · updated ${timestamp(metadata.updated_at)}`
-                          : 'No saved value'}
+                    {external
+                      ? 'External provider · resolved on deployment. Restart to refresh.'
+                      : secrets.isPending
+                        ? 'Checking saved value…'
+                        : secrets.error
+                          ? 'Saved status unavailable'
+                          : metadata
+                            ? `Saved · updated ${timestamp(metadata.updated_at)}`
+                            : 'No saved value'}
                   </small>
                   {shared.length > 0 && <small>Also used by {shared.join(', ')}.</small>}
                 </div>
-                {canWrite && (
+                {canWrite && !external && (
                   <Button
                     size="sm"
                     disabled={!metadataReady}

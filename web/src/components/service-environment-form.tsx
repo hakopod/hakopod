@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan } from '../lib/types'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
+import { secretReference } from '../lib/secret-reference'
 import {
   environmentChanges,
   environmentRows,
@@ -333,7 +334,7 @@ export function ServiceEnvironmentForm({
                       </dt>
                       <dd>
                         <Icon name="lock" size={13} />
-                        <code>{reference.ref}</code>
+                        <code>{secretReference(reference)}</code>
                       </dd>
                     </div>
                   ))}
