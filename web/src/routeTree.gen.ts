@@ -41,6 +41,7 @@ import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
 import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
+import { Route as SettingsSecretProvidersRouteImport } from './routes/settings.secret-providers'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates.$templateId'
 import { Route as ApplicationsApplicationIdCertificatesRouteImport } from './routes/applications.$applicationId.certificates'
 import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
@@ -54,10 +55,12 @@ import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infra
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
+import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
 import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/backups.schedules.$scheduleId.edit'
 import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
+import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -220,6 +223,11 @@ const SettingsProfileRoute = SettingsProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSecretProvidersRoute = SettingsSecretProvidersRouteImport.update({
+  id: '/secret-providers',
+  path: '/secret-providers',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
   id: '/$templateId',
   path: '/$templateId',
@@ -294,6 +302,12 @@ const SettingsIntegrationsProviderRoute =
     path: '/$provider',
     getParentRoute: () => SettingsIntegrationsRoute,
   } as any)
+const SettingsSecretProvidersNewRoute =
+  SettingsSecretProvidersNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => SettingsSecretProvidersRoute,
+  } as any)
 const BackupsArtifactsArtifactIdRestoreRoute =
   BackupsArtifactsArtifactIdRestoreRouteImport.update({
     id: '/artifacts/$artifactId/restore',
@@ -317,6 +331,12 @@ const InfrastructureNodesNodeTerminalRoute =
     id: '/nodes/$node/terminal',
     path: '/nodes/$node/terminal',
     getParentRoute: () => InfrastructureRoute,
+  } as any)
+const SettingsSecretProvidersProviderNameEditRoute =
+  SettingsSecretProvidersProviderNameEditRouteImport.update({
+    id: '/$providerName/edit',
+    path: '/$providerName/edit',
+    getParentRoute: () => SettingsSecretProvidersRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -352,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -365,10 +386,12 @@ export interface FileRoutesByFullPath {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -403,6 +426,7 @@ export interface FileRoutesByTo {
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -416,10 +440,12 @@ export interface FileRoutesByTo {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -455,6 +481,7 @@ export interface FileRoutesById {
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -468,10 +495,12 @@ export interface FileRoutesById {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -508,6 +537,7 @@ export interface FileRouteTypes {
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/settings/secret-providers'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -521,10 +551,12 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/secret-providers/$providerName/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -559,6 +591,7 @@ export interface FileRouteTypes {
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/settings/secret-providers'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -572,10 +605,12 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/secret-providers/$providerName/edit'
   id:
     | '__root__'
     | '/'
@@ -610,6 +645,7 @@ export interface FileRouteTypes {
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
+    | '/settings/secret-providers'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -623,10 +659,12 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/secret-providers/$providerName/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -880,6 +918,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProfileRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/secret-providers': {
+      id: '/settings/secret-providers'
+      path: '/secret-providers'
+      fullPath: '/settings/secret-providers'
+      preLoaderRoute: typeof SettingsSecretProvidersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/templates/$templateId': {
       id: '/templates/$templateId'
       path: '/$templateId'
@@ -971,6 +1016,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIntegrationsProviderRouteImport
       parentRoute: typeof SettingsIntegrationsRoute
     }
+    '/settings/secret-providers/new': {
+      id: '/settings/secret-providers/new'
+      path: '/new'
+      fullPath: '/settings/secret-providers/new'
+      preLoaderRoute: typeof SettingsSecretProvidersNewRouteImport
+      parentRoute: typeof SettingsSecretProvidersRoute
+    }
     '/backups/artifacts/$artifactId/restore': {
       id: '/backups/artifacts/$artifactId/restore'
       path: '/artifacts/$artifactId/restore'
@@ -998,6 +1050,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/infrastructure/nodes/$node/terminal'
       preLoaderRoute: typeof InfrastructureNodesNodeTerminalRouteImport
       parentRoute: typeof InfrastructureRoute
+    }
+    '/settings/secret-providers/$providerName/edit': {
+      id: '/settings/secret-providers/$providerName/edit'
+      path: '/$providerName/edit'
+      fullPath: '/settings/secret-providers/$providerName/edit'
+      preLoaderRoute: typeof SettingsSecretProvidersProviderNameEditRouteImport
+      parentRoute: typeof SettingsSecretProvidersRoute
     }
   }
 }
@@ -1115,16 +1174,35 @@ const SettingsIntegrationsRouteChildren: SettingsIntegrationsRouteChildren = {
 const SettingsIntegrationsRouteWithChildren =
   SettingsIntegrationsRoute._addFileChildren(SettingsIntegrationsRouteChildren)
 
+interface SettingsSecretProvidersRouteChildren {
+  SettingsSecretProvidersNewRoute: typeof SettingsSecretProvidersNewRoute
+  SettingsSecretProvidersProviderNameEditRoute: typeof SettingsSecretProvidersProviderNameEditRoute
+}
+
+const SettingsSecretProvidersRouteChildren: SettingsSecretProvidersRouteChildren =
+  {
+    SettingsSecretProvidersNewRoute: SettingsSecretProvidersNewRoute,
+    SettingsSecretProvidersProviderNameEditRoute:
+      SettingsSecretProvidersProviderNameEditRoute,
+  }
+
+const SettingsSecretProvidersRouteWithChildren =
+  SettingsSecretProvidersRoute._addFileChildren(
+    SettingsSecretProvidersRouteChildren,
+  )
+
 interface SettingsRouteChildren {
   SettingsHostAccessRoute: typeof SettingsHostAccessRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRouteWithChildren
   SettingsProfileRoute: typeof SettingsProfileRoute
+  SettingsSecretProvidersRoute: typeof SettingsSecretProvidersRouteWithChildren
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsHostAccessRoute: SettingsHostAccessRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRouteWithChildren,
   SettingsProfileRoute: SettingsProfileRoute,
+  SettingsSecretProvidersRoute: SettingsSecretProvidersRouteWithChildren,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

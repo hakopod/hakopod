@@ -5,9 +5,11 @@ secrets. Provider integration is available in self-hosted installations without 
 paid license. AWS Secrets Manager, AWS Parameter Store, Doppler, Azure Key Vault,
 Scaleway and Phase are not implemented.
 
-An installation administrator configures providers through `/api/v1/secret-providers`.
-The service Secrets tab displays external references; provider setup currently uses
-the API. Applications keep only provider names, relative paths and keys in strict
+An installation administrator configures providers in **Settings → Secret providers**
+or through `/api/v1/secret-providers`. The dashboard has dedicated setup/edit pages,
+an access review before saving, and explicit credential replacement. Saved credential
+values are never shown. The service Secrets tab displays external references.
+Applications keep only provider names, relative paths and keys in strict
 version-1 TOML. Credentials and resolved values never enter application revisions,
 plans, audit metadata or API responses.
 
