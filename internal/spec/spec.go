@@ -69,10 +69,6 @@ type Network struct {
 	Segment        string `json:"segment,omitempty" toml:"segment"`
 }
 
-type SecretRef struct {
-	Ref string `json:"ref" toml:"ref"`
-}
-
 type Autoscaling struct {
 	MinReplicas int32 `json:"min_replicas" toml:"min_replicas"`
 	MaxReplicas int32 `json:"max_replicas" toml:"max_replicas"`
@@ -245,7 +241,7 @@ func Normalize(input Application) (Application, error) {
 			return Application{}, fmt.Errorf("%s.secrets: at most 32 references", field)
 		}
 		for key, reference := range svc.Secrets {
-			if !envPattern.MatchString(key) || len(key) > 128 || !namePattern.MatchString(reference.Ref) {
+			if !envPattern.MatchString(key) || len(key) > 128 || !reference.Valid() {
 				return Application{}, fmt.Errorf("%s.secrets: invalid environment name or secret reference", field)
 			}
 			if _, exists := svc.Env[key]; exists {

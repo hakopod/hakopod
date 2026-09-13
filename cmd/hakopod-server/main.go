@@ -157,6 +157,7 @@ func run() error {
 		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
 	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig}
+	management.ConfigureSecretProviders()
 	db.ProtectedDomains = []string{domain}
 	if dashboardURL, parseErr := url.Parse(identityConfig.PublicURL); parseErr == nil {
 		db.ProtectedDomains = append(db.ProtectedDomains, strings.ToLower(dashboardURL.Hostname()))

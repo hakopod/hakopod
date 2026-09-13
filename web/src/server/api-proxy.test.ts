@@ -22,6 +22,43 @@ function request(
   })
 }
 
+test('secret provider proxy keeps configuration behind session and origin checks', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return Response.json({ name: 'company', kind: 'vault' })
+  })
+  for (const path of ['secret-providers', 'secret-providers/company']) {
+    assert.equal((await proxy({ request: request(path), params: { _splat: path } })).status, 200)
+    assert.equal(
+      (await proxy({ request: request(path, 'GET', undefined, false), params: { _splat: path } }))
+        .status,
+      401,
+    )
+  }
+  const path = 'secret-providers/company'
+  assert.equal(
+    (
+      await proxy({
+        request: request(path, 'PUT', {}, true, 'https://untrusted.invalid'),
+        params: { _splat: path },
+      })
+    ).status,
+    403,
+  )
+  assert.equal(
+    (
+      await proxy({
+        request: request(path + '/credentials'),
+        params: { _splat: path + '/credentials' },
+      })
+    ).status,
+    404,
+  )
+  assert.equal(calls, 2)
+})
+
 test('the browser proxy forwards alarm reads and mutations with sealed session authority', async (t) => {
   const cases = [
     { path: 'alarms', query: '?project=demo&status=active&limit=25', method: 'GET' },
