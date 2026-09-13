@@ -2,11 +2,13 @@
 """Assemble verified release assets and checksums; never upload or tag anything."""
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,6 +46,60 @@ def release_version(tag):
     return tag[1:]
 
 
+def builder_module(filename):
+    return tooling_module(Path(__file__).with_name(filename))
+
+
+def tooling_module(path):
+    specification = importlib.util.spec_from_file_location('publication_' + path.stem.replace('-', '_'), path)
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    module.ROOT = ROOT
+    return module
+
+
+def validate_public_ui():
+    # CI restores the public consumer files without initializing the gitlink.
+    # Git's dirty status cannot authenticate those files; compare their exact
+    # selected tree to the tagged, checksum-verified source bundle instead.
+    ui = tooling_module(Path(__file__).resolve().parents[1] / 'scripts/ui-source.py')
+    source, archive = ROOT / 'packages/ui', ROOT / 'third_party/ui/ui-source.tar.gz'
+    checksum = archive.with_suffix('.gz.sha256').read_text().strip()
+    if not re.fullmatch(r'[0-9a-f]{64}  ui-source.tar.gz', checksum) or digest(archive) != checksum[:64]:
+        raise ValueError('Tracked public UI source bundle checksum differs')
+    if archive.stat().st_size > ui.LIMIT:
+        raise ValueError('Public UI source bundle exceeds its bound')
+    expected, size = {}, 0
+    with tarfile.open(archive, 'r:gz') as bundle:
+        for member in bundle:
+            size += member.size
+            name = member.name.removeprefix('ui/')
+            if (not member.isfile() or not member.name.startswith('ui/') or name in expected
+                    or len(expected) >= 512 or size > ui.LIMIT):
+                raise ValueError('Invalid public UI source bundle')
+            expected[name] = hashlib.sha256(bundle.extractfile(member).read()).hexdigest()
+    actual = {path.relative_to(source).as_posix(): digest(path) for path in ui.source_files(source)}
+    if not expected or actual != expected:
+        raise ValueError('Restored public UI source differs from the tagged consumer bundle')
+
+
+def validate_sources(version, go, installer):
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    dirty = subprocess.check_output(['git', 'status', '--porcelain', '--ignore-submodules=all'], cwd=ROOT, text=True).strip()
+    if (dirty or any(record.get('version') != version or record.get('source_revision') != revision
+                     or record.get('source_dirty') is not False for record in (go, installer))
+            or go.get('source_changed_during_build') is not False
+            or installer.get('source_changed_during_packaging') is not False
+            or installer.get('dashboard_source') != 'snapshot build; installed dependency closure'):
+        raise ValueError('Publication requires both builders and the current tree to be clean at this exact revision and version')
+    validate_public_ui()
+    # These scopes differ: Go snapshots include cmd/internal/API and dependency
+    # locks; installer snapshots include dashboard/UI, scripts and deployment inputs.
+    if (go.get('source_fingerprint_sha256') != builder_module('build.py').fingerprint()[0]
+            or installer.get('source_fingerprint_sha256') != builder_module('build-installer.py').source_fingerprint()):
+        raise ValueError('Current source fingerprints differ from the built Go or installer snapshot')
+
+
 def assemble(version):
     destination = ROOT / '.local/publication' / version
     if destination.exists():
@@ -53,11 +109,7 @@ def assemble(version):
         verify(source)
     go = json.loads((sources[0] / 'provenance.json').read_text())
     installer = json.loads((sources[1] / 'installer-provenance.json').read_text())
-    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    if (go['version'] != version or go['source_revision'] != revision or go['source_dirty'] or go['source_changed_during_build']
-            or installer['version'] != version or installer['source_changed_during_packaging']
-            or installer['dashboard_source'] != 'snapshot build; installed dependency closure'):
-        raise ValueError('Publication requires an unchanged source build of this exact revision and version')
+    validate_sources(version, go, installer)
     destination.mkdir(parents=True)
     for source in sources:
         for path in sorted(source.iterdir()):
@@ -69,6 +121,7 @@ def assemble(version):
             shutil.copyfile(path, target)
     (destination / 'SHA256SUMS').write_text(manifest(destination))
     verify(destination)
+    validate_sources(version, go, installer)
     return destination
 
 

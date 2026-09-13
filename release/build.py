@@ -31,7 +31,7 @@ def fingerprint():
     files=set()
     for folder in ('cmd','internal','api'):
         files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
-    files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml'))
+    files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml','LICENSE','NOTICE'))
     digest=hashlib.sha256()
     manifest={}
     for path in sorted(files):
@@ -74,6 +74,8 @@ def main():
     version=args.version
     if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?',version) or len(version)>64:
         raise SystemExit('Version must be a release number without v, for example 0.1.0-alpha.1')
+    source_revision=output(['git','rev-parse','--verify','HEAD'])
+    source_dirty=bool(output(['git','status','--porcelain','--ignore-submodules=all']))
     run([str(ROOT/'release/install-syft.sh')])
     stage=ROOT/'.local/release-stage'/version
     destination=ROOT/'.local/releases'/version
@@ -151,8 +153,8 @@ def main():
     # in CI without submodule credentials. Their bytes have a separate fingerprint.
     status=output(['git','status','--porcelain','--ignore-submodules=all'])
     provenance={'version':version,'built_at':datetime.now(timezone.utc).isoformat(),'go_version':output(['go','version']),
-                'syft_version':'1.51.1','source_revision':revision,'source_dirty':bool(status),'source_fingerprint_sha256':before,
-                'source_changed_during_build':after!=before,
+                'syft_version':'1.51.1','source_revision':source_revision,'source_dirty':source_dirty or bool(status),'source_fingerprint_sha256':before,
+                'source_changed_during_build':after!=before or revision!=source_revision,
                 'source_file_hashes':manifest,'target_platforms':[system+'/'+arch for system,arch in TARGETS],
                 'cgo_enabled':False,'go_build_parallelism':2,'go_soft_memory_limit':'256MiB',
                 'sbom_path_normalization':'Machine-specific staging, Go module cache and home paths replaced with $RELEASE_STAGE, $GOPATH/pkg/mod and $HOME; package identities and license data retained',

@@ -39,6 +39,8 @@ def owned_directory(path):
 
 def source_fingerprint():
     h = hashlib.sha256()
+    for name in ('LICENSE', 'NOTICE'):
+        h.update((name + '\0' + host.digest(ROOT / name)).encode())
     for folder in ('web', 'packages/ui', 'installer', 'scripts', 'deploy', 'release/notices'):
         base = ROOT / folder
         if not base.is_dir(): continue
@@ -49,6 +51,11 @@ def source_fingerprint():
                 if path.suffix == '.pyc' or path.name == '.git' or path.name.startswith('.env'): continue
                 h.update((str(path.relative_to(ROOT)) + '\0' + host.digest(path)).encode())
     return h.hexdigest()
+
+def git_source_state():
+    revision = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=ROOT, text=True).strip()
+    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--ignore-submodules=all'], cwd=ROOT, text=True).strip())
+    return dict(source_revision=revision, source_dirty=dirty)
 
 def validate_static_stylesheets(dist):
     # Client and SSR compilation can disagree if a CSS generator scans build
@@ -151,6 +158,7 @@ def main():
     stage = ROOT / '.local/installer-stage' / args.version
     destination = ROOT / '.local/installer-artifacts' / args.version
     owned_directory(stage); owned_directory(destination)
+    source_state = git_source_state()
     before = source_fingerprint()
     if not args.use_existing_dist:
         # The snapshot prevents source edits halfway through Vite compilation.
@@ -204,7 +212,11 @@ def main():
         if f'{host.digest(source)}  {name}' not in (release_dir / 'SHA256SUMS').read_text().splitlines():
             raise ValueError('Original release metadata checksum does not match: ' + name)
         shutil.copyfile(source, destination / ('go-and-lock-provenance.json' if name == 'provenance.json' else name))
-    provenance = dict(version=args.version, source_fingerprint_sha256=before, source_changed_during_packaging=before != after,
+    final_state = git_source_state()
+    provenance = dict(version=args.version, source_revision=source_state['source_revision'],
+        source_dirty=source_state['source_dirty'] or final_state['source_dirty'],
+        source_fingerprint_sha256=before,
+        source_changed_during_packaging=before != after or source_state['source_revision'] != final_state['source_revision'],
         dashboard_source='existing dist; source freshness not established' if args.use_existing_dist else 'snapshot build; installed dependency closure',
         native_runtime_addons=False, dashboard_runtime_packages=count, published=False,
         scope='Dashboard actual runtime files/dependency inventory, installer inputs, and separately verified Go archives. OS and image packages are outside this inventory.')
