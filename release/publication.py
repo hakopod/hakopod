@@ -81,8 +81,11 @@ def finalize(directory):
             raise ValueError('Original build artifact changed before publication')
     for arch in ('amd64', 'arm64'):
         report = json.loads((directory / ('installer-smoke-' + arch + '.json')).read_text())
-        if len(report['checks']) != 1 or report['checks'][0]['architecture'] != arch or not report['checks'][0]['passed']:
+        if (len(report['checks']) != 1 or report['checks'][0]['architecture'] != arch
+                or not report['checks'][0]['passed'] or report['checks'][0].get('execution') != 'native'):
             raise ValueError('Missing successful native Linux/' + arch + ' smoke')
+        if set(report['artifact_sha256']) != {path.name for path in directory.glob('*.tar.gz')}:
+            raise ValueError('Smoke evidence does not cover every archive')
         for name, expected in report['artifact_sha256'].items():
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or digest(directory / name) != expected:
                 raise ValueError('Smoke evidence does not match the published artifact bytes')
