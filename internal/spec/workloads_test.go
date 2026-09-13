@@ -9,7 +9,11 @@ import (
 
 func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 	for _, template := range Templates() {
-		a, err := PlanTemplate(template.ID, TemplateOptions{Name: "template-test", Public: true, StorageGiB: 5, Model: "Qwen/Qwen3-0.6B", ModelRevision: strings.Repeat("a", 40), SiteURL: "https://workspace.example.test", Architecture: "arm64"})
+		options := TemplateOptions{Name: "template-test", Public: true, StorageGiB: 5, Model: "Qwen/Qwen3-0.6B", ModelRevision: strings.Repeat("a", 40), Architecture: "arm64"}
+		if template.SiteURLSupported {
+			options.SiteURL = "https://workspace.example.test"
+		}
+		a, err := PlanTemplate(template.ID, options)
 		if !template.Deployable {
 			if err == nil {
 				t.Fatal("guided template silently deployed")

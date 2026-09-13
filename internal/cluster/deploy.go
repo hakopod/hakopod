@@ -47,6 +47,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if target.ApplicationID == "" {
 		return Observation{}, fmt.Errorf("application ID is required")
 	}
+	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
+		return Observation{}, err
+	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
 	}
@@ -135,6 +138,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	api := c.kube.CoreV1().Namespaces()
 	current, err := api.Get(ctx, ns, metav1.GetOptions{})
 	labels := labelsFor(t, "")
+	labels[scopeKey] = scopeLabel(t.Project, t.Environment)
 	labels["pod-security.kubernetes.io/enforce"] = "restricted"
 	labels["pod-security.kubernetes.io/enforce-version"] = "v1.35"
 	labels["pod-security.kubernetes.io/warn"] = "restricted"
@@ -185,8 +189,12 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 func deployment(t Target, name string, svc spec.Service, deadline time.Duration) *appsv1.Deployment {
 	labels := labelsFor(t, name)
 	podLabels := labelsFor(t, name)
+	podLabels[applicationNameKey] = t.Spec.Name
 	for _, network := range svc.Networks {
 		podLabels[networkKey(network)] = "true"
+		if identity := t.SharedNetworks[network]; identity != "" {
+			podLabels[sharedNetworkKey(t, identity)] = "true"
+		}
 	}
 	profile := spec.Profiles[svc.Size]
 	container := corev1.Container{Name: "app", Image: svc.Image, ImagePullPolicy: corev1.PullIfNotPresent,

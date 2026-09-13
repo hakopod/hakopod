@@ -18,7 +18,8 @@ type Port struct {
 
 type NetworkAccess struct {
 	// An explicit empty list denies peer traffic; omission allows network members.
-	From []string `json:"from" toml:"from"`
+	From             []string `json:"from" toml:"from"`
+	FromApplications []string `json:"from_applications,omitempty" toml:"from_applications"`
 }
 
 func ServicePorts(s Service) []Port {
@@ -105,6 +106,22 @@ func validateNetworkAccess(app Application) error {
 				a.From = []string{}
 			}
 			sort.Strings(a.From)
+			if len(a.FromApplications) > 32 {
+				return fmt.Errorf("services.%s.network_access.from_applications: at most 32 application/service peers", name)
+			}
+			shared := false
+			for _, n := range s.Networks {
+				shared = shared || app.Networks[n].VirtualNetwork != ""
+			}
+			seenApps := map[string]bool{}
+			for _, peer := range a.FromApplications {
+				parts := strings.Split(peer, "/")
+				if !shared || len(parts) != 2 || !namePattern.MatchString(parts[0]) || !namePattern.MatchString(parts[1]) || parts[0] == app.Name || seenApps[peer] {
+					return fmt.Errorf("services.%s.network_access.from_applications: use unique application/service peers on a virtual network; use from for this application's services", name)
+				}
+				seenApps[peer] = true
+			}
+			sort.Strings(a.FromApplications)
 		}
 		app.Services[name] = s
 	}

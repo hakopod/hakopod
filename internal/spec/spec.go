@@ -59,7 +59,9 @@ type Service struct {
 }
 
 type Network struct {
-	Internal bool `json:"internal" toml:"internal"`
+	Internal       bool   `json:"internal" toml:"internal"`
+	VirtualNetwork string `json:"virtual_network,omitempty" toml:"virtual_network"`
+	Segment        string `json:"segment,omitempty" toml:"segment"`
 }
 
 type SecretRef struct {
@@ -170,9 +172,12 @@ func Normalize(input Application) (Application, error) {
 	if len(app.Networks) > 16 {
 		return Application{}, errors.New("networks: at most 16 networks including default are supported")
 	}
-	for name := range app.Networks {
+	for name, network := range app.Networks {
 		if !namePattern.MatchString(name) {
 			return Application{}, fmt.Errorf("networks.%s: invalid network name", name)
+		}
+		if (network.VirtualNetwork == "") != (network.Segment == "") || network.VirtualNetwork != "" && (!namePattern.MatchString(network.VirtualNetwork) || !namePattern.MatchString(network.Segment)) {
+			return Application{}, fmt.Errorf("networks.%s: virtual_network and segment must both name a configured shared network", name)
 		}
 	}
 	for _, name := range Names(app) {
