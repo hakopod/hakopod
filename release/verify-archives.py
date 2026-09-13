@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import subprocess
 import tarfile
@@ -14,6 +15,13 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('release_build',ROOT/'release/build.py')
 build=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
+
+def selfhosted_build_settings(value):
+    tags = re.findall(r'^\s*build\s+-tags=(.+)$', value, re.M)
+    if tags != ['hakopod_selfhosted']:
+        raise ValueError('Public release binary does not have the explicit self-hosted build policy')
+    return {'product': 'self-hosted', 'go_build_tags': ['hakopod_selfhosted'], 'public_signup': False}
+
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -27,6 +35,8 @@ def main():
     provenance=json.loads((destination/'provenance.json').read_text())
     assert provenance['source_fingerprint_sha256']==build.fingerprint()[0],'working-tree source differs from the release snapshot'
     assert not provenance['source_changed_during_build'],'source changed during compilation'
+    assert provenance.get('product') == 'self-hosted' and provenance.get('go_build_tags') == ['hakopod_selfhosted']
+    assert provenance.get('binary_capabilities') == {'public_signup': False}
     binaries=[]
     for bundle in sorted(destination.glob('*.tar.gz')):
         with tarfile.open(bundle) as archive:
@@ -47,7 +57,8 @@ def main():
                 if '_darwin_' in entry.name:assert 'Mach-O' in kind
                 if '_arm64/' in entry.name:assert 'arm64' in kind or 'aarch64' in kind
                 if '_amd64/' in entry.name:assert 'x86_64' in kind or 'x86-64' in kind
-                binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind})
+                settings = selfhosted_build_settings(subprocess.check_output(['go','version','-m',str(binary)],text=True))
+                binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
     assert len(binaries)==6
     host_os=build.output(['go','env','GOHOSTOS'])
     host_arch=build.output(['go','env','GOHOSTARCH'])
@@ -66,6 +77,7 @@ def main():
             'source_matches_working_tree':True,'native_cli_platform':host_os+'/'+host_arch,'native_cli_version':native_version,'binaries':binaries,
             'checks':['all archive paths relative and traversal-free','all six archive executable bytes equal scanned binary bytes',
                       'Linux binaries statically linked; all target formats and architectures correct','native host CLI returns release version',
+                      'all public binaries carry the self-hosted build tag and disable public signup',
                       'all linked external Go modules have preserved license/notice files','JSON host paths normalized','SHA256SUMS verified'],
             'sbom':{'spdx_version':spdx['spdxVersion'],'spdx_package_count':len(spdx['packages']),
                     'cyclonedx_version':cdx['specVersion'],'cyclonedx_component_count':len(cdx['components']),

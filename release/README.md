@@ -1,10 +1,10 @@
 # Release preparation
 
-`.github/workflows/release.yml` builds tags such as `v0.1.0-alpha.1` from commits
+`.github/workflows/release.yml` builds tags such as `v0.1.0-alpha.2` from commits
 already merged into `main`. It cross-compiles the Linux server/CLI and macOS CLI,
 builds the dashboard from source, collects notices and SBOMs, and verifies the
 archives. Separate native Linux amd64 and arm64 jobs run the same immutable
-artifacts in disposable 512 MiB containers. Both must pass before publication.
+artifacts in disposable 512 MiB containers. Both must pass before publication. The same packaged smoke jobs run on installer pull requests, alongside the full native systemd/K3s host matrix.
 
 The publish job binds those smoke reports to the archive hashes, generates
 GitHub build-provenance attestations using OIDC, and attaches the assets to a
@@ -13,8 +13,7 @@ do not replace GitHub's latest stable release. All action references are pinned
 to commits. No private submodule or private token is needed; public UI sources
 come from the checked-in verified bundle.
 
-The first planned tag is `v0.1.0-alpha.1`. Do not create it until the source has
-been reviewed and merged. This workflow has not yet published that release.
+The next planned tag is `v0.1.0-alpha.2`. The earlier `v0.1.0-alpha.1` tag remains immutable; its release was blocked by a root-run test-fixture failure before publication. Create the next tag only after the fix is reviewed, merged, and all candidate smoke and host jobs pass.
 Hosting `hakopod.com/scripts/installer.sh` is a separate website deployment;
 adding the bootstrap here does not make that domain command live.
 
@@ -23,20 +22,25 @@ runtime, all four platform archives, `SHA256SUMS`, SPDX/CycloneDX/Syft inventori
 license notices, build records, native smoke reports and an attestation bundle.
 The bootstrap downloads only the kit, dashboard and selected Linux architecture.
 Go linker flags inject the exact version into `hakopod version`; development
-builds retain `0.1.0-dev`. There is no compilation on the installation target.
+builds retain `0.1.0-dev`. Public builds explicitly use `hakopod_selfhosted`,
+overriding ambient cloud build tags. Provenance records the product capability,
+and archive verification checks the actual Go build metadata of every binary.
+Public artifacts cannot enable open signup through runtime environment or TOML
+settings. Cloud builds require an explicit `hakopod_cloud` tag as well as the
+managed-cloud mode and signup policy. This is a shipped-artifact policy; anyone
+modifying and rebuilding the open-source program can change it. There is no compilation on the installation target.
 
 Verify downloaded assets before use:
 
 ```sh
 sha256sum --check SHA256SUMS
-gh attestation verify hakopod_0.1.0-alpha.1_linux_arm64.tar.gz --repo hakopod/hakopod
+gh attestation verify hakopod_0.1.0-alpha.2_linux_arm64.tar.gz --repo hakopod/hakopod
 ```
 
 The attestation bundle is excluded from SHA256SUMS to avoid a circular digest.
 Its signatures bind the other artifacts, including SHA256SUMS. Checksums alone
 do not authenticate the publisher. Release workflow success establishes the
-checks recorded in the reports; full systemd/K3s host installation, reboot,
-public DNS/ACME and recovery remain separate acceptance requirements.
+checks recorded in the reports, including full native systemd/K3s installation, resume and service restart recovery. Host reboot, public DNS/ACME, restore drills and physical RDS remain outside those checks.
 
 ## Local builds
 
