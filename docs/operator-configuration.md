@@ -68,3 +68,8 @@ in each application’s `hakopod.toml`. This operator file configures the server
 process; it does not import user accounts, grant roles, activate licenses or
 replace persisted application state. Dashboard changes to those resources keep
 their normal authorization, revision and audit checks.
+
+Public TCP ports are disabled by default. Set `[server] public_tcp_ports = [587]`
+or `HAKOPOD_PUBLIC_TCP_PORTS=587` only after provisioning matching ports on the
+owned HAProxy ingress. The installer JSON uses `public_tcp_ports: [587]`.
+See [SMTP migration](smtp-migration.md) for firewall, certificate and AWS setup.

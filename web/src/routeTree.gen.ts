@@ -42,6 +42,7 @@ import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-a
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates.$templateId'
+import { Route as ApplicationsApplicationIdCertificatesRouteImport } from './routes/applications.$applicationId.certificates'
 import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
 import { Route as ApplicationsApplicationIdDomainsRouteImport } from './routes/applications.$applicationId.domains'
 import { Route as ApplicationsApplicationIdEnvironmentRouteImport } from './routes/applications.$applicationId.environment'
@@ -224,6 +225,12 @@ const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
   path: '/$templateId',
   getParentRoute: () => TemplatesRoute,
 } as any)
+const ApplicationsApplicationIdCertificatesRoute =
+  ApplicationsApplicationIdCertificatesRouteImport.update({
+    id: '/certificates',
+    path: '/certificates',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
 const ApplicationsApplicationIdConfigureRoute =
   ApplicationsApplicationIdConfigureRouteImport.update({
     id: '/configure',
@@ -346,6 +353,7 @@ export interface FileRoutesByFullPath {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
@@ -396,6 +404,7 @@ export interface FileRoutesByTo {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
@@ -447,6 +456,7 @@ export interface FileRoutesById {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
@@ -499,6 +509,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
+    | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
+    | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
@@ -599,6 +611,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/templates/$templateId'
+    | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
@@ -874,6 +887,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesTemplateIdRouteImport
       parentRoute: typeof TemplatesRoute
     }
+    '/applications/$applicationId/certificates': {
+      id: '/applications/$applicationId/certificates'
+      path: '/certificates'
+      fullPath: '/applications/$applicationId/certificates'
+      preLoaderRoute: typeof ApplicationsApplicationIdCertificatesRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
     '/applications/$applicationId/configure': {
       id: '/applications/$applicationId/configure'
       path: '/configure'
@@ -1124,6 +1144,7 @@ const TemplatesRouteWithChildren = TemplatesRoute._addFileChildren(
 )
 
 interface ApplicationsApplicationIdRouteChildren {
+  ApplicationsApplicationIdCertificatesRoute: typeof ApplicationsApplicationIdCertificatesRoute
   ApplicationsApplicationIdConfigureRoute: typeof ApplicationsApplicationIdConfigureRoute
   ApplicationsApplicationIdDomainsRoute: typeof ApplicationsApplicationIdDomainsRoute
   ApplicationsApplicationIdEnvironmentRoute: typeof ApplicationsApplicationIdEnvironmentRoute
@@ -1132,6 +1153,8 @@ interface ApplicationsApplicationIdRouteChildren {
 
 const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChildren =
   {
+    ApplicationsApplicationIdCertificatesRoute:
+      ApplicationsApplicationIdCertificatesRoute,
     ApplicationsApplicationIdConfigureRoute:
       ApplicationsApplicationIdConfigureRoute,
     ApplicationsApplicationIdDomainsRoute:

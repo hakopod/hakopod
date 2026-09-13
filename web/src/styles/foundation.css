@@ -573,3 +573,16 @@ table small {
     scroll-behavior: auto !important;
   }
 }
+
+/* Native file controls must fit their field even on narrow screens. */
+input[type='file'] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+label:has(input[type='file']) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

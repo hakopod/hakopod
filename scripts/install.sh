@@ -76,6 +76,7 @@ if [ -z "$config_path" ]; then
   prompt acme 'Application certificates: production (public DNS/port80 required), staging, or off' 'production'
   acme_email=
   if [ "$acme" != off ]; then prompt acme_email 'ACME account contact email (does not create your Hakopod account)' ''; fi
+  prompt public_tcp_ports 'Additional public TCP ports, comma-separated; leave empty to disable' ''
   prompt storage 'Enable optional node-local application volumes: true or false' 'false'
   prompt k3s_memory_mib 'K3s hard memory cap in MiB' '2048'
   prompt api_memory_mib 'API hard memory cap in MiB' '256'
@@ -86,14 +87,15 @@ if [ -z "$config_path" ]; then
   python3 - "$input_tmp" "$version" "$app_domain" "$node_ip" "$node_name" "$supervisor_host" \
     "$dashboard_mode" "$dashboard_origin" "$dashboard_port" "$tls_cert_file" "$tls_key_file" \
     "$acme" "$acme_email" "$storage" "$k3s_memory_mib" "$api_memory_mib" "$dashboard_memory_mib" \
-    "$postgres_memory_mib" "$max_pods" <<'PY'
+    "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" <<'PY'
 import json, sys
 from pathlib import Path
-keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods'.split()
+keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports'.split()
 c=dict(zip(keys,sys.argv[2:]),schema_version=1)
 for key in ('dashboard_port','k3s_memory_mib','api_memory_mib','dashboard_memory_mib','postgres_memory_mib','max_pods'): c[key]=int(c[key])
 if c['storage'] not in ('true','false'): raise SystemExit('storage must be true or false')
 c['storage']=c['storage']=='true'
+c['public_tcp_ports']=[int(port.strip()) for port in c['public_tcp_ports'].split(',')] if c['public_tcp_ports'] else []
 Path(sys.argv[1]).write_text(json.dumps(c)+'\n')
 PY
   config_path=$input_tmp

@@ -47,11 +47,17 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if target.ApplicationID == "" {
 		return Observation{}, fmt.Errorf("application ID is required")
 	}
+	if err := c.ValidateDelivery(ctx, target); err != nil {
+		return Observation{}, err
+	}
 	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
 		return Observation{}, err
 	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
+	}
+	if err := c.PreparePublicTCP(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
 	}
 	emit(Event{Type: "policy", Message: "Namespace, resource budgets and network isolation policies applied before workload changes"})
 	if err := sleepContext(ctx, c.options.PolicySettleTime); err != nil {
@@ -103,7 +109,13 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		}
 		emit(Event{Type: "ready", Service: name, Message: "All desired replicas are ready on the new revision"})
 	}
+	if err := c.ReconcilePublicTCP(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
 	if err := c.cleanup(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
+	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	return c.Observe(ctx, target)
@@ -240,6 +252,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration)
 		result.Spec.Template.Annotations = map[string]string{"hakopod.io/restart-nonce": svc.RestartNonce}
 	}
 	configureWorkload(result, svc)
+	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
 	return result
 }
 
@@ -253,8 +266,14 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if err := c.prepareWorkloadSecrets(ctx, t, name, svc); err != nil {
 		return 0, err
 	}
+	if err := c.prepareBackendCertificates(ctx, t, name, svc); err != nil {
+		return 0, err
+	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout)
+	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {
+		return 0, err
+	}
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}

@@ -102,6 +102,19 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-api.service').read_text())
         self.assertNotIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-dashboard.service').read_text())
         self.assertFalse((rendered / 'api.env').stat().st_mode & 0o077)
+    def test_public_tcp_ports_are_explicit_bounded_and_rendered(self):
+        for value in ([587, 587], [80], [8080], [3000], [True], [0], [65536], list(range(20000, 20017))):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                host.config(self.config_file({'public_tcp_ports': value}))
+        c = host.config(self.config_file({'public_tcp_ports': [587, 465]}))
+        self.assertEqual(c['public_tcp_ports'], [465, 587])
+        secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
+        with patch.object(host, 'regular', return_value=secret): host.render(c, 'arm64', 'b' * 32, self.root / 'render')
+        rendered = self.root / 'render'
+        ingress = json.loads((rendered / 'haproxy.json').read_text())['kubernetes-ingress']['controller']
+        self.assertEqual(ingress['service']['tcpPorts'], [{'name': 'tcp-465', 'port': 465, 'targetPort': 465}, {'name': 'tcp-587', 'port': 587, 'targetPort': 587}])
+        self.assertIn('HAKOPOD_PUBLIC_TCP_PORTS="465,587"', (rendered / 'api.env').read_text())
+
     def test_secret_file_symlink_and_permissions_rejected(self):
         path = self.root / 'secret'; path.write_text('never print this'); path.chmod(0o644)
         with self.assertRaises(ValueError): host.regular(path, True)

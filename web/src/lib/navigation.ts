@@ -39,16 +39,15 @@ export function parentNavigation(
     if (['new', 'import'].includes(parts[1])) return applications
     if (parts[2]) {
       if (parts[2] === 'source') return application(parts[1], 'source')
-      const tab =
-        parts[2] === 'domains'
-          ? service
-            ? 'network'
-            : 'networking'
-          : service
-            ? parts[2] === 'environment'
-              ? 'environment'
-              : 'settings'
-            : 'configuration'
+      const tab = ['domains', 'certificates'].includes(parts[2])
+        ? service
+          ? 'network'
+          : 'networking'
+        : service
+          ? parts[2] === 'environment'
+            ? 'environment'
+            : 'settings'
+          : 'configuration'
       return application(parts[1], tab, true)
     }
     return service ? application(parts[1], 'services') : applications

@@ -31,6 +31,9 @@ DNS routing and certificate coverage are separate checks.
 | `port` | Main private TCP port, 1–65535; used for readiness and optional public HTTP |
 | `ports` | Up to 15 extra private TCP/UDP endpoints, with a name, port and optional target_port |
 | `public` | false; true adds public HTTP ingress and needs a port |
+| `public_tcp` | Explicit public TCP listeners: port, target_port and source_cidrs; requires operator-provisioned ingress ports |
+| `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS |
+| `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
 | `size` | small; centrally defined resources below |
 | `replicas` | 1; allowed 1–20; no scale-to-zero |
 | `healthcheck` | Optional HTTP readiness path; a port otherwise gets TCP readiness |
@@ -223,3 +226,9 @@ rather than weakening policy. Do not put credentials in env, image URLs, TOML
 or source; recognized credential names and URL userinfo are rejected. This
 cannot detect arbitrary secrets disguised as ordinary values, and application
 logs themselves can still contain sensitive data.
+
+## SMTP and other public TCP workloads
+
+See the [SMTP migration guide](smtp-migration.md) for public TCP, backend certificate
+mounts and AWS workload identity. These optional fields preserve existing schema
+v1 behavior: extra ports remain private, and `public`/`tls` still control HTTP.

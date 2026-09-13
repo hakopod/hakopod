@@ -1335,6 +1335,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getServiceDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBackendCertificates"];
+        put?: never;
+        post: operations["uploadBackendCertificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/domains": {
         parameters: {
             query?: never;
@@ -2227,6 +2259,9 @@ export interface components {
                 [key: string]: components["schemas"]["SecretRef"];
             };
             autoscaling?: components["schemas"]["Autoscaling"];
+            public_tcp?: components["schemas"]["PublicTCPListener"][];
+            certificate_mounts?: components["schemas"]["CertificateMount"][];
+            aws_identity?: string;
             restart_nonce?: string;
             registry_credential?: string;
             tls?: components["schemas"]["TLSConfig"];
@@ -2885,6 +2920,57 @@ export interface components {
                 };
             };
             expected_config_revision: number;
+        };
+        PublicTCPListener: {
+            port: number;
+            target_port: number;
+            source_cidrs: string[];
+        };
+        CertificateMount: {
+            certificate: string;
+            hostname: string;
+            mount_path: string;
+        };
+        PublicTCPStatus: {
+            port: number;
+            target_port: number;
+            status: string;
+            message: string;
+            addresses?: string[];
+        };
+        AWSIdentityState: {
+            binding: string;
+            role_arn: string;
+            region: string;
+            service_account: string;
+            token_audience: string;
+            status: string;
+            aws_verified: boolean;
+            message?: string;
+        };
+        ServiceDelivery: {
+            public_tcp: components["schemas"]["PublicTCPStatus"][];
+            aws_identity: components["schemas"]["AWSIdentityState"] | null;
+            /** Format: date-time */
+            observed_at: string;
+        };
+        BackendCertificate: {
+            certificate: string;
+            hostname: string;
+            mount_path?: string;
+            source: string;
+            ready: boolean;
+            /** Format: date-time */
+            not_before?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            message?: string;
+        };
+        BackendCertificateInput: {
+            hostname: string;
+            certificate_pem?: string;
+            private_key_pem?: string;
+            from_ingress?: boolean;
         };
         Domain: {
             hostname: string;
@@ -6848,6 +6934,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildDeployPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getServiceDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceDelivery"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBackendCertificates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BackendCertificate"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    uploadBackendCertificate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackendCertificateInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendCertificate"];
                 };
             };
             /** @description Error */
