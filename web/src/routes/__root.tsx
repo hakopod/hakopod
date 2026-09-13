@@ -21,7 +21,10 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: 'stylesheet', href: css },
-      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico?v=hakopod-1' },
+      { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png?v=hakopod-1' },
+      { rel: 'icon', type: 'image/svg+xml', sizes: 'any', href: '/favicon.svg?v=hakopod-1' },
+      { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png?v=hakopod-1' },
     ],
   }),
   component: Root,
