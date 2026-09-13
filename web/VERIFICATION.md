@@ -4,6 +4,43 @@ Verified locally on 2026-09-12 and 2026-09-13. This record covers the Hatch
 migration, account and runtime changes, compact dashboard, and virtual networks.
 It distinguishes checks against real services from isolated browser fixtures.
 
+## Global layout and independent UI review
+
+Page wrappers now fill their available width without outer horizontal padding
+or centered width caps. This covers the dashboard shell, nested forms, settings,
+onboarding and authentication layouts. Card, input and dialog padding remains
+inside those components. Full-width corner decorations stay inside their
+surfaces, and shared form grids can shrink around long selected values after
+fonts load.
+
+Page and section headers use compact titles and named help controls instead of
+decorative icons and description paragraphs. Help works with hover, keyboard
+and touch, wraps within the viewport, and dismisses with Escape or outside
+activation. Operational status, errors, warnings and field instructions remain
+visible. Shared empty states are smaller, and unused form footers are hidden.
+
+[The standing Hatch checklist](../docs/ui-ux-checklist.md) records the route
+inventory and independent review. Contributor guidance now requires global
+application of design feedback, a delegated UI/UX reviewer, element-bound checks
+and completed screenshot inspection before sign-off or publication.
+
+Independent review passed 260 loaded page/variant checks across all 43 visual
+routes and 22 additional states, at 1484 and 390 pixels in both themes. Another
+56 checks covered 320/2560-pixel layouts, long titles and loaded fonts; ten
+checks covered keyboard, hover and touch help. Full-size screenshots and route
+contact sheets were inspected before sign-off. Lazy-tab placeholders and
+incomplete fixture records found during review were corrected and rechecked;
+those initial captures did not count as verified pages. The final review found
+no unexpected error panels, page overflow, outer gutters or mismatched header
+action heights. The fixture and browser processes were stopped without live
+configuration writes.
+
+The Go suite, dashboard TypeScript, formatting, all 43 frontend tests and the
+production build passed. No dependency, polling or runtime service was added.
+The refreshed preview returned HTTP 200 for applications, service tabs, domains,
+network creation, settings and auth status. Existing setup and application
+revisions were preserved; the API process was not restarted.
+
 ## September 13 layout and service settings follow-up
 
 Application lists now have no outer box or resting card outlines. Summary counts
@@ -254,11 +291,11 @@ level 9; HTTP compression depends on deployment configuration.
 
 | Asset | Files | Raw bytes | Gzip bytes |
 | --- | ---: | ---: | ---: |
-| JavaScript | 105 | 1,358,150 | 431,369 |
-| CSS | 3 | 149,057 | 27,426 |
+| JavaScript | 104 | 1,360,655 | 431,416 |
+| CSS | 3 | 148,717 | 27,385 |
 | Fonts | 2 | 236,032 | 109,697 |
 
-The main JavaScript entry is 401,703 bytes. The 331,178-byte xterm chunk loads only
+The main JavaScript entry is 401,528 bytes. The 331,178-byte xterm chunk loads only
 after Connect. Project creation, appearance and guidance panels load on demand.
 Network routes, environment editors and the new service secrets panel also load
 separately. The secrets panel is 5.68 kB raw, 2.44 kB gzipped, and adds no polling.
@@ -266,8 +303,8 @@ This pass adds no
 chart library, network daemon or model runtime. The portable UI source archive
 remains 135,846 bytes and contains only the consumer library.
 
-After restart and HTTP smoke checks, a process sample showed 26,800 KiB API RSS
-and 109,952 KiB dashboard RSS. These are point-in-time observations, not peak or
+After restart and HTTP smoke checks, a process sample showed 21,536 KiB API RSS
+and 112,592 KiB dashboard RSS. These are point-in-time observations, not peak or
 capacity guarantees. Go retains its 192 MiB soft memory target, and Node its
 192 MiB old-space cap. Neither setting caps total process memory.
 
