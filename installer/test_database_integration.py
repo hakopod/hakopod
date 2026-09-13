@@ -232,6 +232,26 @@ class DatabaseIntegrationTests(unittest.TestCase):
                 host.preflight(self.config, 'arm64', True, self.artifacts)
             probe.assert_not_called()
 
+    def test_interrupted_prepare_rechecks_original_source_as_fresh_database(self):
+        with patch.object(host, 'preserve_database', side_effect=RuntimeError('simulated interruption')):
+            with self.assertRaisesRegex(RuntimeError, 'simulated interruption'):
+                self.prepare()
+        state = json.loads(self.installed('installation.json').read_text())
+        self.assertFalse(state.get('secrets_created', False))
+        self.assertFalse(self.installed('database-url').exists())
+        self.assertTrue(self.url_file.exists())
+        response = json.dumps([{'addr_info': [{'local': self.config['node_ip']}]}])
+        with patch.object(host, 'platform_preflight'), patch.object(host.shutil, 'which', return_value='/fixture/tool'), \
+                patch.object(host.subprocess, 'check_output', return_value=response), \
+                patch.object(host.database, 'preflight', return_value={'endpoint': '127.0.0.1:5432/hakopod', 'server_version': '17.5'}) as probe:
+            with contextlib.redirect_stdout(io.StringIO()):
+                host.preflight(self.config, 'arm64', True, self.artifacts)
+            probe.assert_called_once_with(self.config, resume=False, installed_url_path=None)
+        resumed = self.prepare(resume=True)
+        self.assertEqual(resumed['id'], state['id'])
+        self.assertTrue(resumed['secrets_created'])
+        host.verify_database_state(resumed)
+
 
 if __name__ == '__main__':
     unittest.main()
