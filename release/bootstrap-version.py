@@ -9,7 +9,7 @@ import tarfile
 
 LIMIT = 128 * 1024
 START = "<<'HAKOPOD_BOOTSTRAP_PY'\n"
-END = '\nHAKOPOD_BOOTSTRAP_PY'
+END = '\nHAKOPOD_BOOTSTRAP_PY\n'
 
 
 def valid_version(version):
@@ -27,12 +27,23 @@ def declaration(script):
     tree = ast.parse(body)
     writes = [node for node in ast.walk(tree) if isinstance(node, ast.Name)
               and node.id == 'DEFAULT_VERSION' and isinstance(node.ctx, (ast.Store, ast.Del))]
+    # These bindings are strings in the AST rather than Name(Store) nodes.
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.ExceptHandler,
+                             ast.MatchAs, ast.MatchStar)) and node.name == 'DEFAULT_VERSION':
+            writes.append(node)
+        elif isinstance(node, ast.alias) and (node.asname or node.name.split('.')[0]) == 'DEFAULT_VERSION':
+            writes.append(node)
+        elif isinstance(node, ast.arg) and node.arg == 'DEFAULT_VERSION':
+            writes.append(node)
+        elif isinstance(node, ast.MatchMapping) and node.rest == 'DEFAULT_VERSION':
+            writes.append(node)
     assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
                    and any(isinstance(target, ast.Name) and target.id == 'DEFAULT_VERSION' for target in node.targets)]
     if len(assignments) != 1 or len(writes) != 1:
         raise ValueError('Bootstrap must have exactly one DEFAULT_VERSION declaration')
     node = assignments[0]
-    if (node not in tree.body or len(node.targets) != 1 or node.lineno != node.end_lineno
+    if (node not in tree.body or node.col_offset != 0 or len(node.targets) != 1 or node.lineno != node.end_lineno
             or not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str)):
         raise ValueError('Bootstrap DEFAULT_VERSION must be a top-level string literal')
     remainder = body.splitlines()[node.lineno - 1].encode()[node.end_col_offset:].strip()
