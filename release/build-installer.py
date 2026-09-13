@@ -15,6 +15,8 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('installer_host', ROOT / 'installer/host.py')
 host = importlib.util.module_from_spec(spec); spec.loader.exec_module(host)
+spec = importlib.util.spec_from_file_location('release_bootstrap', Path(__file__).with_name('bootstrap-version.py'))
+bootstrap = importlib.util.module_from_spec(spec); spec.loader.exec_module(bootstrap)
 
 def archive(source, destination):
     epoch = int(os.environ.get('SOURCE_DATE_EPOCH', '0'))
@@ -147,7 +149,7 @@ def main():
     parser.add_argument('--release-dir', type=Path)
     parser.add_argument('--use-existing-dist', action='store_true', help='Development smoke only: package existing dist with explicitly unknown source freshness')
     args = parser.parse_args()
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', args.version): raise ValueError('Invalid version')
+    bootstrap.valid_version(args.version)
     release_dir = args.release_dir or ROOT / '.local/releases' / args.version
     # Verify Go archive bytes before replacing any previously generated installer output.
     for arch in ('amd64', 'arm64'):
@@ -198,13 +200,15 @@ def main():
     for folder in ('installer', 'deploy'):
         shutil.copytree(ROOT / folder, kit / folder, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     (kit / 'scripts').mkdir()
-    for script in ('install.sh', 'installer.sh'):
-        shutil.copyfile(ROOT / 'scripts' / script, kit / 'scripts' / script)
+    shutil.copyfile(ROOT / 'scripts/install.sh', kit / 'scripts/install.sh')
+    rendered_bootstrap = bootstrap.render((ROOT / 'scripts/installer.sh').read_text(), args.version)
+    (kit / 'scripts/installer.sh').write_text(rendered_bootstrap)
     for name in ('LICENSE', 'NOTICE'): shutil.copyfile(ROOT / name, kit / name)
     after = source_fingerprint()
     if before != after and not args.use_existing_dist: raise ValueError('Source changed while packaging; retry after edits finish')
     for source in (dashboard, kit): archive(source, destination / (source.name + '.tar.gz'))
-    shutil.copyfile(ROOT / 'scripts/installer.sh', destination / 'installer.sh')
+    (destination / 'installer.sh').write_text(rendered_bootstrap)
+    bootstrap.verify_artifacts(destination, args.version)
     for arch in ('amd64', 'arm64'):
         name = f'hakopod_{args.version}_linux_{arch}.tar.gz'; shutil.copyfile(release_dir / name, destination / name)
     for name in ('provenance.json', 'hakopod.spdx.json', 'hakopod.cyclonedx.json', 'hakopod.syft.json', 'dependency-license-inventory.json', notices_name):
@@ -219,6 +223,7 @@ def main():
         source_changed_during_packaging=before != after or source_state['source_revision'] != final_state['source_revision'],
         dashboard_source='existing dist; source freshness not established' if args.use_existing_dist else 'snapshot build; installed dependency closure',
         native_runtime_addons=False, dashboard_runtime_packages=count, published=False,
+        bootstrap_default_version=bootstrap.default_version(rendered_bootstrap),
         scope='Dashboard actual runtime files/dependency inventory, installer inputs, and separately verified Go archives. OS and image packages are outside this inventory.')
     (destination / 'installer-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
     (destination / 'SHA256SUMS').write_text(''.join(host.digest(path) + '  ' + path.name + '\n'

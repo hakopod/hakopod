@@ -13,10 +13,11 @@ Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state,
 
 ## Prebuilt releases
 
-`scripts/installer.sh` is the POSIX bootstrap for prebuilt releases. It pins
-[`0.1.0-alpha.2`](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.2)
-by default, rather than using GitHub's `latest` endpoint, which excludes
-prereleases. This release is for evaluation on dedicated infrastructure.
+The downloadable `installer.sh` is the POSIX bootstrap for prebuilt releases.
+The [`0.1.0-alpha.4` release](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.4)
+defaults to that exact version. Packaging stamps both bootstrap copies with the
+requested release version; GitHub's `latest` endpoint excludes prereleases.
+This release is for evaluation on dedicated infrastructure.
 
 On a fresh dedicated Linux server:
 
@@ -31,11 +32,11 @@ bootstrap before running it:
 
 ```sh
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.2/installer.sh \
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.4/installer.sh \
   -o installer.sh
 sh installer.sh --help
-sh installer.sh --version 0.1.0-alpha.2 --config /path/to/install.json --dry-run
-sudo sh installer.sh --version 0.1.0-alpha.2 --config /path/to/install.json
+sh installer.sh --version 0.1.0-alpha.4 --config /path/to/install.json --dry-run
+sudo sh installer.sh --version 0.1.0-alpha.4 --config /path/to/install.json
 ```
 
 The bootstrap supports Linux amd64 and arm64. If Python, Bash, curl or system CA

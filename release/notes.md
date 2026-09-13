@@ -1,3 +1,5 @@
+Alpha.4 fixes the bootstrap default: both the downloadable `installer.sh` and the copy inside the installer kit now select the version of their release. Packaging, native smoke and pre-publication checks inspect both generated scripts. Alpha.3 artifacts remain unchanged; its bootstrap required an explicit version to select alpha.3.
+
 Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target. Missing distro prerequisites are installed automatically. PostgreSQL defaults to an owned K3s pod, with explicit existing local or verified-TLS external database options. Docker is optional; K3s uses bundled containerd.
 
 Public self-hosted binaries disable open signup, including email and OAuth enrollment, even when environment or TOML settings request it. First-administrator setup and explicit invitations remain available. Free self-hosted installations include teams, invitations and shared projects; audit history and higher host limits retain their paid gates. Existing users can still sign in and recover their accounts.
