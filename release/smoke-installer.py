@@ -28,8 +28,8 @@ mkdir -m 0755 /work
 (cd /artifacts && sha256sum --check SHA256SUMS)
 python3 /repo/installer/host.py unpack --source "/artifacts/hakopod_${VERSION}_installer.tar.gz" --destination /work/kit --root "hakopod_${VERSION}_installer"
 export KIT_ROOT="/work/kit/hakopod_${VERSION}_installer"
-python3 "$KIT_ROOT/installer/test_installer.py"
-shellcheck "$KIT_ROOT/scripts/install.sh"
+python3 -m unittest discover -s "$KIT_ROOT/installer" -p 'test_*.py'
+shellcheck "$KIT_ROOT/scripts/install.sh" "$KIT_ROOT/scripts/installer.sh"
 python3 - <<'PY'
 import json,os
 from pathlib import Path
@@ -55,7 +55,7 @@ mv "/work/node/$NODE_ROOT" /opt/hakopod/tools/node
 install -m 0755 /upstream/k3s /opt/hakopod/tools/k3s
 install -m 0755 "/work/helm/linux-$ARCH/helm" /opt/hakopod/tools/helm
 ln -s "releases/$VERSION" /opt/hakopod/current
-runuser -u hakopod-api -- /opt/hakopod/current/hakopod version
+test "$(runuser -u hakopod-api -- /opt/hakopod/current/hakopod version)" = "$VERSION"
 runuser -u hakopod-api -- sh -c 'test -r /etc/hakopod/secrets/setup-token && test -r /etc/hakopod/secrets/auth-encryption-key && ! test -r /etc/hakopod/secrets/session-secret'
 runuser -u hakopod-dashboard -- sh -c 'test -r /opt/hakopod/current/dashboard/serve.mjs && ! test -r /etc/hakopod/secrets/setup-token'
 /opt/hakopod/tools/k3s --version
@@ -111,7 +111,7 @@ def main():
             '--mount', 'type=bind,src=' + str(artifact_dir) + ',dst=/artifacts,readonly',
             '--mount', 'type=bind,src=' + str(upstream) + ',dst=/upstream,readonly',
             IMAGES[arch], 'bash', '-c', SCRIPT]
-        print('Running disposable512MiB Linux/' + arch + ' installer artifact smoke', flush=True)
+        print('Running disposable 512 MiB Linux/' + arch + ' installer artifact smoke', flush=True)
         try:
             result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=600)
         finally:

@@ -1,4 +1,44 @@
-# Local release preparation
+# Release preparation
+
+`.github/workflows/release.yml` builds tags such as `v0.1.0-alpha.1` from commits
+already merged into `main`. It cross-compiles the Linux server/CLI and macOS CLI,
+builds the dashboard from source, collects notices and SBOMs, and verifies the
+archives. Separate native Linux amd64 and arm64 jobs run the same immutable
+artifacts in disposable 512 MiB containers. Both must pass before publication.
+
+The publish job binds those smoke reports to the archive hashes, generates
+GitHub build-provenance attestations using OIDC, and attaches the assets to a
+draft release before publishing it. Prerelease tags are marked prerelease and
+do not replace GitHub's latest stable release. All action references are pinned
+to commits. No private submodule or private token is needed; public UI sources
+come from the checked-in verified bundle.
+
+The first planned tag is `v0.1.0-alpha.1`. Do not create it until the source has
+been reviewed and merged. This workflow has not yet published that release.
+Hosting `hakopod.com/scripts/installer.sh` is a separate website deployment;
+adding the bootstrap here does not make that domain command live.
+
+Release assets include `installer.sh`, the installer kit, the actual dashboard
+runtime, all four platform archives, `SHA256SUMS`, SPDX/CycloneDX/Syft inventories,
+license notices, build records, native smoke reports and an attestation bundle.
+The bootstrap downloads only the kit, dashboard and selected Linux architecture.
+Go linker flags inject the exact version into `hakopod version`; development
+builds retain `0.1.0-dev`. There is no compilation on the installation target.
+
+Verify downloaded assets before use:
+
+```sh
+sha256sum --check SHA256SUMS
+gh attestation verify hakopod_0.1.0-alpha.1_linux_arm64.tar.gz --repo hakopod/hakopod
+```
+
+The attestation bundle is excluded from SHA256SUMS to avoid a circular digest.
+Its signatures bind the other artifacts, including SHA256SUMS. Checksums alone
+do not authenticate the publisher. Release workflow success establishes the
+checks recorded in the reports; full systemd/K3s host installation, reboot,
+public DNS/ACME and recovery remain separate acceptance requirements.
+
+## Local builds
 
 The dedicated Linux installer is described in [installer/README.md](../installer/README.md). After the Go release build below, run `python3 release/build-installer.py` to build a separate local kit containing the actual dashboard runtime and installer inputs. Its output lives in `.local/installer-artifacts/<version>/`; no published download location is assumed. `python3 release/smoke-installer.py --arch arm64 --arch amd64` verifies the exact archives in disposable, memory-limited Linux containers. This verifies packaging/runtime, permissions and templates, not a full systemd/K3s host install. The original Go and dependency-lock SBOM scope below remains distinct.
 
@@ -6,7 +46,7 @@ Run from the repository root after the source and dashboard lockfile are stable:
 
 ```sh
 pnpm --dir web install --frozen-lockfile
-python3 release/build.py
+python3 release/build.py --version 0.1.0-dev
 ```
 
 This performs actual Go cross-compilation and scans the resulting binaries with checksum-verified Syft 1.51.1. It builds Linux amd64/arm64 bundles containing CLI and server, plus macOS amd64/arm64 CLI bundles. CGO is disabled. Compilation and scanning use two logical processors and a 256 MiB Go soft-memory target; targets are sequential. The script does not use Docker. It finishes by running `release/verify-archives.py`, which validates archive bytes, platforms, notice coverage, the native CLI and checksums and writes `verification.json`.
@@ -15,7 +55,7 @@ Outputs are under `.local/releases/<CLI-version>/`: platform `.tar.gz` bundles, 
 
 The SBOM combines packages observed in Go binaries with packages declared by `web/pnpm-lock.yaml`, including development and optional dependencies. It is **not** an inventory of a finished container image, operating-system layers, or the tree-shaken production dashboard. Syft resolves JavaScript license metadata from the npm registry and Go license files from the local Go module cache. Its declarations and `NOASSERTION` fields are retained rather than invented. The separate notice archive preserves locally available upstream texts; see `docs/licenses.md` for coverage and remaining release obligations.
 
-The archives normalize file order, owners, modes and timestamps (`SOURCE_DATE_EPOCH`, default zero), and Go uses `-trimpath -buildvcs=false`. SBOM machine-specific staging, cache and home paths are replaced with `$RELEASE_STAGE`, `$GOPATH/pkg/mod` and `$HOME`; package identities and license data are retained. SBOM generation timestamps and document identifiers may vary; byte-for-byte reproducibility of the entire output directory is not claimed. Cross-compilation does not establish runtime support on untested targets. None of these artifacts is published, signed, notarized, vulnerability-cleared, or a tested production installer.
+The archives normalize file order, owners, modes and timestamps (`SOURCE_DATE_EPOCH`, default zero), and Go uses `-trimpath -buildvcs=false`. SBOM machine-specific staging, cache and home paths are replaced with `$RELEASE_STAGE`, `$GOPATH/pkg/mod` and `$HOME`; package identities and license data are retained. SBOM generation timestamps and document identifiers may vary; byte-for-byte reproducibility of the entire output directory is not claimed. Cross-compilation does not establish runtime support on untested targets. Local build commands do not publish, sign, notarize or vulnerability-clear these artifacts. The release workflow performs the separate attestation and publication steps.
 
 Verify files before copying them elsewhere:
 

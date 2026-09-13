@@ -43,6 +43,8 @@ jobs:
           python3 -m py_compile scripts/*.py api/generate.py api/contracts/*.py examples/shop/variants.py tests/restart.py release/*.py
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m unittest discover -s installer -p 'test_*.py'
+          python3 -m unittest discover -s release -p 'test_*.py'
+          sh -n scripts/installer.sh
   dashboard:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

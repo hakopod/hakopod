@@ -1,0 +1,158 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=512
+      HAKOPOD_TEST_DATABASE_URL: postgres://hakopod_release:ephemeral-release-only@127.0.0.1:5432/postgres?sslmode=disable
+    services:
+      postgres:
+        image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: hakopod_release
+          POSTGRES_PASSWORD: ephemeral-release-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hakopod_release -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 15
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate release tag and source
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(python3 release/publication.py version "$RELEASE_TAG")
+          git merge-base --is-ancestor HEAD origin/main
+          test -z "$(git status --porcelain)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Test source and restore public UI
+        run: |
+          python3 scripts/ui-source.py restore
+          pnpm --dir web install --frozen-lockfile
+          go test ./...
+          go vet ./...
+          python3 -m unittest discover -s installer -p 'test_*.py'
+          python3 -m unittest discover -s release -p 'test_*.py'
+          sh -n scripts/installer.sh
+          bash -n scripts/install.sh
+          pnpm --dir web typecheck
+          pnpm --dir web test
+      - name: Build, inspect and package prebuilt artifacts
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 release/build.py --version "$RELEASE_VERSION"
+          python3 release/build-installer.py --version "$RELEASE_VERSION"
+          python3 release/publication.py assemble "$RELEASE_TAG"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          path: .local/publication/${{ steps.release.outputs.version }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: .local/installer-artifacts/${{ needs.build.outputs.version }}
+      - name: Verify and smoke exact packaged bytes on native Linux
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          python3 release/publication.py verify ".local/installer-artifacts/$RELEASE_VERSION"
+          python3 release/smoke-installer.py --version "$RELEASE_VERSION" --arch "$RELEASE_ARCH"
+          cp ".local/installer-artifacts/$RELEASE_VERSION/installer-smoke.json" "installer-smoke-$RELEASE_ARCH.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-smoke-${{ matrix.arch }}
+          path: installer-smoke-${{ matrix.arch }}.json
+          if-no-files-found: error
+  publish:
+    needs: [build, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: installer-smoke-*
+          merge-multiple: true
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - name: Bind smoke evidence to artifact checksums
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: python3 release/publication.py finalize ".local/publication/$RELEASE_VERSION"
+      - name: Attest release archives, SBOMs and checksum manifest
+        id: attest
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3.0.0
+        with:
+          subject-path: .local/publication/${{ needs.build.outputs.version }}/*
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          directory=".local/publication/$RELEASE_VERSION"
+          cp "$ATTESTATION_BUNDLE" "$directory/build-provenance.intoto.jsonl"
+          python3 release/publication.py verify "$directory"
+          flags=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease --latest=false); else flags+=(--latest); fi
+          gh release create "$RELEASE_TAG" "$directory"/* --verify-tag --draft "${flags[@]}" \
+            --title "Hakopod $RELEASE_VERSION" --notes-file release/notes.md
+          gh release edit "$RELEASE_TAG" --draft=false "${flags[@]}"
