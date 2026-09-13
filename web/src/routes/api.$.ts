@@ -11,6 +11,7 @@ import {
 } from '../server/session'
 
 const allowed = [
+  /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
   /^sources\/(?:plan|deploy)$/,
   /^showcase(?:\/remove)?$/,
   /^applications\/[A-Za-z0-9_-]+\/domains(?:\/[A-Za-z0-9_.-]+\/verify)?$/,
@@ -31,7 +32,7 @@ const allowed = [
   /^auth\/(?:status|onboarding|invites\/inspect|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
   /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
   /^users(?:\/[A-Za-z0-9_-]+)?$/,
-  /^projects\/[A-Za-z0-9_-]+\/(?:members|invites)$/,
+  /^projects\/[A-Za-z0-9_-]+\/(?:members|invites|environments)$/,
   /^registries(?:\/[A-Za-z0-9_-]+(?:\/sync)?)?$/,
   /^tls\/issuers$/,
   /^settings\/haproxy$/,
@@ -39,7 +40,7 @@ const allowed = [
   /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,
   /^integrations\/(?:github|gitlab)$/,
   /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
-  /^templates(?:\/[A-Za-z0-9_-]+\/plan)?$/,
+  /^templates(?:\/[A-Za-z0-9_-]+\/(?:plan|deploy|secrets\/[A-Za-z0-9_-]+))?$/,
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
 ]
 

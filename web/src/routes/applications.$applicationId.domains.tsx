@@ -1,7 +1,7 @@
 import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { useState } from 'react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
@@ -271,15 +271,18 @@ function ApplicationDomains() {
                   </label>
                   <label>
                     Public service
-                    <Select
+                    <SelectField
+                      label="Public service"
                       value={selected}
-                      onChange={(event) => setService(event.target.value)}
+                      onValueChange={(value) => setService(value)}
                       required
-                    >
-                      {publicServices.map((name) => (
-                        <option key={name}>{name}</option>
-                      ))}
-                    </Select>
+                      options={
+                        publicServices.map((name) => ({
+                          value: name,
+                          label: name,
+                        })) ?? []
+                      }
+                    />
                   </label>
                   {!publicServices.length && (
                     <Note>Configure a public HTTP service before adding a domain.</Note>
@@ -334,16 +337,7 @@ function ApplicationDomains() {
               {busy ? 'Submitting…' : 'Apply reviewed domain changes'}
             </Button>
           </>
-        ) : (
-          <Link
-            className="button"
-            to="/applications/$applicationId"
-            params={{ applicationId }}
-            search={{ tab: 'networking' }}
-          >
-            Back to application
-          </Link>
-        )}
+        ) : null}
       </div>
     </FormPage>
   )

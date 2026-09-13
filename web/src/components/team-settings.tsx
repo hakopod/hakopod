@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { Avatar } from './avatar'
 import { useLicense } from '../lib/license'
 import { FeatureLock } from './license-settings'
@@ -119,13 +119,17 @@ export default function TeamSettings() {
           <div className="section-toolbar">
             <label className="inline-label">
               Team
-              <Select value={team} onChange={(e) => setSelected(e.target.value)}>
-                {teams.data.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
+              <SelectField
+                label="Team"
+                value={team}
+                onValueChange={(value) => setSelected(value)}
+                options={
+                  teams.data.items.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  })) ?? []
+                }
+              />
             </label>
             {scope.identity.admin && (
               <Button
@@ -301,22 +305,36 @@ export default function TeamSettings() {
                 >
                   <label>
                     Grant a team access
-                    <Select value={grant} onChange={(e) => setGrant(e.target.value)} required>
-                      <option value="">Choose a team</option>
-                      {teams.data?.items.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </Select>
+                    <SelectField
+                      label="Grant a team access"
+                      value={grant}
+                      onValueChange={(value) => setGrant(value)}
+                      required
+                      options={[
+                        {
+                          value: '',
+                          label: 'Choose a team',
+                        },
+                        ...(teams.data?.items.map((item) => ({
+                          value: item.id,
+                          label: item.name,
+                        })) ?? []),
+                      ]}
+                    />
                   </label>
                   <label>
                     Role
-                    <Select value={grantRole} onChange={(e) => setGrantRole(e.target.value)}>
-                      {['viewer', 'developer', 'admin'].map((role) => (
-                        <option key={role}>{role}</option>
-                      ))}
-                    </Select>
+                    <SelectField
+                      label="Role"
+                      value={grantRole}
+                      onValueChange={(value) => setGrantRole(value)}
+                      options={
+                        ['viewer', 'developer', 'admin'].map((role) => ({
+                          value: role,
+                          label: role,
+                        })) ?? []
+                      }
+                    />
                   </label>
                   <Button type="submit" disabled={busy || !grant}>
                     Grant access
@@ -569,16 +587,21 @@ function RoleEditor({
           } else void save(next)
         }}
       >
-        <Select
-          aria-label={`Role for ${subject}`}
+        <SelectField
+          label={`Role for ${subject}`}
           value={next}
-          onChange={(event) => setNext(event.target.value)}
-        >
-          {roles.map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-          <option value="">Remove access</option>
-        </Select>
+          onValueChange={(value) => setNext(value)}
+          options={[
+            ...(roles.map((value) => ({
+              value: value,
+              label: value,
+            })) ?? []),
+            {
+              value: '',
+              label: 'Remove access',
+            },
+          ]}
+        />
         <Button
           size="sm"
           type="submit"
@@ -726,13 +749,20 @@ function InviteDialog({
               </label>
               <label>
                 Role
-                <Select value={role} onChange={(e) => setRole(e.target.value)}>
-                  {(target === 'team' ? ['member', 'admin'] : ['viewer', 'developer', 'admin']).map(
-                    (value) => (
-                      <option key={value}>{value}</option>
-                    ),
-                  )}
-                </Select>
+                <SelectField
+                  label="Role"
+                  value={role}
+                  onValueChange={(value) => setRole(value)}
+                  options={
+                    (target === 'team'
+                      ? ['member', 'admin']
+                      : ['viewer', 'developer', 'admin']
+                    ).map((value) => ({
+                      value: value,
+                      label: value,
+                    })) ?? []
+                  }
+                />
               </label>
               <label className="checkbox-row">
                 <Input

@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -145,11 +145,17 @@ export default function BuildForm({
               <label>
                 Service
                 {application ? (
-                  <Select value={service} onChange={(e) => setService(e.target.value)}>
-                    {Object.keys(application.spec.services).map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </Select>
+                  <SelectField
+                    label="Service"
+                    value={service}
+                    onValueChange={(value) => setService(value)}
+                    options={
+                      Object.keys(application.spec.services).map((item) => ({
+                        value: item,
+                        label: item,
+                      })) ?? []
+                    }
+                  />
                 ) : (
                   <Input
                     value={service}
@@ -164,13 +170,21 @@ export default function BuildForm({
             </div>
             <label>
               Git provider
-              <Select
+              <SelectField
+                label="Git provider"
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
-              >
-                <option value="github">GitHub Actions + GHCR</option>
-                <option value="gitlab">GitLab CI + GitLab Container Registry</option>
-              </Select>
+                onValueChange={(value) => setProvider(value as 'github' | 'gitlab')}
+                options={[
+                  {
+                    value: 'github',
+                    label: 'GitHub Actions + GHCR',
+                  },
+                  {
+                    value: 'gitlab',
+                    label: 'GitLab CI + GitLab Container Registry',
+                  },
+                ]}
+              />
             </label>
             <div className="form-grid">
               <label>
@@ -202,10 +216,21 @@ export default function BuildForm({
             <div className="form-grid">
               <label>
                 Build method
-                <Select value={mode} onChange={(e) => setMode(e.target.value as Build['mode'])}>
-                  <option value="dockerfile">Dockerfile</option>
-                  <option value="buildpacks">Cloud Native Buildpacks</option>
-                </Select>
+                <SelectField
+                  label="Build method"
+                  value={mode}
+                  onValueChange={(value) => setMode(value as Build['mode'])}
+                  options={[
+                    {
+                      value: 'dockerfile',
+                      label: 'Dockerfile',
+                    },
+                    {
+                      value: 'buildpacks',
+                      label: 'Cloud Native Buildpacks',
+                    },
+                  ]}
+                />
               </label>
               <label>
                 Build context
@@ -219,14 +244,25 @@ export default function BuildForm({
             </div>
             <label>
               Target architecture
-              <Select
+              <SelectField
+                label="Target architecture"
                 value={architecture}
-                onChange={(e) => setArchitecture(e.target.value as Build['architecture'] | '')}
-              >
-                <option value="">Infer from a uniform cluster</option>
-                <option value="amd64">Linux AMD64</option>
-                <option value="arm64">Linux ARM64</option>
-              </Select>
+                onValueChange={(value) => setArchitecture(value as Build['architecture'] | '')}
+                options={[
+                  {
+                    value: '',
+                    label: 'Infer from a uniform cluster',
+                  },
+                  {
+                    value: 'amd64',
+                    label: 'Linux AMD64',
+                  },
+                  {
+                    value: 'arm64',
+                    label: 'Linux ARM64',
+                  },
+                ]}
+              />
             </label>
             {mode === 'dockerfile' ? (
               <label>
@@ -241,16 +277,19 @@ export default function BuildForm({
             ) : (
               <label>
                 Buildpack preset
-                <Select
+                <SelectField
+                  label="Buildpack preset"
                   value={preset}
-                  onChange={(e) => setPreset(e.target.value as Build['preset'])}
-                >
-                  {['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
-                    (value) => (
-                      <option key={value}>{value}</option>
-                    ),
-                  )}
-                </Select>
+                  onValueChange={(value) => setPreset(value as Build['preset'])}
+                  options={
+                    ['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
+                      (value) => ({
+                        value: value,
+                        label: value,
+                      }),
+                    ) ?? []
+                  }
+                />
               </label>
             )}
           </FormSection>
@@ -274,11 +313,17 @@ export default function BuildForm({
                 </label>
                 <label>
                   Resource profile
-                  <Select value={size} onChange={(e) => setSize(e.target.value)}>
-                    {['small', 'medium', 'large'].map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </Select>
+                  <SelectField
+                    label="Resource profile"
+                    value={size}
+                    onValueChange={(value) => setSize(value)}
+                    options={
+                      ['small', 'medium', 'large'].map((value) => ({
+                        value: value,
+                        label: value,
+                      })) ?? []
+                    }
+                  />
                 </label>
               </div>
             )}
@@ -294,17 +339,24 @@ export default function BuildForm({
             )}
             <label>
               Runtime registry credential
-              <Select value={registry} onChange={(e) => setRegistry(e.target.value)}>
-                <option value="">None · image must be publicly pullable</option>
-                {registry && !registries.data?.items.some((item) => item.name === registry) && (
-                  <option value={registry}>{registry}</option>
-                )}
-                {registries.data?.items.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name} · {item.registry}
-                  </option>
-                ))}
-              </Select>
+              <SelectField
+                label="Runtime registry credential"
+                value={registry}
+                onValueChange={(value) => setRegistry(value)}
+                options={[
+                  {
+                    value: '',
+                    label: 'None · image must be publicly pullable',
+                  },
+                  ...(registry && !registries.data?.items.some((item) => item.name === registry)
+                    ? [{ value: registry, label: registry }]
+                    : []),
+                  ...(registries.data?.items.map((item) => ({
+                    value: item.name,
+                    label: item.name + ' · ' + item.registry,
+                  })) ?? []),
+                ]}
+              />
               <span className="field-help">
                 Private registry images need a saved credential with package read permission.
               </span>

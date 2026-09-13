@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { Link } from '@tanstack/react-router'
 import {
   useBackupDestinations,
@@ -30,29 +30,33 @@ export function BackupSourceFields({
     <>
       <label>
         Database source
-        <Select
+        <SelectField
+          label="Database source"
           value={source ? sourceKey(source) : ''}
-          onChange={(event) => {
-            const target = targets.data?.items.find(
-              (item) => sourceKey(item) === event.target.value,
-            )
+          onValueChange={(value) => {
+            const target = targets.data?.items.find((item) => sourceKey(item) === value)
             onSource(target ? sourceFromTarget(target) : null)
           }}
           required
-        >
-          <option value="">Choose an available database</option>
-          {source && !targets.data?.items.some((item) => sourceKey(item) === sourceKey(source)) && (
-            <option value={sourceKey(source)}>Saved source · currently unavailable</option>
-          )}
-          {targets.data?.items.map((item) => (
-            <option key={sourceKey(item)} value={sourceKey(item)} disabled={!item.available}>
-              {item.kind === 'management'
-                ? 'Hakopod management database'
-                : `${item.application_name || item.application_id} / ${item.service} · ${item.engine}`}
-              {!item.available ? ' · unavailable' : ''}
-            </option>
-          ))}
-        </Select>
+          options={[
+            {
+              value: '',
+              label: 'Choose an available database',
+            },
+            ...(source && !targets.data?.items.some((item) => sourceKey(item) === sourceKey(source))
+              ? [{ value: sourceKey(source), label: 'Saved source · currently unavailable' }]
+              : []),
+            ...(targets.data?.items.map((item) => ({
+              value: sourceKey(item),
+              label:
+                (item.kind === 'management'
+                  ? 'Hakopod management database'
+                  : `${item.application_name || item.application_id} / ${item.service} · ${item.engine}`) +
+                (!item.available ? ' · unavailable' : ''),
+              disabled: !item.available,
+            })) ?? []),
+          ]}
+        />
       </label>
       {targets.data?.truncated && <Note>The discovery list reached its 128-target limit.</Note>}
       {source?.kind === 'database' && (
@@ -72,18 +76,22 @@ export function BackupSourceFields({
       )}
       <label>
         Object storage destination
-        <Select
+        <SelectField
+          label="Object storage destination"
           required
           value={destination}
-          onChange={(event) => onDestination(event.target.value)}
-        >
-          <option value="">Choose a saved destination</option>
-          {destinations.data?.items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name} · {item.bucket}
-            </option>
-          ))}
-        </Select>
+          onValueChange={(value) => onDestination(value)}
+          options={[
+            {
+              value: '',
+              label: 'Choose a saved destination',
+            },
+            ...(destinations.data?.items.map((item) => ({
+              value: item.id,
+              label: item.name + ' · ' + item.bucket,
+            })) ?? []),
+          ]}
+        />
       </label>
       {!destinations.data?.items.length && (
         <Note>

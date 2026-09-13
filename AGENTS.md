@@ -9,3 +9,5 @@ Run `go test ./...`, the dashboard build, and real-cluster acceptance tests for 
 Use plain human English in product copy, documentation and comments. Do not use emojis. Forms with more than four inputs belong on dedicated nested pages with concise help, clear navigation and a review step for consequential actions. Preserve entered values when a request fails.
 
 Keep the dashboard simple and compact. Use one desktop header row, narrow scope selectors, short page-heading rows and closely grouped controls. Avoid repeated context, decorative hero spacing and oversized cards. Keep text readable and touch targets usable; move secondary details into inspection panels or concise help.
+
+Use the centralized `SelectField` from `web/src/components/ui/select.tsx` for dashboard selection controls. Supply `label`, `value`, `onValueChange`, and declarative `options`; preserve empty values, disabled choices, required fields, and accessible labels. Do not add native selects or a second select wrapper.

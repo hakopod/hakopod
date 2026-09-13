@@ -1,5 +1,5 @@
 import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -153,18 +153,22 @@ function RestoreBackup() {
           >
             <label>
               Restore to
-              <Select
+              <SelectField
+                label="Restore to"
                 value={selected}
                 disabled={item.deletion_pending}
-                onChange={(event) => setSelected(event.target.value)}
-              >
-                <option value="">Choose a compatible database service</option>
-                {eligible.map((value) => (
-                  <option key={sourceKey(value)} value={sourceKey(value)}>
-                    {value.application_name || value.application_id} / {value.service}
-                  </option>
-                ))}
-              </Select>
+                onValueChange={(value) => setSelected(value)}
+                options={[
+                  {
+                    value: '',
+                    label: 'Choose a compatible database service',
+                  },
+                  ...(eligible.map((value) => ({
+                    value: sourceKey(value),
+                    label: (value.application_name || value.application_id) + ' / ' + value.service,
+                  })) ?? []),
+                ]}
+              />
             </label>
             {!eligible.length && (
               <Note>Create a compatible database service before restoring this artifact.</Note>

@@ -1,7 +1,7 @@
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { Input } from '../components/ui/input'
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
@@ -96,35 +96,70 @@ function HostAccess() {
             ) : (
               <label>
                 Person
-                <Select value={user} onChange={(event) => setUser(event.target.value)} required>
-                  <option value="">Choose a person</option>
-                  {users.data?.items
-                    .filter((item) => !item.disabled && !item.owner)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · {item.email}
-                      </option>
-                    ))}
-                </Select>
+                <SelectField
+                  label="Person"
+                  value={user}
+                  onValueChange={(value) => setUser(value)}
+                  required
+                  options={[
+                    {
+                      value: '',
+                      label: 'Choose a person',
+                    },
+                    ...(users.data?.items
+                      .filter((item) => !item.disabled && !item.owner)
+                      .map((item) => ({
+                        value: item.id,
+                        label: item.name + ' · ' + item.email,
+                      })) ?? []),
+                  ]}
+                />
               </label>
             )}
             <label>
               Node
-              <Select value={node} onChange={(event) => setNode(event.target.value)} required>
-                <option value="">Choose a node</option>
-                {access.data.nodes.map((item) => (
-                  <option key={item.name}>{item.name}</option>
-                ))}
-                <option value="*">All nodes</option>
-              </Select>
+              <SelectField
+                label="Node"
+                value={node}
+                onValueChange={(value) => setNode(value)}
+                required
+                options={[
+                  {
+                    value: '',
+                    label: 'Choose a node',
+                  },
+                  ...(access.data.nodes.map((item) => ({
+                    value: item.name,
+                    label: item.name,
+                  })) ?? []),
+                  {
+                    value: '*',
+                    label: 'All nodes',
+                  },
+                ]}
+              />
             </label>
             <label>
               Expires after
-              <Select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-                <option value={1}>1 hour</option>
-                <option value={8}>8 hours</option>
-                <option value={24}>24 hours</option>
-              </Select>
+              <SelectField
+                label="Expires after"
+                value={String(hours)}
+                onValueChange={(value) => setHours(Number(value))}
+                options={[
+                  {
+                    value: '1',
+                    label: '1 hour',
+                  },
+                  {
+                    value: '8',
+                    label: '8 hours',
+                  },
+                  {
+                    value: '24',
+                    label: '24 hours',
+                  },
+                ]}
+              />
             </label>
             <Button type="submit" variant="primary" disabled={busy || !user || !node}>
               Grant host access
@@ -168,11 +203,6 @@ function HostAccess() {
             {error}
           </div>
         )}
-      </div>
-      <div className="form-footer">
-        <Link className="button" to="/infrastructure">
-          Back to infrastructure
-        </Link>
       </div>
       <Dialog
         open={Boolean(revoke)}

@@ -1,6 +1,6 @@
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -362,30 +362,40 @@ export function DeploymentForm({
                       </label>
                       <label>
                         Registry credential
-                        <Select
+                        <SelectField
+                          label="Registry credential"
                           value={service.registry_credential || ''}
-                          onChange={(event) =>
+                          onValueChange={(value) =>
                             updateService(name, {
-                              registry_credential: event.target.value || undefined,
+                              registry_credential: value || undefined,
                             })
                           }
-                        >
-                          <option value="">Public image / no credential</option>
-                          {service.registry_credential &&
+                          options={[
+                            {
+                              value: '',
+                              label: 'Public image / no credential',
+                            },
+                            ...(service.registry_credential &&
                             !registries.data?.items.some(
                               (item) => item.name === service.registry_credential,
-                            ) && (
-                              <option value={service.registry_credential}>
-                                {service.registry_credential} (saved reference)
-                              </option>
-                            )}
-                          {registries.data?.items.map((item) => (
-                            <option key={item.name} value={item.name}>
-                              {item.name} · {item.registry}
-                              {item.synchronized ? '' : ' · pending sync'}
-                            </option>
-                          ))}
-                        </Select>
+                            )
+                              ? [
+                                  {
+                                    value: service.registry_credential,
+                                    label: `${service.registry_credential} (saved reference)`,
+                                  },
+                                ]
+                              : []),
+                            ...(registries.data?.items.map((item) => ({
+                              value: item.name,
+                              label:
+                                item.name +
+                                ' · ' +
+                                item.registry +
+                                (item.synchronized ? '' : ' · pending sync'),
+                            })) ?? []),
+                          ]}
+                        />
                         {registries.error && (
                           <span className="field-help">
                             Registry credentials could not be loaded. Existing references are
@@ -412,14 +422,25 @@ export function DeploymentForm({
                         </label>
                         <label>
                           Size
-                          <Select
+                          <SelectField
+                            label="Size"
                             value={service.size || 'small'}
-                            onChange={(event) => updateService(name, { size: event.target.value })}
-                          >
-                            <option value="small">Small</option>
-                            <option value="medium">Medium</option>
-                            <option value="large">Large</option>
-                          </Select>
+                            onValueChange={(value) => updateService(name, { size: value })}
+                            options={[
+                              {
+                                value: 'small',
+                                label: 'Small',
+                              },
+                              {
+                                value: 'medium',
+                                label: 'Medium',
+                              },
+                              {
+                                value: 'large',
+                                label: 'Large',
+                              },
+                            ]}
+                          />
                         </label>
                         <label>
                           Replicas

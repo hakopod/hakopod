@@ -1,5 +1,5 @@
 import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -387,12 +387,29 @@ function CreateKey({
               </Note>
               <label>
                 Replacement expires in
-                <Select value={days} onChange={(event) => setDays(Number(event.target.value))}>
-                  <option value={7}>7 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={60}>60 days</option>
-                  <option value={89}>89 days</option>
-                </Select>
+                <SelectField
+                  label="Replacement expires in"
+                  value={String(days)}
+                  onValueChange={(value) => setDays(Number(value))}
+                  options={[
+                    {
+                      value: '7',
+                      label: '7 days',
+                    },
+                    {
+                      value: '30',
+                      label: '30 days',
+                    },
+                    {
+                      value: '60',
+                      label: '60 days',
+                    },
+                    {
+                      value: '89',
+                      label: '89 days',
+                    },
+                  ]}
+                />
               </label>
             </>
           ) : (
@@ -418,12 +435,29 @@ function CreateKey({
                 </label>
                 <label>
                   Expires in
-                  <Select value={days} onChange={(event) => setDays(Number(event.target.value))}>
-                    <option value={7}>7 days</option>
-                    <option value={30}>30 days</option>
-                    <option value={60}>60 days</option>
-                    <option value={89}>89 days</option>
-                  </Select>
+                  <SelectField
+                    label="Expires in"
+                    value={String(days)}
+                    onValueChange={(value) => setDays(Number(value))}
+                    options={[
+                      {
+                        value: '7',
+                        label: '7 days',
+                      },
+                      {
+                        value: '30',
+                        label: '30 days',
+                      },
+                      {
+                        value: '60',
+                        label: '60 days',
+                      },
+                      {
+                        value: '89',
+                        label: '89 days',
+                      },
+                    ]}
+                  />
                 </label>
               </div>
               <label>Permissions</label>

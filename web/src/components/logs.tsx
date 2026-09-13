@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { Textarea } from './ui/textarea'
 import { lazy, Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -222,26 +222,30 @@ export function Logs({
             <div className="log-filter-row">
               <label>
                 Service
-                <Select
+                <SelectField
+                  label="Service"
                   value={service}
-                  onChange={(e) => {
-                    setService(e.target.value)
+                  onValueChange={(value) => {
+                    setService(value)
                     setPod('')
                   }}
-                >
-                  {services.map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-                </Select>
+                  options={services.map((name) => ({ value: name, label: name }))}
+                />
               </label>
               <label>
                 Pod
-                <Select value={pod} onChange={(e) => setPod(e.target.value)}>
-                  <option value="">All service pods</option>
-                  {runtime.data?.pods.map((item) => (
-                    <option key={item.name}>{item.name}</option>
-                  ))}
-                </Select>
+                <SelectField
+                  label="Pod"
+                  value={pod}
+                  onValueChange={setPod}
+                  options={[
+                    { value: '', label: 'All service pods' },
+                    ...(runtime.data?.pods || []).map((item) => ({
+                      value: item.name,
+                      label: item.name,
+                    })),
+                  ]}
+                />
               </label>
               <label>
                 Container
@@ -254,12 +258,17 @@ export function Logs({
               </label>
               <label>
                 Time window
-                <Select value={since} onChange={(e) => setSince(Number(e.target.value))}>
-                  <option value={900}>Last 15 minutes</option>
-                  <option value={3600}>Last hour</option>
-                  <option value={21600}>Last 6 hours</option>
-                  <option value={86400}>Last 24 hours</option>
-                </Select>
+                <SelectField
+                  label="Time window"
+                  value={String(since)}
+                  onValueChange={(value) => setSince(Number(value))}
+                  options={[
+                    { value: '900', label: 'Last 15 minutes' },
+                    { value: '3600', label: 'Last hour' },
+                    { value: '21600', label: 'Last 6 hours' },
+                    { value: '86400', label: 'Last 24 hours' },
+                  ]}
+                />
               </label>
             </div>
             <div className="query-editor">
@@ -301,11 +310,13 @@ export function Logs({
               </label>
               <label className="query-limit">
                 Limit
-                <Select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
-                  <option>100</option>
-                  <option>500</option>
-                  <option>1000</option>
-                </Select>
+                <SelectField
+                  label="Limit"
+                  compact
+                  value={String(limit)}
+                  onValueChange={(value) => setLimit(Number(value))}
+                  options={['100', '500', '1000'].map((value) => ({ value, label: value }))}
+                />
               </label>
             </div>
             <details className="query-reference">

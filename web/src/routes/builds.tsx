@@ -1,5 +1,5 @@
 import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { SelectField } from '../components/ui/select'
 import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -63,16 +63,26 @@ function BuildList() {
               placeholder="Find build or repository…"
             />
           </div>
-          <Select
+          <SelectField
+            label={'Git provider'}
             className="compact-select"
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
-            aria-label="Git provider"
-          >
-            <option value="all">All providers</option>
-            <option value="github">GitHub</option>
-            <option value="gitlab">GitLab</option>
-          </Select>
+            onValueChange={(value) => setProvider(value)}
+            options={[
+              {
+                value: 'all',
+                label: 'All providers',
+              },
+              {
+                value: 'github',
+                label: 'GitHub',
+              },
+              {
+                value: 'gitlab',
+                label: 'GitLab',
+              },
+            ]}
+          />
           <span className="form-spacer" />
           <span className="muted-text">{items.length} build configurations</span>
         </div>

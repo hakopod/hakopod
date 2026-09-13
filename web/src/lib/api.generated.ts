@@ -1544,6 +1544,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project}/environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createEnvironment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/haproxy": {
         parameters: {
             query?: never;
@@ -1946,6 +1962,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/templates/{id}/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["deployTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/templates/{id}/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putTemplateSecret"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/showcase": {
         parameters: {
             query?: never;
@@ -1972,6 +2020,70 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["removeShowcase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/virtual-networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listVirtualNetworks"];
+        put?: never;
+        post: operations["createVirtualNetwork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/virtual-networks/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getVirtualNetwork"];
+        put: operations["updateVirtualNetwork"];
+        post?: never;
+        delete: operations["deleteVirtualNetwork"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/virtual-networks/{name}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listVirtualNetworkCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/virtual-networks/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["planVirtualNetwork"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2022,6 +2134,8 @@ export interface components {
         };
         Network: {
             internal?: boolean;
+            virtual_network?: string;
+            segment?: string;
         };
         SecretRef: {
             ref: string;
@@ -3040,6 +3154,13 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        TemplateSecretField: {
+            name: string;
+            description: string;
+            format: string;
+            generate: boolean;
+            optional: boolean;
+        };
         Template: {
             id: string;
             name: string;
@@ -3055,7 +3176,27 @@ export interface components {
             providers: string[];
             configuration: string;
             site_url_required: boolean;
+            site_url_supported: boolean;
+            database_config: boolean;
+            secret_fields: components["schemas"]["TemplateSecretField"][];
+            sources: string[];
             deployable: boolean;
+        };
+        TemplateConfiguration: {
+            project: string;
+            environment: string;
+            name: string;
+            public?: boolean;
+            storage_gib?: number;
+            architecture?: string;
+            site_url?: string;
+            provider?: string;
+            provider_url?: string;
+            model?: string;
+            model_revision?: string;
+            database_name?: string;
+            database_user?: string;
+            use_model_token?: boolean;
         };
         TemplatePlan: {
             application_id: string;
@@ -3073,6 +3214,8 @@ export interface components {
             };
             required_secrets: string[];
             model_source?: string;
+            toml: string;
+            configuration: components["schemas"]["TemplateConfiguration"];
         };
         Showcase: {
             sample: boolean;
@@ -3087,6 +3230,79 @@ export interface components {
             deployment_status: string;
             message: string;
             removable: boolean;
+        };
+        NetworkSegment: {
+            applications: string[];
+        };
+        VirtualNetworkSpec: {
+            /** @enum {integer} */
+            schema_version: 1;
+            name: string;
+            description: string;
+            segments: {
+                [key: string]: components["schemas"]["NetworkSegment"];
+            };
+        };
+        VirtualNetworkSummary: {
+            id: string;
+            name: string;
+            project: string;
+            environment: string;
+            description: string;
+            segments: string[];
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        VirtualNetworkConnection: {
+            application_id: string;
+            application: string;
+            service: string;
+            network: string;
+            segment: string;
+            address: string;
+            ports: components["schemas"]["PrivatePort"][];
+            revision: number;
+            status: string;
+        };
+        VirtualNetworkDetail: {
+            network: components["schemas"]["VirtualNetworkSummary"];
+            spec: components["schemas"]["VirtualNetworkSpec"];
+            toml: string;
+            connections: components["schemas"]["VirtualNetworkConnection"][];
+            truncated: boolean;
+            can_manage: boolean;
+        };
+        VirtualNetworkInput: {
+            project: string;
+            environment: string;
+            spec?: components["schemas"]["VirtualNetworkSpec"];
+            toml?: string;
+            expected_id?: string;
+            expected_revision?: number;
+        };
+        VirtualNetworkCreate: {
+            project: string;
+            environment: string;
+            spec?: components["schemas"]["VirtualNetworkSpec"];
+            toml?: string;
+            expected_id?: string;
+            expected_revision: number;
+        };
+        VirtualNetworkUpdate: {
+            project: string;
+            environment: string;
+            spec?: components["schemas"]["VirtualNetworkSpec"];
+            toml?: string;
+            expected_id: string;
+            expected_revision: number;
+        };
+        VirtualNetworkPlan: {
+            spec: components["schemas"]["VirtualNetworkSpec"];
+            previous: components["schemas"]["VirtualNetworkSpec"] | null;
+            toml: string;
+            expected_id: string;
+            expected_revision: number;
         };
         Volume: {
             mount_path: string;
@@ -3122,6 +3338,7 @@ export interface components {
         };
         NetworkAccess: {
             from: string[];
+            from_applications?: string[];
         };
         WorkloadSecret: {
             name: string;
@@ -7075,6 +7292,46 @@ export interface operations {
             };
         };
     };
+    createEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        project: string;
+                        name: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getProxy: {
         parameters: {
             query?: never;
@@ -8277,19 +8534,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    project: string;
-                    environment: string;
-                    name: string;
-                    public?: boolean;
-                    storage_gib?: number;
-                    architecture?: string;
-                    site_url?: string;
-                    provider?: string;
-                    provider_url?: string;
-                    model?: string;
-                    model_revision?: string;
-                };
+                "application/json": components["schemas"]["TemplateConfiguration"];
             };
         };
         responses: {
@@ -8300,6 +8545,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TemplatePlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deployTemplate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    configuration: components["schemas"]["TemplateConfiguration"];
+                    toml: string;
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putTemplateSecret: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+                application: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    value?: string;
+                    generate?: boolean;
+                    replace?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name: string;
+                        saved: boolean;
+                    };
                 };
             };
             /** @description Error */
@@ -8368,6 +8701,260 @@ export interface operations {
                     "application/json": {
                         state: string;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listVirtualNetworks: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["VirtualNetworkSummary"][];
+                        can_manage: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createVirtualNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VirtualNetworkCreate"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VirtualNetworkSummary"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVirtualNetwork: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VirtualNetworkDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVirtualNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VirtualNetworkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VirtualNetworkSummary"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteVirtualNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project: string;
+                    environment: string;
+                    expected_id: string;
+                    expected_revision: number;
+                    confirmation: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listVirtualNetworkCandidates: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            name: string;
+                            revision: number;
+                            services: string[];
+                        }[];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    planVirtualNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VirtualNetworkInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VirtualNetworkPlan"];
                 };
             };
             /** @description Error */

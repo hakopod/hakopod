@@ -240,6 +240,12 @@ SSR, and logout. It does not claim Kubernetes rollout correctness; that belongs
 to the repository's real-cluster acceptance suite. Browser verification and
 measurements are recorded in [VERIFICATION.md](./VERIFICATION.md).
 
+All dashboard selection controls use `SelectField` from `src/components/ui/select.tsx`, with
+`label`, `value`, `onValueChange`, and `options`. The wrapper uses the existing Radix Select
+primitive and Hatch styling while retaining empty values, disabled options, and required fields.
+Keep numeric state conversions at the call site. Do not introduce native selects or another
+selection component.
+
 ## Upstream decisions (checked 2026-09-12)
 
 - [TanStack Start build-from-scratch](https://tanstack.com/start/latest/docs/framework/react/build-from-scratch),

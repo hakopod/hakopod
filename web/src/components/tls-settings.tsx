@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -199,10 +199,21 @@ function TLSForm({
           <>
             <label>
               Certificate method
-              <Select value={mode} onChange={(e) => setMode(e.target.value as 'upload' | 'issuer')}>
-                <option value="upload">Upload PEM certificate and private key</option>
-                <option value="issuer">Use a managed ACME issuer</option>
-              </Select>
+              <SelectField
+                label="Certificate method"
+                value={mode}
+                onValueChange={(value) => setMode(value as 'upload' | 'issuer')}
+                options={[
+                  {
+                    value: 'upload',
+                    label: 'Upload PEM certificate and private key',
+                  },
+                  {
+                    value: 'issuer',
+                    label: 'Use a managed ACME issuer',
+                  },
+                ]}
+              />
             </label>
             {mode === 'upload' ? (
               <>
@@ -239,14 +250,21 @@ function TLSForm({
               <>
                 <label>
                   Issuer
-                  <Select value={issuer} onChange={(e) => setIssuer(e.target.value)}>
-                    <option value="">Choose an issuer</option>
-                    {issuers.data.items.map((item) => (
-                      <option key={item.name} value={item.name}>
-                        {item.name} · {item.ready ? 'ready' : 'not ready'}
-                      </option>
-                    ))}
-                  </Select>
+                  <SelectField
+                    label="Issuer"
+                    value={issuer}
+                    onValueChange={(value) => setIssuer(value)}
+                    options={[
+                      {
+                        value: '',
+                        label: 'Choose an issuer',
+                      },
+                      ...(issuers.data.items.map((item) => ({
+                        value: item.name,
+                        label: item.name + ' · ' + (item.ready ? 'ready' : 'not ready'),
+                      })) ?? []),
+                    ]}
+                  />
                 </label>
                 {!issuers.data.items.length && (
                   <Note>An administrator must create a certificate issuer in Infrastructure.</Note>

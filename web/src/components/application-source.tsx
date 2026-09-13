@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -313,13 +313,21 @@ export function SourceForm({
           >
             <label>
               Git provider
-              <Select
+              <SelectField
+                label="Git provider"
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
-              >
-                <option value="github">GitHub</option>
-                <option value="gitlab">GitLab.com</option>
-              </Select>
+                onValueChange={(value) => setProvider(value as 'github' | 'gitlab')}
+                options={[
+                  {
+                    value: 'github',
+                    label: 'GitHub',
+                  },
+                  {
+                    value: 'gitlab',
+                    label: 'GitLab.com',
+                  },
+                ]}
+              />
             </label>
             <label>
               Repository

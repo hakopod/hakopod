@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
 import { Button } from './ui/button'
@@ -129,15 +129,13 @@ export default function LiveLogs({
       <div className="logs-toolbar">
         <div className="inline-field">
           <Icon name="box" size={15} />
-          <Select
-            aria-label="Log service"
+          <SelectField
+            label="Log service"
+            compact
             value={service}
-            onChange={(event) => setService(event.target.value)}
-          >
-            {services.map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </Select>
+            onValueChange={setService}
+            options={services.map((name) => ({ value: name, label: name }))}
+          />
         </div>
         <span className={`log-connection ${state === 'Live' && visible ? 'log-connected' : ''}`}>
           <span className="status-dot" />

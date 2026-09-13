@@ -1,5 +1,5 @@
 import { Input } from './ui/input'
-import { Select } from './ui/select'
+import { SelectField } from './ui/select'
 import { readTerminalEvents } from '../lib/terminal-stream'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -368,70 +368,69 @@ export default function PodTerminal({
         <div className="terminal-controls">
           <label>
             Service
-            <Select
+            <SelectField
+              label="Service"
               disabled={connected || busy}
               value={service}
-              onChange={(e) => {
-                setService(e.target.value)
+              onValueChange={(value) => {
+                setService(value)
                 setPod('')
               }}
-            >
-              {services.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </Select>
+              options={services.map((name) => ({ value: name, label: name }))}
+            />
           </label>
           <label>
             Pod
-            <Select
+            <SelectField
+              label="Pod"
               disabled={connected || busy}
               value={chosenPod}
-              onChange={(e) => setPod(e.target.value)}
-            >
-              <option value="">Choose running pod</option>
-              {runtime.data?.pods.map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.name} · {item.phase}
-                </option>
-              ))}
-            </Select>
+              onValueChange={setPod}
+              options={[
+                { value: '', label: 'Choose running pod' },
+                ...(runtime.data?.pods || []).map((item) => ({
+                  value: item.name,
+                  label: `${item.name} · ${item.phase}`,
+                })),
+              ]}
+            />
           </label>
           <label>
             Container
-            <Select
+            <SelectField
+              label="Container"
               disabled={connected || busy}
               value={container}
-              onChange={(e) => setContainer(e.target.value)}
-            >
-              {(
+              onValueChange={setContainer}
+              options={(
                 runtime.data?.pods
                   .find((item) => item.name === chosenPod)
                   ?.containers.map((item) => item.name) || ['app']
-              ).map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </Select>
+              ).map((name) => ({ value: name, label: name }))}
+            />
           </label>
           <label>
             Client
-            <Select
+            <SelectField
+              label="Client"
               disabled={connected || busy}
               value={preset}
-              onChange={(e) => {
-                setPreset(e.target.value)
-                if (e.target.value !== 'custom')
-                  setCommand(JSON.stringify(presets[e.target.value as keyof typeof presets]))
+              onValueChange={(value) => {
+                setPreset(value)
+                if (value !== 'custom')
+                  setCommand(JSON.stringify(presets[value as keyof typeof presets]))
               }}
-            >
-              <option value="sh">Shell · sh</option>
-              <option value="bash">Shell · bash</option>
-              <option value="psql">PostgreSQL · psql</option>
-              <option value="redis">Redis · redis-cli</option>
-              <option value="valkey">Valkey · valkey-cli</option>
-              <option value="mysql">MySQL · mysql</option>
-              <option value="mongo">MongoDB · mongosh</option>
-              <option value="custom">Custom command</option>
-            </Select>
+              options={[
+                { value: 'sh', label: 'Shell · sh' },
+                { value: 'bash', label: 'Shell · bash' },
+                { value: 'psql', label: 'PostgreSQL · psql' },
+                { value: 'redis', label: 'Redis · redis-cli' },
+                { value: 'valkey', label: 'Valkey · valkey-cli' },
+                { value: 'mysql', label: 'MySQL · mysql' },
+                { value: 'mongo', label: 'MongoDB · mongosh' },
+                { value: 'custom', label: 'Custom command' },
+              ]}
+            />
           </label>
         </div>
       )}

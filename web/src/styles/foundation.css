@@ -99,7 +99,7 @@ label:focus-within {
   color: var(--state);
 }
 label > .input-wrap,
-label > .native-select-wrap {
+label > .select-field-wrap {
   display: block;
   margin-top: 8px;
 }
@@ -108,14 +108,12 @@ label > .native-select-wrap {
   width: 100%;
 }
 .input-wrap input,
-.input-wrap textarea,
-select {
+.input-wrap textarea {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--foreground);
 }
-.input-wrap input,
-select {
+.input-wrap input {
   height: 44px;
 }
 .input-wrap input {
@@ -139,31 +137,35 @@ select {
 .input-wrap:has(textarea:disabled) > .brackets {
   display: none;
 }
-.native-select-wrap {
+.select-field-wrap {
   position: relative;
-  min-width: 0;
   display: inline-block;
   width: 100%;
+  min-width: 0;
 }
-.native-select-wrap > select {
-  display: block;
+.select-field-wrap > .select-trigger {
   width: 100%;
-  margin: 0;
-  padding: 0 32px 0 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 3px;
-  background-color: var(--card);
-  cursor: pointer;
+  min-width: 0;
+  color: var(--foreground);
 }
-.native-select-wrap > .brackets {
-  opacity: 0;
+.select-field-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.native-select-wrap:focus-within > .brackets {
-  opacity: 1;
+.select-trigger > span:not(.select-field-value, .brackets) {
+  flex-shrink: 0;
 }
-.native-select-wrap:focus-within select {
-  border-color: var(--state);
-  background-color: var(--hatch-base);
+.hako-select-content {
+  max-width: min(480px, calc(100vw - 24px));
+}
+.hako-select-content .select-item {
+  overflow-wrap: anywhere;
+}
+.hako-select-content .select-item[data-disabled] {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 input[type='checkbox'],
 input[type='radio'] {
