@@ -11,6 +11,9 @@ import (
 // ValidateDelivery is read-only. It runs during planning, durable acceptance
 // and reconciliation; approval never substitutes for a current ownership check.
 func (c *Client) ValidateDelivery(ctx context.Context, t Target) error {
+	if err := c.ValidateReadiness(t.Spec); err != nil {
+		return err
+	}
 	if !spec.HasDeliveryCapabilities(t.Spec) {
 		return nil
 	}

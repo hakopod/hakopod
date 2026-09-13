@@ -47,6 +47,8 @@ type Service struct {
 	Public                  bool                 `json:"public" toml:"public"`
 	Size                    string               `json:"size" toml:"size"`
 	Replicas                int32                `json:"replicas" toml:"replicas"`
+	UpdateStrategy          string               `json:"update_strategy,omitempty" toml:"update_strategy"`
+	Readiness               *Readiness           `json:"readiness,omitempty" toml:"readiness"`
 	Healthcheck             string               `json:"healthcheck,omitempty" toml:"healthcheck"`
 	Env                     map[string]string    `json:"env,omitempty" toml:"env"`
 	Command                 []string             `json:"command,omitempty" toml:"command"`
@@ -225,6 +227,9 @@ func Normalize(input Application) (Application, error) {
 				return Application{}, fmt.Errorf("%s.healthcheck: use an HTTP path on a service with a port, such as /readyz", field)
 			}
 		}
+		if svc.UpdateStrategy != "" && svc.UpdateStrategy != "rolling" && svc.UpdateStrategy != "recreate" {
+			return Application{}, fmt.Errorf("%s.update_strategy: choose rolling or recreate", field)
+		}
 		if len(svc.Env) > 128 {
 			return Application{}, fmt.Errorf("%s.env: at most 128 variables are supported", field)
 		}
@@ -290,6 +295,13 @@ func Normalize(input Application) (Application, error) {
 	}
 	if err := validateNetworkAccess(app); err != nil {
 		return Application{}, err
+	}
+	for _, name := range Names(app) {
+		svc := app.Services[name]
+		if err := normalizeReadiness(&svc); err != nil {
+			return Application{}, fmt.Errorf("services.%s: %w", name, err)
+		}
+		app.Services[name] = svc
 	}
 	if err := validatePublicTCP(app); err != nil {
 		return Application{}, err
@@ -428,6 +440,8 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "size", a.Size, b.Size, false)
 		add(name, "replicas", a.Replicas, b.Replicas, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
+		add(name, "readiness", a.Readiness, b.Readiness, false)
+		add(name, "update_strategy", a.UpdateStrategy, b.UpdateStrategy, false)
 		add(name, "env", a.Env, b.Env, true)
 		add(name, "command", a.Command, b.Command, false)
 		add(name, "args", a.Args, b.Args, false)

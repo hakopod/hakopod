@@ -25,6 +25,7 @@ const (
 )
 
 type Options struct {
+	ReadinessProbeImage string
 	DeploymentMode      string
 	PublicTCPPorts      []int32
 	AWSIdentityBindings []AWSIdentityBinding
@@ -127,6 +128,9 @@ func (c *Client) restClient() rest.Interface {
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
+	if err := ValidateReadinessProbeImage(options.ReadinessProbeImage); err != nil {
+		return nil, err
+	}
 	mode, err := ParseDeploymentMode(options.DeploymentMode)
 	if err != nil {
 		return nil, err

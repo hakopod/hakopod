@@ -33,20 +33,26 @@ func (c *Client) serviceDeliveryHealthy(ctx context.Context, t Target, name stri
 		}
 		notes = append(notes, "Public TCP is configured; external reachability and STARTTLS remain unverified.")
 	}
-	for _, mount := range svc.CertificateMounts {
-		secret, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, mount.Certificate, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			return false, "A mounted backend certificate is missing; upload and deploy a replacement.", nil
-		}
+	if len(svc.CertificateMounts) > 0 {
+		resolved, err := c.resolveBackendCertificates(ctx, t, name, svc, false)
 		if err != nil {
-			return false, "", fmt.Errorf("observe backend certificate: %w", err)
+			return false, "Backend certificate is unavailable: " + err.Error(), nil
 		}
-		if err := checkBackendCertificate(secret, t, name, mount.Hostname); err != nil {
-			return false, "Mounted backend certificate is unavailable: " + err.Error(), nil
+		if !backendMountsPrepared(current.Spec.Template.Spec, resolved) {
+			return false, "Backend certificate renewal or mount update is pending.", nil
 		}
-	}
-	if len(svc.CertificateMounts) > 0 && !backendMountsPrepared(current.Spec.Template.Spec, svc) {
-		return false, "Backend certificate mounts differ from this revision.", nil
+		for _, mount := range resolved.CertificateMounts {
+			secret, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, mount.Certificate, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, "A mounted backend certificate is missing.", nil
+			}
+			if err != nil {
+				return false, "", err
+			}
+			if err = checkBackendCertificate(secret, t, name, mount.Hostname); err != nil {
+				return false, "Mounted backend certificate is unavailable: " + err.Error(), nil
+			}
+		}
 	}
 	if svc.AWSIdentity != "" {
 		identity, err := c.AWSIdentityStatus(ctx, t, name)

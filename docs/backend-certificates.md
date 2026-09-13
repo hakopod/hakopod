@@ -79,13 +79,60 @@ by cert-manager. The hostname must appear in that ingress's TLS hosts. Callers
 cannot select another service, namespace or arbitrary Secret. Services with only
 public TCP can upload a certificate managed outside Hakopod.
 
-Cert-manager renewal of the HTTP ingress does **not** rotate an existing backend
-snapshot. Import again after renewal, then review and deploy the new reference.
-Use `hakopod certificate-upload APP_ID --service smtp --hostname mail.example.com
---from-ingress` to make that snapshot from the CLI.
-Automatic backend renewal or reload is not implemented. Keep expiry monitoring
-and the existing SMTP deployment in place until this complete rotation path and
-external STARTTLS behavior have been verified for your installation.
+The import endpoint and `--from-ingress` command still create pinned snapshots.
+To follow renewals automatically on a self-hosted installation, deploy the
+service with its HTTP TLS ingress first, then review this opt-in configuration:
+
+```toml
+[services.smtp]
+image = "example/smtp:1"
+port = 8080
+public = true
+healthcheck = "/health"
+certificate_mounts = [
+  { source = "ingress", hostname = "mail.example.com", mount_path = "/certificates/smtp" },
+]
+```
+
+Keep your existing private SMTP port, public TCP mapping, environment variables
+and filesystem settings in the same service. `mail.example.com` must be a domain
+of this service and already appear on its active TLS ingress. The service needs
+an explicit TLS configuration or the installation's default TLS issuer. A mount
+has either `certificate` or `source`, never both. Automatic sources are disabled
+on Hakopod Cloud. TCP-only services can continue to upload pinned certificates.
+
+The existing reconciliation loop checks up to 50 applications per 15-second
+cycle, rotating one automatic-certificate service per application on each full
+scan. Each maintenance step has a five-second budget so a large application
+cannot starve later services. Maintenance runs only after a successful accepted
+deployment and pauses while another deployment is queued or running.
+It validates the current source and
+creates an immutable service-owned copy only when certificate bytes change.
+Changing that mount restarts the service using its configured update strategy
+at the same application
+revision. No upload, deployment approval or persistent sidecar is needed after
+opting in. Applications that load TLS at startup reopen the new certificate.
+The normal readiness gate controls when a replacement pod receives traffic.
+For singleton queue runtimes such as Xem, use `replicas = 1` and
+`update_strategy = "recreate"`; renewal then includes a brief stop-first outage.
+
+Missing, expired or invalid source certificates keep the last valid mount and
+report unhealthy/pending delivery status. Check application observations and
+alarms; a rollout can still stall because of scheduling or application failures.
+Maintenance shares the deployment lock and yields when a deployment is queued.
+An automatic-source rollback follows the current valid ingress certificate;
+a pinned-upload rollback uses its original reference while valid.
+
+Automatic copies are separate from uploaded history and are deleted only when
+no Deployment, ReplicaSet or Pod in the application namespace refers to them.
+Cleanup reads at most 256 of each workload kind, fails closed on partial lists,
+and keeps at most 64 automatic versions per service. It never deletes uploaded
+references. An operator must retire obsolete workloads if that bound is reached.
+
+Use [SMTP readiness](readiness.md) to combine HTTP health with a real listener
+or STARTTLS check. Certificate renewal does not prove public routing, AWS access,
+mail authentication or outbound deliverability. Verify those separately before
+switching production traffic.
 
 `GET` on the same endpoint returns up to 64 historical certificate entries plus
 any active references outside that page, including the mount path, readiness,

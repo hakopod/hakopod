@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -266,6 +267,7 @@ func (w *Worker) Resync(ctx context.Context) {
 	timer := time.NewTicker(15 * time.Second)
 	defer timer.Stop()
 	cursor := ""
+	var renewalRound uint64
 	for {
 		select {
 		case <-ctx.Done():
@@ -285,6 +287,7 @@ func (w *Worker) Resync(ctx context.Context) {
 			rows.Close()
 			if len(ids) == 0 {
 				cursor = ""
+				renewalRound++
 				continue
 			}
 			cursor = ids[len(ids)-1]
@@ -296,6 +299,7 @@ func (w *Worker) Resync(ctx context.Context) {
 				if err != nil {
 					continue
 				}
+				w.renewCertificates(ctx, a, renewalRound)
 				observeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				o, err := w.Cluster.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})
 				cancel()
@@ -308,5 +312,39 @@ func (w *Worker) Resync(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+// Maintenance shares the deployment claim and rechecks it before each write.
+func (w *Worker) renewCertificates(parent context.Context, a store.Application, round uint64) {
+	if !spec.HasAutomaticCertificates(a.Spec) {
+		return
+	}
+	names := []string{}
+	for _, name := range spec.Names(a.Spec) {
+		for _, mount := range a.Spec.Services[name].CertificateMounts {
+			if mount.Source == "ingress" {
+				names = append(names, name)
+				break
+			}
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	selected := names[round%uint64(len(names))]
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	claim, err := w.Store.ClaimRuntime(ctx, a.ID, a.Revision)
+	if err != nil || claim == nil {
+		return
+	}
+	defer claim.Release()
+	target := cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec, BeforeStep: claim.Check}
+	err = w.Cluster.RenewBackendCertificates(ctx, target, func(event cluster.Event) {
+		_ = w.Store.Event(ctx, claim.OperationID, event.Type, event.Message, event.Service)
+	}, selected)
+	if err != nil && ctx.Err() == nil {
+		slog.Debug("automatic certificate renewal deferred", "application", a.ID)
 	}
 }

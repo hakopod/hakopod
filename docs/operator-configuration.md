@@ -37,6 +37,7 @@ The available settings map to the same environment options used by the server:
 | `server.ingress_class` | `HAKOPOD_INGRESS_CLASS` |
 | `server.deployment_mode` | `HAKOPOD_DEPLOYMENT_MODE` |
 | `server.public_tcp_ports` | `HAKOPOD_PUBLIC_TCP_PORTS` |
+| `server.readiness_probe_image` | `HAKOPOD_READINESS_PROBE_IMAGE` |
 | `server.rollout_timeout` | `HAKOPOD_ROLLOUT_TIMEOUT` |
 | `server.public_port` | `HAKOPOD_PUBLIC_PORT` |
 | `server.public_https_port` | `HAKOPOD_PUBLIC_HTTPS_PORT` |

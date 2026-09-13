@@ -38,6 +38,9 @@ func workloadQuota(q *corev1.ResourceQuota, a spec.Application) {
 func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	p := &d.Spec.Template.Spec
 	c := &p.Containers[0]
+	if s.UpdateStrategy == "recreate" {
+		d.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
+	}
 	if s.Architecture != "" {
 		p.NodeSelector = map[string]string{"kubernetes.io/arch": s.Architecture}
 	}
