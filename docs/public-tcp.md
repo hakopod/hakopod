@@ -1,6 +1,9 @@
 # Public TCP services
 
-Public TCP forwards a connection unchanged through the existing HAProxy ingress.
+Self-hosted installations can forward public TCP connections unchanged through
+the existing HAProxy ingress. An administrator must provision each external port
+before an application can use it. Managed-cloud installations do not expose
+public TCP; private TCP communication between services remains available.
 An SMTP application owns its STARTTLS handshake and certificate. Hakopod's
 `public = true` and `tls` fields still configure HTTP ingress; extra `ports`
 remain private unless referenced by an explicit `public_tcp` listener.
@@ -26,19 +29,34 @@ source_cidrs = ["0.0.0.0/0"]
 `target_port` must match exactly one declared TCP container port (`port` or an
 entry in `ports`). A primary `port` is required for workload readiness. If a
 separate HTTP port provides the readiness check, that endpoint must also report
-whether the SMTP listener is ready. Hakopod resolves the target to the corresponding private Kubernetes
-Service port. Public HTTP and TCP cannot target the same backend port because
-HAProxy requires different backend modes. Use distinct container ports. For restricted submission, replace `0.0.0.0/0` with your allowed
-IPv4 CIDRs. Omission is rejected. Each service may declare four listeners, and an
-application may declare sixteen; each listener accepts at most sixteen CIDRs.
+whether the SMTP listener is ready. Hakopod resolves the target to the
+corresponding private Kubernetes Service port. Public HTTP and TCP cannot target
+the same backend port because HAProxy requires different backend modes. Use
+distinct container ports. For restricted submission, replace `0.0.0.0/0` with
+your allowed IPv4 CIDRs. Omission is rejected. Each service may declare sixteen
+listeners, and an application may declare sixty-four; each listener accepts at
+most sixteen CIDRs.
 Source filtering uses the source observed by HAProxy. Upstream NAT or a proxy
 can change that address. PROXY protocol and IPv6 exposure are not supported by
 this initial profile.
 
 ## Operator setup
 
-Enable only the required external ports with `HAKOPOD_PUBLIC_TCP_PORTS` (for
-example, `587`). The installation must also provision matching TCP container and
+The server's `HAKOPOD_DEPLOYMENT_MODE` selects `self-hosted` (the default) or
+`managed-cloud`. Its operator TOML equivalent is `[server] deployment_mode`.
+This is an installation setting, not an application TOML field, dashboard
+permission or license feature. A paid license does not enable public TCP in
+managed-cloud mode. Self-hosted Hakopod can run on an AWS, GCP or Azure VM when
+its administrator controls the ingress ports; the hosting provider's name does
+not select the mode.
+
+In self-hosted mode, administrators may provision any available TCP port from
+1 through 65535 except reserved platform ports. The installation allowlist holds
+at most 256 ports. Enable only those needed with `HAKOPOD_PUBLIC_TCP_PORTS` (for
+example, `587,12345`), or `[server] public_tcp_ports = [587, 12345]`. New installs
+accept the JSON keys `deployment_mode` and `public_tcp_ports`; the interactive
+installer asks for the mode and skips public TCP inputs in managed-cloud mode.
+The installation must also provision matching TCP container and
 Service ports on its owned HAProxy controller. A host installation uses matching
 host ports. A NodePort or LoadBalancer service must use `externalTrafficPolicy:
 Local` to preserve source addresses. NodePort exposes its assigned node port,
@@ -52,9 +70,17 @@ TCP CRD, the owned ready deployment, source-preserving exposure, or the required
 provisioned port fail preflight rather than silently creating a private listener.
 Management ports and HTTP/HTTPS are reserved.
 
+Managed-cloud mode rejects public TCP specifications and a nonempty public-port
+allowlist. Before changing an existing server to that mode, remove its public
+TCP listeners while it is still self-hosted and wait for successful removal.
+Then clear the allowlist, change the mode and restart. Startup rejects remaining
+managed TCP listeners or unacknowledged removals. Changing an environment
+variable does not close host ports, alter cloud firewalls or retire an external
+SMTP deployment.
+
 The supported controller is HAProxy Technologies Kubernetes Ingress 3.2.15,
 installed as `hakopod-ingress` in `haproxy-controller`. TCP-services ConfigMaps and
-custom namespace filters are incompatible with this managed profile. Existing
+custom namespace filters are incompatible with this owned ingress profile. Existing
 v1 and v3 TCP resources are checked for port conflicts. Resource inventories are
 bounded; excessive counts require operator review rather than a partial scan.
 
@@ -94,3 +120,7 @@ production, test from outside the cloud network: SMTP greeting, EHLO, STARTTLS,
 certificate hostname and chain, authenticated delivery, disallowed sources,
 rollback, and long-session behavior. Keep the existing SMTP deployment until
 certificate mounts and AWS permissions have also passed their acceptance checks.
+
+A shared SMTP gateway that routes by authenticated account or domain would need
+to understand SMTP. It is future work; the current raw TCP proxy does not share
+one public SMTP port between unrelated applications.

@@ -138,6 +138,8 @@ func failure(w http.ResponseWriter, err error) {
 		problem(w, 403, "forbidden", err.Error())
 	case errors.Is(err, store.ErrConflict):
 		problem(w, 409, "conflict", err.Error())
+	case errors.Is(err, cluster.ErrPublicTCPDisabled):
+		problem(w, 409, "public_tcp_disabled", err.Error())
 	case errors.Is(err, store.ErrInput):
 		problem(w, 400, "invalid_request", err.Error())
 	case errors.Is(err, pgx.ErrNoRows):

@@ -56,5 +56,5 @@ func (s *Server) serviceDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "unavailable", "Workload identity observations are unavailable")
 		return
 	}
-	write(w, 200, map[string]any{"public_tcp": listeners, "aws_identity": identity, "observed_at": time.Now().UTC()})
+	write(w, 200, map[string]any{"public_tcp": listeners, "public_tcp_policy": s.Cluster.PublicTCPPolicy(), "aws_identity": identity, "observed_at": time.Now().UTC()})
 }

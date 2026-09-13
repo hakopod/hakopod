@@ -66,7 +66,8 @@ printf 'END\n'
 		if e != nil {
 			return nil, e
 		}
-		output := &tcpBoundedWriter{limit: 64 << 10}
+		// Up to 64 application frontends, including their bounded source ACLs.
+		output := &tcpBoundedWriter{limit: 256 << 10}
 		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		e = executor.StreamWithContext(probeCtx, remotecommand.StreamOptions{Stdout: output, Stderr: io.Discard})
 		cancel()
@@ -92,7 +93,7 @@ type tcpBoundedWriter struct {
 
 func (w *tcpBoundedWriter) Write(p []byte) (int, error) {
 	if len(p) > w.limit-w.Len() {
-		return 0, fmt.Errorf("ingress runtime response exceeds 64 KiB")
+		return 0, fmt.Errorf("ingress runtime response exceeds its %d-byte limit", w.limit)
 	}
 	return w.Buffer.Write(p)
 }

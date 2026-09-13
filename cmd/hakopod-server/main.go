@@ -36,6 +36,10 @@ func run() error {
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}
+	deploymentMode, err := cluster.ParseDeploymentMode(os.Getenv("HAKOPOD_DEPLOYMENT_MODE"))
+	if err != nil {
+		return err
+	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(192 << 20)
 	}
@@ -125,9 +129,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{PublicTCPPorts: publicTCPPorts, AWSIdentityBindings: awsIdentities, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, AWSIdentityBindings: awsIdentities, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
+	}
+	if err := kube.ValidatePublicTCPInstallation(ctx); err != nil {
+		return err
 	}
 	listen := env("HAKOPOD_LISTEN", "127.0.0.1:8080")
 	host, _, err := net.SplitHostPort(listen)

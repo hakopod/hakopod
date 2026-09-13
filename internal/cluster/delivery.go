@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -12,6 +13,9 @@ import (
 func (c *Client) ValidateDelivery(ctx context.Context, t Target) error {
 	if !spec.HasDeliveryCapabilities(t.Spec) {
 		return nil
+	}
+	if policy := c.PublicTCPPolicy(); spec.HasPublicTCP(t.Spec) && !policy.Allowed {
+		return fmt.Errorf("%w: %s", ErrPublicTCPDisabled, policy.Message)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

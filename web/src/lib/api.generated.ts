@@ -2948,8 +2948,15 @@ export interface components {
             aws_verified: boolean;
             message?: string;
         };
+        PublicTCPPolicy: {
+            /** @enum {string} */
+            mode: "self-hosted" | "managed-cloud";
+            allowed: boolean;
+            message: string;
+        };
         ServiceDelivery: {
             public_tcp: components["schemas"]["PublicTCPStatus"][];
+            public_tcp_policy: components["schemas"]["PublicTCPPolicy"];
             aws_identity: components["schemas"]["AWSIdentityState"] | null;
             /** Format: date-time */
             observed_at: string;

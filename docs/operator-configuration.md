@@ -35,6 +35,8 @@ The available settings map to the same environment options used by the server:
 | `server.kubeconfig_file` | `HAKOPOD_KUBECONFIG` |
 | `server.app_domain` | `HAKOPOD_APP_DOMAIN` |
 | `server.ingress_class` | `HAKOPOD_INGRESS_CLASS` |
+| `server.deployment_mode` | `HAKOPOD_DEPLOYMENT_MODE` |
+| `server.public_tcp_ports` | `HAKOPOD_PUBLIC_TCP_PORTS` |
 | `server.rollout_timeout` | `HAKOPOD_ROLLOUT_TIMEOUT` |
 | `server.public_port` | `HAKOPOD_PUBLIC_PORT` |
 | `server.public_https_port` | `HAKOPOD_PUBLIC_HTTPS_PORT` |
@@ -69,7 +71,31 @@ process; it does not import user accounts, grant roles, activate licenses or
 replace persisted application state. Dashboard changes to those resources keep
 their normal authorization, revision and audit checks.
 
-Public TCP ports are disabled by default. Set `[server] public_tcp_ports = [587]`
-or `HAKOPOD_PUBLIC_TCP_PORTS=587` only after provisioning matching ports on the
-owned HAProxy ingress. The installer JSON uses `public_tcp_ports: [587]`.
+`server.deployment_mode` accepts `self-hosted` (the default) or `managed-cloud`.
+The setting belongs to the server operator. Applications and dashboard roles
+cannot change it, and licenses do not override it. Self-hosted installations may
+run on cloud VMs when the administrator controls their ingress configuration.
+
+Public TCP is unavailable in managed-cloud mode; private TCP ports still work.
+In self-hosted mode, administrators can provision any available non-platform
+TCP port from 1 through 65535, with at most 256 ports in the installation
+allowlist. No public TCP ports are enabled by default:
+
+```toml
+[server]
+deployment_mode = "self-hosted"
+public_tcp_ports = [587, 12345]
+```
+
+Set this allowlist, or `HAKOPOD_PUBLIC_TCP_PORTS=587,12345`, only after provisioning
+matching ports on the owned HAProxy ingress. New installations accept
+`deployment_mode` and `public_tcp_ports` in installer JSON. Application TOML
+selects from provisioned ports; a deployment never opens another host port or
+changes a firewall automatically.
+
+To switch an existing server to managed-cloud mode, first remove its public TCP
+listeners while still self-hosted and wait for the removals to succeed. Clear
+the allowlist before changing the mode and restarting. Managed-cloud startup
+refuses a nonempty allowlist, remaining managed TCP listeners or unacknowledged
+removals. Changing the setting does not shut down external networking by itself.
 See [SMTP migration](smtp-migration.md) for firewall, certificate and AWS setup.

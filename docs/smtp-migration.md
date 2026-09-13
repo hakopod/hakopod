@@ -1,19 +1,31 @@
 # Moving an SMTP service to Hakopod
 
-Hakopod can publish an explicit TCP listener, mount a service certificate and
+Self-hosted Hakopod can publish an administrator-provisioned TCP listener, mount a service certificate and
 supply an approved AWS web identity. These are separate from HTTP ingress and
 Hakopod's own account/notification email settings. Keep the existing SMTP
 service running until the destination passes the checks below.
 
+Managed-cloud installations do not publish public TCP, including SMTP. Private
+TCP service ports remain available, but this guide is not a public SMTP cutover
+path for that mode. A shared, protocol-aware SMTP gateway is future work and is
+not provided by the current raw TCP proxy.
+
 ## Prepare the destination
 
-1. Enable only the required TCP ports in the installation. New installs accept
+1. Confirm the destination uses `HAKOPOD_DEPLOYMENT_MODE=self-hosted` or
+   `[server] deployment_mode = "self-hosted"` in operator TOML. This server-owned
+   setting defaults to self-hosted and is not controlled by application files,
+   roles or licenses. An administrator then provisions only the required TCP
+   ports. New installs accept `deployment_mode: "self-hosted"` and
    `public_tcp_ports: [587]` in installer JSON or the interactive prompt. This
    provisions the pinned HAProxy container, Service and host port, and the API
    allowlist. It does not open a cloud firewall or claim a listener for an app.
    Existing installs need a reviewed Helm update and
    `HAKOPOD_PUBLIC_TCP_PORTS=587` (or `[server] public_tcp_ports = [587]` in
-   operator TOML). See [public TCP](public-tcp.md) for source-IP and conflict rules.
+   operator TOML). Available non-platform ports from 1 through 65535 can be used;
+   at most 256 may be provisioned per installation. Application deployment never
+   provisions another port automatically. See [public TCP](public-tcp.md) for
+   source-IP and conflict rules.
 2. Deploy your mail application privately first, with its own digest-pinned
    image, secrets and data. Use an unprivileged container port such as 2525. Do
    not change the production MX records or SMTP endpoint yet.
@@ -97,6 +109,12 @@ Also verify:
 
 Only after these pass should you move production traffic. Retain the previous
 service, credentials and endpoint through your agreed observation period.
+
+If the installation later moves to managed-cloud mode, remove its public TCP
+listeners while still self-hosted and wait for successful removal. Clear the
+port allowlist before changing the mode and restarting. Startup refuses leftover
+managed listeners or unacknowledged removals; changing the mode does not itself
+close cloud firewalls or replace the existing SMTP endpoint.
 
 ## Verification record
 
