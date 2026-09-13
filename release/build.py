@@ -20,6 +20,13 @@ from datetime import datetime, timezone
 ROOT=Path(__file__).resolve().parents[1]
 ENV=dict(os.environ,GOMAXPROCS='2',GOMEMLIMIT='256MiB',CGO_ENABLED='0',GOWORK='off')
 TARGETS=[('linux','amd64'),('linux','arm64'),('darwin','amd64'),('darwin','arm64')]
+PUBLIC_BUILD_TAG='hakopod_selfhosted'
+
+def build_command(command, destination, version):
+    flags='-s -w'+(' -X main.version='+version if command=='hakopod' else '')
+    # An explicit tag wins over ambient GOFLAGS and keeps public artifacts closed.
+    return ['go','build','-p','2','-trimpath','-buildvcs=false','-tags='+PUBLIC_BUILD_TAG,
+            '-ldflags='+flags,'-o',str(destination),'./cmd/'+command]
 
 def run(args,**kwargs):
     return subprocess.run(args,cwd=kwargs.pop('cwd',ROOT),env=kwargs.pop('env',ENV),check=True,**kwargs)
@@ -73,7 +80,7 @@ def main():
     args=parser.parse_args()
     version=args.version
     if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?',version) or len(version)>64:
-        raise SystemExit('Version must be a release number without v, for example 0.1.0-alpha.1')
+        raise SystemExit('Version must be a release number without v, for example 0.1.0-alpha.2')
     source_revision=output(['git','rev-parse','--verify','HEAD'])
     source_dirty=bool(output(['git','status','--porcelain','--ignore-submodules=all']))
     run([str(ROOT/'release/install-syft.sh')])
@@ -115,8 +122,7 @@ def main():
         commands=['hakopod','hakopod-server'] if system=='linux' else ['hakopod']
         for command in commands:
             print(f'Building {command} for {system}/{arch}',flush=True)
-            flags='-s -w'+(' -X main.version='+version if command=='hakopod' else '')
-            run(['go','build','-p','2','-trimpath','-buildvcs=false','-ldflags='+flags,'-o',str(directory/command),'./cmd/'+command],env=env,cwd=source)
+            run(build_command(command, directory/command, version),env=env,cwd=source)
         for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,directory/filename)
         shutil.copytree(notices/'go',directory/'third-party-licenses')
         if system=='linux':
@@ -156,6 +162,7 @@ def main():
                 'syft_version':'1.51.1','source_revision':source_revision,'source_dirty':source_dirty or bool(status),'source_fingerprint_sha256':before,
                 'source_changed_during_build':after!=before or revision!=source_revision,
                 'source_file_hashes':manifest,'target_platforms':[system+'/'+arch for system,arch in TARGETS],
+                'product':'self-hosted','go_build_tags':[PUBLIC_BUILD_TAG],'binary_capabilities':{'public_signup':False},
                 'cgo_enabled':False,'go_build_parallelism':2,'go_soft_memory_limit':'256MiB',
                 'sbom_path_normalization':'Machine-specific staging, Go module cache and home paths replaced with $RELEASE_STAGE, $GOPATH/pkg/mod and $HOME; package identities and license data retained',
                 'scope':'Go CLI/server binaries plus declared dashboard dependency lock (including development/optional packages); not a container OS or built dashboard inventory',
