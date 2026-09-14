@@ -5980,6 +5980,224 @@
         }
       }
     },
+    "/git/github/start": {
+      "post": {
+        "operationId": "startGitHubAppManifest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitAppSetup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "organization": {
+                    "type": "string"
+                  },
+                  "builds": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "builds"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/github/complete": {
+      "post": {
+        "operationId": "completeGitHubAppManifest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitAppSetup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitOAuthComplete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/connections/{id}/github/setup": {
+      "post": {
+        "operationId": "resumeGitHubAppSetup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitAppSetup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/github/install/complete": {
+      "post": {
+        "operationId": "completeGitHubAppInstallation",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "installation_id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "state",
+                  "installation_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/setup": {
+      "get": {
+        "operationId": "getGitProviderSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitProviderSetup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/installation/status": {
       "get": {
         "operationId": "getInstallationStatus",
@@ -13464,6 +13682,9 @@
           },
           "webhook_secret": {
             "type": "string"
+          },
+          "managed_app": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -13582,6 +13803,62 @@
         "required": [
           "code",
           "state"
+        ]
+      },
+      "GitAppSetup": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "manifest",
+              "install"
+            ]
+          },
+          "action_url": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "connection_id",
+          "phase",
+          "action_url",
+          "expires_at"
+        ]
+      },
+      "GitProviderSetup": {
+        "type": "object",
+        "properties": {
+          "github_available": {
+            "type": "boolean"
+          },
+          "public_url": {
+            "type": "string"
+          },
+          "gitlab_callback_url": {
+            "type": "string"
+          },
+          "github_notice": {
+            "type": "string"
+          },
+          "gitlab_notice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "github_available",
+          "public_url",
+          "gitlab_callback_url"
         ]
       },
       "InstallationOperation": {

@@ -28,6 +28,7 @@ import (
 // grants access to that exact connection and repository, never to a provider's
 // first available credential. Legacy IDs always refer to their original Secret.
 type gitConnection struct {
+	ManagedApp           bool            `json:"managed_app,omitempty"`
 	ID                   string          `json:"id"`
 	Name                 string          `json:"name"`
 	Provider             string          `json:"provider"`
@@ -55,6 +56,11 @@ type gitConnection struct {
 }
 
 type gitConnectionCredentials struct {
+	Manifest      bool      `json:"manifest,omitempty"`
+	AppSlug       string    `json:"app_slug,omitempty"`
+	SetupOrigin   string    `json:"setup_origin,omitempty"`
+	OwnerLogin    string    `json:"owner_login,omitempty"`
+	Builds        bool      `json:"builds,omitempty"`
 	Token         string    `json:"token,omitempty"`
 	WebhookSecret string    `json:"webhook_secret,omitempty"`
 	AppID         string    `json:"github_app_id,omitempty"`
@@ -147,6 +153,10 @@ func (s *Server) describeGitConnection(ctx context.Context, c gitConnection) (gi
 			return c, e
 		}
 	}
+	c.ManagedApp = v.Manifest
+	if v.Manifest {
+		c.WebhookPath = "/api/v1/webhooks/git/" + c.ID
+	}
 	c.OAuthScopes = v.Scopes
 	c.TokenConfigured = v.Token != "" || (c.AuthKind == "github_app" && v.PrivateKey != "" && c.InstallationID > 0)
 	c.PrivateRepositories = c.TokenConfigured
@@ -163,10 +173,17 @@ func (s *Server) describeGitConnection(ctx context.Context, c gitConnection) (gi
 	if c.AuthKind == "gitlab_oauth" && !c.Configured && c.Enabled {
 		c.Status = "reauthorize"
 	}
+	if v.Manifest && c.InstallationID == 0 {
+		c.Status = "setup_required"
+	}
 	c.Capabilities = map[string]bool{"read_source": c.Enabled, "builds": c.Configured}
 	if c.AuthKind == "gitlab_oauth" {
 		c.Capabilities["read_source"] = c.Configured
 		c.Capabilities["builds"] = c.Configured && v.Scopes == "api"
+	}
+	if v.Manifest {
+		c.Capabilities["builds"] = c.Configured && v.Builds
+		c.Capabilities["read_source"] = c.Configured
 	}
 	return c, nil
 }
@@ -179,6 +196,11 @@ func (s *Server) registerGitConnectionRoutes(public, protected *http.ServeMux) {
 	protected.HandleFunc("POST /api/v1/git/connections/{id}/authorize", s.gitConnectionHandler(s.startGitOAuth))
 	protected.HandleFunc("POST /api/v1/git/connections/{id}/oauth/complete", s.gitConnectionHandler(s.completeGitOAuth))
 	protected.HandleFunc("POST /api/v1/git/oauth/complete", s.gitConnectionHandler(s.completeGitOAuth))
+	protected.HandleFunc("GET /api/v1/git/setup", s.gitConnectionHandler(s.gitProviderSetup))
+	protected.HandleFunc("POST /api/v1/git/github/start", s.gitConnectionHandler(s.startGitHubManifest))
+	protected.HandleFunc("POST /api/v1/git/github/complete", s.gitConnectionHandler(s.completeGitHubManifest))
+	protected.HandleFunc("POST /api/v1/git/github/install/complete", s.gitConnectionHandler(s.completeGitHubInstall))
+	protected.HandleFunc("POST /api/v1/git/connections/{id}/github/setup", s.gitConnectionHandler(s.resumeGitHubSetup))
 	public.HandleFunc("POST /api/v1/webhooks/git/{connection}", s.namedGitWebhook)
 	public.HandleFunc("POST /api/v1/webhooks/github-app/{app}", s.gitHubAppWebhook)
 }
@@ -271,6 +293,10 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 		v, err = s.decodeGitCredentials(c)
 		if err != nil {
 			failure(w, err)
+			return
+		}
+		if v.Manifest && (c.InstallationID == 0 || in.PrivateKey != "" || in.WebhookSecret != "" || (in.AppID != "" && in.AppID != v.AppID)) {
+			problem(w, 409, "managed_app_setup", "Complete App setup; manage this App's credentials through GitHub")
 			return
 		}
 		c.Name = in.Name
