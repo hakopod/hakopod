@@ -110,3 +110,13 @@ Error handling preserves draft state, and consequential saves/removals have
 review or typed confirmation. No further actionable source finding remained in
 this scoped pass. Browser focus behavior, screenshots, responsive layout and live
 provider authorization still require the deferred rendered/integration review.
+
+## Combined code verification
+
+The integration checkout includes the Settings and named Git connection UI through
+`d421791`. Dashboard typecheck, all 28 server tests, all 53 UI tests, the production
+build and formatting checks passed. Regenerating OpenAPI and TypeScript contracts
+produced no changes, and `git diff --check` passed. The combined backend suite had
+already passed against PostgreSQL; the subsequent login entitlement status change
+passed its focused provider tests. These checks do not replace the pending visual
+review or live provider authorization checks. Nothing has been published.
