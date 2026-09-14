@@ -46,6 +46,10 @@ func (s *Server) maintenance(w http.ResponseWriter, r *http.Request, path string
 	req.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(req)
 	if err != nil {
+		if path == "/logs" && body == nil && s.ProcessLogs != nil {
+			write(w, http.StatusOK, s.ProcessLogs.Snapshot())
+			return
+		}
 		problem(w, 503, "maintenance_unavailable", "The installation maintenance service is unavailable. See Infrastructure > Setup for administrator instructions.")
 		return
 	}

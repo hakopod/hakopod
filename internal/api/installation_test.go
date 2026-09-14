@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/store"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +53,7 @@ func TestInstallationOwnerBoundary(t *testing.T) {
 	client.Transport = maintenanceTestTransport{remote.URL, http.DefaultTransport}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := &Server{Auth: AuthConfig{DeploymentMode: c.mode}, maintenanceHTTP: client}
+			s := &Server{Auth: AuthConfig{DeploymentMode: c.mode}, maintenanceHTTP: client, ProcessLogs: serverlogs.New()}
 			for _, method := range []func(http.ResponseWriter, *http.Request){s.installationStatus, s.installationLogs} {
 				r := httptest.NewRequest("GET", "/", nil).WithContext(context.WithValue(context.Background(), principalKey{}, c.p))
 				r.Header.Set("Authorization", "Bearer private")
@@ -90,4 +93,48 @@ func TestInstallationResponseBound(t *testing.T) {
 	if w.Code != 503 {
 		t.Fatal(w.Code)
 	}
+}
+
+func TestProcessLogsFallbackIsOwnerOnlyAndDoesNotEnableMaintenance(t *testing.T) {
+	buffer := serverlogs.New()
+	buffer.Write([]byte("API ready"))
+	owner := store.Principal{Owner: true, Admin: true, Email: "owner@example.test", CredentialType: "browser", Permissions: []string{"admin"}}
+	for _, mode := range []string{"self-hosted", "managed-cloud"} {
+		for _, isOwner := range []bool{true, false} {
+			p := owner
+			p.Owner = isOwner
+			s := &Server{Auth: AuthConfig{DeploymentMode: mode}, ProcessLogs: buffer,
+				maintenanceHTTP: &http.Client{Transport: unavailableMaintenance{}}}
+			request := httptest.NewRequest("GET", "/api/v1/installation/logs", nil).WithContext(context.WithValue(context.Background(), principalKey{}, p))
+			response := httptest.NewRecorder()
+			s.installationLogs(response, request)
+			expected := http.StatusForbidden
+			if mode == "self-hosted" && isOwner {
+				expected = http.StatusOK
+			}
+			if response.Code != expected {
+				t.Fatalf("mode=%s owner=%v: %d %s", mode, isOwner, response.Code, response.Body.String())
+			}
+			if expected == http.StatusOK {
+				var snapshot serverlogs.Snapshot
+				if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+					t.Fatal(err)
+				}
+				if snapshot.Source != "process" || len(snapshot.Entries) != 1 || snapshot.Entries[0].Message != "API ready" {
+					t.Fatal(snapshot)
+				}
+				response = httptest.NewRecorder()
+				s.installationStatus(response, request)
+				if response.Code != 503 {
+					t.Fatal("fallback enabled maintenance status", response.Code)
+				}
+			}
+		}
+	}
+}
+
+type unavailableMaintenance struct{}
+
+func (unavailableMaintenance) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("maintenance socket unavailable")
 }

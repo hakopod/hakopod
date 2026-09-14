@@ -17,16 +17,18 @@ import (
 
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 )
 
 type Server struct {
-	Store   *store.Store
-	Cluster *cluster.Client
-	Auth    AuthConfig
-	Backups *backup.Service
+	Store       *store.Store
+	Cluster     *cluster.Client
+	Auth        AuthConfig
+	Backups     *backup.Service
+	ProcessLogs *serverlogs.Buffer
 	// Overrides are only set by in-process tests, never by an API request.
 	maintenanceHTTP       *http.Client
 	githubHTTP            *http.Client

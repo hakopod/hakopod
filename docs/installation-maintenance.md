@@ -141,3 +141,20 @@ log response limits, storage preflight, version/channel selection, manifest and
 runtime checks, failure before and after the release switch, and concurrent
 upgrade rejection. Live upgrade acceptance on an installed source/target release
 is still required before populating a release's compatibility manifest.
+
+### Direct-process log fallback
+
+If the maintenance socket cannot be reached, self-hosted APIs return the last
+200 captured structured log entries from the current process instead. This also
+works for a local macOS development server without systemd. The dashboard labels
+the source and buffer start time; restarting the API clears this history. The
+buffer retains at most 2 KiB per entry, omits input records larger than 8 KiB,
+and applies credential filtering before retention. It captures API/worker logs
+sent through the standard Go logger, not arbitrary subprocess stderr or earlier
+processes. Credential filtering is defense in depth, not a guarantee against
+all possible secret text. Host logs remain the recovery path for startup failures.
+
+The same self-hosted installation-owner authorization applies to both sources.
+Cloud does not expose this view or allocate the buffer. Journal history resumes
+when the maintenance service becomes reachable. Updates and other privileged
+maintenance actions still require that service; the fallback cannot perform them.
