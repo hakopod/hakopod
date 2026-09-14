@@ -57,6 +57,18 @@ func (c *Client) validateStorage(ctx context.Context, t Target) error {
 	for _, name := range setup.StorageClasses {
 		classes[name] = true
 	}
+	for volumeName, volume := range t.Spec.Volumes {
+		if volume.AccessMode != "ReadWriteMany" {
+			continue
+		}
+		class, err := c.kube.StorageV1().StorageClasses().Get(ctx, volume.StorageClass, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("volumes.%s: shared storage class is unavailable; configure ReadWriteMany storage in Infrastructure > Setup", volumeName)
+		}
+		if class.Provisioner == "rancher.io/local-path" || class.Provisioner == "kubernetes.io/aws-ebs" || class.Provisioner == "ebs.csi.aws.com" {
+			return fmt.Errorf("volumes.%s: storage class %s cannot provide shared ReadWriteMany storage; configure a shared filesystem or use supported object storage", volumeName, class.Name)
+		}
+	}
 	for name, class := range claims {
 		if t.ApplicationID != "" {
 			claim, err := c.kube.CoreV1().PersistentVolumeClaims(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})

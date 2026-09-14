@@ -34,7 +34,17 @@ func TestManagedCloudDeniesPublicTCPForAdminScopedDeployAndRollback(t *testing.T
 	kubernetes := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && r.URL.Path == "/api/v1/nodes" {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"NodeList","metadata":{},"items":[{"metadata":{"name":"fixture-node"}}]}`))
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"NodeList","metadata":{},"items":[{"metadata":{"name":"fixture-node"},"status":{"conditions":[{"type":"Ready","status":"True"}],"allocatable":{"cpu":"8","memory":"16Gi"}}}]}`))
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/api/v1/pods" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"PodList","items":[]}`))
+			return
+		}
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/proxy/stats/summary") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"node":{"fs":{"availableBytes":10737418240}}}`))
 			return
 		}
 		clusterRequests.Add(1)

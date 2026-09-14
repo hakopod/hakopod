@@ -97,6 +97,9 @@ func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	for key := range s.Secrets {
 		keys = append(keys, key)
 	}
+	for key := range s.Bindings {
+		keys = append(keys, key)
+	}
 	sort.Strings(keys)
 	for _, key := range keys {
 		c.Env = append(c.Env, corev1.EnvVar{Name: key, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: d.Name + "-environment"}, Key: key}}})

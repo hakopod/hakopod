@@ -45,7 +45,7 @@ func (s *Service) Resolve(parent context.Context, project, environment string, a
 	result := map[string]map[string][]byte{}
 	total := 0
 	for _, name := range spec.Names(app) {
-		for key, ref := range app.Services[name].Secrets {
+		for key, ref := range spec.SecretReferences(app.Services[name]) {
 			if ref.Provider == "" {
 				continue
 			}

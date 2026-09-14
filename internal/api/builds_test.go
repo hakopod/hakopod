@@ -44,7 +44,7 @@ func TestBuildWorkflowArchitecturePinsAndArtifactBounds(t *testing.T) {
 	for _, architecture := range []string{"amd64", "arm64"} {
 		for _, mode := range []string{"dockerfile", "buildpacks"} {
 			for _, preset := range []string{"auto", "go"} {
-				c := buildConfig{ID: strings.Repeat("a", 32), Repository: "example/source", Branch: "main", Mode: mode, Preset: preset, ContextPath: "app", Dockerfile: "app/Dockerfile", Architecture: architecture, AutoBuild: true}
+				c := buildConfig{BuildArgs: map[string]string{"NEXT_PUBLIC_API_URL": "https://api.example.com", "PUBLIC_LABEL": "test with spaces and ' quotes"}, ID: strings.Repeat("a", 32), Repository: "example/source", Branch: "main", Mode: mode, Preset: preset, ContextPath: "app", Dockerfile: "app/Dockerfile", Architecture: architecture, AutoBuild: true}
 				workflow := buildWorkflow(c)
 				if strings.Contains(workflow, "{{BUILD_") || strings.Contains(workflow, "{{PACK_") {
 					t.Fatal("workflow contains unresolved template tokens")

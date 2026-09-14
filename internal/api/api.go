@@ -560,7 +560,7 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 		rev = current.Revision
 		id = current.ID
 	}
-	warnings := spec.Warnings(next)
+	warnings := deliveryWarnings(r, next)
 	if warnings == nil {
 		warnings = []string{}
 	}

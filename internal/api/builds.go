@@ -22,54 +22,56 @@ import (
 )
 
 type buildConfig struct {
-	Provider           string `json:"provider"`
-	ConnectionID       string `json:"connection_id"`
-	Architecture       string `json:"architecture"`
-	AutoBuild          bool   `json:"auto_build"`
-	AutoDeploy         bool   `json:"auto_deploy"`
-	GrantID            string `json:"-"`
-	ID                 string `json:"id"`
-	ApplicationID      string `json:"application_id,omitempty"`
-	Project            string `json:"project"`
-	Environment        string `json:"environment"`
-	Name               string `json:"name"`
-	Service            string `json:"service"`
-	Repository         string `json:"repository"`
-	Branch             string `json:"branch"`
-	Mode               string `json:"mode"`
-	Preset             string `json:"preset"`
-	ContextPath        string `json:"context_path"`
-	Dockerfile         string `json:"dockerfile"`
-	RegistryCredential string `json:"registry_credential,omitempty"`
-	Port               int    `json:"port"`
-	Public             bool   `json:"public"`
-	Size               string `json:"size"`
-	Revision           int64  `json:"revision"`
-	InstalledRevision  int64  `json:"installed_revision"`
-	InstalledCommit    string `json:"installed_commit"`
+	BuildArgs          map[string]string `json:"build_args,omitempty"`
+	Provider           string            `json:"provider"`
+	ConnectionID       string            `json:"connection_id"`
+	Architecture       string            `json:"architecture"`
+	AutoBuild          bool              `json:"auto_build"`
+	AutoDeploy         bool              `json:"auto_deploy"`
+	GrantID            string            `json:"-"`
+	ID                 string            `json:"id"`
+	ApplicationID      string            `json:"application_id,omitempty"`
+	Project            string            `json:"project"`
+	Environment        string            `json:"environment"`
+	Name               string            `json:"name"`
+	Service            string            `json:"service"`
+	Repository         string            `json:"repository"`
+	Branch             string            `json:"branch"`
+	Mode               string            `json:"mode"`
+	Preset             string            `json:"preset"`
+	ContextPath        string            `json:"context_path"`
+	Dockerfile         string            `json:"dockerfile"`
+	RegistryCredential string            `json:"registry_credential,omitempty"`
+	Port               int               `json:"port"`
+	Public             bool              `json:"public"`
+	Size               string            `json:"size"`
+	Revision           int64             `json:"revision"`
+	InstalledRevision  int64             `json:"installed_revision"`
+	InstalledCommit    string            `json:"installed_commit"`
 }
 type buildInput struct {
-	Provider               string `json:"provider"`
-	ConnectionID           string `json:"connection_id"`
-	Architecture           string `json:"architecture"`
-	AutoBuild              bool   `json:"auto_build"`
-	AutoDeploy             bool   `json:"auto_deploy"`
-	ApplicationID          string `json:"application_id"`
-	Project                string `json:"project"`
-	Environment            string `json:"environment"`
-	Name                   string `json:"name"`
-	Service                string `json:"service"`
-	Repository             string `json:"repository"`
-	Branch                 string `json:"branch"`
-	Mode                   string `json:"mode"`
-	Preset                 string `json:"preset"`
-	ContextPath            string `json:"context_path"`
-	Dockerfile             string `json:"dockerfile"`
-	RegistryCredential     string `json:"registry_credential"`
-	Port                   int    `json:"port"`
-	Public                 bool   `json:"public"`
-	Size                   string `json:"size"`
-	ExpectedConfigRevision *int64 `json:"expected_config_revision"`
+	BuildArgs              map[string]string `json:"build_args,omitempty"`
+	Provider               string            `json:"provider"`
+	ConnectionID           string            `json:"connection_id"`
+	Architecture           string            `json:"architecture"`
+	AutoBuild              bool              `json:"auto_build"`
+	AutoDeploy             bool              `json:"auto_deploy"`
+	ApplicationID          string            `json:"application_id"`
+	Project                string            `json:"project"`
+	Environment            string            `json:"environment"`
+	Name                   string            `json:"name"`
+	Service                string            `json:"service"`
+	Repository             string            `json:"repository"`
+	Branch                 string            `json:"branch"`
+	Mode                   string            `json:"mode"`
+	Preset                 string            `json:"preset"`
+	ContextPath            string            `json:"context_path"`
+	Dockerfile             string            `json:"dockerfile"`
+	RegistryCredential     string            `json:"registry_credential"`
+	Port                   int               `json:"port"`
+	Public                 bool              `json:"public"`
+	Size                   string            `json:"size"`
+	ExpectedConfigRevision *int64            `json:"expected_config_revision"`
 }
 type buildRun struct {
 	Provider       string      `json:"provider"`
@@ -129,7 +131,7 @@ func validBuildPath(value string) bool {
 	return len(value) > 0 && len(value) <= 200 && buildPathPattern.MatchString(value) && path.Clean(value) == value && !strings.HasPrefix(value, "/") && value != ".." && !strings.HasPrefix(value, "../")
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
-	c := buildConfig{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	c := buildConfig{BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	c.Repository = strings.ToLower(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
@@ -161,6 +163,9 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	}
 	if !validScope(c.Project, c.Environment) || !slug.MatchString(c.Name) || !slug.MatchString(c.Service) || !validSourceRepository(c.Provider, c.Repository) || len(c.Branch) > 200 || strings.ContainsAny(c.Branch, "\r\n\x00 ?#") || !validBuildPath(c.ContextPath) || !validBuildPath(c.Dockerfile) || c.Port < 1 || c.Port > 65535 || len(c.RegistryCredential) > 100 {
 		return c, fmt.Errorf("%w: select a valid project/environment/name, repository, branch, relative build paths and port", store.ErrInput)
+	}
+	if err := spec.ValidateBuildArguments(c.BuildArgs); err != nil {
+		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 	}
 	if c.Architecture != "" && c.Architecture != "amd64" && c.Architecture != "arm64" {
 		return c, fmt.Errorf("%w: architecture must be amd64 or arm64", store.ErrInput)

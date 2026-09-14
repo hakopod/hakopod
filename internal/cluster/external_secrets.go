@@ -19,7 +19,7 @@ func (c *Client) SetExternalSecretResolver(resolve func(context.Context, string,
 func (c *Client) snapshotWorkloadSecrets(ctx context.Context, target *Target) error {
 	hasExternal := false
 	for _, service := range target.Spec.Services {
-		for _, ref := range service.Secrets {
+		for _, ref := range spec.SecretReferences(service) {
 			hasExternal = hasExternal || ref.Provider != ""
 		}
 	}
@@ -43,7 +43,7 @@ func (c *Client) snapshotWorkloadSecrets(ctx context.Context, target *Target) er
 			values[name] = map[string][]byte{}
 		}
 		serviceBytes := 0
-		for key, ref := range service.Secrets {
+		for key, ref := range spec.SecretReferences(service) {
 			if ref.Provider == "" {
 				secret, err := c.GetPlatformSecret(ctx, workloadSecretName(target.Project, target.Environment, target.Spec.Name, ref.Ref))
 				if err != nil {

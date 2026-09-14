@@ -41,7 +41,11 @@ DNS routing and certificate coverage are separate checks.
 | `update_strategy` | rolling by default; recreate stops the old revision before starting its replacement |
 | `env` | Explicit nonsecret variables, max128, each value max4KiB |
 | `command`, `args` | Container entrypoint/arguments; not shell strings unless the image runs a shell |
-| `depends_on` | Names of services that must become ready first, bounded by rollout timeout |
+| `depends_on` | Workloads that must become ready (services) or complete successfully (jobs) first |
+| `job` | One-time deployment work with timeout_seconds 10–900 and retries 0–3; one replica, no listeners |
+| `files` | Up to 16 total mounts: named read-only files with mount_path and content or a scoped secret reference |
+| `bindings` | Up to 16 private HTTP/database URL environment bindings derived from service ports and scoped credentials |
+| `http` | Up to four additional named HTTP endpoints on declared TCP service ports, with optional assigned custom domains |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
 | `network_access.from` | Optional allowlist of services in this application; an empty list denies local peer traffic |
 | `network_access.from_applications` | Up to32 exact application/service peers within a granted virtual network segment |
@@ -60,6 +64,8 @@ DNS routing and certificate coverage are separate checks.
 | `gpu` | `count` from1–8; requires advertised NVIDIA GPU capacity; no GPU HPA |
 | `tls` | Exactly one managed `certificate` or cert-manager `issuer`; public services only |
 | `restart_nonce` | Opaque restart marker written by the restart action; at most64 letters, digits, `_` or `-` |
+
+See [application lifecycle](application-lifecycle.md) for jobs, file permissions, connection wiring, named HTTP endpoints and preflight behavior.
 
 TCP startup checks are distinct from readiness. Hakopod never silently converts
 an HTTP readiness check into liveness. Dependencies sequence rollout only;

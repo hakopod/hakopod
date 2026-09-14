@@ -39,7 +39,7 @@ func buildWorkflow(c buildConfig) string {
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.REQUEST_ID }}
           provenance: mode=min
-`
+{{BUILD_ARGS}}`
 	if c.Mode == "buildpacks" {
 		build = `      - name: Install verified Cloud Native Buildpacks pack
         uses: {{PACK}}
@@ -50,7 +50,7 @@ func buildWorkflow(c buildConfig) string {
           BUILD_CONTEXT: {{CONTEXT}}
         run: |
           set -euo pipefail
-{{PACK_SETUP}}          pack build "$IMAGE_NAME:$REQUEST_ID" --path "$BUILD_CONTEXT" --builder {{BUILDER}} --buildpack "$PACK_IMAGE" --env BP_WEB_SERVER=nginx --publish --pull-policy if-not-present
+{{PACK_SETUP}}          pack build "$IMAGE_NAME:$REQUEST_ID" --path "$BUILD_CONTEXT" --builder {{BUILDER}} --buildpack "$PACK_IMAGE" --env BP_WEB_SERVER=nginx{{PACK_ARGS}} --publish --pull-policy if-not-present
 `
 	}
 	text := `# Managed by Hakopod build {{BUILD_ID}}. Review through Hakopod before reinstalling.
@@ -130,6 +130,8 @@ jobs:
 	text = strings.ReplaceAll(text, "{{RUNNER}}", runner)
 	text = strings.ReplaceAll(text, "{{PUSH_TRIGGER}}", push)
 	text = strings.ReplaceAll(text, "{{BUILD_STEP}}", build)
+	text = strings.ReplaceAll(text, "{{BUILD_ARGS}}", workflowBuildArguments(c.BuildArgs))
+	text = strings.ReplaceAll(text, "{{PACK_ARGS}}", shellBuildArguments(c.BuildArgs, "--env"))
 	return strings.NewReplacer("{{BUILD_ID}}", c.ID, "{{IMAGE}}", strconv.Quote(c.imageName()), "{{CHECKOUT}}", checkoutAction, "{{LOGIN}}", loginAction, "{{BUILDX}}", buildxAction, "{{UPLOAD}}", uploadAction, "{{BUILD_PUSH}}", buildPushAction, "{{PACK}}", packAction, "{{CONTEXT}}", strconv.Quote(c.ContextPath), "{{DOCKERFILE}}", strconv.Quote(c.Dockerfile), "{{BUILDER}}", paketoBuilder, "{{PACK_SETUP}}", buildpackSetup(c.Preset)).Replace(text)
 }
 

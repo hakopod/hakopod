@@ -73,6 +73,24 @@ func TestSecretProviderScopeRevisionAndWriteOnlyStorage(t *testing.T) {
 	if err = db.DeleteSecretProvider(ctx, principal, p.Name, 2); !errors.Is(err, ErrConflict) {
 		t.Fatal("referenced provider deleted")
 	}
+	svc.Secrets = nil
+	svc.Files = map[string]spec.File{"credentials": {MountPath: "/app/credentials", Secret: &spec.SecretRef{Provider: "vault", Key: "password"}}}
+	app.Services["api"] = svc
+	if _, err = db.Accept(ctx, principal, "demo", "development", app, 1, "provider-file-app"); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.DeleteSecretProvider(ctx, principal, p.Name, 2); !errors.Is(err, ErrConflict) {
+		t.Fatal("file provider reference did not prevent deletion", err)
+	}
+	svc.Files = nil
+	svc.Bindings = map[string]spec.Binding{"DATABASE_URL": {Service: "api", Protocol: "postgres", Username: "app", Database: "app", Password: &spec.SecretRef{Provider: "vault", Key: "password"}}}
+	app.Services["api"] = svc
+	if _, err = db.Accept(ctx, principal, "demo", "development", app, 2, "provider-binding-app"); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.DeleteSecretProvider(ctx, principal, p.Name, 2); !errors.Is(err, ErrConflict) {
+		t.Fatal("binding provider reference did not prevent deletion", err)
+	}
 	var auditCount int
 	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM audit_events WHERE action='secret.provider.configured'").Scan(&auditCount); err != nil || auditCount != 2 {
 		t.Fatalf("configuration audit missing: %v", err)

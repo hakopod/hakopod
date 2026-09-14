@@ -94,10 +94,20 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 			}}}})
 		}
 		if svc.Public {
-			port := intstr.FromInt32(svc.Port)
+			ports := []networkingv1.NetworkPolicyPort{}
+			for _, p := range spec.ServicePorts(svc) {
+				public := p.Port == svc.Port
+				for _, e := range svc.HTTP {
+					public = public || e.Port == p.Port && p.Protocol == "TCP"
+				}
+				if public {
+					port := intstr.FromInt32(p.TargetPort)
+					ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
+				}
+			}
 			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
 				From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "haproxy-controller"}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "kubernetes-ingress", "app.kubernetes.io/instance": "hakopod-ingress"}}}},
-				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+				Ports: ports,
 			})
 		}
 		publicTCPPolicy(svc, policy)

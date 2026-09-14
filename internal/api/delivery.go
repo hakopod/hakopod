@@ -22,11 +22,27 @@ func (s *Server) validateDeliveryPlan(w http.ResponseWriter, r *http.Request, pr
 	if existing != nil {
 		target.ApplicationID = existing.ID
 	}
-	if err := s.Cluster.ValidateDelivery(r.Context(), target); err != nil {
+	report, err := s.Cluster.ValidateDeliveryWithReport(r.Context(), target)
+	if err != nil {
 		problem(w, 409, "delivery_unavailable", err.Error())
 		return false
 	}
+	*r = *r.WithContext(context.WithValue(r.Context(), deliveryPreflightKey{}, report))
 	return true
+}
+
+type deliveryPreflightKey struct{}
+
+func deliveryWarnings(r *http.Request, next spec.Application) []string {
+	warnings := spec.Warnings(next)
+	if report, ok := r.Context().Value(deliveryPreflightKey{}).(cluster.PreflightReport); ok {
+		for _, check := range report.Checks {
+			if check.Status == "unknown" {
+				warnings = append(warnings, check.Message)
+			}
+		}
+	}
+	return warnings
 }
 
 func (s *Server) serviceDelivery(w http.ResponseWriter, r *http.Request) {

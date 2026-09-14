@@ -27,40 +27,44 @@ type Application struct {
 }
 
 type Service struct {
-	Architecture            string               `json:"architecture,omitempty" toml:"architecture"`
-	Volume                  *Volume              `json:"volume,omitempty" toml:"volume"`
-	GPU                     *GPU                 `json:"gpu,omitempty" toml:"gpu"`
-	RunAsUser               int64                `json:"run_as_user,omitempty" toml:"run_as_user"`
-	RunAsGroup              int64                `json:"run_as_group,omitempty" toml:"run_as_group"`
-	FSGroup                 int64                `json:"fs_group,omitempty" toml:"fs_group"`
-	ReadOnlyRootFilesystem  bool                 `json:"read_only_root_filesystem,omitempty" toml:"read_only_root_filesystem"`
-	WorkingDir              string               `json:"working_dir,omitempty" toml:"working_dir"`
-	TerminationGraceSeconds int64                `json:"termination_grace_seconds,omitempty" toml:"termination_grace_seconds"`
-	CertificateMounts       []CertificateMount   `json:"certificate_mounts,omitempty" toml:"certificate_mounts"`
-	Mounts                  []Mount              `json:"mounts,omitempty" toml:"mounts"`
-	TemporaryMounts         []TemporaryMount     `json:"temporary_mounts,omitempty" toml:"temporary_mounts"`
-	Image                   string               `json:"image" toml:"image"`
-	Port                    int32                `json:"port,omitempty" toml:"port"`
-	PublicTCP               []PublicTCPListener  `json:"public_tcp,omitempty" toml:"public_tcp"`
-	Ports                   []Port               `json:"ports,omitempty" toml:"ports"`
-	NetworkAccess           *NetworkAccess       `json:"network_access,omitempty" toml:"network_access"`
-	Public                  bool                 `json:"public" toml:"public"`
-	Size                    string               `json:"size" toml:"size"`
-	Replicas                int32                `json:"replicas" toml:"replicas"`
-	UpdateStrategy          string               `json:"update_strategy,omitempty" toml:"update_strategy"`
-	Readiness               *Readiness           `json:"readiness,omitempty" toml:"readiness"`
-	Healthcheck             string               `json:"healthcheck,omitempty" toml:"healthcheck"`
-	Env                     map[string]string    `json:"env,omitempty" toml:"env"`
-	Command                 []string             `json:"command,omitempty" toml:"command"`
-	Args                    []string             `json:"args,omitempty" toml:"args"`
-	DependsOn               []string             `json:"depends_on,omitempty" toml:"depends_on"`
-	Networks                []string             `json:"networks" toml:"networks"`
-	Secrets                 map[string]SecretRef `json:"secrets,omitempty" toml:"secrets"`
-	Autoscaling             *Autoscaling         `json:"autoscaling,omitempty" toml:"autoscaling"`
-	RestartNonce            string               `json:"restart_nonce,omitempty" toml:"restart_nonce"`
-	RegistryCredential      string               `json:"registry_credential,omitempty" toml:"registry_credential"`
-	AWSIdentity             string               `json:"aws_identity,omitempty" toml:"aws_identity"`
-	TLS                     *TLSConfig           `json:"tls,omitempty" toml:"tls"`
+	Job                     *Job                    `json:"job,omitempty" toml:"job"`
+	Files                   map[string]File         `json:"files,omitempty" toml:"files"`
+	Bindings                map[string]Binding      `json:"bindings,omitempty" toml:"bindings"`
+	HTTP                    map[string]HTTPEndpoint `json:"http,omitempty" toml:"http"`
+	Architecture            string                  `json:"architecture,omitempty" toml:"architecture"`
+	Volume                  *Volume                 `json:"volume,omitempty" toml:"volume"`
+	GPU                     *GPU                    `json:"gpu,omitempty" toml:"gpu"`
+	RunAsUser               int64                   `json:"run_as_user,omitempty" toml:"run_as_user"`
+	RunAsGroup              int64                   `json:"run_as_group,omitempty" toml:"run_as_group"`
+	FSGroup                 int64                   `json:"fs_group,omitempty" toml:"fs_group"`
+	ReadOnlyRootFilesystem  bool                    `json:"read_only_root_filesystem,omitempty" toml:"read_only_root_filesystem"`
+	WorkingDir              string                  `json:"working_dir,omitempty" toml:"working_dir"`
+	TerminationGraceSeconds int64                   `json:"termination_grace_seconds,omitempty" toml:"termination_grace_seconds"`
+	CertificateMounts       []CertificateMount      `json:"certificate_mounts,omitempty" toml:"certificate_mounts"`
+	Mounts                  []Mount                 `json:"mounts,omitempty" toml:"mounts"`
+	TemporaryMounts         []TemporaryMount        `json:"temporary_mounts,omitempty" toml:"temporary_mounts"`
+	Image                   string                  `json:"image" toml:"image"`
+	Port                    int32                   `json:"port,omitempty" toml:"port"`
+	PublicTCP               []PublicTCPListener     `json:"public_tcp,omitempty" toml:"public_tcp"`
+	Ports                   []Port                  `json:"ports,omitempty" toml:"ports"`
+	NetworkAccess           *NetworkAccess          `json:"network_access,omitempty" toml:"network_access"`
+	Public                  bool                    `json:"public" toml:"public"`
+	Size                    string                  `json:"size" toml:"size"`
+	Replicas                int32                   `json:"replicas" toml:"replicas"`
+	UpdateStrategy          string                  `json:"update_strategy,omitempty" toml:"update_strategy"`
+	Readiness               *Readiness              `json:"readiness,omitempty" toml:"readiness"`
+	Healthcheck             string                  `json:"healthcheck,omitempty" toml:"healthcheck"`
+	Env                     map[string]string       `json:"env,omitempty" toml:"env"`
+	Command                 []string                `json:"command,omitempty" toml:"command"`
+	Args                    []string                `json:"args,omitempty" toml:"args"`
+	DependsOn               []string                `json:"depends_on,omitempty" toml:"depends_on"`
+	Networks                []string                `json:"networks" toml:"networks"`
+	Secrets                 map[string]SecretRef    `json:"secrets,omitempty" toml:"secrets"`
+	Autoscaling             *Autoscaling            `json:"autoscaling,omitempty" toml:"autoscaling"`
+	RestartNonce            string                  `json:"restart_nonce,omitempty" toml:"restart_nonce"`
+	RegistryCredential      string                  `json:"registry_credential,omitempty" toml:"registry_credential"`
+	AWSIdentity             string                  `json:"aws_identity,omitempty" toml:"aws_identity"`
+	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
 }
 
 type Network struct {
@@ -295,12 +299,21 @@ func Normalize(input Application) (Application, error) {
 		if err := validateWorkload(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
+		if err := normalizeJobAndFiles(&svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		app.Services[name] = svc
 	}
 	if err := validateNamedStorage(app); err != nil {
 		return Application{}, err
 	}
+	if err := validateBindings(app); err != nil {
+		return Application{}, err
+	}
 	if err := validateNetworkAccess(app); err != nil {
+		return Application{}, err
+	}
+	if err := validateHTTPEndpoints(app); err != nil {
 		return Application{}, err
 	}
 	for _, name := range Names(app) {
@@ -439,6 +452,13 @@ func Diff(before *Application, after Application) []Change {
 			continue
 		}
 		add(name, "image", a.Image, b.Image, false)
+		add(name, "job", a.Job, b.Job, false)
+		add(name, "bindings", a.Bindings, b.Bindings, false)
+		add(name, "http", a.HTTP, b.HTTP, false)
+		// File bodies belong in the reviewed source, never in event/diff summaries.
+		if !reflect.DeepEqual(a.Files, b.Files) {
+			changes = append(changes, Change{Service: name, Field: "files", Before: "[redacted]", After: "[redacted]", Sensitive: true})
+		}
 		add(name, "port", a.Port, b.Port, false)
 		add(name, "ports", a.Ports, b.Ports, false)
 		add(name, "public_tcp", a.PublicTCP, b.PublicTCP, false)
@@ -498,6 +518,12 @@ func Warnings(app Application) []string {
 	}
 	for _, name := range Names(app) {
 		svc := app.Services[name]
+		if svc.Job != nil {
+			warnings = append(warnings, name+": deployment job must finish before dependent services start. Retries and new revisions can repeat side effects; make migrations idempotent. Rollback does not undo database changes.")
+		}
+		if len(svc.Files) > 0 {
+			warnings = append(warnings, name+": file content is stored in configuration history; use secret references for sensitive files. File updates take effect through a deployment.")
+		}
 		if svc.Volume != nil || len(svc.Mounts) > 0 {
 			warnings = append(warnings, name+": persistent service uses one replica and Recreate updates, with brief downtime; rollback restores configuration, not database contents. Back up data separately.")
 		}

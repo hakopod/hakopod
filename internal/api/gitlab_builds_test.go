@@ -22,7 +22,7 @@ func TestGitLabBuildWorkflowArchitectureAndSyntax(t *testing.T) {
 	for _, architecture := range []string{"amd64", "arm64"} {
 		for _, mode := range []string{"dockerfile", "buildpacks"} {
 			for _, preset := range []string{"auto", "go", "dotnet"} {
-				c := buildConfig{Provider: "gitlab", ID: strings.Repeat("a", 32), Repository: "group/subgroup/source", Branch: "release", Mode: mode, Preset: preset, ContextPath: "app", Dockerfile: "app/Dockerfile", Architecture: architecture, AutoBuild: true}
+				c := buildConfig{BuildArgs: map[string]string{"NEXT_PUBLIC_API_URL": "https://api.example.com", "PUBLIC_LABEL": "test with spaces and ' quotes"}, Provider: "gitlab", ID: strings.Repeat("a", 32), Repository: "group/subgroup/source", Branch: "release", Mode: mode, Preset: preset, ContextPath: "app", Dockerfile: "app/Dockerfile", Architecture: architecture, AutoBuild: true}
 				workflow := buildWorkflow(c)
 				var parsed struct {
 					Workflow struct {

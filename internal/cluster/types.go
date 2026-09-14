@@ -97,14 +97,15 @@ type Observation struct {
 }
 
 type ServiceStatus struct {
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	Ready           int32  `json:"ready"`
-	Desired         int32  `json:"desired"`
-	Image           string `json:"image"`
-	URL             string `json:"url,omitempty"`
-	InternalAddress string `json:"internal_address,omitempty"`
-	Message         string `json:"message,omitempty"`
+	Endpoints       map[string]string `json:"endpoints,omitempty"`
+	Name            string            `json:"name"`
+	Status          string            `json:"status"`
+	Ready           int32             `json:"ready"`
+	Desired         int32             `json:"desired"`
+	Image           string            `json:"image"`
+	URL             string            `json:"url,omitempty"`
+	InternalAddress string            `json:"internal_address,omitempty"`
+	Message         string            `json:"message,omitempty"`
 }
 
 type Node struct {

@@ -148,7 +148,7 @@ func (s *Store) DeleteSecretProvider(ctx context.Context, principal Principal, n
 	// Provider names are durable references. Refuse deletion while any desired
 	// application still uses one; credentials can be rotated without deletion.
 	var used bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM applications a, jsonb_each(a.spec->'services') service, jsonb_each(COALESCE(service.value->'secrets','{}'::jsonb)) binding WHERE binding.value->>'provider'=$1)`, name).Scan(&used); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM applications a, jsonb_each(a.spec->'services') service, LATERAL (SELECT value FROM jsonb_each(COALESCE(service.value->'secrets','{}'::jsonb)) UNION ALL SELECT value->'secret' FROM jsonb_each(COALESCE(service.value->'files','{}'::jsonb)) UNION ALL SELECT value->'password' FROM jsonb_each(COALESCE(service.value->'bindings','{}'::jsonb))) binding WHERE binding.value->>'provider'=$1)`, name).Scan(&used); err != nil {
 		return err
 	}
 	if used {
