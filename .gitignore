@@ -12,3 +12,6 @@ coverage.out
 *.log
 __pycache__/
 *.pyc
+
+# Legacy local checkout; Cloud now embeds the public engine, never the reverse.
+/private/cloud/

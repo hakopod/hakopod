@@ -5,9 +5,6 @@
 	path = packages/ui
 	url = ../hatch-ui.git
 	branch = sudo
-[submodule "private/cloud"]
-	path = private/cloud
-	url = ../hakopod-cloud.git
 [submodule "templates"]
 	path = templates
 	url = https://github.com/hakopod/templates.git

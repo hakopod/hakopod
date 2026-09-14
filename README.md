@@ -98,8 +98,8 @@ The public installation command above downloads the verified release instead.
 ## Cloud deployments
 
 AWS, GCP and Azure provisioning for the planned Bring Your Own Cloud managed
-service lives in the private `hakopod/hakopod-cloud` repository, linked at
-`private/cloud`. It starts with one Ubuntu server and the same installer on
+service lives in the private `hakopod/hakopod-cloud` repository. That repository includes this public engine as its `engine`
+submodule; the public engine never depends on private Cloud source. It starts with one Ubuntu server and the same installer on
 amd64 or arm64. See [cloud deployments](docs/cloud-deployments.md) for scope,
 access and the remaining cloud acceptance tests.
 
@@ -112,7 +112,8 @@ Cloud launch requirements.
 
 The initial private Cloud beta supplies a control dashboard for one node you
 bring. It includes no compute and is limited to allowlisted testers. Its service
-and GCP deployment root remain in `private/cloud`; real GCP acceptance is pending.
+lives in the private repository and reuses this engine’s authentication and
+PostgreSQL storage primitives. Real hosted deployment acceptance is pending.
 
 ## Accounts, licensing and components
 
