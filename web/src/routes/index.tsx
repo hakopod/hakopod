@@ -115,11 +115,16 @@ function Projects() {
               return (
                 <article className="ops-catalog-card project-card interactive" key={project.id}>
                   <Brackets />
-                  {project.personal !== undefined && (
-                    <div className="ops-card-heading">
+                  <div className="ops-card-heading">
+                    {project.personal !== undefined && (
                       <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
-                    </div>
-                  )}
+                    )}
+                    {scope.identity.admin && !project.personal && (
+                      <div className="ops-card-actions">
+                        <DeleteResource project={project.name} trigger="icon" />
+                      </div>
+                    )}
+                  </div>
                   <h2>
                     <Link
                       className="ops-card-link"
@@ -162,13 +167,7 @@ function Projects() {
                       {project.environments.length}{' '}
                       {project.environments.length === 1 ? 'environment' : 'environments'}
                     </span>
-                    {scope.identity.admin && !project.personal ? (
-                      <div className="relative z-10">
-                        <DeleteResource project={project.name} />
-                      </div>
-                    ) : (
-                      <Icon name="arrow" size={15} />
-                    )}
+                    <Icon name="arrow" size={15} />
                   </div>
                 </article>
               )

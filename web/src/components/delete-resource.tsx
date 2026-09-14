@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useState, type ComponentProps } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Application } from '../lib/types'
 import { client, unwrap } from '../lib/client'
@@ -13,15 +13,25 @@ import { Icon } from './icons'
 export function DeleteResource({
   project,
   application,
+  trigger = 'button',
+  initiallyOpen = false,
+  onClose,
+  onCloseAutoFocus,
 }: {
   project: string
   application?: Application
+  trigger?: 'button' | 'icon' | 'none'
+  initiallyOpen?: boolean
+  onClose?: () => void
+  onCloseAutoFocus?: ComponentProps<typeof Dialog>['onCloseAutoFocus']
 }) {
   const scope = useScope()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
-  const [reviewed, setReviewed] = useState<Application | undefined>()
+  const [open, setOpen] = useState(initiallyOpen)
+  const [reviewed, setReviewed] = useState<Application | undefined>(() =>
+    initiallyOpen && application ? structuredClone(application) : undefined,
+  )
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -34,9 +44,14 @@ export function DeleteResource({
       )
     : scope.identity.admin
   if (!allowed) return null
-  const empty = !application || Object.keys(application.spec.services).length === 0
+  const current = open ? reviewed : application
+  const empty = !current || Object.keys(current.spec.services).length === 0
+  const close = () => {
+    setOpen(false)
+    onClose?.()
+  }
   async function remove() {
-    if (busy || confirmation !== name) return
+    if (busy || !empty || confirmation !== name) return
     setBusy(true)
     setError('')
     try {
@@ -57,7 +72,7 @@ export function DeleteResource({
       }
       await queryClient.invalidateQueries({ queryKey: [reviewed ? 'applications' : 'projects'] })
       if (reviewed) queryClient.removeQueries({ queryKey: ['application', reviewed.id] })
-      setOpen(false)
+      close()
       if (reviewed)
         void navigate({
           to: '/projects/$project',
@@ -73,25 +88,32 @@ export function DeleteResource({
   }
   return (
     <>
-      <Button
-        variant="danger"
-        size="sm"
-        disabled={!empty}
-        title={!empty ? 'Remove all services before deleting this application.' : undefined}
-        onClick={() => {
-          setReviewed(application ? structuredClone(application) : undefined)
-          setConfirmation('')
-          setError('')
-          setOpen(true)
-        }}
-      >
-        <Icon name="trash" size={14} />
-        Delete {kind}
-      </Button>
+      {trigger !== 'none' && (
+        <Button
+          variant={trigger === 'icon' ? 'ghost' : 'danger'}
+          size={trigger === 'icon' ? 'icon' : 'sm'}
+          aria-label={trigger === 'icon' ? `Delete ${kind} ${name}` : undefined}
+          disabled={!empty}
+          title={!empty ? 'Remove all services before deleting this application.' : undefined}
+          onClick={() => {
+            setReviewed(application ? structuredClone(application) : undefined)
+            setConfirmation('')
+            setError('')
+            setOpen(true)
+          }}
+        >
+          <Icon name="trash" size={14} />
+          {trigger !== 'icon' && <>Delete {kind}</>}
+        </Button>
+      )}
       <Dialog
         open={open}
+        onCloseAutoFocus={onCloseAutoFocus}
         onOpenChange={(next) => {
-          if (!busy) setOpen(next)
+          if (!busy) {
+            if (next) setOpen(true)
+            else close()
+          }
         }}
         title={`Delete ${name}?`}
         description={
@@ -107,6 +129,24 @@ export function DeleteResource({
           }}
         >
           <div className="dialog-body field-stack">
+            {!empty && reviewed && (
+              <div className="field-stack">
+                <p className="inline-error" role="status">
+                  Remove all services through a reviewed deployment before deleting this
+                  application.
+                </p>
+                <Button asChild size="sm">
+                  <Link
+                    to="/applications/$applicationId"
+                    params={{ applicationId: reviewed.id }}
+                    search={{ tab: 'services' }}
+                    onClick={close}
+                  >
+                    Open services
+                  </Link>
+                </Button>
+              </div>
+            )}
             <p>
               {application
                 ? 'This removes the empty application, its deployment and build history, and Git bindings. Persistent volumes and backups are retained for the operator. Active work or enabled backup schedules must be stopped first.'
@@ -132,10 +172,14 @@ export function DeleteResource({
             )}
           </div>
           <div className="dialog-footer">
-            <Button type="button" disabled={busy} onClick={() => setOpen(false)}>
+            <Button type="button" disabled={busy} onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" variant="danger" disabled={busy || confirmation !== name}>
+            <Button
+              type="submit"
+              variant="danger"
+              disabled={busy || !empty || confirmation !== name}
+            >
               {busy ? 'Deleting…' : `Delete ${kind}`}
             </Button>
           </div>

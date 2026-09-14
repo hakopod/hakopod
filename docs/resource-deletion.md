@@ -62,3 +62,12 @@ server tests and 56 UI regressions, TypeScript, formatting, and the production
 build passed. Real-cluster checks passed for final-service removal and declared
 body-size enable/reset. The HAProxy check waits for HTTP behavior as well as
 configuration generation because file updates can precede reload activation.
+
+The application card menu includes **Delete application** for project
+administrators. It opens the same confirmation used on the application page;
+non-empty applications explain the required service-removal step and cannot be
+deleted. Each service card's menu includes **Delete service** for users allowed
+to deploy changes, opening the existing reviewed removal draft. Shared project
+cards expose a compact trash action at the top right for global administrators.
+These entry points preserve the backend checks and reviewed revision; opening
+a menu or confirmation never deletes a resource.

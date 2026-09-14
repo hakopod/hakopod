@@ -11,6 +11,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
 import { ErrorState, Loading, Note, Status } from './shared'
+import { Logs } from './logs'
 
 export function useInstallationOwner() {
   const scope = useScope()
@@ -31,62 +32,8 @@ function useVisible() {
 }
 export function InstallationLogs() {
   const allowed = useInstallationOwner()
-  const visible = useVisible()
-  const [paused, setPaused] = useState(false)
-  const logs = useQuery({
-    queryKey: ['installation-logs'],
-    queryFn: ({ signal }) => unwrap(client.GET('/installation/logs', { signal })),
-    enabled: allowed && visible && !paused,
-    refetchInterval: visible && !paused ? 5000 : false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    retry: false,
-  })
   if (!allowed) return <Note>API logs are available to the self-hosted installation owner.</Note>
-  return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2>API server logs</h2>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => setPaused(!paused)}>{paused ? 'Resume' : 'Pause'}</Button>
-          <Button disabled={logs.isFetching} onClick={() => void logs.refetch()}>
-            Refresh
-          </Button>
-        </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {logs.data?.source === 'process'
-          ? 'Last 200 captured API entries from this process. Journal history is unavailable.'
-          : 'Last 200 journal entries.'}{' '}
-        {logs.data?.source === 'process' &&
-          logs.data.started_at &&
-          `Buffer started ${timestamp(logs.data.started_at)}; clears on API restart. `}
-        {paused ? 'Automatic refresh paused.' : 'Checks every 5 seconds while visible.'}{' '}
-        {logs.data && `Updated ${timestamp(logs.data.observed_at)}.`}
-      </p>
-      {logs.error && <ErrorState error={logs.error} />}
-      {logs.isPending ? (
-        <Loading />
-      ) : (
-        logs.data && (
-          <pre
-            className="code-panel max-h-[32rem] overflow-auto! whitespace-pre-wrap break-words p-4 text-xs"
-            tabIndex={0}
-            aria-label="API server log output"
-          >
-            {logs.data.entries.length
-              ? logs.data.entries
-                  .map(
-                    (entry) =>
-                      `${new Date(Number(entry.timestamp) / 1000).toISOString()} ${entry.message}`,
-                  )
-                  .join('\n')
-              : 'No API log entries available.'}
-          </pre>
-        )
-      )}
-    </section>
-  )
+  return <Logs installation services={[]} />
 }
 export function InstallationSetup() {
   const allowed = useInstallationOwner()

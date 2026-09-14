@@ -304,6 +304,21 @@ function ApplicationDetail() {
                             Open endpoint
                           </MenuItem>
                         )}
+                        {scope.can('deployments:write') && (
+                          <MenuItem
+                            destructive
+                            onSelect={() =>
+                              void navigate({
+                                to: '/applications/$applicationId/configure',
+                                params: { applicationId: app.id },
+                                search: { remove: name },
+                              })
+                            }
+                          >
+                            <Icon name="trash" size={14} />
+                            Delete service
+                          </MenuItem>
+                        )}
                       </Menu>
                     </div>
                   </div>
