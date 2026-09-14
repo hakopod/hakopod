@@ -264,7 +264,10 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	if err != nil {
 		return nil, err
 	}
-	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_PUBLIC_TCP_PORTS") != "" {
+	if err := cluster.ValidateDedicatedPublicTCPNode(mode, get("HAKOPOD_DEDICATED_TCP_NODE")); err != nil {
+		return nil, err
+	}
+	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_DEDICATED_TCP_NODE") == "" && get("HAKOPOD_PUBLIC_TCP_PORTS") != "" {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
 	}
 	if _, err := authConfigFrom(get); err != nil {

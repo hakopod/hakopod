@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -194,5 +195,54 @@ func TestManagedCloudStartupInventoryFailures(t *testing.T) {
 	}
 	if err := (&Client{}).ValidatePublicTCPInstallation(context.Background()); err != nil {
 		t.Fatal("self-hosted mode performed managed-cloud inventory check", err)
+	}
+}
+
+func TestDedicatedBYOPublicTCPRequiresExactIsolatedNode(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		nodes []string
+		allow bool
+	}{
+		{"owned dedicated", []string{"byo-owner"}, true},
+		{"unjoined", nil, false},
+		{"foreign node", []string{"other"}, false},
+		{"shared cluster", []string{"byo-owner", "other"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, target := publicTCPTestClient(t)
+			c.options.DeploymentMode = DeploymentManagedCloud
+			c.options.DedicatedPublicTCPNode = "byo-owner"
+			// Administrator provisioning is sufficient in the dedicated cluster;
+			// self-hosted and shared-cloud allowlist semantics remain unchanged.
+			c.options.PublicTCPPorts = nil
+			for _, name := range tc.nodes {
+				_, err := c.kube.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := c.ValidatePublicTCP(ctx, target)
+			if (err == nil) != tc.allow {
+				t.Fatalf("allowed=%v error=%v", tc.allow, err)
+			}
+			if tc.allow {
+				_, err = c.kube.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "later-node"}}, metav1.CreateOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.PreparePublicTCP(ctx, target) == nil {
+					t.Fatal("node inventory was not rechecked")
+				}
+			}
+		})
+	}
+}
+func TestDedicatedTCPSettingCannotChangeEdition(t *testing.T) {
+	for _, value := range []struct{ mode, name string }{{DeploymentSelfHosted, "byo"}, {DeploymentManagedCloud, "*"}, {DeploymentManagedCloud, "wrong/node"}} {
+		if ValidateDedicatedPublicTCPNode(value.mode, value.name) == nil {
+			t.Fatal("invalid binding accepted", value)
+		}
 	}
 }

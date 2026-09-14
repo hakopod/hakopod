@@ -40,6 +40,19 @@ func TestLivePublicTCPSTARTTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	provisionPublicTCPTestPort(t, ctx, c)
+	if os.Getenv("HAKOPOD_PUBLIC_TCP_BYO_TEST") == "1" {
+		nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 2})
+		if err != nil || len(nodes.Items) != 1 || nodes.Continue != "" {
+			t.Fatal("BYO acceptance requires one development node", err)
+		}
+		c.options.DeploymentMode = DeploymentManagedCloud
+		c.options.DedicatedPublicTCPNode = nodes.Items[0].Name
+		c.options.PublicTCPPorts = nil
+		if err := c.ValidatePublicTCPInstallation(ctx); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("Testing dedicated BYO TCP with administrator-provisioned host port and no static port allowlist")
+	}
 	target := Target{ApplicationID: fmt.Sprintf("smtp-tcp-acceptance-%d", time.Now().UnixNano()), Project: "smtp-acceptance", Environment: "test", OperationID: "tcp-initial", Revision: 1}
 	target.Spec, err = spec.Normalize(spec.Application{Name: "smtp", Services: map[string]spec.Service{"mail": {
 		Image: "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a", Port: 2525, RunAsUser: 12345, RunAsGroup: 23456, FSGroup: 23456, ReadOnlyRootFilesystem: true,

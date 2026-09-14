@@ -33,17 +33,19 @@ type Options struct {
 	ReadinessProbeImage string
 	DeploymentMode      string
 	PublicTCPPorts      []int32
-	AWSIdentityBindings []AWSIdentityBinding
-	SupervisorURL       string
-	ProxyNamespace      string
-	ProxyConfigMap      string
-	ProxyRelease        string
-	RegistrySecretName  func(context.Context, string, string, string) (string, error)
-	ExternalSecrets     func(context.Context, string, string, spec.Application) (map[string]map[string][]byte, error)
-	VirtualNetworks     func(context.Context, string, string, spec.Application) (map[string]string, error)
-	AppDomain           string
-	IngressClass        string
-	RolloutTimeout      time.Duration
+	// DedicatedPublicTCPNode is operator-only: an isolated BYO cluster with exactly this node.
+	DedicatedPublicTCPNode string
+	AWSIdentityBindings    []AWSIdentityBinding
+	SupervisorURL          string
+	ProxyNamespace         string
+	ProxyConfigMap         string
+	ProxyRelease           string
+	RegistrySecretName     func(context.Context, string, string, string) (string, error)
+	ExternalSecrets        func(context.Context, string, string, spec.Application) (map[string]map[string][]byte, error)
+	VirtualNetworks        func(context.Context, string, string, spec.Application) (map[string]string, error)
+	AppDomain              string
+	IngressClass           string
+	RolloutTimeout         time.Duration
 	// TLSIssuer must identify an operator-provisioned cert-manager ClusterIssuer.
 	// Empty leaves HTTP explicit; the local development cluster uses this mode.
 	TLSIssuer       string
@@ -154,7 +156,10 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, err
 	}
 	options.DeploymentMode = mode
-	if mode == DeploymentManagedCloud && len(options.PublicTCPPorts) > 0 {
+	if err := ValidateDedicatedPublicTCPNode(mode, options.DedicatedPublicTCPNode); err != nil {
+		return nil, err
+	}
+	if mode == DeploymentManagedCloud && options.DedicatedPublicTCPNode == "" && len(options.PublicTCPPorts) > 0 {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
 	}
 	if err := ValidateAWSIdentityBindings(options.AWSIdentityBindings); err != nil {
