@@ -33,21 +33,26 @@
   background: transparent;
   min-height: calc(100dvh - var(--hako-header-height, 96px) - 96px);
 }
-.settings-page .settings-nav {
-  padding: 24px 0;
+:is(.settings-page, .hako-preferences) .settings-nav {
+  @apply px-0 py-3;
 }
-.settings-page .settings-nav .nav-group {
-  padding: 20px 24px 10px;
-  margin: 0;
+:is(.settings-page, .hako-preferences) .settings-nav .nav-group {
+  @apply m-0 px-0 pt-3 pb-1;
   color: var(--muted);
   font: 11px var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.settings-page .settings-nav button {
-  padding: 10px 24px;
+:is(.settings-page, .hako-preferences) .settings-nav > div:first-child .nav-group {
+  @apply pt-0;
+}
+:is(.settings-page, .hako-preferences) .settings-nav button {
+  @apply min-h-9 px-0 py-1.5;
   font-size: 14px;
   width: 100%;
+  @variant pointer-coarse {
+    @apply min-h-11;
+  }
 }
 .settings-page .settings-content {
   max-width: none;
@@ -383,6 +388,9 @@
   }
 }
 @media (max-width: 1023px) {
+  :is(.settings-page, .hako-preferences) .settings-nav {
+    @apply py-1;
+  }
   .settings-page > .settings-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -391,7 +399,7 @@
     display: flex;
     flex-wrap: nowrap;
     overflow: auto;
-    @apply -mx-4 px-4 py-3;
+    @apply -mx-4 gap-4 px-4 py-1;
 
     @variant sm {
       @apply -mx-6 px-6;
@@ -404,7 +412,7 @@
   }
   .settings-page .settings-nav button {
     white-space: nowrap;
-    padding: 10px 12px;
+    @apply px-0 py-1.5;
   }
   .settings-page .settings-content {
     padding: 16px 0 24px;
