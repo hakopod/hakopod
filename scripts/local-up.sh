@@ -92,15 +92,17 @@ PY
     --restart unless-stopped --memory 256m --cpus 0.5 \
     --publish 127.0.0.1:55432:5432 --env-file "$ROOT/.local/postgres.env" \
     --volume hakopod-postgres-data:/var/lib/postgresql/data \
-    --health-cmd 'pg_isready -U hakopod -d hakopod' --health-interval 5s --health-timeout 3s --health-retries 12 \
+    --health-cmd 'pg_isready -h 127.0.0.1 -U hakopod -d hakopod' --health-interval 5s --health-timeout 3s --health-retries 12 \
     "$POSTGRES_IMAGE" -c shared_buffers=32MB -c max_connections=30 -c work_mem=2MB \
     -c maintenance_work_mem=32MB -c wal_buffers=4MB >/dev/null
 fi
+# The image's initialization server listens on a Unix socket before restarting.
+# Probe TCP so a transient initialization success cannot race the final check.
 for attempt in $(seq 1 30); do
-  if docker exec hakopod-postgres pg_isready -U hakopod -d hakopod >/dev/null 2>&1; then break; fi
+  if docker exec hakopod-postgres pg_isready -h 127.0.0.1 -U hakopod -d hakopod >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec hakopod-postgres pg_isready -U hakopod -d hakopod
+docker exec hakopod-postgres pg_isready -h 127.0.0.1 -U hakopod -d hakopod
 python3 - "$ROOT" <<'PY'
 import pathlib, shlex, sys
 root = pathlib.Path(sys.argv[1])
