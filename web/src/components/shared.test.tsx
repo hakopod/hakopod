@@ -9,10 +9,29 @@ import '../lib/runtime-health.test'
 import '../lib/projects.test'
 import '../lib/runtime-metrics.test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Copy } from './shared'
+import { Copy, ErrorState } from './shared'
+import { APIError, message } from '../lib/api'
 import { specToTOML } from '../lib/toml'
 import { canAccess, canOpenHostTerminal } from '../lib/scope'
 import type { Identity } from '../lib/types'
+
+test('error messages survive normalization and rendering across form boundaries', () => {
+  const text = 'Verify domain ownership before importing an application with custom domains.'
+  const cause = new APIError(text, 400, 'domain_verification_required')
+  assert.equal(message(message(cause)), text)
+  assert.ok(renderToStaticMarkup(<ErrorState error={message(cause)} />).includes(text))
+  assert.ok(
+    renderToStaticMarkup(<ErrorState error={cause} />).includes('domain_verification_required'),
+  )
+  assert.ok(
+    renderToStaticMarkup(<ErrorState error="Backup destination is unavailable." />).includes(
+      'Backup destination is unavailable.',
+    ),
+  )
+  assert.equal(message(new Error('Connection failed.')), 'Connection failed.')
+  for (const value of ['', '  ', undefined, null, {}, 0, new Error('')])
+    assert.equal(message(value), 'An unexpected error occurred.')
+})
 
 test('copying a generated key cannot submit its credential creation form', () => {
   const html = renderToStaticMarkup(
