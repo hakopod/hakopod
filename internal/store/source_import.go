@@ -9,13 +9,14 @@ import (
 )
 
 type InitialSource struct {
-	Provider     string `json:"provider"`
-	ConnectionID string `json:"connection_id,omitempty"`
-	Repository   string `json:"repository"`
-	Branch       string `json:"branch"`
-	Path         string `json:"path"`
-	AutoDeploy   bool   `json:"auto_deploy"`
-	CommitSHA    string `json:"commit_sha"`
+	Provider                   string `json:"provider"`
+	ConnectionID               string `json:"connection_id,omitempty"`
+	ExpectedConnectionRevision int64  `json:"-"`
+	Repository                 string `json:"repository"`
+	Branch                     string `json:"branch"`
+	Path                       string `json:"path"`
+	AutoDeploy                 bool   `json:"auto_deploy"`
+	CommitSHA                  string `json:"commit_sha"`
 }
 
 func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, environment string, next spec.Application, source InitialSource, idem string) (Deployment, error) {
@@ -30,6 +31,24 @@ func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, en
 func (s *Store) bindInitialSource(ctx context.Context, tx pgx.Tx, p Principal, a Application, deployment string, source InitialSource) error {
 	if a.Revision != 0 || !p.IsAdmin() {
 		return ErrForbidden
+	}
+	connectionID := source.ConnectionID
+	if connectionID == "" {
+		connectionID = source.Provider + "-default"
+	}
+	var enabled bool
+	var revision int64
+	var provider string
+	// Share-lock the exact connection until acceptance commits. Disabling or
+	// rotating it cannot race the final provider-independent acceptance boundary.
+	if err := tx.QueryRow(ctx, "SELECT enabled,revision,provider FROM git_connections WHERE id=$1 FOR SHARE", connectionID).Scan(&enabled, &revision, &provider); err != nil {
+		return err
+	}
+	if !enabled || provider != source.Provider {
+		return ErrForbidden
+	}
+	if source.ExpectedConnectionRevision > 0 && revision != source.ExpectedConnectionRevision {
+		return ErrConflict
 	}
 	grant, err := s.NewSourceGrant(ctx, tx, p, a.Project, a.Environment, a.Name)
 	if err != nil {

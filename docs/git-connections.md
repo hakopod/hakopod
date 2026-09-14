@@ -39,6 +39,39 @@ feed TOML sources; workflow_run events feed automatic builds. Installation delet
 or suspension disables the corresponding connection. Re-enable it after fixing the
 provider installation; saving verifies its current identity again.
 
+## GitLab OAuth
+
+Register a GitLab OAuth application with the dashboard callback URL
+`https://YOUR-DASHBOARD/settings/git/callback`. Create a `gitlab_oauth` connection
+with its client ID and secret. Source reads use `read_api`; full build installation,
+pipeline control and artifact observation use `api`. The provider user's project
+permissions still apply. `write_repository` does not authorize these write APIs.
+No personal access token is required by this authentication method.
+
+The dashboard starts `POST /api/v1/git/connections/{id}/authorize`, opens the
+returned authorization URL, then submits `code` and `state` from the callback to
+`POST /api/v1/git/oauth/complete`. The source-specific one-use challenge binds
+PKCE, the exact callback, connection revision and initiating browser session.
+Completing under another session, even for the same administrator, is refused.
+The response contains connection metadata, never provider tokens. Operator account
+sign-in settings are neither reused nor changed.
+
+The encrypted access/refresh pair is rotated under a per-connection PostgreSQL
+advisory lock. Refresh uses the returned expiry, persists both tokens together,
+and increments a separate credential generation so ordinary refresh does not
+invalidate source reviews. Interrupted or failed refresh requires reconnection;
+it cannot silently replay a potentially consumed refresh token. One authorized
+connection per GitLab OAuth App/user pair prevents independent refresh races over
+the same delegated grant. Use that connection for its approved repositories.
+
+GitLab OAuth is user-delegated authority, not a GitHub-style repository installation.
+Connection and repository approval in Hakopod still restrict which sources/builds
+may use the token. OAuth does not create remote project webhooks automatically.
+Configure the connection's returned webhook URL and secret for Push and Pipeline
+events as needed. New imports capture the connection revision and require a fresh
+review after operator configuration changes. Already accepted import retries still
+recover their original durable deployment after disabling the connection.
+
 ## GitLab and token connections
 
 A named token connection uses its own webhook URL and secret. GitLab token

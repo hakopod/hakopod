@@ -5781,6 +5781,140 @@
         "security": []
       }
     },
+    "/git/connections/{id}/authorize": {
+      "post": {
+        "operationId": "startGitSourceOAuth",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitOAuthStart"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/connections/{id}/oauth/complete": {
+      "post": {
+        "operationId": "completeNamedGitSourceOAuth",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitOAuthComplete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/oauth/complete": {
+      "post": {
+        "operationId": "completeGitSourceOAuth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitOAuthComplete"
+              }
+            }
+          }
+        }
+      }
+    },
     "/installation/login-providers/{provider}": {
       "get": {
         "operationId": "getInstallationLoginProvider",
@@ -12918,6 +13052,12 @@
           "installation_id": {
             "type": "integer"
           },
+          "oauth_client_id": {
+            "type": "string"
+          },
+          "oauth_scopes": {
+            "type": "string"
+          },
           "legacy": {
             "type": "boolean"
           },
@@ -12985,7 +13125,8 @@
             "type": "string",
             "enum": [
               "token",
-              "github_app"
+              "github_app",
+              "gitlab_oauth"
             ]
           },
           "expected_revision": {
@@ -13008,12 +13149,60 @@
           },
           "github_installation_id": {
             "type": "integer"
+          },
+          "oauth_client_id": {
+            "type": "string"
+          },
+          "oauth_client_secret": {
+            "type": "string"
+          },
+          "oauth_scopes": {
+            "type": "string",
+            "enum": [
+              "api",
+              "read_api"
+            ]
           }
         },
         "required": [
           "name",
           "provider",
           "auth_kind"
+        ]
+      },
+      "GitOAuthStart": {
+        "type": "object",
+        "properties": {
+          "authorization_url": {
+            "type": "string"
+          },
+          "callback_url": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "callback_url",
+          "expires_at"
+        ]
+      },
+      "GitOAuthComplete": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "state"
         ]
       },
       "InstallationLoginProvider": {

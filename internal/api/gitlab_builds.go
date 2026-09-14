@@ -37,7 +37,14 @@ func (s *Server) gitlabBuildRequest(ctx context.Context, method, endpoint string
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("PRIVATE-TOKEN", string(credentials["token"]))
+	if string(credentials["auth-kind"]) == "gitlab_oauth" {
+		if method != "GET" && !gitScopeAllows(string(credentials["scopes"]), "api") {
+			return nil, errors.New("this GitLab OAuth connection needs api scope to install or run builds")
+		}
+		request.Header.Set("Authorization", "Bearer "+string(credentials["token"]))
+	} else {
+		request.Header.Set("PRIVATE-TOKEN", string(credentials["token"]))
+	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "hakopod")

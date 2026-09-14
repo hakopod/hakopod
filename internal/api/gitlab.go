@@ -144,7 +144,11 @@ func (s *Server) gitlabGET(ctx context.Context, endpoint string, output any, con
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "hakopod")
 	if len(data["token"]) > 0 {
-		request.Header.Set("PRIVATE-TOKEN", string(data["token"]))
+		if string(data["auth-kind"]) == "gitlab_oauth" {
+			request.Header.Set("Authorization", "Bearer "+string(data["token"]))
+		} else {
+			request.Header.Set("PRIVATE-TOKEN", string(data["token"]))
+		}
 	}
 	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	if s.gitlabHTTP != nil {
@@ -210,7 +214,7 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connectionID := selectedGitConnection("gitlab", r.PathValue("connection"))
-	credentials, err := s.connectionCredentials(r.Context(), "gitlab", connectionID, "", nil)
+	credentials, err := s.gitWebhookCredentials(r.Context(), "gitlab", connectionID)
 	if err != nil || len(credentials["webhook-secret"]) < 32 {
 		problem(w, 503, "gitlab_not_configured", "GitLab webhook authentication is not configured")
 		return
