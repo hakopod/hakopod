@@ -23,6 +23,8 @@ func (s *Server) registerRuntimeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/applications/{id}/services/{service}/runtime", s.serviceRuntime)
 	mux.HandleFunc("POST /api/v1/applications/{id}/services/{service}/restart", s.restartService)
 	mux.HandleFunc("POST /api/v1/applications/{id}/services/{service}/scale", s.scaleService)
+	mux.HandleFunc("POST /api/v1/applications/{id}/services/{service}/stop", s.stopService)
+	mux.HandleFunc("POST /api/v1/applications/{id}/services/{service}/resume", s.resumeService)
 }
 
 func (s *Server) serviceRuntime(w http.ResponseWriter, r *http.Request) {

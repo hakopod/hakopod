@@ -78,6 +78,20 @@ func TestRuntimeActionsPinDigestsAndReplayAcrossRevisions(t *testing.T) {
 	if status != 202 || scale.Revision != 3 || scale.Spec.Services["api"].Replicas != 3 || scale.ResolvedSpec.Services["api"].Image != resolved.Services["api"].Image {
 		t.Fatalf("scale failed: %d %+v", status, scale)
 	}
+
+	finish()
+	status, stopped := call("stop", "runtime-stop", map[string]any{"expected_revision": 3})
+	if status != 202 || !stopped.Spec.Services["api"].Suspended || stopped.Spec.Services["api"].Replicas != 3 || stopped.ResolvedSpec.Services["api"].Image != resolved.Services["api"].Image {
+		t.Fatalf("stop lost configuration: %d %+v", status, stopped)
+	}
+	finish()
+	status, resumed := call("resume", "runtime-resume", map[string]any{"expected_revision": 4})
+	if status != 202 || resumed.Spec.Services["api"].Suspended || resumed.Spec.Services["api"].Replicas != 3 {
+		t.Fatalf("resume lost replica count: %d %+v", status, resumed)
+	}
+	if status, _ := call("stop", "runtime-stale-stop", map[string]any{"expected_revision": 3}); status != 409 {
+		t.Fatalf("stale stop accepted: %d", status)
+	}
 	status, replay := call("restart", "runtime-restart", map[string]any{"expected_revision": 1})
 	if status != 202 || replay.ID != restart.ID {
 		t.Fatalf("restart replay after advancing revision changed: %d %s", status, replay.ID)

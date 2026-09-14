@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/util/retry"
 	"net"
 	"reflect"
 	"sort"
@@ -105,7 +106,7 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		}
 		emit(Event{Type: "applying", Service: name, Message: "Applying digest-pinned Deployment with readiness-gated rolling update"})
 		// Remove an old HPA before taking manual ownership of replicas.
-		if svc.Autoscaling == nil {
+		if svc.Autoscaling == nil || svc.Suspended {
 			if err := c.applyHPA(ctx, target, name, svc); err != nil {
 				return c.observationAfterFailure(target), fmt.Errorf("%s autoscaling: %w", name, err)
 			}
@@ -114,7 +115,7 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		if err != nil {
 			return c.observationAfterFailure(target), fmt.Errorf("%s: %w", name, err)
 		}
-		if svc.Autoscaling != nil {
+		if svc.Autoscaling != nil && !svc.Suspended {
 			if err := c.applyHPA(ctx, target, name, svc); err != nil {
 				return c.observationAfterFailure(target), fmt.Errorf("%s autoscaling: %w", name, err)
 			}
@@ -296,7 +297,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	}
 	result := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labels, Annotations: map[string]string{"hakopod.io/revision": strconv.FormatInt(t.Revision, 10), "hakopod.io/operation": t.OperationID}},
-		Spec: appsv1.DeploymentSpec{Replicas: ptr(svc.Replicas), Selector: &metav1.LabelSelector{MatchLabels: labels}, RevisionHistoryLimit: ptr(int32(2)), MinReadySeconds: 2, ProgressDeadlineSeconds: &seconds,
+		Spec: appsv1.DeploymentSpec{Replicas: ptr(serviceReplicas(svc)), Selector: &metav1.LabelSelector{MatchLabels: labels}, RevisionHistoryLimit: ptr(int32(2)), MinReadySeconds: 2, ProgressDeadlineSeconds: &seconds,
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{MaxSurge: ptr(intstr.FromInt32(1)), MaxUnavailable: ptr(intstr.FromInt32(0))}},
 			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: podLabels}, Spec: corev1.PodSpec{AutomountServiceAccountToken: ptr(false), TerminationGracePeriodSeconds: ptr(int64(30)), EnableServiceLinks: ptr(false),
 				SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: ptr(true), RunAsUser: ptr(int64(10001)), RunAsGroup: ptr(int64(10001)), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container},
@@ -343,46 +344,58 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}
-	current, err := api.Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		created, err := api.Create(ctx, wanted, metav1.CreateOptions{})
+	var generation int64
+	template := wanted
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := beforeStep(ctx, t); err != nil {
+			return err
+		}
+		wanted := template.DeepCopy()
+		current, err := api.Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			created, err := api.Create(ctx, wanted, metav1.CreateOptions{})
+			if err != nil {
+				return err
+			}
+			generation = created.Generation
+			return nil
+		}
 		if err != nil {
-			return 0, err
+			return err
 		}
-		return created.Generation, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if err := owned(current, t); err != nil {
-		return 0, err
-	}
-	// HPA owns /spec/replicas after creation. Secret-reload and other controller
-	// annotations on both Deployment and PodTemplate retain their ownership.
-	if svc.Autoscaling != nil {
-		wanted.Spec.Replicas = current.Spec.Replicas
-	}
-	if wanted.Spec.Template.Annotations == nil {
-		wanted.Spec.Template.Annotations = map[string]string{}
-	}
-	for key, value := range current.Spec.Template.Annotations {
-		if key != "hakopod.io/restart-nonce" {
-			wanted.Spec.Template.Annotations[key] = value
+		if err := owned(current, t); err != nil {
+			return err
 		}
-	}
-	for key, value := range wanted.Annotations {
-		if current.Annotations == nil {
-			current.Annotations = make(map[string]string)
+		// HPA owns /spec/replicas after creation. Secret-reload and other controller
+		// annotations on both Deployment and PodTemplate retain their ownership.
+		// A resumed zero-replica target must return to the saved minimum before HPA can act.
+		if svc.Autoscaling != nil && !svc.Suspended && current.Spec.Replicas != nil && *current.Spec.Replicas > 0 {
+			wanted.Spec.Replicas = current.Spec.Replicas
 		}
-		current.Annotations[key] = value
-	}
-	current.Labels = wanted.Labels
-	current.Spec = wanted.Spec
-	updated, err := api.Update(ctx, current, metav1.UpdateOptions{})
-	if err != nil {
-		return 0, err
-	}
-	return updated.Generation, nil
+		if wanted.Spec.Template.Annotations == nil {
+			wanted.Spec.Template.Annotations = map[string]string{}
+		}
+		for key, value := range current.Spec.Template.Annotations {
+			if key != "hakopod.io/restart-nonce" {
+				wanted.Spec.Template.Annotations[key] = value
+			}
+		}
+		for key, value := range wanted.Annotations {
+			if current.Annotations == nil {
+				current.Annotations = make(map[string]string)
+			}
+			current.Annotations[key] = value
+		}
+		current.Labels = wanted.Labels
+		current.Spec = wanted.Spec
+		updated, err := api.Update(ctx, current, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+		generation = updated.Generation
+		return nil
+	})
+	return generation, err
 }
 
 func (c *Client) applyService(ctx context.Context, t Target, name string, svc spec.Service) error {
@@ -519,7 +532,7 @@ func (c *Client) applyHPA(ctx context.Context, t Target, name string, svc spec.S
 	}
 	api := c.kube.AutoscalingV2().HorizontalPodAutoscalers(Namespace(t.ApplicationID))
 	current, err := api.Get(ctx, name, metav1.GetOptions{})
-	if svc.Autoscaling == nil {
+	if svc.Autoscaling == nil || svc.Suspended {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -845,4 +858,11 @@ func (c *Client) waitRetiredPods(ctx context.Context, t Target) error {
 			return fmt.Errorf("waiting for removed service pods to stop: %w", err)
 		}
 	}
+}
+
+func serviceReplicas(svc spec.Service) int32 {
+	if svc.Suspended {
+		return 0
+	}
+	return svc.Replicas
 }

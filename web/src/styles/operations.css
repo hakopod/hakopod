@@ -780,6 +780,7 @@
   gap: 16px;
   min-width: 0;
 }
+.light .node-runtime,
 [data-theme='light'] .node-runtime {
   --node-cpu: #175d9d;
   --node-memory: #813eb4;
@@ -1988,4 +1989,8 @@
   .service-delivery > .panel-heading > .delivery-title {
     flex-basis: 100%;
   }
+}
+
+.ops-card-link:disabled {
+  @apply bg-transparent;
 }

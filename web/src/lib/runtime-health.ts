@@ -68,21 +68,24 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
   return {
     observed: true,
     ...counts,
-    status: failed
-      ? 'failed'
-      : inspect
-        ? 'blocked'
-        : ready
-          ? state === 'completed'
-            ? 'completed'
-            : counts.desired === 0
-              ? 'scaled down'
-              : 'ready'
-          : state === 'missing'
-            ? 'missing'
-            : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
-              ? state
-              : 'pending',
+    status:
+      state === 'stopped'
+        ? 'stopped'
+        : failed
+          ? 'failed'
+          : inspect
+            ? 'blocked'
+            : ready
+              ? state === 'completed'
+                ? 'completed'
+                : counts.desired === 0
+                  ? 'scaled down'
+                  : 'ready'
+              : state === 'missing'
+                ? 'missing'
+                : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
+                  ? state
+                  : 'pending',
     issues:
       inspect || failed
         ? [
@@ -158,7 +161,9 @@ export function applicationRuntimeHealth(
   )
   const services = names.map((name) => assessService(observations.get(name)))
   const observed = services.filter((service) => service.observed).length
-  const ready = services.filter((service) => ['ready', 'completed'].includes(service.status)).length
+  const ready = services.filter((service) =>
+    ['ready', 'completed', 'stopped'].includes(service.status),
+  ).length
   const counts =
     services.length &&
     services.every((service) => service.ready !== undefined && service.desired !== undefined)
@@ -171,19 +176,22 @@ export function applicationRuntimeHealth(
     {
       observed: observed > 0,
       ...counts,
-      status: !observed
-        ? 'not observed'
-        : services.some((service) => service.status === 'failed')
-          ? 'failed'
-          : services.some((service) => service.status === 'blocked')
-            ? 'blocked'
-            : ready === names.length
-              ? 'healthy'
-              : services.every((service) => service.status === 'scaled down')
-                ? 'scaled down'
-                : ready || observed < names.length
-                  ? 'partial'
-                  : 'pending',
+      status:
+        services.length > 0 && services.every((service) => service.status === 'stopped')
+          ? 'stopped'
+          : !observed
+            ? 'not observed'
+            : services.some((service) => service.status === 'failed')
+              ? 'failed'
+              : services.some((service) => service.status === 'blocked')
+                ? 'blocked'
+                : ready === names.length
+                  ? 'healthy'
+                  : services.every((service) => service.status === 'scaled down')
+                    ? 'scaled down'
+                    : ready || observed < names.length
+                      ? 'partial'
+                      : 'pending',
       issues: services.flatMap((service) => service.issues),
       ...(observed > 0 && observed < names.length
         ? {

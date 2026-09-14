@@ -27,6 +27,7 @@ type Application struct {
 }
 
 type Service struct {
+	Suspended               bool                    `json:"suspended,omitempty" toml:"suspended,omitempty"`
 	Job                     *Job                    `json:"job,omitempty" toml:"job"`
 	Files                   map[string]File         `json:"files,omitempty" toml:"files"`
 	Bindings                map[string]Binding      `json:"bindings,omitempty" toml:"bindings"`
@@ -225,6 +226,9 @@ func Normalize(input Application) (Application, error) {
 		}
 		if _, ok := Profiles[svc.Size]; !ok {
 			return Application{}, fmt.Errorf("%s.size: choose small, medium, large, compute or gpu", field)
+		}
+		if svc.Suspended && svc.Job != nil {
+			return Application{}, fmt.Errorf("%s: deployment jobs cannot be stopped or resumed", field)
 		}
 		if svc.Replicas == 0 {
 			svc.Replicas = 1
