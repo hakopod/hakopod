@@ -47,7 +47,8 @@ func (s *Server) registerLoginProviderRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/v1/installation/login-providers/{provider}", s.putLoginProvider)
 }
 func (s *Server) loginSettingsAllowed(w http.ResponseWriter, r *http.Request) bool {
-	if who(r).CredentialType != "browser" || !who(r).IsAdmin() || s.Auth.DeploymentMode == cluster.DeploymentManagedCloud {
+	mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+	if who(r).CredentialType != "browser" || !who(r).IsAdmin() || modeErr != nil || mode != cluster.DeploymentSelfHosted {
 		authFailure(w, store.ErrForbidden)
 		return false
 	}
@@ -214,7 +215,11 @@ func (s *Server) loginAllowed(ctx context.Context, provider string) error {
 	if !validLoginProvider(provider) {
 		return store.ErrInput
 	}
-	if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud {
+	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+	if err != nil {
+		return err
+	}
+	if mode == cluster.DeploymentManagedCloud {
 		return nil
 	}
 	return s.Store.RequireFeatures(ctx, loginFeature(provider))
