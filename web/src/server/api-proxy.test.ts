@@ -370,3 +370,61 @@ test('resource deletion proxy requires a session and same-origin request', async
   }
   assert.equal(calls, 2)
 })
+
+test('stop and resume forward reviewed mutations without bypassing session or origin checks', async (t) => {
+  for (const action of ['stop', 'resume']) {
+    const path = `applications/app-a/services/api/${action}`
+    const body = { expected_revision: 7 }
+    let calls = 0
+    const mock = t.mock.method(
+      globalThis,
+      'fetch',
+      async (url: unknown, init: RequestInit = {}) => {
+        calls++
+        assert.equal(new URL(String(url)).pathname, `/api/v1/${path}`)
+        assert.equal(init.method, 'POST')
+        assert.equal(init.body, JSON.stringify(body))
+        const headers = new Headers(init.headers)
+        assert.equal(headers.get('Authorization'), `Bearer ${token}`)
+        assert.equal(headers.get('Idempotency-Key'), 'reviewed-action')
+        assert.equal(headers.has('Cookie'), false)
+        return Response.json({ revision: 8 }, { status: 202 })
+      },
+    )
+    const mutation = request(path, 'POST', body)
+    mutation.headers.set('Idempotency-Key', 'reviewed-action')
+    const result = await proxy({ request: mutation, params: { _splat: path } })
+    assert.equal(result.status, 202)
+    assert.deepEqual(await result.json(), { revision: 8 })
+    assert.match(result.headers.get('Cache-Control') || '', /no-store/)
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, 'POST', body, false),
+          params: { _splat: path },
+        })
+      ).status,
+      401,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, 'POST', body, true, 'https://untrusted.invalid'),
+          params: { _splat: path },
+        })
+      ).status,
+      403,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path + '/extra', 'POST', body),
+          params: { _splat: path + '/extra' },
+        })
+      ).status,
+      404,
+    )
+    assert.equal(calls, 1)
+    mock.mock.restore()
+  }
+})
