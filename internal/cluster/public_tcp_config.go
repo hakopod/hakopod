@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func ParsePublicTCPPorts(value string) ([]int32, error) {
@@ -72,6 +73,9 @@ func (c *Client) PublicTCPPolicy() PublicTCPPolicyStatus {
 	if err != nil {
 		return PublicTCPPolicyStatus{Mode: c.options.DeploymentMode, Allowed: false, Message: "Public TCP is unavailable because the installation deployment mode is invalid."}
 	}
+	if mode == DeploymentManagedCloud && c.options.DedicatedPublicTCPNode != "" && ValidateDedicatedPublicTCPNode(mode, c.options.DedicatedPublicTCPNode) == nil {
+		return PublicTCPPolicyStatus{Mode: mode, Allowed: true, Message: "Public TCP is available on your dedicated BYO node after you provision its ports in workspace settings. Reserved platform ports and ports already in use cannot be assigned."}
+	}
 	if mode == DeploymentManagedCloud {
 		return PublicTCPPolicyStatus{Mode: mode, Allowed: false, Message: "Public TCP is unavailable on managed cloud."}
 	}
@@ -84,6 +88,12 @@ func (c *Client) ValidatePublicTCPInstallation(ctx context.Context) error {
 	mode, err := ParseDeploymentMode(c.options.DeploymentMode)
 	if err != nil {
 		return err
+	}
+	if err := ValidateDedicatedPublicTCPNode(mode, c.options.DedicatedPublicTCPNode); err != nil {
+		return err
+	}
+	if c.options.DedicatedPublicTCPNode != "" {
+		return c.validateDedicatedPublicTCPNode(ctx, true)
 	}
 	if mode != DeploymentManagedCloud {
 		return nil
@@ -127,6 +137,44 @@ func (c *Client) ValidatePublicTCPInstallation(ctx context.Context) error {
 				return fmt.Errorf("application public TCP removal is not acknowledged; finish removal before switching to managed-cloud")
 			}
 		}
+	}
+	return nil
+}
+
+// This setting is supplied by the Cloud operator, never by application TOML.
+func ValidateDedicatedPublicTCPNode(mode, name string) error {
+	if name == "" {
+		return nil
+	}
+	if mode != DeploymentManagedCloud || len(name) > 63 || len(validation.IsDNS1123Label(name)) > 0 {
+		return fmt.Errorf("HAKOPOD_DEDICATED_TCP_NODE requires a DNS label in managed-cloud mode")
+	}
+	return nil
+}
+
+func (c *Client) validateDedicatedPublicTCPNode(ctx context.Context, bootstrap bool) error {
+	name := c.options.DedicatedPublicTCPNode
+	if name == "" {
+		return nil
+	}
+	if err := ValidateDedicatedPublicTCPNode(c.options.DeploymentMode, name); err != nil {
+		return err
+	}
+	if c.kube == nil {
+		return fmt.Errorf("dedicated BYO node verification requires Kubernetes access")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 2})
+	if err != nil {
+		return fmt.Errorf("verify dedicated BYO node: %w", err)
+	}
+	// Agentless control planes start before their first BYO worker joins.
+	if bootstrap && nodes.Continue == "" && len(nodes.Items) == 0 {
+		return nil
+	}
+	if nodes.Continue != "" || len(nodes.Items) != 1 || nodes.Items[0].Name != name {
+		return fmt.Errorf("public TCP requires an isolated cluster containing only the registered BYO node")
 	}
 	return nil
 }

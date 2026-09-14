@@ -75,6 +75,9 @@ func (c *Client) ValidatePublicTCP(ctx context.Context, t Target) error {
 	if policy := c.PublicTCPPolicy(); !policy.Allowed {
 		return fmt.Errorf("%w: %s", ErrPublicTCPDisabled, policy.Message)
 	}
+	if err := c.validateDedicatedPublicTCPNode(ctx, false); err != nil {
+		return err
+	}
 	if c.dynamic == nil {
 		return fmt.Errorf("public TCP requires the HAProxy v3 TCP API")
 	}
@@ -85,7 +88,7 @@ func (c *Client) ValidatePublicTCP(ctx context.Context, t Target) error {
 	requested := map[int32]bool{}
 	for _, svc := range t.Spec.Services {
 		for _, listener := range svc.PublicTCP {
-			if !slices.Contains(c.options.PublicTCPPorts, listener.Port) {
+			if c.options.DedicatedPublicTCPNode == "" && !slices.Contains(c.options.PublicTCPPorts, listener.Port) {
 				return fmt.Errorf("public TCP port %d is not enabled by the installation operator", listener.Port)
 			}
 			if !controller[listener.Port] {

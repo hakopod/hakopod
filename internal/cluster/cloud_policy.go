@@ -44,6 +44,7 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 	if err != nil {
 		return CloudCapabilities{}, fmt.Errorf("read managed-cloud node capacity: %w", err)
 	}
+	result.PublicTCP = c.options.DedicatedPublicTCPNode != "" && nodes.Continue == "" && len(nodes.Items) == 1 && nodes.Items[0].Name == c.options.DedicatedPublicTCPNode
 	result.NodeCount = len(nodes.Items)
 	result.NodeCountComplete = nodes.Continue == ""
 	if result.NodeCount > 2 {
