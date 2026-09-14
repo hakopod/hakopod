@@ -72,3 +72,41 @@ The user subsequently directed code work to continue and visual review to wait.
 The disposable API/UI fixtures were stopped by their owner and their temporary
 databases removed; restart scripts are retained locally. This record grants no
 visual sign-off and must be completed before publishing the UI.
+
+## Git connection UI source follow-up
+
+The same independent reviewer subsequently inspected the named Git connection
+list/editor/review, GitLab OAuth callback, repository connection selector,
+application source/build/import propagation, legacy-route redirect and named
+webhook proxy. This follow-up also grants no rendered approval.
+
+Three findings were resolved in source and re-inspected:
+
+- Git editor requests now use a base revision captured with the draft. A focus
+  refetch can no longer advance expected_revision while keeping old field values.
+  Deletion uses that same captured revision.
+- Explicit migrated github-default/gitlab-default IDs normalize only for selector
+  presentation; they no longer appear as unavailable connections. Saved bindings
+  keep their actual connection IDs and never substitute the first named record.
+- Source/import selectors honor read_source=false for OAuth connections needing
+  authorization. Unavailable selected values remain visible and disabled, and
+  valid public-repository defaults remain selectable. Build selectors separately
+  honor the builds capability.
+
+The source includes meaningful regression cases for explicit defaults and denied
+source access. The reviewer independently ran
+`node --experimental-strip-types --test src/server/git-webhook.test.ts`: both
+cases passed. These verify exact signed bytes, removal of browser Authorization,
+Cookie/Origin and forwarded-address headers, response-cookie stripping, strict
+webhook endpoint paths, POST-only access and the 512 KiB request bound.
+
+OAuth authorization navigation is limited to the exact GitLab authorization
+origin/path. The callback clears code/state from the visible URL and completes
+through the authenticated API proxy; backend same-session, PKCE and revision
+checks remain authoritative. The page uses the shared no-referrer policy.
+Credentials stay in password/private-key inputs and are omitted from review rows;
+the newly generated webhook secret is shown only on the immediate save result.
+Error handling preserves draft state, and consequential saves/removals have
+review or typed confirmation. No further actionable source finding remained in
+this scoped pass. Browser focus behavior, screenshots, responsive layout and live
+provider authorization still require the deferred rendered/integration review.
