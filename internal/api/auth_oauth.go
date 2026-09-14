@@ -3,16 +3,12 @@ package api
 import (
 	"context"
 	"crypto/subtle"
-	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/store"
 	"golang.org/x/oauth2"
 	"io"
-	"net"
 	"net/http"
-	"net/smtp"
 	"net/url"
 	"strconv"
 	"strings"
@@ -298,100 +294,4 @@ func (s *Server) authMFAComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessionResponse(w, r, session)
-}
-
-var authMailSlots = make(chan struct{}, 2)
-
-func (s *Server) sendAuthMail(ctx context.Context, recipient, subject, body string) error {
-	if !s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "" {
-		return store.ErrForbidden
-	}
-	select {
-	case authMailSlots <- struct{}{}:
-		defer func() { <-authMailSlots }()
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return store.ErrBusy
-	}
-	return s.deliverAuthMail(ctx, recipient, subject, body)
-}
-
-// Public registration and recovery must not expose account existence through
-// SMTP latency. Reserve a slot before starting work; there is no waiting queue.
-func (s *Server) startAuthMail(ctx context.Context, recipient, subject, body, challenge, kind string) {
-	select {
-	case authMailSlots <- struct{}{}:
-	default:
-		_, _ = s.Store.ConsumeChallenge(ctx, challenge, kind)
-		return
-	}
-	go func() {
-		defer func() { <-authMailSlots }()
-		mailContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if s.deliverAuthMail(mailContext, recipient, subject, body) != nil {
-			_, _ = s.Store.ConsumeChallenge(mailContext, challenge, kind)
-			_, _ = s.Store.Pool.Exec(mailContext, "INSERT INTO audit_events(identity_id,action,resource) VALUES('','auth.email.failed',$1)", kind)
-		}
-	}()
-}
-
-func (s *Server) deliverAuthMail(ctx context.Context, recipient, subject, body string) error {
-	recipient, err := store.NormalizeEmail(recipient)
-	if err != nil {
-		return err
-	}
-	from, err := store.NormalizeEmail(s.Auth.SMTPFrom)
-	if err != nil {
-		return err
-	}
-	host, _, err := net.SplitHostPort(s.Auth.SMTPAddress)
-	if err != nil {
-		return err
-	}
-	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", s.Auth.SMTPAddress)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err = client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
-			return err
-		}
-	} else {
-		ip := net.ParseIP(host)
-		if !s.Auth.SMTPAllowInsecure || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
-			return errors.New("SMTP requires STARTTLS")
-		}
-	}
-	if s.Auth.SMTPUsername != "" {
-		if err = client.Auth(smtp.PlainAuth("", s.Auth.SMTPUsername, s.Auth.SMTPPassword, host)); err != nil {
-			return err
-		}
-	}
-	if err = client.Mail(from); err != nil {
-		return err
-	}
-	if err = client.Rcpt(recipient); err != nil {
-		return err
-	}
-	writer, err := client.Data()
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(writer, "From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n", from, recipient, subject, strings.ReplaceAll(body, "\n", "\r\n"))
-	if err != nil {
-		return err
-	}
-	if err = writer.Close(); err != nil {
-		return err
-	}
-	return client.Quit()
 }

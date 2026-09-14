@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"crypto/x509"
 	"errors"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
@@ -34,6 +35,9 @@ type AuthConfig struct {
 	SMTPAddress, SMTPUsername, SMTPPassword, SMTPFrom string
 	SMTPAllowInsecure                                 bool
 	SMTPAllowDelivery                                 bool
+	SMTPSecurity                                      string
+	// Trusted in-process configuration only; never supplied by an HTTP request.
+	SMTPRootCAs *x509.CertPool
 }
 
 // PublicSignupEnabled applies the installation policy to every enrollment path.
@@ -104,6 +108,7 @@ func authFailure(w http.ResponseWriter, err error) {
 	}
 }
 func (s *Server) registerAuthRoutes(public, protected *http.ServeMux) {
+	s.registerSMTPRoutes(protected)
 	public.HandleFunc("GET /api/v1/auth/status", s.authPublic(s.authStatus))
 	public.HandleFunc("POST /api/v1/auth/setup", s.authPublic(s.authSetup))
 	public.HandleFunc("POST /api/v1/auth/login", s.authPublic(s.authLogin))
@@ -168,7 +173,8 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "configuration_unavailable", "deployment mode is unavailable")
 		return
 	}
-	write(w, 200, map[string]any{"deployment_mode": mode, "setup_required": needed, "signup_enabled": s.Auth.PublicSignupEnabled() && !needed, "password_recovery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != "", "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": s.Auth.SMTPAllowDelivery && s.Auth.SMTPAddress != ""})
+	emailAvailable := s.smtpMailAvailable(r.Context())
+	write(w, 200, map[string]any{"deployment_mode": mode, "setup_required": needed, "signup_enabled": s.Auth.PublicSignupEnabled() && !needed, "password_recovery": emailAvailable, "password": true, "providers": providers, "passkeys": passkeyErr == nil, "totp": len(s.authEncryptionKey()) == 32, "email_delivery": emailAvailable})
 }
 func (s *Server) sessionResponse(w http.ResponseWriter, r *http.Request, session store.Session) {
 	http.SetCookie(w, &http.Cookie{Name: "hakopod_session", Value: session.Token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Auth.PublicURL, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: int(time.Until(session.ExpiresAt).Seconds()), Expires: session.ExpiresAt})
@@ -379,7 +385,7 @@ func (s *Server) authCreateInvite(w http.ResponseWriter, r *http.Request) {
 	if project == "" {
 		project = in.Project
 	}
-	if in.Deliver && (!s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "") {
+	if in.Deliver && !s.smtpMailAvailable(r.Context()) {
 		problem(w, 409, "email_not_configured", "email delivery is disabled; create a copyable invitation link instead")
 		return
 	}

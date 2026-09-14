@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,16 +60,8 @@ func (s *Server) alarms(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, result)
 }
 
-func (s *Server) alarmEmailAvailable() bool {
-	if !s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "" {
-		return false
-	}
-	host, port, err := net.SplitHostPort(s.Auth.SMTPAddress)
-	if err != nil || host == "" || port == "" {
-		return false
-	}
-	_, err = store.NormalizeEmail(s.Auth.SMTPFrom)
-	return err == nil
+func (s *Server) alarmEmailAvailable(ctx context.Context) bool {
+	return s.smtpMailAvailable(ctx)
 }
 
 func (s *Server) alarmSettings(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +75,7 @@ func (s *Server) alarmSettings(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	settings.EmailAvailable = s.alarmEmailAvailable()
+	settings.EmailAvailable = s.alarmEmailAvailable(r.Context())
 	write(w, 200, settings)
 }
 
@@ -112,7 +103,7 @@ func (s *Server) putAlarmSettings(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	if *input.EmailEnabled && !s.alarmEmailAvailable() {
+	if *input.EmailEnabled && !s.alarmEmailAvailable(r.Context()) {
 		failure(w, fmt.Errorf("%w: email delivery is unavailable; an installation administrator must configure and enable SMTP delivery first", store.ErrInput))
 		return
 	}
@@ -121,7 +112,7 @@ func (s *Server) putAlarmSettings(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	settings.EmailAvailable = s.alarmEmailAvailable()
+	settings.EmailAvailable = s.alarmEmailAvailable(r.Context())
 	write(w, 200, settings)
 }
 
@@ -180,7 +171,7 @@ func (s *Server) evaluateAlarms(parent context.Context) {
 		defer stop()
 		_ = s.Store.AdvanceAlarmEvaluation(finish, lease, false, true)
 	}()
-	email := s.alarmEmailAvailable()
+	email := s.alarmEmailAvailable(ctx)
 	if lease.NodesDue {
 		observing, stop := context.WithTimeout(ctx, 5*time.Second)
 		var nodes []cluster.AlarmNode

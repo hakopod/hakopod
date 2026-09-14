@@ -32,7 +32,7 @@ func (s *Server) authRegister(w http.ResponseWriter, r *http.Request) {
 	if !s.signupOpen(w, r) {
 		return
 	}
-	if !s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "" {
+	if !s.smtpMailAvailable(r.Context()) {
 		problem(w, 409, "email_not_configured", "email registration is unavailable until the operator configures email delivery")
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) authVerifyRegistration(w http.ResponseWriter, r *http.Request) 
 	s.sessionResponse(w, r, session)
 }
 func (s *Server) authForgotPassword(w http.ResponseWriter, r *http.Request) {
-	if !s.Auth.SMTPAllowDelivery || s.Auth.SMTPAddress == "" {
+	if !s.smtpMailAvailable(r.Context()) {
 		problem(w, 409, "email_not_configured", "password recovery is unavailable until the operator configures email delivery")
 		return
 	}

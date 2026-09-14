@@ -64,6 +64,7 @@ type operatorConfig struct {
 	SMTP struct {
 		Enabled      *bool   `toml:"enabled"`
 		Address      *string `toml:"address"`
+		Security     *string `toml:"security"`
 		From         *string `toml:"from"`
 		Username     *string `toml:"username"`
 		PasswordFile *string `toml:"password_file"`
@@ -203,6 +204,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"oauth.oidc.issuer_url", "HAKOPOD_OIDC_ISSUER_URL", c.OAuth.OIDC.IssuerURL, false, false, false},
 		{"smtp.enabled", "HAKOPOD_SMTP_ENABLED", boolSetting(c.SMTP.Enabled), false, false, false},
 		{"smtp.address", "HAKOPOD_SMTP_ADDRESS", c.SMTP.Address, false, false, false},
+		{"smtp.security", "HAKOPOD_SMTP_SECURITY", c.SMTP.Security, false, false, false},
 		{"smtp.from", "HAKOPOD_SMTP_FROM", c.SMTP.From, false, false, false},
 		{"smtp.username", "HAKOPOD_SMTP_USERNAME", c.SMTP.Username, false, false, false},
 		{"smtp.password_file", "HAKOPOD_SMTP_PASSWORD_FILE", c.SMTP.PasswordFile, true, true, true},
@@ -333,6 +335,10 @@ func validateOperatorValue(field, value string) error {
 	case "server.ingress_class", "server.tls_issuer", "server.haproxy_configmap", "server.haproxy_release":
 		if len(validation.IsDNS1123Subdomain(value)) != 0 {
 			return fmt.Errorf("%s must be a valid Kubernetes name", field)
+		}
+	case "smtp.security":
+		if value != "starttls" && value != "tls" {
+			return fmt.Errorf("smtp.security must be starttls or tls")
 		}
 	case "server.listen", "smtp.address":
 		host, port, err := net.SplitHostPort(value)

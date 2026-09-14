@@ -69,7 +69,7 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 		GitHubClientID: get("HAKOPOD_GITHUB_CLIENT_ID"), GitHubClientSecret: secrets["HAKOPOD_GITHUB_CLIENT_SECRET"], GoogleClientID: get("HAKOPOD_GOOGLE_CLIENT_ID"), GoogleClientSecret: secrets["HAKOPOD_GOOGLE_CLIENT_SECRET"],
 		GitLabClientID: get("HAKOPOD_GITLAB_CLIENT_ID"), GitLabClientSecret: secrets["HAKOPOD_GITLAB_CLIENT_SECRET"],
 		OIDCClientID: get("HAKOPOD_OIDC_CLIENT_ID"), OIDCClientSecret: secrets["HAKOPOD_OIDC_CLIENT_SECRET"], OIDCIssuerURL: get("HAKOPOD_OIDC_ISSUER_URL"),
-		SMTPAddress: get("HAKOPOD_SMTP_ADDRESS"), SMTPUsername: get("HAKOPOD_SMTP_USERNAME"), SMTPPassword: secrets["HAKOPOD_SMTP_PASSWORD"], SMTPFrom: get("HAKOPOD_SMTP_FROM"), SMTPAllowDelivery: get("HAKOPOD_SMTP_ENABLED") == "true"}
+		SMTPAddress: get("HAKOPOD_SMTP_ADDRESS"), SMTPSecurity: get("HAKOPOD_SMTP_SECURITY"), SMTPUsername: get("HAKOPOD_SMTP_USERNAME"), SMTPPassword: secrets["HAKOPOD_SMTP_PASSWORD"], SMTPFrom: get("HAKOPOD_SMTP_FROM"), SMTPAllowDelivery: get("HAKOPOD_SMTP_ENABLED") == "true"}
 	u, e := url.Parse(c.PublicURL)
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return c, fmt.Errorf("HAKOPOD_WEB_ORIGIN must be a dashboard origin without a path")
@@ -103,6 +103,12 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 		if err != nil || issuer.Scheme != "https" || issuer.Host == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.Fragment != "" || c.OIDCClientID == "" || c.OIDCClientSecret == "" {
 			return c, fmt.Errorf("OIDC requires a client ID, client secret and HTTPS issuer URL")
 		}
+	}
+	if c.SMTPSecurity == "" {
+		c.SMTPSecurity = "starttls"
+	}
+	if c.SMTPSecurity != "starttls" && c.SMTPSecurity != "tls" {
+		return c, fmt.Errorf("SMTP security must be starttls or tls")
 	}
 	if c.SMTPAllowDelivery {
 		if _, _, e = net.SplitHostPort(c.SMTPAddress); e != nil {
