@@ -32,11 +32,12 @@ func (in sourceImportInput) binding() sourceBinding {
 }
 
 type sourceImportReview struct {
-	Input   sourceImportInput `json:"source"`
-	Commit  string            `json:"commit"`
-	Hash    string            `json:"hash"`
-	Key     string            `json:"key"`
-	Expires int64             `json:"expires"`
+	ConnectionRevision int64             `json:"connection_revision,omitempty"`
+	Input              sourceImportInput `json:"source"`
+	Commit             string            `json:"commit"`
+	Hash               string            `json:"hash"`
+	Key                string            `json:"key"`
+	Expires            int64             `json:"expires"`
 }
 
 func sourceContentHash(a spec.Application) string {
@@ -45,7 +46,7 @@ func sourceContentHash(a spec.Application) string {
 }
 
 func (review sourceImportReview) initialSource() store.InitialSource {
-	return store.InitialSource{ConnectionID: review.Input.ConnectionID, Provider: review.Input.Provider, Repository: review.Input.Repository, Branch: review.Input.Branch, Path: review.Input.Path, AutoDeploy: review.Input.AutoDeploy, CommitSHA: review.Commit}
+	return store.InitialSource{ExpectedConnectionRevision: review.ConnectionRevision, ConnectionID: review.Input.ConnectionID, Provider: review.Input.Provider, Repository: review.Input.Repository, Branch: review.Input.Branch, Path: review.Input.Path, AutoDeploy: review.Input.AutoDeploy, CommitSHA: review.Commit}
 }
 func (s *Server) signSourceReview(body []byte) string {
 	mac := hmac.New(sha256.New, s.authEncryptionKey())
@@ -74,7 +75,7 @@ func (s *Server) sourceImportConfigured(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	if in.AutoDeploy {
-		data, err := s.connectionCredentials(r.Context(), in.Provider, in.ConnectionID, "", nil)
+		data, err := s.gitWebhookCredentials(r.Context(), in.Provider, in.ConnectionID)
 		if err != nil || len(data["webhook-secret"]) < 32 {
 			problem(w, 400, "source_not_configured", "Configure this provider's signed webhook before enabling automatic deployment")
 			return false
@@ -112,7 +113,12 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := time.Now().Add(15 * time.Minute)
-	review := sourceImportReview{Input: in, Commit: commit, Hash: sourceContentHash(next), Key: who(r).KeyID, Expires: expires.Unix()}
+	connection, err := s.readGitConnection(r.Context(), in.ConnectionID)
+	if err != nil {
+		authFailure(w, err)
+		return
+	}
+	review := sourceImportReview{ConnectionRevision: connection.Revision, Input: in, Commit: commit, Hash: sourceContentHash(next), Key: who(r).KeyID, Expires: expires.Unix()}
 	warnings := spec.Warnings(next)
 	if warnings == nil {
 		warnings = []string{}
@@ -195,6 +201,17 @@ func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 	if !s.sourceImportConfigured(w, r, review.Input) {
 		return
 	}
+	if review.ConnectionRevision > 0 {
+		connection, e := s.readGitConnection(r.Context(), selectedGitConnection(review.Input.Provider, review.Input.ConnectionID))
+		if e != nil {
+			authFailure(w, e)
+			return
+		}
+		if connection.Revision != review.ConnectionRevision {
+			problem(w, 409, "git_connection_changed", "Git connection changed; review the repository again")
+			return
+		}
+	}
 	next, _, err := s.sourceSpec(r.Context(), review.Input.binding(), review.Commit)
 	if err != nil {
 		problem(w, 400, "source_unavailable", err.Error())
@@ -207,6 +224,19 @@ func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 	p, err = s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
 	if err != nil {
 		failure(w, err)
+		return
+	}
+	connection, err := s.readGitConnection(r.Context(), selectedGitConnection(review.Input.Provider, review.Input.ConnectionID))
+	if err != nil {
+		authFailure(w, err)
+		return
+	}
+	if !connection.Enabled {
+		problem(w, 409, "git_connection_disabled", "Git connection was disabled; enable it and review the repository again")
+		return
+	}
+	if review.ConnectionRevision > 0 && connection.Revision != review.ConnectionRevision {
+		problem(w, 409, "git_connection_changed", "Git connection changed; review the repository again")
 		return
 	}
 	d, err := s.Store.AcceptSourceImport(r.Context(), p, review.Input.Project, review.Input.Environment, next, review.initialSource(), key)

@@ -28,26 +28,30 @@ import (
 // grants access to that exact connection and repository, never to a provider's
 // first available credential. Legacy IDs always refer to their original Secret.
 type gitConnection struct {
-	ID                  string          `json:"id"`
-	Name                string          `json:"name"`
-	Provider            string          `json:"provider"`
-	AuthKind            string          `json:"auth_kind"`
-	Revision            int64           `json:"revision"`
-	Enabled             bool            `json:"enabled"`
-	Account             string          `json:"account"`
-	SubjectID           int64           `json:"subject_id"`
-	AppID               int64           `json:"github_app_id"`
-	InstallationID      int64           `json:"installation_id"`
-	Legacy              bool            `json:"legacy"`
-	Configured          bool            `json:"configured"`
-	TokenConfigured     bool            `json:"token_configured"`
-	PrivateRepositories bool            `json:"private_repositories"`
-	WebhookPath         string          `json:"webhook_path"`
-	Status              string          `json:"status"`
-	Capabilities        map[string]bool `json:"capabilities"`
-	UpdatedAt           time.Time       `json:"updated_at"`
-	encrypted           []byte
-	legacyRef           string
+	ID                   string          `json:"id"`
+	Name                 string          `json:"name"`
+	Provider             string          `json:"provider"`
+	AuthKind             string          `json:"auth_kind"`
+	Revision             int64           `json:"revision"`
+	Enabled              bool            `json:"enabled"`
+	Account              string          `json:"account"`
+	SubjectID            int64           `json:"subject_id"`
+	OAuthScopes          string          `json:"oauth_scopes,omitempty"`
+	OAuthClientID        string          `json:"oauth_client_id,omitempty"`
+	CredentialGeneration int64           `json:"-"`
+	RefreshState         string          `json:"-"`
+	AppID                int64           `json:"github_app_id"`
+	InstallationID       int64           `json:"installation_id"`
+	Legacy               bool            `json:"legacy"`
+	Configured           bool            `json:"configured"`
+	TokenConfigured      bool            `json:"token_configured"`
+	PrivateRepositories  bool            `json:"private_repositories"`
+	WebhookPath          string          `json:"webhook_path"`
+	Status               string          `json:"status"`
+	Capabilities         map[string]bool `json:"capabilities"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	encrypted            []byte
+	legacyRef            string
 }
 
 type gitConnectionCredentials struct {
@@ -74,9 +78,10 @@ type gitConnectionInput struct {
 	InstallationID   int64  `json:"github_installation_id"`
 	ClientID         string `json:"oauth_client_id"`
 	ClientSecret     string `json:"oauth_client_secret"`
+	Scopes           string `json:"oauth_scopes"`
 }
 
-const gitConnectionColumns = "id,name,provider,auth_kind,revision,enabled,account,subject_id,github_app_id,installation_id,credentials,legacy_secret_ref,updated_at"
+const gitConnectionColumns = "id,name,provider,auth_kind,revision,enabled,account,subject_id,github_app_id,installation_id,credentials,legacy_secret_ref,updated_at,oauth_client_id,credential_generation,refresh_state"
 
 func defaultGitConnection(provider string) string {
 	if provider == "gitlab" {
@@ -92,7 +97,7 @@ func selectedGitConnection(provider string, ids ...string) string {
 }
 func scanGitConnection(row pgx.Row) (gitConnection, error) {
 	var c gitConnection
-	err := row.Scan(&c.ID, &c.Name, &c.Provider, &c.AuthKind, &c.Revision, &c.Enabled, &c.Account, &c.SubjectID, &c.AppID, &c.InstallationID, &c.encrypted, &c.legacyRef, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.Provider, &c.AuthKind, &c.Revision, &c.Enabled, &c.Account, &c.SubjectID, &c.AppID, &c.InstallationID, &c.encrypted, &c.legacyRef, &c.UpdatedAt, &c.OAuthClientID, &c.CredentialGeneration, &c.RefreshState)
 	c.Legacy = c.legacyRef != ""
 	c.WebhookPath = "/api/v1/webhooks/git/" + c.ID
 	if c.AuthKind == "github_app" {
@@ -142,24 +147,38 @@ func (s *Server) describeGitConnection(ctx context.Context, c gitConnection) (gi
 			return c, e
 		}
 	}
+	c.OAuthScopes = v.Scopes
 	c.TokenConfigured = v.Token != "" || (c.AuthKind == "github_app" && v.PrivateKey != "" && c.InstallationID > 0)
 	c.PrivateRepositories = c.TokenConfigured
 	c.Configured = c.Enabled && c.TokenConfigured
+	if c.AuthKind == "gitlab_oauth" && (c.RefreshState != "ready" || v.RefreshToken == "" || c.SubjectID == 0) {
+		c.Configured = false
+	}
 	c.Status = "ready"
 	if !c.Enabled {
 		c.Status = "disabled"
 	} else if !c.TokenConfigured {
 		c.Status = "not_configured"
 	}
+	if c.AuthKind == "gitlab_oauth" && !c.Configured && c.Enabled {
+		c.Status = "reauthorize"
+	}
 	c.Capabilities = map[string]bool{"read_source": c.Enabled, "builds": c.Configured}
+	if c.AuthKind == "gitlab_oauth" {
+		c.Capabilities["read_source"] = c.Configured
+		c.Capabilities["builds"] = c.Configured && v.Scopes == "api"
+	}
 	return c, nil
 }
 func (s *Server) registerGitConnectionRoutes(public, protected *http.ServeMux) {
-	protected.HandleFunc("GET /api/v1/git/connections", s.listGitConnections)
-	protected.HandleFunc("GET /api/v1/git/connections/{id}", s.getGitConnection)
-	protected.HandleFunc("POST /api/v1/git/connections", s.saveGitConnection)
-	protected.HandleFunc("PUT /api/v1/git/connections/{id}", s.saveGitConnection)
-	protected.HandleFunc("DELETE /api/v1/git/connections/{id}", s.deleteGitConnection)
+	protected.HandleFunc("GET /api/v1/git/connections", s.gitConnectionHandler(s.listGitConnections))
+	protected.HandleFunc("GET /api/v1/git/connections/{id}", s.gitConnectionHandler(s.getGitConnection))
+	protected.HandleFunc("POST /api/v1/git/connections", s.gitConnectionHandler(s.saveGitConnection))
+	protected.HandleFunc("PUT /api/v1/git/connections/{id}", s.gitConnectionHandler(s.saveGitConnection))
+	protected.HandleFunc("DELETE /api/v1/git/connections/{id}", s.gitConnectionHandler(s.deleteGitConnection))
+	protected.HandleFunc("POST /api/v1/git/connections/{id}/authorize", s.gitConnectionHandler(s.startGitOAuth))
+	protected.HandleFunc("POST /api/v1/git/connections/{id}/oauth/complete", s.gitConnectionHandler(s.completeGitOAuth))
+	protected.HandleFunc("POST /api/v1/git/oauth/complete", s.gitConnectionHandler(s.completeGitOAuth))
 	public.HandleFunc("POST /api/v1/webhooks/git/{connection}", s.namedGitWebhook)
 	public.HandleFunc("POST /api/v1/webhooks/github-app/{app}", s.gitHubAppWebhook)
 }
@@ -215,12 +234,16 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in gitConnectionInput
-	if !decode(w, r, &in) {
+	if !decodeGitInput(w, r, &in) {
 		return
 	}
 	in.Name = strings.TrimSpace(in.Name)
-	if in.Name == "" || len(in.Name) > 80 || strings.ContainsAny(in.Name, "\r\n\x00") || (in.Provider != "github" && in.Provider != "gitlab") || (in.AuthKind != "token" && in.AuthKind != "github_app") || (in.AuthKind == "github_app" && in.Provider != "github") || len(in.Token) > 16384 || len(in.WebhookSecret) > 256 || len(in.PrivateKey) > 16384 || len(in.AppID) > 100 || strings.ContainsAny(in.Token+in.WebhookSecret+in.AppID, "\r\n\x00") {
+	if in.Name == "" || len(in.Name) > 80 || strings.ContainsAny(in.Name, "\r\n\x00") || (in.Provider != "github" && in.Provider != "gitlab") || (in.AuthKind != "token" && in.AuthKind != "github_app" && in.AuthKind != "gitlab_oauth") || (in.AuthKind == "github_app" && in.Provider != "github") || (in.AuthKind == "gitlab_oauth" && in.Provider != "gitlab") || len(in.ClientID) > 1024 || len(in.ClientSecret) > 4096 || strings.ContainsAny(in.ClientID+in.ClientSecret, "\r\n\x00") || (in.Scopes != "" && in.Scopes != "api" && in.Scopes != "read_api") || len(in.Token) > 16384 || len(in.WebhookSecret) > 256 || len(in.PrivateKey) > 16384 || len(in.AppID) > 100 || strings.ContainsAny(in.Token+in.WebhookSecret+in.AppID, "\r\n\x00") {
 		problem(w, 400, "invalid_git_connection", "Choose a name, provider and supported authentication method with bounded credentials")
+		return
+	}
+	if in.AuthKind != "token" && in.Token != "" {
+		problem(w, 400, "unexpected_git_token", "Use the selected App authentication flow instead of supplying a token")
 		return
 	}
 	c := gitConnection{ID: store.NewID(), Name: in.Name, Provider: in.Provider, AuthKind: in.AuthKind, Revision: 1, Enabled: true}
@@ -274,6 +297,33 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		c.InstallationID = in.InstallationID
+	}
+	if c.AuthKind == "gitlab_oauth" {
+		if updating && in.ClientID != "" && in.ClientID != v.ClientID {
+			problem(w, 400, "immutable_oauth_app", "Create another connection for a different OAuth App")
+			return
+		}
+		if in.ClientID != "" {
+			v.ClientID = in.ClientID
+		}
+		if in.ClientSecret != "" {
+			v.ClientSecret = in.ClientSecret
+		}
+		if v.Scopes == "" {
+			v.Scopes = "api"
+		}
+		if in.Scopes != "" && in.Scopes != v.Scopes {
+			if updating && v.Token != "" {
+				problem(w, 409, "oauth_scope_changed", "Create another connection to change authorized OAuth scopes")
+				return
+			}
+			v.Scopes = in.Scopes
+		}
+		if v.ClientID == "" || v.ClientSecret == "" {
+			problem(w, 400, "oauth_app_required", "Provide the GitLab source OAuth App ID and client secret")
+			return
+		}
+		c.OAuthClientID = v.ClientID
 	}
 	once := ""
 	if v.WebhookSecret == "" {
@@ -353,7 +403,7 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if updating {
 		var tag pgconn.CommandTag
-		tag, err = tx.Exec(r.Context(), "UPDATE git_connections SET name=$2,revision=$3,enabled=$4,account=$5,subject_id=$6,installation_id=$7,credentials=$8,github_app_id=$10,updated_at=now() WHERE id=$1 AND revision=$9", c.ID, c.Name, c.Revision, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.Revision-1, c.AppID)
+		tag, err = tx.Exec(r.Context(), "UPDATE git_connections SET name=$2,revision=$3,enabled=$4,account=$5,subject_id=$6,installation_id=$7,credentials=$8,github_app_id=$10,oauth_client_id=$11,credential_generation=credential_generation+1,updated_at=now() WHERE id=$1 AND revision=$9 AND credential_generation=$12", c.ID, c.Name, c.Revision, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.Revision-1, c.AppID, c.OAuthClientID, c.CredentialGeneration)
 		if err == nil && tag.RowsAffected() != 1 {
 			err = store.ErrConflict
 		}
@@ -364,7 +414,7 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 			err = store.ErrBusy
 		}
 		if err == nil {
-			_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,account,subject_id,installation_id,credentials,github_app_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", c.ID, c.Name, c.Provider, c.AuthKind, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.AppID)
+			_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,account,subject_id,installation_id,credentials,github_app_id,oauth_client_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", c.ID, c.Name, c.Provider, c.AuthKind, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.AppID, c.OAuthClientID)
 		}
 	}
 	if err == nil {
@@ -463,13 +513,19 @@ func (s *Server) connectionCredentials(ctx context.Context, provider, id, reposi
 		return nil, err
 	}
 	token := v.Token
+	if c.AuthKind == "gitlab_oauth" {
+		token, err = s.gitOAuthToken(ctx, c.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if c.AuthKind == "github_app" && repository != "" {
 		token, err = s.githubInstallationToken(ctx, c, v, repository, permissions)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return map[string][]byte{"token": []byte(token), "webhook-secret": []byte(v.WebhookSecret), "auth-kind": []byte(c.AuthKind)}, nil
+	return map[string][]byte{"token": []byte(token), "webhook-secret": []byte(v.WebhookSecret), "auth-kind": []byte(c.AuthKind), "scopes": []byte(v.Scopes)}, nil
 }
 func (s *Server) validateGitConnection(ctx context.Context, provider, id string) error {
 	c, e := s.readGitConnection(ctx, selectedGitConnection(provider, id))
@@ -586,7 +642,7 @@ func (s *Server) verifyGitHubInstallation(ctx context.Context, c *gitConnection,
 	if err := s.githubAppAPI(ctx, v, "GET", "/app/installations/"+strconv.FormatInt(c.InstallationID, 10), nil, &installation); err != nil {
 		return err
 	}
-	if installation.ID != c.InstallationID || installation.AppID != app.ID || installation.Account.ID <= 0 || installation.Account.Login == "" || installation.SuspendedAt != nil {
+	if installation.ID != c.InstallationID || installation.AppID != app.ID || installation.Account.ID <= 0 || installation.Account.Login == "" || len(installation.Account.Login) > 100 || strings.ContainsAny(installation.Account.Login, "/\\\r\n\x00") || installation.SuspendedAt != nil {
 		return errors.New("The installation must be active and belong to the configured GitHub App")
 	}
 	if c.AppID != 0 && c.AppID != app.ID {
@@ -685,4 +741,44 @@ func (s *Server) gitHubAppWebhook(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	r.SetPathValue("connection", id)
 	s.githubWebhook(w, r)
+}
+
+func (s *Server) gitConnectionHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		next(w, r.WithContext(ctx))
+	}
+}
+
+// Do not expose decoder diagnostics: malformed JSON may contain credential
+// fragments in an unexpected field name or token value.
+func decodeGitInput(w http.ResponseWriter, r *http.Request, out any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(out) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		problem(w, 400, "invalid_git_input", "Provide a valid Git connection request within the supported size limit")
+		return false
+	}
+	return true
+}
+
+func (s *Server) gitWebhookCredentials(ctx context.Context, provider, id string) (map[string][]byte, error) {
+	id = selectedGitConnection(provider, id)
+	if id == defaultGitConnection(provider) {
+		return s.sourceCredentials(ctx, provider)
+	}
+	c, err := s.readGitConnection(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !c.Enabled || c.Provider != provider {
+		return nil, store.ErrForbidden
+	}
+	v, err := s.decodeGitCredentials(c)
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]byte{"webhook-secret": []byte(v.WebhookSecret)}, nil
 }

@@ -225,7 +225,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.AutoDeploy {
-		data, err := s.connectionCredentials(r.Context(), b.Provider, b.ConnectionID, "", nil)
+		data, err := s.gitWebhookCredentials(r.Context(), b.Provider, b.ConnectionID)
 		if err != nil || len(data["webhook-secret"]) < 32 {
 			problem(w, 400, "source_not_configured", "configure this source provider’s webhook authentication before enabling automatic deployments")
 			return
@@ -430,7 +430,7 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connectionID := selectedGitConnection("github", r.PathValue("connection"))
-	data, err := s.connectionCredentials(r.Context(), "github", connectionID, "", nil)
+	data, err := s.gitWebhookCredentials(r.Context(), "github", connectionID)
 	if err != nil || len(data["webhook-secret"]) < 32 {
 		problem(w, 503, "github_not_configured", "GitHub webhook authentication is not configured")
 		return
