@@ -60,7 +60,7 @@ func (s *Server) oauthConfig(provider string) (*oauth2.Config, error) {
 	}
 	u, err := url.Parse(s.Auth.PublicURL)
 	if err != nil || u.Host == "" || c.ClientID == "" || c.ClientSecret == "" {
-		return nil, fmt.Errorf("%w: identity provider is not configured", store.ErrInput)
+		return c, fmt.Errorf("%w: identity provider is not configured", store.ErrInput)
 	}
 	return c, nil
 }
@@ -70,7 +70,7 @@ func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	provider := r.PathValue("provider")
-	config, err := s.oauthConfig(provider)
+	config, _, settings, err := s.configuredOAuth(r.Context(), provider)
 	if err != nil {
 		problem(w, 409, "provider_not_configured", "this sign-in provider has not been configured by the operator")
 		return
@@ -86,13 +86,13 @@ func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 	verifier := oauth2.GenerateVerifier()
 	binding := store.NewID() + store.NewID()
-	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding, "intent": r.URL.Query().Get("intent"), "invite_token": r.URL.Query().Get("invite_token")}, 5*time.Minute)
+	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding, "intent": r.URL.Query().Get("intent"), "invite_token": r.URL.Query().Get("invite_token"), "fingerprint": providerFingerprint(settings), "nonce": binding}, 5*time.Minute)
 	if err != nil {
 		authFailure(w, err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "hakopod_oauth", Value: binding, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Auth.PublicURL, "https://"), SameSite: http.SameSiteLaxMode, MaxAge: 300})
-	http.Redirect(w, r, config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)), http.StatusFound)
+	http.Redirect(w, r, config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("nonce", binding)), http.StatusFound)
 }
 
 type oauthIdentity struct{ Subject, Email, Name string }
@@ -187,7 +187,7 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	provider := r.PathValue("provider")
-	config, err := s.oauthConfig(provider)
+	config, discovery, settings, err := s.configuredOAuth(r.Context(), provider)
 	if err != nil {
 		authFailure(w, err)
 		return
@@ -203,7 +203,7 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var pending map[string]string
-	if json.Unmarshal(challenge.Data, &pending) != nil || pending["provider"] != provider || subtle.ConstantTimeCompare([]byte(pending["binding"]), []byte(cookie.Value)) != 1 {
+	if json.Unmarshal(challenge.Data, &pending) != nil || pending["provider"] != provider || pending["fingerprint"] != providerFingerprint(settings) || subtle.ConstantTimeCompare([]byte(pending["binding"]), []byte(cookie.Value)) != 1 {
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
@@ -220,12 +220,25 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
-	verified, err := s.providerIdentity(ctx, client, provider, token.AccessToken)
+	var verified oauthIdentity
+	if discovery != nil {
+		verified, err = verifyOIDC(ctx, discovery, settings, token, pending["nonce"])
+	} else {
+		verified, err = s.providerIdentity(ctx, client, provider, token.AccessToken)
+	}
 	if err != nil {
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
-	id, err := s.Store.ResolveOAuthAccount(ctx, provider, verified.Subject, verified.Email, verified.Name, s.Auth.PublicSignupEnabled() && pending["intent"] == "register", pending["invite_token"])
+	identityProvider := provider
+	if provider == "oidc" {
+		identityProvider += ":" + settings.IssuerURL
+	}
+	if err = s.loginAllowed(ctx, provider); err != nil {
+		authFailure(w, err)
+		return
+	}
+	id, err := s.Store.ResolveOAuthAccount(ctx, identityProvider, verified.Subject, verified.Email, verified.Name, s.Auth.PublicSignupEnabled() && pending["intent"] == "register", pending["invite_token"])
 	if err != nil {
 		authFailure(w, err)
 		return

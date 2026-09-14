@@ -50,10 +50,13 @@ var catalog = []Feature{
 	{ID: "source_builds", Name: "Source builds", Plan: "free", Description: "Reviewed remote builds and immutable image deployment."},
 	{ID: "source_sync", Name: "Repository synchronization", Plan: "free", Description: "Approved repository configuration and signed source automation."},
 	{ID: "runtime", Name: "Cluster and service operations", Plan: "free", Description: "Logs, metrics, nodes, registries, secrets, TLS and service workloads."},
-	{ID: "account_security", Name: "Account security", Plan: "free", Description: "Owner recovery, password and provider login, passkeys, TOTP and session revocation."},
-	{ID: "teams", Name: "Teams", Plan: "free", Description: "Create teams, manage team membership and use team-derived access."},
+	{ID: "account_security", Name: "Account security", Plan: "free", Description: "Owner recovery, password login, passkeys, TOTP and session revocation."},
+	{ID: "teams", Name: "Teams", Plan: "free", Description: "One self-hosted team, membership and team-derived access."},
 	{ID: "invitations", Name: "Member invitations", Plan: "free", Description: "Create and accept invitations for additional team or project members."},
 	{ID: "project_rbac", Name: "Project roles", Plan: "free", Description: "Grant and use fixed administrator, developer and viewer roles for people and teams."},
+	{ID: "multi_team", Name: "Multiple teams", Plan: "pro", Description: "Create additional teams on self-hosted installations."},
+	{ID: "oauth_login", Name: "Social login", Plan: "pro", Description: "Sign in through Google, GitHub or GitLab."},
+	{ID: "enterprise_sso", Name: "Enterprise SSO", Plan: "pro", Description: "Sign in through an OpenID Connect identity provider."},
 	{ID: "audit_history", Name: "User audit history and export", Plan: "pro", Description: "Inspect user activity with paginated history and bounded CSV exports."},
 }
 
@@ -62,7 +65,7 @@ var catalog = []Feature{
 // imply advanced authority. Unsupported capabilities are not shown in the catalog.
 func knownEntitlement(id string) bool {
 	switch id {
-	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa":
+	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso":
 		return true
 	}
 	return false
@@ -145,7 +148,7 @@ func (v *Verifier) Verify(token, installation string, now time.Time) (Claims, er
 	if !ok || !ed25519.Verify(key, append([]byte(Domain), payload...), signature) {
 		return invalid("invalid_signature")
 	}
-	if c.Version != 1 || !idPattern.MatchString(c.LicenseID) || !idPattern.MatchString(c.InstallationID) || c.Sequence < 1 || len(c.Customer) < 1 || len(c.Customer) > 200 || (c.Plan != "free" && c.Plan != "pro") || c.IssuedAt <= 0 || c.NotBefore < c.IssuedAt || c.ExpiresAt <= c.NotBefore || c.ExpiresAt-c.IssuedAt > int64((10*366*24*time.Hour)/time.Second) || len(c.Features) > 6 {
+	if c.Version != 1 || !idPattern.MatchString(c.LicenseID) || !idPattern.MatchString(c.InstallationID) || c.Sequence < 1 || len(c.Customer) < 1 || len(c.Customer) > 200 || (c.Plan != "free" && c.Plan != "pro") || c.IssuedAt <= 0 || c.NotBefore < c.IssuedAt || c.ExpiresAt <= c.NotBefore || c.ExpiresAt-c.IssuedAt > int64((10*366*24*time.Hour)/time.Second) || len(c.Features) > 9 {
 		return invalid("invalid")
 	}
 	seen := map[string]bool{}

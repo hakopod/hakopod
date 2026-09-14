@@ -26,7 +26,7 @@ func sourcePaidFixture(t *testing.T, db *store.Store) {
 		t.Fatal(err)
 	}
 	now := time.Now().Add(-time.Minute).Unix()
-	claims := license.Claims{Version: 1, KeyID: "ephemeral-source-fixture", LicenseID: strings.Repeat("a", 32), InstallationID: status.InstallationID, Customer: "Local source test fixture", Plan: "pro", Sequence: 1, IssuedAt: now, NotBefore: now, ExpiresAt: now + 7200, Features: []string{"teams", "invitations", "project_rbac"}}
+	claims := license.Claims{Version: 1, KeyID: "ephemeral-source-fixture", LicenseID: strings.Repeat("a", 32), InstallationID: status.InstallationID, Customer: "Local source test fixture", Plan: "pro", Sequence: 1, IssuedAt: now, NotBefore: now, ExpiresAt: now + 7200, Features: []string{"teams", "invitations", "project_rbac", "multi_team"}}
 	payload := store.JSON(claims)
 	signature := ed25519.Sign(private, append([]byte(license.Domain), payload...))
 	token := "hl1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)

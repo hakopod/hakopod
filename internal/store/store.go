@@ -30,6 +30,7 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type Store struct {
 	Pool             *pgxpool.Pool
 	ShowcaseEnabled  bool
+	ManagedCloud     bool
 	ProtectedDomains []string
 	// Read-only runtime checks run for every acceptance path, including source
 	// sync and rollback. Reconciliation repeats checks before changing workloads.
