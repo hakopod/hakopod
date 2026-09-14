@@ -4,6 +4,8 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^installation\/smtp(?:\/test)?$/,
+  /^installation\/login-providers\/(?:github|google|gitlab|oidc)$/,
   /^audit\/(?:history|export)$/,
   /^alarms(?:\/[A-Za-z0-9_-]+\/(?:read|acknowledge))?$/,
   /^alarm-settings$/,
@@ -56,7 +58,7 @@ export async function proxy({
       if (rejected) return rejected
     }
     const path = (params._splat || '').replace(/^v1\/(auth\/oauth\/)/, '$1')
-    if (/^auth\/oauth\/(github|google|gitlab)\/(start|callback)$/.test(path))
+    if (/^auth\/oauth\/(github|google|gitlab|oidc)\/(start|callback)$/.test(path))
       return oauth(request, path)
     if (!allowed.some((pattern) => pattern.test(path)))
       return Response.json({ error: { message: 'Unknown API endpoint.' } }, { status: 404 })

@@ -367,20 +367,28 @@ export function AuthScreen({
                           </Button>
                         )}
                         {status.data?.providers
-                          .filter((provider) => ['github', 'google', 'gitlab'].includes(provider))
+                          .filter((provider) =>
+                            ['github', 'google', 'gitlab', 'oidc'].includes(provider),
+                          )
                           .map((provider) => (
                             <Button variant="outline" className="full-width" asChild key={provider}>
                               <a
                                 href={`/api/v1/auth/oauth/${provider}/start${register || inviteToken ? `?${new URLSearchParams({ intent: 'register', ...(inviteToken ? { invite_token: inviteToken } : {}) })}` : ''}`}
                                 onClick={rememberReturn}
                               >
-                                <ServiceIcon name={provider} size={17} />
+                                {provider === 'oidc' ? (
+                                  <Icon name="shield" size={17} />
+                                ) : (
+                                  <ServiceIcon name={provider} size={17} />
+                                )}
                                 Continue with{' '}
                                 {provider === 'github'
                                   ? 'GitHub'
                                   : provider === 'gitlab'
                                     ? 'GitLab'
-                                    : 'Google'}
+                                    : provider === 'oidc'
+                                      ? 'company SSO'
+                                      : 'Google'}
                               </a>
                             </Button>
                           ))}

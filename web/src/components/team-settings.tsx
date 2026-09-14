@@ -1,4 +1,6 @@
 import { Input } from './ui/input'
+import { Icon } from './icons'
+import { useAuthStatus } from '../lib/installation-settings'
 import { SelectField } from './ui/select'
 import { Avatar } from './avatar'
 import { useLicense } from '../lib/license'
@@ -17,6 +19,7 @@ import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note } from './shared'
 export default function TeamSettings() {
   const scope = useScope()
   const license = useLicense()
+  const authStatus = useAuthStatus()
   const hasFeature = (feature: string) =>
     Boolean(license.data?.catalog.find((item) => item.id === feature)?.enabled)
   const cache = useQueryClient()
@@ -40,7 +43,15 @@ export default function TeamSettings() {
     queryFn: ({ signal }) => unwrap(client.GET('/teams', { signal })),
     staleTime: 30000,
   })
-  const team = selected || teams.data?.items[0]?.id || ''
+  const team = teams.data?.items.some((item) => item.id === selected)
+    ? selected
+    : teams.data?.items[0]?.id || ''
+  const mayCreateTeam =
+    scope.identity.admin &&
+    teams.isSuccess &&
+    (teams.data.items.length === 0 ||
+      authStatus.data?.deployment_mode === 'managed-cloud' ||
+      hasFeature('multi_team'))
   const current = teams.data?.items.find((item) => item.id === team)
   const canTeam = scope.identity.admin || ['owner', 'admin'].includes(current?.role || '')
   const canProject =
@@ -82,75 +93,86 @@ export default function TeamSettings() {
     void cache.invalidateQueries({ queryKey: ['projects'] })
   }
   return (
-    <>
+    <div className="team-settings grid gap-4">
       {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
-      <div className="section-toolbar">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <div className="hako-section-heading-title">
-            <h2>Your teams</h2>
-            <HeadingHelp title="Your teams">
+            <h2>Teams</h2>
+            <HeadingHelp title="Teams">
               Manage people together, then grant teams access to projects.
             </HeadingHelp>
           </div>
+          {!!teams.data?.items.length && (
+            <div className="w-full min-w-0 sm:w-52">
+              <SelectField
+                compact
+                label="Selected team"
+                value={team}
+                onValueChange={setSelected}
+                options={teams.data.items.map((item) => ({ value: item.id, label: item.name }))}
+              />
+            </div>
+          )}
         </div>
-        <Button
-          disabled={!scope.identity.admin || !hasFeature('teams')}
-          title={
-            !scope.identity.admin
-              ? 'Requires installation administrator access'
-              : !hasFeature('teams')
-                ? 'Loading team access'
-                : undefined
-          }
-          onClick={() => {
-            setError('')
-            setAdding(true)
-          }}
-        >
-          Create team
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {scope.identity.admin && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!mayCreateTeam}
+              onClick={() => {
+                setError('')
+                setAdding(true)
+              }}
+            >
+              Create team
+            </Button>
+          )}
+          {current && canTeam && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!hasFeature('invitations')}
+              onClick={() => setInvite('team')}
+            >
+              Invite member
+            </Button>
+          )}
+          {current && scope.identity.admin && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Delete team ${current.name}`}
+              onClick={() => {
+                setError('')
+                setConfirmation('')
+                setRemoveTeam({ id: current.id, name: current.name })
+              }}
+            >
+              <Icon name="trash" size={16} />
+            </Button>
+          )}
+        </div>
       </div>
+      {scope.identity.admin &&
+        teams.isSuccess &&
+        teams.data.items.length > 0 &&
+        authStatus.data?.deployment_mode === 'self-hosted' &&
+        !hasFeature('multi_team') && (
+          <p className="field-help">
+            Free includes one team. A multi-team license lets you create more teams. Existing
+            members and invitations remain available.
+          </p>
+        )}
       {teams.isPending ? (
         <Loading rows={2} />
       ) : teams.error ? (
-        <ErrorState error={teams.error} />
+        <ErrorState error={teams.error} retry={() => void teams.refetch()} />
       ) : !teams.data?.items.length ? (
-        <Empty title="No teams yet" description="Create a team to invite collaborators." />
+        <Empty title="No teams yet" description="Create your first team to invite collaborators." />
       ) : (
-        <section className="panel service-summary-panel">
-          <div className="section-toolbar">
-            <label className="inline-label">
-              Team
-              <SelectField
-                label="Team"
-                value={team}
-                onValueChange={(value) => setSelected(value)}
-                options={
-                  teams.data.items.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                  })) ?? []
-                }
-              />
-            </label>
-            {scope.identity.admin && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setError('')
-                  setConfirmation('')
-                  if (current) setRemoveTeam({ id: current.id, name: current.name })
-                }}
-              >
-                Delete team
-              </Button>
-            )}
-            {canTeam && (
-              <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('team')}>
-                Invite member
-              </Button>
-            )}
-          </div>
+        <section className="grid gap-0" aria-label="Team members">
           {members.isPending ? (
             <Loading rows={2} />
           ) : members.error ? (
@@ -189,17 +211,27 @@ export default function TeamSettings() {
                   <span className="label-chip">{member.role}</span>
                 )}
                 {hasFeature('teams') && (canTeam || member.id === scope.identity.id) && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setUsernameMember(member)
-                      setUsername(member.username || '')
-                      setUsernameError('')
-                    }}
+                  <Menu
+                    trigger={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Actions for ${member.name || member.email}`}
+                      >
+                        <MoreHorizontal size={16} />
+                      </Button>
+                    }
                   >
-                    Username
-                  </Button>
+                    <MenuItem
+                      onSelect={() => {
+                        setUsernameMember(member)
+                        setUsername(member.username || '')
+                        setUsernameError('')
+                      }}
+                    >
+                      Edit team username
+                    </MenuItem>
+                  </Menu>
                 )}
               </div>
             ))
@@ -211,13 +243,20 @@ export default function TeamSettings() {
           <div className="hako-section-heading-title">
             <h2>Project access</h2>
             <HeadingHelp title="Project access">
-              Role changes take effect on new requests.
+              Viewers inspect applications and logs. Developers also deploy. Project administrators
+              manage membership. Team roles control the team’s membership. Role changes apply to new
+              requests.
             </HeadingHelp>
           </div>
           <span className="muted-text">{scope.project || 'Select a project'}</span>
         </div>
         {canShareProject && scope.project && (
-          <Button disabled={!hasFeature('invitations')} onClick={() => setInvite('project')}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!hasFeature('invitations')}
+            onClick={() => setInvite('project')}
+          >
             Invite to project
           </Button>
         )}
@@ -241,7 +280,7 @@ export default function TeamSettings() {
         ) : project.error ? (
           <ErrorState error={project.error} />
         ) : (
-          <section className="panel service-summary-panel">
+          <section className="grid gap-3" aria-label="Project members">
             {project.data?.items.length ? (
               project.data.items.map((member) => (
                 <div className="settings-list-row" key={member.identity_id || member.team_id}>
@@ -311,7 +350,7 @@ export default function TeamSettings() {
                   }}
                 >
                   <label>
-                    Grant a team access
+                    Team
                     <SelectField
                       label="Grant a team access"
                       value={grant}
@@ -343,7 +382,7 @@ export default function TeamSettings() {
                       }
                     />
                   </label>
-                  <Button type="submit" disabled={busy || !grant}>
+                  <Button type="submit" variant="primary" size="sm" disabled={busy || !grant}>
                     Grant access
                   </Button>
                 </form>
@@ -357,12 +396,6 @@ export default function TeamSettings() {
         <div className="inline-error" role="alert">
           {error}
         </div>
-      )}
-      {!personalProject && (
-        <Note>
-          Viewers can inspect applications and logs. Developers can deploy and read logs. Project
-          admins also manage membership. Team roles control the team’s own membership.
-        </Note>
       )}
       <Dialog
         open={Boolean(usernameMember)}
@@ -503,7 +536,7 @@ export default function TeamSettings() {
         <form
           onSubmit={async (e) => {
             e.preventDefault()
-            if (busy) return
+            if (busy || !mayCreateTeam) return
             setBusy(true)
             setError('')
             try {
@@ -539,13 +572,13 @@ export default function TeamSettings() {
             <Button type="button" disabled={busy} onClick={() => setAdding(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" disabled={busy || !mayCreateTeam}>
               Create team
             </Button>
           </div>
         </form>
       </Dialog>
-    </>
+    </div>
   )
 }
 
@@ -609,14 +642,26 @@ function RoleEditor({
             },
           ]}
         />
-        <Button
-          size="sm"
-          type="submit"
-          disabled={busy || next === role}
-          variant={next ? 'secondary' : 'danger'}
-        >
-          {next ? 'Save' : 'Remove'}
-        </Button>
+        {next !== role && (
+          <>
+            <Button size="sm" type="submit" disabled={busy} variant={next ? 'outline' : 'danger'}>
+              {!next && <Icon name="trash" size={14} />}
+              {next ? 'Save' : 'Remove'}
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setNext(role)
+                setError('')
+              }}
+            >
+              Cancel
+            </Button>
+          </>
+        )}
         {error && !confirmOpen && (
           <span className="inline-error" role="alert">
             {error}

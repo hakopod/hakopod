@@ -70,59 +70,78 @@ test('personal deployment and Free team creation never grant personal workspace 
   for (const admin of [false, true]) {
     for (const pro of [false, true]) {
       for (const personalProject of [false, true]) {
-        const identity = { ...personal, admin }
-        const scenario = `admin=${admin} Pro=${pro} personal=${personalProject}`
-        const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        cache.setQueryData(['license'], {
-          catalog: ['teams', 'invitations', 'project_rbac'].map((id) => ({ id, enabled: true })),
-        })
-        cache.setQueryData(['teams'], {
-          items: [{ id: 'fixture-team', name: 'Fixture team', role: 'member' }],
-        })
-        cache.setQueryData(['team-members', 'fixture-team'], { items: [] })
-        cache.setQueryData(['project-members', 'personal-project'], { items: [] })
-        cache.setQueryData(['projects'], {
-          items: [{ name: 'personal-project', personal: personalProject, environments: [] }],
-        })
-        const router = createRouter({
-          routeTree: createRootRoute(),
-          history: createMemoryHistory({ initialEntries: ['/settings'] }),
-        })
-        try {
-          const html = renderToStaticMarkup(
-            <QueryClientProvider client={cache}>
-              <RouterContextProvider router={router}>
-                <ScopeContext.Provider
-                  value={{
-                    project: 'personal-project',
-                    environment: 'development',
-                    identity,
-                    can: (permission) => canAccess(identity, 'personal-project', permission),
-                    syncScope: () => {},
-                  }}
-                >
-                  <TeamSettings />
-                </ScopeContext.Provider>
-              </RouterContextProvider>
-            </QueryClientProvider>,
-          )
-          const buttons = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map(
-            ([button]) => button,
-          )
-          const create = buttons.find((button) => button.includes('Create team'))
-          assert.ok(create, 'team settings renders its creation control')
-          assert.equal(/\bdisabled=""/.test(create), !admin, scenario)
-          const invitation = buttons.find((button) => button.includes('Invite to project'))
-          assert.equal(Boolean(invitation), !personalProject, scenario)
-          if (invitation) assert.equal(/\bdisabled=""/.test(invitation), false, scenario)
-          assert.equal(html.includes('Grant a team access'), !personalProject, scenario)
-          assert.equal(
-            html.includes('Personal workspaces cannot be shared'),
-            personalProject,
-            scenario,
-          )
-        } finally {
-          cache.clear()
+        for (const teamCount of [0, 1]) {
+          for (const mode of ['self-hosted', 'managed-cloud']) {
+            const identity = { ...personal, admin }
+            const scenario = `admin=${admin} Pro=${pro} personal=${personalProject} teams=${teamCount} mode=${mode}`
+            const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+            cache.setQueryData(['license'], {
+              catalog: [
+                ...['teams', 'invitations', 'project_rbac'].map((id) => ({ id, enabled: true })),
+                { id: 'multi_team', enabled: pro },
+              ],
+            })
+            cache.setQueryData(['auth-status'], { deployment_mode: mode })
+            cache.setQueryData(['teams'], {
+              items: teamCount
+                ? [{ id: 'fixture-team', name: 'Fixture team', role: 'member' }]
+                : [],
+            })
+            cache.setQueryData(['team-members', 'fixture-team'], { items: [] })
+            cache.setQueryData(['project-members', 'personal-project'], { items: [] })
+            cache.setQueryData(['projects'], {
+              items: [{ name: 'personal-project', personal: personalProject, environments: [] }],
+            })
+            const router = createRouter({
+              routeTree: createRootRoute(),
+              history: createMemoryHistory({ initialEntries: ['/settings'] }),
+            })
+            try {
+              const html = renderToStaticMarkup(
+                <QueryClientProvider client={cache}>
+                  <RouterContextProvider router={router}>
+                    <ScopeContext.Provider
+                      value={{
+                        project: 'personal-project',
+                        environment: 'development',
+                        identity,
+                        can: (permission) => canAccess(identity, 'personal-project', permission),
+                        syncScope: () => {},
+                      }}
+                    >
+                      <TeamSettings />
+                    </ScopeContext.Provider>
+                  </RouterContextProvider>
+                </QueryClientProvider>,
+              )
+              const buttons = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map(
+                ([button]) => button,
+              )
+              const create = buttons.find((button) => button.includes('Create team'))
+              assert.equal(Boolean(create), admin, scenario)
+              if (create)
+                assert.equal(
+                  /\bdisabled=""/.test(create),
+                  teamCount > 0 && !pro && mode === 'self-hosted',
+                  scenario,
+                )
+              const invitation = buttons.find((button) => button.includes('Invite to project'))
+              assert.equal(Boolean(invitation), !personalProject, scenario)
+              if (invitation) assert.equal(/\bdisabled=""/.test(invitation), false, scenario)
+              assert.equal(
+                html.includes('Grant a team access'),
+                !personalProject && teamCount > 0,
+                scenario,
+              )
+              assert.equal(
+                html.includes('Personal workspaces cannot be shared'),
+                personalProject,
+                scenario,
+              )
+            } finally {
+              cache.clear()
+            }
+          }
         }
       }
     }
