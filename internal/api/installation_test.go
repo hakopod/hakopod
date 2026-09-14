@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInstallationOwnerBoundary(t *testing.T) {
@@ -46,7 +47,11 @@ func TestInstallationOwnerBoundary(t *testing.T) {
 		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 			t.Error("browser authority forwarded to helper")
 		}
-		write(w, 200, map[string]string{"source": "fixture"})
+		if r.URL.Path == "/logs" {
+			write(w, 200, serverlogs.Snapshot{Entries: []serverlogs.Entry{}, ObservedAt: time.Now().UTC()})
+		} else {
+			write(w, 200, map[string]string{"source": "fixture"})
+		}
 	}))
 	defer remote.Close()
 	client := remote.Client()

@@ -24,16 +24,21 @@ func (s *Server) installationOwner(w http.ResponseWriter, r *http.Request) bool 
 func (s *Server) registerInstallationRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/installation/status", s.installationStatus)
 	m.HandleFunc("GET /api/v1/installation/logs", s.installationLogs)
+	m.HandleFunc("POST /api/v1/installation/logs/query", s.queryInstallationLogs)
 	m.HandleFunc("GET /api/v1/installation/setup", s.installationSetup)
 	m.HandleFunc("POST /api/v1/installation/upgrade", s.installationUpgrade)
 }
-func (s *Server) maintenance(w http.ResponseWriter, r *http.Request, path string, body []byte) {
+func (s *Server) maintenanceClient() *http.Client {
 	client := s.maintenanceHTTP
 	if client == nil {
 		client = &http.Client{Timeout: 25 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", "/run/hakopod-maintenance/control.sock")
 		}, DisableKeepAlives: true}}
 	}
+	return client
+}
+func (s *Server) maintenance(w http.ResponseWriter, r *http.Request, path string, body []byte) {
+	client := s.maintenanceClient()
 	method := http.MethodGet
 	if body != nil {
 		method = http.MethodPost
@@ -46,10 +51,6 @@ func (s *Server) maintenance(w http.ResponseWriter, r *http.Request, path string
 	req.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(req)
 	if err != nil {
-		if path == "/logs" && body == nil && s.ProcessLogs != nil {
-			write(w, http.StatusOK, s.ProcessLogs.Snapshot())
-			return
-		}
 		problem(w, 503, "maintenance_unavailable", "The installation maintenance service is unavailable. See Infrastructure > Setup for administrator instructions.")
 		return
 	}
@@ -76,7 +77,12 @@ func (s *Server) installationStatus(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) installationLogs(w http.ResponseWriter, r *http.Request) {
 	if s.installationOwner(w, r) {
-		s.maintenance(w, r, "/logs", nil)
+		snapshot, err := s.installationLogSnapshot(r.Context())
+		if err != nil {
+			problem(w, 503, "maintenance_unavailable", "API logs are unavailable. See Infrastructure > Setup for administrator instructions.")
+			return
+		}
+		write(w, http.StatusOK, snapshot)
 	}
 }
 func (s *Server) installationSetup(w http.ResponseWriter, r *http.Request) {

@@ -6193,6 +6193,44 @@
         }
       }
     },
+    "/installation/logs/query": {
+      "post": {
+        "operationId": "queryInstallationLogs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationLogQueryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationLogQuery"
+              }
+            }
+          }
+        }
+      }
+    },
     "/installation/login-providers/{provider}": {
       "get": {
         "operationId": "getInstallationLoginProvider",
@@ -13657,6 +13695,48 @@
         "required": [
           "entries",
           "observed_at"
+        ]
+      },
+      "InstallationLogQuery": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "since_seconds": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": []
+      },
+      "InstallationLogQueryResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LogQueryResult"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "source",
+              "observed_at"
+            ]
+          }
         ]
       },
       "InstallationLoginProvider": {

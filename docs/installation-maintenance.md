@@ -158,3 +158,29 @@ The same self-hosted installation-owner authorization applies to both sources.
 Cloud does not expose this view or allocate the buffer. Journal history resumes
 when the maintenance service becomes reachable. Updates and other privileged
 maintenance actions still require that service; the fallback cannot perform them.
+
+### Querying API logs
+
+Infrastructure > API logs uses the same explorer as service logs: time-window
+and SQL-like filters, a histogram of sampled matches, entry inspection, wrapping,
+copy and JSONL download. Queries are evaluated by the existing bounded Go
+`logquery` parser, never a database or shell. For example:
+
+```sql
+severity >= ERROR AND message ILIKE '%timeout%'
+```
+
+The owner-only `POST /api/v1/installation/logs/query` accepts `query` (up to 4096
+characters), `since_seconds` (1–86400) and `limit` (1–200). Filters run over at
+most the latest 200 available journal or process-buffer records. Increasing the
+time window does not retrieve older journal pages. The histogram counts all
+matching sampled entries before the result limit; selecting a bucket narrows the
+loaded results. Invalid timestamps are excluded with a visible warning.
+
+New process records use structured JSON, exposing levels and fields such as
+`json.status` when emitted. Earlier slog text records expose their explicit
+`level` field; arbitrary prose is not assigned a guessed severity. API logs do
+not show pod/container controls. The source column identifies `journal` or
+`process`; the latter resets with the API. Live refresh polls every five seconds
+while the page is visible, and Query mode pauses automatic refresh. This is not
+an unbounded stream or a retained logging service.
