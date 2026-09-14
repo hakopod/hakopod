@@ -4,6 +4,7 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
+import { dashboardEdition } from '../lib/dashboard-edition'
 
 export const Route = createFileRoute('/networks/new')({ component: NewNetwork })
 function NewNetwork() {
@@ -27,8 +28,16 @@ function NewNetwork() {
     return (
       <Empty
         icon="lock"
-        title="Project administrator access required"
-        description="Project administrators manage virtual networks and application grants."
+        title={
+          dashboardEdition.cloud
+            ? 'Workspace owner access required'
+            : 'Project administrator access required'
+        }
+        description={
+          dashboardEdition.cloud
+            ? 'Your workspace owner can manage private networks. Update the connected node and reconnect it with a project/environment key granting networks:write, deployments:read and deployments:write.'
+            : 'Project administrators manage virtual networks and application grants.'
+        }
       />
     )
   return (

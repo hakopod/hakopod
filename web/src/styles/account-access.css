@@ -90,6 +90,9 @@
 .hako-auth-providers [data-provider='google'] .auth-provider-logo {
   filter: brightness(0);
 }
+.light .hako-auth-providers [data-provider='google'] .auth-provider-logo {
+  filter: brightness(0) invert(1);
+}
 .hako-auth-providers .button:focus-visible {
   outline: 2px solid var(--foreground);
   outline-offset: 3px;

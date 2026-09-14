@@ -10,6 +10,7 @@ import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Badge } from '../components/ui/surfaces'
+import { dashboardEdition } from '../lib/dashboard-edition'
 
 export const Route = createFileRoute('/networks')({ component: NetworkRoute })
 function NetworkRoute() {
@@ -83,7 +84,9 @@ function Networks() {
             description={
               networks.data?.can_manage
                 ? 'Create a network, grant applications access to its segments, then connect their services.'
-                : 'A project administrator can create a network and grant applications access.'
+                : dashboardEdition.cloud
+                  ? 'Your workspace owner can manage private networks. The connected node key must include networks:write, deployment read and write permissions.'
+                  : 'A project administrator can create a network and grant applications access.'
             }
             action={
               networks.data?.can_manage && (
@@ -143,7 +146,10 @@ function Networks() {
         )}
         <div className="resource-footnote">
           <span>{items.length} networks</span>
-          <span>Grants are managed by project administrators</span>
+          <span>
+            Grants are managed by{' '}
+            {dashboardEdition.cloud ? 'workspace owners' : 'project administrators'}
+          </span>
         </div>
       </section>
     </div>
