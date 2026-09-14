@@ -10,6 +10,8 @@ Run `go test ./...`, the dashboard build, and real-cluster acceptance tests for 
 
 Use plain human English in product copy, documentation and comments. Do not use emojis. Forms with more than four inputs belong on dedicated nested pages with concise help, clear navigation and a review step for consequential actions. Preserve entered values when a request fails.
 
+Self-hosted dashboards must not display decorative corner brackets, including in dialogs, menus, forms and auth pages. Preserve visible keyboard focus with a simple outline instead. Cloud may retain its bracket styling.
+
 Keep the dashboard simple and compact. Use one desktop header row, narrow scope selectors, short page-heading rows and closely grouped controls. Avoid repeated context, decorative hero spacing and oversized cards. Keep text readable and touch targets usable; move secondary details into inspection panels or concise help.
 
 Balance page-heading padding above and below. Active navigation and tabs use the shared theme-aware red for text and icons, with no selected underline, border or background fill; retain visible keyboard focus. This includes Settings and preferences navigation. Primary actions use the configured accent, reserving destructive button styling for destructive actions. Use a named trash icon for deletion.

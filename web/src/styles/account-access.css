@@ -30,8 +30,8 @@
   margin-top: 20px;
   font-size: 13px;
 }
-.hako-auth-links a:hover {
-  color: var(--action);
+.hako-auth-card a:not(.button):is(:hover, :focus-visible) {
+  color: var(--navigation-active);
   text-decoration: underline;
 }
 .onboarding-page {

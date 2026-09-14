@@ -1,5 +1,6 @@
+import type { AuthView } from '../lib/auth-view'
 import { Brand, brandLabel } from './brand'
-import { dashboardEdition } from '../lib/dashboard-edition'
+import { dashboardEdition, EditionAuthAside } from '../lib/dashboard-edition'
 import { ServiceIcon } from './service-icon'
 import '../styles/account-access.css'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -225,6 +226,21 @@ export function AuthScreen({
               : setup
                 ? 'Make this workspace yours'
                 : 'Welcome back'
+  const authView: AuthView = forgot
+    ? 'forgot'
+    : reset
+      ? 'reset'
+      : verify
+        ? 'verify'
+        : mfa || providerMFA
+          ? 'mfa'
+          : inviteToken
+            ? 'invite'
+            : setup
+              ? 'setup'
+              : register
+                ? 'signup'
+                : 'login'
   return (
     <div className={`hako-auth-page ${signedIn ? 'hako-auth-embedded' : ''}`}>
       {!signedIn && (
@@ -249,7 +265,11 @@ export function AuthScreen({
           )}
         </header>
       )}
-      <div className="hako-auth-main bg-grid">
+      <div
+        className="hako-auth-main bg-grid"
+        data-auth-aside={(!signedIn && dashboardEdition.authAside) || undefined}
+      >
+        {!signedIn && <EditionAuthAside view={authView} />}
         <AuthCard
           className="hako-auth-card"
           title={title}

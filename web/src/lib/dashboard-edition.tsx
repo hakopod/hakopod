@@ -1,3 +1,4 @@
+import type { AuthView } from './auth-view'
 import type { ReactNode } from 'react'
 
 // Product extensions replace this module in a disposable build directory.
@@ -9,6 +10,7 @@ export const dashboardEdition = {
   label: 'Self-hosted',
   brandSuffix: '',
   releaseChannel: '',
+  authAside: false,
   navigation: (_path: string) => true,
   scopedNavigation: (_path: string) => true,
   settings: (_section: string) => true,
@@ -25,4 +27,8 @@ export function useEditionAuth() {}
 
 export function useEditionFeatures() {
   return { git: true, terminal: true }
+}
+
+export function EditionAuthAside(_props: { view: AuthView }) {
+  return null
 }

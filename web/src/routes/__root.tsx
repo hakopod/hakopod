@@ -1,3 +1,4 @@
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { useState } from 'react'
 import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -58,7 +59,13 @@ function Root() {
       }),
   )
   return (
-    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="dark"
+      data-theme="dark"
+      data-edition={dashboardEdition.cloud ? 'cloud' : 'self-hosted'}
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
         <script
