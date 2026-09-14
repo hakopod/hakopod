@@ -134,6 +134,7 @@ class BootstrapVersionTests(unittest.TestCase):
                 (root / folder).mkdir(parents=True, exist_ok=True)
             old = bootstrap.render(TEMPLATE, '0.1.0-alpha.2')
             (root / 'scripts/installer.sh').write_text(old)
+            (root / 'installer/pins.json').write_bytes((ROOT / 'installer/pins.json').read_bytes())
             for name in ('LICENSE', 'NOTICE', 'scripts/install.sh', 'installer/serve.mjs',
                          'web/THIRD_PARTY_NOTICES.md', 'web/dist/server/server.js'):
                 (root / name).write_text('')

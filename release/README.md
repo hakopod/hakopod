@@ -87,3 +87,37 @@ The verification command checks the actual local image ID, embedded OpenAPI byte
 The earlier foundation arm64 image on 2026-09-12 was 32,075,846 bytes. Its server binary exactly matched the arm64 release executable. The image catalog identified 47 Go module records and five Debian package records; CycloneDX additionally lists filesystem components. This is one development build, not a runtime load measurement. See the current generated verification files for each build's immutable image ID and source fingerprint.
 
 A public release still requires full runtime acceptance for the intended installation, vulnerability triage, license/source obligations for everything actually redistributed, artifact signatures, and a chosen publication destination. A local archive, startup smoke or generated SBOM is not evidence those gates passed.
+
+## Prebuilt readiness probe
+
+The release workflow builds `Dockerfile.probe` on native amd64 and arm64 runners
+only after the archive, installer smoke and host acceptance jobs pass. Each
+image is tested under a nonroot user, a read-only root filesystem and a 64 MiB
+limit. The smoke checks the init-copy path, executable permissions, trust bundle,
+license files and execution of the copied binary. Protocol behavior is covered
+by the Go readiness suite; this packaging smoke does not send SMTP mail or claim
+production SMTP delivery acceptance.
+
+The tested images are combined into
+`ghcr.io/hakopod/hakopod-probe:<release-tag>` (including the `v` prefix). No moving
+`latest` tag is published, including for prereleases. `probe-image.txt` contains
+the digest-pinned multi-platform reference; `probe-image.json` binds the native
+smoke records and child digests to the release source revision. Both are included
+in release checksums and file attestations. The index has its own OCI provenance
+attestation. Final GitHub release publication depends on the image job and
+successful anonymous pulls for both platforms.
+
+Before the first release completes, an organization package administrator must
+set the new **hakopod-probe** container package visibility to **Public** in GitHub
+Packages. GHCR creates new packages as private by default; the workflow deliberately
+fails its anonymous-pull gate until this is done. Grant this repository Actions
+write access if the package already exists. The workflow uses its scoped
+`GITHUB_TOKEN` with `packages: write`; users do not need a personal access token.
+Run-scoped architecture tags are intermediate build outputs, not recommended
+installation references. If a run stops before final publication, do not treat
+its registry tags as a released version; use a published release's verified asset.
+
+Infrastructure > Setup links to the release asset and shows the systemd setting.
+See [helper installation](../docs/readiness.md#helper-installation). The helper
+remains opt-in and digest-pinned; releases do not silently change an installation's
+configured image or running application pods.

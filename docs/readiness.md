@@ -63,19 +63,54 @@ the current helper and the exact operator configuration steps. See
 [installation maintenance](installation-maintenance.md#smtp-listener-readiness).
 
 TCP-only readiness uses the native kubelet TCP probe. SMTP and combined HTTP plus
-TCP checks need the Hakopod probe helper. Build the included `Dockerfile.probe`
-for `linux/amd64` and `linux/arm64`, publish it to a registry reachable by the
-nodes, and configure the verified multi-platform image digest in operator TOML:
+TCP checks need the Hakopod probe helper. Releases with `probe-image.txt` include
+a prebuilt public image at `ghcr.io/hakopod/hakopod-probe:<release-tag>` for
+`linux/amd64` and `linux/arm64`, built from `Dockerfile.probe`. The release tag
+includes its `v` prefix. No compiler, Docker daemon or registry login is needed
+on the installation target; K3s pulls the helper when an application needs it.
+
+Open the [release matching your installation](https://github.com/hakopod/hakopod/releases),
+download `probe-image.txt`, and use the **complete digest-pinned reference** in
+that file. The digest identifies the multi-platform index, so the same setting
+works on both architectures. Mutable tags and `latest` are not accepted by the
+operator configuration. `probe-image.json` records the source revision,
+platform image digests and native packaging smoke results. Both files are covered
+by the release's `SHA256SUMS` and artifact attestations; verify the downloaded
+file with `gh attestation verify probe-image.txt --repo hakopod/hakopod`.
+The index also has registry provenance, verifiable with
+`gh attestation verify oci://ghcr.io/hakopod/hakopod-probe@sha256:RELEASE_DIGEST --repo hakopod/hakopod`.
+Replace the placeholder below with the reference from your verified file:
 
 ```toml
 [server]
-readiness_probe_image = "registry.example.com/hakopod/probe@sha256:YOUR_VERIFIED_IMAGE_DIGEST"
+readiness_probe_image = "ghcr.io/hakopod/hakopod-probe@sha256:RELEASE_DIGEST"
 ```
 
 The equivalent environment setting is `HAKOPOD_READINESS_PROBE_IMAGE`. Plans and
 deployments reject helper checks until this setting exists. The digest is an
 operator setting, so application TOML cannot replace the executable. Private
 registries need node pull access or compatible configured image pull secrets.
+
+For a systemd installation, run `sudo systemctl edit hakopod-api` and add:
+
+```ini
+[Service]
+Environment="HAKOPOD_READINESS_PROBE_IMAGE=ghcr.io/hakopod/hakopod-probe@sha256:RELEASE_DIGEST"
+```
+
+Replace the whole example reference with `probe-image.txt`, then run
+`sudo systemctl restart hakopod-api`. Check **Infrastructure > Setup** for the
+configured reference, review the application deployment again, and redeploy it.
+Changing this setting does not replace helpers in already running pods.
+Upgrades remain explicit: review the new release, update the pinned digest,
+restart the API and redeploy affected services.
+
+Older releases without `probe-image.txt` still require a local helper build.
+For those releases or an offline/private mirror, build `Dockerfile.probe` from
+the matching source tag, publish it to a registry reachable by your nodes, and
+configure its verified digest. Mirroring can change the index digest; use the
+verified destination digest. The public image does not enable public SMTP in
+Hakopod Cloud or bypass administrator port provisioning.
 
 A nonroot init container copies the static executable and public trust bundle
 into a 40 MiB disk-backed `emptyDir`. The application receives a read-only mount
