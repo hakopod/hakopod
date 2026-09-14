@@ -3,3 +3,4 @@ dist/
 .tanstack/
 .env
 .env.local
+public/template-assets/

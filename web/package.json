@@ -8,8 +8,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "vite dev --host 127.0.0.1 --port 3000",
-    "build": "vite build",
+    "dev": "node ../templates/scripts/sync-assets.mjs public/template-assets && vite dev --host 127.0.0.1 --port 3000",
+    "build": "node ../templates/scripts/sync-assets.mjs public/template-assets && vite build",
     "typecheck": "tsc --noEmit",
     "start": "node --max-old-space-size=192 --env-file-if-exists=.env.local scripts/serve.mjs",
     "generate:api": "openapi-typescript ../api/openapi.json -o src/lib/api.generated.ts",

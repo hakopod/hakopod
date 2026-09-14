@@ -26,6 +26,9 @@ export default function TemplateForm({
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [name, setName] = useState('')
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries((template.config_fields || []).map((field) => [field.name, field.default])),
+  )
   const [isPublic, setPublic] = useState(false)
   const [storage, setStorage] = useState(template.id === 'vllm' ? 30 : 5)
   const [model, setModel] = useState('')
@@ -70,6 +73,7 @@ export default function TemplateForm({
             environment: scope.environment,
             name,
             public: isPublic,
+            values,
             storage_gib: storage,
             architecture,
             ...(template.site_url_supported ? { site_url: siteURL } : {}),
@@ -134,7 +138,12 @@ export default function TemplateForm({
         icon="book"
       >
         <FormSection title="Deployment prerequisites" icon="book">
-          <ServiceIcon name={template.id} size={42} />
+          <ServiceIcon
+            background={template.logo_background}
+            src={template.logo || undefined}
+            name={template.id}
+            size={42}
+          />
           {template.requirements.map((requirement) => (
             <Note key={requirement}>{requirement}</Note>
           ))}
@@ -160,7 +169,12 @@ export default function TemplateForm({
         plan ? null : (
           <>
             <div className="template-identity">
-              <ServiceIcon name={template.id} size={42} />
+              <ServiceIcon
+                background={template.logo_background}
+                src={template.logo || undefined}
+                name={template.id}
+                size={42}
+              />
               <h2>{template.name}</h2>
               <p>{template.description}</p>
               <small>{template.license}</small>
@@ -299,6 +313,24 @@ export default function TemplateForm({
                 })),
               ]}
             />
+            {(template.config_fields || []).map((field) => (
+              <div className="grid gap-1" key={field.name}>
+                <label htmlFor={`template-config-${field.name}`}>{field.label}</label>
+                <Input
+                  id={`template-config-${field.name}`}
+                  aria-describedby={`template-help-${field.name}`}
+                  value={values[field.name] || ''}
+                  required={field.required}
+                  maxLength={2048}
+                  onChange={(event) =>
+                    setValues((current) => ({ ...current, [field.name]: event.target.value }))
+                  }
+                />
+                <span className="field-help" id={`template-help-${field.name}`}>
+                  {field.description}
+                </span>
+              </div>
+            ))}
             {template.database_config && (
               <>
                 <label>
@@ -468,6 +500,9 @@ export default function TemplateForm({
           disabled={
             busy ||
             !name ||
+            (template.config_fields || []).some(
+              (field) => field.required && !values[field.name]?.trim(),
+            ) ||
             !Number.isFinite(storage) ||
             storage < 1 ||
             storage > 200 ||
