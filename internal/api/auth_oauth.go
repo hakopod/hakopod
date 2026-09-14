@@ -62,7 +62,8 @@ func (s *Server) oauthConfig(provider string) (*oauth2.Config, error) {
 	return c, nil
 }
 func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
-	if intent := r.URL.Query().Get("intent"); intent != "" && intent != "login" && intent != "register" {
+	intent := r.URL.Query().Get("intent")
+	if intent != "" && intent != "login" && intent != "register" {
 		authFailure(w, store.ErrInput)
 		return
 	}
@@ -76,7 +77,12 @@ func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "provider_not_configured", "this sign-in provider has not been configured by the operator")
 		return
 	}
-	if r.URL.Query().Get("intent") == "register" && r.URL.Query().Get("invite_token") == "" && !s.signupOpen(w, r) {
+	// Public Cloud uses one provider flow for both new and returning accounts.
+	// Record enrollment permission in the one-use state and recheck it at callback.
+	if s.Auth.PublicSignupEnabled() {
+		intent = "register"
+	}
+	if intent == "register" && r.URL.Query().Get("invite_token") == "" && !s.signupOpen(w, r) {
 		return
 	}
 	if invite := r.URL.Query().Get("invite_token"); invite != "" {
@@ -87,7 +93,7 @@ func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 	verifier := oauth2.GenerateVerifier()
 	binding := store.NewID() + store.NewID()
-	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding, "intent": r.URL.Query().Get("intent"), "invite_token": r.URL.Query().Get("invite_token"), "fingerprint": providerFingerprint(settings), "nonce": binding}, 5*time.Minute)
+	state, err := s.Store.NewChallenge(r.Context(), "oauth", map[string]string{"provider": provider, "verifier": verifier, "binding": binding, "intent": intent, "invite_token": r.URL.Query().Get("invite_token"), "fingerprint": providerFingerprint(settings), "nonce": binding}, 5*time.Minute)
 	if err != nil {
 		authFailure(w, err)
 		return
