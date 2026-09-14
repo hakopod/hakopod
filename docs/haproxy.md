@@ -21,6 +21,7 @@ applicable override to take effect. Unknown ConfigMap entries are preserved.
 
 | Setting | Accepted values | Effect |
 | --- | --- | --- |
+| `max-content-length` | Self-hosted only; integer bytes, 1–10737418240 (10 GiB) | Returns HTTP 413 when the declared `Content-Length` exceeds this limit. Streaming/chunked bodies are not capped. |
 | `maxconn` | Integer, 16–65536 | Caps connections accepted by each HAProxy process. Higher limits use more memory. |
 | `nbthread` | Integer, 1–8 | Sets HAProxy worker threads. |
 | `timeout-connect`, `timeout-client`, `timeout-server` | 1ms–24h | Limits backend connection setup and client/backend inactivity. |
@@ -40,7 +41,7 @@ applicable override to take effect. Unknown ConfigMap entries are preserved.
 
 Durations must use one integer followed by `ms`, `s`, `m` or `h`. Compound and
 fractional durations are rejected. Booleans and integers must still be quoted
-JSON strings. Each value is limited to 32 characters, with at most 20 fields in
+JSON strings. Each value is limited to 32 characters, with at most 21 fields in
 a request. Existing installations receive no new defaults until an administrator
 applies a change.
 
@@ -63,3 +64,29 @@ does not replace checking ingress health or the controller's reload status.
 cluster, waits for the generated directives, checks them with `haproxy -c` and
 restores the original ConfigMap. It refuses any other cluster context and
 preserves intervening operator edits instead of overwriting them during cleanup.
+
+## Declared request body size
+
+In self-hosted installations, set `"max-content-length": "10485760"` for a
+10 MiB declared upload limit. An empty string removes the guard. The dashboard
+lists this under Infrastructure → HAProxy → Supported fields. Hakopod Cloud
+rejects changes to this field, including previously queued self-hosted changes.
+
+This is a Content-Length admission guard, **not a complete request-body limit**.
+HAProxy 3.2's `req.body_size` reports only available buffered data for chunked
+requests, so using it as a large streaming-body cap would allow bypasses. Enforce
+streaming/chunked limits in the receiving application or a dedicated upload
+service. No large per-connection buffers are allocated by this setting.
+
+Hakopod generates a fixed HTTP request ACL in an owned block of
+`backend-config-snippet`; arbitrary snippet input stays unavailable. Other
+snippet content is retained. Editing or removing the owned block outside
+Hakopod produces a conflict instead of falsely reporting the guard as configured.
+A backend snippet triggers the controller's reload path; frontend-only snippet
+edits in this controller version can update the file without activating it. On
+reset, a harmless comment explicitly clears the generated rule.
+Controller redirects/rejections that happen before the snippet still take priority.
+
+`TestLiveContentLengthGuard` checks the declared-size boundary through real
+HAProxy, documents that streaming bodies are not capped, and verifies reset
+removes the effective ACL. It uses only the named development cluster.

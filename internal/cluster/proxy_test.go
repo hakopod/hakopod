@@ -111,3 +111,56 @@ func TestProxyOwnershipConflictsAndRecovery(t *testing.T) {
 		}
 	}
 }
+
+func TestContentLengthGuardOwnershipAndCloud(t *testing.T) {
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "controller", Namespace: "ingress", ResourceVersion: "100", Labels: map[string]string{"app.kubernetes.io/instance": "hakopod", "app.kubernetes.io/name": "kubernetes-ingress"}, Annotations: map[string]string{"meta.helm.sh/release-name": "hakopod", "meta.helm.sh/release-namespace": "ingress"}}, Data: map[string]string{"backend-config-snippet": "# operator setting", "unrelated": "keep"}}
+	c := &Client{kube: fake.NewClientset(cm), options: Options{ProxyNamespace: "ingress", ProxyConfigMap: "controller", ProxyRelease: "hakopod"}}
+	ctx := context.Background()
+	for _, v := range []string{"0", "-1", "1m", "10737418241", "123\nhttp-request allow"} {
+		if ValidateProxySettings(map[string]string{"max-content-length": v}) == nil {
+			t.Fatal("invalid limit accepted", v)
+		}
+	}
+	if _, err := c.ApplyProxyConfiguration(ctx, map[string]string{"max-content-length": "10485760"}, "100", 1); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := c.ProxyConfiguration(ctx)
+	if err != nil || observed.Settings["max-content-length"] != "10485760" {
+		t.Fatal("guard not observed", err)
+	}
+	c.options.DeploymentMode = DeploymentManagedCloud
+	if _, err = c.ApplyProxyConfiguration(ctx, map[string]string{"max-content-length": ""}, "100", 2); err == nil {
+		t.Fatal("cloud changed guard")
+	}
+	observed, err = c.ProxyConfiguration(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range observed.Fields {
+		if f.Name == "max-content-length" {
+			t.Fatal("cloud exposed control")
+		}
+	}
+	c.options.DeploymentMode = DeploymentSelfHosted
+	if _, err = c.ApplyProxyConfiguration(ctx, map[string]string{"max-content-length": ""}, "100", 2); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := c.proxyConfigMap(ctx)
+	if current.Data["backend-config-snippet"] != "# operator setting" || current.Data["unrelated"] != "keep" {
+		t.Fatal("unrelated settings lost")
+	}
+	if _, err = c.ApplyProxyConfiguration(ctx, map[string]string{"max-content-length": "1024"}, "100", 3); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = c.proxyConfigMap(ctx)
+	current.Data["backend-config-snippet"] = "# operator replaced snippet"
+	if _, err = c.kube.CoreV1().ConfigMaps("ingress").Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.ProxyConfiguration(ctx); !errors.Is(err, ErrProxyConflict) {
+		t.Fatal("missing guard falsely displayed as configured", err)
+	}
+	if _, err = c.ApplyProxyConfiguration(ctx, map[string]string{"max-content-length": "2048"}, "100", 4); !errors.Is(err, ErrProxyConflict) {
+		t.Fatal("external edit overwritten", err)
+	}
+}

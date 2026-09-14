@@ -17,6 +17,21 @@ import (
 
 func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 	result := Observation{Revision: t.Revision, Status: "pending", Services: make([]ServiceStatus, 0, len(t.Spec.Services)), ObservedAt: time.Now().UTC()}
+	if len(t.Spec.Services) == 0 {
+		options := metav1.ListOptions{LabelSelector: managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID), Limit: 1}
+		pods, err := c.kube.CoreV1().Pods(Namespace(t.ApplicationID)).List(ctx, options)
+		if err != nil {
+			return result, err
+		}
+		deployments, err := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).List(ctx, options)
+		if err != nil {
+			return result, err
+		}
+		if len(pods.Items) == 0 && pods.Continue == "" && len(deployments.Items) == 0 && deployments.Continue == "" {
+			result.Status = "empty"
+		}
+		return result, nil
+	}
 	healthy := 0
 	for _, name := range spec.Names(t.Spec) {
 		svc := t.Spec.Services[name]

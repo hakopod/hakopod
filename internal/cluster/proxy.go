@@ -14,6 +14,7 @@ import (
 )
 
 var ErrProxyConflict = errors.New("HAProxy configuration changed after review")
+var ErrProxySelfHosted = errors.New("request body admission controls are only available in self-hosted installations")
 
 type ProxyField struct {
 	Name        string `json:"name"`
@@ -31,8 +32,10 @@ type ProxyConfiguration struct {
 
 func ProxyFields() []ProxyField {
 	// ConfigMap keys supported by HAProxy Technologies Kubernetes Ingress 3.2.
+	// max-content-length is a Hakopod-owned ACL, not a native ConfigMap key.
 	// Keep this allowlist separate from arbitrary controller annotations/snippets.
 	return []ProxyField{
+		{"max-content-length", "Self-hosted only: maximum declared HTTP request body size in bytes, 1–10737418240 (10 GiB). Oversized Content-Length requests receive 413. Streaming/chunked bodies need an application-level limit. Empty removes this guard.", "10485760"},
 		{"maxconn", "Maximum concurrent connections, 16–65536; larger values increase memory use.", "1024"},
 		{"nbthread", "HAProxy threads, bounded to 1–8.", "2"},
 		{"timeout-connect", "Backend connection deadline, 1ms–24h.", "5s"},
@@ -73,6 +76,11 @@ func ValidateProxySettings(values map[string]string) error {
 			continue
 		}
 		switch k {
+		case "max-content-length":
+			n, e := strconv.ParseUint(v, 10, 64)
+			if e != nil || n < 1 || n > 10737418240 {
+				return fmt.Errorf("max-content-length must be 1–10737418240 bytes")
+			}
 		case "maxconn", "nbthread", "pod-maxconn":
 			n, e := strconv.ParseUint(v, 10, 32)
 			min, max := uint64(16), uint64(65536)
@@ -162,15 +170,31 @@ func (c *Client) ProxyConfiguration(ctx context.Context) (ProxyConfiguration, er
 	if err != nil {
 		return ProxyConfiguration{}, err
 	}
+	if !bodyLimitBlockMatches(cm) {
+		return ProxyConfiguration{}, fmt.Errorf("%w: the Content-Length guard differs from its saved setting; ask the operator to restore the owned snippet", ErrProxyConflict)
+	}
 	values := map[string]string{}
 	for _, field := range ProxyFields() {
+		if field.Name == "max-content-length" {
+			if !c.CloudMode() && cm.Annotations[bodyLimitAnnotation] != "" {
+				values[field.Name] = cm.Annotations[bodyLimitAnnotation]
+			}
+			continue
+		}
 		if value, ok := cm.Data[field.Name]; ok {
 			values[field.Name] = value
 		}
 	}
-	return ProxyConfiguration{Namespace: cm.Namespace, Name: cm.Name, ResourceVersion: cm.ResourceVersion, Settings: values, Fields: ProxyFields(), AppliedRevision: cm.Annotations["hakopod.io/proxy-revision"]}, nil
+	fields := ProxyFields()
+	if c.CloudMode() {
+		fields = slices.DeleteFunc(fields, func(f ProxyField) bool { return f.Name == "max-content-length" })
+	}
+	return ProxyConfiguration{Namespace: cm.Namespace, Name: cm.Name, ResourceVersion: cm.ResourceVersion, Settings: values, Fields: fields, AppliedRevision: cm.Annotations["hakopod.io/proxy-revision"]}, nil
 }
 func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]string, expected string, revision int64) (string, error) {
+	if _, ok := values["max-content-length"]; ok && c.CloudMode() {
+		return "", ErrProxySelfHosted
+	}
 	if err := ValidateProxySettings(values); err != nil {
 		return "", err
 	}
@@ -181,7 +205,11 @@ func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]
 	revisionValue := strconv.FormatInt(revision, 10)
 	matches := true
 	for k, v := range values {
-		matches = matches && cm.Data[k] == v
+		if k == "max-content-length" {
+			matches = matches && cm.Annotations[bodyLimitAnnotation] == v && bodyLimitBlockMatches(cm)
+		} else {
+			matches = matches && cm.Data[k] == v
+		}
 	}
 	if cm.Annotations["hakopod.io/proxy-revision"] == revisionValue && matches {
 		return cm.ResourceVersion, nil
@@ -196,6 +224,12 @@ func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]
 		cm.Annotations = map[string]string{}
 	}
 	for k, v := range values {
+		if k == "max-content-length" {
+			if err := setBodyLimit(cm, v); err != nil {
+				return "", err
+			}
+			continue
+		}
 		if v == "" {
 			delete(cm.Data, k)
 		} else {
@@ -208,4 +242,53 @@ func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]
 		return "", err
 	}
 	return changed.ResourceVersion, nil
+}
+
+const bodyLimitAnnotation = "hakopod.io/max-content-length"
+const bodyLimitStart = "# BEGIN hakopod max-content-length"
+const bodyLimitEnd = "# END hakopod max-content-length"
+
+func bodyLimitBlock(value string) string {
+	if value == "" {
+		return ""
+	}
+	return bodyLimitStart + "\nhttp-request deny deny_status 413 if { req.hdr(content-length) -m int gt " + value + " }\n" + bodyLimitEnd
+}
+func bodyLimitBlockMatches(cm *corev1.ConfigMap) bool {
+	text := cm.Data["backend-config-snippet"]
+	value := cm.Annotations[bodyLimitAnnotation]
+	if value == "" {
+		return !strings.Contains(text, bodyLimitStart) && !strings.Contains(text, bodyLimitEnd)
+	}
+	block := bodyLimitBlock(value)
+	return strings.Count(text, bodyLimitStart) == 1 && strings.Count(text, bodyLimitEnd) == 1 && strings.Contains(text, block)
+}
+func setBodyLimit(cm *corev1.ConfigMap, value string) error {
+	if !bodyLimitBlockMatches(cm) {
+		return fmt.Errorf("%w: owned body-size snippet changed; restore it before editing this setting", ErrProxyConflict)
+	}
+	text := cm.Data["backend-config-snippet"]
+	old := bodyLimitBlock(cm.Annotations[bodyLimitAnnotation])
+	if old != "" {
+		text = strings.Replace(text, old, "", 1)
+	}
+	text = strings.TrimSpace(text)
+	block := bodyLimitBlock(value)
+	if block != "" {
+		if text != "" {
+			text += "\n"
+		}
+		text += block
+		cm.Annotations[bodyLimitAnnotation] = value
+	} else {
+		delete(cm.Annotations, bodyLimitAnnotation)
+	}
+	if text == "" {
+		// Keep reset explicit so the controller observes a changed snippet and
+		// reloads its backend rules instead of retaining a previous insertion.
+		cm.Data["backend-config-snippet"] = "# No Hakopod Content-Length guard."
+	} else {
+		cm.Data["backend-config-snippet"] = text
+	}
+	return nil
 }

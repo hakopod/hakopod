@@ -128,6 +128,17 @@ func Parse(data []byte) (Application, error) {
 		}
 		return Application{}, errors.New("invalid TOML syntax or field type")
 	}
+	// The typed TOML decoder leaves an explicit empty table as a nil map.
+	// Preserve its presence so omission cannot accidentally mean "remove all".
+	if app.Services == nil {
+		var document map[string]any
+		if err := toml.Unmarshal(data, &document); err != nil {
+			return Application{}, errors.New("invalid TOML service table")
+		}
+		if services, ok := document["services"].(map[string]any); ok && len(services) == 0 {
+			app.Services = map[string]Service{}
+		}
+	}
 	return Normalize(app)
 }
 
@@ -154,8 +165,8 @@ func Normalize(input Application) (Application, error) {
 	if !namePattern.MatchString(app.Name) {
 		return Application{}, errors.New("name: use 1–40 lowercase letters, digits or hyphens, beginning with a letter and ending with a letter or digit")
 	}
-	if len(app.Services) == 0 || len(app.Services) > 20 {
-		return Application{}, errors.New("services: define between 1 and 20 services")
+	if app.Services == nil || len(app.Services) > 20 {
+		return Application{}, errors.New("services: provide an explicit services table with at most 20 services")
 	}
 	if err := ValidateDomains(app); err != nil {
 		return Application{}, err

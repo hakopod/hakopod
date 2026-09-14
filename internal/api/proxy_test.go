@@ -124,6 +124,19 @@ func TestProxyDurableAcceptanceAndRevocation(t *testing.T) {
 	if afterReplay != 1 {
 		t.Fatal("crash recovery duplicated ConfigMap mutation")
 	}
+	server.Auth.DeploymentMode = cluster.DeploymentManagedCloud
+	patch(1, "101", map[string]string{"max-content-length": "1024"}, 403)
+	if _, err = db.Pool.Exec(ctx, `UPDATE runtime_resources SET metadata=$1 WHERE kind='proxy'`, store.JSON(proxyChange{Settings: map[string]string{"max-content-length": "1024"}, ResourceVersion: "101", KeyID: p.KeyID, Status: "queued"})); err != nil {
+		t.Fatal(err)
+	}
+	server.reconcileProxy(ctx)
+	cloudRow, _ := db.RuntimeResource(ctx, "proxy", "", "", "haproxy")
+	var cloudChange proxyChange
+	_ = json.Unmarshal(cloudRow.Metadata, &cloudChange)
+	if cloudChange.Status != "failed" {
+		t.Fatal("cloud replay accepted self-hosted guard")
+	}
+	server.Auth.DeploymentMode = cluster.DeploymentSelfHosted
 	patch(1, "101", map[string]string{"timeout-client": "32s", "dontlognull": ""}, 202)
 	_, _ = db.Pool.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE id=$1", p.KeyID)
 	server.reconcileProxy(ctx)

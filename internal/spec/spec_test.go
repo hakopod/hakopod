@@ -130,3 +130,21 @@ func TestAutoscalingBounds(t *testing.T) {
 		t.Fatal("unbounded autoscaling accepted")
 	}
 }
+
+func TestExplicitEmptyServiceTableForRemoval(t *testing.T) {
+	app, err := Parse([]byte("schema_version=1\nname='retire-app'\n[services]\n"))
+	if err != nil || app.Services == nil || len(app.Services) != 0 {
+		t.Fatal("explicit empty TOML services rejected", err)
+	}
+	if _, err = Parse([]byte("schema_version=1\nname='retire-app'\n")); err == nil {
+		t.Fatal("omitted services accepted as removal")
+	}
+	before, err := Parse([]byte("name='retire-app'\n[services.api]\nimage='python:3.13'\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := Diff(&before, app)
+	if len(changes) == 0 {
+		t.Fatal("final-service removal missing from review diff")
+	}
+}
