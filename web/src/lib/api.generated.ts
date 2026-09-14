@@ -1511,6 +1511,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/git/connections/{id}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startGitSourceOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/git/connections/{id}/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeNamedGitSourceOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/git/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeGitSourceOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/installation/login-providers/{provider}": {
         parameters: {
             query?: never;
@@ -3237,6 +3285,8 @@ export interface components {
             subject_id: number;
             github_app_id: number;
             installation_id: number;
+            oauth_client_id?: string;
+            oauth_scopes?: string;
             legacy: boolean;
             configured: boolean;
             token_configured: boolean;
@@ -3253,7 +3303,7 @@ export interface components {
             /** @enum {string} */
             provider: "github" | "gitlab";
             /** @enum {string} */
-            auth_kind: "token" | "github_app";
+            auth_kind: "token" | "github_app" | "gitlab_oauth";
             expected_revision?: number;
             enabled?: boolean;
             token?: string;
@@ -3261,6 +3311,20 @@ export interface components {
             github_app_id?: string;
             github_private_key?: string;
             github_installation_id?: number;
+            oauth_client_id?: string;
+            oauth_client_secret?: string;
+            /** @enum {string} */
+            oauth_scopes?: "api" | "read_api";
+        };
+        GitOAuthStart: {
+            authorization_url: string;
+            callback_url: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        GitOAuthComplete: {
+            code: string;
+            state: string;
         };
         InstallationLoginProvider: {
             /** @enum {string} */
@@ -7912,6 +7976,109 @@ export interface operations {
                         accepted?: boolean;
                         ignored?: boolean;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    startGitSourceOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitOAuthStart"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeNamedGitSourceOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitOAuthComplete"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnection"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeGitSourceOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitOAuthComplete"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnection"];
                 };
             };
             /** @description Error */
