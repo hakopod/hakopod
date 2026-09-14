@@ -1,3 +1,4 @@
+import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -498,6 +499,12 @@ function ApplicationDetail() {
           )}
         </Tabs.Content>
         <Tabs.Content value="configuration" className="tab-content">
+          <div className="section-toolbar">
+            <span className="field-help">
+              Remove every service and deploy the empty revision before deleting this application.
+            </span>
+            <DeleteResource project={application.data.project} application={application.data} />
+          </div>
           <div className="section-toolbar">
             <div>
               <h2>Applied configuration</h2>

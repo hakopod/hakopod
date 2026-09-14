@@ -1,3 +1,4 @@
+import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
@@ -161,7 +162,13 @@ function Projects() {
                       {project.environments.length}{' '}
                       {project.environments.length === 1 ? 'environment' : 'environments'}
                     </span>
-                    <Icon name="arrow" size={15} />
+                    {scope.identity.admin && !project.personal ? (
+                      <div className="relative z-10">
+                        <DeleteResource project={project.name} />
+                      </div>
+                    ) : (
+                      <Icon name="arrow" size={15} />
+                    )}
                   </div>
                 </article>
               )

@@ -130,6 +130,19 @@ export function applicationRuntimeHealth(
   now = Date.now(),
 ): RuntimeHealth {
   const names = Object.keys(application?.spec.services || {})
+  if (application && names.length === 0 && application.observed.status === 'empty')
+    return observationTime(
+      {
+        status: 'empty',
+        observed: true,
+        ready: 0,
+        desired: 0,
+        issues: [],
+        note: 'All services have been removed. Persistent storage is retained.',
+      },
+      application.observed.observed_at,
+      now,
+    )
   const observations = new Map(
     application?.observed?.services?.map((service) => [service.name, service]),
   )

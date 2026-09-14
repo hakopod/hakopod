@@ -1,3 +1,4 @@
+import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { SelectField } from './ui/select'
@@ -27,11 +28,13 @@ export function DeploymentForm({
   application,
   initialMode = 'form',
   serviceName,
+  removeService,
 }: {
   onClose: () => void
   application?: Application
   initialMode?: 'form' | 'toml'
   serviceName?: string
+  removeService?: string
 }) {
   const scope = useScope()
   const project = application?.project || scope.project
@@ -56,13 +59,18 @@ export function DeploymentForm({
   const requestKey = useRef('')
   useEffect(() => {
     {
-      setSpec(application ? structuredClone(application.spec) : newSpec())
+      const initial = application
+        ? removeService
+          ? withoutService(application.spec, removeService)
+          : structuredClone(application.spec)
+        : newSpec()
+      setSpec(initial)
       setPlan(null)
       setError('')
-      setToml(application ? specToTOML(application.spec) : '')
+      setToml(application ? specToTOML(initial) : '')
       setMode(initialMode)
     }
-  }, [application?.id, initialMode, serviceName])
+  }, [application?.id, initialMode, serviceName, removeService])
   const payload = () => ({
     project,
     environment,
@@ -214,6 +222,13 @@ export function DeploymentForm({
                 <strong>{Object.keys(plan.spec.services).length}</strong>
               </div>
             </div>
+            {Object.keys(plan.spec.services).length === 0 && (
+              <Note>
+                This removes every service and stops all application traffic. Persistent volumes and
+                backups are retained. Delete the empty application only after this deployment
+                succeeds.
+              </Note>
+            )}
             <div className="review-resources">
               {Object.entries(plan.spec.services).map(([name, service]) => {
                 const profile = plan.resource_profiles?.[service.size || 'small']
@@ -317,6 +332,13 @@ export function DeploymentForm({
                     maxLength={63}
                   />
                 </label>
+                {application && Object.keys(spec.services).length === 0 && (
+                  <Note>
+                    Deploying this revision removes every service and stops application traffic.
+                    Persistent volumes and backups are retained. Once deployment succeeds, you can
+                    delete the empty application.
+                  </Note>
+                )}
                 <div className="form-section-heading">
                   <span>Services</span>
                   <span className="muted-text">Private network included</span>
@@ -334,24 +356,18 @@ export function DeploymentForm({
                         </div>
                         <strong className="mono">{name}</strong>
                         <span className="form-spacer" />
-                        {!serviceName && Object.keys(spec.services).length > 1 && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Remove service ${name}`}
-                            disabled={busy}
-                            onClick={() =>
-                              setSpec((previous) => ({
-                                ...previous,
-                                services: Object.fromEntries(
-                                  Object.entries(previous.services).filter(([key]) => key !== name),
-                                ),
-                              }))
-                            }
-                          >
-                            <Icon name="trash" size={14} />
-                          </Button>
-                        )}
+                        {!serviceName &&
+                          (Boolean(application) || Object.keys(spec.services).length > 1) && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`Remove service ${name}`}
+                              disabled={busy}
+                              onClick={() => setSpec((previous) => withoutService(previous, name))}
+                            >
+                              <Icon name="trash" size={14} />
+                            </Button>
+                          )}
                       </div>
                       <label>
                         Container image

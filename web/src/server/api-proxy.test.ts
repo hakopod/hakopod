@@ -333,3 +333,35 @@ test('named Git CRUD and source OAuth completion require the initiating browser 
     )
   assert.equal(calls, 5)
 })
+
+test('resource deletion proxy requires a session and same-origin request', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(init.method, 'DELETE')
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return Response.json({ status: 'deleted' })
+  })
+  for (const path of ['projects/empty-project', 'applications/empty-application']) {
+    const body = { confirm_name: 'reviewed-name', expected_revision: 2 }
+    assert.equal(
+      (await proxy({ request: request(path, 'DELETE', body), params: { _splat: path } })).status,
+      200,
+    )
+    assert.equal(
+      (await proxy({ request: request(path, 'DELETE', body, false), params: { _splat: path } }))
+        .status,
+      401,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, 'DELETE', body, true, 'https://untrusted.invalid'),
+          params: { _splat: path },
+        })
+      ).status,
+      403,
+    )
+  }
+  assert.equal(calls, 2)
+})

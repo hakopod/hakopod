@@ -707,6 +707,24 @@ export function ServiceDetail({
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="settings" className="tab-content">
+          {scope.can('deployments:write') && (
+            <div className="section-toolbar">
+              <p className="field-help">
+                Remove this service through a reviewed application deployment. Review dependencies
+                before deploying.
+              </p>
+              <Button variant="danger" size="sm" asChild>
+                <Link
+                  to="/applications/$applicationId/configure"
+                  params={{ applicationId: application.id }}
+                  search={{ remove: serviceName }}
+                >
+                  <Icon name="trash" size={14} />
+                  Remove service
+                </Link>
+              </Button>
+            </div>
+          )}
           <div className="section-toolbar">
             <div>
               <div className="hako-section-heading-title">

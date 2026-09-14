@@ -62,7 +62,7 @@ export interface paths {
         get: operations["getApplication"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["deleteEmptyApplication"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1958,6 +1958,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["setProxy"];
+        trace?: never;
+    };
+    "/projects/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteEmptyProject"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/applications/{id}/services/{service}/runtime": {
@@ -4319,6 +4335,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Application"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteEmptyApplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirm_name: string;
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
                 };
             };
             /** @description Error */
@@ -9299,6 +9355,45 @@ export interface operations {
                 content: {
                     "application/json": {
                         revision: number;
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteEmptyProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
                         status: string;
                     };
                 };
