@@ -39,7 +39,7 @@ type Buffer struct {
 
 func New() *Buffer { return &Buffer{started: time.Now().UTC()} }
 
-// Write accepts one structured logging record per write, as slog's text handler
+// Write accepts one structured logging record per write, as slog's handler
 // emits it. Oversized records are omitted, not partially retained. This writer
 // never reads host files or stores the unredacted record.
 func (b *Buffer) Write(p []byte) (int, error) {

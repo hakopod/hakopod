@@ -9,3 +9,7 @@ route('/installation/upgrade','post','upgradeInstallation',obj({'accepted':B},['
 
 route('/applications/{id}/domains/{hostname}','delete','discardDomainVerification',obj({'discarded':B},['discarded']),obj({'expected_revision':I},['expected_revision']))
 paths['/applications/{id}/domains/{hostname}']['delete']['parameters'].append({'name':'hostname','in':'path','required':True,'schema':S})
+
+schemas['InstallationLogQuery'] = obj({'query':S,'since_seconds':I,'limit':I},[])
+schemas['InstallationLogQueryResult'] = {'allOf':[ref('LogQueryResult'),obj({'source':S,'observed_at':T,'started_at':T},['source','observed_at'])]}
+route('/installation/logs/query','post','queryInstallationLogs',ref('InstallationLogQueryResult'),ref('InstallationLogQuery'))

@@ -47,7 +47,7 @@ func run() error {
 		processLogs = serverlogs.New()
 		previousLogger := slog.Default()
 		defer slog.SetDefault(previousLogger)
-		slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, processLogs), nil)))
+		slog.SetDefault(slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stderr, processLogs), nil)))
 	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(192 << 20)
