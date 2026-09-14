@@ -17,12 +17,38 @@ or retained durable job references it. Removal does not uninstall a provider App
 
 ## GitHub Apps
 
-A GitHub App can replace a personal access token. Register an operator-owned App,
-then provide its App ID, RSA private key and installation ID. Hakopod verifies the
-App's identity and checks that the installation belongs to it and is active. The
-installation and account are immutable; use a new connection to select another.
-These administrator-supplied credentials are not an unverified installation setup
-callback. Automatic browser installation onboarding is not implemented here.
+The dashboard's **Add connection → GitHub** flow registers an App through
+GitHub's [App Manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest).
+The person or organization registering the App owns it. Enter a connection name,
+optionally an organization login, and choose whether the App needs Actions build
+permissions. Click **Install GitHub App**, approve creation on GitHub, then choose
+repositories to finish installation. No personal token, App ID, installation ID,
+private key or webhook secret needs to be copied into Hakopod.
+
+The operator must configure a publicly reachable HTTPS dashboard URL. GitHub must
+reach `/api/v1/webhooks/git/{connection_id}` at that origin. The UI reads the
+operator's configured callback address, rather than assuming the browser's current
+address. Localhost and private IP setup are rejected; use a public HTTPS deployment
+or a properly configured development tunnel. The URL check is syntactic, not a
+public DNS or connectivity probe. GitHub will still reject an unreachable webhook.
+
+Setup saves a disabled connection first. One-use, 15-minute challenges bind each
+phase to the initiating administrator browser session, connection revision and
+configured origin. The server exchanges GitHub's temporary code, encrypts the
+returned App key and webhook secret, and retains them before installation. An
+unfinished connection can be reopened to resume. The connection remains unusable
+until Hakopod verifies its App, owning account, active installation, required
+permissions and secure JSON webhook destination. GitHub callback query parameters
+alone never authorize a connection. Expired or failed installation callbacks can
+be retried through **Continue on GitHub**. If creation succeeds on GitHub but the
+one-time conversion response is lost before being saved, delete that unused App
+on GitHub before restarting registration; provider creation and local persistence
+cannot be one atomic transaction.
+
+New dashboard connections offer GitHub Apps and GitLab OAuth, with no token
+creation option. Existing token connections and the compatibility API remain
+available so existing deployments are not interrupted. Existing manually configured
+GitHub Apps retain their current webhook and credential workflow.
 
 For TOML source reads, grant Contents read. Existing source builds additionally
 need Contents write and Workflows write to install the reviewed workflow, and
@@ -31,17 +57,24 @@ access is selected on the GitHub installation. Hakopod mints a short-lived
 installation token for one repository and only the permissions needed by the
 current request. Tokens are not persisted or supplied to workloads.
 
-Configure the App's webhook URL to the returned `webhook_path`, and set its webhook
-secret to the value returned once by Hakopod (or the explicit supplied secret).
-All connections for the same App share this signing secret and webhook URL. Events
-are authenticated before routing by the verified installation ID. Push events
-feed TOML sources; workflow_run events feed automatic builds. Installation deletion
-or suspension disables the corresponding connection. Re-enable it after fixing the
-provider installation; saving verifies its current identity again.
+Manifest-created Apps already have a connection-specific signed webhook configured.
+Do not replace that webhook secret or URL manually. Their dashboard edit form
+manages the connection's name and enabled state; repository access is managed on
+GitHub. Manual legacy App connections use the returned `webhook_path` and share
+an App-level signing secret. Events are authenticated before routing by the verified
+installation ID. Push events feed TOML sources; workflow_run events feed automatic
+builds. Installation deletion or suspension disables the corresponding connection.
+Re-enable it after fixing the provider installation; saving verifies its identity.
 
 ## GitLab OAuth
 
-Register a GitLab OAuth application with the dashboard callback URL
+GitLab's [Applications API](https://docs.gitlab.com/api/applications/) is for
+instance administrators; it cannot create personal or group OAuth applications.
+There is no supported user-owned manifest flow equivalent to GitHub's. The dashboard
+therefore provides a registration link and exact settings, followed by provider-led
+authorization. This one-time registration step is not automated, and the UI says so.
+
+Register a confidential GitLab OAuth application with the dashboard callback URL
 `https://YOUR-DASHBOARD/settings/git/callback`. Create a `gitlab_oauth` connection
 with its client ID and secret. Source reads use `read_api`; full build installation,
 pipeline control and artifact observation use `api`. The provider user's project
@@ -109,5 +142,8 @@ reference-protected deletion, credential selection, same-repository webhook
 isolation/deduplication, App JWT signatures, verified installation identity and
 repository-scoped token minting. No hosted App registration, installation, webhook
 delivery, repository write or provider runner execution was performed by these
-tests. Dashboard forms and public proxy forwarding need their own implementation
-and rendered review before this backend can be called a complete dashboard flow.
+tests. The manifest tests also cover same-session/replay/expiry checks, concurrent stale
+callbacks, resumable encrypted credentials, owner/permission/suspension/webhook
+rejections and verified activation. The dashboard proxies explicitly allow only the
+new setup paths and retain session and same-origin checks. A real provider App
+creation and webhook round trip still need verification on a public HTTPS instance.

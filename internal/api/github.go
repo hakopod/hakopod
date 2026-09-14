@@ -448,6 +448,12 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 401, "invalid_signature", "GitHub webhook signature is invalid")
 		return
 	}
+	// App-level pings have no installation ID. The connection must already be
+	// enabled and its HMAC verified above; a ping never enqueues application work.
+	if r.Header.Get("X-GitHub-Event") == "ping" {
+		write(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if !s.verifyWebhookConnection(w, r, connectionID, "github", body) {
 		return
 	}
@@ -462,10 +468,6 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		write(w, 202, map[string]bool{"accepted": true})
-		return
-	}
-	if r.Header.Get("X-GitHub-Event") == "ping" {
-		write(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	if r.Header.Get("X-GitHub-Event") == "workflow_run" {

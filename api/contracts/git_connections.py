@@ -18,3 +18,13 @@ schemas['GitOAuthComplete']=obj({'code':S,'state':S},['code','state'])
 route('/git/connections/{id}/authorize','post','startGitSourceOAuth',ref('GitOAuthStart'),obj({}))
 route('/git/connections/{id}/oauth/complete','post','completeNamedGitSourceOAuth',ref('GitConnection'),ref('GitOAuthComplete'))
 route('/git/oauth/complete','post','completeGitSourceOAuth',ref('GitConnection'),ref('GitOAuthComplete'))
+
+schemas['GitConnection']['properties']['managed_app']=B
+schemas['GitAppSetup']=obj({'connection_id':S,'phase':{'type':'string','enum':['manifest','install']},'action_url':S,'manifest':S,'expires_at':T},['connection_id','phase','action_url','expires_at'])
+route('/git/github/start','post','startGitHubAppManifest',ref('GitAppSetup'),obj({'name':S,'organization':S,'builds':B},['name','builds']))
+route('/git/github/complete','post','completeGitHubAppManifest',ref('GitAppSetup'),ref('GitOAuthComplete'))
+route('/git/connections/{id}/github/setup','post','resumeGitHubAppSetup',ref('GitAppSetup'),obj({}))
+route('/git/github/install/complete','post','completeGitHubAppInstallation',ref('GitConnection'),obj({'state':S,'installation_id':I},['state','installation_id']))
+
+schemas['GitProviderSetup']=obj({'github_available':B,'public_url':S,'gitlab_callback_url':S,'github_notice':S,'gitlab_notice':S},['github_available','public_url','gitlab_callback_url'])
+route('/git/setup','get','getGitProviderSetup',ref('GitProviderSetup'))
