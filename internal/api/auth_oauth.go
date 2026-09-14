@@ -234,6 +234,11 @@ func (s *Server) authOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
+	latest, err := s.readLoginProvider(ctx, provider)
+	if err != nil || !latest.Enabled || providerFingerprint(latest) != pending["fingerprint"] {
+		authFailure(w, store.ErrUnauthorized)
+		return
+	}
 	id, err := s.Store.ResolveOAuthAccount(ctx, identityProvider, verified.Subject, verified.Email, verified.Name, s.Auth.PublicSignupEnabled() && pending["intent"] == "register", pending["invite_token"])
 	if err != nil {
 		authFailure(w, err)
