@@ -173,6 +173,9 @@ func (s *Server) generateTemplateSecret(ctx context.Context, project, environmen
 		return u.String(), nil
 	}
 	size := 32
+	if field.Format == "token64" {
+		size = 48
+	}
 	if field.Format == "hex32" {
 		size = 16
 	}

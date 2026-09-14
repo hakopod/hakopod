@@ -15931,6 +15931,33 @@
           "expires_at"
         ]
       },
+      "TemplateConfigField": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "default",
+          "required"
+        ]
+      },
       "TemplateSecretField": {
         "type": "object",
         "properties": {
@@ -15965,6 +15992,12 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string"
+          },
+          "logo_background": {
             "type": "string"
           },
           "category": {
@@ -16020,6 +16053,12 @@
           },
           "database_config": {
             "type": "boolean"
+          },
+          "config_fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateConfigField"
+            }
           },
           "secret_fields": {
             "type": "array",
@@ -16100,6 +16139,12 @@
           },
           "database_user": {
             "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "use_model_token": {
             "type": "boolean"

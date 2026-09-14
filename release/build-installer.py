@@ -43,7 +43,7 @@ def source_fingerprint():
     h = hashlib.sha256()
     for name in ('LICENSE', 'NOTICE'):
         h.update((name + '\0' + host.digest(ROOT / name)).encode())
-    for folder in ('web', 'packages/ui', 'installer', 'scripts', 'deploy', 'release/notices'):
+    for folder in ('web', 'packages/ui', 'templates', 'installer', 'scripts', 'deploy', 'release/notices'):
         base = ROOT / folder
         if not base.is_dir(): continue
         for directory, folders, files in os.walk(base):
@@ -169,7 +169,7 @@ def main():
     if not args.use_existing_dist:
         # The snapshot prevents source edits halfway through Vite compilation.
         source = stage / 'source'
-        for folder in ('web', 'packages/ui'):
+        for folder in ('web', 'packages/ui', 'templates'):
             if (ROOT / folder).exists():
                 shutil.copytree(ROOT / folder, source / folder,
                     ignore=shutil.ignore_patterns('node_modules', 'dist', '.git', '.env*', '.tanstack', '__pycache__'))
@@ -199,6 +199,10 @@ def main():
         if source.is_file():
             target = dashboard / 'third-party-licenses/hakopod-ui' / name
             target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(source, target)
+    for name in ('LICENSE', 'LICENSE-Dokploy', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
+        target = dashboard / 'third-party-licenses/hakopod-templates' / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / 'templates' / name, target)
     count = package_runtime(dashboard / 'dist/server', dashboard)
     kit = stage / f'hakopod_{args.version}_installer'; kit.mkdir()
     for folder in ('installer', 'deploy'):

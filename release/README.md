@@ -121,3 +121,8 @@ Infrastructure > Setup links to the release asset and shows the systemd setting.
 See [helper installation](../docs/readiness.md#helper-installation). The helper
 remains opt-in and digest-pinned; releases do not silently change an installation's
 configured image or running application pods.
+
+The public template submodule must be initialized (`git submodule update --init templates`).
+Both builders snapshot its content; publication verifies every file against the
+parent's pinned commit, including ignored additions. Catalog and upstream icon
+license notices are packaged alongside binaries and dashboard assets.

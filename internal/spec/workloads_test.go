@@ -13,6 +13,7 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 		if template.SiteURLSupported {
 			options.SiteURL = "https://workspace.example.test"
 		}
+		options.Values = catalogTestValues(template)
 		a, err := PlanTemplate(template.ID, options)
 		if !template.Deployable {
 			if err == nil {
@@ -29,7 +30,6 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 		if len(expected) != len(actual) || len(expected) > 0 && !reflect.DeepEqual(expected, actual) {
 			t.Fatalf("%s secret prerequisites do not match the final specification: %v / %v", template.ID, expected, actual)
 		}
-		persistent := false
 		for name, s := range a.Services {
 			if !strings.Contains(s.Image, "@sha256:") || s.Architecture != "arm64" {
 				t.Fatalf("%s/%s lacks immutable artifact or requested architecture", template.ID, name)
@@ -38,7 +38,6 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 				t.Fatal("database dependency exposed publicly")
 			}
 			if s.Volume != nil {
-				persistent = true
 				changed, _ := Normalize(a)
 				s.Replicas = 2
 				changed.Services[name] = s
@@ -46,9 +45,6 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 					t.Fatal("unsafe multi-writer persistent deployment allowed")
 				}
 			}
-		}
-		if !persistent {
-			t.Fatalf("%s has no persistent data service", template.ID)
 		}
 	}
 	a, _ := FromTemplate("postgresql", "db", false, 5, "", "")

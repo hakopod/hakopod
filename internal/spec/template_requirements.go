@@ -25,41 +25,12 @@ type TemplateSecretField struct {
 var databaseIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 func TemplateSecretFields(id string) []TemplateSecretField {
-	password := TemplateSecretField{"database-password", "Database password. Use at least 16 characters. Initialization values do not rotate a password in an existing database.", "password", true, false}
-	token := func(name, description string) TemplateSecretField {
-		return TemplateSecretField{name, description + " Keep this stable and include it in protected backups.", "token", true, false}
-	}
-	switch id {
-	case "postgresql", "valkey", "redis", "clickhouse":
-		return []TemplateSecretField{password}
-	case "mysql":
-		return []TemplateSecretField{password, {"database-root-password", "Separate MySQL root password, at least 16 characters. Do not use the application password.", "password", true, false}}
-	case "cockroachdb":
-		return []TemplateSecretField{
-			{"database-ca", "PEM CA certificate. Keep the CA private key outside this application.", "certificate", false, false},
-			{"database-node-cert", "PEM certificate for the node principal, signed by the CA, with server/client use and main and localhost DNS names.", "certificate", false, false},
-			{"database-node-key", "Unencrypted PEM private key matching the node certificate. SQL clients still need their own client certificates.", "private-key", false, false},
+	for _, t := range Templates() {
+		if t.ID == id {
+			return t.SecretFields
 		}
-	case "metabase":
-		return []TemplateSecretField{password, token("credential-encryption-key", "Encrypts saved database connection credentials.")}
-	case "infisical":
-		return []TemplateSecretField{
-			password,
-			{"redis-password", "Private Redis password, at least 16 characters.", "password", true, false},
-			{"encryption-key", "Exactly 32 hexadecimal characters for this standard, non-FIPS image. Losing it makes stored secrets unreadable.", "hex32", true, false},
-			{"auth-secret", "32 random bytes encoded as standard Base64 for authentication signing.", "base64-32", true, false},
-			{"database-url", "PostgreSQL URL for hakopod at db:5432/app. Generate it after saving database-password to encode the matching password safely.", "postgres-url", true, false},
-			{"redis-url", "Redis URL for redis:6379. Generate it after saving redis-password to encode the matching password safely.", "redis-url", true, false},
-		}
-	case "open-webui":
-		return []TemplateSecretField{{"provider-key", "API key from the selected provider. This must authorize the chosen model; generated random text will not work.", "provider-key", false, false}, token("session-secret", "Signs sessions and protects persistent authentication material.")}
-	case "flowise":
-		return []TemplateSecretField{token("credential-encryption-key", "Encrypts saved model and tool credentials."), token("session-secret", "Signs browser sessions."), token("token-hash-secret", "Protects token hashes."), token("token-refresh-secret", "Signs refresh tokens."), token("token-signing-secret", "Signs access tokens.")}
-	case "vllm":
-		return []TemplateSecretField{token("inference-api-key", "Clients must supply this key when calling the inference API."), {"model-token", "Hugging Face read token with access to the selected private or gated model. Accept the model's terms upstream first.", "provider-key", false, true}}
-	default:
-		return []TemplateSecretField{}
 	}
+	return []TemplateSecretField{}
 }
 
 func TemplateSecretFieldByName(id, name string) (TemplateSecretField, bool) {
@@ -81,10 +52,13 @@ func ValidateTemplateSecret(id, name, value string) error {
 		return fmt.Errorf("%s must be nonempty and at most 64 KiB without NUL", name)
 	}
 	switch field.Format {
-	case "password", "token", "provider-key":
+	case "password", "token", "token64", "provider-key":
 		minimum := 16
 		if field.Format == "token" {
 			minimum = 32
+		}
+		if field.Format == "token64" {
+			minimum = 64
 		}
 		if field.Format == "provider-key" {
 			minimum = 1
@@ -202,21 +176,4 @@ func ValidateTemplateSecretSet(id string, required []string, values map[string]s
 		}
 	}
 	return nil
-}
-
-var templateSources = map[string][]string{
-	"postgresql":  {"https://hub.docker.com/_/postgres"},
-	"valkey":      {"https://valkey.io/topics/security/", "https://valkey.io/topics/persistence/"},
-	"redis":       {"https://redis.io/docs/latest/operate/oss_and_stack/management/security/", "https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/"},
-	"mysql":       {"https://hub.docker.com/_/mysql"},
-	"cockroachdb": {"https://www.cockroachlabs.com/docs/stable/start-a-local-cluster-in-docker-linux", "https://www.cockroachlabs.com/docs/stable/create-security-certificates-openssl"},
-	"clickhouse":  {"https://github.com/ClickHouse/ClickHouse/blob/master/docker/server/README.md"},
-	"metabase":    {"https://www.metabase.com/docs/latest/installation-and-operation/running-metabase-on-docker", "https://www.metabase.com/docs/latest/databases/encrypting-details-at-rest"},
-	"infisical":   {"https://infisical.com/docs/self-hosting/configuration/envars"},
-	"open-webui":  {"https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/env.py", "https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/config.py"},
-	"flowise":     {"https://github.com/FlowiseAI/Flowise/blob/flowise%403.1.4/docker/.env.example"},
-	"uptime-kuma": {"https://github.com/louislam/uptime-kuma#how-to-install"},
-	"gitea":       {"https://docs.gitea.com/installation/install-with-docker-rootless", "https://docs.gitea.com/administration/config-cheat-sheet"},
-	"vllm":        {"https://docs.vllm.ai/en/stable/deployment/docker/", "https://docs.vllm.ai/en/stable/configuration/env_vars/"},
-	"xem":         {"https://github.com/mailxem/devops/blob/main/docs/kubernetes.md"},
 }

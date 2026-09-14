@@ -83,6 +83,37 @@ def validate_public_ui():
         raise ValueError('Restored public UI source differs from the tagged consumer bundle')
 
 
+def validate_public_templates():
+    source = ROOT / 'templates'
+    tracked = subprocess.check_output(['git', 'ls-tree', 'HEAD', 'templates'], cwd=ROOT, text=True).split()
+    if len(tracked) != 4 or tracked[0] != '160000' or tracked[1] != 'commit':
+        raise ValueError('Public templates must be a pinned Git submodule')
+    actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
+    if actual != tracked[2]:
+        raise ValueError('Public templates checkout differs from its pinned commit')
+    # Compare all files, including ignored additions that could be embedded/compiled.
+    listing = subprocess.check_output(['git', 'ls-tree', '-rz', '--full-tree', 'HEAD'], cwd=source)
+    expected = {}
+    for record in listing.split(b'\0'):
+        if not record: continue
+        header, name = record.split(b'\t', 1)
+        mode, kind, oid = header.decode().split()
+        if kind != 'blob' or mode not in ('100644', '100755'):
+            raise ValueError('Unsupported file type in public template catalog')
+        expected[name.decode()] = oid
+    algorithm = subprocess.check_output(['git', 'rev-parse', '--show-object-format'], cwd=source, text=True).strip()
+    files = {}
+    for path in source.rglob('*'):
+        relative = path.relative_to(source)
+        if '.git' in relative.parts: continue
+        if path.is_symlink(): raise ValueError('Template catalog contains a symlink')
+        if not path.is_file(): continue
+        data = path.read_bytes()
+        files[relative.as_posix()] = hashlib.new(algorithm, b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+    if files != expected:
+        raise ValueError('Public template source differs from its pinned commit')
+
+
 def validate_sources(version, go, installer):
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(['git', 'status', '--porcelain', '--ignore-submodules=all'], cwd=ROOT, text=True).strip()
@@ -93,6 +124,7 @@ def validate_sources(version, go, installer):
             or installer.get('dashboard_source') != 'snapshot build; installed dependency closure'):
         raise ValueError('Publication requires both builders and the current tree to be clean at this exact revision and version')
     validate_public_ui()
+    validate_public_templates()
     # These scopes differ: Go snapshots include cmd/internal/API and dependency
     # locks; installer snapshots include dashboard/UI, scripts and deployment inputs.
     if (go.get('source_fingerprint_sha256') != builder_module('build.py').fingerprint()[0]

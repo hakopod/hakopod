@@ -36,8 +36,8 @@ def output(args):
 
 def fingerprint():
     files=set()
-    for folder in ('cmd','internal','api'):
-        files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
+    for folder in ('cmd','internal','api','templates'):
+        files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '.git' not in p.parts and '__pycache__' not in p.parts and p.suffix != '.pyc')
     files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml','LICENSE','NOTICE'))
     digest=hashlib.sha256()
     manifest={}
@@ -125,6 +125,9 @@ def main():
             run(build_command(command, directory/command, version),env=env,cwd=source)
         for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,directory/filename)
         shutil.copytree(notices/'go',directory/'third-party-licenses')
+        template_notices=directory/'third-party-licenses'/'hakopod-templates'
+        template_notices.mkdir()
+        for filename in ('LICENSE','LICENSE-Dokploy','NOTICE','THIRD_PARTY_NOTICES.md'):shutil.copyfile(source/'templates'/filename,template_notices/filename)
         if system=='linux':
             (directory/'api').mkdir()
             shutil.copyfile(source/'api/openapi.json',directory/'api/openapi.json')

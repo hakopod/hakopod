@@ -140,7 +140,9 @@ ordinary builds independent of submodule hosting. The license issuer and
 commercial cloud toolkit are separate private submodules, excluded from public
 release artifacts. Submodule URLs resolve to sibling repositories in the Hakopod
 GitHub organization.
-Public contributors should restore the UI bundle, without recursively fetching
+The shared [template catalog](https://github.com/hakopod/templates) is a public
+submodule at `templates/`. Initialize it with `git submodule update --init templates`
+before building. Public contributors should restore the UI bundle without recursively fetching
 private repositories. See [submodule development](docs/submodules.md).
 
 The [logs and terminals guide](docs/observability.md) explains SQL-style filters,

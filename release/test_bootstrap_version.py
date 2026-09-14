@@ -130,13 +130,13 @@ class BootstrapVersionTests(unittest.TestCase):
         # compilation and dependency traversal are outside this regression.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for folder in ('installer', 'deploy', 'scripts', 'web/dist/server', 'release-input'):
+            for folder in ('installer', 'deploy', 'scripts', 'web/dist/server', 'release-input', 'templates'):
                 (root / folder).mkdir(parents=True, exist_ok=True)
             old = bootstrap.render(TEMPLATE, '0.1.0-alpha.2')
             (root / 'scripts/installer.sh').write_text(old)
             (root / 'installer/pins.json').write_bytes((ROOT / 'installer/pins.json').read_bytes())
             for name in ('LICENSE', 'NOTICE', 'scripts/install.sh', 'installer/serve.mjs',
-                         'web/THIRD_PARTY_NOTICES.md', 'web/dist/server/server.js'):
+                         'web/THIRD_PARTY_NOTICES.md', 'web/dist/server/server.js', 'templates/LICENSE', 'templates/LICENSE-Dokploy', 'templates/NOTICE', 'templates/THIRD_PARTY_NOTICES.md'):
                 (root / name).write_text('')
             inputs = root / 'release-input'
             for arch in ('amd64', 'arm64'):
