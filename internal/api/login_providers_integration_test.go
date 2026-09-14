@@ -105,3 +105,27 @@ func TestCloudLoginSettingsNeverCustomerConfigurable(t *testing.T) {
 		t.Fatal("operator cloud provider blocked")
 	}
 }
+
+func TestProviderCallbackRechecksLicenseAndConfiguration(t *testing.T) {
+	base := signupPolicyProvider(t)
+	for _, change := range []string{"license", "configuration"} {
+		t.Run(change, func(t *testing.T) {
+			h := newAuthHarness(t, func(c *api.AuthConfig) {
+				configurePolicyProviders(c, base)
+				c.DeploymentMode = cluster.DeploymentSelfHosted
+			})
+			owner := h.owner()
+			want := 402
+			if change == "configuration" {
+				want = 401
+			}
+			policyOAuthFlow(h, "github", nil, func() {
+				if change == "license" {
+					h.call("DELETE", "/license", owner, map[string]any{"expected_revision": 1}, 200)
+				} else {
+					h.call("PUT", "/installation/login-providers/github", owner, map[string]any{"enabled": true, "client_id": "changed-client", "client_secret": "changed-secret", "issuer_url": "", "expected_revision": 0}, 200)
+				}
+			}, want)
+		})
+	}
+}
