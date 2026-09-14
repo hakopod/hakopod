@@ -3,6 +3,9 @@
 .dark {
   --background: #000;
 }
+html[data-edition='cloud']:not(.light) {
+  --background: #0f0004;
+}
 :root,
 .dark,
 .light {

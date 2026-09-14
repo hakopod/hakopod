@@ -382,32 +382,47 @@ export function AuthScreen({
                             Sign in with a passkey
                           </Button>
                         )}
-                        {status.data?.providers
-                          .filter((provider) =>
-                            ['github', 'google', 'gitlab', 'oidc'].includes(provider),
-                          )
-                          .map((provider) => (
-                            <Button variant="outline" className="full-width" asChild key={provider}>
-                              <a
-                                href={`/api/v1/auth/oauth/${provider}/start${register || inviteToken ? `?${new URLSearchParams({ intent: 'register', ...(inviteToken ? { invite_token: inviteToken } : {}) })}` : ''}`}
-                                onClick={rememberReturn}
-                              >
-                                {provider === 'oidc' ? (
-                                  <Icon name="shield" size={17} />
-                                ) : (
-                                  <ServiceIcon name={provider} size={17} />
-                                )}
-                                Continue with{' '}
-                                {provider === 'github'
+                        <div className="hako-auth-providers">
+                          {['google', 'github', 'gitlab', 'oidc']
+                            .filter((provider) => status.data?.providers.includes(provider))
+                            .map((provider) => {
+                              const label =
+                                provider === 'github'
                                   ? 'GitHub'
                                   : provider === 'gitlab'
                                     ? 'GitLab'
                                     : provider === 'oidc'
                                       ? 'company SSO'
-                                      : 'Google'}
-                              </a>
-                            </Button>
-                          ))}
+                                      : 'Google'
+                              return (
+                                <Button variant="outline" asChild key={provider}>
+                                  <a
+                                    data-provider={provider}
+                                    href={`/api/v1/auth/oauth/${provider}/start${register || inviteToken ? `?${new URLSearchParams({ intent: 'register', ...(inviteToken ? { invite_token: inviteToken } : {}) })}` : ''}`}
+                                    onClick={rememberReturn}
+                                    aria-label={`Continue with ${label}`}
+                                  >
+                                    {provider === 'oidc' ? (
+                                      <Icon name="shield" size={20} />
+                                    ) : provider === 'google' || provider === 'gitlab' ? (
+                                      <img
+                                        className="auth-provider-logo"
+                                        src={`/icons/${provider}-color.svg`}
+                                        alt=""
+                                        width={20}
+                                        height={20}
+                                      />
+                                    ) : (
+                                      <ServiceIcon name={provider} size={20} />
+                                    )}
+                                    {provider === 'google' || provider === 'oidc'
+                                      ? `Continue with ${label}`
+                                      : label}
+                                  </a>
+                                </Button>
+                              )
+                            })}
+                        </div>
                         <div className="hako-auth-divider">
                           <span>Or use your email</span>
                         </div>

@@ -1,3 +1,5 @@
+@reference '../styles.css';
+
 .hako-auth-workspace-choice {
   display: grid;
   gap: 12px;
@@ -59,4 +61,39 @@
   font-size: 14px;
   line-height: 1.6;
   color: var(--muted-fg);
+}
+
+/* A full-width Google action leads the compact provider grid. */
+.hako-auth-providers {
+  @apply grid grid-cols-2 gap-3;
+}
+.hako-auth-providers .button {
+  @apply min-w-0 w-full;
+}
+.hako-auth-providers [data-provider='google'],
+.hako-auth-providers [data-provider='oidc'],
+.hako-auth-providers .button:only-child,
+.hako-auth-providers:has([data-provider='google']):not(:has([data-provider='gitlab']))
+  [data-provider='github'],
+.hako-auth-providers:has([data-provider='google']):not(:has([data-provider='github']))
+  [data-provider='gitlab'] {
+  @apply col-span-2;
+}
+.hako-auth-providers .button[data-provider='google'] {
+  background: var(--navigation-active);
+  color: var(--destructive-fg);
+  border-color: transparent;
+}
+.hako-auth-providers .button[data-provider='google']:hover {
+  background: color-mix(in srgb, var(--navigation-active) 90%, white);
+}
+.hako-auth-providers [data-provider='google'] .auth-provider-logo {
+  filter: brightness(0);
+}
+.hako-auth-providers .button:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
+.auth-provider-logo {
+  @apply shrink-0 object-contain;
 }

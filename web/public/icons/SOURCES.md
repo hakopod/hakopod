@@ -18,3 +18,11 @@ These unmodified project logos identify the corresponding applications. Their up
 - openbao: https://raw.githubusercontent.com/openbao/openbao/f7fecfd63a92abe70a3762d1c1cc7def525ef342/ui/public/favicon.svg (MPL-2.0; see LICENSE.openbao.txt)
 
 The secret-provider UI uses the unmodified Vault and Infisical SVGs as CSS masks in the dashboard foreground color for contrast in both themes. Their geometry is unchanged. OpenBao retains its upstream colors. Vault and OpenBao are separate marks beside the combined provider name, not a new combined logo. Infisical's MIT notice is in LICENSE.infisical.txt. These marks identify integrations and do not imply endorsement.
+
+## Authentication provider color marks
+
+- Google: https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg
+- GitLab: https://gitlab.com/gitlab-com/gitlab-artwork/-/raw/master/logo/logo.svg
+
+Retrieved 2026-09-15. Provider trademarks remain owned by their respective owners.
+The Google auth button renders its mark in black with a CSS filter; the source geometry is unchanged.
