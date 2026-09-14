@@ -2,6 +2,7 @@ import type { ProviderInput, SecretProvider } from '../lib/secret-providers'
 import { providerBinding, providerNames, scopeSummary } from '../lib/secret-providers'
 import { FormSection } from './form-page'
 import { Note } from './shared'
+import { SecretProviderIcon } from './secret-provider-icon'
 
 // Accept public configuration only, so credential values cannot enter the review.
 export function SecretProviderReview({
@@ -50,7 +51,16 @@ export function SecretProviderReview({
           {rows.map(([label, value]) => (
             <div key={label} className="grid gap-1 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-3">
               <dt className="muted-text text-sm">{label}</dt>
-              <dd className="m-0 min-w-0 break-all text-sm">{value}</dd>
+              <dd className="m-0 min-w-0 break-all text-sm">
+                {label === 'Provider' ? (
+                  <span className="inline-flex items-center gap-2">
+                    <SecretProviderIcon kind={configuration.kind} />
+                    <span>{value}</span>
+                  </span>
+                ) : (
+                  value
+                )}
+              </dd>
             </div>
           ))}
         </dl>

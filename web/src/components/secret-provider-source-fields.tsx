@@ -36,6 +36,7 @@ export function SecretProviderSourceFields({
           Provider
           <SelectField
             label="Provider"
+            className="secret-provider-select"
             value={configuration.kind}
             disabled={readonly}
             onValueChange={(value) =>
