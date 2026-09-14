@@ -1447,6 +1447,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/git/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listGitConnections"];
+        put?: never;
+        post: operations["createGitConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/git/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getGitConnection"];
+        put: operations["updateGitConnection"];
+        post?: never;
+        delete: operations["deleteGitConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/git/{connection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["namedGitWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/github-app/{app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gitHubAppWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/login-providers/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInstallationLoginProvider"];
+        put: operations["putInstallationLoginProvider"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/smtp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInstallationSMTP"];
+        put: operations["putInstallationSMTP"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/smtp/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testInstallationSMTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/license": {
         parameters: {
             query?: never;
@@ -2302,59 +2414,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/installation/login-providers/{provider}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read installation sign-in provider settings without secrets */
-        get: operations["getInstallationLoginProvider"];
-        /** Update a licensed installation sign-in provider */
-        put: operations["putInstallationLoginProvider"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/installation/smtp": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read effective installation email settings without password */
-        get: operations["getInstallationSMTP"];
-        /** Update installation email settings */
-        put: operations["putInstallationSMTP"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/installation/smtp/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Send a test email to the current administrator using saved settings */
-        post: operations["testInstallationSMTP"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2969,6 +3028,7 @@ export interface components {
             expires_at: string;
         };
         BuildConfig: {
+            connection_id: string;
             /** @enum {string} */
             architecture: "amd64" | "arm64";
             id: string;
@@ -2998,6 +3058,7 @@ export interface components {
             provider: "github" | "gitlab";
         };
         BuildInput: {
+            connection_id?: string;
             /** @enum {string} */
             architecture?: "amd64" | "arm64";
             application_id?: string;
@@ -3158,6 +3219,107 @@ export interface components {
             /** Format: date-time */
             verified_at?: string;
             target: string;
+        };
+        GitConnectionCapabilities: {
+            read_source: boolean;
+            builds: boolean;
+        };
+        GitConnection: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
+            /** @enum {string} */
+            auth_kind: "token" | "github_app" | "gitlab_oauth";
+            revision: number;
+            enabled: boolean;
+            account: string;
+            subject_id: number;
+            github_app_id: number;
+            installation_id: number;
+            legacy: boolean;
+            configured: boolean;
+            token_configured: boolean;
+            private_repositories: boolean;
+            webhook_path: string;
+            status: string;
+            capabilities: components["schemas"]["GitConnectionCapabilities"];
+            /** Format: date-time */
+            updated_at: string;
+            webhook_secret?: string;
+        };
+        GitConnectionInput: {
+            name: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab";
+            /** @enum {string} */
+            auth_kind: "token" | "github_app";
+            expected_revision?: number;
+            enabled?: boolean;
+            token?: string;
+            webhook_secret?: string;
+            github_app_id?: string;
+            github_private_key?: string;
+            github_installation_id?: number;
+        };
+        InstallationLoginProvider: {
+            /** @enum {string} */
+            provider: "github" | "google" | "gitlab" | "oidc";
+            enabled: boolean;
+            client_id: string;
+            secret_configured: boolean;
+            issuer_url: string;
+            revision: number;
+            callback_url: string;
+            /** @enum {string} */
+            source?: "operator" | "settings";
+            encryption_ready: boolean;
+        };
+        InstallationLoginProviderInput: {
+            enabled: boolean;
+            client_id: string;
+            client_secret?: string;
+            clear_secret?: boolean;
+            issuer_url: string;
+            expected_revision: number;
+        };
+        InstallationSMTP: {
+            revision: number;
+            /** @enum {string} */
+            source: "operator" | "settings";
+            enabled: boolean;
+            host: string;
+            port: number;
+            /** @enum {string} */
+            security: "starttls" | "tls";
+            /** @description At most 256 UTF-8 bytes, without control characters. */
+            username: string;
+            /** @description At most 254 UTF-8 bytes. */
+            from_email: string;
+            password_set: boolean;
+            encryption_ready: boolean;
+        };
+        InstallationSMTPInput: {
+            expected_revision: number;
+            enabled: boolean;
+            host: string;
+            port: number;
+            /** @enum {string} */
+            security: "starttls" | "tls";
+            /** @description At most 256 UTF-8 bytes, without control characters. */
+            username: string;
+            /** @description At most 254 UTF-8 bytes. */
+            from_email: string;
+            /** @description At most 4096 UTF-8 bytes, without NUL or line breaks. Omit to keep the stored password. */
+            password?: string;
+            clear_password?: boolean;
+        };
+        InstallationSMTPTestInput: {
+            expected_revision: number;
+        };
+        InstallationSMTPTestResult: {
+            sent: boolean;
+            recipient: string;
         };
         LicenseFeature: {
             /** @description Feature identifier. Paid capabilities include multi_team, oauth_login and enterprise_sso; availability comes from enabled. */
@@ -3556,6 +3718,7 @@ export interface components {
         };
         SourceBinding: {
             application_id: string;
+            connection_id: string;
             /** @enum {string} */
             provider: "github" | "gitlab";
             repository: string;
@@ -3600,6 +3763,7 @@ export interface components {
         SourceImportInput: {
             project: string;
             environment: string;
+            connection_id?: string;
             /** @enum {string} */
             provider: "github" | "gitlab";
             repository: string;
@@ -3817,60 +3981,6 @@ export interface components {
             name: string;
             /** Format: date-time */
             updated_at: string;
-        };
-        InstallationLoginProvider: {
-            /** @enum {string} */
-            provider: "github" | "google" | "gitlab" | "oidc";
-            enabled: boolean;
-            client_id: string;
-            secret_configured: boolean;
-            issuer_url: string;
-            revision: number;
-            callback_url: string;
-            /** @enum {string} */
-            source?: "operator" | "settings";
-            encryption_ready: boolean;
-        };
-        InstallationLoginProviderInput: {
-            enabled: boolean;
-            client_id: string;
-            client_secret?: string;
-            clear_secret?: boolean;
-            issuer_url: string;
-            expected_revision: number;
-        };
-        InstallationSMTP: {
-            revision: number;
-            /** @enum {string} */
-            source: "operator" | "settings";
-            enabled: boolean;
-            host: string;
-            port: number;
-            /** @enum {string} */
-            security: "starttls" | "tls";
-            username: string;
-            from_email: string;
-            password_set: boolean;
-            encryption_ready: boolean;
-        };
-        InstallationSMTPInput: {
-            expected_revision: number;
-            enabled: boolean;
-            host: string;
-            port: number;
-            /** @enum {string} */
-            security: "starttls" | "tls";
-            username: string;
-            from_email: string;
-            password?: string;
-            clear_password?: boolean;
-        };
-        InstallationSMTPTestInput: {
-            expected_revision: number;
-        };
-        InstallationSMTPTestResult: {
-            sent: boolean;
-            recipient: string;
         };
     };
     responses: never;
@@ -7574,6 +7684,464 @@ export interface operations {
             };
         };
     };
+    listGitConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["GitConnection"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnection"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnection"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateGitConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnection"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteGitConnection: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    namedGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accepted?: boolean;
+                        ignored?: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    gitHubAppWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accepted?: boolean;
+                        ignored?: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getInstallationLoginProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google" | "gitlab" | "oidc";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationLoginProvider"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putInstallationLoginProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google" | "gitlab" | "oidc";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationLoginProviderInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationLoginProvider"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTP"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationSMTPInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTP"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationSMTPTestInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTPTestResult"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getLicenseStatus: {
         parameters: {
             query?: never;
@@ -9209,6 +9777,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    connection_id?: string;
                     /**
                      * @default github
                      * @enum {string}
@@ -10116,178 +10685,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
-            };
-        };
-    };
-    getInstallationLoginProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider: "github" | "google" | "gitlab" | "oidc";
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallationLoginProvider"];
-                };
-            };
-            /** @description Self-hosted installation administrator access required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    putInstallationLoginProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider: "github" | "google" | "gitlab" | "oidc";
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InstallationLoginProviderInput"];
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallationLoginProvider"];
-                };
-            };
-            /** @description Self-hosted installation administrator access required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Configuration revision changed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    getInstallationSMTP: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallationSMTP"];
-                };
-            };
-            /** @description Self-hosted installation administrator access required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    putInstallationSMTP: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InstallationSMTPInput"];
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallationSMTP"];
-                };
-            };
-            /** @description Self-hosted installation administrator access required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Configuration revision changed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    testInstallationSMTP: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InstallationSMTPTestInput"];
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallationSMTPTestResult"];
-                };
-            };
-            /** @description Self-hosted installation administrator access required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Configuration revision changed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
