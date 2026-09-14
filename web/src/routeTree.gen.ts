@@ -55,6 +55,7 @@ import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.
 import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
+import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
@@ -62,6 +63,8 @@ import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
 import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/backups.schedules.$scheduleId.edit'
 import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
+import { Route as SettingsGitConnectionsConnectionIdRouteImport } from './routes/settings.git.connections.$connectionId'
+import { Route as SettingsGitConnectionsNewRouteImport } from './routes/settings.git.connections.new'
 import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -303,6 +306,11 @@ const NetworksNetworkNameConnectRoute =
     path: '/connect',
     getParentRoute: () => NetworksNetworkNameRoute,
   } as any)
+const SettingsGitCallbackRoute = SettingsGitCallbackRouteImport.update({
+  id: '/git/callback',
+  path: '/git/callback',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsIntegrationsProviderRoute =
   SettingsIntegrationsProviderRouteImport.update({
     id: '/$provider',
@@ -344,6 +352,18 @@ const InfrastructureNodesNodeTerminalRoute =
     id: '/nodes/$node/terminal',
     path: '/nodes/$node/terminal',
     getParentRoute: () => InfrastructureRoute,
+  } as any)
+const SettingsGitConnectionsConnectionIdRoute =
+  SettingsGitConnectionsConnectionIdRouteImport.update({
+    id: '/git/connections/$connectionId',
+    path: '/git/connections/$connectionId',
+    getParentRoute: () => SettingsRoute,
+  } as any)
+const SettingsGitConnectionsNewRoute =
+  SettingsGitConnectionsNewRouteImport.update({
+    id: '/git/connections/new',
+    path: '/git/connections/new',
+    getParentRoute: () => SettingsRoute,
   } as any)
 const SettingsSecretProvidersProviderNameEditRoute =
   SettingsSecretProvidersProviderNameEditRouteImport.update({
@@ -399,6 +419,7 @@ export interface FileRoutesByFullPath {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -406,6 +427,8 @@ export interface FileRoutesByFullPath {
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
+  '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesByTo {
@@ -455,6 +478,7 @@ export interface FileRoutesByTo {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -462,6 +486,8 @@ export interface FileRoutesByTo {
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
+  '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesById {
@@ -512,6 +538,7 @@ export interface FileRoutesById {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -519,6 +546,8 @@ export interface FileRoutesById {
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
+  '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRouteTypes {
@@ -570,6 +599,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
@@ -577,6 +607,8 @@ export interface FileRouteTypes {
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/git/connections/$connectionId'
+    | '/settings/git/connections/new'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -626,6 +658,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
@@ -633,6 +666,8 @@ export interface FileRouteTypes {
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/git/connections/$connectionId'
+    | '/settings/git/connections/new'
     | '/settings/secret-providers/$providerName/edit'
   id:
     | '__root__'
@@ -682,6 +717,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
@@ -689,6 +725,8 @@ export interface FileRouteTypes {
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/settings/git/connections/$connectionId'
+    | '/settings/git/connections/new'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesById: FileRoutesById
 }
@@ -1041,6 +1079,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NetworksNetworkNameConnectRouteImport
       parentRoute: typeof NetworksNetworkNameRoute
     }
+    '/settings/git/callback': {
+      id: '/settings/git/callback'
+      path: '/git/callback'
+      fullPath: '/settings/git/callback'
+      preLoaderRoute: typeof SettingsGitCallbackRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/integrations/$provider': {
       id: '/settings/integrations/$provider'
       path: '/$provider'
@@ -1089,6 +1134,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/infrastructure/nodes/$node/terminal'
       preLoaderRoute: typeof InfrastructureNodesNodeTerminalRouteImport
       parentRoute: typeof InfrastructureRoute
+    }
+    '/settings/git/connections/$connectionId': {
+      id: '/settings/git/connections/$connectionId'
+      path: '/git/connections/$connectionId'
+      fullPath: '/settings/git/connections/$connectionId'
+      preLoaderRoute: typeof SettingsGitConnectionsConnectionIdRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/git/connections/new': {
+      id: '/settings/git/connections/new'
+      path: '/git/connections/new'
+      fullPath: '/settings/git/connections/new'
+      preLoaderRoute: typeof SettingsGitConnectionsNewRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/secret-providers/$providerName/edit': {
       id: '/settings/secret-providers/$providerName/edit'
@@ -1236,7 +1295,10 @@ interface SettingsRouteChildren {
   SettingsProfileRoute: typeof SettingsProfileRoute
   SettingsSecretProvidersRoute: typeof SettingsSecretProvidersRouteWithChildren
   SettingsSmtpRoute: typeof SettingsSmtpRoute
+  SettingsGitCallbackRoute: typeof SettingsGitCallbackRoute
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
+  SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
+  SettingsGitConnectionsNewRoute: typeof SettingsGitConnectionsNewRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -1245,7 +1307,11 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsProfileRoute: SettingsProfileRoute,
   SettingsSecretProvidersRoute: SettingsSecretProvidersRouteWithChildren,
   SettingsSmtpRoute: SettingsSmtpRoute,
+  SettingsGitCallbackRoute: SettingsGitCallbackRoute,
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
+  SettingsGitConnectionsConnectionIdRoute:
+    SettingsGitConnectionsConnectionIdRoute,
+  SettingsGitConnectionsNewRoute: SettingsGitConnectionsNewRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

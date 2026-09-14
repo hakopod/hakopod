@@ -1,6 +1,4 @@
-import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
-import { GitHubSettings } from '../components/application-source'
-import { FormPage } from '../components/form-page'
+import { createFileRoute, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { Empty } from '../components/shared'
 import { useScope } from '../lib/scope'
 export const Route = createFileRoute('/settings/integrations')({ component: Integrations })
@@ -16,14 +14,5 @@ function Integrations() {
       />
     )
   if (path !== '/settings/integrations') return <Outlet />
-  return (
-    <FormPage
-      title="Git integrations"
-      description="Connect the provider accounts used by repository sources and builds."
-      breadcrumbs={[{ label: 'Account & access', to: '/settings' }, { label: 'Integrations' }]}
-      icon="branch"
-    >
-      <GitHubSettings />
-    </FormPage>
-  )
+  return <Navigate to="/settings" search={{ tab: 'github' }} replace />
 }

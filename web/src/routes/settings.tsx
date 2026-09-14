@@ -26,12 +26,14 @@ import {
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
 )
-const GitHubSettings = lazy(() =>
-  import('../components/application-source').then((m) => ({ default: m.GitHubSettings })),
-)
 const AccountSettings = lazy(() => import('../components/account-settings'))
 const LicenseSettings = lazy(() => import('../components/license-settings'))
 const TeamSettings = lazy(() => import('../components/team-settings'))
+const GitConnectionsPanel = lazy(() =>
+  import('../components/git-connections').then((module) => ({
+    default: module.GitConnectionsPanel,
+  })),
+)
 const LoginProviderSettings = lazy(() =>
   import('../components/login-provider-settings').then((module) => ({
     default: module.LoginProviderSettingsPanel,
@@ -116,7 +118,7 @@ function Administration() {
           {scope.identity.admin && (
             <>
               {tab === 'users' && <InstallationUsers />}
-              {tab === 'github' && <GitHubSettings />}
+              {tab === 'github' && <GitConnectionsPanel />}
               {tab === 'secret-providers' && <SecretProviders />}
               {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}
