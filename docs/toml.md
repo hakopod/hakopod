@@ -10,6 +10,30 @@ Required application fields are `name` and a `services` map. Each service needs
 an `image`. The minimum public service also needs `port` and `public=true`.
 One-service applications use exactly the same format as groups.
 
+Set replicas independently inside each service table:
+
+```toml
+schema_version = 1
+name = "shop"
+
+[services.web]
+image = "nginx:stable-alpine"
+port = 80
+public = true
+replicas = 2
+
+[services.api]
+image = "ghcr.io/your-team/api:1.0"
+port = 8080
+replicas = 3
+```
+
+Replica counts are not application-wide. Omitted counts default to one. Services
+with persistent volumes and deployment jobs require one replica. Autoscaling,
+when configured on a service, uses its own minimum and maximum replica counts.
+Use `suspended = true` or the dashboard's Stop action to stop a service; keep its
+`replicas` value so Resume can restore it.
+
 An optional application-level `domains` table maps custom hostnames to public
 HTTP services:
 
@@ -35,7 +59,8 @@ DNS routing and certificate coverage are separate checks.
 | `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS |
 | `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
 | `size` | small; centrally defined resources below |
-| `replicas` | 1; allowed 1–20; no scale-to-zero |
+| `replicas` | Per-service saved count; defaults to 1, allowed 1–20 (Cloud: at most 3) |
+| `suspended` | false; true stops the service and pauses autoscaling while retaining its saved replicas |
 | `healthcheck` | Optional HTTP readiness path; a port otherwise gets TCP readiness |
 | `readiness` | Optional declared-listener check: tcp, smtp or smtp_starttls; combined with healthcheck when present |
 | `update_strategy` | rolling by default; recreate stops the old revision before starting its replacement |

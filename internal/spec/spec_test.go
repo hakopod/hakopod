@@ -148,3 +148,30 @@ func TestExplicitEmptyServiceTableForRemoval(t *testing.T) {
 		t.Fatal("final-service removal missing from review diff")
 	}
 }
+
+func TestTOMLPerServiceReplicas(t *testing.T) {
+	app, err := Parse([]byte(minimum + `replicas = 2
+[services.api]
+image = "python:3.13-alpine"
+replicas = 3
+suspended = true
+[services.worker]
+image = "python:3.13-alpine"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Services["web"].Replicas != 2 || app.Services["api"].Replicas != 3 || !app.Services["api"].Suspended || app.Services["worker"].Replicas != 1 {
+		t.Fatalf("per-service counts were not retained: %+v", app.Services)
+	}
+	next := app.Services["web"]
+	next.Replicas = 4
+	app.Services["web"] = next
+	normalized, err := Normalize(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Services["web"].Replicas != 4 || normalized.Services["api"].Replicas != 3 || normalized.Services["worker"].Replicas != 1 {
+		t.Fatal("changing one service affected another service's replica count")
+	}
+}
