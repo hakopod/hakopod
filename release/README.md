@@ -105,7 +105,8 @@ the digest-pinned multi-platform reference; `probe-image.json` binds the native
 smoke records and child digests to the release source revision. Both are included
 in release checksums and file attestations. The index has its own OCI provenance
 attestation. Final GitHub release publication depends on the image job and
-successful anonymous pulls for both platforms.
+successful anonymous pulls for both platforms. Each pull uses the verified child digest
+to avoid classic Docker image stores trying to bind one index digest to two architectures.
 
 Before the first release completes, an organization package administrator must
 set the new **hakopod-probe** container package visibility to **Public** in GitHub

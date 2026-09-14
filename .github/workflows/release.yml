@@ -184,10 +184,13 @@ jobs:
           anonymous_config=$(mktemp -d)
           trap 'rm -rf "$anonymous_config"' EXIT
           DOCKER_CONFIG="$anonymous_config" docker manifest inspect "$image@$digest" > .local/probe/probe-index.json
-          for arch in amd64 arm64; do
-            DOCKER_CONFIG="$anonymous_config" docker pull --platform "linux/$arch" "$image@$digest"
-          done
           python3 release/probe-metadata.py .local/probe "$RELEASE_TAG" "$GITHUB_SHA"
+          for arch in amd64 arm64; do
+            # Classic Docker stores cannot bind one index digest to two local architectures.
+            # Metadata verification above binds each child to the tested release index.
+            platform_image=$(cat ".local/probe/probe-$arch.txt")
+            DOCKER_CONFIG="$anonymous_config" docker pull --platform "linux/$arch" "$platform_image"
+          done
       - name: Attest the probe index
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3.0.0
         with:
