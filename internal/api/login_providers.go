@@ -144,7 +144,7 @@ func (s *Server) putLoginProvider(w http.ResponseWriter, r *http.Request) {
 		IssuerURL        string `json:"issuer_url"`
 		ExpectedRevision *int64 `json:"expected_revision"`
 	}
-	if !decode(w, r, &in) {
+	if !decodeLoginProvider(w, r, &in) {
 		return
 	}
 	if in.ExpectedRevision == nil || (in.ClearSecret && in.ClientSecret != "") {
@@ -304,4 +304,15 @@ func (boundedOIDCTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		response.Body = oidcResponseBody{io.LimitReader(response.Body, 1<<20), response.Body}
 	}
 	return response, err
+}
+
+func decodeLoginProvider(w http.ResponseWriter, r *http.Request, value any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(value) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		problem(w, 400, "invalid_request", "Login settings require one valid JSON object with known fields")
+		return false
+	}
+	return true
 }
