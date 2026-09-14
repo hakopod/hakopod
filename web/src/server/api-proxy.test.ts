@@ -288,3 +288,48 @@ test('OIDC start is public while forwarding only its temporary OAuth state', asy
   assert.match(response.headers.get('Set-Cookie') || '', /HttpOnly.*SameSite=Lax/)
   assert.equal(response.headers.get('Set-Cookie')?.includes('Domain='), false)
 })
+
+test('named Git CRUD and source OAuth completion require the initiating browser authority', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    assert.equal(new Headers(init.headers).has('Cookie'), false)
+    return Response.json({ id: 'fixture' })
+  })
+  for (const path of [
+    'git/connections',
+    'git/connections/fixture',
+    'git/connections/fixture/authorize',
+    'git/connections/fixture/oauth/complete',
+    'git/oauth/complete',
+  ]) {
+    assert.equal(
+      (await proxy({ request: request(path, 'POST', {}, false), params: { _splat: path } })).status,
+      401,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, 'POST', {}, true, 'https://untrusted.invalid'),
+          params: { _splat: path },
+        })
+      ).status,
+      403,
+    )
+    assert.equal(
+      (await proxy({ request: request(path, 'POST', {}), params: { _splat: path } })).status,
+      200,
+    )
+  }
+  for (const path of [
+    'git/connections/fixture/credentials',
+    'git/oauth/complete/extra',
+    'git/connections/fixture/authorize/extra',
+  ])
+    assert.equal(
+      (await proxy({ request: request(path, 'POST', {}), params: { _splat: path } })).status,
+      404,
+    )
+  assert.equal(calls, 5)
+})
