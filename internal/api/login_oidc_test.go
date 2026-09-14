@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,5 +90,19 @@ func TestOIDCSettingsRejectUnsafeIssuerAndIncompleteCredentials(t *testing.T) {
 	}
 	if validateLoginProvider(loginProvider{Provider: "oidc", Enabled: true, ClientID: "client", ClientSecret: "secret", IssuerURL: "https://identity.example/realms/team"}) != nil {
 		t.Fatal("valid issuer rejected")
+	}
+}
+
+func TestMalformedLoginSettingsDoNotEchoSecrets(t *testing.T) {
+	secret := "never-echo-this-client-secret"
+	for _, body := range []string{`{"client_secret":123,"` + secret + `":true}`, `{"` + secret + `":true}`} {
+		request := httptest.NewRequest("PUT", "/installation/login-providers/github", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		var value struct {
+			ClientSecret string `json:"client_secret"`
+		}
+		if decodeLoginProvider(response, request, &value) || response.Code != 400 || strings.Contains(response.Body.String(), secret) {
+			t.Fatal("invalid credential payload was accepted or reflected")
+		}
 	}
 }
