@@ -235,7 +235,7 @@ export function AuthScreen({
             data-edition-brand={Boolean(dashboardEdition.brandSuffix) || undefined}
             aria-label={`${brandLabel} home`}
           >
-            <Brand />
+            <Brand icon={dashboardEdition.cloud} />
           </a>
           {toggleTheme && (
             <Button
