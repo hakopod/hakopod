@@ -1,3 +1,4 @@
+import { editionFetch } from './client-edition'
 import createClient from 'openapi-fetch'
 import type { paths } from './api.generated'
 import { APIError } from './api'
@@ -6,6 +7,7 @@ import { APIError } from './api'
 // This typed client is shared by queries; the browser never handles a bearer token.
 export const client = createClient<paths>({
   baseUrl: '/api',
+  fetch: editionFetch,
   credentials: 'same-origin',
   cache: 'no-store',
 })

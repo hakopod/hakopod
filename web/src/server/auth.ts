@@ -1,3 +1,4 @@
+import { editionSignOutCookies } from './dashboard-edition.ts'
 import {
   apiURL,
   boundedBody,
@@ -307,8 +308,8 @@ export async function signOut(request: Request) {
       revoked = false
     }
   }
-  return Response.json(
-    { authenticated: false, server_session_revoked: revoked },
-    { headers: { ...privateHeaders, 'Set-Cookie': sessionCookie(request, '', true) } },
-  )
+  const headers = new Headers(privateHeaders)
+  headers.append('Set-Cookie', sessionCookie(request, '', true))
+  for (const cookie of editionSignOutCookies(request)) headers.append('Set-Cookie', cookie)
+  return Response.json({ authenticated: false, server_session_revoked: revoked }, { headers })
 }

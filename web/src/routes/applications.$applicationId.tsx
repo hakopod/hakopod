@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
@@ -73,6 +74,7 @@ function ApplicationRoute() {
 function ApplicationDetail() {
   const { applicationId } = Route.useParams()
   const { service: selectedService, tab: selectedTab, pod: selectedPod } = Route.useSearch()
+  const features = useEditionFeatures()
   const scope = useScope()
   const navigate = useNavigate()
   const [tab, setTab] = useState(selectedTab || 'services')
@@ -198,7 +200,14 @@ function ApplicationDetail() {
         canInspectNodes={scope.can('admin')}
         canInspectLogs={scope.can('logs:read')}
       />
-      <Tabs.Root value={tab} onValueChange={setTab}>
+      <Tabs.Root
+        value={
+          (tab === 'terminal' && !features.terminal) || (tab === 'source' && !features.git)
+            ? 'services'
+            : tab
+        }
+        onValueChange={setTab}
+      >
         <Tabs.List
           ref={navigationRoot}
           className="tab-list application-tabs"
@@ -214,12 +223,17 @@ function ApplicationDetail() {
             ['configuration', 'settings', 'Configuration'],
             ['source', 'branch', 'Source'],
             ['secrets', 'lock', 'Secrets'],
-          ].map(([value, icon, label]) => (
-            <Tabs.Trigger className="tab-trigger" key={value} value={value}>
-              <Icon name={icon} size={15} />
-              {label}
-            </Tabs.Trigger>
-          ))}
+          ]
+            .filter(
+              ([value]) =>
+                (value !== 'terminal' || features.terminal) && (value !== 'source' || features.git),
+            )
+            .map(([value, icon, label]) => (
+              <Tabs.Trigger className="tab-trigger" key={value} value={value}>
+                <Icon name={icon} size={15} />
+                {label}
+              </Tabs.Trigger>
+            ))}
         </Tabs.List>
         <Tabs.Content value="topology" className="tab-content">
           <Suspense fallback={<Loading />}>

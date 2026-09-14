@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { lazy, Suspense, useEffect, useState } from 'react'
@@ -26,6 +27,7 @@ export function ApplicationList({
   project: Project
   environment: string
 }) {
+  const features = useEditionFeatures()
   const workspace = useScope()
   const scope = {
     ...workspace,
@@ -110,12 +112,14 @@ export function ApplicationList({
           action={
             scope.can('deployments:write') && (
               <div className="toolbar-actions">
-                <Button asChild>
-                  <Link to="/builds" aria-label="Deploy from source" title="Deploy from source">
-                    <Icon name="branch" size={14} />
-                    <span className="app-action-label">From source</span>
-                  </Link>
-                </Button>
+                {features.git && (
+                  <Button asChild>
+                    <Link to="/builds" aria-label="Deploy from source" title="Deploy from source">
+                      <Icon name="branch" size={14} />
+                      <span className="app-action-label">From source</span>
+                    </Link>
+                  </Button>
+                )}
                 <Button
                   variant="primary"
                   aria-label="New application"

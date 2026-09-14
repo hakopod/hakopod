@@ -1,3 +1,4 @@
+import { editionHeaders, editionRequestError, editionResponseHeaders } from './dashboard-edition.ts'
 import { authenticatedResponse, oauth } from './auth.ts'
 import { forwardNamedGitWebhook } from './git-webhook.ts'
 import { forwardGitHubWebhook } from './github-webhook.ts'
@@ -80,7 +81,9 @@ export async function proxy({
         { error: { code: 'unauthorized', message: 'Sign in to your account to continue.' } },
         { status: 401, headers: privateHeaders },
       )
-    const headers = new Headers({ Accept: 'application/json' })
+    const editionError = editionRequestError(request, path)
+    if (editionError) return editionError
+    const headers = new Headers({ Accept: 'application/json', ...editionHeaders(request) })
     if (token) headers.set('Authorization', `Bearer ${token}`)
     const idempotency = request.headers.get('idempotency-key')
     if (idempotency) headers.set('Idempotency-Key', idempotency)
@@ -116,6 +119,7 @@ export async function proxy({
       status: response.status,
       headers: {
         ...privateHeaders,
+        ...editionResponseHeaders(request),
         'Content-Type': response.headers.get('content-type') || 'application/json',
         ...(streaming ? { 'X-Accel-Buffering': 'no' } : {}),
         ...(path === 'audit/export' && response.headers.has('X-Hakopod-Next-Cursor')

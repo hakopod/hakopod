@@ -225,6 +225,10 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			failure(w, err)
 			return
 		}
+		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationPath(r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) {
+			failure(w, store.ErrForbidden)
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
 }

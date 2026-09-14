@@ -1,3 +1,4 @@
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
@@ -100,13 +101,14 @@ function Administration() {
         ]
       : []),
   ]
-  const tab = sections.some((section) => section.id === selected) ? selected : 'account'
+  const visibleSections = sections.filter((section) => dashboardEdition.settings(section.id))
+  const tab = visibleSections.some((section) => section.id === selected) ? selected : 'account'
   const navigationRoot = useActiveSection(tab)
   return (
     <div className="settings-page" ref={navigationRoot}>
       <PageHeader title="Workspace settings" />
       <SettingsLayout
-        sections={sections}
+        sections={visibleSections}
         active={tab}
         onSectionChange={(next) => void navigate({ search: { tab: next } })}
       >

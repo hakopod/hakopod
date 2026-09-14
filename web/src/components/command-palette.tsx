@@ -1,3 +1,5 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -32,6 +34,7 @@ export default function CommandPalette({
   environment: string
   onPreferences?: () => void
 }) {
+  const features = useEditionFeatures()
   const [search, setSearch] = useState('')
   const [active, setActive] = useState(0)
   const { identity } = useScope()
@@ -82,13 +85,15 @@ export default function CommandPalette({
       ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
       { to: '/settings', icon: 'settings', label: 'Settings' },
       { to: '/alarms', icon: 'alert', label: 'Alarms' },
-    ].map(({ to, icon, label }) => ({
-      id: to,
-      label,
-      icon,
-      group: 'Navigate',
-      action: () => void navigate({ to }),
-    })),
+    ]
+      .filter(({ to }) => dashboardEdition.navigation(to) && (features.git || to !== '/builds'))
+      .map(({ to, icon, label }) => ({
+        id: to,
+        label,
+        icon,
+        group: 'Navigate',
+        action: () => void navigate({ to }),
+      })),
     ...(onPreferences
       ? [
           {

@@ -1,3 +1,4 @@
+import { editionFetch } from '../lib/client-edition'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
@@ -39,7 +40,7 @@ export function AuditHistory() {
     try {
       const query = new URLSearchParams({ identity_id: identity })
       if (exportBefore) query.set('before', String(exportBefore))
-      const response = await fetch('/api/audit/export?' + query, {
+      const response = await editionFetch('/api/audit/export?' + query, {
         credentials: 'same-origin',
         cache: 'no-store',
       })
