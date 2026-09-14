@@ -93,8 +93,115 @@ jobs:
     with:
       version: ${{ needs.build.outputs.version }}
       artifact_name: release-assets
-  publish:
+  probe:
     needs: [build, smoke, hosts]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and smoke the native probe image
+        env:
+          ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          docker buildx build --file Dockerfile.probe --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --provenance=false --load --tag hakopod-probe:release .
+          python3 release/smoke-probe.py --image hakopod-probe:release --arch "$ARCH" --output "probe-smoke-$ARCH.json"
+      - name: Push the tested platform image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-probe"
+          # Run-scoped tags avoid overwriting a published version during partial retries.
+          tag="$image:run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker tag hakopod-probe:release "$tag"
+          docker push "$tag"
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}')
+          printf '%s@%s\n' "$image" "$digest" > "probe-$ARCH.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: probe-${{ matrix.arch }}
+          path: |
+            probe-${{ matrix.arch }}.txt
+            probe-smoke-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 7
+  probe-index:
+    needs: [build, probe]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.index.outputs.image }}
+      digest: ${{ steps.index.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: probe-*
+          merge-multiple: true
+          path: .local/probe
+      - name: Publish versioned multi-platform probe
+        id: index
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-probe"
+          docker buildx imagetools create --tag "$image:$RELEASE_TAG" \
+            "$(cat .local/probe/probe-amd64.txt)" "$(cat .local/probe/probe-arm64.txt)"
+          digest=$(docker buildx imagetools inspect "$image:$RELEASE_TAG" --format '{{.Manifest.Digest}}')
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          printf '%s@%s\n' "$image" "$digest" > .local/probe/probe-image.txt
+          # Fail publication if self-hosted nodes cannot pull without credentials.
+          # GHCR package settings must be Public before the first release completes.
+          anonymous_config=$(mktemp -d)
+          trap 'rm -rf "$anonymous_config"' EXIT
+          DOCKER_CONFIG="$anonymous_config" docker manifest inspect "$image@$digest" > .local/probe/probe-index.json
+          for arch in amd64 arm64; do
+            DOCKER_CONFIG="$anonymous_config" docker pull --platform "linux/$arch" "$image@$digest"
+          done
+          python3 release/probe-metadata.py .local/probe "$RELEASE_TAG" "$GITHUB_SHA"
+      - name: Attest the probe index
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3.0.0
+        with:
+          subject-name: ${{ steps.index.outputs.image }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: probe-release
+          path: |
+            .local/probe/probe-image.txt
+            .local/probe/probe-image.json
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [build, smoke, hosts, probe-index]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -123,6 +230,10 @@ jobs:
         with:
           pattern: installer-host-*
           path: .local/host-evidence
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: probe-release
+          path: .local/publication/${{ needs.build.outputs.version }}
       - name: Retain native host acceptance evidence
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}

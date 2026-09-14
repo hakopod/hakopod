@@ -117,8 +117,11 @@ state is recorded separately in `/etc/hakopod/modules.json`.
 ## SMTP listener readiness
 
 Infrastructure > Setup shows the configured helper and its installation steps.
-SMTP and combined HTTP/listener checks require a digest-pinned image built from
-`Dockerfile.probe`. See [listener readiness](readiness.md#helper-installation).
+SMTP and combined HTTP/listener checks require the digest-pinned probe helper.
+New releases publish a prebuilt amd64/arm64 image from `Dockerfile.probe`; copy
+its complete reference from the release's `probe-image.txt`. Older releases
+without that asset require a local build. See the verification and systemd steps
+in [listener readiness](readiness.md#helper-installation).
 The image remains an operator setting, not an application-controlled executable.
 Review the deployment again after restarting the API with the configured image.
 
