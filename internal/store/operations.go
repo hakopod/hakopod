@@ -120,6 +120,16 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	}
 	a, err := scanApp(tx.QueryRow(ctx, "SELECT "+appCols+" FROM applications WHERE project=$1 AND environment=$2 AND name=$3 FOR UPDATE", project, env, next.Name))
 	if errors.Is(err, pgx.ErrNoRows) {
+		var retired bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM retired_resource_names WHERE kind='application' AND project=$1 AND environment=$2 AND name=$3)`, project, env, next.Name).Scan(&retired); err != nil {
+			return Deployment{}, err
+		}
+		if retired {
+			return Deployment{}, fmt.Errorf("%w: this application name was deleted; choose a new name", ErrConflict)
+		}
+		if len(next.Services) == 0 {
+			return Deployment{}, errors.New("a new application needs at least one service")
+		}
 		// Per-application locks do not serialize different new names. Lock the
 		// environment row before counting so the hard listing limit cannot be
 		// exceeded by concurrent first deployments of separate applications.
@@ -355,6 +365,9 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 	appStatus := status
 	if status == "succeeded" {
 		appStatus = "healthy"
+		if len(d.Spec.Services) == 0 {
+			appStatus = "empty"
+		}
 	}
 	if _, err = tx.Exec(ctx, "UPDATE applications SET observed=CASE WHEN revision=$3 THEN $2 ELSE observed END,status=CASE WHEN revision=$3 THEN $4 ELSE 'queued' END,updated_at=now() WHERE id=$1", d.ApplicationID, JSON(result), d.Revision, appStatus); err != nil {
 		return err

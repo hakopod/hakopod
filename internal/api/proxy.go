@@ -8,6 +8,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 	"net/http"
+	"slices"
 	"time"
 )
 
@@ -39,6 +40,15 @@ func (s *Server) getProxy(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "proxy_unavailable", err.Error())
 		return
 	}
+	mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+	if modeErr != nil {
+		problem(w, 503, "unavailable", "installation mode is unavailable")
+		return
+	}
+	if mode == cluster.DeploymentManagedCloud {
+		delete(observed.Settings, "max-content-length")
+		observed.Fields = slices.DeleteFunc(observed.Fields, func(f cluster.ProxyField) bool { return f.Name == "max-content-length" })
+	}
 	row, err := s.Store.RuntimeResource(r.Context(), "proxy", "", "", "haproxy")
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)
@@ -50,6 +60,9 @@ func (s *Server) getProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	change.KeyID = ""
+	if mode == cluster.DeploymentManagedCloud {
+		delete(change.Settings, "max-content-length")
+	}
 	drift := false
 	if change.Status == "applied" {
 		for k, v := range change.Settings {
@@ -88,6 +101,13 @@ func (s *Server) setProxy(w http.ResponseWriter, r *http.Request) {
 	} else if !errors.Is(previousErr, pgx.ErrNoRows) {
 		failure(w, previousErr)
 		return
+	}
+	if _, ok := in.Settings["max-content-length"]; ok {
+		mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+		if err != nil || mode != cluster.DeploymentSelfHosted {
+			problem(w, 403, "forbidden", "Request body admission is managed by the Cloud operator")
+			return
+		}
 	}
 	if err := cluster.ValidateProxySettings(in.Settings); err != nil {
 		problem(w, 400, "invalid_proxy", err.Error())
@@ -147,6 +167,12 @@ func (s *Server) reconcileProxy(parent context.Context) {
 	if err == nil && !principal.IsAdmin() {
 		err = store.ErrForbidden
 	}
+	if _, ok := change.Settings["max-content-length"]; ok {
+		mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
+		if modeErr != nil || mode != cluster.DeploymentSelfHosted {
+			err = store.ErrForbidden
+		}
+	}
 	if err == nil {
 		change.AppliedVersion, err = s.Cluster.ApplyProxyConfiguration(ctx, change.Settings, change.ResourceVersion, row.Revision)
 	}
@@ -162,7 +188,7 @@ func (s *Server) reconcileProxy(parent context.Context) {
 		if len(change.Error) > 512 {
 			change.Error = "HAProxy configuration could not be applied"
 		}
-		if change.Attempts < 5 && !errors.Is(err, store.ErrForbidden) && !errors.Is(err, store.ErrUnauthorized) && !errors.Is(err, cluster.ErrProxyConflict) {
+		if change.Attempts < 5 && !errors.Is(err, store.ErrForbidden) && !errors.Is(err, store.ErrUnauthorized) && !errors.Is(err, cluster.ErrProxyConflict) && !errors.Is(err, cluster.ErrProxySelfHosted) {
 			change.Status = "queued"
 			change.RetryAt = time.Now().Add(time.Duration(5*(1<<change.Attempts)) * time.Second)
 		}

@@ -177,7 +177,7 @@ func waitForProxyDirectives(ctx context.Context, path string, check func([]strin
 func generatedProxyDirectives(ctx context.Context, path string) ([]string, error) {
 	// Read only the reviewed directives, without dumping routes, certificates or log targets.
 	args := []string{"--kubeconfig", path, "--context", "k3d-hakopod-dev", "-n", "haproxy-controller", "exec", "deployment/hakopod-ingress-kubernetes-ingress", "--", "sed", "-n"}
-	for _, name := range []string{"hard-stop-after", "timeout", "option", "no option", "balance", "default-server"} {
+	for _, name := range []string{"hard-stop-after", "timeout", "option", "no option", "balance", "default-server", "http-request deny"} {
 		args = append(args, "-e", "/^[[:space:]]*"+name+" /p")
 	}
 	args = append(args, "/etc/haproxy/haproxy.cfg")

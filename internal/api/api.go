@@ -82,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerSecretProviderRoutes(routes)
 	s.registerTemplateRoutes(routes)
 	s.registerProxyRoutes(routes)
+	s.registerDeletionRoutes(routes)
 	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
@@ -319,6 +320,15 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_scope", "project/environment use 1–40 lowercase letters, digits and hyphens")
 		return
 	}
+	retired, err := s.Store.RetiredName(r.Context(), "project", in.Name, "", in.Name)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if retired {
+		problem(w, 409, "retired_project", "This project ID was deleted. Choose a new ID.")
+		return
+	}
 	displayName, description, err := projectMetadata(in.Name, in.DisplayName, in.Description)
 	if err != nil {
 		problem(w, 400, "invalid_project", err.Error())
@@ -458,6 +468,21 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)
 		return next, nil, false
+	}
+	if existing == nil {
+		retired, e := s.Store.RetiredName(r.Context(), "application", in.Project, in.Environment, next.Name)
+		if e != nil {
+			failure(w, e)
+			return next, nil, false
+		}
+		if retired {
+			problem(w, 409, "retired_application", "This application name was deleted. Choose a new name.")
+			return next, nil, false
+		}
+		if len(next.Services) == 0 {
+			problem(w, 400, "invalid_spec", "A new application needs at least one service.")
+			return next, nil, false
+		}
 	}
 	if in.Service != "" {
 		svc, ok := next.Services[in.Service]

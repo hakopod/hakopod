@@ -139,11 +139,14 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.cleanup(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
+	if err := c.waitRetiredPods(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
 	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	observed, err := c.Observe(ctx, target)
-	if err == nil && observed.Status != "healthy" {
+	if err == nil && observed.Status != "healthy" && !(len(target.Spec.Services) == 0 && observed.Status == "empty") {
 		err = fmt.Errorf("release did not remain healthy at final observation")
 	}
 	return observed, err
@@ -768,4 +771,49 @@ func (c *Client) cleanup(ctx context.Context, t Target) error {
 		}
 	}
 	return nil
+}
+
+// Foreground deletion is asynchronous. A removal release only succeeds once
+// the old pods have actually stopped, while leaving persistent storage intact.
+func (c *Client) waitRetiredPods(ctx context.Context, t Target) error {
+	selector := managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID)
+	if names := spec.Names(t.Spec); len(names) > 0 {
+		selector += "," + serviceKey + " notin (" + strings.Join(names, ",") + ")"
+	}
+	for {
+		if err := beforeStep(ctx, t); err != nil {
+			return err
+		}
+		pods, err := c.kube.CoreV1().Pods(Namespace(t.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 401})
+		if err != nil {
+			return err
+		}
+		if pods.Continue != "" || len(pods.Items) > 400 {
+			return fmt.Errorf("too many owned pods for bounded removal checks")
+		}
+		remaining := false
+		deployments, err := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 101})
+		if err != nil {
+			return err
+		}
+		if deployments.Continue != "" || len(deployments.Items) > 100 {
+			return fmt.Errorf("too many owned deployments for bounded removal checks")
+		}
+		for _, deployment := range deployments.Items {
+			if _, exists := t.Spec.Services[deployment.Name]; !exists {
+				remaining = true
+			}
+		}
+		for _, pod := range pods.Items {
+			if _, exists := t.Spec.Services[pod.Labels[serviceKey]]; !exists {
+				remaining = true
+			}
+		}
+		if !remaining {
+			return nil
+		}
+		if err := sleepContext(ctx, 500*time.Millisecond); err != nil {
+			return fmt.Errorf("waiting for removed service pods to stop: %w", err)
+		}
+	}
 }

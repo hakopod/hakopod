@@ -57,8 +57,8 @@ func (c *Client) ValidateCloudSpec(app spec.Application) error {
 	if !c.CloudMode() {
 		return nil
 	}
-	if len(app.Services) < 1 || len(app.Services) > 10 {
-		return fmt.Errorf("%w: use 1–10 services per application", ErrCloudLimit)
+	if len(app.Services) > 10 {
+		return fmt.Errorf("%w: use at most 10 services per application", ErrCloudLimit)
 	}
 	for name, service := range app.Services {
 		if service.GPU != nil || service.AWSIdentity != "" {
