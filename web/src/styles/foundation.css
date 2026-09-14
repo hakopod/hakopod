@@ -1,3 +1,8 @@
+/* Keep the dashboard canvas black in dark mode; Paper retains its own palette. */
+:root:not(.light),
+.dark {
+  --background: #000;
+}
 :root,
 .dark,
 .light {

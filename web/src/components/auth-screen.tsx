@@ -1,3 +1,5 @@
+import { Brand, brandLabel } from './brand'
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { ServiceIcon } from './service-icon'
 import '../styles/account-access.css'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -227,19 +229,13 @@ export function AuthScreen({
     <div className={`hako-auth-page ${signedIn ? 'hako-auth-embedded' : ''}`}>
       {!signedIn && (
         <header className="hako-auth-header">
-          <a href="/" className="hako-wordmark" aria-label="Hakopod home">
-            <img
-              className="hako-wordmark-dark"
-              src="/brand/hakopod-horizontal-paper.svg"
-              alt=""
-              width="140"
-            />
-            <img
-              className="hako-wordmark-light"
-              src="/brand/hakopod-horizontal-ink.svg"
-              alt=""
-              width="140"
-            />
+          <a
+            href="/"
+            className="hako-wordmark"
+            data-edition-brand={Boolean(dashboardEdition.brandSuffix) || undefined}
+            aria-label={`${brandLabel} home`}
+          >
+            <Brand />
           </a>
           {toggleTheme && (
             <Button

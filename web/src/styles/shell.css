@@ -89,6 +89,13 @@
 .hako-wordmark[data-edition-brand] {
   @apply flex w-auto shrink-0 basis-auto items-center gap-2;
 }
+.hako-product-mark {
+  @apply flex items-center gap-2 whitespace-nowrap text-lg font-medium leading-6;
+  color: var(--foreground);
+}
+.hako-wordmark img.hako-brand-symbol {
+  @apply size-6 shrink-0;
+}
 .hako-edition-brand {
   @apply flex items-center gap-1.5 whitespace-nowrap text-sm font-medium;
   color: var(--foreground);
@@ -102,7 +109,7 @@
   .hako-wordmark[data-edition-brand] {
     @apply flex-col items-start gap-0;
   }
-  .hako-wordmark[data-edition-brand] img {
+  .hako-wordmark[data-edition-brand] img:not(.hako-brand-symbol) {
     width: 96px;
     height: 20px;
   }
