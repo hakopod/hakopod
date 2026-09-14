@@ -1,3 +1,4 @@
+import { GitConnectionField } from '../components/git-connection-field'
 import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
@@ -17,6 +18,7 @@ function ImportRepository() {
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [provider, setProvider] = useState<'github' | 'gitlab'>('github')
+  const [connectionId, setConnectionId] = useState('')
   const [repository, setRepository] = useState('')
   const [branch, setBranch] = useState('main')
   const [path, setPath] = useState('hakopod.toml')
@@ -86,6 +88,7 @@ function ImportRepository() {
                     project: scope.project,
                     environment: scope.environment,
                     provider,
+                    connection_id: connectionId,
                     repository,
                     branch,
                     path,
@@ -114,6 +117,10 @@ function ImportRepository() {
                       {plan.source.provider === 'gitlab' ? 'GitLab' : 'GitHub'} /{' '}
                       {plan.source.repository}
                     </dd>
+                  </div>
+                  <div>
+                    <dt>Connection</dt>
+                    <dd>{plan.source.connection_id || `${plan.source.provider}-default`}</dd>
                   </div>
                   <div>
                     <dt>Branch / configuration path</dt>
@@ -158,13 +165,21 @@ function ImportRepository() {
                       key={value}
                       aria-pressed={provider === value}
                       variant={provider === value ? 'primary' : 'secondary'}
-                      onClick={() => setProvider(value)}
+                      onClick={() => {
+                        setProvider(value)
+                        setConnectionId('')
+                      }}
                     >
                       <ServiceIcon name={value} size={18} />
                       {value === 'github' ? 'GitHub' : 'GitLab'}
                     </Button>
                   ))}
                 </div>
+                <GitConnectionField
+                  provider={provider}
+                  value={connectionId}
+                  onValueChange={setConnectionId}
+                />
                 <label>
                   Repository
                   <Input
