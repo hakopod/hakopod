@@ -92,6 +92,74 @@ func TestVirtualNetworkAPIReviewScopeAndConnections(t *testing.T) {
 	call("PUT", "/virtual-networks/commerce", admin, base, 409)
 }
 
+func TestScopedMachineNetworkManagement(t *testing.T) {
+	db, _ := database(t)
+	ctx := context.Background()
+	admin, err := db.Bootstrap(ctx, "network-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := db.Authenticate(ctx, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := store.KeyInput{Name: "cloud-node", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)}
+	_, oldKey, err := db.CreateKey(ctx, owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Permissions = append(in.Permissions, "networks:write")
+	_, networkKey, err := db.CreateKey(ctx, owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := db.Authenticate(ctx, networkKey)
+	if err != nil || principal.IsAdmin() || principal.CanManageProject("demo") {
+		t.Fatal("network key gained administrator access", err)
+	}
+	in.Application = "orders"
+	if _, _, err := db.CreateKey(ctx, owner, in); err == nil {
+		t.Fatal("application-scoped network key accepted")
+	}
+	handler := (&api.Server{Store: db}).Handler()
+	call := func(method, path, token string, body any, expected int) []byte {
+		t.Helper()
+		r := httptest.NewRequest(method, "/api/v1"+path, strings.NewReader(string(store.JSON(body))))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != expected {
+			t.Fatalf("%s %s: got %d want %d: %s", method, path, w.Code, expected, w.Body.String())
+		}
+		return w.Body.Bytes()
+	}
+	body := map[string]any{"project": "demo", "environment": "development", "expected_revision": 0, "toml": "name='shared'\n[segments.data]\napplications=['orders']"}
+	call("POST", "/virtual-networks/plan", oldKey, body, 403)
+	call("POST", "/virtual-networks/plan", networkKey, body, 200)
+	created := call("POST", "/virtual-networks", networkKey, body, 201)
+	var saved struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(created, &saved); err != nil {
+		t.Fatal(err)
+	}
+	listing := call("GET", "/virtual-networks?project=demo&environment=development", networkKey, nil, 200)
+	if !strings.Contains(string(listing), `"can_manage":true`) {
+		t.Fatal("missing scoped management capability")
+	}
+	call("GET", "/virtual-networks?project=demo&environment=production", networkKey, nil, 403)
+	body["environment"] = "production"
+	call("POST", "/virtual-networks", networkKey, body, 403)
+	body["environment"] = "development"
+	body["project"] = "another"
+	call("POST", "/virtual-networks", networkKey, body, 403)
+	body["project"] = "demo"
+	body["expected_revision"] = 1
+	body["expected_id"] = saved.ID
+	call("PUT", "/virtual-networks/shared", networkKey, body, 200)
+	call("DELETE", "/virtual-networks/shared", networkKey, map[string]any{"project": "demo", "environment": "development", "expected_id": saved.ID, "expected_revision": 2, "confirmation": "shared"}, 200)
+}
+
 func TestVirtualNetworkAPIRejectsRecreatedReview(t *testing.T) {
 	db, _ := database(t)
 	ctx := context.Background()
