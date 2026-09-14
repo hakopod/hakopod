@@ -1141,16 +1141,12 @@ html[data-accent] .button-primary:hover {
   .hako-preferences .settings-nav {
     flex-direction: row;
     flex-wrap: wrap;
-    padding: 8px 16px;
-    gap: 8px;
+    @apply gap-x-4 gap-y-1 px-0 py-1;
     border-right: 0;
     border-bottom: 1px solid var(--hairline);
   }
   .hako-preferences .settings-nav .nav-group {
     display: none;
-  }
-  .hako-preferences .settings-nav button {
-    padding: 8px;
   }
   .hako-preferences .settings-content {
     padding: 24px;
