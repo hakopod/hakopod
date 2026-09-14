@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 )
 
 func TestLiveNamedNetworksAndHPA(t *testing.T) {
@@ -122,13 +124,16 @@ func TestLiveNamedNetworksAndHPA(t *testing.T) {
 		t.Fatal(err)
 	}
 	deploymentAPI := c.kube.AppsV1().Deployments(ns)
-	dep, err := deploymentAPI.Get(ctx, "web", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dep.Spec.Replicas = ptr(int32(2))
-	dep.Spec.Template.Annotations = map[string]string{"test.example/secret-reload": "preserved"}
-	if _, err := deploymentAPI.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		dep, err := deploymentAPI.Get(ctx, "web", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		dep.Spec.Replicas = ptr(int32(2))
+		dep.Spec.Template.Annotations = map[string]string{"test.example/secret-reload": "preserved"}
+		_, err = deploymentAPI.Update(ctx, dep, metav1.UpdateOptions{})
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.applyDeployment(ctx, target, "web", autoscaled); err != nil {
@@ -148,5 +153,42 @@ func TestLiveNamedNetworksAndHPA(t *testing.T) {
 	if hpa.Spec.Behavior == nil || hpa.Spec.Behavior.ScaleDown == nil || *hpa.Spec.Behavior.ScaleDown.StabilizationWindowSeconds != 300 {
 		t.Fatal("missing HPA downscale stabilization")
 	}
+	// Stop retains the service specification but removes HPA ownership and all active pods.
+	autoscaled.Suspended = true
+	target.Spec.Services["web"] = autoscaled
+	target.Revision++
+	if _, err := c.Deploy(ctx, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := deploymentAPI.Get(ctx, "web", metav1.GetOptions{})
+	if err != nil || *stopped.Spec.Replicas != 0 || stopped.Status.Replicas != 0 {
+		t.Fatal("stop did not scale to zero", err)
+	}
+	if _, err := c.kube.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "web", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatal("stopped HPA still exists", err)
+	}
+	observed, err := c.Observe(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range observed.Services {
+		if service.Name == "web" && service.Status != "stopped" {
+			t.Fatal("stopped service reported incorrectly", service)
+		}
+	}
+	autoscaled.Suspended = false
+	target.Spec.Services["web"] = autoscaled
+	target.Revision++
+	if _, err := c.Deploy(ctx, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := deploymentAPI.Get(ctx, "web", metav1.GetOptions{})
+	if err != nil || *resumed.Spec.Replicas < 1 {
+		t.Fatal("resume did not restore replicas", err)
+	}
+	if _, err := c.kube.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "web", metav1.GetOptions{}); err != nil {
+		t.Fatal("resume did not restore HPA", err)
+	}
+
 	t.Log(fmt.Sprintf("real HPA field ownership verified at %d replicas, 300-second downscale stabilization", *after.Spec.Replicas))
 }

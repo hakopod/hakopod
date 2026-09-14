@@ -13,7 +13,9 @@ type runtimeActionInput struct {
 	Replicas         *int32 `json:"replicas,omitempty"`
 }
 
-func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, restart bool) {
+func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, action string) {
+	restart := action == "restart"
+	power := action == "stop" || action == "resume"
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
 	if !ok {
 		return
@@ -26,7 +28,7 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, restart b
 		problem(w, 400, "missing_revision", "expected_revision is required")
 		return
 	}
-	if restart && in.Replicas != nil || !restart && (in.Replicas == nil || *in.Replicas < 1 || *in.Replicas > 20) {
+	if (restart || power) && in.Replicas != nil || !restart && !power && (in.Replicas == nil || *in.Replicas < 1 || *in.Replicas > 20) {
 		problem(w, 400, "invalid_request", "restart accepts no replicas; scale requires replicas between 1 and 20")
 		return
 	}
@@ -40,8 +42,8 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, restart b
 		failure(w, err)
 		return
 	}
-	if base.Status != "succeeded" || base.ResolvedSpec == nil {
-		problem(w, 409, "revision_not_ready", "restart and scale require a successful deployed revision; finish or roll back the current release first")
+	if (base.Status != "succeeded" && !(action == "stop" && base.Status == "failed")) || base.ResolvedSpec == nil {
+		problem(w, 409, "revision_not_ready", "This action requires a completed resolved deployment. Stop also supports failed resolved deployments; finish or cancel an active rollout first.")
 		return
 	}
 	next, err := spec.Normalize(base.Spec)
@@ -61,7 +63,14 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, restart b
 		return
 	}
 	artifact := resolved.Services[name]
-	if restart {
+	if svc.Job != nil {
+		problem(w, 409, "deployment_job", "Deployment jobs do not support runtime actions")
+		return
+	}
+	if power {
+		svc.Suspended = action == "stop"
+		artifact.Suspended = svc.Suspended
+	} else if restart {
 		nonce := fmt.Sprintf("%x", sha256.Sum256([]byte(who(r).ID+"\x00"+a.ID+"\x00"+name+"\x00"+idem)))
 		svc.RestartNonce = nonce
 		artifact.RestartNonce = nonce
@@ -87,5 +96,12 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, restart b
 	}
 	write(w, http.StatusAccepted, d)
 }
-func (s *Server) restartService(w http.ResponseWriter, r *http.Request) { s.runtimeAction(w, r, true) }
-func (s *Server) scaleService(w http.ResponseWriter, r *http.Request)   { s.runtimeAction(w, r, false) }
+func (s *Server) restartService(w http.ResponseWriter, r *http.Request) {
+	s.runtimeAction(w, r, "restart")
+}
+func (s *Server) scaleService(w http.ResponseWriter, r *http.Request) { s.runtimeAction(w, r, "scale") }
+
+func (s *Server) stopService(w http.ResponseWriter, r *http.Request) { s.runtimeAction(w, r, "stop") }
+func (s *Server) resumeService(w http.ResponseWriter, r *http.Request) {
+	s.runtimeAction(w, r, "resume")
+}

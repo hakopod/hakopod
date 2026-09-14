@@ -46,7 +46,7 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 			}
 			continue
 		}
-		status := ServiceStatus{Name: name, Status: "missing", Desired: svc.Replicas, Image: svc.Image}
+		status := ServiceStatus{Name: name, Status: "missing", Desired: serviceReplicas(svc), Image: svc.Image}
 		if svc.Port > 0 {
 			status.InternalAddress = fmt.Sprintf("%s:%d", name, svc.Port)
 		}
@@ -71,7 +71,11 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 				if err != nil {
 					return result, err
 				}
-				if ready {
+				if ready && svc.Suspended && status.Desired == 0 {
+					status.Status = "stopped"
+					status.Message = "Stopped by user; configuration and volumes are retained"
+					healthy++
+				} else if ready {
 					deliveryReady, message, err := c.serviceDeliveryHealthy(ctx, t, name, current)
 					if err != nil {
 						return result, err

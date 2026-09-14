@@ -47,3 +47,7 @@ for path in paths:
     if '/services/{service}/' in path:
         for operation in paths[path].values():
             operation['parameters'].append({'name':'service','in':'path','required':True,'schema':S})
+
+schemas["Service"]["properties"]["suspended"] = B
+for action in ("stop", "resume"):
+ route("/applications/{id}/services/{service}/"+action,"post",action+"Service",ref("Deployment"),obj({"expected_revision":I},["expected_revision"]),"202",idem=True)

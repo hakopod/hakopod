@@ -1,3 +1,4 @@
+import { DeleteServiceDialog } from '../components/delete-service-dialog'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { DeploymentForm } from '../components/deploy-dialog'
@@ -45,6 +46,16 @@ function ConfigureApplication() {
       <Empty
         title="Service not found"
         description="This service is absent from the current application revision."
+      />
+    )
+  if (remove)
+    return (
+      <DeleteServiceDialog
+        application={application.data}
+        service={remove}
+        onClose={() =>
+          void navigate({ to: '/applications/$applicationId', params: { applicationId } })
+        }
       />
     )
   return (

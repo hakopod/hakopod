@@ -1,4 +1,6 @@
+import { ServicePowerDialog } from '../components/service-power-dialog'
 import { useEditionFeatures } from '../lib/dashboard-edition'
+import { DeleteServiceDialog } from '../components/delete-service-dialog'
 import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useLocation, Outlet } from '@tanstack/react-router'
@@ -82,6 +84,8 @@ function ApplicationDetail() {
   useEffect(() => {
     if (selectedTab) setTab(selectedTab)
   }, [selectedTab])
+  const [powerService, setPowerService] = useState('')
+  const [deletingService, setDeletingService] = useState('')
   const [logService, setLogService] = useState('')
   const application = useQuery({
     queryKey: ['application', applicationId],
@@ -133,6 +137,20 @@ function ApplicationDetail() {
     )
   return (
     <div className="ops-page">
+      {powerService && (
+        <ServicePowerDialog
+          application={app}
+          service={powerService}
+          onClose={() => setPowerService('')}
+        />
+      )}
+      {deletingService && (
+        <DeleteServiceDialog
+          application={app}
+          service={deletingService}
+          onClose={() => setDeletingService('')}
+        />
+      )}
       <Suspense fallback={null}>
         <SampleBanner applicationId={app.id} />
       </Suspense>
@@ -318,17 +336,14 @@ function ApplicationDetail() {
                             Open endpoint
                           </MenuItem>
                         )}
+                        {scope.can('deployments:write') && !service.job && (
+                          <MenuItem onSelect={() => setPowerService(name)}>
+                            <Icon name={service.suspended ? 'play' : 'pause'} size={14} />
+                            {service.suspended ? 'Resume service' : 'Stop service'}
+                          </MenuItem>
+                        )}
                         {scope.can('deployments:write') && (
-                          <MenuItem
-                            destructive
-                            onSelect={() =>
-                              void navigate({
-                                to: '/applications/$applicationId/configure',
-                                params: { applicationId: app.id },
-                                search: { remove: name },
-                              })
-                            }
-                          >
+                          <MenuItem destructive onSelect={() => setDeletingService(name)}>
                             <Icon name="trash" size={14} />
                             Delete service
                           </MenuItem>
