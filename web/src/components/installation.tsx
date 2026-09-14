@@ -55,7 +55,12 @@ export function InstallationLogs() {
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        Last 200 journal entries.{' '}
+        {logs.data?.source === 'process'
+          ? 'Last 200 captured API entries from this process. Journal history is unavailable.'
+          : 'Last 200 journal entries.'}{' '}
+        {logs.data?.source === 'process' &&
+          logs.data.started_at &&
+          `Buffer started ${timestamp(logs.data.started_at)}; clears on API restart. `}
         {paused ? 'Automatic refresh paused.' : 'Checks every 5 seconds while visible.'}{' '}
         {logs.data && `Updated ${timestamp(logs.data.observed_at)}.`}
       </p>
@@ -65,7 +70,7 @@ export function InstallationLogs() {
       ) : (
         logs.data && (
           <pre
-            className="code-panel max-h-[32rem] overflow-auto whitespace-pre-wrap break-words p-4 text-xs"
+            className="code-panel max-h-[32rem] overflow-auto! whitespace-pre-wrap break-words p-4 text-xs"
             tabIndex={0}
             aria-label="API server log output"
           >
@@ -76,7 +81,7 @@ export function InstallationLogs() {
                       `${new Date(Number(entry.timestamp) / 1000).toISOString()} ${entry.message}`,
                   )
                   .join('\n')
-              : 'No journal entries available.'}
+              : 'No API log entries available.'}
           </pre>
         )
       )}

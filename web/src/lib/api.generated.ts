@@ -3448,6 +3448,9 @@ export interface components {
             }[];
             /** Format: date-time */
             observed_at: string;
+            source?: string;
+            /** Format: date-time */
+            started_at?: string;
         };
         InstallationLoginProvider: {
             /** @enum {string} */
