@@ -73,6 +73,8 @@ export function parentNavigation(
       label: 'Back to infrastructure',
     }
   if (parts[0] === 'settings' && parts[1]) {
+    if (parts[1] === 'git')
+      return { to: '/settings', search: { tab: 'github' }, label: 'Back to Git connections' }
     if (parts[1] === 'login-providers' || parts[1] === 'smtp')
       return { to: '/settings', search: { tab: parts[1] }, label: 'Back to settings' }
     if (parts[1] === 'secret-providers' && parts[2])
