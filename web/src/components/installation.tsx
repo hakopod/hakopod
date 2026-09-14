@@ -105,8 +105,21 @@ export function InstallationSetup() {
       <section className="flex flex-col gap-3">
         <h2>Listener readiness</h2>
         <p>
-          SMTP and combined checks need the Hakopod probe helper. Build and publish{' '}
-          <code>Dockerfile.probe</code> for your nodes, then use its verified image digest.
+          SMTP and combined checks need the Hakopod probe helper. Releases include a prebuilt image
+          for Linux amd64 and arm64; no local build is needed.
+        </p>
+        <p>
+          Open your installed version’s{' '}
+          <a
+            className="underline! underline-offset-4"
+            href="https://github.com/hakopod/hakopod/releases"
+            target="_blank"
+            rel="noreferrer"
+          >
+            release assets
+          </a>{' '}
+          and copy the complete image reference from <code>probe-image.txt</code>. Releases before
+          this asset was introduced require a local build; see the setup guide below.
         </p>
         <p>
           Current helper:{' '}
@@ -114,18 +127,22 @@ export function InstallationSetup() {
         </p>
         <p>
           Add the setting below with <code>sudo systemctl edit hakopod-api</code>, replace the
-          example with your published digest, then restart the API with{' '}
+          example with the release’s digest-pinned image reference, then restart the API with{' '}
           <code>sudo systemctl restart hakopod-api</code>.
         </p>
-        <pre className="code-panel overflow-auto p-4">
+        <pre
+          className="code-panel overflow-auto! p-4"
+          tabIndex={0}
+          aria-label="Readiness helper systemd configuration"
+        >
           {
-            '[Service]\nEnvironment="HAKOPOD_READINESS_PROBE_IMAGE=registry.example.com/hakopod/probe@sha256:YOUR_VERIFIED_DIGEST"'
+            '[Service]\nEnvironment="HAKOPOD_READINESS_PROBE_IMAGE=ghcr.io/hakopod/hakopod-probe@sha256:RELEASE_DIGEST"'
           }
         </pre>
         <p>
           Operator TOML also supports <code>server.readiness_probe_image</code>. Set{' '}
           <code>HAKOPOD_CONFIG_FILE</code> to its path. Review the deployment again after
-          configuration.
+          configuration, then redeploy affected services to use the new helper.
         </p>
         <a
           href="https://github.com/hakopod/hakopod/blob/main/docs/readiness.md"
