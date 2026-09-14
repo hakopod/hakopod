@@ -1,3 +1,35 @@
+.secret-provider-icon {
+  @apply inline-flex h-5 w-12 shrink-0 items-center justify-center gap-1;
+  color: var(--foreground);
+}
+.secret-provider-icon img {
+  @apply h-5 w-6 shrink-0 object-contain;
+}
+.secret-provider-mark {
+  @apply block h-5 shrink-0;
+  background-color: currentColor;
+  mask: var(--provider-mark) center / contain no-repeat;
+}
+.secret-provider-mark-vault {
+  @apply w-5;
+  --provider-mark: url('/icons/vault.svg');
+}
+.secret-provider-mark-infisical {
+  @apply w-8;
+  --provider-mark: url('/icons/infisical.svg');
+}
+.select-field-wrap > .secret-provider-select {
+  @apply h-auto min-h-12 py-2;
+}
+.secret-provider-select .select-field-value {
+  @apply flex items-center whitespace-normal text-left;
+}
+.hako-select-content .select-item:has(.secret-provider-icon) {
+  @apply gap-2;
+}
+.hako-select-content .select-item > span:has(.secret-provider-icon) {
+  @apply mr-0;
+}
 .mono {
   font-family: var(--font-mono);
 }
