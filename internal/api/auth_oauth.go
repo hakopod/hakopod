@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/store"
 	"golang.org/x/oauth2"
@@ -68,6 +69,10 @@ func (s *Server) authOAuthStart(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
 	config, _, settings, err := s.configuredOAuth(r.Context(), provider)
 	if err != nil {
+		if errors.Is(err, store.ErrLicenseRequired) {
+			authFailure(w, err)
+			return
+		}
 		problem(w, 409, "provider_not_configured", "this sign-in provider has not been configured by the operator")
 		return
 	}

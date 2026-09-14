@@ -79,6 +79,7 @@ func TestLoginProviderSettingsEncryptedGatedAndRevisioned(t *testing.T) {
 	in["client_secret"] = ""
 	h.call("PUT", path, owner, in, 200)
 	h.call("DELETE", "/license", owner, map[string]any{"expected_revision": 1}, 200)
+	h.call("GET", "/auth/oauth/github/start", "", nil, 402)
 	status := h.call("GET", "/auth/status", "", nil, 200)
 	if len(status["providers"].([]any)) != 0 {
 		t.Fatal("unlicensed provider advertised")
