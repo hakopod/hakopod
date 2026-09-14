@@ -16,11 +16,11 @@ func (s *Server) deliverAlarmEmails(parent context.Context) {
 	}
 	maintenance, stop := context.WithTimeout(parent, 3*time.Second)
 	_ = s.Store.PruneAlarms(maintenance)
-	_ = s.Store.RemovedAlarmResources(maintenance, "application", "", 0, nil, time.Now().UTC(), s.alarmEmailAvailable())
+	_ = s.Store.RemovedAlarmResources(maintenance, "application", "", 0, nil, time.Now().UTC(), s.alarmEmailAvailable(maintenance))
 	stop()
-	// The same explicit operator gate used for account mail also gates every
+	// The same effective delivery gate used for account mail also gates every
 	// alarm attempt. Scope email_enabled remains false until explicitly saved.
-	if !s.alarmEmailAvailable() {
+	if !s.alarmEmailAvailable(parent) {
 		return
 	}
 	fanout, stop := context.WithTimeout(parent, 3*time.Second)

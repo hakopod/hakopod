@@ -56,6 +56,7 @@ The available settings map to the same environment options used by the server:
 | `oauth.gitlab.client_id`, `client_secret_file` | `HAKOPOD_GITLAB_CLIENT_ID`, `HAKOPOD_GITLAB_CLIENT_SECRET_FILE` |
 | `oauth.google.client_id`, `client_secret_file` | `HAKOPOD_GOOGLE_CLIENT_ID`, `HAKOPOD_GOOGLE_CLIENT_SECRET_FILE` |
 | `smtp.enabled`, `address`, `from` | `HAKOPOD_SMTP_ENABLED`, `HAKOPOD_SMTP_ADDRESS`, `HAKOPOD_SMTP_FROM` |
+| `smtp.security` (`starttls` by default, or `tls`) | `HAKOPOD_SMTP_SECURITY` |
 | `smtp.username`, `password_file` | `HAKOPOD_SMTP_USERNAME`, `HAKOPOD_SMTP_PASSWORD_FILE` |
 | `backups.pg_dump_path` | `HAKOPOD_PG_DUMP_PATH` |
 | `backups.state_dir` | `HAKOPOD_BACKUP_STATE_DIR` |
