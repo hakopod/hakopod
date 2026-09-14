@@ -9,6 +9,7 @@ import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import type { APIKey } from '../lib/types'
 import { useScope } from '../lib/scope'
+import { useInstallationAccess } from '../lib/installation-settings'
 import { useActiveSection } from '../lib/use-active-section'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
@@ -31,6 +32,14 @@ const GitHubSettings = lazy(() =>
 const AccountSettings = lazy(() => import('../components/account-settings'))
 const LicenseSettings = lazy(() => import('../components/license-settings'))
 const TeamSettings = lazy(() => import('../components/team-settings'))
+const LoginProviderSettings = lazy(() =>
+  import('../components/login-provider-settings').then((module) => ({
+    default: module.LoginProviderSettingsPanel,
+  })),
+)
+const SMTPSettings = lazy(() =>
+  import('../components/smtp-settings').then((module) => ({ default: module.SMTPSettingsPanel })),
+)
 const SecretProviders = lazy(() =>
   import('../components/secret-providers').then((module) => ({ default: module.SecretProviders })),
 )
@@ -52,6 +61,8 @@ export const Route = createFileRoute('/settings')({
         'appearance',
         'license',
         'secret-providers',
+        'login-providers',
+        'smtp',
       ].includes(search.tab)
         ? search.tab
         : undefined,
@@ -63,6 +74,7 @@ function AdministrationRoute() {
 }
 function Administration() {
   const scope = useScope()
+  const installation = useInstallationAccess()
   const selected = Route.useSearch().tab || 'account'
   const navigate = Route.useNavigate()
   const sections = [
@@ -77,6 +89,12 @@ function Administration() {
           { id: 'secret-providers', label: 'Secret providers', group: 'Installation' },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
+          ...(installation.allowed
+            ? [
+                { id: 'login-providers', label: 'Sign-in providers', group: 'Installation' },
+                { id: 'smtp', label: 'Email delivery', group: 'Installation' },
+              ]
+            : []),
         ]
       : []),
   ]
@@ -102,6 +120,8 @@ function Administration() {
               {tab === 'secret-providers' && <SecretProviders />}
               {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}
+              {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
+              {installation.allowed && tab === 'smtp' && <SMTPSettings />}
             </>
           )}
         </Suspense>

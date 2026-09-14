@@ -212,3 +212,79 @@ test('audit export preserves bounded pagination and sealed authorization', async
   assert.equal(await result.text(), 'id,action\n1,fixture\n')
   assert.equal(calls, 1)
 })
+
+test('installation settings require sealed sessions and same-origin writes', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return Response.json({ revision: 1 })
+  })
+  for (const path of [
+    'installation/smtp',
+    'installation/smtp/test',
+    ...['github', 'google', 'gitlab', 'oidc'].map(
+      (provider) => `installation/login-providers/${provider}`,
+    ),
+  ]) {
+    const method = path.endsWith('/test') ? 'POST' : 'GET'
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, method, method === 'POST' ? {} : undefined, false),
+          params: { _splat: path },
+        })
+      ).status,
+      401,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, method, method === 'POST' ? {} : undefined),
+          params: { _splat: path },
+        })
+      ).status,
+      200,
+    )
+    assert.equal(
+      (
+        await proxy({
+          request: request(path, 'PUT', {}, true, 'https://untrusted.invalid'),
+          params: { _splat: path },
+        })
+      ).status,
+      403,
+    )
+  }
+  assert.equal(calls, 6)
+  for (const path of [
+    'installation/smtp/password',
+    'installation/login-providers/other',
+    'installation/login-providers/oidc/secret',
+  ])
+    assert.equal((await proxy({ request: request(path), params: { _splat: path } })).status, 404)
+})
+
+test('OIDC start is public while forwarding only its temporary OAuth state', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+    assert.match(String(url), /auth\/oauth\/oidc\/start$/)
+    assert.equal(new Headers(init.headers).has('Authorization'), false)
+    assert.equal(new Headers(init.headers).has('Cookie'), false)
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: 'https://identity.example.test/authorize',
+        'Set-Cookie': 'hakopod_oauth=oidc-fixture-state; Path=/; HttpOnly; SameSite=Lax',
+      },
+    })
+  })
+  const path = 'v1/auth/oauth/oidc/start'
+  const response = await proxy({
+    request: request(path, 'GET', undefined, false),
+    params: { _splat: path },
+  })
+  assert.equal(response.status, 302)
+  assert.equal(response.headers.get('Location'), 'https://identity.example.test/authorize')
+  assert.match(response.headers.get('Set-Cookie') || '', /HttpOnly.*SameSite=Lax/)
+  assert.equal(response.headers.get('Set-Cookie')?.includes('Domain='), false)
+})

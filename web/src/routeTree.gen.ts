@@ -42,6 +42,7 @@ import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-a
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 import { Route as SettingsSecretProvidersRouteImport } from './routes/settings.secret-providers'
+import { Route as SettingsSmtpRouteImport } from './routes/settings.smtp'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates.$templateId'
 import { Route as ApplicationsApplicationIdCertificatesRouteImport } from './routes/applications.$applicationId.certificates'
 import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
@@ -55,6 +56,7 @@ import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infra
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
+import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
@@ -228,6 +230,11 @@ const SettingsSecretProvidersRoute = SettingsSecretProvidersRouteImport.update({
   path: '/secret-providers',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSmtpRoute = SettingsSmtpRouteImport.update({
+  id: '/smtp',
+  path: '/smtp',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
   id: '/$templateId',
   path: '/$templateId',
@@ -302,6 +309,12 @@ const SettingsIntegrationsProviderRoute =
     path: '/$provider',
     getParentRoute: () => SettingsIntegrationsRoute,
   } as any)
+const SettingsLoginProvidersProviderRoute =
+  SettingsLoginProvidersProviderRouteImport.update({
+    id: '/login-providers/$provider',
+    path: '/login-providers/$provider',
+    getParentRoute: () => SettingsRoute,
+  } as any)
 const SettingsSecretProvidersNewRoute =
   SettingsSecretProvidersNewRouteImport.update({
     id: '/new',
@@ -373,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
+  '/settings/smtp': typeof SettingsSmtpRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -386,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -427,6 +442,7 @@ export interface FileRoutesByTo {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
+  '/settings/smtp': typeof SettingsSmtpRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -440,6 +456,7 @@ export interface FileRoutesByTo {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -482,6 +499,7 @@ export interface FileRoutesById {
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
   '/settings/secret-providers': typeof SettingsSecretProvidersRouteWithChildren
+  '/settings/smtp': typeof SettingsSmtpRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/applications/$applicationId/certificates': typeof ApplicationsApplicationIdCertificatesRoute
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
@@ -495,6 +513,7 @@ export interface FileRoutesById {
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
@@ -538,6 +557,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/settings/secret-providers'
+    | '/settings/smtp'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -551,6 +571,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -592,6 +613,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/settings/secret-providers'
+    | '/settings/smtp'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -605,6 +627,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -646,6 +669,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/profile'
     | '/settings/secret-providers'
+    | '/settings/smtp'
     | '/templates/$templateId'
     | '/applications/$applicationId/certificates'
     | '/applications/$applicationId/configure'
@@ -659,6 +683,7 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
     | '/settings/integrations/$provider'
+    | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
@@ -925,6 +950,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSecretProvidersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/smtp': {
+      id: '/settings/smtp'
+      path: '/smtp'
+      fullPath: '/settings/smtp'
+      preLoaderRoute: typeof SettingsSmtpRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/templates/$templateId': {
       id: '/templates/$templateId'
       path: '/$templateId'
@@ -1015,6 +1047,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/integrations/$provider'
       preLoaderRoute: typeof SettingsIntegrationsProviderRouteImport
       parentRoute: typeof SettingsIntegrationsRoute
+    }
+    '/settings/login-providers/$provider': {
+      id: '/settings/login-providers/$provider'
+      path: '/login-providers/$provider'
+      fullPath: '/settings/login-providers/$provider'
+      preLoaderRoute: typeof SettingsLoginProvidersProviderRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/secret-providers/new': {
       id: '/settings/secret-providers/new'
@@ -1196,6 +1235,8 @@ interface SettingsRouteChildren {
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRouteWithChildren
   SettingsProfileRoute: typeof SettingsProfileRoute
   SettingsSecretProvidersRoute: typeof SettingsSecretProvidersRouteWithChildren
+  SettingsSmtpRoute: typeof SettingsSmtpRoute
+  SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -1203,6 +1244,8 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsIntegrationsRoute: SettingsIntegrationsRouteWithChildren,
   SettingsProfileRoute: SettingsProfileRoute,
   SettingsSecretProvidersRoute: SettingsSecretProvidersRouteWithChildren,
+  SettingsSmtpRoute: SettingsSmtpRoute,
+  SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

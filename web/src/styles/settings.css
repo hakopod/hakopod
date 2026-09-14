@@ -494,3 +494,19 @@
     display: block;
   }
 }
+
+.team-settings .section-toolbar {
+  @apply mb-0 flex-wrap gap-3;
+}
+.team-settings .settings-list-row {
+  @apply grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 px-0 py-3;
+  @variant sm {
+    @apply grid-cols-[minmax(0,1fr)_auto_auto];
+  }
+}
+.team-settings .role-editor {
+  @apply order-1 col-span-2;
+  @variant sm {
+    @apply order-none col-span-1;
+  }
+}

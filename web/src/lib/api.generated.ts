@@ -2302,6 +2302,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/installation/login-providers/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read installation sign-in provider settings without secrets */
+        get: operations["getInstallationLoginProvider"];
+        /** Update a licensed installation sign-in provider */
+        put: operations["putInstallationLoginProvider"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/smtp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read effective installation email settings without password */
+        get: operations["getInstallationSMTP"];
+        /** Update installation email settings */
+        put: operations["putInstallationSMTP"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/smtp/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a test email to the current administrator using saved settings */
+        post: operations["testInstallationSMTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3107,6 +3160,7 @@ export interface components {
             target: string;
         };
         LicenseFeature: {
+            /** @description Feature identifier. Paid capabilities include multi_team, oauth_login and enterprise_sso; availability comes from enabled. */
             id: string;
             name: string;
             /** @enum {string} */
@@ -3763,6 +3817,60 @@ export interface components {
             name: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        InstallationLoginProvider: {
+            /** @enum {string} */
+            provider: "github" | "google" | "gitlab" | "oidc";
+            enabled: boolean;
+            client_id: string;
+            secret_configured: boolean;
+            issuer_url: string;
+            revision: number;
+            callback_url: string;
+            /** @enum {string} */
+            source?: "operator" | "settings";
+            encryption_ready: boolean;
+        };
+        InstallationLoginProviderInput: {
+            enabled: boolean;
+            client_id: string;
+            client_secret?: string;
+            clear_secret?: boolean;
+            issuer_url: string;
+            expected_revision: number;
+        };
+        InstallationSMTP: {
+            revision: number;
+            /** @enum {string} */
+            source: "operator" | "settings";
+            enabled: boolean;
+            host: string;
+            port: number;
+            /** @enum {string} */
+            security: "starttls" | "tls";
+            username: string;
+            from_email: string;
+            password_set: boolean;
+            encryption_ready: boolean;
+        };
+        InstallationSMTPInput: {
+            expected_revision: number;
+            enabled: boolean;
+            host: string;
+            port: number;
+            /** @enum {string} */
+            security: "starttls" | "tls";
+            username: string;
+            from_email: string;
+            password?: string;
+            clear_password?: boolean;
+        };
+        InstallationSMTPTestInput: {
+            expected_revision: number;
+        };
+        InstallationSMTPTestResult: {
+            sent: boolean;
+            recipient: string;
         };
     };
     responses: never;
@@ -5233,7 +5341,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                provider: "github" | "google" | "gitlab";
+                provider: "github" | "google" | "gitlab" | "oidc";
             };
             cookie?: never;
         };
@@ -5268,7 +5376,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                provider: "github" | "google" | "gitlab";
+                provider: "github" | "google" | "gitlab" | "oidc";
             };
             cookie?: never;
         };
@@ -10008,6 +10116,178 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    getInstallationLoginProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google" | "gitlab" | "oidc";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationLoginProvider"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    putInstallationLoginProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google" | "gitlab" | "oidc";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationLoginProviderInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationLoginProvider"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTP"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    putInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationSMTPInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTP"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testInstallationSMTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationSMTPTestInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationSMTPTestResult"];
+                };
+            };
+            /** @description Self-hosted installation administrator access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
