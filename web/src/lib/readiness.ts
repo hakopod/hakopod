@@ -1,6 +1,7 @@
 import type { Service } from './types'
 
 export function readinessLabel(service: Service): string {
+  if (service.job) return 'Job completion'
   const check = service.readiness
   if (!check) return service.healthcheck || (service.port ? 'TCP probe' : 'Process health')
   const protocol =

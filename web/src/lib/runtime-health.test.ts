@@ -192,3 +192,38 @@ test('empty applications require a fresh explicit runtime observation', () => {
   assert.equal(health.desired, 0)
   assert.equal(applicationRuntimeHealth(app, now + runtimeObservationMaxAge + 1).status, 'stale')
 })
+
+test('jobs keep completion distinct while contributing successful application health', () => {
+  const completed = service('api', {
+    status: 'completed',
+    ready: 1,
+    message: 'Job completed successfully',
+  })
+  const health = serviceRuntimeHealth(completed, observedAt, now)
+  assert.equal(health.status, 'completed')
+  assert.equal(runtimeReplicaSummary(health), 'Completed')
+  const app = application([
+    completed,
+    service('web', { status: 'ready', ready: 1, message: undefined }),
+  ])
+  app.spec.services.api.job = { timeout_seconds: 300, retries: 0 }
+  assert.equal(applicationRuntimeHealth(app, now).status, 'healthy')
+  assert.equal(
+    serviceRuntimeHealth(completed, observedAt, now + runtimeObservationMaxAge + 1).status,
+    'stale',
+  )
+  const running = service('api', { status: 'running', message: undefined })
+  assert.equal(runtimeReplicaSummary(serviceRuntimeHealth(running, observedAt, now)), 'Running')
+  app.observed.services![0] = running
+  assert.equal(applicationRuntimeHealth(app, now).status, 'partial')
+  app.observed.services![0] = service('api', {
+    status: 'failed',
+    message: 'Job failed or exceeded its deadline; inspect service logs',
+  })
+  assert.equal(applicationRuntimeHealth(app, now).status, 'failed')
+  assert.equal(applicationRuntimeHealth(app, now).issues[0].inspect, 'logs')
+  assert.equal(
+    runtimeReplicaSummary(serviceRuntimeHealth(app.observed.services![0], observedAt, now), true),
+    'Failed',
+  )
+})

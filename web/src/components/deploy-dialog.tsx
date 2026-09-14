@@ -236,11 +236,12 @@ export function DeploymentForm({
                   <div key={name}>
                     <strong>{name}</strong>
                     <span>
-                      {service.replicas || 1} replica · {profile.CPURequest} CPU /{' '}
-                      {profile.MemoryRequest} memory requested
+                      {service.job ? 'Deployment job' : `${service.replicas ?? 1} replica`} ·{' '}
+                      {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
                     </span>
                     <small>
-                      Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per replica
+                      Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per{' '}
+                      {service.job ? 'attempt' : 'replica'}
                     </small>
                   </div>
                 ) : null
@@ -428,6 +429,7 @@ export function DeploymentForm({
                             min={0}
                             max={65535}
                             placeholder="No port"
+                            disabled={Boolean(service.job)}
                             value={service.port || ''}
                             onChange={(event) =>
                               updateService(name, {
@@ -465,7 +467,8 @@ export function DeploymentForm({
                             type="number"
                             min={1}
                             max={20}
-                            value={service.replicas || 1}
+                            value={service.replicas ?? 1}
+                            disabled={Boolean(service.job)}
                             onChange={(event) =>
                               updateService(name, { replicas: Number(event.target.value) })
                             }
@@ -477,7 +480,7 @@ export function DeploymentForm({
                           <Input
                             type="checkbox"
                             checked={service.public || false}
-                            disabled={!service.port}
+                            disabled={Boolean(service.job) || !service.port}
                             onChange={(event) =>
                               updateService(name, { public: event.target.checked })
                             }
@@ -489,7 +492,9 @@ export function DeploymentForm({
                             ? 'Gets a generated URL'
                             : service.port
                               ? 'Private to this application'
-                              : 'Background worker'}
+                              : service.job
+                                ? 'Deployment job · configure timeout and retries in TOML'
+                                : 'Background worker'}
                         </span>
                       </div>
                     </div>

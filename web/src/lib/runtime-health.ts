@@ -18,9 +18,12 @@ export type RuntimeHealth = {
   observedAt?: string
 }
 
-export function runtimeReplicaSummary(health: RuntimeHealth) {
+export function runtimeReplicaSummary(health: RuntimeHealth, job = false) {
   if (health.ready === undefined || health.desired === undefined)
     return health.observed ? 'Unavailable' : 'Not observed'
+  if (health.status === 'completed') return 'Completed'
+  if (health.status === 'running') return 'Running'
+  if (job) return health.status === 'failed' ? 'Failed' : 'Not completed'
   return `${health.ready} / ${health.desired} ready`
 }
 
@@ -35,7 +38,7 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
       : {}
   const state = service.status.toLowerCase()
   const ready =
-    ['ready', 'healthy'].includes(state) &&
+    ['ready', 'healthy', 'completed'].includes(state) &&
     counts.ready !== undefined &&
     counts.desired !== undefined &&
     counts.ready >= counts.desired
@@ -48,7 +51,12 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
       )
     )
       inspect = 'nodes'
-    else if (/\b(?:CrashLoopBackOff|OOMKilled)\b|container exited/i.test(message)) inspect = 'logs'
+    else if (
+      /\b(?:CrashLoopBackOff|OOMKilled)\b|container exited|job failed|job.*exceeded.*deadline/i.test(
+        message,
+      )
+    )
+      inspect = 'logs'
     else if (
       /\b(?:ImagePullBackOff|ErrImagePull|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|ProgressDeadlineExceeded)\b|readiness check has not passed/i.test(
         message,
@@ -60,17 +68,19 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
   return {
     observed: true,
     ...counts,
-    status: inspect
-      ? 'blocked'
-      : failed
-        ? 'failed'
+    status: failed
+      ? 'failed'
+      : inspect
+        ? 'blocked'
         : ready
-          ? counts.desired === 0
-            ? 'scaled down'
-            : 'ready'
+          ? state === 'completed'
+            ? 'completed'
+            : counts.desired === 0
+              ? 'scaled down'
+              : 'ready'
           : state === 'missing'
             ? 'missing'
-            : ['deploying', 'progressing', 'terminating'].includes(state)
+            : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
               ? state
               : 'pending',
     issues:
@@ -148,7 +158,7 @@ export function applicationRuntimeHealth(
   )
   const services = names.map((name) => assessService(observations.get(name)))
   const observed = services.filter((service) => service.observed).length
-  const ready = services.filter((service) => service.status === 'ready').length
+  const ready = services.filter((service) => ['ready', 'completed'].includes(service.status)).length
   const counts =
     services.length &&
     services.every((service) => service.ready !== undefined && service.desired !== undefined)

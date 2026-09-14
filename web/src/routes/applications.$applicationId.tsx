@@ -344,17 +344,19 @@ function ApplicationDetail() {
                   </small>
                   <dl className="ops-card-facts">
                     <div>
-                      <dt>Replicas</dt>
-                      <dd>{runtimeReplicaSummary(serviceHealth)}</dd>
+                      <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
+                      <dd>{runtimeReplicaSummary(serviceHealth, Boolean(service.job))}</dd>
                     </div>
                     <div>
                       <dt>Exposure</dt>
                       <dd>
-                        {service.public
+                        {service.public || Object.keys(service.http || {}).length > 0
                           ? 'Public HTTP'
                           : service.port || service.ports?.length
                             ? 'Private'
-                            : 'Worker'}
+                            : service.job
+                              ? 'Deployment job'
+                              : 'Worker'}
                       </dd>
                     </div>
                     <div>

@@ -410,7 +410,7 @@ function DeploymentDetail() {
                     <tr>
                       <th>Service / recorded state</th>
                       <th>Image</th>
-                      <th>Recorded replicas</th>
+                      <th>Recorded result</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -445,7 +445,17 @@ function DeploymentDetail() {
                             </div>
                           </td>
                           <td className="mono">
-                            {result ? `${result.ready} / ${result.desired} ready` : 'Not observed'}
+                            {result
+                              ? service.job
+                                ? result.status === 'completed'
+                                  ? 'Completed'
+                                  : result.status === 'running'
+                                    ? 'Running'
+                                    : result.status === 'failed'
+                                      ? 'Failed'
+                                      : 'Not completed'
+                                : `${result.ready} / ${result.desired} ready`
+                              : 'Not observed'}
                           </td>
                         </tr>
                       )
