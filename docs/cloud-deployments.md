@@ -1,7 +1,7 @@
 # Bring Your Own Cloud deployments
 
 Hakopod's commercial cloud toolkit is maintained in the private
-`hakopod/hakopod-cloud` repository and linked here at `private/cloud`. Authorized
+`hakopod/hakopod-cloud` repository and linked here at the separate private `hakopod/hakopod-cloud` repository. Authorized
 operators can fetch it with:
 
 ```sh

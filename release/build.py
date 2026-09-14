@@ -22,11 +22,17 @@ ENV=dict(os.environ,GOMAXPROCS='2',GOMEMLIMIT='256MiB',CGO_ENABLED='0',GOWORK='o
 TARGETS=[('linux','amd64'),('linux','arm64'),('darwin','amd64'),('darwin','arm64')]
 PUBLIC_BUILD_TAG='hakopod_selfhosted'
 
+def compile_command(package, destination, *, tags='', ldflags='-s -w'):
+    """Shared bounded Go build flags; callers select their own module/package."""
+    command = ['go', 'build', '-p', '2', '-trimpath', '-buildvcs=false']
+    if tags:
+        command.append('-tags=' + tags)
+    return command + ['-ldflags=' + ldflags, '-o', str(destination), package]
+
 def build_command(command, destination, version):
     flags='-s -w'+(' -X main.version='+version if command=='hakopod' else '')
-    # An explicit tag wins over ambient GOFLAGS and keeps public artifacts closed.
-    return ['go','build','-p','2','-trimpath','-buildvcs=false','-tags='+PUBLIC_BUILD_TAG,
-            '-ldflags='+flags,'-o',str(destination),'./cmd/'+command]
+    # Public artifacts always retain their closed-signup build tag.
+    return compile_command('./cmd/'+command, destination, tags=PUBLIC_BUILD_TAG, ldflags=flags)
 
 def run(args,**kwargs):
     return subprocess.run(args,cwd=kwargs.pop('cwd',ROOT),env=kwargs.pop('env',ENV),check=True,**kwargs)
@@ -36,7 +42,7 @@ def output(args):
 
 def fingerprint():
     files=set()
-    for folder in ('cmd','internal','api','templates'):
+    for folder in ('cmd','internal','api','auth','templates'):
         files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '.git' not in p.parts and '__pycache__' not in p.parts and p.suffix != '.pyc')
     files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml','LICENSE','NOTICE'))
     digest=hashlib.sha256()
