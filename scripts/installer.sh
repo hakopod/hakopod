@@ -11,7 +11,7 @@ hakopod_prerequisites() {
     case "$1" in
       --dry-run) bootstrap_dry_run=true; shift;;
       --help|-h) bootstrap_help=true; shift;;
-      --resume|--yes) shift;;
+      --resume|--yes|--upgrade) shift;;
       --config|--version)
         if [ "$#" -lt 2 ] || [ -z "$2" ]; then
           printf '%s requires a value\n' "$1" >&2; return 1
@@ -25,7 +25,7 @@ hakopod_prerequisites() {
     esac
   done
   if "$bootstrap_help"; then
-    printf '%s\n' 'Usage: sh installer.sh [--version VERSION] [--config FILE] [--dry-run] [--resume] [--yes]'
+    printf '%s\n' 'Usage: sh installer.sh [--version VERSION] [--config FILE] [--dry-run] [--resume] [--yes] [--upgrade]'
     printf '%s\n' 'Installs missing Linux prerequisites, verifies prebuilt Hakopod, then reviews the host plan.'
     return 2
   fi
@@ -216,6 +216,7 @@ def main(argv=None):
     parser.add_argument('--config', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--upgrade', action='store_true', help='Upgrade an installer-owned host; never rerun first-time setup')
     parser.add_argument('--yes', action='store_true', help='Accept the host plan; requires --config')
     args = parser.parse_args(argv)
     if sys.version_info < (3, 10):
@@ -223,10 +224,12 @@ def main(argv=None):
     arch = architecture(platform.system(), platform.machine())
     if not shutil.which('bash'):
         raise ValueError('Bash is required to run the verified host installer')
-    if args.yes and not args.config:
+    if args.yes and not args.config and not args.upgrade:
         raise ValueError('--yes requires an explicit --config file')
     if args.resume and not args.config:
         raise ValueError('--resume requires the original --config file, usually /etc/hakopod/config.json')
+    if args.upgrade and (args.resume or args.config):
+        raise ValueError('--upgrade cannot be combined with --resume or --config')
     config = read_config(args.config) if args.config else {}
     selected = version(args.version or config.get('version', DEFAULT_VERSION))
     if config.get('version', selected) != selected:
@@ -234,7 +237,7 @@ def main(argv=None):
     if not args.dry_run and os.geteuid() != 0:
         raise ValueError('Run the installer as root on a dedicated Linux host, or use --dry-run to review it')
     terminal = None
-    if not args.config or (not args.yes and not args.dry_run):
+    if (not args.upgrade and not args.config) or (not args.yes and not args.dry_run):
         try:
             terminal = open('/dev/tty', 'r')
             if not os.isatty(terminal.fileno()):
@@ -257,6 +260,19 @@ def main(argv=None):
                     raise ValueError('Release checksum inventory is missing ' + name)
                 download(base + name, directory / name, limit, hashes[name])
             extract_kit(directory / (kit + '.tar.gz'), directory / 'kit', kit)
+            if args.upgrade:
+                helper = directory / 'kit' / kit / 'installer/maintenance.py'
+                if not helper.is_file():
+                    raise ValueError('This release does not include upgrade support; do not use resume as an upgrade')
+                if args.dry_run:
+                    print('Verified release artifacts. Upgrade stops only API/dashboard, backs up PostgreSQL and configuration, then switches binaries. Compatibility is checked before stopping services.')
+                    return
+                if not args.yes:
+                    print('Upgrade to ' + selected + ': stop API/dashboard, back up PostgreSQL/configuration, then restart. Applications keep running. Type upgrade ' + selected + ' to continue:', flush=True)
+                    if terminal.readline().strip() != 'upgrade ' + selected:
+                        raise ValueError('Upgrade cancelled')
+                subprocess.run(['python3', str(helper), '--upgrade', selected], check=True)
+                return
             command = ['bash', str(directory / 'kit' / kit / 'scripts/install.sh'), '--artifact-dir', str(directory),
                        '--arch', arch, '--version', selected]
             if args.config:

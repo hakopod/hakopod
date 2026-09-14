@@ -5915,6 +5915,219 @@
         }
       }
     },
+    "/installation/status": {
+      "get": {
+        "operationId": "getInstallationStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/installation/logs": {
+      "get": {
+        "operationId": "getInstallationLogs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationLogs"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/installation/setup": {
+      "get": {
+        "operationId": "getInstallationSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationSetup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/installation/upgrade": {
+      "post": {
+        "operationId": "upgradeInstallation",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "version",
+                  "confirmation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/domains/{hostname}": {
+      "delete": {
+        "operationId": "discardDomainVerification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "discarded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "discarded"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/installation/login-providers/{provider}": {
       "get": {
         "operationId": "getInstallationLoginProvider",
@@ -13203,6 +13416,112 @@
         "required": [
           "code",
           "state"
+        ]
+      },
+      "InstallationOperation": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "previous_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "version"
+        ]
+      },
+      "InstallationStatus": {
+        "type": "object",
+        "properties": {
+          "current_version": {
+            "type": "string"
+          },
+          "latest_version": {
+            "type": "string"
+          },
+          "update_available": {
+            "type": "boolean"
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "check_error": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/InstallationOperation"
+          }
+        },
+        "required": [
+          "current_version",
+          "latest_version",
+          "update_available",
+          "checked_at",
+          "check_error",
+          "operation"
+        ]
+      },
+      "InstallationSetup": {
+        "type": "object",
+        "properties": {
+          "readiness_image": {
+            "type": "string"
+          },
+          "storage_classes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_storage_class": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "readiness_image",
+          "storage_classes",
+          "default_storage_class"
+        ]
+      },
+      "InstallationLogs": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timestamp": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timestamp",
+                "message"
+              ]
+            }
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "entries",
+          "observed_at"
         ]
       },
       "InstallationLoginProvider": {

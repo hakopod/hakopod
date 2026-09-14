@@ -58,6 +58,10 @@ continue after endpoint removal; this does not forcibly close them.
 
 ## Helper installation
 
+The dashboard links readiness errors to **Infrastructure > Setup**, which shows
+the current helper and the exact operator configuration steps. See
+[installation maintenance](installation-maintenance.md#smtp-listener-readiness).
+
 TCP-only readiness uses the native kubelet TCP probe. SMTP and combined HTTP plus
 TCP checks need the Hakopod probe helper. Build the included `Dockerfile.probe`
 for `linux/amd64` and `linux/arm64`, publish it to a registry reachable by the

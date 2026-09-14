@@ -56,7 +56,7 @@ as answers. Without a terminal, pass an explicit `--config` and `--dry-run` or
 `--yes`. The config version must match `--version`; when omitted, the bootstrap
 uses the version in the config. `--resume --config /etc/hakopod/config.json`
 downloads that same version and delegates to the existing ownership checks.
-Resume does not upgrade or replace installation inputs.
+Resume does not upgrade or replace installation inputs. The separate `--upgrade` path and owner-only dashboard controls are described in [installation maintenance](../docs/installation-maintenance.md). Alpha.4 does not yet contain that protocol.
 
 Checksums downloaded with the archive establish consistency, not publisher
 identity. Releases also publish GitHub provenance attestations. For an

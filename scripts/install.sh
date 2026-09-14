@@ -343,10 +343,12 @@ fi
 if [ "$cfg_storage" = true ]; then
   # Convert the pinned module to JSON, stamp every object, and relocate its owned data.
   kubectl create --dry-run=client -f "$bundle_root/deploy/storage/local-path.yaml" -o json > "$stage/storage.json"
-  python3 - "$stage/storage.json" "$installation" > "$stage/storage-objects.tsv" <<'PY'
+  python3 - "$stage/storage.json" "$installation" "$bundle_root/installer" > "$stage/storage-objects.tsv" <<'PY'
 import json,sys
 from pathlib import Path
-p=Path(sys.argv[1]);j=json.loads(p.read_text())
+sys.path.insert(0,sys.argv[3])
+from modules import documents
+p=Path(sys.argv[1]);j=documents(p.read_text())
 for item in j['items']:
     m=item['metadata'];m.setdefault('labels',{})['hakopod.com/installation']=sys.argv[2]
     print(item['kind']+'\t'+m['name']+'\t'+m.get('namespace',''))
@@ -356,6 +358,15 @@ PY
   while IFS=$'\t' read -r kind name namespace; do owned "$kind" "$name" "$namespace"; done < "$stage/storage-objects.tsv"
   kubectl apply --server-side --field-manager=hakopod-installer -f "$stage/storage.json" >/dev/null
   kubectl -n hakopod-storage rollout status deployment/local-path-provisioner --timeout=120s
+fi
+install -d -m 0755 /opt/hakopod/maintenance
+install -m 0644 "$bundle_root"/installer/*.py "$bundle_root/installer/pins.json" /opt/hakopod/maintenance/
+install -d -m 0755 /opt/hakopod/maintenance/modules
+cp -R "$bundle_root/deploy/storage" "$bundle_root/deploy/cert-manager" /opt/hakopod/maintenance/modules/
+install -m 0644 "$bundle_root/installer/hakopod-maintenance.service" /etc/systemd/system/hakopod-maintenance.service
+systemctl daemon-reload
+if [ "$(python3 -c 'import json; print(json.load(open("/etc/hakopod/config.json")).get("deployment_mode", "self-hosted"))')" = self-hosted ]; then
+  systemctl enable --now hakopod-maintenance
 fi
 systemctl enable --now hakopod-api hakopod-dashboard
 healthy=false

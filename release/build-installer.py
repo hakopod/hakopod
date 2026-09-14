@@ -146,10 +146,14 @@ def package_runtime(dist, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', default='0.1.0-dev')
+    parser.add_argument('--upgrade-from', action='append', default=[], help='Explicitly tested source release; repeat for each supported upgrade')
     parser.add_argument('--release-dir', type=Path)
     parser.add_argument('--use-existing-dist', action='store_true', help='Development smoke only: package existing dist with explicitly unknown source freshness')
     args = parser.parse_args()
     bootstrap.valid_version(args.version)
+    for source_version in args.upgrade_from: bootstrap.valid_version(source_version)
+    if len(set(args.upgrade_from)) != len(args.upgrade_from) or args.version in args.upgrade_from:
+        raise ValueError("Upgrade sources must be distinct older releases")
     release_dir = args.release_dir or ROOT / '.local/releases' / args.version
     # Verify Go archive bytes before replacing any previously generated installer output.
     for arch in ('amd64', 'arm64'):
@@ -226,6 +230,8 @@ def main():
         bootstrap_default_version=bootstrap.default_version(rendered_bootstrap),
         scope='Dashboard actual runtime files/dependency inventory, installer inputs, and separately verified Go archives. OS and image packages are outside this inventory.')
     (destination / 'installer-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+    (destination / 'upgrade.json').write_text(json.dumps(dict(schema_version=1, version=args.version,
+        from_versions=args.upgrade_from, runtime_pins_sha256=host.digest(ROOT / 'installer/pins.json'))) + '\n')
     (destination / 'SHA256SUMS').write_text(''.join(host.digest(path) + '  ' + path.name + '\n'
         for path in sorted(destination.iterdir()) if path.is_file() and not path.name.startswith('.') and path.name != 'SHA256SUMS'))
     print(f'Packaged {count} actual SSR runtime packages; local installer artifacts: {destination}')
