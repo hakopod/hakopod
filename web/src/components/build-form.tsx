@@ -1,5 +1,7 @@
 import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
+import { formatBuildArgs, parseBuildArgs } from '../lib/build-args'
 import { SelectField } from './ui/select'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -42,6 +44,7 @@ export default function BuildForm({
     build?.architecture || '',
   )
   const [context, setContext] = useState(build?.context_path || '.')
+  const [buildArgs, setBuildArgs] = useState(() => formatBuildArgs(build?.build_args))
   const [dockerfile, setDockerfile] = useState(build?.dockerfile || 'Dockerfile')
   const [port, setPort] = useState(build?.port || 8080)
   const [isPublic, setPublic] = useState(build?.public || false)
@@ -102,6 +105,7 @@ export default function BuildForm({
               context_path: context,
               architecture: architecture || undefined,
               dockerfile,
+              build_args: parseBuildArgs(buildArgs),
               port,
               public: isPublic,
               size,
@@ -304,6 +308,21 @@ export default function BuildForm({
                 />
               </label>
             )}
+            <label>
+              Public build values
+              <Textarea
+                value={buildArgs}
+                onChange={(event) => setBuildArgs(event.target.value)}
+                rows={3}
+                placeholder="NEXT_PUBLIC_API_URL=https://api.example.com"
+                aria-describedby="build-args-help"
+                spellCheck={false}
+              />
+              <span id="build-args-help" className="field-help">
+                One NAME=value per line. Public values are baked into the image; never enter
+                secrets. Save changes, then review and reinstall the workflow before building.
+              </span>
+            </label>
           </FormSection>
           <FormSection
             title="Runtime"

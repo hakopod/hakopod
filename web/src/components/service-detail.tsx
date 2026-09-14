@@ -201,16 +201,18 @@ export function ServiceDetail({
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
           <div className="toolbar-actions">
-            <Button
-              onClick={() => {
-                setRequestKey(crypto.randomUUID())
-                setError('')
-                setRestartOpen(true)
-              }}
-            >
-              <Icon name="refresh" size={14} />
-              Restart
-            </Button>
+            {!service.job && (
+              <Button
+                onClick={() => {
+                  setRequestKey(crypto.randomUUID())
+                  setError('')
+                  setRestartOpen(true)
+                }}
+              >
+                <Icon name="refresh" size={14} />
+                Restart
+              </Button>
+            )}
             <Button
               variant={
                 ['logs', 'environment', 'secrets', 'terminal', 'settings'].includes(tab)
@@ -226,6 +228,7 @@ export function ServiceDetail({
         )}
       </div>
       <RuntimeNotice
+        job={Boolean(service.job)}
         health={health}
         applicationId={application.id}
         canInspectNodes={scope.can('admin')}
@@ -280,17 +283,17 @@ export function ServiceDetail({
               </div>
               <dl className="service-definition-list">
                 <div>
-                  <dt>Replicas</dt>
-                  <dd>{runtimeReplicaSummary(health)}</dd>
+                  <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
+                  <dd>{runtimeReplicaSummary(health, Boolean(service.job))}</dd>
                 </div>
                 <div>
-                  <dt>Readiness</dt>
+                  <dt>{service.job ? 'Completion gate' : 'Readiness'}</dt>
                   <dd>{readinessLabel(service)}</dd>
                 </div>
                 <div>
                   <dt>Configured exposure</dt>
                   <dd>
-                    {service.public
+                    {service.public || Object.keys(service.http || {}).length > 0
                       ? service.public_tcp?.length
                         ? 'Public HTTP and TCP'
                         : 'Public HTTP'
@@ -494,7 +497,7 @@ export function ServiceDetail({
               <div>
                 <dt>Configured exposure</dt>
                 <dd>
-                  {service.public
+                  {service.public || Object.keys(service.http || {}).length > 0
                     ? service.public_tcp?.length
                       ? 'Public HTTP and TCP'
                       : 'Public HTTP'
@@ -535,6 +538,25 @@ export function ServiceDetail({
                   )}
                 </dd>
               </div>
+              {Object.entries(observed?.endpoints || {})
+                .filter(([, url]) => /^https?:\/\//.test(url))
+                .map(([name, url]) => (
+                  <div key={name}>
+                    <dt>HTTP endpoint · {name}</dt>
+                    <dd>
+                      <a
+                        className="inline-flex min-w-0 max-w-full items-center gap-1"
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`${name}: ${url}`}
+                      >
+                        <span className="truncate">{url}</span>
+                        <Icon name="external" size={13} className="shrink-0" />
+                      </a>
+                    </dd>
+                  </div>
+                ))}
               <div>
                 <dt>Networks</dt>
                 <dd>
@@ -567,7 +589,7 @@ export function ServiceDetail({
                 </dd>
               </div>
               <div>
-                <dt>Readiness dependencies</dt>
+                <dt>Deployment dependencies</dt>
                 <dd>
                   {service.depends_on?.length
                     ? service.depends_on.map((name) => (

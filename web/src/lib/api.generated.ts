@@ -2705,6 +2705,16 @@ export interface components {
             public_tcp?: components["schemas"]["PublicTCPListener"][];
             certificate_mounts?: components["schemas"]["CertificateMount"][];
             aws_identity?: string;
+            job?: components["schemas"]["DeploymentJob"];
+            files?: {
+                [key: string]: components["schemas"]["ConfigurationFile"];
+            };
+            bindings?: {
+                [key: string]: components["schemas"]["ServiceBinding"];
+            };
+            http?: {
+                [key: string]: components["schemas"]["HTTPEndpoint"];
+            };
             readiness?: components["schemas"]["Readiness"];
             /** @enum {string} */
             update_strategy?: "rolling" | "recreate";
@@ -2759,6 +2769,9 @@ export interface components {
             url?: string;
             internal_address?: string;
             message?: string;
+            endpoints?: {
+                [key: string]: string;
+            };
         };
         Observation: {
             status?: string;
@@ -3296,6 +3309,9 @@ export interface components {
             installed_commit: string;
             /** @enum {string} */
             provider: "github" | "gitlab";
+            build_args?: {
+                [key: string]: string;
+            };
         };
         BuildInput: {
             connection_id?: string;
@@ -3323,6 +3339,9 @@ export interface components {
             /** @enum {string} */
             provider?: "github" | "gitlab";
             expected_config_revision?: number;
+            build_args?: {
+                [key: string]: string;
+            };
         };
         BuildRun: {
             id: string;
@@ -3659,6 +3678,29 @@ export interface components {
             sequence: number;
             features: string[];
             catalog: components["schemas"]["LicenseFeature"][];
+        };
+        DeploymentJob: {
+            timeout_seconds?: number;
+            retries?: number;
+        };
+        ConfigurationFile: {
+            mount_path: string;
+            content?: string;
+            secret?: components["schemas"]["SecretRef"];
+            /** @enum {integer} */
+            mode?: 288 | 292;
+        };
+        ServiceBinding: {
+            service: string;
+            /** @enum {string} */
+            protocol: "http" | "postgres" | "mysql" | "redis";
+            database?: string;
+            username?: string;
+            password?: components["schemas"]["SecretRef"];
+        };
+        HTTPEndpoint: {
+            port: number;
+            domain?: string;
         };
         LogEntry: {
             /** Format: date-time */

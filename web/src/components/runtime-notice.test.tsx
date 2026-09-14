@@ -86,3 +86,29 @@ test('runtime diagnostics retain pod inspection without offering unavailable nod
   assert.match(html, /Inspect pods/)
   assert.doesNotMatch(html, /Inspect nodes|Inspect logs/)
 })
+
+test('failed deployment jobs retain log inspection without claiming ready replicas', () => {
+  const router = createRouter({
+    routeTree: createRootRoute(),
+    history: createMemoryHistory({ initialEntries: ['/applications/example'] }),
+  })
+  const html = renderToStaticMarkup(
+    <RouterContextProvider router={router}>
+      <RuntimeNotice
+        applicationId="example"
+        job
+        canInspectLogs
+        health={{
+          status: 'failed',
+          observed: true,
+          ready: 0,
+          desired: 1,
+          issues: [{ service: 'migrate', message: 'Job failed', inspect: 'logs' }],
+        }}
+      />
+    </RouterContextProvider>,
+  )
+  assert.match(html, /Runtime failed/)
+  assert.match(html, /tab=logs/)
+  assert.doesNotMatch(html, /replicas ready/)
+})

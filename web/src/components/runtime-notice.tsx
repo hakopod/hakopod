@@ -34,11 +34,13 @@ export function ApplicationAlarmLinks({
 export function RuntimeNotice({
   health,
   applicationId,
+  job = false,
   canInspectNodes = false,
   canInspectLogs = false,
 }: {
   health: RuntimeHealth
   applicationId: string
+  job?: boolean
   canInspectNodes?: boolean
   canInspectLogs?: boolean
 }) {
@@ -56,12 +58,15 @@ export function RuntimeNotice({
         <strong>
           {health.issues.length ? `Runtime ${health.status}` : 'Runtime health unavailable'}
         </strong>
-        {health.ready !== undefined && health.desired !== undefined && health.issues.length > 0 && (
-          <span>
-            {' '}
-            · {health.ready} / {health.desired} replicas ready
-          </span>
-        )}
+        {!job &&
+          health.ready !== undefined &&
+          health.desired !== undefined &&
+          health.issues.length > 0 && (
+            <span>
+              {' '}
+              · {health.ready} / {health.desired} replicas ready
+            </span>
+          )}
         {health.note && <p>{health.note}</p>}
         {issues.map((issue) => (
           <div className="runtime-issue" key={issue.service}>

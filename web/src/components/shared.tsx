@@ -14,6 +14,7 @@ export function Status({ value, small }: { value?: string; small?: boolean }) {
     'ready',
     'succeeded',
     'complete',
+    'completed',
     'active',
     'verified',
     'synchronized',
