@@ -7,6 +7,8 @@ export const dashboardEdition = {
   authReturn: (path: string | undefined | null) => Boolean(path?.startsWith('/login/')),
   home: '/',
   label: 'Self-hosted',
+  brandSuffix: '',
+  releaseChannel: '',
   navigation: (_path: string) => true,
   scopedNavigation: (_path: string) => true,
   settings: (_section: string) => true,
