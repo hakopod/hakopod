@@ -1,17 +1,34 @@
-Alpha.4 fixes the bootstrap default: both the downloadable `installer.sh` and the copy inside the installer kit now select the version of their release. Packaging, native smoke and pre-publication checks inspect both generated scripts. Alpha.3 artifacts remain unchanged; its bootstrap required an explicit version to select alpha.3.
+Hakopod alpha.5 adds shared templates, deployment lifecycle primitives, Git App connections, and self-hosted installation controls.
 
-Prebuilt Linux amd64 and arm64 server, CLI and dashboard bundles are included, alongside macOS CLI archives. No Go, Node package manager or frontend compiler runs on the installation target. Missing distro prerequisites are installed automatically. PostgreSQL defaults to an owned K3s pod, with explicit existing local or verified-TLS external database options. Docker is optional; K3s uses bundled containerd.
+## Deployment and catalog
 
-Public self-hosted binaries disable open signup, including email and OAuth enrollment, even when environment or TOML settings request it. First-administrator setup and explicit invitations remain available. Free self-hosted installations include teams, invitations and shared projects; audit history and higher host limits retain their paid gates. Existing users can still sign in and recover their accounts.
+- Shared public [template catalog](https://github.com/hakopod/templates), pinned into this release: 71 entries, including 35 deployable presets and 36 guides. Complex migrations remain guides until their requirements are supported and verified.
+- Bounded one-shot deployment Jobs and dependency gates for migrations and initialization. Completed jobs are shown separately from running service replicas.
+- Read-only configuration and scoped secret file mounts; derived private PostgreSQL, MySQL, Redis and HTTP connection URLs.
+- Additional named HTTP endpoints, public build arguments, and preflight checks for resources, architecture, taints, storage and observed disk headroom.
+- Custom domains can be staged before ownership verification; routing activates only after verification.
 
-Administrators can configure Vault/OpenBao KV v2 and Infisical providers in Settings, grant project/environment access and review credential or access changes before saving. Applications reference provider names, relative paths and keys in version-1 TOML. Deployments and service restarts read a fresh snapshot; provider failures preserve the last good workload secrets. There is no background polling. Other external providers are not implemented, and real upstream Vault/Infisical account credentials were not part of verification.
+## Connections, settings and operations
 
-Cloud builds also enforce their configured node and workload limits at the engine; the distributed self-hosted binaries retain their separate capability policy.
+- Named GitHub/GitLab connections across imports, sources and builds. GitHub App registration and installation use GitHub's manifest flow, with the App owned by the user or organization. GitLab uses OAuth and still requires one-time application registration. Existing token connections remain compatible.
+- Encrypted self-hosted SMTP settings, licensed OAuth login and OpenID Connect SSO. Free self-hosted installations allow one new team; additional teams require a valid multi-team license. Existing teams remain accessible after downgrade. First-admin setup and invitations remain available; public binaries do not enable open signup.
+- Owner-only API log explorer with bounded queries and a direct-process fallback; installation setup and upgrade controls; optional local storage and cert-manager module helpers.
+- Reviewed resource deletion, compact account/settings controls, and self-hosted HAProxy request body limits.
 
-Download and review `installer.sh` from this release, then run `sh installer.sh --help`. Use a fresh dedicated Linux server and review the printed plan before accepting installation. The installer guide in this tag describes supported distributions, required packages, DNS, memory limits and resume behavior. The `hakopod.com/scripts/installer.sh` endpoint must be deployed separately; publication here does not activate that domain.
+## Prebuilt artifacts
 
-`SHA256SUMS` covers the release assets, native amd64/arm64 container smoke reports, and `host-acceptance.json`. GitHub build-provenance attestations are attached as `build-provenance.intoto.jsonl`; verify an asset with `gh attestation verify FILE --repo hakopod/hakopod`. Checksums alone establish consistency, not publisher identity. The attestation bundle is excluded from SHA256SUMS to avoid a circular digest; its signatures bind the other artifact hashes.
+Linux amd64/arm64 server, CLI and dashboard bundles and macOS CLI archives are included. Installation does not compile Go or frontend sources on the target. The release also publishes the tested multi-platform readiness helper at `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.5`; use the immutable reference in `probe-image.txt` when configuring Infrastructure > Setup.
 
-SPDX, CycloneDX, source provenance and dependency notices describe their inventory scope. Native container smoke verifies the packaged runtime and permissions. Separate native Ubuntu 24.04 host checks install K3s and managed PostgreSQL on amd64 and arm64, plus existing local and verified-TLS external PostgreSQL fixtures on amd64. They verify API/dashboard health, first-user setup, node readiness, resume with preserved secrets, service restart recovery, database/certificate refusal checks, and preservation of an unrelated database.
+Download and review this release's `installer.sh`, then run `sh installer.sh --help`. The website bootstrap is deployed separately; GitHub publication does not update `hakopod.com/scripts/installer.sh`.
 
-Reboot recovery, public DNS, ACME issuance, restore drills, physical AWS RDS, other Linux distributions and existing-database modes on arm64 remain unverified. The configured memory caps are not measured idle usage. See `docs/prebuilt-installation-verification.md` for the candidate evidence and its limits. This prerelease is for evaluation on disposable infrastructure.
+`SHA256SUMS`, dependency inventories, license notices, source provenance, native smoke reports and host acceptance reports accompany the artifacts. Verify publisher provenance with `gh attestation verify FILE --repo hakopod/hakopod`; checksums alone establish consistency. The attestation bundle is excluded from the checksum manifest to avoid a circular digest.
+
+## Compatibility and verification limits
+
+- This prerelease is for evaluation. Preserve database/configuration backups before any manual upgrade. Upgrade support is implemented, but the compatibility manifest advertises no source-to-target upgrade until that exact path has passed live acceptance; alpha.4 cannot upgrade itself through its old dashboard.
+- Jobs run again on new revisions and must be idempotent. Rollback does not reverse database migrations. Mounted file changes require deployment; no hot reload is promised.
+- Lifecycle behavior and Redis persistence were verified on a real ARM64 development cluster. The PR adds native amd64/arm64 runtime checks. Publication additionally requires packaged runtime smoke and native Ubuntu 24.04 systemd/K3s host acceptance on both architectures.
+- The complete catalog is not runtime-certified. Automatic multi-build template orchestration and broad upstream upgrade testing remain open. Shared storage needs an appropriate CSI driver; preflight is not a complete scheduler or image-size forecast.
+- Real hosted GitHub App/GitLab OAuth setup and provider-hosted builds with public arguments still need end-to-end verification. SSO implements OpenID Connect, not SAML or SCIM.
+- Reboot recovery, public DNS/ACME issuance, physical RDS, restore drills, other Linux distributions and existing-database host modes on arm64 remain outside release acceptance.
+- Arbitrary public TCP/SMTP and installation operator controls remain self-hosted features. Managed Cloud retains its HTTP/HTTPS and private-networking boundary.
