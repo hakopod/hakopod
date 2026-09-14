@@ -53,7 +53,7 @@ authroute("/auth/oauth/{provider}/callback","get","finishProviderLogin",{"oneOf"
 paths["/auth/oauth/{provider}/callback"]["get"]["parameters"] += [{"name":v,"in":"query","schema":S} for v in ["state","code","error"]]
 for path in ["/auth/oauth/{provider}/start","/auth/oauth/{provider}/callback"]:
     for parameter in paths[path]["get"]["parameters"]:
-        if parameter["name"] == "provider":parameter["schema"]={"type":"string","enum":["github","google","gitlab"]}
+        if parameter["name"] == "provider":parameter["schema"]={"type":"string","enum":["github","google","gitlab","oidc"]}
 authroute("/auth/passkeys/register/start","post","beginPasskeyRegistration",ref("PasskeyChallenge"),obj({"name":S,"password":S,"code":S},["name","password"]))
 authroute("/auth/passkeys/register/finish","post","finishPasskeyRegistration",obj({"id":S,"name":S},["id","name"]),obj({"challenge":S,"credential":mapping({})},["challenge","credential"]),"201")
 authroute("/auth/passkeys/login/start","post","beginPasskeyLogin",ref("PasskeyChallenge"),obj({}),public=True)

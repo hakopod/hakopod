@@ -5781,6 +5781,226 @@
         "security": []
       }
     },
+    "/installation/login-providers/{provider}": {
+      "get": {
+        "operationId": "getInstallationLoginProvider",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "github",
+                "google",
+                "gitlab",
+                "oidc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationLoginProvider"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation administrator access required"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putInstallationLoginProvider",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "github",
+                "google",
+                "gitlab",
+                "oidc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationLoginProvider"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation administrator access required"
+          },
+          "409": {
+            "description": "Configuration revision changed"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationLoginProviderInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/installation/smtp": {
+      "get": {
+        "operationId": "getInstallationSMTP",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationSMTP"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation administrator access required"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putInstallationSMTP",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationSMTP"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation administrator access required"
+          },
+          "409": {
+            "description": "Configuration revision changed"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationSMTPInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/installation/smtp/test": {
+      "post": {
+        "operationId": "testInstallationSMTP",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationSMTPTestResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation administrator access required"
+          },
+          "409": {
+            "description": "Configuration revision changed"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationSMTPTestInput"
+              }
+            }
+          }
+        }
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -9567,178 +9787,6 @@
           }
         }
       }
-    },
-    "/installation/login-providers/{provider}": {
-      "get": {
-        "operationId": "getInstallationLoginProvider",
-        "summary": "Read installation sign-in provider settings without secrets",
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallationLoginProvider"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Self-hosted installation administrator access required"
-          }
-        },
-        "parameters": [
-          {
-            "name": "provider",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "github",
-                "google",
-                "gitlab",
-                "oidc"
-              ]
-            }
-          }
-        ]
-      },
-      "put": {
-        "operationId": "putInstallationLoginProvider",
-        "summary": "Update a licensed installation sign-in provider",
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallationLoginProvider"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Self-hosted installation administrator access required"
-          },
-          "409": {
-            "description": "Configuration revision changed"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InstallationLoginProviderInput"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "provider",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "github",
-                "google",
-                "gitlab",
-                "oidc"
-              ]
-            }
-          }
-        ]
-      }
-    },
-    "/installation/smtp": {
-      "get": {
-        "operationId": "getInstallationSMTP",
-        "summary": "Read effective installation email settings without password",
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallationSMTP"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Self-hosted installation administrator access required"
-          }
-        }
-      },
-      "put": {
-        "operationId": "putInstallationSMTP",
-        "summary": "Update installation email settings",
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallationSMTP"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Self-hosted installation administrator access required"
-          },
-          "409": {
-            "description": "Configuration revision changed"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InstallationSMTPInput"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/installation/smtp/test": {
-      "post": {
-        "operationId": "testInstallationSMTP",
-        "summary": "Send a test email to the current administrator using saved settings",
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallationSMTPTestResult"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Self-hosted installation administrator access required"
-          },
-          "409": {
-            "description": "Configuration revision changed"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InstallationSMTPTestInput"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -12968,6 +13016,247 @@
           "auth_kind"
         ]
       },
+      "InstallationLoginProvider": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "google",
+              "gitlab",
+              "oidc"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_id": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "secret_configured": {
+            "type": "boolean"
+          },
+          "issuer_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "callback_url": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "settings"
+            ]
+          },
+          "encryption_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "enabled",
+          "client_id",
+          "secret_configured",
+          "issuer_url",
+          "revision",
+          "callback_url",
+          "encryption_ready"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationLoginProviderInput": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_id": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "client_secret": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 8192
+          },
+          "clear_secret": {
+            "type": "boolean"
+          },
+          "issuer_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "enabled",
+          "client_id",
+          "issuer_url",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationSMTP": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "settings"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "security": {
+            "type": "string",
+            "enum": [
+              "starttls",
+              "tls"
+            ]
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "At most 256 UTF-8 bytes, without control characters."
+          },
+          "from_email": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "At most 254 UTF-8 bytes."
+          },
+          "password_set": {
+            "type": "boolean"
+          },
+          "encryption_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "source",
+          "enabled",
+          "host",
+          "port",
+          "security",
+          "username",
+          "from_email",
+          "password_set",
+          "encryption_ready"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationSMTPInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "security": {
+            "type": "string",
+            "enum": [
+              "starttls",
+              "tls"
+            ]
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "At most 256 UTF-8 bytes, without control characters."
+          },
+          "from_email": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "At most 254 UTF-8 bytes."
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "description": "At most 4096 UTF-8 bytes, without NUL or line breaks. Omit to keep the stored password."
+          },
+          "clear_password": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled",
+          "host",
+          "port",
+          "security",
+          "username",
+          "from_email"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationSMTPTestInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationSMTPTestResult": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "boolean"
+          },
+          "recipient": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sent",
+          "recipient"
+        ],
+        "additionalProperties": false
+      },
       "LicenseFeature": {
         "type": "object",
         "properties": {
@@ -15386,235 +15675,6 @@
         "required": [
           "name",
           "updated_at"
-        ]
-      },
-      "InstallationLoginProvider": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "provider": {
-            "type": "string",
-            "enum": [
-              "github",
-              "google",
-              "gitlab",
-              "oidc"
-            ]
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "client_id": {
-            "type": "string",
-            "maxLength": 512
-          },
-          "secret_configured": {
-            "type": "boolean"
-          },
-          "issuer_url": {
-            "type": "string",
-            "maxLength": 2048
-          },
-          "revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "callback_url": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "operator",
-              "settings"
-            ]
-          },
-          "encryption_ready": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "provider",
-          "enabled",
-          "client_id",
-          "secret_configured",
-          "issuer_url",
-          "revision",
-          "callback_url",
-          "encryption_ready"
-        ]
-      },
-      "InstallationLoginProviderInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "client_id": {
-            "type": "string",
-            "maxLength": 512
-          },
-          "client_secret": {
-            "type": "string",
-            "writeOnly": true,
-            "maxLength": 8192
-          },
-          "clear_secret": {
-            "type": "boolean"
-          },
-          "issuer_url": {
-            "type": "string",
-            "maxLength": 2048
-          },
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "enabled",
-          "client_id",
-          "issuer_url",
-          "expected_revision"
-        ]
-      },
-      "InstallationSMTP": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "operator",
-              "settings"
-            ]
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "host": {
-            "type": "string"
-          },
-          "port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "security": {
-            "type": "string",
-            "enum": [
-              "starttls",
-              "tls"
-            ]
-          },
-          "username": {
-            "type": "string"
-          },
-          "from_email": {
-            "type": "string"
-          },
-          "password_set": {
-            "type": "boolean"
-          },
-          "encryption_ready": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "revision",
-          "source",
-          "enabled",
-          "host",
-          "port",
-          "security",
-          "username",
-          "from_email",
-          "password_set",
-          "encryption_ready"
-        ]
-      },
-      "InstallationSMTPInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "host": {
-            "type": "string"
-          },
-          "port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "security": {
-            "type": "string",
-            "enum": [
-              "starttls",
-              "tls"
-            ]
-          },
-          "username": {
-            "type": "string"
-          },
-          "from_email": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string",
-            "writeOnly": true
-          },
-          "clear_password": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "expected_revision",
-          "enabled",
-          "host",
-          "port",
-          "security",
-          "username",
-          "from_email"
-        ]
-      },
-      "InstallationSMTPTestInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "expected_revision"
-        ]
-      },
-      "InstallationSMTPTestResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "sent": {
-            "type": "boolean"
-          },
-          "recipient": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "sent",
-          "recipient"
         ]
       }
     }
