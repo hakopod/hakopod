@@ -14,18 +14,19 @@ import (
 
 type AuthConfig struct {
 	// CloudSignupAvailable is set by the server build, never operator configuration.
-	CloudSignupAvailable bool
-	DeploymentMode       string
-	SignupEnabled        bool
-	PublicURL            string
-	SetupSecret          string
-	EncryptionKey        string
-	GitHubClientID       string
-	GitHubClientSecret   string
-	GoogleClientID       string
-	GoogleClientSecret   string
-	GitLabClientID       string
-	GitLabClientSecret   string
+	CloudSignupAvailable                          bool
+	DeploymentMode                                string
+	SignupEnabled                                 bool
+	PublicURL                                     string
+	SetupSecret                                   string
+	EncryptionKey                                 string
+	GitHubClientID                                string
+	GitHubClientSecret                            string
+	GoogleClientID                                string
+	GoogleClientSecret                            string
+	GitLabClientID                                string
+	GitLabClientSecret                            string
+	OIDCClientID, OIDCClientSecret, OIDCIssuerURL string
 	// Provider endpoints are overridden only by trusted in-process integration tests.
 	GitHubAuthURL, GitHubTokenURL, GitHubAPIURL       string
 	GoogleAuthURL, GoogleTokenURL, GoogleUserInfoURL  string
@@ -152,14 +153,14 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	providers := []string{}
-	if s.Auth.GitHubClientID != "" && s.Auth.GitHubClientSecret != "" {
-		providers = append(providers, "github")
-	}
-	if s.Auth.GoogleClientID != "" && s.Auth.GoogleClientSecret != "" {
-		providers = append(providers, "google")
-	}
-	if s.Auth.GitLabClientID != "" && s.Auth.GitLabClientSecret != "" {
-		providers = append(providers, "gitlab")
+	for _, provider := range []string{"github", "google", "gitlab", "oidc"} {
+		if s.loginAllowed(r.Context(), provider) != nil {
+			continue
+		}
+		config, e := s.readLoginProvider(r.Context(), provider)
+		if e == nil && config.Enabled && config.SecretConfigured {
+			providers = append(providers, provider)
+		}
 	}
 	_, passkeyErr := s.webAuthn()
 	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)

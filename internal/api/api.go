@@ -49,6 +49,9 @@ type bucket struct {
 type principalKey struct{}
 
 func (s *Server) Handler() http.Handler {
+	if s.Store != nil {
+		s.Store.ManagedCloud = s.Auth.DeploymentMode == cluster.DeploymentManagedCloud
+	}
 	s.buckets = map[string]bucket{}
 	s.concurrent = make(chan struct{}, 64)
 	s.streams = make(chan struct{}, 16)
@@ -66,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	routes := http.NewServeMux()
 	s.registerAuthRoutes(mux, routes)
 	s.registerLicenseRoutes(routes)
+	s.registerLoginProviderRoutes(routes)
 	s.registerProfileRoutes(routes)
 	s.registerDomainRoutes(routes)
 	s.registerBackupRoutes(routes)

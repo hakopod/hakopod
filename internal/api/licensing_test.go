@@ -52,7 +52,7 @@ func TestLicenseFreeCollaborationDowngradeAndRecovery(t *testing.T) {
 	if free["plan"] != "free" {
 		t.Fatal("signed downgrade retained Pro")
 	}
-	h.call("POST", "/teams", owner, map[string]string{"name": "Free after downgrade"}, 201)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Free after downgrade"}, 402)
 	h.call("POST", "/teams/"+teamID+"/invites", owner, map[string]string{"email": "free-again@example.test", "role": "member"}, 201)
 	h.call("PUT", "/teams/"+teamID+"/members/"+memberID, owner, map[string]string{"role": "admin"}, 200)
 	h.call("PUT", "/projects/demo/members", owner, map[string]string{"identity_id": memberID, "role": "developer"}, 200)
@@ -107,7 +107,7 @@ func TestLicenseFreeCollaborationDowngradeAndRecovery(t *testing.T) {
 	if h.call("GET", "/license", owner, nil, 200)["state"] != "expired" {
 		t.Fatal("stored signed expiry was not enforced")
 	}
-	h.call("POST", "/teams", owner, map[string]string{"name": "Free after expiry"}, 201)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Free after expiry"}, 402)
 	h.call("DELETE", "/teams/"+teamID, owner, nil, 200)
 	h.call("DELETE", "/license", owner, map[string]int64{"expected_revision": 3}, 200)
 	h.call("PUT", "/license", owner, map[string]any{"license": renewal, "expected_revision": 4}, 409)

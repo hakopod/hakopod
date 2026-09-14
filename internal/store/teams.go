@@ -97,6 +97,11 @@ func (s *Store) CreateTeam(ctx context.Context, p Principal, name string) (Team,
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM teams").Scan(&count); err != nil {
 		return Team{}, err
 	}
+	if count >= 1 && !s.ManagedCloud {
+		if err = s.requireFeaturesTx(ctx, tx, "multi_team"); err != nil {
+			return Team{}, err
+		}
+	}
 	if count >= 100 {
 		return Team{}, fmt.Errorf("%w: team limit reached", ErrInput)
 	}

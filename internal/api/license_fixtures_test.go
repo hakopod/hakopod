@@ -24,7 +24,7 @@ func testSignedLicense(key ed25519.PrivateKey, claims license.Claims) string {
 }
 func testLicenseClaims(installation string, sequence int64) license.Claims {
 	now := time.Now().UTC().Add(-time.Minute).Unix()
-	return license.Claims{Version: 1, KeyID: "ephemeral-fixture", LicenseID: strings.Repeat("a", 32), InstallationID: installation, Customer: "Local test fixture", Plan: "pro", Sequence: sequence, IssuedAt: now, NotBefore: now, ExpiresAt: now + 7200, Features: []string{"teams", "invitations", "project_rbac"}}
+	return license.Claims{Version: 1, KeyID: "ephemeral-fixture", LicenseID: strings.Repeat("a", 32), InstallationID: installation, Customer: "Local test fixture", Plan: "pro", Sequence: sequence, IssuedAt: now, NotBefore: now, ExpiresAt: now + 7200, Features: []string{"teams", "invitations", "project_rbac", "multi_team", "oauth_login", "enterprise_sso"}}
 }
 func testProLicense(t *testing.T, db *store.Store) ed25519.PrivateKey {
 	t.Helper()

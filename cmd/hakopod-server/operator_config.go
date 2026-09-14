@@ -55,6 +55,11 @@ type operatorConfig struct {
 		GitHub operatorProvider `toml:"github"`
 		GitLab operatorProvider `toml:"gitlab"`
 		Google operatorProvider `toml:"google"`
+		OIDC   struct {
+			ClientID         *string `toml:"client_id"`
+			ClientSecretFile *string `toml:"client_secret_file"`
+			IssuerURL        *string `toml:"issuer_url"`
+		} `toml:"oidc"`
 	} `toml:"oauth"`
 	SMTP struct {
 		Enabled      *bool   `toml:"enabled"`
@@ -193,6 +198,9 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"oauth.gitlab.client_secret_file", "HAKOPOD_GITLAB_CLIENT_SECRET_FILE", c.OAuth.GitLab.ClientSecretFile, true, true, true},
 		{"oauth.google.client_id", "HAKOPOD_GOOGLE_CLIENT_ID", c.OAuth.Google.ClientID, false, false, false},
 		{"oauth.google.client_secret_file", "HAKOPOD_GOOGLE_CLIENT_SECRET_FILE", c.OAuth.Google.ClientSecretFile, true, true, true},
+		{"oauth.oidc.client_id", "HAKOPOD_OIDC_CLIENT_ID", c.OAuth.OIDC.ClientID, false, false, false},
+		{"oauth.oidc.client_secret_file", "HAKOPOD_OIDC_CLIENT_SECRET_FILE", c.OAuth.OIDC.ClientSecretFile, true, true, true},
+		{"oauth.oidc.issuer_url", "HAKOPOD_OIDC_ISSUER_URL", c.OAuth.OIDC.IssuerURL, false, false, false},
 		{"smtp.enabled", "HAKOPOD_SMTP_ENABLED", boolSetting(c.SMTP.Enabled), false, false, false},
 		{"smtp.address", "HAKOPOD_SMTP_ADDRESS", c.SMTP.Address, false, false, false},
 		{"smtp.from", "HAKOPOD_SMTP_FROM", c.SMTP.From, false, false, false},

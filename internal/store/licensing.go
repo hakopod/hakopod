@@ -184,3 +184,9 @@ func (s *Store) RemoveLicense(ctx context.Context, p Principal, expected int64) 
 	}
 	return s.LicenseStatus(ctx)
 }
+
+// RequireFeaturesTx checks entitlement while holding a shared license lock until
+// the caller commits its paid mutation.
+func (s *Store) RequireFeaturesTx(ctx context.Context, tx pgx.Tx, features ...string) error {
+	return s.requireFeaturesTx(ctx, tx, features...)
+}

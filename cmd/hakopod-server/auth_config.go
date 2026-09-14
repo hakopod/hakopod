@@ -54,7 +54,7 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 		return api.AuthConfig{}, err
 	}
 	secrets := map[string]string{}
-	for _, name := range []string{"HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_SMTP_PASSWORD"} {
+	for _, name := range []string{"HAKOPOD_GITHUB_CLIENT_SECRET", "HAKOPOD_GITLAB_CLIENT_SECRET", "HAKOPOD_GOOGLE_CLIENT_SECRET", "HAKOPOD_SMTP_PASSWORD", "HAKOPOD_OIDC_CLIENT_SECRET"} {
 		value, e := secretSettingFrom(name, get)
 		if e != nil {
 			return api.AuthConfig{}, e
@@ -68,6 +68,7 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 	c := api.AuthConfig{CloudSignupAvailable: cloudSignupAvailable, DeploymentMode: mode, SignupEnabled: get("HAKOPOD_SIGNUP_ENABLED") == "true", PublicURL: origin, SetupSecret: setup, EncryptionKey: encryption,
 		GitHubClientID: get("HAKOPOD_GITHUB_CLIENT_ID"), GitHubClientSecret: secrets["HAKOPOD_GITHUB_CLIENT_SECRET"], GoogleClientID: get("HAKOPOD_GOOGLE_CLIENT_ID"), GoogleClientSecret: secrets["HAKOPOD_GOOGLE_CLIENT_SECRET"],
 		GitLabClientID: get("HAKOPOD_GITLAB_CLIENT_ID"), GitLabClientSecret: secrets["HAKOPOD_GITLAB_CLIENT_SECRET"],
+		OIDCClientID: get("HAKOPOD_OIDC_CLIENT_ID"), OIDCClientSecret: secrets["HAKOPOD_OIDC_CLIENT_SECRET"], OIDCIssuerURL: get("HAKOPOD_OIDC_ISSUER_URL"),
 		SMTPAddress: get("HAKOPOD_SMTP_ADDRESS"), SMTPUsername: get("HAKOPOD_SMTP_USERNAME"), SMTPPassword: secrets["HAKOPOD_SMTP_PASSWORD"], SMTPFrom: get("HAKOPOD_SMTP_FROM"), SMTPAllowDelivery: get("HAKOPOD_SMTP_ENABLED") == "true"}
 	u, e := url.Parse(c.PublicURL)
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -96,6 +97,12 @@ func authConfigFrom(get func(string) string) (api.AuthConfig, error) {
 	}
 	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") || (c.GoogleClientID == "") != (c.GoogleClientSecret == "") || (c.GitLabClientID == "") != (c.GitLabClientSecret == "") {
 		return c, fmt.Errorf("each OAuth client ID requires its matching client secret")
+	}
+	if c.OIDCClientID != "" || c.OIDCClientSecret != "" || c.OIDCIssuerURL != "" {
+		issuer, err := url.Parse(c.OIDCIssuerURL)
+		if err != nil || issuer.Scheme != "https" || issuer.Host == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.Fragment != "" || c.OIDCClientID == "" || c.OIDCClientSecret == "" {
+			return c, fmt.Errorf("OIDC requires a client ID, client secret and HTTPS issuer URL")
+		}
 	}
 	if c.SMTPAllowDelivery {
 		if _, _, e = net.SplitHostPort(c.SMTPAddress); e != nil {

@@ -1,14 +1,17 @@
 # Free and Pro features
 
 Hakopod runs without an activation service or a paid license. Free includes the
-installer-selected owner, account recovery and authentication, password/provider
+installer-selected owner, account recovery and authentication, password
 login, passkeys and TOTP, machine keys, application deployments and rollbacks,
 source builds and approved source synchronization, logs and metrics, node and
 service operations, registries, secrets and TLS. GitLab.com login is supported
 alongside GitHub and Google. GitLab build-provider support is described separately
 from authentication and source synchronization.
 
-Teams, member invitations and fixed project roles are included in Free. The
+One self-hosted team, member invitations and fixed project roles are included in Free.
+Additional teams require `multi_team`; Google, GitHub and GitLab login requires
+`oauth_login`. Enterprise OpenID Connect SSO requires `enterprise_sso`.
+See [installation access settings](installation-access-settings.md). The
 capability identifiers `teams`, `invitations` and `project_rbac` remain stable, but
 no paid activation is required. Team roles are owner, administrator and member;
 project roles are administrator, developer and viewer. These fixed roles do not
@@ -32,7 +35,7 @@ advanced capability explicitly. A Pro plan label alone never enables a feature.
 
 Public signup is optional in Cloud-capable builds running managed-cloud mode.
 Self-hosted binaries allow first-owner setup and explicit invitation enrollment,
-including Google, GitHub and GitLab OAuth with a verified matching email. A
+including licensed Google, GitHub and GitLab OAuth with a verified matching email. A
 verified account can create one private personal workspace. Its ownership is
 separate from shared project grants: it cannot accept members or team assignments.
 See [accounts](accounts.md).

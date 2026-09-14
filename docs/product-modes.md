@@ -22,7 +22,7 @@ create a production-ready shared hosting platform.
 | Node access, host terminals and shared ingress configuration | Authorized installation operators | Platform operations only |
 | Resource capacity | Operator-owned capacity and workload profiles | Initial node/profile/replica limits enforced; managed-compute accounting remains planned |
 | Public signup | Disabled in public release binaries; setup and explicit invites remain available | Private beta accepts allowlisted, verified accounts only |
-| Team features | Basic teams, invitations and fixed roles are Free; actor audit history is paid | Initial Free beta includes one team with up to five members; tester allowlist is tighter |
+| Team features | One team, invitations and fixed roles are Free; multiple teams, OAuth login, enterprise SSO and actor audit history require their paid entitlements | Initial Free beta includes one team with up to five members; tester allowlist is tighter |
 
 Customer-owned Bring Your Own Cloud is a dedicated self-hosted installation on
 AWS, GCP or Azure. Paid operations do not turn it into the shared Hakopod Cloud
