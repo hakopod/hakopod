@@ -1,3 +1,4 @@
+import { InstallationUpdateNotice } from './installation'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -444,6 +445,7 @@ function Workspace({
             {links()}
           </nav>
           <div className="hako-header-tools">
+            <InstallationUpdateNotice />
             <Tooltip content="Quick navigation · ⌘ K">
               <Button
                 variant="ghost"
