@@ -1,0 +1,62 @@
+name: Template runtime acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'templates'
+      - 'internal/spec/**'
+      - 'internal/cluster/**'
+      - '.github/workflows/template-runtime.yml'
+permissions:
+  contents: read
+concurrency:
+  group: template-runtime-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      HAKOPOD_TEST_KUBECONFIG: ${{ github.workspace }}/.local/kubeconfig
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - name: Start disposable development cluster
+        run: |
+          scripts/local-up.sh
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev apply -f deploy/storage/local-path.yaml
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev -n hakopod-storage rollout status deployment/local-path-provisioner --timeout=120s
+      - name: Validate catalog and lifecycle behavior
+        run: |
+          set -o pipefail
+          mkdir -p .local/runtime-results
+          git rev-parse HEAD > .local/runtime-results/product-commit.txt
+          git -C templates rev-parse HEAD > .local/runtime-results/catalog-commit.txt
+          uname -m > .local/runtime-results/architecture.txt
+          python3 templates/scripts/validate.py
+          HAKOPOD_LIFECYCLE_TEST=1 go test ./internal/cluster -run '^TestLiveDeploymentLifecycle$' -count=1 -json | tee .local/runtime-results/lifecycle.jsonl
+      - name: Verify template readiness and persistent data across restart
+        run: |
+          set -o pipefail
+          HAKOPOD_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=redis go test ./internal/cluster -run '^TestLiveCatalogTemplates$' -count=1 -json | tee .local/runtime-results/redis.jsonl
+          HAKOPOD_SHARED_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=nginx go test ./internal/cluster -run '^TestLiveSharedCatalog$' -count=1 -json | tee .local/runtime-results/nginx.jsonl
+      - name: Save verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: template-runtime-${{ matrix.runner }}
+          path: .local/runtime-results
+          retention-days: 14
+          if-no-files-found: warn

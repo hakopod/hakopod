@@ -41,6 +41,18 @@ func templateSecretKube(t *testing.T) *cluster.Client {
 			write(w, 200, map[string]any{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClassList", "items": []any{map[string]any{"metadata": map[string]any{"name": "test-storage", "annotations": map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}}, "provisioner": "test.invalid/storage"}}})
 			return
 		}
+		if r.URL.Path == "/api/v1/nodes" {
+			write(w, 200, map[string]any{"apiVersion": "v1", "kind": "NodeList", "items": []any{map[string]any{"metadata": map[string]any{"name": "fixture-node"}, "status": map[string]any{"conditions": []any{map[string]string{"type": "Ready", "status": "True"}}, "allocatable": map[string]string{"cpu": "8", "memory": "16Gi"}}}}})
+			return
+		}
+		if r.URL.Path == "/api/v1/pods" {
+			write(w, 200, map[string]any{"apiVersion": "v1", "kind": "PodList", "items": []any{}})
+			return
+		}
+		if r.URL.Path == "/api/v1/nodes/fixture-node/proxy/stats/summary" {
+			write(w, 200, map[string]any{"node": map[string]any{"fs": map[string]any{"availableBytes": 10 << 30}}})
+			return
+		}
 		base := "/api/v1/namespaces/hakopod-system/secrets"
 		if !strings.HasPrefix(r.URL.Path, base) {
 			http.NotFound(w, r)

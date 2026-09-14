@@ -27,6 +27,11 @@ func validateAWSIdentity(s Service) error {
 			return fmt.Errorf("secrets.%s: managed by aws_identity", key)
 		}
 	}
+	for key := range s.Bindings {
+		if awsIdentityReservedEnv(key) {
+			return fmt.Errorf("bindings.%s: managed by aws_identity", key)
+		}
+	}
 	paths := []string{}
 	if s.Volume != nil {
 		paths = append(paths, s.Volume.MountPath)

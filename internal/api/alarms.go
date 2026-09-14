@@ -260,10 +260,13 @@ func applicationAlarmObservations(app store.Application, current cluster.Observa
 		if observationErr == nil && found {
 			health = "unhealthy"
 			message = fmt.Sprintf("Service %s is not ready (%d/%d replicas).", name, service.Ready, service.Desired)
-			if service.Status == "ready" && service.Ready >= service.Desired {
+			if (service.Status == "ready" || service.Status == "completed" && app.Spec.Services[name].Job != nil) && service.Ready >= service.Desired {
 				health = "healthy"
 				ready++
 				message = fmt.Sprintf("Service %s is ready (%d/%d replicas).", name, service.Ready, service.Desired)
+				if app.Spec.Services[name].Job != nil {
+					message = fmt.Sprintf("Job %s completed successfully.", name)
+				}
 			} else if service.Message != "" {
 				message += " " + service.Message
 			}

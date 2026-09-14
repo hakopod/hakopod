@@ -69,7 +69,7 @@ func (c *Client) DeleteWorkloadSecret(ctx context.Context, project, environment,
 
 func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name string, s spec.Service) error {
 	api := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID))
-	if len(s.Secrets) == 0 {
+	if len(s.Secrets) == 0 && len(s.Bindings) == 0 {
 		return nil
 	}
 	data := map[string][]byte{}
@@ -97,6 +97,21 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 		if total > 512<<10 {
 			return fmt.Errorf("service secret values exceed 512 KiB")
 		}
+	}
+	for key, binding := range s.Bindings {
+		var password []byte
+		if binding.Password != nil {
+			var ok bool
+			password, ok = t.secretValues[name][spec.BindingSecretKey(key)]
+			if !ok {
+				return fmt.Errorf("binding secret snapshot is incomplete")
+			}
+		}
+		data[key] = []byte(spec.BindingURL(binding, t.Spec.Services[binding.Service], password))
+		total += len(key) + len(data[key])
+	}
+	if total > 512<<10 {
+		return fmt.Errorf("service secret values exceed 512 KiB")
 	}
 	wanted := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name + "-environment", Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Type: corev1.SecretTypeOpaque, Data: data}
 	current, err := api.Get(ctx, wanted.Name, metav1.GetOptions{})

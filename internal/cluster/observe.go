@@ -35,6 +35,17 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 	healthy := 0
 	for _, name := range spec.Names(t.Spec) {
 		svc := t.Spec.Services[name]
+		if svc.Job != nil {
+			status, err := c.observeJob(ctx, t, name, svc)
+			if err != nil {
+				return result, err
+			}
+			result.Services = append(result.Services, status)
+			if status.Status == "completed" {
+				healthy++
+			}
+			continue
+		}
 		status := ServiceStatus{Name: name, Status: "missing", Desired: svc.Replicas, Image: svc.Image}
 		if svc.Port > 0 {
 			status.InternalAddress = fmt.Sprintf("%s:%d", name, svc.Port)
@@ -88,6 +99,10 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 			ingress, err := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
 			if err == nil && owned(ingress, t) == nil {
 				status.URL = c.serviceURL(t, name)
+				status.Endpoints = map[string]string{}
+				for endpoint := range svc.HTTP {
+					status.Endpoints[endpoint] = strings.Replace(status.URL, c.hostname(t, name), c.endpointHostname(t, name, endpoint), 1)
+				}
 			}
 		}
 		result.Services = append(result.Services, status)

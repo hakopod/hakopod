@@ -11,6 +11,21 @@ import (
 // ValidateDelivery is read-only. It runs during planning, durable acceptance
 // and reconciliation; approval never substitutes for a current ownership check.
 func (c *Client) ValidateDelivery(ctx context.Context, t Target) error {
+	_, err := c.ValidateDeliveryWithReport(ctx, t)
+	return err
+}
+
+func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (PreflightReport, error) {
+	if err := c.validateDeliveryPolicy(ctx, t); err != nil {
+		return PreflightReport{}, err
+	}
+	report, err := c.Preflight(ctx, t)
+	if err != nil {
+		return report, err
+	}
+	return report, report.Validate()
+}
+func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
 	if err := c.validateStorage(ctx, t); err != nil {
 		return err
 	}

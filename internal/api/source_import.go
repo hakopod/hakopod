@@ -116,7 +116,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	review := sourceImportReview{ConnectionRevision: connection.Revision, Input: in, Commit: commit, Hash: sourceContentHash(next), Key: who(r).KeyID, Expires: expires.Unix()}
-	warnings := spec.Warnings(next)
+	warnings := deliveryWarnings(r, next)
 	if warnings == nil {
 		warnings = []string{}
 	}

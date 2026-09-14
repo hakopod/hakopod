@@ -67,11 +67,11 @@ tar -xzf /tmp/hakopod-pack.tgz -C /tmp pack
 			script += strings.TrimPrefix(line, "          ") + "\n"
 		}
 		script = strings.ReplaceAll(script, `compgen -G "$BUILD_CONTEXT/*.csproj" > /dev/null || compgen -G "$BUILD_CONTEXT/*.fsproj" > /dev/null`, `[ -n "$(find "$BUILD_CONTEXT" -maxdepth 1 \( -name '*.csproj' -o -name '*.fsproj' \) -print -quit)" ]`)
-		script += `/tmp/pack build "$IMAGE_NAME:$REQUEST_ID" --path "$BUILD_CONTEXT" --builder {{BUILDER}} --buildpack "$PACK_IMAGE" --env BP_WEB_SERVER=nginx --publish --pull-policy if-not-present
+		script += `/tmp/pack build "$IMAGE_NAME:$REQUEST_ID" --path "$BUILD_CONTEXT" --builder {{BUILDER}} --buildpack "$PACK_IMAGE" --env BP_WEB_SERVER=nginx{{PACK_ARGS}} --publish --pull-policy if-not-present
 `
 	} else {
 		script += `docker buildx create --driver docker-container --use
-docker buildx build --platform {{PLATFORM}} --file {{DOCKERFILE}} --tag "$IMAGE_NAME:$REQUEST_ID" --provenance=mode=min --push "$BUILD_CONTEXT"
+docker buildx build --platform {{PLATFORM}} --file {{DOCKERFILE}} --tag "$IMAGE_NAME:$REQUEST_ID" --provenance=mode=min{{BUILD_ARGS}} --push "$BUILD_CONTEXT"
 `
 	}
 	script += `docker buildx imagetools inspect "$IMAGE_NAME:$REQUEST_ID" > /tmp/hakopod-image.txt
@@ -80,6 +80,8 @@ printf '%s\n' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
 printf '{"build_id":"%s","request_id":"%s","commit_sha":"%s","image":"%s@%s"}\n' "$BUILD_ID" "$REQUEST_ID" "$SOURCE_SHA" "$IMAGE_NAME" "$DIGEST" > result.json
 `
 	script = strings.NewReplacer("{{BUILD_ID}}", strconv.Quote(c.ID), "{{IMAGE}}", strconv.Quote(c.imageName()), "{{CONTEXT}}", strconv.Quote(c.ContextPath), "{{REPOSITORY_URL}}", strconv.Quote("https://gitlab.com/"+c.Repository+".git"), "{{PACK_URL}}", strconv.Quote("https://github.com/buildpacks/pack/releases/download/v0.40.9/"+packAsset), "{{PACK_CHECKSUM}}", strconv.Quote(packChecksum), "{{BUILDER}}", strconv.Quote(paketoBuilder), "{{PLATFORM}}", strconv.Quote("linux/"+c.Architecture), "{{DOCKERFILE}}", strconv.Quote(c.Dockerfile)).Replace(script)
+	script = strings.ReplaceAll(script, "{{PACK_ARGS}}", shellBuildArguments(c.BuildArgs, "--env"))
+	script = strings.ReplaceAll(script, "{{BUILD_ARGS}}", shellBuildArguments(c.BuildArgs, "--build-arg"))
 	var out strings.Builder
 	out.WriteString("# Managed by Hakopod build " + c.ID + ". Review through Hakopod before reinstalling.\nworkflow:\n  rules:\n" + rules + "stages: [build]\n" + c.gitlabJobName() + ":\n  stage: build\n  image: " + strconv.Quote(gitlabDockerCLI) + "\n  tags: [" + strconv.Quote(runner) + "]\n  timeout: 30m\n  interruptible: false\n  retry: 0\n  resource_group: " + strconv.Quote("hakopod-"+c.ID) + "\n  services:\n    - name: " + strconv.Quote(gitlabDockerDaemon) + "\n      alias: docker\n      command: [\"--tls=false\", \"--mtu=1400\"]\n  variables:\n    DOCKER_HOST: \"tcp://docker:2375\"\n    DOCKER_TLS_CERTDIR: \"\"\n    GIT_DEPTH: \"1\"\n  script:\n    - |\n")
 	for _, line := range strings.Split(strings.TrimSuffix(script, "\n"), "\n") {

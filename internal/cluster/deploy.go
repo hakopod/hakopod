@@ -47,13 +47,16 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if target.ApplicationID == "" {
 		return Observation{}, fmt.Errorf("application ID is required")
 	}
-	if err := c.ValidateDelivery(ctx, target); err != nil {
+	if err := beforeStep(ctx, target); err != nil {
 		return Observation{}, err
 	}
 	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
 		return Observation{}, err
 	}
-	if err := beforeStep(ctx, target); err != nil {
+	if err := c.ValidateDelivery(ctx, target); err != nil {
+		return Observation{}, err
+	}
+	if err := c.validateWorkloadKinds(ctx, target); err != nil {
 		return Observation{}, err
 	}
 	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
@@ -61,6 +64,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
+	}
+	if err := c.cleanupFiles(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
 	}
 	if err := c.PreparePublicTCP(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
@@ -87,6 +93,15 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		svc := target.Spec.Services[name]
 		if err := ctx.Err(); err != nil {
 			return c.observationAfterFailure(target), err
+		}
+		if svc.Job != nil {
+			emit(Event{Type: "applying", Service: name, Message: "Running deployment job; dependent services wait for successful completion"})
+			if err := c.runJob(ctx, target, name, svc); err != nil {
+				emit(Event{Type: "failed", Service: name, Message: err.Error()})
+				return c.observationAfterFailure(target), err
+			}
+			emit(Event{Type: "completed", Service: name, Message: "Deployment job completed successfully"})
+			continue
 		}
 		emit(Event{Type: "applying", Service: name, Message: "Applying digest-pinned Deployment with readiness-gated rolling update"})
 		// Remove an old HPA before taking manual ownership of replicas.
@@ -136,10 +151,16 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.ReconcilePublicTCP(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
+	if err := c.cleanupJobs(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
 	if err := c.cleanup(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.waitRetiredPods(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
+	if err := c.cleanupFiles(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
@@ -208,6 +229,9 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 		corev1.ResourceRequestsEphemeralStorage: resource.MustParse("4Gi"), corev1.ResourceLimitsEphemeralStorage: resource.MustParse("8Gi"),
 		corev1.ResourcePods: resource.MustParse("64"), corev1.ResourceServices: resource.MustParse("25"), corev1.ResourcePersistentVolumeClaims: resource.MustParse("0"),
 	}}}
+	quota.Spec.Hard["count/jobs.batch"] = resource.MustParse("20")
+	quota.Spec.Hard["count/configmaps"] = resource.MustParse("256")
+	quota.Spec.Hard["count/secrets"] = resource.MustParse("256")
 	workloadQuota(quota, t.Spec)
 	quotaAPI := c.kube.CoreV1().ResourceQuotas(ns)
 	if err := beforeStep(ctx, t); err != nil {
@@ -283,6 +307,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		result.Spec.Template.Annotations = map[string]string{"hakopod.io/restart-nonce": svc.RestartNonce}
 	}
 	configureWorkload(result, svc)
+	configureFiles(t, name, svc, &result.Spec.Template.Spec)
 	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
 	image := ""
 	if len(readinessImages) > 0 {
@@ -307,6 +332,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 		return 0, err
 	}
 	svc = resolved
+	if err := c.prepareFiles(ctx, t, name, svc); err != nil {
+		return 0, err
+	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
 	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {
@@ -432,6 +460,7 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	for _, host := range hosts[1:] {
 		rule := wanted.Spec.Rules[0].DeepCopy()
 		rule.Host = host
+		rule.HTTP.Paths[0].Backend.Service.Port.Number = c.httpHostPort(t, name, host)
 		wanted.Spec.Rules = append(wanted.Spec.Rules, *rule)
 	}
 	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {

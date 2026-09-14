@@ -10717,6 +10717,27 @@
           "aws_identity": {
             "type": "string"
           },
+          "job": {
+            "$ref": "#/components/schemas/DeploymentJob"
+          },
+          "files": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConfigurationFile"
+            }
+          },
+          "bindings": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ServiceBinding"
+            }
+          },
+          "http": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HTTPEndpoint"
+            }
+          },
           "readiness": {
             "$ref": "#/components/schemas/Readiness"
           },
@@ -10887,6 +10908,12 @@
           },
           "message": {
             "type": "string"
+          },
+          "endpoints": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -12930,6 +12957,12 @@
               "github",
               "gitlab"
             ]
+          },
+          "build_args": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -13044,6 +13077,12 @@
           },
           "expected_config_revision": {
             "type": "integer"
+          },
+          "build_args": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -14360,6 +14399,90 @@
           "sequence",
           "features",
           "catalog"
+        ]
+      },
+      "DeploymentJob": {
+        "type": "object",
+        "properties": {
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 900
+          },
+          "retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          }
+        },
+        "required": []
+      },
+      "ConfigurationFile": {
+        "type": "object",
+        "properties": {
+          "mount_path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretRef"
+          },
+          "mode": {
+            "type": "integer",
+            "enum": [
+              288,
+              292
+            ]
+          }
+        },
+        "required": [
+          "mount_path"
+        ]
+      },
+      "ServiceBinding": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "http",
+              "postgres",
+              "mysql",
+              "redis"
+            ]
+          },
+          "database": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "$ref": "#/components/schemas/SecretRef"
+          }
+        },
+        "required": [
+          "service",
+          "protocol"
+        ]
+      },
+      "HTTPEndpoint": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer"
+          },
+          "domain": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "port"
         ]
       },
       "LogEntry": {

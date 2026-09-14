@@ -17,6 +17,15 @@ func (c *Client) serviceHostnames(ctx context.Context, t Target, service string)
 			return nil, err
 		}
 	}
+	generated := []string{c.hostname(t, service)}
+	names := []string{}
+	for name := range t.Spec.Services[service].HTTP {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		generated = append(generated, c.endpointHostname(t, service, name))
+	}
 	custom := []string{}
 	for host, name := range t.Spec.Domains {
 		if name == service && approved[host] {
@@ -24,7 +33,7 @@ func (c *Client) serviceHostnames(ctx context.Context, t Target, service string)
 		}
 	}
 	sort.Strings(custom)
-	return append([]string{c.hostname(t, service)}, custom...), nil
+	return append(generated, custom...), nil
 }
 func (c *Client) validateServiceCertificate(ctx context.Context, t Target, service string, cert, key []byte) (*x509.Certificate, error) {
 	var leaf *x509.Certificate
@@ -40,4 +49,17 @@ func (c *Client) validateServiceCertificate(ctx context.Context, t Target, servi
 		}
 	}
 	return leaf, nil
+}
+
+func (c *Client) endpointHostname(t Target, service, endpoint string) string {
+	return c.hostname(t, service+"-"+endpoint)
+}
+func (c *Client) httpHostPort(t Target, service, host string) int32 {
+	svc := t.Spec.Services[service]
+	for name, e := range svc.HTTP {
+		if host == c.endpointHostname(t, service, name) || host == e.Domain {
+			return e.Port
+		}
+	}
+	return svc.Port
 }

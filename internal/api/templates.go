@@ -95,7 +95,7 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		revision = previous.Revision
 		id = previous.ID
 	}
-	warnings := spec.Warnings(next)
+	warnings := deliveryWarnings(r, next)
 	required := spec.TemplateSecretNames(next)
 	for _, t := range spec.Templates() {
 		if t.ID == r.PathValue("id") {

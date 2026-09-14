@@ -11,6 +11,22 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
+func TestCompletedJobDoesNotTriggerReadinessAlarm(t *testing.T) {
+	app := store.Application{ID: "jobs", Name: "jobs", Spec: spec.Application{Services: map[string]spec.Service{"migrate": {Job: &spec.Job{}}}}}
+	observed := cluster.Observation{Services: []cluster.ServiceStatus{{Name: "migrate", Status: "completed", Ready: 1, Desired: 1}}}
+	for _, alarm := range applicationAlarmObservations(app, observed, nil, time.Now()) {
+		if alarm.Health != "healthy" {
+			t.Fatal("completed job caused an alarm", alarm)
+		}
+	}
+	observed.Services[0].Status = "failed"
+	for _, alarm := range applicationAlarmObservations(app, observed, nil, time.Now()) {
+		if alarm.Health != "unhealthy" {
+			t.Fatal("failed job did not cause an alarm", alarm)
+		}
+	}
+}
+
 func TestAlarmSnapshotFreshnessRevisionAndActualReadiness(t *testing.T) {
 	now := time.Now().UTC()
 	app := store.Application{ID: "app", Name: "example", Project: "demo", Environment: "development", Revision: 2, Status: "healthy", Spec: spec.Application{Services: map[string]spec.Service{"web": {Replicas: 1}}}}

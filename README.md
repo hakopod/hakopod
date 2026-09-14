@@ -150,7 +150,7 @@ live resource observations, terminal permissions and bounds, and GitLab source s
 [Runtime alarms](docs/alarms.md) covers the dashboard inbox, unhealthy-resource
 and recovery notifications, scoped settings, and optional SMTP delivery.
 The [template catalog](docs/templates.md) records each preset's credentials,
-storage, memory and verification limits. [Backups](docs/backups.md) explains
+storage, memory and verification limits. [Application lifecycle](docs/application-lifecycle.md) covers deployment jobs, configuration files, connection bindings, multiple HTTP endpoints and capacity checks. [Backups](docs/backups.md) explains
 S3-compatible destinations, schedules, recovery keys and restores into fresh
 database names. A management backup covers the logical database, not the whole
 host or Kubernetes cluster.
