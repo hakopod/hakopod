@@ -180,7 +180,7 @@ func TestOAuthCallbackRechecksBuildAndMode(t *testing.T) {
 				c.CloudSignupAvailable = true
 			})
 			h.owner()
-			policyOAuthFlow(h, "google", url.Values{"intent": {"register"}}, func() {
+			policyOAuthFlow(h, "google", url.Values{"intent": {"login"}}, func() {
 				h.server.Close()
 				switch change {
 				case "build":
@@ -198,5 +198,30 @@ func TestOAuthCallbackRechecksBuildAndMode(t *testing.T) {
 				t.Fatal("old OAuth state created an account after signup policy changed", err)
 			}
 		})
+	}
+}
+
+func TestPublicCloudOAuthAcceptsNewAndReturningUsersFromEveryEntry(t *testing.T) {
+	base := signupPolicyProvider(t)
+	for _, provider := range []string{"github", "gitlab", "google"} {
+		for _, intent := range []string{"", "login", "register"} {
+			t.Run(provider+"/"+intent, func(t *testing.T) {
+				h := newAuthHarness(t, func(c *api.AuthConfig) {
+					configurePolicyProviders(c, base)
+					c.CloudSignupAvailable = true
+				})
+				h.owner()
+				query := url.Values{"intent": {intent}}
+				result := policyOAuthFlow(h, provider, query, nil, 200)
+				user := result["user"].(map[string]any)
+				if user["admin"] == true || user["owner"] == true {
+					t.Fatal("public OAuth granted installation administration")
+				}
+				again := policyOAuthFlow(h, provider, query, nil, 200)
+				if again["user"].(map[string]any)["id"] != user["id"] {
+					t.Fatal("returning OAuth user received a different account")
+				}
+			})
+		}
 	}
 }
