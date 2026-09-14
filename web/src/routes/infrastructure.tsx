@@ -1,3 +1,9 @@
+import {
+  InstallationLogs,
+  InstallationSetup,
+  InstallationUpdates,
+  useInstallationOwner,
+} from '../components/installation'
 import { Input } from '../components/ui/input'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Badge } from '../components/ui/surfaces'
@@ -26,7 +32,9 @@ const ProxySettings = lazy(() => import('../components/proxy-settings'))
 
 export const Route = createFileRoute('/infrastructure')({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
-    tab: ['nodes', 'registries', 'tls', 'enrollment', 'proxy'].includes(String(search.tab))
+    tab: ['nodes', 'registries', 'tls', 'enrollment', 'proxy', 'logs', 'setup', 'updates'].includes(
+      String(search.tab),
+    )
       ? String(search.tab)
       : undefined,
   }),
@@ -52,6 +60,7 @@ function gib(bytes: number) {
 }
 
 function Infrastructure() {
+  const owner = useInstallationOwner()
   const scope = useScope()
   const { tab } = Route.useSearch()
   const navigationRoot = useActiveSection(tab || 'nodes', '.tab-list')
@@ -107,6 +116,19 @@ function Infrastructure() {
               HAProxy
             </Tabs.Trigger>
           )}
+          {owner && (
+            <>
+              <Tabs.Trigger className="tab-trigger" value="logs">
+                API logs
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="setup">
+                Setup
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tab-trigger" value="updates">
+                Updates
+              </Tabs.Trigger>
+            </>
+          )}
         </Tabs.List>
         <Tabs.Content className="tab-content" value="nodes">
           <Nodes />
@@ -135,6 +157,15 @@ function Infrastructure() {
             </Suspense>
           </Tabs.Content>
         )}
+        <Tabs.Content className="tab-content" value="logs">
+          <InstallationLogs />
+        </Tabs.Content>
+        <Tabs.Content className="tab-content" value="setup">
+          <InstallationSetup />
+        </Tabs.Content>
+        <Tabs.Content className="tab-content" value="updates">
+          <InstallationUpdates />
+        </Tabs.Content>
       </Tabs.Root>
     </div>
   )

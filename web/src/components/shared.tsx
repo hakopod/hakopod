@@ -85,6 +85,13 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
         <h2>Something needs attention</h2>
         <p>{message(error)}</p>
         {error instanceof APIError && error.code && <code>{error.code}</code>}
+        {/readiness probe image|persistent storage is unavailable|maintenance service is unavailable/.test(
+          message(error),
+        ) && (
+          <Button asChild size="sm">
+            <a href="/infrastructure?tab=setup">Open infrastructure setup</a>
+          </Button>
+        )}
       </div>
       {retry && (
         <Button variant="primary" size="sm" onClick={retry}>

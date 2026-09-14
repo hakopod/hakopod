@@ -43,6 +43,7 @@ function ApplicationDomains() {
   const [error, setError] = useState('')
   const [plan, setPlan] = useState<Plan | null>(null)
   const [key, setKey] = useState('')
+  const [domainAction, setDomainAction] = useState('')
   if (application.isPending || domains.isPending) return <Loading />
   if (application.error || domains.error || !application.data)
     return <ErrorState error={application.error || domains.error} />
@@ -70,6 +71,11 @@ function ApplicationDomains() {
       )
       if (result.expected_revision !== current.revision)
         throw new Error('The application changed during review. Refresh and try again.')
+      setDomainAction(
+        target
+          ? `Activate ${domain} for ${target} after DNS ownership verification. This revision activates all verified mappings in its configuration; unverified domains stay inactive.`
+          : `Remove ${domain} from this application’s domain configuration.`,
+      )
       setPlan(result)
       setKey(crypto.randomUUID())
     } catch (err) {
@@ -112,6 +118,15 @@ function ApplicationDomains() {
             description={`Revision ${plan.expected_revision} to ${plan.expected_revision + 1}`}
             icon="globe"
           >
+            <Note>{domainAction}</Note>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              {Object.entries(plan.spec.domains || {}).map(([host, service]) => (
+                <div key={host} className="contents">
+                  <dt className="break-all">{host}</dt>
+                  <dd>{service}</dd>
+                </div>
+              ))}
+            </dl>
             <DiffTable changes={plan.changes} />
             {plan.warnings.map((warning) => (
               <Note key={warning}>{warning}</Note>
@@ -120,8 +135,8 @@ function ApplicationDomains() {
         ) : (
           <>
             <Note>
-              Configured means the mapping is saved in the application. Deployment status, DNS
-              resolution, and certificate readiness are reported separately.
+              Configured means ownership was verified and the mapping was accepted for routing.
+              Deployment status, DNS resolution, and certificate readiness are reported separately.
             </Note>
             <FormSection
               title="Custom domains"
@@ -213,7 +228,33 @@ function ApplicationDomains() {
                             Review activation
                           </Button>
                         )}
-                        {domain.active && (
+                        {!app.spec.domains?.[domain.hostname] && (
+                          <Button
+                            disabled={busy}
+                            onClick={async () => {
+                              setBusy(true)
+                              setError('')
+                              try {
+                                await unwrap(
+                                  client.DELETE('/applications/{id}/domains/{hostname}', {
+                                    params: {
+                                      path: { id: applicationId, hostname: domain.hostname },
+                                    },
+                                    body: { expected_revision: app.revision },
+                                  }),
+                                )
+                                void domains.refetch()
+                              } catch (e) {
+                                setError(message(e))
+                              } finally {
+                                setBusy(false)
+                              }
+                            }}
+                          >
+                            Discard setup record
+                          </Button>
+                        )}
+                        {app.spec.domains?.[domain.hostname] && (
                           <Button
                             variant="danger"
                             disabled={busy}

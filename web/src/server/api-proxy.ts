@@ -5,6 +5,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^installation\/(?:status|logs|setup|upgrade)$/,
   /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete))?)?$/,
   /^git\/oauth\/complete$/,
   /^installation\/smtp(?:\/test)?$/,
@@ -15,7 +16,7 @@ const allowed = [
   /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
   /^sources\/(?:plan|deploy)$/,
   /^showcase(?:\/remove)?$/,
-  /^applications\/[A-Za-z0-9_-]+\/domains(?:\/[A-Za-z0-9_.-]+\/verify)?$/,
+  /^applications\/[A-Za-z0-9_-]+\/domains(?:\/[A-Za-z0-9_.-]+(?:\/verify)?)?$/,
   /^auth\/profile$/,
   /^teams\/[A-Za-z0-9_-]+\/members\/[A-Za-z0-9_-]+\/username$/,
   /^host-access(?:\/[A-Za-z0-9_-]+(?:\/(?:[A-Za-z0-9_.-]+|\*))?)?$/,

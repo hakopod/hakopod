@@ -181,3 +181,15 @@ test('host terminal controls require owner or explicit node authority, never adm
 })
 import '../lib/service-environment.test'
 import '../lib/virtual-networks.test'
+
+test('installation prerequisites link to setup without losing the error', () => {
+  for (const text of [
+    'SMTP readiness probe image is missing',
+    'persistent storage is unavailable',
+    'The maintenance service is unavailable',
+  ]) {
+    const html = renderToStaticMarkup(<ErrorState error={text} />)
+    assert.ok(html.includes(text))
+    assert.ok(html.includes('/infrastructure?tab=setup'))
+  }
+})

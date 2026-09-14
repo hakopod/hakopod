@@ -88,6 +88,19 @@ function ApplicationDetail() {
     refetchIntervalInBackground: false,
     gcTime: 0,
   })
+  const domains = useQuery({
+    queryKey: ['application-domains', applicationId],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/applications/{id}/domains', {
+          signal,
+          params: { path: { id: applicationId } },
+        }),
+      ),
+    enabled: !!application.data && Object.keys(application.data.spec.domains || {}).length > 0,
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
+  })
   const configuration = useMemo(
     () => (application.data ? specToTOML(application.data.spec) : ''),
     [application.data?.spec],
@@ -120,6 +133,16 @@ function ApplicationDetail() {
       <Suspense fallback={null}>
         <SampleBanner applicationId={app.id} />
       </Suspense>
+      {domains.data?.items.some(
+        (domain) => !!app.spec.domains?.[domain.hostname] && !domain.active,
+      ) && (
+        <Note>
+          Custom domains need setup.{' '}
+          <Link to="/applications/$applicationId/domains" params={{ applicationId }}>
+            Configure DNS and activate domains
+          </Link>
+        </Note>
+      )}
       <div className="application-heading">
         <div>
           <div className="title-row hako-page-heading-title">

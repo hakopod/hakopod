@@ -241,8 +241,9 @@ function ImportRepository() {
                   </Note>
                 )}
                 <Note>
-                  The initial TOML must reference container images. Configure custom domains after
-                  the application exists so ownership can be verified.
+                  The initial TOML must reference container images. New custom domains stay pending
+                  until DNS ownership is verified after the application exists so ownership can be
+                  verified.
                 </Note>
               </FormSection>
             </>
