@@ -1,3 +1,4 @@
+import { Brand, brandLabel } from './brand'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import {
   dashboardEdition,
@@ -389,35 +390,9 @@ function Workspace({
               to={dashboardEdition.home}
               className="hako-wordmark"
               data-edition-brand={Boolean(dashboardEdition.brandSuffix) || undefined}
-              aria-label={[
-                'Hakopod',
-                dashboardEdition.brandSuffix,
-                dashboardEdition.releaseChannel,
-                dashboardEdition.cloud ? 'workspaces' : 'projects',
-              ]
-                .filter(Boolean)
-                .join(' ')}
+              aria-label={`${brandLabel} ${dashboardEdition.cloud ? 'workspaces' : 'projects'}`}
             >
-              <img
-                className="hako-wordmark-dark"
-                src="/brand/hakopod-horizontal-paper.svg"
-                alt=""
-                width="124"
-              />
-              <img
-                className="hako-wordmark-light"
-                src="/brand/hakopod-horizontal-ink.svg"
-                alt=""
-                width="124"
-              />
-              {dashboardEdition.brandSuffix && (
-                <span className="hako-edition-brand">
-                  <span>{dashboardEdition.brandSuffix}</span>
-                  {dashboardEdition.releaseChannel && (
-                    <span className="hako-release-badge">{dashboardEdition.releaseChannel}</span>
-                  )}
-                </span>
-              )}
+              <Brand icon={dashboardEdition.cloud} />
             </Link>
           </div>
           <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
