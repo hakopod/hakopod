@@ -7,7 +7,7 @@ import { Badge, Tooltip } from './ui/surfaces'
 import { relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { ScopeContext, canAccess, useScope } from '../lib/scope'
-import type { Project } from '../lib/types'
+import type { Application, Project } from '../lib/types'
 import { applicationRuntimeHealth } from '../lib/runtime-health'
 import { Button } from './ui/button'
 import { Icon } from './icons'
@@ -15,6 +15,7 @@ import { Copy, Empty, ErrorState, Loading, PageHeader, Status } from './shared'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { ServiceImageIcon } from './service-image-icon'
+import { DeleteResource } from './delete-resource'
 
 const SampleBanner = lazy(() => import('./sample-banner'))
 
@@ -35,6 +36,7 @@ export function ApplicationList({
   useEffect(() => {
     workspace.syncScope(project.name, environment)
   }, [workspace.syncScope, project.name, environment])
+  const [deleteApplication, setDeleteApplication] = useState<Application | null>(null)
   const [search, setSearch] = useState('')
   const [health, setHealth] = useState('all')
   const navigate = useNavigate()
@@ -85,6 +87,21 @@ export function ApplicationList({
   return (
     <ScopeContext.Provider value={scope}>
       <div className="ops-page application-list-page">
+        {deleteApplication && (
+          <DeleteResource
+            key={deleteApplication.id}
+            application={deleteApplication}
+            project={deleteApplication.project}
+            trigger="none"
+            initiallyOpen
+            onClose={() => setDeleteApplication(null)}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              document.getElementById(`application-actions-${deleteApplication.id}`)?.focus()
+            }}
+          />
+        )}
+
         <Suspense fallback={null}>
           <SampleBanner />
         </Suspense>
@@ -214,6 +231,7 @@ export function ApplicationList({
                             variant="ghost"
                             size="icon"
                             aria-label={`Actions for ${app.name}`}
+                            id={`application-actions-${app.id}`}
                           >
                             <span aria-hidden="true">···</span>
                           </Button>
@@ -254,6 +272,15 @@ export function ApplicationList({
                           >
                             <Icon name="settings" size={14} />
                             Configure application
+                          </MenuItem>
+                        )}
+                        {(scope.identity.admin ||
+                          scope.identity.project_roles?.some(
+                            (role) => role.project === app.project && role.role === 'admin',
+                          )) && (
+                          <MenuItem destructive onSelect={() => setDeleteApplication(app)}>
+                            <Icon name="trash" size={14} />
+                            Delete application
                           </MenuItem>
                         )}
                       </Menu>

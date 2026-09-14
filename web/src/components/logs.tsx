@@ -1,7 +1,7 @@
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Textarea } from './ui/textarea'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Badge, Tooltip } from './ui/surfaces'
 import { Dialog } from './ui/dialog'
@@ -14,6 +14,11 @@ import type { components } from '../lib/api.generated'
 const LiveLogs = lazy(() => import('./live-logs'))
 type Query = components['schemas']['LogQuery']
 type LogEntry = components['schemas']['LogEntry']
+type ExplorerResult = components['schemas']['LogQueryResult'] & {
+  source?: string
+  started_at?: string
+  observed_at?: string
+}
 const examples = [
   ['Errors', 'severity >= ERROR'],
   ['Timeouts', "message ILIKE '%timeout%'"],
@@ -21,29 +26,40 @@ const examples = [
   ['Exclude health checks', "NOT message ILIKE '%health%'"],
 ] as const
 export function Logs({
-  applicationId,
+  applicationId = '',
   services,
   initialService,
+  installation = false,
 }: {
-  applicationId: string
+  installation?: boolean
+  applicationId?: string
   services: string[]
   initialService?: string
 }) {
   const [selected, setSelected] = useState<LogEntry | null>(null)
   const [range, setRange] = useState<{ from: number; to: number } | null>(null)
-  const [mode, setMode] = useState<'explore' | 'live'>('explore')
-  const [service, setService] = useState(initialService || services[0] || '')
+  const [mode, setMode] = useState<'explore' | 'live'>(installation ? 'live' : 'explore')
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === 'visible')
+    update()
+    document.addEventListener('visibilitychange', update)
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [])
+  const [service, setService] = useState(
+    installation ? 'hakopod-api' : initialService || services[0] || '',
+  )
   const [pod, setPod] = useState('')
   const [container, setContainer] = useState('app')
   const [draft, setDraft] = useState('')
   const [since, setSince] = useState(3600)
-  const [limit, setLimit] = useState(500)
+  const [limit, setLimit] = useState(installation ? 200 : 500)
   const [previous, setPrevious] = useState(false)
   const [wrap, setWrap] = useState(false)
   const [query, setQuery] = useState<Query>({
     service,
     since_seconds: 3600,
-    limit: 500,
+    limit: installation ? 200 : 500,
     tail: 2000,
   })
   const runtime = useQuery({
@@ -55,24 +71,35 @@ export function Logs({
           params: { path: { id: applicationId, service } },
         }),
       ),
-    enabled: Boolean(service) && mode === 'explore',
+    enabled: !installation && Boolean(service) && mode === 'explore',
     gcTime: 0,
     staleTime: 30000,
   })
   const logs = useQuery({
-    queryKey: ['log-query', applicationId, query],
-    queryFn: ({ signal }) =>
-      unwrap(
-        client.POST('/applications/{id}/logs/query', {
-          signal,
-          params: { path: { id: applicationId } },
-          body: query,
-        }),
-      ),
-    enabled: Boolean(query.service) && mode === 'explore',
+    queryKey: [installation ? 'installation-log-query' : 'log-query', applicationId, query],
+    queryFn: async ({ signal }): Promise<ExplorerResult> =>
+      installation
+        ? unwrap(
+            client.POST('/installation/logs/query', {
+              signal,
+              body: { query: query.query, since_seconds: query.since_seconds, limit: query.limit },
+            }),
+          )
+        : unwrap(
+            client.POST('/applications/{id}/logs/query', {
+              signal,
+              params: { path: { id: applicationId } },
+              body: query,
+            }),
+          ),
+    enabled: installation
+      ? mode === 'explore' || visible
+      : Boolean(query.service) && mode === 'explore',
+    refetchInterval: installation && mode === 'live' && visible ? 5000 : false,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const run = () => {
     setRange(null)
@@ -108,7 +135,7 @@ export function Logs({
     a.click()
     URL.revokeObjectURL(url)
   }
-  if (!services.length)
+  if (!installation && !services.length)
     return (
       <Empty
         icon="terminal"
@@ -120,8 +147,8 @@ export function Logs({
     <section className="log-explorer ops-logs">
       <div className="explorer-heading">
         <div className="hako-section-heading-title">
-          <h2>Log explorer</h2>
-          <Badge>CONTAINER OUTPUT</Badge>
+          <h2>{installation ? 'API log explorer' : 'Log explorer'}</h2>
+          <Badge>{installation ? 'API SERVER' : 'CONTAINER OUTPUT'}</Badge>
         </div>
         <div className="view-switch" role="group" aria-label="Log mode">
           <Button
@@ -138,16 +165,27 @@ export function Logs({
             aria-pressed={mode === 'live'}
             onClick={() => setMode('live')}
           >
-            Live tail
+            {installation ? 'Live refresh' : 'Live tail'}
           </Button>
         </div>
       </div>
-      {mode === 'live' ? (
+      {mode === 'live' && !installation ? (
         <Suspense fallback={<Loading />}>
           <LiveLogs applicationId={applicationId} services={services} initialService={service} />
         </Suspense>
       ) : (
         <>
+          {installation && (
+            <p className="log-source-note text-sm text-muted-foreground">
+              {mode === 'live'
+                ? 'Refreshes every 5 seconds while visible.'
+                : 'Automatic refresh paused.'}{' '}
+              {data?.source === 'process' &&
+                data.started_at &&
+                `Process buffer started ${timestamp(data.started_at)}; clears on API restart. `}
+              {data?.observed_at && `Updated ${timestamp(data.observed_at)}.`}
+            </p>
+          )}
           <section className="log-volume-panel" aria-label="Log volume">
             <div className="log-volume-heading">
               <span>Log volume</span>
@@ -219,42 +257,46 @@ export function Logs({
             }}
           >
             <div className="log-filter-row">
-              <label>
-                Service
-                <SelectField
-                  label="Service"
-                  value={service}
-                  onValueChange={(value) => {
-                    setService(value)
-                    setPod('')
-                  }}
-                  options={services.map((name) => ({ value: name, label: name }))}
-                />
-              </label>
-              <label>
-                Pod
-                <SelectField
-                  label="Pod"
-                  value={pod}
-                  onValueChange={setPod}
-                  options={[
-                    { value: '', label: 'All service pods' },
-                    ...(runtime.data?.pods || []).map((item) => ({
-                      value: item.name,
-                      label: item.name,
-                    })),
-                  ]}
-                />
-              </label>
-              <label>
-                Container
-                <Input
-                  value={container}
-                  onChange={(e) => setContainer(e.target.value)}
-                  placeholder="app"
-                  maxLength={63}
-                />
-              </label>
+              {!installation && (
+                <>
+                  <label>
+                    Service
+                    <SelectField
+                      label="Service"
+                      value={service}
+                      onValueChange={(value) => {
+                        setService(value)
+                        setPod('')
+                      }}
+                      options={services.map((name) => ({ value: name, label: name }))}
+                    />
+                  </label>
+                  <label>
+                    Pod
+                    <SelectField
+                      label="Pod"
+                      value={pod}
+                      onValueChange={setPod}
+                      options={[
+                        { value: '', label: 'All service pods' },
+                        ...(runtime.data?.pods || []).map((item) => ({
+                          value: item.name,
+                          label: item.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label>
+                    Container
+                    <Input
+                      value={container}
+                      onChange={(e) => setContainer(e.target.value)}
+                      placeholder="app"
+                      maxLength={63}
+                    />
+                  </label>
+                </>
+              )}
               <label>
                 Time window
                 <SelectField
@@ -299,14 +341,16 @@ export function Logs({
                 </button>
               ))}
               <span className="form-spacer" />
-              <label className="checkbox-row">
-                <Input
-                  type="checkbox"
-                  checked={previous}
-                  onChange={(e) => setPrevious(e.target.checked)}
-                />
-                Previous container
-              </label>
+              {!installation && (
+                <label className="checkbox-row">
+                  <Input
+                    type="checkbox"
+                    checked={previous}
+                    onChange={(e) => setPrevious(e.target.checked)}
+                  />
+                  Previous container
+                </label>
+              )}
               <label className="query-limit">
                 Limit
                 <SelectField
@@ -314,18 +358,27 @@ export function Logs({
                   compact
                   value={String(limit)}
                   onValueChange={(value) => setLimit(Number(value))}
-                  options={['100', '500', '1000'].map((value) => ({ value, label: value }))}
+                  options={(installation ? ['50', '100', '200'] : ['100', '500', '1000']).map(
+                    (value) => ({ value, label: value }),
+                  )}
                 />
               </label>
             </div>
             <details className="query-reference">
               <summary>Filter syntax</summary>
               <p>
-                Use fields <code>timestamp</code>, <code>pod</code>, <code>service</code>,{' '}
-                <code>container</code>, <code>message</code>, <code>severity</code>, or{' '}
-                <code>json.status</code>. Combine comparisons with <code>AND</code>, <code>OR</code>
-                , <code>NOT</code>, and parentheses. <code>ILIKE</code> matches text without case.
-                This filters sampled container output; it does not query a retained log database.
+                Use fields <code>timestamp</code>,{' '}
+                {!installation && (
+                  <>
+                    <code>pod</code>, <code>service</code>, <code>container</code>,{' '}
+                  </>
+                )}
+                <code>message</code>, <code>severity</code>, or <code>json.status</code>. Combine
+                comparisons with <code>AND</code>, <code>OR</code>, <code>NOT</code>, and
+                parentheses. <code>ILIKE</code> matches text without case.
+                {installation
+                  ? 'This filters at most 200 available API entries; it cannot search older history.'
+                  : 'This filters sampled container output; it does not query a retained log database.'}
               </p>
             </details>
           </form>
@@ -339,8 +392,8 @@ export function Logs({
                 <div className="log-result-toolbar">
                   <span>
                     <strong>{range ? entries.length : data.matched}</strong>{' '}
-                    {range ? 'visible entries' : 'matches'} · {data.scanned} sampled lines ·{' '}
-                    {data.pods} pods
+                    {range ? 'visible entries' : 'matches'} · {data.scanned}{' '}
+                    {installation ? 'sampled API entries' : `sampled lines · ${data.pods} pods`}
                   </span>
                   {data.truncated && <Badge tone="warning">Truncated</Badge>}
                   <span className="form-spacer" />
@@ -392,13 +445,26 @@ export function Logs({
                     <Empty
                       icon="search"
                       title="No matching log entries"
-                      description="Change your filter, container, or time window, then run the query again."
+                      description={
+                        installation
+                          ? 'Change your filter or time window, then run the query again.'
+                          : 'Change your filter, container, or time window, then run the query again.'
+                      }
                     />
                   )}
                 </div>
                 <div className="log-footer">
-                  <span>Queried {query.service} · Recent pod output</span>
-                  <span>Up to 2,000 lines per sampled pod · {query.limit} result limit</span>
+                  <span>
+                    {installation
+                      ? `API server · ${data.source === 'process' ? 'Current process' : 'Journal sample'}`
+                      : `Queried ${query.service} · Recent pod output`}
+                  </span>
+                  <span>
+                    {installation
+                      ? 'Up to 200 available API entries'
+                      : 'Up to 2,000 lines per sampled pod'}{' '}
+                    · {query.limit} result limit
+                  </span>
                 </div>
               </>
             )
@@ -412,7 +478,11 @@ export function Logs({
           if (!open) setSelected(null)
         }}
         title="Log entry"
-        description="Structured fields returned by the selected container."
+        description={
+          installation
+            ? 'Structured fields from the selected API log entry.'
+            : 'Structured fields returned by the selected container.'
+        }
       >
         {selected && (
           <>
@@ -431,18 +501,20 @@ export function Logs({
                   </dd>
                 </div>
                 <div>
-                  <dt>Pod</dt>
+                  <dt>{installation ? 'Source' : 'Pod'}</dt>
                   <dd className="break-text">
                     <code>{selected.pod}</code>
                     <Copy value={selected.pod} />
                   </dd>
                 </div>
-                <div>
-                  <dt>Container</dt>
-                  <dd>
-                    <code>{selected.container}</code>
-                  </dd>
-                </div>
+                {!installation && (
+                  <div>
+                    <dt>Container</dt>
+                    <dd>
+                      <code>{selected.container}</code>
+                    </dd>
+                  </div>
+                )}
               </dl>
               <h3>Message</h3>
               <pre className="ops-inspector-code">{selected.message}</pre>
