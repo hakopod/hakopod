@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
@@ -22,6 +22,7 @@ import { FormPage, FormHint, FormSection } from './form-page'
 import { InstallationReviewRows, useInstallationFormFocus } from './installation-form-fields'
 import { ServiceIcon } from './service-icon'
 import { GitOAuthAuthorize, GitWebhookAddress } from './git-oauth'
+import { GitHubAppSetup, GitLabRegistrationCallback } from './git-app-setup'
 
 function AccessRequired() {
   return (
@@ -110,15 +111,52 @@ export function GitConnectionEditor({ id }: { id?: string }) {
   if (id && query.error) return <ErrorState error={query.error} />
   if (query.data?.legacy)
     return <Note>Use the original provider settings to update this default connection.</Note>
-  return <GitConnectionForm key={id || 'new'} current={query.data} />
+  if (!id) return <NewGitConnection />
+  return <GitConnectionForm key={id} current={query.data} />
 }
-function GitConnectionForm({ current }: { current?: GitConnection }) {
+function NewGitConnection() {
+  const [provider, setProvider] = useState<GitProvider>('github')
+  const picker = (
+    <FormSection title="Provider">
+      <div className="max-w-64">
+        <SelectField
+          label="Git provider"
+          value={provider}
+          onValueChange={(v) => setProvider(v as GitProvider)}
+          options={[
+            { value: 'github', label: 'GitHub' },
+            { value: 'gitlab', label: 'GitLab' },
+          ]}
+        />
+      </div>
+    </FormSection>
+  )
+  return provider === 'github' ? (
+    <FormPage
+      title="Add Git connection"
+      description="Install an App owned by your GitHub account."
+      breadcrumbs={[]}
+    >
+      {picker}
+      <GitHubAppSetup />
+    </FormPage>
+  ) : (
+    <GitConnectionForm providerPicker={picker} />
+  )
+}
+function GitConnectionForm({
+  current,
+  providerPicker,
+}: {
+  current?: GitConnection
+  providerPicker?: ReactNode
+}) {
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [baseRevision] = useState(current?.revision)
   const [name, setName] = useState(current?.name || '')
-  const [provider, setProvider] = useState<GitProvider>(current?.provider || 'github')
-  const [kind, setKind] = useState<GitConnection['auth_kind']>(current?.auth_kind || 'token')
+  const [provider, setProvider] = useState<GitProvider>(current?.provider || 'gitlab')
+  const [kind, setKind] = useState<GitConnection['auth_kind']>(current?.auth_kind || 'gitlab_oauth')
   const [clientID, setClientID] = useState(current?.oauth_client_id || '')
   const [clientSecret, setClientSecret] = useState('')
   const [oauthScopes, setOAuthScopes] = useState<'api' | 'read_api'>(
@@ -141,6 +179,7 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
   const [saved, setSaved] = useState<GitConnection | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmation, setConfirmation] = useState('')
+  const pendingApp = current?.managed_app && current.installation_id === 0
   const formRef = useInstallationFormFocus(review)
   const back = () => void navigate({ to: '/settings', search: { tab: 'github' } })
   function input(): components['schemas']['GitConnectionInput'] {
@@ -238,28 +277,75 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
       breadcrumbs={[]}
       description="Shared repository credentials stay encrypted on the server."
       help={
-        <>
-          <FormHint title="Choose repository access">
-            A connection can serve several applications. Restrict its GitHub or GitLab permissions
-            to the repositories you need.
-          </FormHint>
-          <FormHint title="GitHub App">
-            Install the app on the intended GitHub account, then enter its App ID, installation ID
-            and PEM private key. Saving verifies the installation.
-          </FormHint>
-          <FormHint title="Webhooks">
-            Each connection has a signed webhook path. Installations of the same GitHub App share
-            that app’s webhook secret.
-          </FormHint>
-        </>
+        !pendingApp && (
+          <>
+            <FormHint title="Choose repository access">
+              A connection can serve several applications. Restrict its GitHub or GitLab permissions
+              to the repositories you need.
+            </FormHint>
+            <FormHint title="App ownership">
+              New GitHub connections use App registration on GitHub. GitLab requires you to register
+              a personal or group OAuth application before authorizing repository access.
+            </FormHint>
+            <FormHint title="Webhooks">
+              Each connection has a signed webhook path. Installations of the same GitHub App share
+              that app’s webhook secret.
+            </FormHint>
+          </>
+        )
       }
     >
+      {providerPicker}
+      {pendingApp && (
+        <GitHubAppSetup
+          id={current.id}
+          footerActions={
+            <>
+              <Button
+                type="button"
+                aria-label={`Delete ${current.name}`}
+                onClick={() => setDeleting(true)}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </Button>
+              <Button type="button" onClick={back}>
+                Cancel
+              </Button>
+            </>
+          }
+        />
+      )}
+      {!current && (
+        <FormSection title="Register your GitLab application">
+          <p className="field-help">
+            GitLab does not offer automated registration for user-owned OAuth apps. Create an
+            application in your personal settings or your group’s Settings → Applications, then
+            enter its application ID and secret below.
+          </p>
+          <p className="field-help">
+            Use the exact callback URL below, enable Confidential, and choose api for builds or
+            read_api for source-only access. Repository authorization happens on GitLab after
+            saving.
+          </p>
+          <GitLabRegistrationCallback />
+          <Button asChild>
+            <a
+              href="https://gitlab.com/-/user_settings/applications"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Create app on GitLab
+            </a>
+          </Button>
+        </FormSection>
+      )}
       {current?.auth_kind === 'gitlab_oauth' && (
         <FormSection title="GitLab account">
           <GitOAuthAuthorize connection={current} />
         </FormSection>
       )}
       <form
+        hidden={Boolean(pendingApp)}
         ref={formRef}
         tabIndex={-1}
         aria-label={review ? 'Review Git connection' : 'Git connection settings'}
@@ -303,7 +389,7 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
           }
         }}
       >
-        <div className="form-body auth-form">
+        <div className="form-body auth-form" hidden={Boolean(pendingApp)}>
           {review ? (
             <FormSection title="Changes">
               <InstallationReviewRows
@@ -360,49 +446,53 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
                     onChange={(e) => setName(e.target.value)}
                   />
                 </label>
-                <label>
-                  Provider
-                  <SelectField
-                    label="Provider"
-                    value={provider}
-                    disabled={Boolean(current)}
-                    onValueChange={(value) => {
-                      setProvider(value as GitProvider)
-                      setKind('token')
-                      setToken('')
-                      setPrivateKey('')
-                    }}
-                    options={[
-                      { value: 'github', label: 'GitHub' },
-                      { value: 'gitlab', label: 'GitLab' },
-                    ]}
-                  />
-                </label>
-                <label>
-                  Authentication
-                  <SelectField
-                    label="Authentication"
-                    value={kind}
-                    disabled={Boolean(current)}
-                    onValueChange={(value) => {
-                      setKind(value as GitConnection['auth_kind'])
-                      setClientSecret('')
-                      setToken('')
-                      setPrivateKey('')
-                    }}
-                    options={
-                      provider === 'github'
-                        ? [
-                            { value: 'token', label: 'Access token' },
-                            { value: 'github_app', label: 'GitHub App' },
-                          ]
-                        : [
-                            { value: 'token', label: 'Access token' },
-                            { value: 'gitlab_oauth', label: 'GitLab OAuth' },
-                          ]
-                    }
-                  />
-                </label>
+                {current && (
+                  <>
+                    <label>
+                      Provider
+                      <SelectField
+                        label="Provider"
+                        value={provider}
+                        disabled={Boolean(current)}
+                        onValueChange={(value) => {
+                          setProvider(value as GitProvider)
+                          setKind('token')
+                          setToken('')
+                          setPrivateKey('')
+                        }}
+                        options={[
+                          { value: 'github', label: 'GitHub' },
+                          { value: 'gitlab', label: 'GitLab' },
+                        ]}
+                      />
+                    </label>
+                    <label>
+                      Authentication
+                      <SelectField
+                        label="Authentication"
+                        value={kind}
+                        disabled={Boolean(current)}
+                        onValueChange={(value) => {
+                          setKind(value as GitConnection['auth_kind'])
+                          setClientSecret('')
+                          setToken('')
+                          setPrivateKey('')
+                        }}
+                        options={
+                          provider === 'github'
+                            ? [
+                                { value: 'token', label: 'Access token' },
+                                { value: 'github_app', label: 'GitHub App' },
+                              ]
+                            : [
+                                { value: 'token', label: 'Access token' },
+                                { value: 'gitlab_oauth', label: 'GitLab OAuth' },
+                              ]
+                        }
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="checkbox-label">
                   <Input
                     type="checkbox"
@@ -412,151 +502,180 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
                   Enable connection
                 </label>
               </FormSection>
-              <FormSection title="Credentials">
-                {kind === 'gitlab_oauth' && (
-                  <>
-                    <label>
-                      OAuth application ID
+              {!current?.managed_app && (
+                <FormSection title="Credentials">
+                  {kind === 'gitlab_oauth' && (
+                    <>
+                      <label>
+                        OAuth application ID
+                        <Input
+                          required
+                          value={clientID}
+                          maxLength={1024}
+                          readOnly={Boolean(current)}
+                          onChange={(e) => setClientID(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        OAuth permissions
+                        <SelectField
+                          label="OAuth permissions"
+                          value={oauthScopes}
+                          onValueChange={(value) => setOAuthScopes(value as 'api' | 'read_api')}
+                          options={[
+                            { value: 'api', label: 'Repository access and builds (api)' },
+                            {
+                              value: 'read_api',
+                              label: 'Read repository configuration (read_api)',
+                            },
+                          ]}
+                        />
+                      </label>
+                      {current && (
+                        <>
+                          <p className="field-help">
+                            Register this exact callback URL in your GitLab OAuth application.
+                          </p>
+                          <GitLabRegistrationCallback />
+                        </>
+                      )}
+                      <Note>
+                        Changing permissions requires authorization again. OAuth grants the GitLab
+                        user's access; choose a dedicated account when access should be limited.
+                      </Note>
+                    </>
+                  )}
+                  {kind === 'github_app' && (
+                    <div className="form-grid-two">
+                      <label>
+                        App ID
+                        <Input
+                          value={appID}
+                          required
+                          inputMode="numeric"
+                          maxLength={100}
+                          readOnly={Boolean(current)}
+                          onChange={(e) => setAppID(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Installation ID
+                        <Input
+                          value={installationID}
+                          required
+                          inputMode="numeric"
+                          readOnly={Boolean(current)}
+                          onChange={(e) => setInstallationID(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
+                  {current && (
+                    <label className="checkbox-label">
                       <Input
-                        required
-                        value={clientID}
-                        maxLength={1024}
-                        readOnly={Boolean(current)}
-                        onChange={(e) => setClientID(e.target.value)}
+                        type="checkbox"
+                        checked={replaceCredential}
+                        onChange={(e) => {
+                          setReplaceCredential(e.target.checked)
+                          setToken('')
+                          setClientSecret('')
+                          setPrivateKey('')
+                        }}
                       />
+                      Replace stored credential
                     </label>
-                    <label>
-                      OAuth permissions
-                      <SelectField
-                        label="OAuth permissions"
-                        value={oauthScopes}
-                        onValueChange={(value) => setOAuthScopes(value as 'api' | 'read_api')}
-                        options={[
-                          { value: 'api', label: 'Repository access and builds (api)' },
-                          { value: 'read_api', label: 'Read repository configuration (read_api)' },
-                        ]}
-                      />
-                    </label>
-                    <p className="field-help">
-                      Register this exact callback URL in your GitLab OAuth application.
-                    </p>
-                    <GitWebhookAddress path="/settings/git/callback" />
-                    <Note>
-                      Changing permissions requires authorization again. OAuth grants the GitLab
-                      user's access; choose a dedicated account when access should be limited.
-                    </Note>
-                  </>
-                )}
-                {kind === 'github_app' && (
-                  <div className="form-grid-two">
-                    <label>
-                      App ID
-                      <Input
-                        value={appID}
-                        required
-                        inputMode="numeric"
-                        maxLength={100}
-                        readOnly={Boolean(current)}
-                        onChange={(e) => setAppID(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Installation ID
-                      <Input
-                        value={installationID}
-                        required
-                        inputMode="numeric"
-                        readOnly={Boolean(current)}
-                        onChange={(e) => setInstallationID(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                )}
-                {current && (
+                  )}
+                  {replaceCredential &&
+                    (kind === 'token' || kind === 'gitlab_oauth' ? (
+                      <label>
+                        {kind === 'gitlab_oauth' ? 'OAuth client secret' : 'Access token'}
+                        <Input
+                          type="password"
+                          required
+                          value={kind === 'gitlab_oauth' ? clientSecret : token}
+                          maxLength={kind === 'gitlab_oauth' ? 4096 : 16384}
+                          autoComplete="new-password"
+                          onChange={(e) =>
+                            kind === 'gitlab_oauth'
+                              ? setClientSecret(e.target.value)
+                              : setToken(e.target.value)
+                          }
+                        />
+                      </label>
+                    ) : (
+                      <label>
+                        Private key (PEM)
+                        <textarea
+                          required
+                          className="min-h-40 resize-y font-mono text-xs"
+                          value={privateKey}
+                          maxLength={16384}
+                          spellCheck={false}
+                          autoComplete="off"
+                          onChange={(e) => setPrivateKey(e.target.value)}
+                        />
+                      </label>
+                    ))}
+                  <p className="field-help">
+                    Stored credentials are never returned to the browser. Repository access is
+                    approved with your provider.
+                  </p>
+                </FormSection>
+              )}
+              {!current?.managed_app && (
+                <FormSection title="Webhook">
                   <label className="checkbox-label">
                     <Input
                       type="checkbox"
-                      checked={replaceCredential}
+                      checked={replaceWebhook}
                       onChange={(e) => {
-                        setReplaceCredential(e.target.checked)
-                        setToken('')
-                        setClientSecret('')
-                        setPrivateKey('')
+                        setReplaceWebhook(e.target.checked)
+                        setWebhook('')
                       }}
                     />
-                    Replace stored credential
+                    {current ? 'Replace webhook secret' : 'Use my own webhook secret'}
                   </label>
-                )}
-                {replaceCredential &&
-                  (kind === 'token' || kind === 'gitlab_oauth' ? (
+                  {replaceWebhook ? (
                     <label>
-                      {kind === 'gitlab_oauth' ? 'OAuth client secret' : 'Access token'}
+                      Webhook secret
                       <Input
                         type="password"
                         required
-                        value={kind === 'gitlab_oauth' ? clientSecret : token}
-                        maxLength={kind === 'gitlab_oauth' ? 4096 : 16384}
+                        minLength={32}
+                        maxLength={256}
+                        value={webhook}
                         autoComplete="new-password"
-                        onChange={(e) =>
-                          kind === 'gitlab_oauth'
-                            ? setClientSecret(e.target.value)
-                            : setToken(e.target.value)
-                        }
+                        onChange={(e) => setWebhook(e.target.value)}
                       />
                     </label>
                   ) : (
-                    <label>
-                      Private key (PEM)
-                      <textarea
-                        required
-                        className="min-h-40 resize-y font-mono text-xs"
-                        value={privateKey}
-                        maxLength={16384}
-                        spellCheck={false}
-                        autoComplete="off"
-                        onChange={(e) => setPrivateKey(e.target.value)}
-                      />
-                    </label>
-                  ))}
-                <p className="field-help">
-                  Stored credentials are never returned to the browser. A token must have repository
-                  access; build workflows also require write permissions.
-                </p>
-              </FormSection>
-              <FormSection title="Webhook">
-                <label className="checkbox-label">
-                  <Input
-                    type="checkbox"
-                    checked={replaceWebhook}
-                    onChange={(e) => {
-                      setReplaceWebhook(e.target.checked)
-                      setWebhook('')
-                    }}
-                  />
-                  {current ? 'Replace webhook secret' : 'Use my own webhook secret'}
-                </label>
-                {replaceWebhook ? (
-                  <label>
-                    Webhook secret
-                    <Input
-                      type="password"
-                      required
-                      minLength={32}
-                      maxLength={256}
-                      value={webhook}
-                      autoComplete="new-password"
-                      onChange={(e) => setWebhook(e.target.value)}
-                    />
-                  </label>
-                ) : (
+                    <p className="field-help">
+                      {current
+                        ? 'The stored webhook secret is retained.'
+                        : 'A secret is generated when you save. Copy it from the confirmation page.'}
+                    </p>
+                  )}
+                  {current && <GitWebhookAddress path={current.webhook_path} />}
+                </FormSection>
+              )}
+              {current?.managed_app && (
+                <FormSection title="GitHub App">
                   <p className="field-help">
-                    {current
-                      ? 'The stored webhook secret is retained.'
-                      : 'A secret is generated when you save. Copy it from the confirmation page.'}
+                    Credentials and webhooks were configured during registration. Manage repository
+                    access and App settings on GitHub.
                   </p>
-                )}
-                {current && <GitWebhookAddress path={current.webhook_path} />}
-              </FormSection>
+                  <GitWebhookAddress path={current.webhook_path} />
+                  <Button asChild>
+                    <a
+                      href="https://github.com/settings/installations"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Manage on GitHub
+                    </a>
+                  </Button>
+                </FormSection>
+              )}
             </>
           )}
           {error && (
@@ -585,9 +704,11 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
           <Button type="button" disabled={busy} onClick={review ? () => setReview(false) : back}>
             {review ? 'Back to edit' : 'Cancel'}
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || conflict}>
-            {busy ? 'Saving…' : review ? 'Save connection' : 'Review connection'}
-          </Button>
+          {!pendingApp && (
+            <Button type="submit" variant="primary" disabled={busy || conflict}>
+              {busy ? 'Saving…' : review ? 'Save connection' : 'Review connection'}
+            </Button>
+          )}
         </div>
       </form>
       <Dialog
@@ -596,7 +717,7 @@ function GitConnectionForm({ current }: { current?: GitConnection }) {
           if (!busy) setDeleting(value)
         }}
         title="Delete connection"
-        description="Applications or builds that still use this connection must be updated first."
+        description="Update applications or builds that use this connection first. Deleting the connection does not uninstall or delete the App on GitHub or GitLab."
       >
         <form
           onSubmit={async (event) => {

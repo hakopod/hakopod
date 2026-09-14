@@ -43,3 +43,14 @@ export function gitConnectionOptions(
     options.push({ value: current, label: `Unavailable connection · ${current}`, disabled: true })
   return options
 }
+
+export function useGitProviderSetup() {
+  const scope = useScope()
+  return useQuery({
+    queryKey: ['git-provider-setup'],
+    queryFn: ({ signal }) => unwrap(client.GET('/git/setup', { signal })),
+    enabled: scope.identity.admin,
+    retry: false,
+    staleTime: 15000,
+  })
+}

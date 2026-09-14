@@ -303,6 +303,11 @@ test('named Git CRUD and source OAuth completion require the initiating browser 
     'git/connections/fixture/authorize',
     'git/connections/fixture/oauth/complete',
     'git/oauth/complete',
+    'git/github/start',
+    'git/github/complete',
+    'git/github/install/complete',
+    'git/connections/fixture/github/setup',
+    'installation/logs/query',
   ]) {
     assert.equal(
       (await proxy({ request: request(path, 'POST', {}, false), params: { _splat: path } })).status,
@@ -331,7 +336,7 @@ test('named Git CRUD and source OAuth completion require the initiating browser 
       (await proxy({ request: request(path, 'POST', {}), params: { _splat: path } })).status,
       404,
     )
-  assert.equal(calls, 5)
+  assert.equal(calls, 10)
 })
 
 test('resource deletion proxy requires a session and same-origin request', async (t) => {
