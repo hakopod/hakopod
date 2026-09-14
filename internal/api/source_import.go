@@ -17,17 +17,18 @@ import (
 )
 
 type sourceImportInput struct {
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
-	Provider    string `json:"provider"`
-	Repository  string `json:"repository"`
-	Branch      string `json:"branch"`
-	Path        string `json:"path"`
-	AutoDeploy  bool   `json:"auto_deploy"`
+	Project      string `json:"project"`
+	Environment  string `json:"environment"`
+	Provider     string `json:"provider"`
+	ConnectionID string `json:"connection_id"`
+	Repository   string `json:"repository"`
+	Branch       string `json:"branch"`
+	Path         string `json:"path"`
+	AutoDeploy   bool   `json:"auto_deploy"`
 }
 
 func (in sourceImportInput) binding() sourceBinding {
-	return sourceBinding{Provider: in.Provider, Repository: in.Repository, Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
+	return sourceBinding{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Provider: in.Provider, Repository: in.Repository, Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
 }
 
 type sourceImportReview struct {
@@ -44,7 +45,7 @@ func sourceContentHash(a spec.Application) string {
 }
 
 func (review sourceImportReview) initialSource() store.InitialSource {
-	return store.InitialSource{Provider: review.Input.Provider, Repository: review.Input.Repository, Branch: review.Input.Branch, Path: review.Input.Path, AutoDeploy: review.Input.AutoDeploy, CommitSHA: review.Commit}
+	return store.InitialSource{ConnectionID: review.Input.ConnectionID, Provider: review.Input.Provider, Repository: review.Input.Repository, Branch: review.Input.Branch, Path: review.Input.Path, AutoDeploy: review.Input.AutoDeploy, CommitSHA: review.Commit}
 }
 func (s *Server) signSourceReview(body []byte) string {
 	mac := hmac.New(sha256.New, s.authEncryptionKey())
@@ -68,8 +69,12 @@ func (s *Server) sourceImportConfigured(w http.ResponseWriter, r *http.Request, 
 		problem(w, 400, "invalid_source", "Choose a project, environment, provider, repository, branch and relative TOML path")
 		return false
 	}
+	if err := s.validateGitConnection(r.Context(), in.Provider, in.ConnectionID); err != nil {
+		authFailure(w, err)
+		return false
+	}
 	if in.AutoDeploy {
-		data, err := s.sourceCredentials(r.Context(), in.Provider)
+		data, err := s.connectionCredentials(r.Context(), in.Provider, in.ConnectionID, "", nil)
 		if err != nil || len(data["webhook-secret"]) < 32 {
 			problem(w, 400, "source_not_configured", "Configure this provider's signed webhook before enabling automatic deployment")
 			return false
@@ -83,6 +88,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Repository = strings.ToLower(strings.TrimSpace(in.Repository))
+	in.ConnectionID = selectedGitConnection(in.Provider, in.ConnectionID)
 	if !s.sourceImportConfigured(w, r, in) {
 		return
 	}

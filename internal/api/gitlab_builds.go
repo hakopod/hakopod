@@ -17,8 +17,8 @@ import (
 )
 
 func (c buildConfig) gitlabProjectPath() string { return "/projects/" + url.PathEscape(c.Repository) }
-func (s *Server) gitlabBuildRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
-	credentials, err := s.gitlabCredentials(ctx)
+func (s *Server) gitlabBuildRequest(ctx context.Context, method, endpoint string, body any, connections ...string) (*http.Response, error) {
+	credentials, err := s.connectionCredentials(ctx, "gitlab", selectedGitConnection("gitlab", connections...), "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ type gitlabCIFile struct {
 }
 
 func (s *Server) gitlabCIContents(ctx context.Context, c buildConfig, ref string) (string, gitlabCIFile, int, error) {
-	response, err := s.gitlabBuildRequest(ctx, "GET", c.gitlabProjectPath()+"/repository/files/"+url.PathEscape(c.workflowPath())+"?ref="+url.QueryEscape(ref), nil)
+	response, err := s.gitlabBuildRequest(ctx, "GET", c.gitlabProjectPath()+"/repository/files/"+url.PathEscape(c.workflowPath())+"?ref="+url.QueryEscape(ref), nil, c.ConnectionID)
 	if err != nil {
 		return "", gitlabCIFile{}, 0, err
 	}
@@ -88,7 +88,7 @@ func (s *Server) gitlabDefaultBranch(ctx context.Context, c buildConfig) (string
 		DefaultBranch string `json:"default_branch"`
 		CIConfigPath  string `json:"ci_config_path"`
 	}
-	if err := s.gitlabGET(ctx, c.gitlabProjectPath(), &project); err != nil {
+	if err := s.gitlabGET(ctx, c.gitlabProjectPath(), &project, c.ConnectionID); err != nil {
 		return "", err
 	}
 	if project.DefaultBranch == "" || len(project.DefaultBranch) > 200 {
@@ -103,7 +103,7 @@ func (s *Server) gitlabBuildCommit(ctx context.Context, c buildConfig, ref strin
 	var commit struct {
 		ID string `json:"id"`
 	}
-	if err := s.gitlabGET(ctx, c.gitlabProjectPath()+"/repository/commits/"+url.PathEscape(ref), &commit); err != nil {
+	if err := s.gitlabGET(ctx, c.gitlabProjectPath()+"/repository/commits/"+url.PathEscape(ref), &commit, c.ConnectionID); err != nil {
 		return "", err
 	}
 	if !commitPattern.MatchString(commit.ID) {
@@ -163,7 +163,7 @@ func (s *Server) installGitLabBuild(w http.ResponseWriter, r *http.Request, c bu
 			method = "PUT"
 			body["last_commit_id"] = current.LastCommit
 		}
-		response, err := s.gitlabBuildRequest(r.Context(), method, c.gitlabProjectPath()+"/repository/files/"+url.PathEscape(c.workflowPath()), body)
+		response, err := s.gitlabBuildRequest(r.Context(), method, c.gitlabProjectPath()+"/repository/files/"+url.PathEscape(c.workflowPath()), body, c.ConnectionID)
 		if err != nil {
 			problem(w, 503, "install_unknown", err.Error())
 			return
@@ -204,7 +204,7 @@ type gitlabPipeline struct {
 
 func (s *Server) dispatchGitLabBuild(ctx context.Context, c buildConfig, branch, commit, requestID string) (string, string, int64) {
 	variables := []map[string]string{{"key": "HAKOPOD_BUILD_ID", "value": c.ID, "variable_type": "env_var"}, {"key": "HAKOPOD_REQUEST_ID", "value": requestID, "variable_type": "env_var"}, {"key": "HAKOPOD_SOURCE_SHA", "value": commit, "variable_type": "env_var"}}
-	response, err := s.gitlabBuildRequest(ctx, "POST", c.gitlabProjectPath()+"/pipeline", map[string]any{"ref": branch, "variables": variables})
+	response, err := s.gitlabBuildRequest(ctx, "POST", c.gitlabProjectPath()+"/pipeline", map[string]any{"ref": branch, "variables": variables}, c.ConnectionID)
 	if err != nil {
 		return "dispatch_unknown", "Pipeline response was interrupted. Refresh to locate the remote pipeline before creating another request.", 0
 	}

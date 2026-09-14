@@ -10,7 +10,11 @@ import (
 
 // Called only after the GitLab integration authenticates its Pipeline Hook.
 // The worker re-fetches pipeline identity, committed CI bytes and job artifact.
-func (s *Server) enqueueGitLabBuildWebhook(ctx context.Context, body []byte, delivery string) error {
+func (s *Server) enqueueGitLabBuildWebhook(ctx context.Context, body []byte, delivery string, connections ...string) error {
+	connectionID := selectedGitConnection("gitlab", connections...)
+	if connectionID != defaultGitConnection("gitlab") {
+		delivery = connectionID + ":" + delivery
+	}
 	var payload struct {
 		Kind    string `json:"object_kind"`
 		Project struct {
@@ -31,7 +35,7 @@ func (s *Server) enqueueGitLabBuildWebhook(ctx context.Context, body []byte, del
 	if payload.Attributes.Source != "push" || payload.Attributes.Tag || (payload.Attributes.Status != "success" && payload.Attributes.Status != "failed" && payload.Attributes.Status != "canceled" && payload.Attributes.Status != "skipped") {
 		return nil
 	}
-	rows, err := s.Store.Pool.Query(ctx, `SELECT id FROM build_configs WHERE config->>'provider'='gitlab' AND config->>'repository'=$1 AND config->>'branch'=$2 AND config->>'auto_build'='true' AND installed_revision=revision ORDER BY id LIMIT 101`, strings.ToLower(payload.Project.Path), payload.Attributes.Ref)
+	rows, err := s.Store.Pool.Query(ctx, `SELECT id FROM build_configs WHERE connection_id=$3 AND config->>'provider'='gitlab' AND config->>'repository'=$1 AND config->>'branch'=$2 AND config->>'auto_build'='true' AND installed_revision=revision ORDER BY id LIMIT 101`, strings.ToLower(payload.Project.Path), payload.Attributes.Ref, connectionID)
 	if err != nil {
 		return err
 	}
@@ -57,7 +61,7 @@ func (s *Server) enqueueGitLabBuildWebhook(ctx context.Context, body []byte, del
 		if err != nil {
 			return err
 		}
-		if c.Provider != "gitlab" || !c.AutoBuild || c.InstalledRevision != c.Revision || c.Repository != strings.ToLower(payload.Project.Path) || c.Branch != payload.Attributes.Ref {
+		if c.ConnectionID != connectionID || c.Provider != "gitlab" || !c.AutoBuild || c.InstalledRevision != c.Revision || c.Repository != strings.ToLower(payload.Project.Path) || c.Branch != payload.Attributes.Ref {
 			continue
 		}
 		if err = s.enqueueAutomaticBuild(ctx, c, gitlabBuildRequestID(c.ID, payload.Attributes.ID), payload.Attributes.SHA, payload.Attributes.ID, "gitlab-pipeline-"+delivery, body); err != nil {

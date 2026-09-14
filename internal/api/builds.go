@@ -23,6 +23,7 @@ import (
 
 type buildConfig struct {
 	Provider           string `json:"provider"`
+	ConnectionID       string `json:"connection_id"`
 	Architecture       string `json:"architecture"`
 	AutoBuild          bool   `json:"auto_build"`
 	AutoDeploy         bool   `json:"auto_deploy"`
@@ -49,6 +50,7 @@ type buildConfig struct {
 }
 type buildInput struct {
 	Provider               string `json:"provider"`
+	ConnectionID           string `json:"connection_id"`
 	Architecture           string `json:"architecture"`
 	AutoBuild              bool   `json:"auto_build"`
 	AutoDeploy             bool   `json:"auto_deploy"`
@@ -98,6 +100,7 @@ func scanBuildRun(row pgx.Row) (buildRun, error) {
 	if b.Config.Provider == "" {
 		b.Config.Provider = "github"
 	}
+	b.Config.ConnectionID = selectedGitConnection(b.Config.Provider, b.Config.ConnectionID)
 	b.Provider = b.Config.Provider
 	if b.Provider == "github" {
 		b.GitHubRunID = b.RemoteRunID
@@ -126,7 +129,7 @@ func validBuildPath(value string) bool {
 	return len(value) > 0 && len(value) <= 200 && buildPathPattern.MatchString(value) && path.Clean(value) == value && !strings.HasPrefix(value, "/") && value != ".." && !strings.HasPrefix(value, "../")
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
-	c := buildConfig{Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	c := buildConfig{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	c.Repository = strings.ToLower(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
@@ -184,6 +187,7 @@ func (s *Server) readBuild(ctx context.Context, id string) (buildConfig, error) 
 	if c.Provider == "" {
 		c.Provider = "github"
 	}
+	c.ConnectionID = selectedGitConnection(c.Provider, c.ConnectionID)
 	return c, err
 }
 func (s *Server) authorizedBuild(w http.ResponseWriter, r *http.Request, permission string) (buildConfig, bool) {
@@ -224,6 +228,7 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 		if c.Provider == "" {
 			c.Provider = "github"
 		}
+		c.ConnectionID = selectedGitConnection(c.Provider, c.ConnectionID)
 		if who(r).Allows("deployments:read", project, environment, c.Name) {
 			out = append(out, c)
 		}
@@ -272,6 +277,14 @@ func (s *Server) createBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if !who(r).Allows("deployments:write", c.Project, c.Environment, c.Name) {
 		authFailure(w, store.ErrForbidden)
+		return
+	}
+	if err = s.validateGitConnection(r.Context(), c.Provider, c.ConnectionID); err != nil {
+		authFailure(w, err)
+		return
+	}
+	if c.ConnectionID != defaultGitConnection(c.Provider) && !who(r).IsAdmin() {
+		problem(w, 403, "repository_approval_required", "An administrator must approve a named connection repository for this build")
 		return
 	}
 	if err = s.validateBuildApplication(r.Context(), c); err != nil {
@@ -341,6 +354,14 @@ func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "immutable_build_target", "project, environment, application name, service and linked application cannot change")
 		return
 	}
+	if err = s.validateGitConnection(r.Context(), c.Provider, c.ConnectionID); err != nil {
+		authFailure(w, err)
+		return
+	}
+	if (c.ConnectionID != defaultGitConnection(c.Provider) || old.ConnectionID != defaultGitConnection(old.Provider)) && (c.ConnectionID != old.ConnectionID || c.Repository != old.Repository || c.Provider != old.Provider) && !who(r).IsAdmin() {
+		problem(w, 403, "repository_approval_required", "An administrator must approve changing this build repository or connection")
+		return
+	}
 	c.ID = old.ID
 	c.Revision = old.Revision + 1
 	tx, err := s.Store.Pool.Begin(r.Context())
@@ -384,8 +405,18 @@ func (s *Server) previewBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitHub Actions enabled for this repository", "GitHub integration token with repository contents/workflows write and Actions write permissions", "Administrator explicitly installs this reviewed workflow on the repository default branch", "Automatic builds also require this exact workflow on the selected source branch when it differs from the repository default branch", "GitHub-hosted Linux runner capacity and GHCR package publishing permission", "For private GHCR images, configure a persistent read:packages registry credential before deployment"}})
 }
-func (s *Server) githubBuildRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
-	data, err := s.githubCredentials(ctx)
+func (s *Server) githubBuildRequest(ctx context.Context, method, endpoint string, body any, connections ...string) (*http.Response, error) {
+	level := "read"
+	if method != "GET" {
+		level = "write"
+	}
+	permissions := map[string]string{"contents": level}
+	if strings.Contains(endpoint, "/actions/") {
+		permissions = map[string]string{"actions": level}
+	} else if method != "GET" && strings.Contains(endpoint, "/.github/workflows/") {
+		permissions["workflows"] = "write"
+	}
+	data, err := s.connectionCredentials(ctx, "github", selectedGitConnection("github", connections...), githubEndpointRepository(endpoint), permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +458,7 @@ type githubContents struct {
 }
 
 func (s *Server) workflowContents(ctx context.Context, c buildConfig, ref string) (githubContents, int, error) {
-	response, err := s.githubBuildRequest(ctx, "GET", "/repos/"+c.Repository+"/contents/"+c.workflowPath()+"?ref="+url.QueryEscape(ref), nil)
+	response, err := s.githubBuildRequest(ctx, "GET", "/repos/"+c.Repository+"/contents/"+c.workflowPath()+"?ref="+url.QueryEscape(ref), nil, c.ConnectionID)
 	if err != nil {
 		return githubContents{}, 0, err
 	}
@@ -474,7 +505,7 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	var repo struct {
 		DefaultBranch string `json:"default_branch"`
 	}
-	if err := s.githubGET(r.Context(), "/repos/"+c.Repository, &repo); err != nil {
+	if err := s.githubGET(r.Context(), "/repos/"+c.Repository, &repo, c.ConnectionID); err != nil {
 		problem(w, 409, "github_unavailable", err.Error())
 		return
 	}
@@ -498,7 +529,7 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	if current.SHA != "" {
 		body["sha"] = current.SHA
 	}
-	response, err := s.githubBuildRequest(r.Context(), "PUT", "/repos/"+c.Repository+"/contents/"+c.workflowPath(), body)
+	response, err := s.githubBuildRequest(r.Context(), "PUT", "/repos/"+c.Repository+"/contents/"+c.workflowPath(), body, c.ConnectionID)
 	if err != nil {
 		problem(w, 503, "install_unknown", err.Error())
 		return
@@ -591,7 +622,7 @@ func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if err = s.githubGET(r.Context(), "/repos/"+c.Repository+"/commits/"+url.PathEscape(ref), &commit); err != nil {
+		if err = s.githubGET(r.Context(), "/repos/"+c.Repository+"/commits/"+url.PathEscape(ref), &commit, c.ConnectionID); err != nil {
 			problem(w, 409, "source_unavailable", err.Error())
 			return
 		}
@@ -599,7 +630,7 @@ func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 			problem(w, 503, "invalid_source", "GitHub returned an invalid commit identifier")
 			return
 		}
-		if err = s.githubGET(r.Context(), "/repos/"+c.Repository, &repo); err != nil {
+		if err = s.githubGET(r.Context(), "/repos/"+c.Repository, &repo, c.ConnectionID); err != nil {
 			problem(w, 409, "source_unavailable", err.Error())
 			return
 		}
@@ -671,7 +702,7 @@ func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 	if c.Provider == "gitlab" {
 		state, message, remoteID = s.dispatchGitLabBuild(r.Context(), c, repo.DefaultBranch, commit.SHA, id)
 	} else {
-		response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+c.Repository+"/actions/workflows/"+url.PathEscape(path.Base(c.workflowPath()))+"/dispatches", map[string]any{"ref": repo.DefaultBranch, "inputs": map[string]string{"commit": commit.SHA, "request_id": id}})
+		response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+c.Repository+"/actions/workflows/"+url.PathEscape(path.Base(c.workflowPath()))+"/dispatches", map[string]any{"ref": repo.DefaultBranch, "inputs": map[string]string{"commit": commit.SHA, "request_id": id}}, c.ConnectionID)
 		if err != nil {
 			state = "dispatch_unknown"
 			message = "Dispatch response was interrupted. Refresh to locate the remote run before retrying."

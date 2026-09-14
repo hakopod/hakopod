@@ -28,6 +28,7 @@ import (
 
 type sourceBinding struct {
 	Provider       string    `json:"provider"`
+	ConnectionID   string    `json:"connection_id"`
 	ApplicationID  string    `json:"application_id"`
 	Repository     string    `json:"repository"`
 	Branch         string    `json:"branch"`
@@ -44,10 +45,11 @@ type sourceBinding struct {
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
 var commitPattern = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
 
-const sourceColumns = "application_id,provider,repository,branch,path,auto_deploy,grant_id,revision,last_commit,last_deployment,last_error,updated_at"
+const sourceColumns = "application_id,provider,repository,branch,path,auto_deploy,grant_id,revision,last_commit,last_deployment,last_error,updated_at,connection_id"
 
 func (s *Server) registerSourceRoutes(public, protected *http.ServeMux) {
 	s.registerSourceImportRoutes(protected)
+	s.registerGitConnectionRoutes(public, protected)
 	s.registerGitLabRoutes(public, protected)
 	protected.HandleFunc("GET /api/v1/integrations/github", s.githubStatus)
 	protected.HandleFunc("PUT /api/v1/integrations/github", s.configureGitHub)
@@ -137,7 +139,7 @@ func (s *Server) configureGitHub(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) readSource(ctx context.Context, id string) (sourceBinding, error) {
 	var b sourceBinding
-	err := s.Store.Pool.QueryRow(ctx, "SELECT "+sourceColumns+" FROM application_sources WHERE application_id=$1", id).Scan(&b.ApplicationID, &b.Provider, &b.Repository, &b.Branch, &b.Path, &b.AutoDeploy, &b.GrantID, &b.Revision, &b.LastCommit, &b.LastDeployment, &b.LastError, &b.UpdatedAt)
+	err := s.Store.Pool.QueryRow(ctx, "SELECT "+sourceColumns+" FROM application_sources WHERE application_id=$1", id).Scan(&b.ApplicationID, &b.Provider, &b.Repository, &b.Branch, &b.Path, &b.AutoDeploy, &b.GrantID, &b.Revision, &b.LastCommit, &b.LastDeployment, &b.LastError, &b.UpdatedAt, &b.ConnectionID)
 	return b, err
 }
 func (s *Server) getSource(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +167,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Provider               string `json:"provider"`
+		ConnectionID           string `json:"connection_id"`
 		Repository             string `json:"repository"`
 		Branch                 string `json:"branch"`
 		Path                   string `json:"path"`
@@ -177,13 +180,17 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	if in.Provider == "" {
 		in.Provider = "github"
 	}
-	b := sourceBinding{Provider: in.Provider, Repository: strings.ToLower(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
+	b := sourceBinding{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Provider: in.Provider, Repository: strings.ToLower(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
 	if !validSource(b) {
 		problem(w, 400, "invalid_source", "use owner/repository, a branch, and a relative .toml path without traversal")
 		return
 	}
 	if in.ExpectedSourceRevision == nil || *in.ExpectedSourceRevision < 0 {
 		problem(w, 400, "source_revision_required", "provide the expected_source_revision returned by the current source binding, or zero for the first binding")
+		return
+	}
+	if err := s.validateGitConnection(r.Context(), b.Provider, b.ConnectionID); err != nil {
+		authFailure(w, err)
 		return
 	}
 	tx, err := s.Store.Pool.Begin(r.Context())
@@ -198,9 +205,9 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	var previous, approvedRepository, approvedProvider string
+	var previous, approvedRepository, approvedProvider, approvedConnection string
 	var revision int64
-	err = tx.QueryRow(r.Context(), "SELECT grant_id,revision,repository,provider FROM application_sources WHERE application_id=$1 FOR UPDATE", a.ID).Scan(&previous, &revision, &approvedRepository, &approvedProvider)
+	err = tx.QueryRow(r.Context(), "SELECT grant_id,revision,repository,provider,connection_id FROM application_sources WHERE application_id=$1 FOR UPDATE", a.ID).Scan(&previous, &revision, &approvedRepository, &approvedProvider, &approvedConnection)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)
 		return
@@ -212,13 +219,13 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	// A shared installation token may read private repositories outside this
 	// project's authority. Only a global admin can approve the repository;
 	// project deployers may choose branch/path within that locked approval.
-	repositoryChanged := revision == 0 || approvedProvider != b.Provider || !strings.EqualFold(approvedRepository, b.Repository)
+	repositoryChanged := revision == 0 || approvedConnection != b.ConnectionID || approvedProvider != b.Provider || !strings.EqualFold(approvedRepository, b.Repository)
 	if repositoryChanged && !who(r).IsAdmin() {
 		problem(w, 403, "repository_approval_required", "a platform administrator must approve the first repository binding or a repository change")
 		return
 	}
 	if in.AutoDeploy {
-		data, err := s.sourceCredentials(r.Context(), b.Provider)
+		data, err := s.connectionCredentials(r.Context(), b.Provider, b.ConnectionID, "", nil)
 		if err != nil || len(data["webhook-secret"]) < 32 {
 			problem(w, 400, "source_not_configured", "configure this source provider’s webhook authentication before enabling automatic deployments")
 			return
@@ -229,7 +236,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO application_sources(application_id,repository,branch,path,auto_deploy,grant_id,provider) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(application_id) DO UPDATE SET provider=EXCLUDED.provider,repository=EXCLUDED.repository,branch=EXCLUDED.branch,path=EXCLUDED.path,auto_deploy=EXCLUDED.auto_deploy,grant_id=EXCLUDED.grant_id,revision=application_sources.revision+1,updated_at=now()`, a.ID, b.Repository, b.Branch, b.Path, b.AutoDeploy, grant, b.Provider)
+	_, err = tx.Exec(r.Context(), `INSERT INTO application_sources(application_id,repository,branch,path,auto_deploy,grant_id,provider,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(application_id) DO UPDATE SET connection_id=EXCLUDED.connection_id,provider=EXCLUDED.provider,repository=EXCLUDED.repository,branch=EXCLUDED.branch,path=EXCLUDED.path,auto_deploy=EXCLUDED.auto_deploy,grant_id=EXCLUDED.grant_id,revision=application_sources.revision+1,updated_at=now()`, a.ID, b.Repository, b.Branch, b.Path, b.AutoDeploy, grant, b.Provider, b.ConnectionID)
 	if err == nil && previous != "" {
 		_, err = tx.Exec(r.Context(), "UPDATE api_keys SET revoked_at=now() WHERE id=$1", previous)
 	}
@@ -254,8 +261,12 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"connected": true, "source": b})
 }
 
-func (s *Server) githubGET(ctx context.Context, endpoint string, output any) error {
-	data, err := s.githubCredentials(ctx)
+func (s *Server) githubGET(ctx context.Context, endpoint string, output any, connections ...string) error {
+	permissions := map[string]string{"contents": "read"}
+	if strings.Contains(endpoint, "/actions/") {
+		permissions = map[string]string{"actions": "read"}
+	}
+	data, err := s.connectionCredentials(ctx, "github", selectedGitConnection("github", connections...), githubEndpointRepository(endpoint), permissions)
 	if err != nil {
 		return err
 	}
@@ -302,7 +313,7 @@ func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string)
 		var ref struct {
 			SHA string `json:"sha"`
 		}
-		err := s.githubGET(ctx, "/repos/"+b.Repository+"/commits/"+url.PathEscape(b.Branch), &ref)
+		err := s.githubGET(ctx, "/repos/"+b.Repository+"/commits/"+url.PathEscape(b.Branch), &ref, b.ConnectionID)
 		if err != nil {
 			return spec.Application{}, "", err
 		}
@@ -317,7 +328,7 @@ func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string)
 		Content  string `json:"content"`
 		Size     int    `json:"size"`
 	}
-	err := s.githubGET(ctx, "/repos/"+b.Repository+"/contents/"+url.PathEscape(b.Path)+"?ref="+url.QueryEscape(commit), &file)
+	err := s.githubGET(ctx, "/repos/"+b.Repository+"/contents/"+url.PathEscape(b.Path)+"?ref="+url.QueryEscape(commit), &file, b.ConnectionID)
 	if err != nil {
 		return spec.Application{}, commit, err
 	}
@@ -398,6 +409,10 @@ func (s *Server) deploySource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if err = s.validateGitConnection(r.Context(), b.Provider, b.ConnectionID); err != nil {
+		authFailure(w, err)
+		return
+	}
 	d, err := s.Store.Accept(r.Context(), principal, a.Project, a.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		failure(w, err)
@@ -414,7 +429,8 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 429, "rate_limit", "too many webhook deliveries; retry with backoff")
 		return
 	}
-	data, err := s.githubCredentials(r.Context())
+	connectionID := selectedGitConnection("github", r.PathValue("connection"))
+	data, err := s.connectionCredentials(r.Context(), "github", connectionID, "", nil)
 	if err != nil || len(data["webhook-secret"]) < 32 {
 		problem(w, 503, "github_not_configured", "GitHub webhook authentication is not configured")
 		return
@@ -432,6 +448,22 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 401, "invalid_signature", "GitHub webhook signature is invalid")
 		return
 	}
+	if !s.verifyWebhookConnection(w, r, connectionID, "github", body) {
+		return
+	}
+	if r.Header.Get("X-GitHub-Event") == "installation" && connectionID != defaultGitConnection("github") {
+		var event struct {
+			Action string `json:"action"`
+		}
+		if json.Unmarshal(body, &event) == nil && (event.Action == "deleted" || event.Action == "suspend") {
+			if _, err = s.Store.Pool.Exec(r.Context(), "UPDATE git_connections SET enabled=false,revision=revision+1,updated_at=now() WHERE id=$1 AND auth_kind='github_app' AND enabled", connectionID); err != nil {
+				failure(w, err)
+				return
+			}
+		}
+		write(w, 202, map[string]bool{"accepted": true})
+		return
+	}
 	if r.Header.Get("X-GitHub-Event") == "ping" {
 		write(w, 200, map[string]bool{"ok": true})
 		return
@@ -442,7 +474,7 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 			problem(w, 400, "delivery_required", "valid X-GitHub-Delivery is required")
 			return
 		}
-		if err := s.enqueueBuildWebhook(r.Context(), "workflow_run", body, delivery); err != nil {
+		if err := s.enqueueBuildWebhook(r.Context(), "workflow_run", body, delivery, connectionID); err != nil {
 			if errors.Is(err, errBuildQueueFull) {
 				w.Header().Set("Retry-After", "30")
 				problem(w, 503, "queue_full", "build inbox is full; GitHub should retry this delivery")
@@ -479,7 +511,7 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "delivery_required", "valid X-GitHub-Delivery is required")
 		return
 	}
-	if err = s.enqueueSources(r.Context(), delivery, payload.After, payload.Repository.FullName, payload.Ref); err != nil {
+	if err = s.enqueueProviderSources(r.Context(), "github", delivery, payload.After, payload.Repository.FullName, payload.Ref, connectionID); err != nil {
 		if errors.Is(err, errSourceQueueFull) {
 			w.Header().Set("Retry-After", "30")
 			problem(w, 503, "queue_full", "source inbox is full; GitHub should retry this delivery")
@@ -496,7 +528,11 @@ var errSourceQueueFull = errors.New("source inbox is full")
 func (s *Server) enqueueSources(ctx context.Context, delivery, commit, repository, ref string) error {
 	return s.enqueueProviderSources(ctx, "github", delivery, commit, repository, ref)
 }
-func (s *Server) enqueueProviderSources(ctx context.Context, provider, delivery, commit, repository, ref string) error {
+func (s *Server) enqueueProviderSources(ctx context.Context, provider, delivery, commit, repository, ref string, connections ...string) error {
+	connectionID := selectedGitConnection(provider, connections...)
+	if connectionID != defaultGitConnection(provider) {
+		delivery = connectionID + ":" + delivery
+	}
 	if provider != "github" {
 		delivery = provider + ":" + delivery
 	}
@@ -513,13 +549,13 @@ func (s *Server) enqueueProviderSources(ctx context.Context, provider, delivery,
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM source_jobs WHERE status IN ('queued','running')").Scan(&pending); err != nil {
 		return err
 	}
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM application_sources s WHERE provider=$4 AND repository=$1 AND 'refs/heads/'||branch=$2 AND auto_deploy AND NOT EXISTS(SELECT 1 FROM source_jobs j WHERE j.application_id=s.application_id AND j.delivery_id=$3)`, repository, ref, delivery, provider).Scan(&added); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM application_sources s WHERE connection_id=$5 AND provider=$4 AND repository=$1 AND 'refs/heads/'||branch=$2 AND auto_deploy AND NOT EXISTS(SELECT 1 FROM source_jobs j WHERE j.application_id=s.application_id AND j.delivery_id=$3)`, repository, ref, delivery, provider, connectionID).Scan(&added); err != nil {
 		return err
 	}
 	if pending+added > 1000 {
 		return errSourceQueueFull
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO source_jobs(id,application_id,source_revision,commit_sha,delivery_id) SELECT md5(application_id||':'||$1),application_id,revision,$2,$1 FROM application_sources WHERE provider=$5 AND repository=$3 AND 'refs/heads/'||branch=$4 AND auto_deploy ON CONFLICT(application_id,delivery_id) DO NOTHING`, delivery, commit, repository, ref, provider)
+	_, err = tx.Exec(ctx, `INSERT INTO source_jobs(id,application_id,source_revision,commit_sha,delivery_id,connection_id) SELECT md5(application_id||':'||$1),application_id,revision,$2,$1,connection_id FROM application_sources WHERE connection_id=$6 AND provider=$5 AND repository=$3 AND 'refs/heads/'||branch=$4 AND auto_deploy ON CONFLICT(application_id,delivery_id) DO NOTHING`, delivery, commit, repository, ref, provider, connectionID)
 	if err != nil {
 		return err
 	}
@@ -551,10 +587,10 @@ func (s *Server) RunSources(ctx context.Context) {
 func (s *Server) runSource(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, 50*time.Second)
 	defer cancel()
-	var id, appID, commit string
+	var id, appID, commit, connectionID string
 	var sourceRevision int64
 	var attempts int
-	err := s.Store.Pool.QueryRow(ctx, `UPDATE source_jobs SET status='running',claimed_at=now(),attempts=attempts+1 WHERE id=(SELECT id FROM source_jobs WHERE (status='queued' AND next_attempt_at<=now()) OR (status='running' AND claimed_at<now()-interval '2 minutes') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,application_id,source_revision,commit_sha,attempts`).Scan(&id, &appID, &sourceRevision, &commit, &attempts)
+	err := s.Store.Pool.QueryRow(ctx, `UPDATE source_jobs SET status='running',claimed_at=now(),attempts=attempts+1 WHERE id=(SELECT id FROM source_jobs WHERE (status='queued' AND next_attempt_at<=now()) OR (status='running' AND claimed_at<now()-interval '2 minutes') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,application_id,source_revision,commit_sha,attempts,connection_id`).Scan(&id, &appID, &sourceRevision, &commit, &attempts, &connectionID)
 	if err != nil {
 		return
 	}
@@ -565,7 +601,7 @@ func (s *Server) runSource(parent context.Context) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		var b sourceBinding
 		b, err = s.readSource(ctx, appID)
-		if err == nil && (!b.AutoDeploy || b.Revision != sourceRevision) {
+		if err == nil && (!b.AutoDeploy || b.Revision != sourceRevision || b.ConnectionID != connectionID) {
 			err = errors.New("source binding changed or automatic deployment disabled")
 			terminal = true
 		}
@@ -590,6 +626,9 @@ func (s *Server) runSource(parent context.Context) {
 		}
 		if err == nil {
 			principal, err = s.Store.KeyPrincipal(ctx, b.GrantID)
+		}
+		if err == nil {
+			err = s.validateGitConnection(ctx, b.Provider, b.ConnectionID)
 		}
 		if err == nil {
 			var d store.Deployment

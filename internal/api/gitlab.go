@@ -128,8 +128,8 @@ func (s *Server) configureGitLab(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, map[string]any{"configured": true, "token_configured": len(data["token"]) > 0, "webhook_path": "/api/v1/webhooks/gitlab", "webhook_secret": once})
 }
-func (s *Server) gitlabGET(ctx context.Context, endpoint string, output any) error {
-	data, err := s.gitlabCredentials(ctx)
+func (s *Server) gitlabGET(ctx context.Context, endpoint string, output any, connections ...string) error {
+	data, err := s.connectionCredentials(ctx, "gitlab", selectedGitConnection("gitlab", connections...), "", nil)
 	if err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func (s *Server) gitlabSourceSpec(ctx context.Context, b sourceBinding, commit s
 		var ref struct {
 			ID string `json:"id"`
 		}
-		err := s.gitlabGET(ctx, base+"/repository/commits/"+url.PathEscape(b.Branch), &ref)
+		err := s.gitlabGET(ctx, base+"/repository/commits/"+url.PathEscape(b.Branch), &ref, b.ConnectionID)
 		if err != nil {
 			return spec.Application{}, "", err
 		}
@@ -188,7 +188,7 @@ func (s *Server) gitlabSourceSpec(ctx context.Context, b sourceBinding, commit s
 		Size     int    `json:"size"`
 		Commit   string `json:"commit_id"`
 	}
-	err := s.gitlabGET(ctx, base+"/repository/files/"+url.PathEscape(b.Path)+"?ref="+url.QueryEscape(commit), &file)
+	err := s.gitlabGET(ctx, base+"/repository/files/"+url.PathEscape(b.Path)+"?ref="+url.QueryEscape(commit), &file, b.ConnectionID)
 	if err != nil {
 		return spec.Application{}, commit, err
 	}
@@ -209,7 +209,8 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 429, "rate_limit", "Too many webhook deliveries; retry with backoff")
 		return
 	}
-	credentials, err := s.gitlabCredentials(r.Context())
+	connectionID := selectedGitConnection("gitlab", r.PathValue("connection"))
+	credentials, err := s.connectionCredentials(r.Context(), "gitlab", connectionID, "", nil)
 	if err != nil || len(credentials["webhook-secret"]) < 32 {
 		problem(w, 503, "gitlab_not_configured", "GitLab webhook authentication is not configured")
 		return
@@ -233,7 +234,7 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
 			problem(w, 400, "delivery_required", "A valid X-Gitlab-Event-UUID is required")
 			return
 		}
-		if err = s.enqueueGitLabBuildWebhook(r.Context(), body, delivery); err != nil {
+		if err = s.enqueueGitLabBuildWebhook(r.Context(), body, delivery, connectionID); err != nil {
 			if errors.Is(err, errBuildQueueFull) {
 				w.Header().Set("Retry-After", "30")
 				problem(w, 503, "queue_full", "Build inbox is full; GitLab should retry")
@@ -277,7 +278,7 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "delivery_required", "A valid X-Gitlab-Event-UUID is required")
 		return
 	}
-	if err = s.enqueueProviderSources(r.Context(), "gitlab", delivery, payload.After, payload.Project.Path, payload.Ref); err != nil {
+	if err = s.enqueueProviderSources(r.Context(), "gitlab", delivery, payload.After, payload.Project.Path, payload.Ref, connectionID); err != nil {
 		if errors.Is(err, errSourceQueueFull) {
 			w.Header().Set("Retry-After", "30")
 			problem(w, 503, "queue_full", "Source inbox is full; GitLab should retry")

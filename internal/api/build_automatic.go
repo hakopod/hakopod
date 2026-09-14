@@ -17,7 +17,8 @@ var errBuildQueueFull = errors.New("build inbox is full")
 
 // Called only after the GitHub integration has verified the raw body HMAC.
 // Completion is an inbox item, never permission to trust an image in a webhook.
-func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []byte, delivery string) error {
+func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []byte, delivery string, connections ...string) error {
+	connectionID := selectedGitConnection("github", connections...)
 	if event != "workflow_run" {
 		return nil
 	}
@@ -52,10 +53,15 @@ func (s *Server) enqueueBuildWebhook(ctx context.Context, event string, body []b
 	if err != nil {
 		return err
 	}
-	if c.Provider != "github" || !c.AutoBuild || c.InstalledRevision != c.Revision || !strings.EqualFold(payload.Repository.FullName, c.Repository) || payload.Run.HeadBranch != c.Branch {
+	if c.ConnectionID != connectionID || c.Provider != "github" || !c.AutoBuild || c.InstalledRevision != c.Revision || !strings.EqualFold(payload.Repository.FullName, c.Repository) || payload.Run.HeadBranch != c.Branch {
 		return nil
 	}
 	runID := fmt.Sprintf("%032x", payload.Run.ID)
+	if connectionID != defaultGitConnection("github") {
+		sum := sha256.Sum256([]byte(connectionID + ":" + c.ID + ":" + runID))
+		runID = fmt.Sprintf("%x", sum[:16])
+		delivery = connectionID + ":" + delivery
+	}
 	return s.enqueueAutomaticBuild(ctx, c, runID, payload.Run.HeadSHA, payload.Run.ID, "github-workflow-"+delivery, body)
 }
 func (s *Server) enqueueAutomaticBuild(ctx context.Context, c buildConfig, runID, commit string, remoteID int64, delivery string, body []byte) error {
@@ -164,7 +170,7 @@ func (s *Server) processAutomaticBuild(ctx context.Context, run buildRun) (strin
 	if c.Provider == "gitlab" {
 		latest.SHA, err = s.gitlabBuildCommit(ctx, c, c.Branch)
 	} else {
-		err = s.githubGET(ctx, "/repos/"+c.Repository+"/commits/"+url.PathEscape(c.Branch), &latest)
+		err = s.githubGET(ctx, "/repos/"+c.Repository+"/commits/"+url.PathEscape(c.Branch), &latest, c.ConnectionID)
 	}
 	if err != nil {
 		return "", "", err

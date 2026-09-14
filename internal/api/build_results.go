@@ -60,7 +60,7 @@ func (s *Server) refreshBuildRun(ctx context.Context, run buildRun) (buildRun, e
 		var list struct {
 			Runs []githubBuildRun `json:"workflow_runs"`
 		}
-		if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/workflows/"+url.PathEscape(path.Base(run.Config.workflowPath()))+"/runs?event=workflow_dispatch&per_page=50", &list); err != nil {
+		if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/workflows/"+url.PathEscape(path.Base(run.Config.workflowPath()))+"/runs?event=workflow_dispatch&per_page=50", &list, run.Config.ConnectionID); err != nil {
 			return run, err
 		}
 		for _, candidate := range list.Runs {
@@ -75,7 +75,7 @@ func (s *Server) refreshBuildRun(ctx context.Context, run buildRun) (buildRun, e
 			return run, nil
 		}
 	} else {
-		if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10), &remote); err != nil {
+		if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10), &remote, run.Config.ConnectionID); err != nil {
 			return run, err
 		}
 	}
@@ -187,7 +187,7 @@ func (s *Server) readBuildArtifact(ctx context.Context, run buildRun) (string, e
 			Size    int64  `json:"size_in_bytes"`
 		} `json:"artifacts"`
 	}
-	if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10)+"/artifacts?per_page=30", &listing); err != nil {
+	if err := s.githubGET(ctx, "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10)+"/artifacts?per_page=30", &listing, run.Config.ConnectionID); err != nil {
 		return "", err
 	}
 	var artifactID int64
@@ -202,7 +202,7 @@ func (s *Server) readBuildArtifact(ctx context.Context, run buildRun) (string, e
 	if artifactID == 0 {
 		return "", errors.New("result artifact is absent, expired or exceeds the size limit")
 	}
-	response, err := s.githubBuildRequest(ctx, "GET", "/repos/"+run.Config.Repository+"/actions/artifacts/"+strconv.FormatInt(artifactID, 10)+"/zip", nil)
+	response, err := s.githubBuildRequest(ctx, "GET", "/repos/"+run.Config.Repository+"/actions/artifacts/"+strconv.FormatInt(artifactID, 10)+"/zip", nil, run.Config.ConnectionID)
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +253,7 @@ func (s *Server) cancelBuildRun(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "run_not_observed", "refresh the build until its GitHub run is observed before cancelling")
 		return
 	}
-	response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10)+"/cancel", map[string]any{})
+	response, err := s.githubBuildRequest(r.Context(), "POST", "/repos/"+run.Config.Repository+"/actions/runs/"+strconv.FormatInt(run.GitHubRunID, 10)+"/cancel", map[string]any{}, run.Config.ConnectionID)
 	if err != nil {
 		problem(w, 503, "cancel_unknown", err.Error())
 		return

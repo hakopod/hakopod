@@ -9,12 +9,13 @@ import (
 )
 
 type InitialSource struct {
-	Provider   string `json:"provider"`
-	Repository string `json:"repository"`
-	Branch     string `json:"branch"`
-	Path       string `json:"path"`
-	AutoDeploy bool   `json:"auto_deploy"`
-	CommitSHA  string `json:"commit_sha"`
+	Provider     string `json:"provider"`
+	ConnectionID string `json:"connection_id,omitempty"`
+	Repository   string `json:"repository"`
+	Branch       string `json:"branch"`
+	Path         string `json:"path"`
+	AutoDeploy   bool   `json:"auto_deploy"`
+	CommitSHA    string `json:"commit_sha"`
 }
 
 func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, environment string, next spec.Application, source InitialSource, idem string) (Deployment, error) {
@@ -34,7 +35,7 @@ func (s *Store) bindInitialSource(ctx context.Context, tx pgx.Tx, p Principal, a
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO application_sources(application_id,provider,repository,branch,path,auto_deploy,grant_id,last_commit,last_deployment) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", a.ID, source.Provider, source.Repository, source.Branch, source.Path, source.AutoDeploy, grant, source.CommitSHA, deployment)
+	_, err = tx.Exec(ctx, "INSERT INTO application_sources(application_id,provider,repository,branch,path,auto_deploy,grant_id,last_commit,last_deployment,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''))", a.ID, source.Provider, source.Repository, source.Branch, source.Path, source.AutoDeploy, grant, source.CommitSHA, deployment, source.ConnectionID)
 	if err != nil {
 		return err
 	}
