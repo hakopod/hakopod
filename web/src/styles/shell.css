@@ -197,39 +197,38 @@
   color: var(--muted);
 }
 .hako-account-menu {
-  width: 440px;
+  @apply w-72;
   max-width: calc(100vw - 28px);
 }
 .hako-account-menu .menu-item {
-  gap: 12px;
-  padding: 12px 16px;
-  font-size: 16px;
+  @apply min-h-9 gap-2 px-3 py-2 text-[13px];
+}
+.hako-account-menu .menu-item svg {
+  @apply size-4 shrink-0;
 }
 .hako-account-identity {
-  padding: 16px 16px 20px;
+  @apply px-3 py-3;
 }
 .hako-account-identity > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  @apply flex items-center gap-2;
 }
 .hako-account-identity strong {
-  font-size: 18px;
-  font-weight: 500;
+  @apply text-sm font-medium;
   overflow-wrap: anywhere;
 }
 .hako-account-identity p {
-  padding-left: 40px;
-  margin-top: 6px;
-  font-size: 14px;
+  @apply mt-1 pl-9 text-xs;
   overflow-wrap: anywhere;
 }
 .hako-account-identity small {
-  display: block;
-  padding-left: 40px;
-  margin-top: 6px;
+  @apply mt-1 block pl-9;
   font: 11px var(--font-mono);
   color: var(--muted);
+}
+@media (pointer: coarse) {
+  .hako-account-menu .menu-item {
+    @apply min-h-11;
+  }
 }
 .hako-mobile-sheet.sheet {
   left: 0;

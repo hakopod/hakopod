@@ -8,15 +8,16 @@ import { useScope, useResourceScope } from '../lib/scope'
 export const Route = createFileRoute('/applications/$applicationId/configure')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { mode?: 'form' | 'toml'; service?: string } => ({
+  ): { mode?: 'form' | 'toml'; service?: string; remove?: string } => ({
     mode: search.mode === 'toml' ? 'toml' : 'form',
     service: typeof search.service === 'string' ? search.service : undefined,
+    remove: typeof search.remove === 'string' ? search.remove : undefined,
   }),
   component: ConfigureApplication,
 })
 function ConfigureApplication() {
   const { applicationId } = Route.useParams()
-  const { mode, service } = Route.useSearch()
+  const { mode, service, remove } = Route.useSearch()
   const navigate = useNavigate()
   const scope = useScope()
   const application = useQuery({
@@ -36,7 +37,10 @@ function ConfigureApplication() {
         description="Your project role does not allow configuration changes."
       />
     )
-  if (service && !application.data.spec.services[service])
+  if (
+    (service && !application.data.spec.services[service]) ||
+    (remove && !application.data.spec.services[remove])
+  )
     return (
       <Empty
         title="Service not found"
@@ -47,7 +51,8 @@ function ConfigureApplication() {
     <DeploymentForm
       application={application.data}
       initialMode={mode}
-      serviceName={service}
+      serviceName={remove ? undefined : service}
+      removeService={remove}
       onClose={() =>
         void navigate({
           to: '/applications/$applicationId',

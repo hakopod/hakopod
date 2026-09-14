@@ -181,3 +181,14 @@ test('active container failures direct inspection without treating old events as
     assert.equal(health.issues[0].inspect, inspect)
   }
 })
+
+test('empty applications require a fresh explicit runtime observation', () => {
+  const app = application([])
+  app.spec.services = {}
+  assert.equal(applicationRuntimeHealth(app, now).status, 'not observed')
+  app.observed.status = 'empty'
+  const health = applicationRuntimeHealth(app, now)
+  assert.equal(health.status, 'empty')
+  assert.equal(health.desired, 0)
+  assert.equal(applicationRuntimeHealth(app, now + runtimeObservationMaxAge + 1).status, 'stale')
+})
