@@ -23,6 +23,26 @@ exec(compile(SOURCE, str(SCRIPT), 'exec'), bootstrap.__dict__)
 
 
 class BootstrapTest(unittest.TestCase):
+    def release(self, value, prerelease=True, draft=False):
+        names = ['SHA256SUMS', 'installer.sh'] + ['hakopod_' + value + '_' + part + '.tar.gz'
+                 for part in ('installer', 'dashboard', 'linux_amd64', 'linux_arm64')]
+        return dict(tag_name='v' + value, draft=draft, prerelease=prerelease, assets=[{'name': name} for name in names])
+
+    def test_release_selection_uses_complete_published_versions(self):
+        releases = [self.release('0.1.0-alpha.9'), self.release('0.1.0-alpha.10'), self.release('0.1.0-alpha.11', draft=True)]
+        incomplete = self.release('0.1.0-alpha.12'); incomplete['assets'].pop()
+        releases.append(incomplete)
+        self.assertEqual(bootstrap.release_version(releases), '0.1.0-alpha.10')
+        releases += [self.release('0.1.0', prerelease=False), self.release('0.2.0-beta.1')]
+        self.assertEqual(bootstrap.release_version(releases), '0.1.0')
+        for invalid in ([], {}, [incomplete], [self.release('../escape')]):
+            with self.assertRaises(ValueError): bootstrap.release_version(invalid)
+
+    def test_discovery_failure_does_not_use_packaged_version(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(bootstrap, 'download', side_effect=OSError('unavailable')):
+            with self.assertRaisesRegex(ValueError, 'no old version was selected'):
+                bootstrap.latest_version(Path(directory))
+
     def test_platform_and_version_rejection(self):
         self.assertEqual(bootstrap.architecture('Linux', 'x86_64'), 'amd64')
         for arch in ('aarch64', 'arm64'):
@@ -73,9 +93,9 @@ class BootstrapTest(unittest.TestCase):
                 with self.assertRaises(ValueError): bootstrap.extract_kit(source, Path(directory) / 'out', 'kit')
                 self.assertFalse((Path(directory) / 'escape').exists())
 
-    def fixtures(self, directory, arch='amd64'):
+    def fixtures(self, directory, arch='amd64', release_version=None):
         assets = directory / 'assets'; assets.mkdir()
-        version = bootstrap.DEFAULT_VERSION
+        version = release_version or bootstrap.DEFAULT_VERSION
         kit = 'hakopod_' + version + '_installer'
         installer = b'''#!/usr/bin/env bash
 set -eu
@@ -92,6 +112,7 @@ if [ -t 0 ]; then printf 'TTY INPUT: '; IFS= read -r reply; printf 'TTY RECEIVED
             (assets / ('hakopod_' + version + '_' + name + '.tar.gz')).write_bytes(b'verified fixture')
         (assets / 'SHA256SUMS').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n'
             for path in sorted(assets.iterdir())))
+        (assets / 'releases.json').write_text(json.dumps([self.release(version)]))
         # Redirect the real bootstrap's network only inside its test subprocess.
         hook = directory / 'sitecustomize.py'
         hook.write_text('''import io, os, platform, urllib.request
@@ -102,7 +123,8 @@ class Response(io.BytesIO):
     headers = {}
 class Opener:
     def open(self, request, timeout):
-        return Response((Path(os.environ['FIXTURE_ASSETS']) / request.full_url.rsplit('/', 1)[-1]).read_bytes())
+        name = 'releases.json' if request.full_url.startswith('https://api.github.com/') else request.full_url.rsplit('/', 1)[-1]
+        return Response((Path(os.environ['FIXTURE_ASSETS']) / name).read_bytes())
 urllib.request.build_opener = lambda *args: Opener()
 ''')
         # Ensure the script chooses this interpreter even on machines with several Pythons.
@@ -138,6 +160,7 @@ urllib.request.build_opener = lambda *args: Opener()
             with self.subTest(arch=arch), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 assets, env = self.fixtures(directory, arch)
+                (assets / 'releases.json').unlink()  # Explicit pins must work without release discovery.
                 env['FIXTURE_ARCH'] = 'x86_64' if arch == 'amd64' else 'aarch64'
                 config = directory / 'config.json'; config.write_text(json.dumps({'version': bootstrap.DEFAULT_VERSION}))
                 args = ['sh', str(SCRIPT), '--config', str(config), '--dry-run', '--resume', '--yes']
@@ -157,7 +180,7 @@ urllib.request.build_opener = lambda *args: Opener()
         import pty
         import termios
         with tempfile.TemporaryDirectory() as temporary:
-            _, env = self.fixtures(Path(temporary))
+            _, env = self.fixtures(Path(temporary), release_version='0.1.0-alpha.99')
             env['FIXTURE_ARCH'] = 'x86_64'
             master, slave = pty.openpty()
             def session():
@@ -179,6 +202,7 @@ urllib.request.build_opener = lambda *args: Opener()
                     if process.poll() is not None: break
                 self.assertEqual(process.wait(timeout=2), 0, output.decode())
                 self.assertIn(b'TTY RECEIVED fixture-reply', output)
+                self.assertIn(b'Downloading Hakopod 0.1.0-alpha.99', output)
             finally:
                 if process.poll() is None: process.kill(); process.wait()
                 os.close(master)

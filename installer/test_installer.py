@@ -47,6 +47,27 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(host.config(self.config_file(valid))['dashboard_mode'], 'https')
         for origin in ('https://foo.apps.example.test:8443', 'https://apps.example.test:8443', 'https://console.example.test', 'https://user@console.example.test:8443'):
             with self.assertRaises(ValueError): host.config(self.config_file(dict(valid, dashboard_origin=origin)))
+    def test_letsencrypt_dashboard_is_independent_of_application_acme(self):
+        values = dict(dashboard_mode='https', dashboard_certificate='letsencrypt', dashboard_port=8443,
+                      dashboard_origin='https://console.example.test:8443', acme='off', acme_email='admin@example.test')
+        config = host.config(self.config_file(values))
+        for changes in ({'acme_email': ''}, {'tls_key_file': '/root/key.pem'}, {'dashboard_certificate': 'unknown'}, {'dashboard_mode': 'ssh'}):
+            with self.assertRaises(ValueError): host.config(self.config_file(dict(values, **changes)))
+        secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
+        with patch.object(host, 'regular', return_value=secret): host.render(config, 'amd64', 'a' * 32, self.root / 'tls-render')
+        rendered = self.root / 'tls-render'
+        issuer = json.loads((rendered / 'dashboard-issuer.json').read_text())
+        self.assertEqual(issuer['spec']['acme']['server'], 'https://acme-v02.api.letsencrypt.org/directory')
+        certificate = json.loads((rendered / 'dashboard-certificate.json').read_text())
+        self.assertEqual(certificate['spec']['dnsNames'], ['console.example.test'])
+        self.assertEqual(certificate['spec']['secretTemplate']['labels'][host.LABEL], 'a' * 32)
+        self.assertFalse((rendered / 'issuer.json').exists())
+        self.assertIn('/etc/hakopod/dashboard-tls/current/dashboard.crt', (rendered / 'dashboard.env').read_text())
+        self.assertIn('OnUnitActiveSec=6h', (rendered / 'hakopod-dashboard-certificate.timer').read_text())
+    def test_default_certificate_setting_preserves_legacy_resume_fingerprint(self):
+        legacy = dict(self.config)
+        legacy.pop('dashboard_certificate')
+        self.assertEqual(host.fingerprint(legacy, 'amd64', {}), host.fingerprint(self.config, 'amd64', {}))
     def test_archive_rejects_traversal_links_devices_duplicates(self):
         bad = [
             [('../escape', 'file', b'x')], [('/absolute', 'file', b'x')],
