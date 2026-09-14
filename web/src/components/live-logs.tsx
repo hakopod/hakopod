@@ -1,3 +1,4 @@
+import { editionFetch } from '../lib/client-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
@@ -49,7 +50,7 @@ export default function LiveLogs({
     async function connect(attempt = 0) {
       setState(attempt ? `Reconnecting (${attempt}/3)` : 'Connecting')
       try {
-        const response = await fetch(
+        const response = await editionFetch(
           `/api/applications/${encodeURIComponent(applicationId)}/logs?service=${encodeURIComponent(service)}&tail=100&follow=${follow}`,
           { signal: controller.signal, cache: 'no-store' },
         )

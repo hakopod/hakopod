@@ -22,11 +22,14 @@ type User struct {
 	Email    string `json:"email"`
 	Name     string `json:"name"`
 	Verified bool   `json:"verified"`
+	Operator bool   `json:"operator"`
 }
 
 type Service struct {
 	store   *store.Store
 	handler http.Handler
+	control http.Handler
+	config  Config
 }
 
 // Open uses the canonical engine schema in a dedicated control-service database.
@@ -42,7 +45,7 @@ func Open(ctx context.Context, databaseURL string, config Config) (*Service, err
 	}
 	server := &api.Server{Store: db, Auth: config}
 	full := server.Handler()
-	service := &Service{store: db}
+	service := &Service{store: db, control: full, config: config}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && r.URL.Path == "/api/v1/auth/account" {
 			token := ""
@@ -72,6 +75,17 @@ func Open(ctx context.Context, databaseURL string, config Config) (*Service, err
 	service.handler = handler
 	return service, nil
 }
+
+// AccountHandler exposes only canonical account/profile/appearance routes.
+func (s *Service) AccountHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if identityRoute(r) || r.URL.Path == "/api/v1/auth/profile" || r.URL.Path == "/api/v1/settings/appearance" || (r.URL.Path == "/api/v1/license" && r.Method == "GET") {
+			s.control.ServeHTTP(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+}
 func (s *Service) Close()                { s.store.Close() }
 func (s *Service) Pool() *pgxpool.Pool   { return s.store.Pool }
 func (s *Service) Handler() http.Handler { return s.handler }
@@ -84,6 +98,7 @@ func (s *Service) Verify(ctx context.Context, token string) (User, error) {
 	if err = s.store.Pool.QueryRow(ctx, "SELECT email_verified FROM identities WHERE id=$1 AND NOT disabled", p.ID).Scan(&u.Verified); err != nil {
 		return User{}, ErrUnauthorized
 	}
+	u.Operator = u.Verified && p.IsSuperAdmin()
 	return u, nil
 }
 

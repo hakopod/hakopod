@@ -1,3 +1,10 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
+import {
+  dashboardEdition,
+  EditionControls,
+  EditionGate,
+  useEditionAuth,
+} from '../lib/dashboard-edition'
 import { InstallationUpdateNotice } from './installation'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
@@ -42,6 +49,7 @@ const AppearanceSettings = lazy(() =>
 )
 
 export function DashboardShell({ children }: { children: ReactNode }) {
+  useEditionAuth()
   const [mounted, setMounted] = useState(false)
   const [resetError, setResetError] = useState('')
   const [theme, setTheme] = useTheme()
@@ -57,10 +65,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (identity.data?.credential_type !== 'browser') return
     const destination = sessionStorage.getItem('hakopod-auth-return')
-    if (destination?.startsWith('/login/')) {
+    if (dashboardEdition.authReturn(destination)) {
       sessionStorage.removeItem('hakopod-auth-return')
       if (destination !== window.location.pathname + window.location.search)
-        window.location.assign(destination)
+        window.location.assign(destination!)
     }
   }, [identity.data?.credential_type])
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
@@ -70,6 +78,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <Logo size={32} />
         <h1>Connecting to your workspace</h1>
         <Loading rows={3} />
+      </div>
+    )
+  if (identity.error instanceof APIError && identity.error.status === 409)
+    return (
+      <div className="hako-connection-page">
+        <h1>Session context changed</h1>
+        <p>{message(identity.error)}</p>
+        <Button variant="primary" onClick={() => window.location.reload()}>
+          Reload page
+        </Button>
       </div>
     )
   if (identity.error && !(identity.error instanceof APIError && identity.error.status === 401))
@@ -113,7 +131,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         onSuccess={() => {
           const destination = sessionStorage.getItem('hakopod-auth-return')
           sessionStorage.removeItem('hakopod-auth-return')
-          if (destination?.startsWith('/login/')) window.location.assign(destination)
+          if (dashboardEdition.authReturn(destination)) window.location.assign(destination!)
           else {
             void queryClient.invalidateQueries({ queryKey: ['me'] })
             void queryClient.invalidateQueries({ queryKey: ['auth-status'] })
@@ -141,6 +159,7 @@ function Workspace({
   theme: string
   toggleTheme: () => void
 }) {
+  const features = useEditionFeatures()
   const location = useLocation()
   const projects = useProjects()
   // Share detail caches so a deep link never inherits another project's navigation.
@@ -280,12 +299,17 @@ function Workspace({
     })
     setMobileOpen(false)
   }
+  const scopedNavigation = dashboardEdition.scopedNavigation(location.pathname)
   const navigation = [
     {
-      to: project ? `/projects/${encodeURIComponent(project)}` : '/',
+      to: !scopedNavigation
+        ? dashboardEdition.home
+        : project
+          ? `/projects/${encodeURIComponent(project)}`
+          : '/',
       search: project && environment ? { environment } : undefined,
       icon: 'grid',
-      label: project ? 'Applications' : 'Projects',
+      label: !scopedNavigation ? 'Workspaces' : project ? 'Applications' : 'Projects',
     },
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
@@ -299,11 +323,13 @@ function Workspace({
       ? location.pathname === '/' ||
         /^\/(projects|applications|deployments)(\/|$)/.test(location.pathname)
       : location.pathname === to || location.pathname.startsWith(to + '/')
-  const accountRole = identity.owner
-    ? 'Super admin'
-    : identity.admin
-      ? 'Installation administrator'
-      : 'Scoped project access'
+  const accountRole = dashboardEdition.cloud
+    ? 'Cloud account'
+    : identity.owner
+      ? 'Super admin'
+      : identity.admin
+        ? 'Installation administrator'
+        : 'Scoped project access'
   const signOut = async () => {
     setSessionError('')
     try {
@@ -316,21 +342,28 @@ function Workspace({
     }
   }
   const links = (mobile = false) =>
-    navigation.map(({ to, search, icon, label }) => (
-      <Link
-        key={to}
-        to={to}
-        search={search}
-        className="hako-nav-link interactive"
-        data-active={isActive(to) || undefined}
-        aria-current={isActive(to) ? 'page' : undefined}
-        onClick={() => setMobileOpen(false)}
-      >
-        {mobile && <Icon name={icon} size={18} />}
-        <span>{label}</span>
-        <Brackets />
-      </Link>
-    ))
+    navigation
+      .filter(
+        ({ to }) =>
+          dashboardEdition.navigation(to) &&
+          (features.git || to !== '/builds') &&
+          (scopedNavigation || to === dashboardEdition.home || to === '/settings'),
+      )
+      .map(({ to, search, icon, label }) => (
+        <Link
+          key={to}
+          to={to}
+          search={search}
+          className="hako-nav-link interactive"
+          data-active={isActive(to) || undefined}
+          aria-current={isActive(to) ? 'page' : undefined}
+          onClick={() => setMobileOpen(false)}
+        >
+          {mobile && <Icon name={icon} size={18} />}
+          <span>{label}</span>
+          <Brackets />
+        </Link>
+      ))
   return (
     <ScopeContext.Provider value={{ project, environment, identity, can, syncScope }}>
       <a href="#main-content" className="skip-link">
@@ -352,7 +385,11 @@ function Workspace({
             >
               <Icon name="menu" />
             </Button>
-            <Link to="/" className="hako-wordmark" aria-label="Hakopod projects">
+            <Link
+              to={dashboardEdition.home}
+              className="hako-wordmark"
+              aria-label={dashboardEdition.cloud ? 'Hakopod workspaces' : 'Hakopod projects'}
+            >
               <img
                 className="hako-wordmark-dark"
                 src="/brand/hakopod-horizontal-paper.svg"
@@ -368,84 +405,89 @@ function Workspace({
             </Link>
           </div>
           <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
-            <div className="hako-scope-select hako-project-select">
-              <SelectField
-                compact
-                label="Project"
-                title={currentProject?.display_name || project || 'All projects'}
-                value={project}
-                disabled={Boolean(identity.project) && !overview}
-                onValueChange={(value) => {
-                  if (!value) {
-                    void navigate({ to: '/' })
-                    return
-                  }
-                  changeScope({
-                    project: value,
-                    environment:
-                      projects.data?.items.find((item) => item.name === value)?.environments?.[0]
-                        ?.name || '',
-                  })
-                }}
-                options={[
-                  { value: '', label: 'All projects' },
-                  ...(project && !currentProject ? [{ value: project, label: project }] : []),
-                  ...(projects.data?.items.map((item) => ({
-                    value: item.name,
-                    label: item.display_name || item.name,
-                  })) || []),
-                ]}
-              />
-            </div>
-            {!overview && <Icon name="chevron" size={12} />}
-            {!overview && (
-              <div className="hako-scope-select hako-environment-select">
-                <SelectField
-                  compact
-                  ref={environmentTrigger}
-                  label="Environment"
-                  title={environment || 'Select an environment'}
-                  value={environment}
-                  disabled={Boolean(identity.environment) || !project}
-                  onValueChange={(value) => {
-                    if (value === '__create_environment__') setEnvironmentOpen(true)
-                    else changeScope({ project, environment: value })
-                  }}
-                  options={[
-                    ...(!environment ? [{ value: '', label: 'Select an environment' }] : []),
-                    ...(environment &&
-                    !currentProject?.environments.some((item) => item.name === environment)
-                      ? [{ value: environment, label: environment }]
-                      : []),
-                    ...(currentProject?.environments.map((item) => ({
-                      value: item.name,
-                      label: item.name,
-                    })) || []),
-                    ...(createEnvironmentAllowed && currentProject
-                      ? [{ value: '__create_environment__', label: 'Create environment…' }]
-                      : []),
-                  ]}
-                />
-              </div>
-            )}
-            {identity.admin && (
-              <Tooltip content="Create a project">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Create project"
-                  onClick={() => setProjectOpen(true)}
-                >
-                  <Icon name="plus" size={16} />
-                </Button>
-              </Tooltip>
+            <EditionControls />
+            {scopedNavigation && (
+              <>
+                <div className="hako-scope-select hako-project-select">
+                  <SelectField
+                    compact
+                    label="Project"
+                    title={currentProject?.display_name || project || 'All projects'}
+                    value={project}
+                    disabled={Boolean(identity.project) && !overview}
+                    onValueChange={(value) => {
+                      if (!value) {
+                        void navigate({ to: '/' })
+                        return
+                      }
+                      changeScope({
+                        project: value,
+                        environment:
+                          projects.data?.items.find((item) => item.name === value)
+                            ?.environments?.[0]?.name || '',
+                      })
+                    }}
+                    options={[
+                      { value: '', label: 'All projects' },
+                      ...(project && !currentProject ? [{ value: project, label: project }] : []),
+                      ...(projects.data?.items.map((item) => ({
+                        value: item.name,
+                        label: item.display_name || item.name,
+                      })) || []),
+                    ]}
+                  />
+                </div>
+                {!overview && <Icon name="chevron" size={12} />}
+                {!overview && (
+                  <div className="hako-scope-select hako-environment-select">
+                    <SelectField
+                      compact
+                      ref={environmentTrigger}
+                      label="Environment"
+                      title={environment || 'Select an environment'}
+                      value={environment}
+                      disabled={Boolean(identity.environment) || !project}
+                      onValueChange={(value) => {
+                        if (value === '__create_environment__') setEnvironmentOpen(true)
+                        else changeScope({ project, environment: value })
+                      }}
+                      options={[
+                        ...(!environment ? [{ value: '', label: 'Select an environment' }] : []),
+                        ...(environment &&
+                        !currentProject?.environments.some((item) => item.name === environment)
+                          ? [{ value: environment, label: environment }]
+                          : []),
+                        ...(currentProject?.environments.map((item) => ({
+                          value: item.name,
+                          label: item.name,
+                        })) || []),
+                        ...(createEnvironmentAllowed && currentProject
+                          ? [{ value: '__create_environment__', label: 'Create environment…' }]
+                          : []),
+                      ]}
+                    />
+                  </div>
+                )}
+                {identity.admin && (
+                  <Tooltip content="Create a project">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Create project"
+                      onClick={() => setProjectOpen(true)}
+                    >
+                      <Icon name="plus" size={16} />
+                    </Button>
+                  </Tooltip>
+                )}
+              </>
             )}
           </div>
           <nav className="hako-global-nav" aria-label="Main navigation" ref={desktopNavigation}>
             {links()}
           </nav>
           <div className="hako-header-tools">
-            <InstallationUpdateNotice />
+            {!dashboardEdition.cloud && <InstallationUpdateNotice />}
             <Tooltip content="Quick navigation · ⌘ K">
               <Button
                 variant="ghost"
@@ -477,7 +519,7 @@ function Workspace({
                 <Bot size={19} strokeWidth={1.75} aria-hidden="true" />
               </Button>
             </Tooltip>
-            <NotificationButton />
+            {scopedNavigation && <NotificationButton />}
             <Menu
               className="hako-account-menu"
               trigger={
@@ -510,7 +552,7 @@ function Workspace({
                 <Icon name="shield" />
                 Account security
               </MenuItem>
-              {identity.admin && (
+              {identity.admin && dashboardEdition.settings('keys') && (
                 <MenuItem
                   onSelect={() => void navigate({ to: '/settings', search: { tab: 'keys' } })}
                 >
@@ -519,12 +561,20 @@ function Workspace({
                 </MenuItem>
               )}
               <MenuItem
-                onSelect={() => void navigate({ to: '/settings', search: { tab: 'license' } })}
+                onSelect={() =>
+                  void navigate(
+                    dashboardEdition.cloud
+                      ? { to: dashboardEdition.home }
+                      : { to: '/settings', search: { tab: 'license' } },
+                  )
+                }
               >
                 <Icon name="info" />
-                {license.data?.plan
-                  ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
-                  : 'Installation license'}
+                {dashboardEdition.cloud
+                  ? 'Cloud workspaces'
+                  : license.data?.plan
+                    ? `Hakopod ${license.data.plan === 'pro' ? 'Pro' : 'Free'}`
+                    : 'Installation license'}
               </MenuItem>
               <MenuItem onSelect={toggleTheme}>
                 <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
@@ -544,40 +594,42 @@ function Workspace({
               {sessionError}
             </div>
           )}
-          {projects.error && !overview && !projectPath && (
+          {scopedNavigation && projects.error && !overview && !projectPath && (
             <ErrorState error={projects.error} retry={() => void projects.refetch()} />
           )}
-          {overview || projectPath || resourcePage ? (
-            children
-          ) : !project && projects.isPending ? (
-            <Loading />
-          ) : !project &&
-            !projects.error &&
-            !location.pathname.startsWith('/settings') &&
-            !location.pathname.startsWith('/alarms') &&
-            !location.pathname.startsWith('/login/') ? (
-            <Empty
-              icon="box"
-              title="Create your first project"
-              description="Projects organize applications and environments, with access scoped to your team."
-              action={
-                identity.admin ? (
-                  <Button variant="primary" onClick={() => setProjectOpen(true)}>
-                    <Icon name="plus" />
-                    Create project
-                  </Button>
-                ) : (
-                  <Note>Ask your administrator to create a project and invite you to it.</Note>
-                )
-              }
-            />
-          ) : (
-            children
-          )}
+          <EditionGate>
+            {dashboardEdition.cloud || overview || projectPath || resourcePage ? (
+              children
+            ) : !project && projects.isPending ? (
+              <Loading />
+            ) : !project &&
+              !projects.error &&
+              !location.pathname.startsWith('/settings') &&
+              !location.pathname.startsWith('/alarms') &&
+              !location.pathname.startsWith('/login/') ? (
+              <Empty
+                icon="box"
+                title="Create your first project"
+                description="Projects organize applications and environments, with access scoped to your team."
+                action={
+                  identity.admin ? (
+                    <Button variant="primary" onClick={() => setProjectOpen(true)}>
+                      <Icon name="plus" />
+                      Create project
+                    </Button>
+                  ) : (
+                    <Note>Ask your administrator to create a project and invite you to it.</Note>
+                  )
+                }
+              />
+            ) : (
+              children
+            )}
+          </EditionGate>
         </main>
         <footer className="hako-footer">
           <span>Hakopod · Infrastructure you own</span>
-          <span>Self-hosted · API v1</span>
+          <span>{dashboardEdition.label} · API v1</span>
         </footer>
       </div>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -598,7 +650,11 @@ function Workspace({
         >
           <SheetHeader>
             <SheetTitle>Navigation</SheetTitle>
-            <SheetDescription>Projects, applications and installation controls.</SheetDescription>
+            <SheetDescription>
+              {dashboardEdition.cloud
+                ? 'Workspaces, projects and applications.'
+                : 'Projects, applications and installation controls.'}
+            </SheetDescription>
           </SheetHeader>
           <SheetBody>
             <nav

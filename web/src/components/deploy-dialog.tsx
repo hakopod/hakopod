@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
@@ -36,6 +37,7 @@ export function DeploymentForm({
   serviceName?: string
   removeService?: string
 }) {
+  const features = useEditionFeatures()
   const scope = useScope()
   const project = application?.project || scope.project
   const environment = application?.environment || scope.environment
@@ -278,7 +280,7 @@ export function DeploymentForm({
                 <Icon name="code" size={15} />
                 Import TOML
               </button>
-              {!application && scope.identity.admin && (
+              {!application && scope.identity.admin && features.git && (
                 <button onClick={() => void navigate({ to: '/applications/import' })}>
                   <ServiceIcon name="github" size={15} />
                   <ServiceIcon name="gitlab" size={15} />

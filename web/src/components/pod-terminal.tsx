@@ -1,3 +1,4 @@
+import { editionFetch } from '../lib/client-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { readTerminalEvents } from '../lib/terminal-stream'
@@ -88,7 +89,7 @@ export default function PodTerminal({
       setState(reason)
     }
     if (current)
-      void fetch(`${base}/${encodeURIComponent(current.id)}`, {
+      void editionFetch(`${base}/${encodeURIComponent(current.id)}`, {
         method: 'DELETE',
         keepalive: true,
       }).catch(() => undefined)
@@ -210,7 +211,7 @@ export default function PodTerminal({
             }),
           )
       if (!alive.current || generation !== attempt.current) {
-        void fetch(`${base}/${encodeURIComponent(created.id)}`, {
+        void editionFetch(`${base}/${encodeURIComponent(created.id)}`, {
           method: 'DELETE',
           keepalive: true,
         }).catch(() => undefined)
@@ -220,7 +221,7 @@ export default function PodTerminal({
       setSession(created)
       const abort = new AbortController()
       controller.current = abort
-      const response = await fetch(`${base}/${encodeURIComponent(created.id)}/output`, {
+      const response = await editionFetch(`${base}/${encodeURIComponent(created.id)}/output`, {
         signal: abort.signal,
         cache: 'no-store',
       })
@@ -238,7 +239,7 @@ export default function PodTerminal({
       let queued = new Uint8Array(0)
       let sending = false
       const input = async (body: { data?: string; cols?: number; rows?: number }) => {
-        const result = await fetch(`${base}/${encodeURIComponent(created.id)}/input`, {
+        const result = await editionFetch(`${base}/${encodeURIComponent(created.id)}/input`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

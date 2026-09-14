@@ -1,3 +1,4 @@
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
@@ -36,6 +37,12 @@ export function ParentBackLink() {
   const location = useLocation()
   const scope = useScope()
   const deployment = /^\/deployments\/([^/]+)$/.exec(location.pathname)
+  if (
+    dashboardEdition.cloud &&
+    location.pathname !== dashboardEdition.home &&
+    !dashboardEdition.scopedNavigation(location.pathname)
+  )
+    return <ParentLink parent={{ to: dashboardEdition.home, label: 'All workspaces' }} />
   return deployment ? (
     <DeploymentParent id={deployment[1]} />
   ) : (

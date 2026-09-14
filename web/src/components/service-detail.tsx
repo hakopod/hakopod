@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -85,6 +86,7 @@ export function ServiceDetail({
   initialTab?: string
   initialPod?: string
 }) {
+  const features = useEditionFeatures()
   const scope = useScope()
   const navigate = useNavigate()
   const cache = useQueryClient()
@@ -238,7 +240,7 @@ export function ServiceDetail({
         <Note>{observed.message}</Note>
       )}
       <Tabs.Root
-        value={tab}
+        value={tab === 'terminal' && !features.terminal ? 'overview' : tab}
         onValueChange={(value) => {
           setTab(value)
           void navigate({
@@ -267,12 +269,17 @@ export function ServiceDetail({
             ['terminal', 'terminal', 'Terminal'],
             ['network', 'network', 'Networking'],
             ['settings', 'settings', 'Settings'],
-          ].map(([value, icon, label]) => (
-            <Tabs.Trigger className="tab-trigger" key={value} value={value}>
-              <Icon name={icon} size={15} />
-              {label}
-            </Tabs.Trigger>
-          ))}
+          ]
+            .filter(
+              ([value]) =>
+                (value !== 'terminal' || features.terminal) && (value !== 'source' || features.git),
+            )
+            .map(([value, icon, label]) => (
+              <Tabs.Trigger className="tab-trigger" key={value} value={value}>
+                <Icon name={icon} size={15} />
+                {label}
+              </Tabs.Trigger>
+            ))}
         </Tabs.List>
         <Tabs.Content value="overview" className="tab-content">
           <div className="service-overview-grid">
@@ -447,7 +454,7 @@ export function ServiceDetail({
             loading={runtime.isPending}
             error={runtime.error}
             onConnect={
-              scope.can('deployments:write')
+              features.terminal && scope.can('deployments:write')
                 ? (pod) => {
                     setTerminalPod(pod)
                     setTab('terminal')
