@@ -1,3 +1,4 @@
+import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { useState } from 'react'
@@ -32,6 +33,7 @@ export default function BuildForm({
     build?.service || Object.keys(application?.spec.services || {})[0] || 'web',
   )
   const [provider, setProvider] = useState<'github' | 'gitlab'>(build?.provider || 'github')
+  const [connectionId, setConnectionId] = useState(build?.connection_id || '')
   const [repository, setRepository] = useState(build?.repository || '')
   const [branch, setBranch] = useState(build?.branch || 'main')
   const [mode, setMode] = useState<Build['mode']>(build?.mode || 'dockerfile')
@@ -92,6 +94,7 @@ export default function BuildForm({
               name,
               service,
               provider,
+              connection_id: connectionId,
               repository,
               branch,
               mode,
@@ -173,7 +176,10 @@ export default function BuildForm({
               <SelectField
                 label="Git provider"
                 value={provider}
-                onValueChange={(value) => setProvider(value as 'github' | 'gitlab')}
+                onValueChange={(value) => {
+                  setProvider(value as 'github' | 'gitlab')
+                  setConnectionId('')
+                }}
                 options={[
                   {
                     value: 'github',
@@ -186,6 +192,12 @@ export default function BuildForm({
                 ]}
               />
             </label>
+            <GitConnectionField
+              provider={provider}
+              value={connectionId}
+              onValueChange={setConnectionId}
+              builds
+            />
             <div className="form-grid">
               <label>
                 Repository

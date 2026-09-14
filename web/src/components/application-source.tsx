@@ -1,3 +1,4 @@
+import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { useState } from 'react'
@@ -83,6 +84,10 @@ export default function ApplicationSource({ application }: { application: Applic
                   {binding.provider === 'gitlab' ? 'GitLab' : 'GitHub'} / {binding.repository}
                 </a>
               </dd>
+            </div>
+            <div>
+              <dt>Connection</dt>
+              <dd>{binding.connection_id || `${binding.provider}-default`}</dd>
             </div>
             <div>
               <dt>Branch / path</dt>
@@ -260,6 +265,7 @@ export function SourceForm({
   onSaved: () => void
 }) {
   const [provider, setProvider] = useState<'github' | 'gitlab'>(source?.provider || 'github')
+  const [connectionId, setConnectionId] = useState(source?.connection_id || '')
   const [repository, setRepository] = useState(source?.repository || '')
   const [branch, setBranch] = useState(source?.branch || 'main')
   const [path, setPath] = useState(source?.path || 'hakopod.toml')
@@ -295,6 +301,7 @@ export function SourceForm({
                 params: { path: { id: application.id } },
                 body: {
                   provider,
+                  connection_id: connectionId,
                   repository,
                   branch,
                   path,
@@ -322,7 +329,10 @@ export function SourceForm({
               <SelectField
                 label="Git provider"
                 value={provider}
-                onValueChange={(value) => setProvider(value as 'github' | 'gitlab')}
+                onValueChange={(value) => {
+                  setProvider(value as 'github' | 'gitlab')
+                  setConnectionId('')
+                }}
                 options={[
                   {
                     value: 'github',
@@ -335,6 +345,11 @@ export function SourceForm({
                 ]}
               />
             </label>
+            <GitConnectionField
+              provider={provider}
+              value={connectionId}
+              onValueChange={setConnectionId}
+            />
             <label>
               Repository
               <Input
