@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"log/slog"
 	"net"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/hakopod/hakopod/internal/worker"
@@ -39,6 +41,13 @@ func run() error {
 	deploymentMode, err := cluster.ParseDeploymentMode(os.Getenv("HAKOPOD_DEPLOYMENT_MODE"))
 	if err != nil {
 		return err
+	}
+	var processLogs *serverlogs.Buffer
+	if deploymentMode == cluster.DeploymentSelfHosted {
+		processLogs = serverlogs.New()
+		previousLogger := slog.Default()
+		defer slog.SetDefault(previousLogger)
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, processLogs), nil)))
 	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(192 << 20)
@@ -156,7 +165,7 @@ func run() error {
 	db.ValidateDeployment = func(ctx context.Context, app store.Application, next spec.Application) error {
 		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
-	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig}
+	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig, ProcessLogs: processLogs}
 	management.ConfigureSecretProviders()
 	db.ProtectedDomains = []string{domain}
 	if dashboardURL, parseErr := url.Parse(identityConfig.PublicURL); parseErr == nil {
