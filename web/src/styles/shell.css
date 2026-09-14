@@ -1295,3 +1295,28 @@ html[data-accent] .button-primary:hover {
     @apply hidden;
   }
 }
+
+/* Optional edition storytelling panel; the authentication form remains shared. */
+.hako-auth-main[data-auth-aside] {
+  @apply grid w-full grid-cols-1 place-items-stretch p-0;
+  background-image: none;
+}
+.hako-auth-main[data-auth-aside] > .hako-auth-card {
+  @apply mx-auto my-8 self-center;
+  width: min(460px, calc(100% - 32px));
+}
+@variant lg {
+  .hako-auth-main[data-auth-aside] {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .hako-auth-main[data-auth-aside] > .hako-auth-card {
+    @apply my-10;
+    width: min(460px, calc(100% - 64px));
+  }
+}
+
+@variant xl {
+  .hako-auth-main[data-auth-aside] {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+}

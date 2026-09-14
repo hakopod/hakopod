@@ -70,7 +70,8 @@ textarea {
   outline: none;
 }
 /* The fallback gives native links and controls the same four focus corners. */
-:where(a, button, select, summary):focus-visible:not(:has(> .brackets)) {
+:root:not([data-edition='self-hosted'])
+  :where(a, button, select, summary):focus-visible:not(:has(> .brackets)) {
   background-image:
     linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state)),
     linear-gradient(var(--state), var(--state)), linear-gradient(var(--state), var(--state)),
@@ -591,4 +592,23 @@ input[type='file'] {
 label:has(input[type='file']) {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Edition-wide, including dialogs and menus portaled outside the dashboard shell. */
+html[data-edition='self-hosted'] .brackets {
+  display: none;
+}
+html[data-edition='self-hosted']
+  :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible,
+html[data-edition='self-hosted'] .otp-cell[data-active] {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: 2px;
+}
+
+/* Stretched card links focus the entire card, rather than outlining its label twice. */
+html[data-edition='self-hosted'] .ops-card-link:focus-visible {
+  outline: none;
+}
+html[data-edition='self-hosted'] .ops-card-link:focus-visible::after {
+  outline-color: var(--navigation-active);
 }
