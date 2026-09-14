@@ -1,9 +1,12 @@
 import { authenticatedResponse, oauth } from './auth.ts'
+import { forwardNamedGitWebhook } from './git-webhook.ts'
 import { forwardGitHubWebhook } from './github-webhook.ts'
 import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete))?)?$/,
+  /^git\/oauth\/complete$/,
   /^installation\/smtp(?:\/test)?$/,
   /^installation\/login-providers\/(?:github|google|gitlab|oidc)$/,
   /^audit\/(?:history|export)$/,
@@ -51,6 +54,8 @@ export async function proxy({
   params: { _splat?: string }
 }) {
   try {
+    if (/^v1\/webhooks\/(?:git|github-app)\//.test(params._splat || ''))
+      return forwardNamedGitWebhook(request)
     if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)
     if (params._splat === 'v1/webhooks/gitlab') return forwardGitLabWebhook(request)
     if (request.method !== 'GET') {
