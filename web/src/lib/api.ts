@@ -10,7 +10,8 @@ export class APIError extends Error {
 }
 
 export function message(error: unknown) {
-  return error instanceof Error ? error.message : 'An unexpected error occurred.'
+  const value = error instanceof Error ? error.message : error
+  return typeof value === 'string' && value.trim() ? value : 'An unexpected error occurred.'
 }
 export const activeDeployment = (status?: string) => status === 'queued' || status === 'running'
 export function timestamp(date?: string | null) {
