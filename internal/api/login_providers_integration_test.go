@@ -22,10 +22,21 @@ func TestFreeTeamLimitConcurrentAndCloudExemption(t *testing.T) {
 			})
 			token := h.owner()
 			ctx := context.Background()
-			h.call("DELETE", "/license", token, map[string]any{"expected_revision": 1}, 200)
+			if cloud {
+				h.call("DELETE", "/license", token, map[string]any{"expected_revision": 1}, 403)
+			} else {
+				h.call("DELETE", "/license", token, map[string]any{"expected_revision": 1}, 200)
+			}
 			p, err := h.db.Authenticate(ctx, token)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if cloud {
+				// Cloud installation changes are out of band. Keep this
+				// fixture unlicensed to test the store's Cloud exemption.
+				if _, err := h.db.RemoveLicense(ctx, p, 1); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var wg sync.WaitGroup
 			results := make(chan error, 8)
@@ -98,7 +109,14 @@ func TestCloudLoginSettingsNeverCustomerConfigurable(t *testing.T) {
 		c.GitHubClientSecret = "operator-secret"
 	})
 	owner := h.owner()
-	h.call("DELETE", "/license", owner, map[string]any{"expected_revision": 1}, 200)
+	h.call("DELETE", "/license", owner, map[string]any{"expected_revision": 1}, 403)
+	p, err := h.db.Authenticate(context.Background(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.RemoveLicense(context.Background(), p, 1); err != nil {
+		t.Fatal(err)
+	}
 	h.call("GET", "/installation/login-providers/github", owner, nil, 403)
 	h.call("PUT", "/installation/login-providers/github", owner, map[string]any{"enabled": false, "expected_revision": 0}, 403)
 	status := h.call("GET", "/auth/status", "", nil, 200)
