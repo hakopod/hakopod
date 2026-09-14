@@ -5,7 +5,7 @@ on:
       version:
         description: Candidate package version
         required: false
-        default: 0.1.0-alpha.4
+        default: 0.1.0-alpha.5
         type: string
   pull_request:
     paths:
@@ -27,9 +27,11 @@ jobs:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
       NODE_OPTIONS: --max-old-space-size=512
-      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.4' }}
+      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.5' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore public template catalog
+        run: git submodule update --init templates
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -60,11 +62,11 @@ jobs:
     needs: build
     uses: ./.github/workflows/installer-hosts.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.4' }}
+      version: ${{ inputs.version || '0.1.0-alpha.5' }}
       artifact_name: installer-candidate
   smoke:
     needs: build
     uses: ./.github/workflows/installer-smoke.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.4' }}
+      version: ${{ inputs.version || '0.1.0-alpha.5' }}
       artifact_name: installer-candidate
