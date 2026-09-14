@@ -5,9 +5,11 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
-  /^installation\/(?:status|logs|setup|upgrade)$/,
-  /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete))?)?$/,
+  /^installation\/(?:status|logs(?:\/query)?|setup|upgrade)$/,
+  /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete|github\/setup))?)?$/,
+  /^git\/setup$/,
   /^git\/oauth\/complete$/,
+  /^git\/github\/(?:start|complete|install\/complete)$/,
   /^installation\/smtp(?:\/test)?$/,
   /^installation\/login-providers\/(?:github|google|gitlab|oidc)$/,
   /^audit\/(?:history|export)$/,

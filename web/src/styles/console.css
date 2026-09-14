@@ -1357,7 +1357,7 @@ a.resource-note:focus-visible {
   display: grid;
   gap: 16px;
 }
-.auth-form label {
+.auth-form label:not(.checkbox-label) {
   display: grid;
   gap: 7px;
   font-size: 13px;

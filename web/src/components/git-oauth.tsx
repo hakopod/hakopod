@@ -4,15 +4,30 @@ import { useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
-import type { GitConnection } from '../lib/git-connections'
+import { useGitProviderSetup, type GitConnection } from '../lib/git-connections'
 import { Button } from './ui/button'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { FormPage, FormSection } from './form-page'
 
 export function GitWebhookAddress({ path }: { path: string }) {
-  const [origin, setOrigin] = useState('')
-  useEffect(() => setOrigin(window.location.origin), [])
-  const address = `${origin}${path}`
+  const query = useGitProviderSetup()
+  if (query.isPending) return <Loading />
+  if (query.error) return <ErrorState error={query.error} />
+  if (!query.data.public_url)
+    return (
+      <Note>
+        Configure a publicly reachable HTTPS dashboard URL before adding provider webhooks.{' '}
+        <Link
+          className="underline! underline-offset-2"
+          to="/infrastructure"
+          search={{ tab: 'setup' }}
+        >
+          Open installation setup
+        </Link>
+        .
+      </Note>
+    )
+  const address = `${query.data.public_url}${path}`
   return (
     <div className="flex min-w-0 items-center gap-3">
       <code className="break-all">{address}</code>

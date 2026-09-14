@@ -65,6 +65,8 @@ import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/bac
 import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
 import { Route as SettingsGitConnectionsConnectionIdRouteImport } from './routes/settings.git.connections.$connectionId'
 import { Route as SettingsGitConnectionsNewRouteImport } from './routes/settings.git.connections.new'
+import { Route as SettingsGitGithubCallbackRouteImport } from './routes/settings.git.github.callback'
+import { Route as SettingsGitGithubInstalledRouteImport } from './routes/settings.git.github.installed'
 import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -365,6 +367,18 @@ const SettingsGitConnectionsNewRoute =
     path: '/git/connections/new',
     getParentRoute: () => SettingsRoute,
   } as any)
+const SettingsGitGithubCallbackRoute =
+  SettingsGitGithubCallbackRouteImport.update({
+    id: '/git/github/callback',
+    path: '/git/github/callback',
+    getParentRoute: () => SettingsRoute,
+  } as any)
+const SettingsGitGithubInstalledRoute =
+  SettingsGitGithubInstalledRouteImport.update({
+    id: '/git/github/installed',
+    path: '/git/github/installed',
+    getParentRoute: () => SettingsRoute,
+  } as any)
 const SettingsSecretProvidersProviderNameEditRoute =
   SettingsSecretProvidersProviderNameEditRouteImport.update({
     id: '/$providerName/edit',
@@ -429,6 +443,8 @@ export interface FileRoutesByFullPath {
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
+  '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
+  '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesByTo {
@@ -488,6 +504,8 @@ export interface FileRoutesByTo {
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
+  '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
+  '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesById {
@@ -548,6 +566,8 @@ export interface FileRoutesById {
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
+  '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
+  '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRouteTypes {
@@ -609,6 +629,8 @@ export interface FileRouteTypes {
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
+    | '/settings/git/github/callback'
+    | '/settings/git/github/installed'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -668,6 +690,8 @@ export interface FileRouteTypes {
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
+    | '/settings/git/github/callback'
+    | '/settings/git/github/installed'
     | '/settings/secret-providers/$providerName/edit'
   id:
     | '__root__'
@@ -727,6 +751,8 @@ export interface FileRouteTypes {
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
+    | '/settings/git/github/callback'
+    | '/settings/git/github/installed'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesById: FileRoutesById
 }
@@ -1149,6 +1175,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGitConnectionsNewRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/git/github/callback': {
+      id: '/settings/git/github/callback'
+      path: '/git/github/callback'
+      fullPath: '/settings/git/github/callback'
+      preLoaderRoute: typeof SettingsGitGithubCallbackRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/git/github/installed': {
+      id: '/settings/git/github/installed'
+      path: '/git/github/installed'
+      fullPath: '/settings/git/github/installed'
+      preLoaderRoute: typeof SettingsGitGithubInstalledRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/secret-providers/$providerName/edit': {
       id: '/settings/secret-providers/$providerName/edit'
       path: '/$providerName/edit'
@@ -1299,6 +1339,8 @@ interface SettingsRouteChildren {
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
   SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
   SettingsGitConnectionsNewRoute: typeof SettingsGitConnectionsNewRoute
+  SettingsGitGithubCallbackRoute: typeof SettingsGitGithubCallbackRoute
+  SettingsGitGithubInstalledRoute: typeof SettingsGitGithubInstalledRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -1312,6 +1354,8 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGitConnectionsConnectionIdRoute:
     SettingsGitConnectionsConnectionIdRoute,
   SettingsGitConnectionsNewRoute: SettingsGitConnectionsNewRoute,
+  SettingsGitGithubCallbackRoute: SettingsGitGithubCallbackRoute,
+  SettingsGitGithubInstalledRoute: SettingsGitGithubInstalledRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
