@@ -219,7 +219,7 @@ function ImportRepository() {
                 </label>
                 <p className="field-help">
                   Private repositories use the matching{' '}
-                  <Link to="/settings/integrations/$provider" params={{ provider }}>
+                  <Link to="/settings/git/connections/new" search={{ provider }}>
                     provider integration
                   </Link>
                   .

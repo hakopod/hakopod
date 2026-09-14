@@ -46,7 +46,10 @@ on GitHub before restarting registration; provider creation and local persistenc
 cannot be one atomic transaction.
 
 New dashboard connections offer GitHub Apps and GitLab OAuth, with no token
-creation option. Existing token connections and the compatibility API remain
+creation option. Both provider cards open this setup with the matching provider
+selected. Old integration URLs and direct default-connection links redirect to
+the same setup flow. Named connections still open their existing edit/resume page.
+Existing token connections and the compatibility API remain
 available so existing deployments are not interrupted. Existing manually configured
 GitHub Apps retain their current webhook and credential workflow.
 
@@ -122,8 +125,11 @@ requirements remain applicable; see [GitLab builds](gitlab-builds.md).
 
 Migration 023 creates `github-default` and `gitlab-default`, referencing the
 original platform Kubernetes Secrets. Existing bindings and queued/saved build
-records retain that exact default connection. The original provider settings and
-webhook URLs continue to operate on those defaults only. An omitted connection ID
+records retain that exact default connection. The original provider API and
+webhook URLs continue to operate on those defaults only; old dashboard provider
+settings now redirect to App setup. Creating an App connection does not migrate
+existing source/build bindings or overwrite their credentials. An omitted
+connection ID
 means that fixed provider default; it never selects the first named connection.
 Default connection rows cannot be removed through the new API. An application
 repository or named connection change still needs administrator approval.

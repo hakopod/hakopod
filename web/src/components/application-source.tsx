@@ -451,8 +451,8 @@ function GitProviderCard({ provider }: { provider: 'github' | 'gitlab' }) {
   const ready = connection.data?.configured && connection.data?.token_configured
   return (
     <Link
-      to="/settings/integrations/$provider"
-      params={{ provider }}
+      to="/settings/git/connections/new"
+      search={{ provider }}
       className="panel integration-card interactive"
     >
       <Brackets />
