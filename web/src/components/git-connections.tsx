@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
@@ -61,28 +61,42 @@ export function GitConnectionsPanel() {
               key={item.id}
               to={
                 item.legacy
-                  ? '/settings/integrations/$provider'
+                  ? '/settings/git/connections/new'
                   : '/settings/git/connections/$connectionId'
               }
-              params={item.legacy ? { provider: item.provider } : { connectionId: item.id }}
+              params={item.legacy ? {} : { connectionId: item.id }}
+              search={item.legacy ? { provider: item.provider } : {}}
               className="panel integration-card interactive"
             >
               <ServiceIcon name={item.provider} size={32} />
               <div className="min-w-0">
-                <h3 className="break-words">{item.name}</h3>
+                <h3 className="break-words">{item.legacy ? gitNames[item.provider] : item.name}</h3>
                 <p>
-                  {gitNames[item.provider]} · {authNames[item.auth_kind]}
+                  {item.legacy
+                    ? item.provider === 'github'
+                      ? 'GitHub App'
+                      : 'GitLab OAuth App'
+                    : `${gitNames[item.provider]} · ${authNames[item.auth_kind]}`}
                 </p>
                 <p>
-                  {item.account ||
-                    (item.legacy
-                      ? 'Default operator connection'
-                      : 'Select this connection in an application or build')}
+                  {item.legacy
+                    ? item.configured
+                      ? 'Set up an App connection. Your existing connection stays active.'
+                      : 'Connect an App owned by your account or organization.'
+                    : item.account || 'Select this connection in an application or build'}
                 </p>
               </div>
-              <Status
-                value={item.status === 'ready' ? 'configured' : item.status.replaceAll('_', ' ')}
-              />
+              <div className="integration-state">
+                {item.legacy ? (
+                  <span className="field-help shrink-0">Set up</span>
+                ) : (
+                  <Status
+                    value={
+                      item.status === 'ready' ? 'configured' : item.status.replaceAll('_', ' ')
+                    }
+                  />
+                )}
+              </div>
             </Link>
           ))}
         </div>
@@ -96,7 +110,13 @@ export function GitConnectionsPanel() {
     </>
   )
 }
-export function GitConnectionEditor({ id }: { id?: string }) {
+export function GitConnectionEditor({
+  id,
+  initialProvider = 'github',
+}: {
+  id?: string
+  initialProvider?: GitProvider
+}) {
   const scope = useScope()
   const query = useQuery({
     queryKey: ['git-connection', id],
@@ -106,16 +126,27 @@ export function GitConnectionEditor({ id }: { id?: string }) {
     retry: false,
     gcTime: 0,
   })
+  const navigate = useNavigate()
+  const legacyProvider = query.data?.legacy ? query.data.provider : undefined
+  // Keep the resolved redirect stable while query and route state update.
+  useEffect(() => {
+    if (scope.identity.admin && legacyProvider) {
+      void navigate({
+        to: '/settings/git/connections/new',
+        search: { provider: legacyProvider },
+        replace: true,
+      })
+    }
+  }, [navigate, legacyProvider, scope.identity.admin])
   if (!scope.identity.admin) return <AccessRequired />
   if (id && query.isPending) return <Loading />
   if (id && query.error) return <ErrorState error={query.error} />
-  if (query.data?.legacy)
-    return <Note>Use the original provider settings to update this default connection.</Note>
-  if (!id) return <NewGitConnection />
+  if (legacyProvider) return <Loading />
+  if (!id) return <NewGitConnection initialProvider={initialProvider} />
   return <GitConnectionForm key={id} current={query.data} />
 }
-function NewGitConnection() {
-  const [provider, setProvider] = useState<GitProvider>('github')
+function NewGitConnection({ initialProvider }: { initialProvider: GitProvider }) {
+  const [provider, setProvider] = useState<GitProvider>(initialProvider)
   const picker = (
     <FormSection title="Provider">
       <div className="max-w-64">
