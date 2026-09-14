@@ -31,13 +31,14 @@ PINS = json.loads((HERE / 'pins.json').read_text())
 DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip='',
     node_name='hakopod-server', supervisor_host='', dashboard_mode='ssh',
     dashboard_origin='http://localhost:3000', dashboard_port=3000,
+    dashboard_certificate='provided',
     tls_cert_file='', tls_key_file='', acme='production', acme_email='', storage=False,
     k3s_memory_mib=2048, api_memory_mib=256, dashboard_memory_mib=320,
     database_mode='managed', database_url_file='', database_ca_file='', install_docker=False,
     postgres_memory_mib=256, max_pods=50, deployment_mode='self-hosted', public_tcp_ports=[], oauth={})
 LABEL = 'hakopod.com/installation'
 ROOTS = ('/etc/hakopod', '/opt/hakopod', '/var/lib/hakopod')
-UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard')
+UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard', 'hakopod-dashboard-certificate')
 
 def fail(message):
     raise ValueError(message)
@@ -96,7 +97,10 @@ def config(path):
     except ValueError: fail('Invalid dashboard origin port')
     if origin.username or origin.password or origin.path or origin.query or origin.fragment:
         fail('dashboard_origin must be an origin without path, credentials, query or fragment')
+    if c['dashboard_certificate'] not in ('provided', 'letsencrypt'):
+        fail('dashboard_certificate must be provided or letsencrypt')
     if c['dashboard_mode'] == 'ssh':
+        if c['dashboard_certificate'] != 'provided': fail('Let\'s Encrypt requires dashboard_mode=https')
         if origin.scheme != 'http' or origin.hostname not in ('localhost', '127.0.0.1') or port != c['dashboard_port']:
             fail('SSH mode requires http://localhost:<dashboard_port> or http://127.0.0.1:<dashboard_port>')
         if c['tls_cert_file'] or c['tls_key_file']: fail('TLS file inputs require dashboard_mode=https')
@@ -105,12 +109,20 @@ def config(path):
             fail('HTTPS mode requires a DNS origin with the configured dashboard_port')
         if origin.hostname == c['app_domain'] or origin.hostname.endswith('.' + c['app_domain']):
             fail('Dashboard must have a separate origin outside the application domain')
-        for key in ('tls_cert_file', 'tls_key_file'):
-            if not c[key].startswith('/') or not re.fullmatch(r'/[A-Za-z0-9_./-]+', c[key]):
-                fail(key + ' must be an absolute file path without whitespace')
+        if c['dashboard_certificate'] == 'provided':
+            for key in ('tls_cert_file', 'tls_key_file'):
+                if not c[key].startswith('/') or not re.fullmatch(r'/[A-Za-z0-9_./-]+', c[key]):
+                    fail(key + ' must be an absolute file path without whitespace')
+        elif c['tls_cert_file'] or c['tls_key_file']:
+            fail('Let\'s Encrypt mode does not take certificate or key files')
+        if c['dashboard_certificate'] == 'letsencrypt':
+            if '.' not in origin.hostname: fail('Let\'s Encrypt requires a public dashboard DNS hostname')
+            try: ipaddress.ip_address(origin.hostname)
+            except ValueError: pass
+            else: fail('Let\'s Encrypt requires a dashboard DNS hostname, not an IP address')
     else: fail('dashboard_mode must be ssh or https')
     if c['acme'] not in ('off', 'staging', 'production'): fail('acme must be off, staging or production')
-    if c['acme'] != 'off' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', c['acme_email']):
+    if (c['acme'] != 'off' or c['dashboard_certificate'] == 'letsencrypt') and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', c['acme_email']):
         fail('ACME needs an operator-provided acme_email')
     c['oauth'] = oauth.configured(c['oauth'])
     database.validate_config(c, inspect_files=False)
@@ -131,6 +143,8 @@ def digest(path):
 def fingerprint(c, arch, artifacts):
     # Moving the same verified input bytes does not invalidate a resume.
     canonical = dict(c, oauth=oauth.canonical(c.get('oauth', {})))
+    # Preserve fingerprints of existing SSH/supplied-certificate installations.
+    if canonical.get('dashboard_certificate') == 'provided': canonical.pop('dashboard_certificate')
     return hashlib.sha256(json.dumps(dict(config=canonical, arch=arch, artifacts=artifacts,
         pins=PINS), sort_keys=True).encode()).hexdigest()
 
@@ -208,7 +222,7 @@ def plan(c, arch, directory):
     print('HAProxy: one controller pinned to this node; host ports80/443; private administration/metrics.')
     if c['public_tcp_ports']: print('Additional TCP host ports: ' + ', '.join(map(str, c['public_tcp_ports'])) + '; firewall remains operator-managed; applications must claim listeners explicitly.')
     print('Application DNS: *.' + c['app_domain'] + ' → operator-managed public IP/NAT; DNS/firewall unchanged.')
-    print('Dashboard: ' + c['dashboard_origin'] + (' via SSH tunnel; API127.0.0.1:8080' if c['dashboard_mode'] == 'ssh' else '; supplied certificate; API127.0.0.1:8080'))
+    print('Dashboard: ' + c['dashboard_origin'] + (' via SSH tunnel; API127.0.0.1:8080' if c['dashboard_mode'] == 'ssh' else '; ' + ('Let\'s Encrypt with automatic renewal' if c['dashboard_certificate'] == 'letsencrypt' else 'supplied certificate') + '; API127.0.0.1:8080'))
     if c['database_mode'] == 'managed':
         print('PostgreSQL: installer-owned K3s pod, static 20 GiB local PV (Retain), private service 10.43.0.20:5432.')
     else:
@@ -243,7 +257,7 @@ def platform_preflight(c, arch):
         fail('Disable swap explicitly before installation; installer does not change swap configuration')
     memory = int(re.search(r'^MemTotal:\s+(\d+)', Path('/proc/meminfo').read_text(), re.M)[1]) // 1024
     database_memory = c['postgres_memory_mib'] if c['database_mode'] == 'managed' else 0
-    required = max(3900, c['k3s_memory_mib'] + c['api_memory_mib'] + c['dashboard_memory_mib'] + database_memory + 768 + (384 if c['acme'] != 'off' else 0))
+    required = max(3900, c['k3s_memory_mib'] + c['api_memory_mib'] + c['dashboard_memory_mib'] + database_memory + 768 + (384 if c['acme'] != 'off' or c['dashboard_certificate'] == 'letsencrypt' else 0))
     if memory < required: fail(f'Host has {memory} MiB RAM; this configuration requires at least {required} MiB plus application capacity')
     if shutil.disk_usage('/var/lib').free < 30 * 1024 ** 3: fail('At least 30 GiB free disk is required under /var/lib')
 
@@ -288,7 +302,7 @@ def preflight(c, arch, resume, directory):
             except ValueError: continue
             if network.version == 4 and any(network.overlaps(ipaddress.ip_network(cidr)) for cidr in ('10.42.0.0/16', '10.43.0.0/16')):
                 fail('Existing route overlaps the fixed K3s pod/service CIDRs; use a fresh network')
-    if c['dashboard_mode'] == 'https':
+    if c['dashboard_mode'] == 'https' and c['dashboard_certificate'] == 'provided':
         cert_path, key_path = c['tls_cert_file'], c['tls_key_file']
         if resume and Path('/etc/hakopod/dashboard.crt').is_file() and Path('/etc/hakopod/dashboard.key').is_file():
             cert_path, key_path = '/etc/hakopod/dashboard.crt', '/etc/hakopod/dashboard.key'
@@ -412,7 +426,7 @@ def render(c, arch, installation, out):
         metadata = dict(name=name, labels={LABEL: installation, 'app.kubernetes.io/managed-by': 'hakopod'})
         if namespace: metadata['namespace'] = namespace
         api = {'Deployment': 'apps/v1', 'NetworkPolicy': 'networking.k8s.io/v1',
-               'ClusterIssuer': 'cert-manager.io/v1'}.get(kind, 'v1')
+               'ClusterIssuer': 'cert-manager.io/v1', 'Certificate': 'cert-manager.io/v1'}.get(kind, 'v1')
         return dict(apiVersion=api, kind=kind, metadata=metadata, **fields)
     # JSON is also valid YAML, and avoids interpolated YAML scalar parsing.
     emit('k3s.yaml', json.dumps({
@@ -484,6 +498,19 @@ def render(c, arch, installation, out):
             'email': c['acme_email'], 'server': endpoint, 'privateKeySecretRef': {'name': 'hakopod-acme-account'},
             'solvers': [{'http01': {'ingress': {'ingressClassName': 'haproxy'}}}]
         }}), indent=2) + '\n')
+    if c['dashboard_certificate'] == 'letsencrypt':
+        emit('dashboard-issuer.json', json.dumps(obj('ClusterIssuer', 'hakopod-dashboard-acme', spec={'acme': {
+            'email': c['acme_email'], 'server': 'https://acme-v02.api.letsencrypt.org/directory',
+            'privateKeySecretRef': {'name': 'hakopod-dashboard-acme-account'},
+            'solvers': [{'http01': {'ingress': {'ingressClassName': 'haproxy'}}}]
+        }})) + '\n')
+        emit('dashboard-certificate.json', json.dumps(obj('Certificate', 'hakopod-dashboard', 'hakopod-system', spec={
+            'secretName': 'hakopod-dashboard-tls', 'secretTemplate': {'labels': {LABEL: installation}},
+            'dnsNames': [urlsplit(c['dashboard_origin']).hostname],
+            'issuerRef': {'name': 'hakopod-dashboard-acme', 'kind': 'ClusterIssuer'},
+            'duration': '2160h', 'renewBefore': '720h',
+            'privateKey': {'rotationPolicy': 'Always', 'algorithm': 'RSA', 'size': 2048}
+        })) + '\n')
     def environment(values):
         # Inputs were strictly validated; quote anyway for systemd EnvironmentFile.
         return ''.join(key + '=' + json.dumps(str(value)) + '\n' for key, value in values.items())
@@ -507,9 +534,45 @@ def render(c, arch, installation, out):
     dashboard_env = dict(NODE_ENV='production', HOST='127.0.0.1' if c['dashboard_mode'] == 'ssh' else c['node_ip'],
         PORT=c['dashboard_port'], HAKOPOD_API_URL='http://127.0.0.1:8080',
         HAKOPOD_WEB_ORIGIN=c['dashboard_origin'], HAKOPOD_SESSION_SECRET=session_secret)
-    if c['dashboard_mode'] == 'https': dashboard_env.update(HAKOPOD_DASHBOARD_TLS_CERT='/etc/hakopod/dashboard.crt', HAKOPOD_DASHBOARD_TLS_KEY='/etc/hakopod/dashboard.key')
+    if c['dashboard_mode'] == 'https':
+        prefix = '/etc/hakopod/dashboard-tls/current/' if c['dashboard_certificate'] == 'letsencrypt' else '/etc/hakopod/'
+        dashboard_env.update(HAKOPOD_DASHBOARD_TLS_CERT=prefix + 'dashboard.crt', HAKOPOD_DASHBOARD_TLS_KEY=prefix + 'dashboard.key')
     emit('dashboard.env', environment(dashboard_env))
     common = f'# Hakopod installation {installation}\n'
+    if c['dashboard_certificate'] == 'letsencrypt':
+        emit('hakopod-dashboard-certificate.service', common + '''[Unit]
+Description=Refresh the Hakopod dashboard certificate from cert-manager
+After=network-online.target hakopod-k3s.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /opt/hakopod/maintenance/dashboard_certificate.py
+Environment=GOMEMLIMIT=64MiB GOMAXPROCS=2
+UMask=0077
+TimeoutStartSec=90
+MemoryMax=128M
+CPUQuota=50%
+TasksMax=64
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/hakopod/dashboard-tls /run/lock
+''')
+        emit('hakopod-dashboard-certificate.timer', common + '''[Unit]
+Description=Check for renewed Hakopod dashboard certificates
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=6h
+RandomizedDelaySec=5min
+Unit=hakopod-dashboard-certificate.service
+
+[Install]
+WantedBy=timers.target
+''')
     emit('hakopod-k3s.service', common + f'''[Unit]
 Description=Hakopod dedicated K3s server
 Wants=network-online.target

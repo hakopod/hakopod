@@ -13,11 +13,20 @@ Use a **fresh dedicated server**. Existing K3s, kubelet, RKE2, Kubernetes state,
 
 ## Prebuilt releases
 
-The downloadable `installer.sh` is the POSIX bootstrap for prebuilt releases.
-The [`0.1.0-alpha.4` release](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.4)
-defaults to that exact version. Packaging stamps both bootstrap copies with the
-requested release version; GitHub's `latest` endpoint excludes prereleases.
-This release is for evaluation on dedicated infrastructure.
+The source `installer.sh` discovers releases through the GitHub Releases API when
+neither `--version` nor a configuration version is supplied. It chooses the newest
+complete stable version among the latest 100 published releases, or the newest
+complete prerelease when no stable release is listed. Drafts and releases missing
+the bootstrap, checksum inventory, installer kit, dashboard, or either Linux
+architecture archive are skipped. Discovery failure stops installation; it never
+silently falls back to an old hardcoded version. Explicit version/configuration
+pins bypass discovery and keep repeatable installs and resumes pinned.
+
+Previously published bootstraps, including alpha.4, still default to their stamped
+release. They are immutable; this behavior reaches the website after a new
+bootstrap is published and the verified website copy is updated. Until then,
+select a published release explicitly with `--version`. GitHub's `/releases/latest`
+alone is insufficient because it excludes the project's alpha prereleases.
 
 On a fresh dedicated Linux server:
 
@@ -106,11 +115,40 @@ Point `*.app_domain` and requested custom domains at your server/public NAT. All
 Dashboard access is explicit:
 
 * `dashboard_mode=ssh` (default): binds 127.0.0.1:3000, origin `http://localhost:3000`. Open the printed SSH tunnel and then that exact localhost origin. API binds 127.0.0.1:8080. Use a corresponding SSH tunnel for remote CLI access.
-* `dashboard_mode=https`: supply `dashboard_origin=https://console.your-company.example:8443`, `dashboard_port=8443`, and absolute PEM certificate/key paths. The dashboard binds `node_ip` directly with TLS on that separate port. Allow it only to intended operators. The origin must be outside the application domain; the private key must have mode 0600/0400 and match a certificate valid for that hostname. Certificate validity and key matching are checked before installation, and HTTPS readiness uses system trust. The installer does not obtain or renew this operator-supplied dashboard certificate. Renew the copied `/etc/hakopod/dashboard.crt` and `.key` atomically, retain dashboard-user ownership/mode 0400, then restart `hakopod-dashboard`.
+* `dashboard_mode=https`: supply `dashboard_origin=https://console.your-company.example:8443` and `dashboard_port=8443`. The dashboard binds `node_ip` directly with TLS on that separate port. Allow it only to intended operators. The hostname must be outside the application domain. Interactive HTTPS setup now defaults to `dashboard_certificate=letsencrypt`: enter an ACME contact email, point the dashboard hostname at public ingress, and allow inbound TCP 80 for issuance and renewal. No certificate files are needed. The existing HAProxy ingress serves cert-manager HTTP-01 challenges; it does not surrender application ports 80/443 to a second web server.
+* `dashboard_certificate=provided` retains the existing certificate option. Supply absolute regular PEM certificate/key files; the private key must have mode 0600/0400 and match a certificate valid for the hostname. HTTPS readiness uses system trust. This mode does not obtain or renew certificates. Renew the copied `/etc/hakopod/dashboard.crt` and `.key`, retain dashboard-user ownership/mode 0400, then restart `hakopod-dashboard`. Existing configurations without the new field retain this behavior and their resume fingerprints.
+
+Automatic dashboard certificates use a separate production Let's Encrypt issuer,
+`hakopod-dashboard-acme`, even if application ACME is staging or off. This installs
+the pinned cert-manager module when needed. The Certificate and TLS Secret live
+in `hakopod-system` as `hakopod-dashboard` and `hakopod-dashboard-tls`. Initial
+installation waits up to five minutes for issuance and checks the public trust
+chain, hostname, expiry and matching key before starting the dashboard. If DNS
+or HTTP-01 fails, fix it and resume with the saved configuration; no successful
+HTTPS installation is reported without a certificate.
+
+cert-manager renews the certificate. The installer-owned
+`hakopod-dashboard-certificate.timer` checks its Secret every six hours, and on
+boot, validates renewed material, atomically switches the certificate/key pair,
+and briefly restarts only the dashboard when it changes. It retains the previous
+pair on validation or restart failure, keeps at most two generations, and uses
+the installation lock to avoid colliding with maintenance. Keep TCP 80 and the
+dashboard's DNS pointing at this installation for future renewals. Inspect:
+
+```sh
+sudo systemctl status hakopod-dashboard-certificate.timer
+sudo journalctl -u hakopod-dashboard-certificate.service --no-pager -n 30
+sudo /opt/hakopod/tools/kubectl --kubeconfig=/etc/hakopod/admin-kubeconfig -n hakopod-system describe certificate hakopod-dashboard
+```
+
+The feature is implemented in source, not retrofitted into previously published
+installer kits. Local tests cover rendering, configuration compatibility,
+certificate validation and rotation/rollback; public Let's Encrypt issuance and
+renewal still require a dedicated host acceptance run before release.
 
 There is no public API listener or implicitly trusted reverse proxy. Untrusted application origins receive no dashboard credentials. SMTP is disabled unless separately configured. The installer offers optional Google, GitHub and GitLab OAuth inputs before starting services; without credentials those providers stay disabled.
 
-The interactive installer defaults to `acme=production` for Let's Encrypt application HTTPS and asks for a contact `acme_email`; it requires public DNS and reachable port 80. The included example deliberately sets `off` for a safe review/test configuration: that choice keeps cert-manager off and public applications initially use HTTP until TLS is configured. `staging` installs pinned cert-manager plus a staging ClusterIssuer; its test certificates are **not browser-trusted**. The email is an ACME contact, not a Hakopod owner identity. HTTP-01 handles individual names; no wildcard DNS-01 automation is installed. Inspect actual issuer/certificate Ready conditions in Hakopod. cert-manager renews application certificates it manages. Local automated tests explicitly disable issuance.
+The interactive installer defaults to `acme=production` for Let's Encrypt application HTTPS and asks for a contact `acme_email`; it requires public DNS and reachable port 80. The included example deliberately sets `off` for a safe review/test configuration: that choice keeps cert-manager off unless automatic dashboard certificates are enabled, and public applications initially use HTTP until TLS is configured. `staging` installs pinned cert-manager plus a staging ClusterIssuer; its test certificates are **not browser-trusted**. The email is an ACME contact, not a Hakopod owner identity. HTTP-01 handles individual names; no wildcard DNS-01 automation is installed. Inspect actual issuer/certificate Ready conditions in Hakopod. cert-manager renews application certificates it manages. Local automated tests explicitly disable issuance.
 
 `storage=false` is the default. When enabled, the separately pinned local-path module supplies node-local application volumes under `/var/lib/hakopod/application-volumes`; these use Delete reclaim and are not replicated backups. In managed database mode, platform PostgreSQL uses its own static 20 GiB PV with Retain regardless of this option. The static PV's declared size is scheduling metadata, not a filesystem quota. Database data stays under `/var/lib/hakopod/postgres` on the initial node.
 

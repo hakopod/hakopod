@@ -48,6 +48,14 @@ prompt() {
   IFS= read -r answer || die 'Input ended; use --config for unattended installation'
   printf -v "$variable" '%s' "${answer:-$default}"
 }
+prompt_required() {
+  local variable=$1 label=$2
+  while true; do
+    prompt "$variable" "$label" ''
+    [ -n "${!variable}" ] && return 0
+    printf 'This value is required. Enter a value or press Ctrl+C to cancel.\n' >&2
+  done
+}
 if [ -z "$artifact_dir" ]; then
   [ -t 0 ] || die '--artifact-dir is required: use your verified local build directory'
   prompt artifact_dir 'Directory containing both local release artifacts and SHA256SUMS' ''
@@ -59,27 +67,34 @@ if [ -z "$config_path" ]; then
   version='' app_domain='' node_ip='' node_name='' supervisor_host='' dashboard_mode=''
   dashboard_port='' acme='' storage='' k3s_memory_mib='' api_memory_mib=''
   dashboard_memory_mib='' postgres_memory_mib='' max_pods='' deployment_mode='' public_tcp_ports=''
-  database_mode='' install_docker=''
+  database_mode='' install_docker='' dashboard_certificate='provided'
   prompt deployment_mode 'Deployment mode: self-hosted or managed-cloud' 'self-hosted'
   case "$deployment_mode" in self-hosted|managed-cloud) ;; *) die 'deployment_mode must be self-hosted or managed-cloud';; esac
   if [ -n "$release_version" ]; then version=$release_version; else prompt version 'Hakopod release version' '0.1.0-dev'; fi
-  prompt app_domain 'Operator-owned application DNS domain (for example apps.example.com)' ''
-  prompt node_ip 'This server IPv4 address, reachable by future workers' ''
+  prompt_required app_domain 'Operator-owned application DNS domain (for example apps.example.com)'
+  prompt_required node_ip 'IPv4 assigned to this server NIC, reachable by workers (Azure: private NIC IP, not public NAT IP)'
   prompt node_name 'Kubernetes node name' 'hakopod-server'
   prompt supervisor_host 'Worker-reachable K3s DNS name or IPv4 address' "$node_ip"
-  prompt dashboard_mode 'Dashboard access: ssh or https with your certificate' 'ssh'
+  prompt dashboard_mode "Dashboard access: ssh or https with Let's Encrypt" 'ssh'
   if [ "$dashboard_mode" = https ]; then
-    prompt dashboard_port 'Dashboard HTTPS port; application HTTPS uses443' '8443'
-    prompt dashboard_origin 'Dashboard origin, including its port, outside the application domain' ''
-    prompt tls_cert_file 'Absolute path to the PEM certificate chain' ''
-    prompt tls_key_file 'Absolute path to its private key, mode0600' ''
+    prompt dashboard_certificate 'Dashboard certificate: letsencrypt or provided' 'letsencrypt'
+    case "$dashboard_certificate" in letsencrypt|provided) ;; *) die 'Dashboard certificate must be letsencrypt or provided';; esac
+    prompt dashboard_port 'Dashboard HTTPS port; application HTTPS uses 443' '8443'
+    prompt_required dashboard_origin "Dashboard origin, for example https://console.example.com:$dashboard_port (outside $app_domain)"
+    tls_cert_file=; tls_key_file=
+    if [ "$dashboard_certificate" = provided ]; then
+      prompt_required tls_cert_file 'Absolute path to the existing PEM certificate chain'
+      prompt_required tls_key_file 'Absolute path to its existing private key, mode 0600'
+    else
+      printf "Point the dashboard hostname at this server's public IP and allow inbound TCP 80 before continuing. Let's Encrypt will issue and renew its certificate automatically.\n" >&2
+    fi
   else
     prompt dashboard_port 'Loopback dashboard port for the SSH tunnel' '3000'
     dashboard_origin="http://localhost:$dashboard_port"; tls_cert_file=; tls_key_file=
   fi
   prompt acme 'Application certificates: production (public DNS/port80 required), staging, or off' 'production'
   acme_email=
-  if [ "$acme" != off ]; then prompt acme_email 'ACME account contact email (does not create your Hakopod account)' ''; fi
+  if [ "$acme" != off ] || [ "$dashboard_certificate" = letsencrypt ]; then prompt_required acme_email 'ACME account contact email (does not create your Hakopod account)'; fi
   if [ "$deployment_mode" = self-hosted ]; then
     prompt public_tcp_ports 'Public TCP ports to provision, comma-separated (up to 256); leave empty to disable' ''
   else
@@ -115,10 +130,10 @@ if [ -z "$config_path" ]; then
     "$dashboard_mode" "$dashboard_origin" "$dashboard_port" "$tls_cert_file" "$tls_key_file" \
     "$acme" "$acme_email" "$storage" "$k3s_memory_mib" "$api_memory_mib" "$dashboard_memory_mib" \
     "$postgres_memory_mib" "$max_pods" "$public_tcp_ports" "$deployment_mode" \
-    "$database_mode" "$database_url_file" "$database_ca_file" "$install_docker" <<'PY'
+    "$database_mode" "$database_url_file" "$database_ca_file" "$install_docker" "$dashboard_certificate" <<'PY'
 import json, sys
 from pathlib import Path
-keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports deployment_mode database_mode database_url_file database_ca_file install_docker'.split()
+keys='version app_domain node_ip node_name supervisor_host dashboard_mode dashboard_origin dashboard_port tls_cert_file tls_key_file acme acme_email storage k3s_memory_mib api_memory_mib dashboard_memory_mib postgres_memory_mib max_pods public_tcp_ports deployment_mode database_mode database_url_file database_ca_file install_docker dashboard_certificate'.split()
 c=dict(zip(keys,sys.argv[2:]),schema_version=1)
 for key in ('dashboard_port','k3s_memory_mib','api_memory_mib','dashboard_memory_mib','postgres_memory_mib','max_pods'): c[key]=int(c[key])
 for key in ('storage', 'install_docker'):
@@ -171,7 +186,7 @@ for name in ('/opt/hakopod/tools','/opt/hakopod/releases','/var/lib/hakopod/down
     if path.is_symlink(): raise SystemExit('Refusing unexpected symlink: ' + name)
 PY
 # Populated by the validated allowlist below; these are not shell-evaluated values.
-cfg_version='' cfg_dashboard_mode='' cfg_tls_cert_file='' cfg_tls_key_file='' cfg_node_name=''
+cfg_version='' cfg_dashboard_mode='' cfg_dashboard_certificate='' cfg_tls_cert_file='' cfg_tls_key_file='' cfg_node_name=''
 cfg_database_mode='' cfg_acme='' cfg_storage='' cfg_dashboard_port='' cfg_dashboard_origin='' cfg_node_ip='' cfg_supervisor_host=''
 while IFS=$'\t' read -r key value; do printf -v "cfg_$key" '%s' "$value"; done < <(python3 "$helper" config "${args[@]}")
 if [ -z "$target_arch" ]; then
@@ -269,7 +284,7 @@ for provider in google github gitlab; do
     chmod 0400 "$oauth_secret"
   fi
 done
-if [ "$cfg_dashboard_mode" = https ]; then
+if [ "$cfg_dashboard_mode" = https ] && [ "$cfg_dashboard_certificate" = provided ]; then
   # Resuming preserves the installed certificate, including an operator renewal.
   if ! "$resume" || [ ! -f /etc/hakopod/dashboard.crt ] || [ ! -f /etc/hakopod/dashboard.key ]; then
     install -m 0400 -o hakopod-dashboard -g hakopod-dashboard "$cfg_tls_cert_file" /etc/hakopod/dashboard.crt
@@ -321,9 +336,8 @@ PY
 ensure_namespace haproxy-controller
 helm upgrade --install hakopod-ingress "$bundle_root/deploy/charts/hakopod-platform" \
   --namespace haproxy-controller --values "$rendered/haproxy.json" --wait --timeout 3m
-if [ "$cfg_acme" != off ]; then
+if [ "$cfg_acme" != off ] || [ "$cfg_dashboard_certificate" = letsencrypt ]; then
   owned namespace cert-manager
-  owned clusterissuer hakopod-acme
   kubectl create namespace cert-manager --dry-run=client -o json > "$stage/namespace.json"
   python3 - "$stage/namespace.json" "$installation" <<'PY'
 import json,sys
@@ -337,8 +351,31 @@ PY
   helm upgrade --install hakopod-cert-manager "$bundle_root/deploy/cert-manager/cert-manager-v1.21.2.tgz" \
     --namespace cert-manager --values "$bundle_root/deploy/cert-manager/values.yaml" --wait --timeout 3m
   kubectl wait --for=condition=Established crd/clusterissuers.cert-manager.io --timeout=30s
-  kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/issuer.json" >/dev/null
-  kubectl wait --for=condition=Ready clusterissuer/hakopod-acme --timeout=90s
+  if [ "$cfg_acme" != off ]; then
+    owned clusterissuer hakopod-acme
+    kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/issuer.json" >/dev/null
+    kubectl wait --for=condition=Ready clusterissuer/hakopod-acme --timeout=90s
+  fi
+fi
+if [ "$cfg_dashboard_certificate" = letsencrypt ]; then
+  ensure_namespace hakopod-system
+  owned clusterissuer hakopod-dashboard-acme
+  owned certificate hakopod-dashboard hakopod-system
+  owned secret hakopod-dashboard-tls hakopod-system
+  kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/dashboard-issuer.json" >/dev/null
+  kubectl wait --for=condition=Ready clusterissuer/hakopod-dashboard-acme --timeout=90s
+  kubectl apply --server-side --field-manager=hakopod-installer -f "$rendered/dashboard-certificate.json" >/dev/null
+  kubectl -n hakopod-system wait --for=condition=Ready certificate/hakopod-dashboard --timeout=300s || die 'Dashboard certificate is not ready. Check dashboard DNS, inbound TCP 80, and cert-manager Certificate/Challenge events, then resume with /etc/hakopod/config.json'
+  python3 "$bundle_root/installer/dashboard_certificate.py" --initial
+  for suffix in service timer; do
+    unit_path="/etc/systemd/system/hakopod-dashboard-certificate.$suffix"
+    if [ -e "$unit_path" ] || [ -L "$unit_path" ]; then
+      [ ! -L "$unit_path" ] || die "Refusing symlink $unit_path"
+      IFS= read -r first_line < "$unit_path"
+      [ "$first_line" = "# Hakopod installation $installation" ] || die "Refusing unrelated $unit_path"
+    fi
+    install -m 0644 "$rendered/hakopod-dashboard-certificate.$suffix" "$unit_path"
+  done
 fi
 if [ "$cfg_storage" = true ]; then
   # Convert the pinned module to JSON, stamp every object, and relocate its owned data.
@@ -369,6 +406,9 @@ if [ "$(python3 -c 'import json; print(json.load(open("/etc/hakopod/config.json"
   systemctl enable --now hakopod-maintenance
 fi
 systemctl enable --now hakopod-api hakopod-dashboard
+if [ "$cfg_dashboard_certificate" = letsencrypt ]; then
+  systemctl enable --now hakopod-dashboard-certificate.timer
+fi
 healthy=false
 for ((attempt=0; attempt<30; attempt++)); do
   if curl --silent --fail --noproxy '*' --max-time 3 http://127.0.0.1:8080/healthz >/dev/null; then healthy=true; break; fi

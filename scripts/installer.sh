@@ -91,8 +91,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# Release packaging stamps this provenance marker; it is not the install default.
 DEFAULT_VERSION = '0.1.0-alpha.2'
 RELEASES = 'https://github.com/hakopod/hakopod/releases/download'
+RELEASE_INDEX = 'https://api.github.com/repos/hakopod/hakopod/releases?per_page=100'
 VERSION = re.compile(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*)?')
 MIB = 1024 * 1024
 
@@ -156,6 +158,45 @@ def checksums(path):
         raise ValueError('Release checksum inventory exceeds its bound or is empty')
     return values
 
+def release_version(releases):
+    if not isinstance(releases, list) or len(releases) > 100:
+        raise ValueError('Invalid GitHub release inventory')
+    candidates = []
+    for release in releases:
+        if not isinstance(release, dict) or release.get('draft') is not False:
+            continue
+        try:
+            tag = release['tag_name']
+            if not isinstance(tag, str) or not tag.startswith('v'):
+                continue
+            candidate = version(tag[1:])
+            core, separator, suffix = candidate.partition('-')
+            prerelease = tuple((0, int(p)) if p.isdigit() else (1, p) for p in suffix.split('.')) if separator else ()
+            if separator and any(p.isdigit() and len(p) > 1 and p.startswith('0') for p in suffix.split('.')):
+                continue
+            assets = {asset.get('name') for asset in release.get('assets', []) if isinstance(asset, dict)}
+            required = {'SHA256SUMS', 'installer.sh', 'hakopod_' + candidate + '_installer.tar.gz',
+                        'hakopod_' + candidate + '_dashboard.tar.gz',
+                        'hakopod_' + candidate + '_linux_amd64.tar.gz',
+                        'hakopod_' + candidate + '_linux_arm64.tar.gz'}
+            if not required.issubset(assets):
+                continue
+            stable = not separator and release.get('prerelease') is False
+            candidates.append((stable, tuple(map(int, core.split('.'))), not separator, prerelease, candidate))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not candidates:
+        raise ValueError('No complete installable GitHub release found; retry later or pass --version explicitly')
+    return max(candidates)[-1]
+
+def latest_version(directory):
+    index = directory / 'releases.json'
+    try:
+        download(RELEASE_INDEX, index, 4 * MIB)
+        return release_version(json.loads(index.read_text()))
+    except (OSError, ValueError) as error:
+        raise ValueError('Cannot discover an installable GitHub release. Retry later or pass an explicit --version; no old version was selected. ' + str(error)) from error
+
 def extract_kit(source, destination, root):
     # Only the small installer kit is extracted here. The verified kit validates
     # its larger server/dashboard bundles with installer/host.py.
@@ -212,7 +253,7 @@ def read_config(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Download and verify a prebuilt Hakopod release, then review its installation plan.')
-    parser.add_argument('--version', help='Exact release without v; defaults to the config version or ' + DEFAULT_VERSION)
+    parser.add_argument('--version', help='Exact release without v; otherwise use the config version or newest complete stable GitHub release (prerelease if no stable release is listed)')
     parser.add_argument('--config', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--resume', action='store_true')
@@ -231,7 +272,7 @@ def main(argv=None):
     if args.upgrade and (args.resume or args.config):
         raise ValueError('--upgrade cannot be combined with --resume or --config')
     config = read_config(args.config) if args.config else {}
-    selected = version(args.version or config.get('version', DEFAULT_VERSION))
+    selected = version(args.version or config['version']) if args.version or 'version' in config else None
     if config.get('version', selected) != selected:
         raise ValueError('--version differs from the configuration; resume must use the original version')
     if not args.dry_run and os.geteuid() != 0:
@@ -247,6 +288,7 @@ def main(argv=None):
     try:
         with tempfile.TemporaryDirectory(prefix='hakopod-bootstrap-') as temporary:
             directory = Path(temporary)
+            selected = selected or latest_version(directory)
             base = RELEASES + '/v' + selected + '/'
             manifest = directory / 'SHA256SUMS'
             print('Downloading Hakopod ' + selected + ' for Linux/' + arch, flush=True)
