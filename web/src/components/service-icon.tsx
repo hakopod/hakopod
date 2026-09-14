@@ -29,16 +29,30 @@ const source: Record<string, string> = {
   python: 'python',
   nodejs: 'nodedotjs',
 }
-export function ServiceIcon({ name, size = 28 }: { name: string; size?: number }) {
+export function ServiceIcon({
+  name,
+  size = 28,
+  src,
+  background,
+}: {
+  name: string
+  size?: number
+  src?: string
+  background?: string
+}) {
   const slug = source[name]
+  const catalogLogo =
+    src && /^\/template-assets\/[a-z0-9.-]+\/logo\.(svg|png|webp|jpe?g)$/.test(src)
+      ? src
+      : undefined
   return (
     <span
-      className={`service-brand-icon ${['valkey', 'open-webui', 'infisical', 'flowise'].includes(name) ? 'official-project-icon' : ''}`}
+      className={`service-brand-icon ${catalogLogo ? `catalog-brand-icon ${background === 'dark' ? 'catalog-brand-dark' : ''}` : ''} ${['valkey', 'open-webui', 'infisical', 'flowise'].includes(name) ? 'official-project-icon' : ''}`}
       style={{ width: size, height: size }}
     >
-      {slug ? (
+      {catalogLogo || slug ? (
         <img
-          src={`/icons/${slug}.svg`}
+          src={catalogLogo || `/icons/${slug}.svg`}
           alt=""
           width={size}
           height={size}

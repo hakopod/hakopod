@@ -2731,3 +2731,15 @@ a.resource-note:focus-visible {
   color: var(--muted);
   line-height: 1.6;
 }
+
+/* Catalog logos retain their original colors on a contrasting brand plate. */
+.service-brand-icon.catalog-brand-icon {
+  @apply rounded p-1;
+  background: #f5f2e9;
+}
+.service-brand-icon.catalog-brand-dark {
+  background: #182c39;
+}
+.service-brand-icon.catalog-brand-icon img {
+  filter: none;
+}

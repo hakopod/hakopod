@@ -114,7 +114,12 @@ function Templates() {
             >
               <Brackets />
               <div className="catalog-card-header">
-                <ServiceIcon name={template.id} size={28} />
+                <ServiceIcon
+                  background={template.logo_background}
+                  src={template.logo || undefined}
+                  name={template.id}
+                  size={28}
+                />
                 <Badge>{labels[template.category] || template.category}</Badge>
               </div>
               <h2>{template.name}</h2>
@@ -144,7 +149,12 @@ function Templates() {
           <>
             <div className="dialog-body catalog-detail">
               <div className="catalog-detail-identity">
-                <ServiceIcon name={detail.id} size={36} />
+                <ServiceIcon
+                  background={detail.logo_background}
+                  src={detail.logo || undefined}
+                  name={detail.id}
+                  size={36}
+                />
                 <span className="copy-id">
                   <code>{detail.id}</code>
                   <Copy value={detail.id} />
@@ -167,8 +177,14 @@ function Templates() {
               </dl>
               {detail.required_secrets.length > 0 && (
                 <section>
-                  <h3>Required secrets</h3>
-                  <p>Set these values during deployment review.</p>
+                  <h3>
+                    {detail.deployable ? 'Required secrets' : 'Candidate credential references'}
+                  </h3>
+                  <p>
+                    {detail.deployable
+                      ? 'Set these values during deployment review.'
+                      : 'Some providers are alternatives. Finalize required bindings after resolving the migration prerequisites.'}
+                  </p>
                   <div className="catalog-secret-list">
                     {detail.required_secrets.map((name) => (
                       <code key={name}>{name}</code>

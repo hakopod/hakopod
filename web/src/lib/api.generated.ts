@@ -4106,6 +4106,13 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        TemplateConfigField: {
+            name: string;
+            label: string;
+            description: string;
+            default: string;
+            required: boolean;
+        };
         TemplateSecretField: {
             name: string;
             description: string;
@@ -4116,6 +4123,8 @@ export interface components {
         Template: {
             id: string;
             name: string;
+            logo?: string;
+            logo_background?: string;
             category: string;
             description: string;
             license: string;
@@ -4130,6 +4139,7 @@ export interface components {
             site_url_required: boolean;
             site_url_supported: boolean;
             database_config: boolean;
+            config_fields?: components["schemas"]["TemplateConfigField"][];
             secret_fields: components["schemas"]["TemplateSecretField"][];
             sources: string[];
             deployable: boolean;
@@ -4148,6 +4158,9 @@ export interface components {
             model_revision?: string;
             database_name?: string;
             database_user?: string;
+            values?: {
+                [key: string]: string;
+            };
             use_model_token?: boolean;
         };
         TemplatePlan: {
