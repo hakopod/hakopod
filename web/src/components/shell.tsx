@@ -388,7 +388,15 @@ function Workspace({
             <Link
               to={dashboardEdition.home}
               className="hako-wordmark"
-              aria-label={dashboardEdition.cloud ? 'Hakopod workspaces' : 'Hakopod projects'}
+              data-edition-brand={Boolean(dashboardEdition.brandSuffix) || undefined}
+              aria-label={[
+                'Hakopod',
+                dashboardEdition.brandSuffix,
+                dashboardEdition.releaseChannel,
+                dashboardEdition.cloud ? 'workspaces' : 'projects',
+              ]
+                .filter(Boolean)
+                .join(' ')}
             >
               <img
                 className="hako-wordmark-dark"
@@ -402,6 +410,14 @@ function Workspace({
                 alt=""
                 width="124"
               />
+              {dashboardEdition.brandSuffix && (
+                <span className="hako-edition-brand">
+                  <span>{dashboardEdition.brandSuffix}</span>
+                  {dashboardEdition.releaseChannel && (
+                    <span className="hako-release-badge">{dashboardEdition.releaseChannel}</span>
+                  )}
+                </span>
+              )}
             </Link>
           </div>
           <div className="hako-scope-fields" role="group" aria-label="Workspace scope">
@@ -512,6 +528,7 @@ function Workspace({
               <Button
                 variant="ghost"
                 size="icon"
+                className="hako-assistant-trigger"
                 aria-label="Open assistant"
                 aria-expanded={assistantOpen}
                 onClick={() => setAssistantOpen(true)}
@@ -671,6 +688,15 @@ function Workspace({
                 }}
               >
                 Quick navigation
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setMobileOpen(false)
+                  setAssistantOpen(true)
+                }}
+              >
+                Workspace assistant
               </Button>
               <Button asChild variant="ghost">
                 <Link to="/alarms" onClick={() => setMobileOpen(false)}>
