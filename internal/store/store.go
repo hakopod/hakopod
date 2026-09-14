@@ -224,12 +224,15 @@ func validKeyInput(in KeyInput) error {
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range in.Permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
 	if !contains(in.Permissions, "admin") && (in.Project == "" || in.Environment == "") {
 		return errors.New("machine keys require explicit project and environment")
+	}
+	if contains(in.Permissions, "networks:write") && (in.Project == "" || in.Environment == "" || in.Application != "") {
+		return errors.New("network management keys require a project and environment without an application restriction")
 	}
 	return nil
 }

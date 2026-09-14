@@ -16,7 +16,10 @@ type VirtualNetworkMetadata struct {
 }
 
 func (p Principal) CanManageVirtualNetworks(project, environment string) bool {
-	return p.CanManageProject(project) && p.Allows("deployments:write", project, environment, "")
+	if !p.Allows("deployments:write", project, environment, "") {
+		return false
+	}
+	return p.CanManageProject(project) || (p.CredentialType == "machine" && p.Project == project && p.Environment == environment && project != "" && environment != "" && p.Application == "" && p.Allows("networks:write", project, environment, ""))
 }
 
 type networkReader interface {

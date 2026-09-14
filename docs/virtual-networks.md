@@ -9,6 +9,32 @@ Development, staging and production have separate network scopes, even when
 they use the same names. Create environments from the header's environment menu.
 Each environment has its own applications, secrets and network grants.
 
+## Cloud workspace owners and connection keys
+
+Cloud workspace owners can create, update and delete private networks in their
+selected workspace's project and environment. Other members can inspect them
+and deploy permitted service connections, but cannot change network definitions
+or application grants. These permissions do not enable host networking, public
+TCP listeners, installation settings or access to another workspace.
+
+For a BYO node, update its Hakopod binary and create a scoped connection key on
+that node with `deployments:read`, `deployments:write`, `logs:read` and
+`networks:write`. With the CLI authenticated as the node administrator:
+
+```sh
+hakopod key-create --name cloud-connection --project YOUR_PROJECT \
+  --environment YOUR_ENVIRONMENT \
+  --permissions deployments:read,deployments:write,logs:read,networks:write \
+  --ttl 720h
+```
+
+Save the returned key privately and replace the workspace's node connection
+with it. Keep the project/environment unchanged, then revoke the previous key
+after verifying the connection. Existing keys are not expanded automatically;
+they retain their current deployment access. The new permission requires an
+explicit project and environment, deployment write access, and no application
+restriction. It cannot grant general project or installation administration.
+
 ## Create a network
 
 Open **Networks → Create network**. Use the form or import a network TOML file:
