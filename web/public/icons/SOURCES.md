@@ -25,4 +25,4 @@ The secret-provider UI uses the unmodified Vault and Infisical SVGs as CSS masks
 - GitLab: https://gitlab.com/gitlab-com/gitlab-artwork/-/raw/master/logo/logo.svg
 
 Retrieved 2026-09-15. Provider trademarks remain owned by their respective owners.
-The Google auth button renders its mark in black with a CSS filter; the source geometry is unchanged.
+The Google auth button renders its mark in black in dark mode and white in light mode with a CSS filter; the source geometry is unchanged.

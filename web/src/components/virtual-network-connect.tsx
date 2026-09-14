@@ -12,6 +12,7 @@ import { ErrorState, Loading, Note } from './shared'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
+import { dashboardEdition } from '../lib/dashboard-edition'
 
 function suggestedName(network: string, segment: string) {
   return `${network.slice(0, 20)}-${segment.slice(0, 19)}`.replace(/-+$/, '')
@@ -289,8 +290,9 @@ export function VirtualNetworkConnect({
             )}
             {candidates.data && !choices.length && (
               <Note>
-                No existing application you can deploy is allowed in this segment. A project
-                administrator can grant an application name in network configuration.
+                No existing application you can deploy is allowed in this segment. A{' '}
+                {dashboardEdition.cloud ? 'workspace owner' : 'project administrator'} can grant an
+                application name in network configuration.
               </Note>
             )}
             {application.error && selected && (

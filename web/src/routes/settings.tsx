@@ -512,24 +512,29 @@ function CreateKey({
               </div>
               <label>Permissions</label>
               <div className="permission-checkboxes">
-                {['deployments:read', 'deployments:write', 'logs:read'].map((permission) => (
-                  <label className="checkbox-label" key={permission}>
-                    <Input
-                      type="checkbox"
-                      checked={permissions.includes(permission)}
-                      onChange={(event) =>
-                        setPermissions((previous) =>
-                          event.target.checked
-                            ? [...previous, permission]
-                            : previous.filter((item) => item !== permission),
-                        )
-                      }
-                    />
-                    <code>{permission}</code>
-                  </label>
-                ))}
+                {['deployments:read', 'deployments:write', 'logs:read', 'networks:write'].map(
+                  (permission) => (
+                    <label className="checkbox-label" key={permission}>
+                      <Input
+                        type="checkbox"
+                        checked={permissions.includes(permission)}
+                        onChange={(event) =>
+                          setPermissions((previous) =>
+                            event.target.checked
+                              ? [...previous, permission]
+                              : previous.filter((item) => item !== permission),
+                          )
+                        }
+                      />
+                      <code>{permission}</code>
+                    </label>
+                  ),
+                )}
               </div>
-              <Note>Scoped keys cannot administer the platform or retrieve secret values.</Note>
+              <Note>
+                Scoped keys cannot administer the platform or retrieve secret values. Network
+                management requires deployments:write and no application restriction.
+              </Note>
             </>
           )}
           {error && <div className="inline-error">{error}</div>}
