@@ -2,11 +2,15 @@
 
 Templates produce the same versioned application specification, review, optimistic revision check, scoped secret references, durable queue and reconciler as hand-written TOML. They do not start a second orchestrator, builder, database, or model runner in the management process. Optional application resources are charged to the application pods.
 
-The [setup requirements review](template-requirements.md) records official sources for all 14 entries. The form shows these sources, credential formats and runtime prerequisites. It keeps entered values after failed requests.
+The shared catalog is maintained in [hakopod/templates](https://github.com/hakopod/templates), pinned at `templates/` in both the engine and website. Native TOML, metadata, requirements and logos have one source. The binary embeds the catalog at build time and never fetches or executes remote template definitions at runtime.
 
-All deployable image references are pinned to immutable upstream OCI index digests in `internal/spec/templates.go`. Each index was checked for Linux AMD64 and ARM64 manifests on 12 September 2026. Manifest availability does not establish runtime compatibility. The catalog's `verification` field records the narrower checks actually performed. Updating a pinned version requires a new review; mutable upstream tags cannot silently change an accepted deployment.
+The catalog has 71 entries: 35 deployment presets and 36 migration guides. All 58 requested Dokploy blueprints are recorded, with the existing Valkey preset retained. A migration guide is not deployment support: initialization jobs, privileged/root initialization, host configuration mounts, public UDP and unresolved startup behavior are explicit prerequisites. The deploy API rejects these guides. Consult each entry’s `README.md` and `migration.json` for exact coverage.
 
-## Presets
+All enabled presets use immutable image digests. `templates/images.lock.json` records registry checks, while each entry’s `verification` distinguishes these from actual runtime acceptance. The original 13 deployment specifications are preserved exactly. New preset live acceptance is pending. BentoPDF was blocked by Docker Hub rate limiting before workload creation. Browserless reached image creation but filled the small development disk and timed out. Its namespace, credential and exclusive cached blobs were removed; all existing deployments returned ready. Reserve at least 8 GiB free disk before testing that browser image.
+
+The form exposes ordinary configuration separately from scoped secrets and retains inputs after a failed request. Required configuration is checked before review and again by the API. Never substitute secret values into TOML.
+
+## Original presets
 
 Memory values below are Kubernetes request / limit. These are small starting configurations, not production capacity claims. Every persistent service has one replica and uses a PVC with a Recreate update strategy. Increasing replicas does not turn a single-writer database into a cluster.
 

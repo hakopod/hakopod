@@ -34,6 +34,7 @@ func TestTemplateCanonicalConfigurationAndInputs(t *testing.T) {
 			o.DatabaseName = "project_data"
 			o.DatabaseUser = "app_user"
 		}
+		o.Values = catalogTestValues(template)
 		a, err := PlanTemplate(template.ID, o)
 		if err != nil {
 			t.Fatal(template.ID, err)
@@ -164,4 +165,14 @@ func TestTemplateCockroachCertificateBundle(t *testing.T) {
 			t.Fatal("incorrect certificate decision", invalid, err)
 		}
 	}
+}
+
+func catalogTestValues(template Template) map[string]string {
+	values := map[string]string{}
+	for _, f := range template.ConfigFields {
+		if f.Default == "" && f.Required {
+			values[f.Name] = "operator@example.test"
+		}
+	}
+	return values
 }

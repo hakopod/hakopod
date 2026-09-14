@@ -22,6 +22,11 @@ class PublicationTest(unittest.TestCase):
             path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value)
         ui = publication.tooling_module(Path(publication.__file__).resolve().parents[1] / 'scripts/ui-source.py')
         ui.pack(root / 'packages/ui', root / 'third_party/ui/ui-source.tar.gz')
+        templates = root / 'templates'; templates.mkdir()
+        (templates / 'catalog.json').write_text('[]\n')
+        subprocess.run(['git', 'init', '-q', str(templates)], check=True)
+        subprocess.run(['git', '-C', str(templates), 'add', '.'], check=True)
+        self.commit_fixture(templates)
         subprocess.run(['git', 'init', '-q', str(root)], check=True)
         subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
         self.commit_fixture(root)
@@ -149,3 +154,18 @@ class PublicationTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_template_source_must_match_pinned_commit_including_ignored_files(self):
+        for change in ('edited', 'untracked', 'ignored'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary, patch.object(publication, 'ROOT', Path(temporary)):
+                self.source_fixture(publication.ROOT)
+                publication.validate_public_templates()
+                source = publication.ROOT / 'templates'
+                if change == 'edited':
+                    (source / 'catalog.json').write_text('[{"changed":true}]')
+                else:
+                    if change == 'ignored':
+                        (source / '.git/info/exclude').write_text('extra.go\n')
+                    (source / 'extra.go').write_text('package templates\n')
+                with self.assertRaisesRegex(ValueError, 'template source differs'):
+                    publication.validate_public_templates()

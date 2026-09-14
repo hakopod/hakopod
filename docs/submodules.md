@@ -1,9 +1,10 @@
 # Component, issuer and cloud repositories
 
-Hakopod uses three separately versioned Git repositories:
+Hakopod uses separately versioned Git repositories:
 
 | Path | Purpose | Distribution |
 | --- | --- | --- |
+| `templates` | Native catalog, setup requirements and logos shared with the website | Public |
 | `packages/ui` | Hatch monorepo; consumer components in `packages/ui/packages/ui` | Public |
 | `private/license-issuer` | Offline license issuance tools | Private |
 | `private/cloud` | AWS, GCP and Azure provisioning and managed-deployment workflows | Private, commercial |
@@ -19,6 +20,7 @@ Ordinary dashboard/server builds do not need private source. The parent includes
 a deterministic, checksummed public UI snapshot under `third_party/ui`:
 
 ```sh
+git submodule update --init templates
 python3 scripts/ui-source.py restore
 pnpm --dir web install --frozen-lockfile
 pnpm --dir web build
@@ -40,7 +42,7 @@ cd hakopod
 git submodule update --init packages/ui
 ```
 
-Public contributors should initialize only `packages/ui`; a recursive submodule
+Public contributors should initialize only `packages/ui` and `templates`; a recursive submodule
 checkout also requests the private repositories. If you already restored the public
 snapshot, preserve any edits and move `packages/ui` aside before initializing its
 submodule. Authorized issuer operators can initialize `private/license-issuer`
@@ -64,3 +66,15 @@ fonts’ OFL licenses and the package's component notices. Private issuer change
 are committed only in its own repository; the parent stores the resulting gitlink.
 Never include issuer/cloud source, private keys, installation secrets or activation
 tokens in public source bundles, dashboard archives or container images.
+
+## Shared template catalog
+
+Commit catalog changes in `hakopod/templates` first, then update the `templates`
+gitlink in both the main repository and private website to the same commit.
+Run `python3 templates/scripts/validate.py`, the Go spec/API tests, dashboard build
+and website build/tests. Update runtime verification only after real cluster tests.
+
+GitHub's automatic source ZIPs do not include Git submodule contents. Source
+builders should use a Git checkout and initialize `templates` explicitly. Published
+binaries and installer kits embed the catalog and include its license notices;
+installed users do not need Git credentials or a templates checkout.
