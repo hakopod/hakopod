@@ -80,6 +80,11 @@ func TestLiveCustomDomainRoutingAndTLS(t *testing.T) {
 		t.Fatal("custom domain routing did not reach requested state", want)
 	}
 	httpClient := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	probe(httpClient, "http://127.0.0.1:18080", false)
+	c.options.ApprovedDomains = func(context.Context, string) (map[string]bool, error) { return map[string]bool{custom: true}, nil }
+	if err = c.applyIngress(ctx, target, "web", target.Spec.Services["web"]); err != nil {
+		t.Fatal(err)
+	}
 	probe(httpClient, "http://127.0.0.1:18080", true)
 	wrongCert, wrongKey := testTLSCertificate(t, c.hostname(target, "web"), time.Now().Add(time.Hour))
 	if _, err = c.PutTLSCertificate(ctx, target, "web", wrongCert, wrongKey); err == nil {

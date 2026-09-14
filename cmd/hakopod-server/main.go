@@ -129,7 +129,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, AWSIdentityBindings: awsIdentities, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, AWSIdentityBindings: awsIdentities, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
 	}

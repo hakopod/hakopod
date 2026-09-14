@@ -26,7 +26,7 @@ func TestSourceImportPinsReviewAndCreatesAtomicBinding(t *testing.T) {
 				t.Fatal(err)
 			}
 			commit := strings.Repeat("b", 40)
-			content := "name='source-import'\n[services.web]\nimage='python:3.13-alpine'\nport=8080\n"
+			content := "name='source-import'\n[services.web]\nimage='python:3.13-alpine'\nport=8080\npublic=true\n[domains]\n'import.example.test'='web'\n"
 			var unavailable atomic.Bool
 			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if unavailable.Load() {
@@ -83,6 +83,17 @@ func TestSourceImportPinsReviewAndCreatesAtomicBinding(t *testing.T) {
 			var d store.Deployment
 			if json.Unmarshal(accepted.Body.Bytes(), &d) != nil {
 				t.Fatal("invalid deployment")
+			}
+			if d.Spec.Domains["import.example.test"] != "web" {
+				t.Fatal("import lost desired domain")
+			}
+			approved, err := db.ApprovedDomains(ctx, d.ApplicationID)
+			if err != nil || len(approved) != 0 {
+				t.Fatal("import activated unverified domain", err)
+			}
+			proofs, err := db.DomainVerifications(ctx, d.ApplicationID)
+			if err != nil || len(proofs) != 1 || proofs[0].Token == "" {
+				t.Fatal("import did not stage DNS setup", err)
 			}
 			bound, err := s.readSource(ctx, d.ApplicationID)
 			if err != nil || bound.Repository != input.Repository || bound.Provider != provider || bound.Path != input.Path || bound.LastCommit != commit || bound.LastDeployment != d.ID || !bound.AutoDeploy {

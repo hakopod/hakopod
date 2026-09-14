@@ -119,6 +119,9 @@ func (s *Store) reserveDomains(ctx context.Context, tx pgx.Tx, app string, next 
 		hosts = append(hosts, host)
 	}
 	sort.Strings(hosts)
+	if _, err := tx.Exec(ctx, "DELETE FROM domain_verifications d WHERE application_id=$1 AND staged AND NOT(hostname=ANY($2::text[])) AND NOT EXISTS(SELECT 1 FROM application_domains a WHERE a.application_id=d.application_id AND a.hostname=d.hostname)", app, hosts); err != nil {
+		return err
+	}
 	for _, host := range hosts {
 		if !s.DomainAllowed(host) {
 			return fmt.Errorf("%w: hostname is reserved for installation routing", ErrInput)
@@ -132,6 +135,16 @@ func (s *Store) reserveDomains(ctx context.Context, tx pgx.Tx, app string, next 
 			return err
 		}
 		if owner == app {
+			var count int
+			if err = tx.QueryRow(ctx, "SELECT count(*) FROM domain_verifications WHERE application_id=$1 AND hostname<>$2", app, host).Scan(&count); err != nil {
+				return err
+			}
+			if count >= 40 {
+				return fmt.Errorf("%w: discard unused domain setup records before reactivating this hostname", ErrInput)
+			}
+			if _, err = tx.Exec(ctx, "INSERT INTO domain_verifications(application_id,hostname,service,token,verified_at,staged) VALUES($1,$2,$3,$4,now(),true) ON CONFLICT(application_id,hostname) DO UPDATE SET service=EXCLUDED.service", app, host, next.Domains[host], "hakopod-verification="+NewID()+NewID()); err != nil {
+				return err
+			}
 			continue
 		}
 		if owner != "" {
@@ -142,7 +155,18 @@ func (s *Store) reserveDomains(ctx context.Context, tx pgx.Tx, app string, next 
 			return err
 		}
 		if !verified {
-			return fmt.Errorf("%w: verify DNS ownership of %s before applying it", ErrInput, host)
+			var count int
+			if err = tx.QueryRow(ctx, "SELECT count(*) FROM domain_verifications WHERE application_id=$1 AND hostname<>$2", app, host).Scan(&count); err != nil {
+				return err
+			}
+			if count >= 40 {
+				return fmt.Errorf("%w: at most 40 pending domains are supported", ErrInput)
+			}
+			_, err = tx.Exec(ctx, "INSERT INTO domain_verifications(application_id,hostname,service,token,staged) VALUES($1,$2,$3,$4,true) ON CONFLICT(application_id,hostname) DO UPDATE SET service=EXCLUDED.service", app, host, next.Domains[host], "hakopod-verification="+NewID()+NewID())
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		var count int
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM application_domains WHERE application_id=$1", app).Scan(&count); err != nil {
@@ -158,4 +182,49 @@ func (s *Store) reserveDomains(ctx context.Context, tx pgx.Tx, app string, next 
 	// A removed route keeps its reservation for historical rollbacks. Releasing
 	// it before all old releases are retired could route another app's hostname.
 	return nil
+}
+
+// ApprovedDomains contains only names reserved after proof at release acceptance.
+// Pending configuration never claims a hostname or enables ingress.
+func (s *Store) ApprovedDomains(ctx context.Context, app string) (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	rows, err := s.Pool.Query(ctx, "SELECT hostname FROM application_domains WHERE application_id=$1 LIMIT 40", app)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var host string
+		if err := rows.Scan(&host); err != nil {
+			return nil, err
+		}
+		result[host] = true
+	}
+	return result, rows.Err()
+}
+
+// DiscardDomainProof removes an unused setup record, never its historical route reservation.
+func (s *Store) DiscardDomainProof(ctx context.Context, app, host string, expected int64) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var revision int64
+	var desired bool
+	if err = tx.QueryRow(ctx, "SELECT revision,COALESCE(spec->'domains' ? $2,false) FROM applications WHERE id=$1 FOR UPDATE", app, host).Scan(&revision, &desired); err != nil {
+		return err
+	}
+	if revision != expected {
+		return ErrConflict
+	}
+	if desired {
+		return fmt.Errorf("%w: remove this domain from application configuration through a reviewed deployment first", ErrInput)
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM domain_verifications WHERE application_id=$1 AND hostname=$2", app, host); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
