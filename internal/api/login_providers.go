@@ -105,6 +105,9 @@ func (s *Server) readLoginProviderFrom(ctx context.Context, provider string, q l
 	return p, nil
 }
 func (s *Server) getLoginProvider(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if !s.loginSettingsAllowed(w, r) {
 		return
 	}
@@ -134,6 +137,9 @@ func validateLoginProvider(p loginProvider) error {
 	return nil
 }
 func (s *Server) putLoginProvider(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if !s.loginSettingsAllowed(w, r) {
 		return
 	}
