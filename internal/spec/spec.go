@@ -482,6 +482,9 @@ func redact(value any) any {
 
 func Warnings(app Application) []string {
 	warnings := make([]string, 0)
+	if len(app.Domains) > 0 {
+		warnings = append(warnings, "Custom domains are saved with this application. New domains remain inactive until you verify DNS ownership and activate them from Networking > Domains.")
+	}
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		if svc.Volume != nil || len(svc.Mounts) > 0 {

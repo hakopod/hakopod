@@ -105,10 +105,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	if len(next.Domains) > 0 {
-		problem(w, 400, "domain_verification_required", "Import the initial application without custom domains, then verify and attach its domains from the application page")
-		return
-	}
+
 	if !s.validateDeliveryPlan(w, r, in.Project, in.Environment, next, nil) {
 		return
 	}

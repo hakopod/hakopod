@@ -43,9 +43,25 @@ func TestDomainProofReservationAndRollback(t *testing.T) {
 		}
 	}
 	next.Domains = map[string]string{"store.example.test": "web"}
-	if _, err = db.Accept(ctx, p, a.Project, a.Environment, next, 1, "domain-unverified"); !errors.Is(err, store.ErrInput) {
-		t.Fatal("unverified raw spec bypassed proof", err)
+	pending, err := db.Accept(ctx, p, a.Project, a.Environment, next, 1, "domain-unverified")
+	if err != nil {
+		t.Fatal(err)
 	}
+	approved, err := db.ApprovedDomains(ctx, a.ID)
+	if err != nil || len(approved) != 0 {
+		t.Fatal("pending domain reserved", err, approved)
+	}
+	if pending.Spec.Domains["store.example.test"] != "web" {
+		t.Fatal("desired domain was lost")
+	}
+	if err = db.Pool.QueryRow(ctx, "SELECT revision FROM applications WHERE id=$1", a.ID).Scan(&a.Revision); err != nil {
+		t.Fatal(err)
+	}
+	a.Spec = next
+	if view := (&Server{Store: db}).domainView(a, store.DomainVerification{Hostname: "store.example.test", Service: "web"}, approved); view.Active || view.Verified {
+		t.Fatal("pending domain reported active", view)
+	}
+
 	v, err := db.BeginDomainVerification(ctx, p, a, "store.example.test", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +88,7 @@ func TestDomainProofReservationAndRollback(t *testing.T) {
 	if w := verify(); w.Code != 200 {
 		t.Fatal("valid DNS record denied", w.Code, w.Body.String())
 	}
-	d, err = db.Accept(ctx, p, a.Project, a.Environment, next, 1, "domain-verified")
+	d, err = db.Accept(ctx, p, a.Project, a.Environment, next, 2, "domain-verified")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +107,16 @@ func TestDomainProofReservationAndRollback(t *testing.T) {
 	if _, err = db.Accept(ctx, p, a.Project, a.Environment, copyNext, 0, "domain-collision-again"); !errors.Is(err, store.ErrConflict) {
 		t.Fatal("historical route reservation released before rollback retirement", err)
 	}
+	if err = db.DiscardDomainProof(ctx, a.ID, "store.example.test", 4); err != nil {
+		t.Fatal(err)
+	}
 	next.Domains = map[string]string{"store.example.test": "web"}
-	if _, err = db.Accept(ctx, p, a.Project, a.Environment, next, 3, "domain-reapply"); err != nil {
+	if _, err = db.Accept(ctx, p, a.Project, a.Environment, next, 4, "domain-reapply"); err != nil {
 		t.Fatal("same app could not reapply domain", err)
+	}
+	proofs, err := db.DomainVerifications(ctx, a.ID)
+	if err != nil || len(proofs) != 1 || proofs[0].VerifiedAt == nil {
+		t.Fatal("reserved reactivation lost domain display", err)
 	}
 	data, _ := json.Marshal(next)
 	parsed, err := spec.Parse([]byte("name='domain-toml'\n[domains]\n'store.example.test'='web'\n[services.web]\nimage='python:3.13-alpine'\nport=8080\npublic=true\n"))

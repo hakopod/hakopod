@@ -26,7 +26,13 @@ func automaticCertificateFixture(t *testing.T) (*Client, Target, *corev1.Secret)
 	cert, key := testTLSCertificate(t, "mail.example.com", time.Now().Add(time.Hour))
 	source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ingress-certificate", Namespace: Namespace(target.ApplicationID)}, Type: corev1.SecretTypeTLS, Data: map[string][]byte{corev1.TLSCertKey: cert, corev1.TLSPrivateKeyKey: key}}
 	ingress := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: source.Namespace, Labels: labelsFor(target, "web")}, Spec: networkingv1.IngressSpec{TLS: []networkingv1.IngressTLS{{Hosts: []string{"mail.example.com"}, SecretName: source.Name}}}}
-	c := &Client{kube: fake.NewClientset(source, ingress), options: Options{TLSIssuer: "test-issuer"}}
+	c := &Client{kube: fake.NewClientset(source, ingress), options: Options{TLSIssuer: "test-issuer", ApprovedDomains: func(context.Context, string) (map[string]bool, error) {
+		result := map[string]bool{}
+		for host := range target.Spec.Domains {
+			result[host] = true
+		}
+		return result, nil
+	}}}
 	return c, target, source
 }
 

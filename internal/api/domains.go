@@ -23,8 +23,9 @@ type domainView struct {
 	Target            string     `json:"target"`
 }
 
-func (s *Server) domainView(a store.Application, d store.DomainVerification) domainView {
-	service, active := a.Spec.Domains[d.Hostname]
+func (s *Server) domainView(a store.Application, d store.DomainVerification, approved map[string]bool) domainView {
+	service, configured := a.Spec.Domains[d.Hostname]
+	active := configured && approved[d.Hostname]
 	if !active {
 		service = d.Service
 	}
@@ -38,6 +39,7 @@ func (s *Server) registerDomainRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/applications/{id}/domains", s.domains)
 	m.HandleFunc("POST /api/v1/applications/{id}/domains", s.beginDomain)
 	m.HandleFunc("POST /api/v1/applications/{id}/domains/{hostname}/verify", s.verifyDomain)
+	m.HandleFunc("DELETE /api/v1/applications/{id}/domains/{hostname}", s.discardDomain)
 }
 func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:read")
@@ -49,9 +51,14 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	approved, err := s.Store.ApprovedDomains(r.Context(), a.ID)
+	if err != nil {
+		failure(w, err)
+		return
+	}
 	views := []domainView{}
 	for _, d := range items {
-		views = append(views, s.domainView(a, d))
+		views = append(views, s.domainView(a, d, approved))
 	}
 	write(w, 200, map[string]any{"items": views, "expected_revision": a.Revision})
 }
@@ -72,7 +79,12 @@ func (s *Server) beginDomain(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	write(w, 201, s.domainView(a, d))
+	approved, err := s.Store.ApprovedDomains(r.Context(), a.ID)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 201, s.domainView(a, d, approved))
 }
 func (s *Server) verifyDomain(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
@@ -111,10 +123,33 @@ func (s *Server) verifyDomain(w http.ResponseWriter, r *http.Request) {
 			failure(w, err)
 			return
 		}
+		approved, err := s.Store.ApprovedDomains(r.Context(), a.ID)
+		if err != nil {
+			failure(w, err)
+			return
+		}
 		now := time.Now()
 		d.VerifiedAt = &now
-		write(w, 200, s.domainView(a, d))
+		write(w, 200, s.domainView(a, d, approved))
 		return
 	}
 	problem(w, 404, "not_found", "Create a domain verification first")
+}
+
+func (s *Server) discardDomain(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
+	if !ok {
+		return
+	}
+	var in struct {
+		ExpectedRevision int64 `json:"expected_revision"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.Store.DiscardDomainProof(r.Context(), a.ID, r.PathValue("hostname"), in.ExpectedRevision); err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 200, map[string]bool{"discarded": true})
 }

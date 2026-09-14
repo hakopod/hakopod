@@ -25,6 +25,7 @@ const (
 )
 
 type Options struct {
+	ApprovedDomains     func(context.Context, string) (map[string]bool, error)
 	ReadinessProbeImage string
 	DeploymentMode      string
 	PublicTCPPorts      []int32

@@ -36,7 +36,11 @@ func (c *Client) resolveBackendCertificates(ctx context.Context, t Target, servi
 				return svc, fmt.Errorf("automatic backend certificates are available only on self-hosted installations")
 			}
 			covered := false
-			for _, host := range c.serviceHostnames(t, service) {
+			hosts, err := c.serviceHostnames(ctx, t, service)
+			if err != nil {
+				return svc, err
+			}
+			for _, host := range hosts {
 				covered = covered || host == mount.Hostname
 			}
 			if !covered || (svc.TLS == nil && c.options.TLSIssuer == "") {
