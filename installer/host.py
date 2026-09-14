@@ -326,6 +326,9 @@ def verify_database_state(state):
 
 
 def verify_resume(c, arch, directory):
+    current = Path('/opt/hakopod/current')
+    if current.is_symlink() and current.resolve().name != c['version']:
+        fail('This installation was upgraded; resume would restore an older version. Use maintenance instead.')
     old = read_json(regular('/etc/hakopod/installation.json', True))
     if old.get('fingerprint') != fingerprint(c, arch, artifacts(directory, c, arch)):
         fail('Resume inputs or artifact bytes changed; this installer does not perform upgrades')

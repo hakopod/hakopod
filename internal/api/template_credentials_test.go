@@ -37,6 +37,10 @@ func templateSecretKube(t *testing.T) *cluster.Client {
 			write(w, 200, corev1.Namespace{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Namespace"}, ObjectMeta: metav1.ObjectMeta{Name: "hakopod-system", Labels: map[string]string{"app.kubernetes.io/managed-by": "hakopod"}}})
 			return
 		}
+		if r.URL.Path == "/apis/storage.k8s.io/v1/storageclasses" {
+			write(w, 200, map[string]any{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClassList", "items": []any{map[string]any{"metadata": map[string]any{"name": "test-storage", "annotations": map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}}, "provisioner": "test.invalid/storage"}}})
+			return
+		}
 		base := "/api/v1/namespaces/hakopod-system/secrets"
 		if !strings.HasPrefix(r.URL.Path, base) {
 			http.NotFound(w, r)

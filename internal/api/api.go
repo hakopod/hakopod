@@ -28,6 +28,7 @@ type Server struct {
 	Auth    AuthConfig
 	Backups *backup.Service
 	// Overrides are only set by in-process tests, never by an API request.
+	maintenanceHTTP       *http.Client
 	githubHTTP            *http.Client
 	gitlabHTTP            *http.Client
 	gitlabAPIURL          string
@@ -76,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerAlarmRoutes(routes)
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
+	s.registerInstallationRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
 	s.registerSecretProviderRoutes(routes)
 	s.registerTemplateRoutes(routes)

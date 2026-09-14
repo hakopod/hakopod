@@ -24,7 +24,7 @@ func ValidateReadinessProbeImage(image string) error {
 func (c *Client) ValidateReadiness(app spec.Application) error {
 	for _, s := range app.Services {
 		if spec.NeedsReadinessHelper(s) && (c.options.ReadinessProbeImage == "" || ValidateReadinessProbeImage(c.options.ReadinessProbeImage) != nil) {
-			return fmt.Errorf("SMTP or combined readiness requires an administrator-configured, digest-pinned readiness probe image")
+			return fmt.Errorf("SMTP or combined readiness requires an administrator-configured, digest-pinned readiness probe image. Ask the installation owner to configure the helper in Infrastructure > Setup, then review this deployment again.")
 		}
 	}
 	return nil
