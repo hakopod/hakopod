@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildRun) (spec.Application, *store.Application, error) {
+	if err := s.validateGitConnection(ctx, c.Provider, c.ConnectionID); err != nil {
+		return spec.Application{}, nil, err
+	}
 	if run.Status != "completed" || run.Conclusion != "success" || run.Image == "" || run.ConfigRevision != c.Revision {
 		return spec.Application{}, nil, fmt.Errorf("%w: a verified successful image from the current build configuration is required", store.ErrConflict)
 	}

@@ -5453,6 +5453,332 @@
         }
       }
     },
+    "/git/connections": {
+      "get": {
+        "operationId": "listGitConnections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GitConnection"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createGitConnection",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitConnectionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/git/connections/{id}": {
+      "get": {
+        "operationId": "getGitConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateGitConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitConnectionInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteGitConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/git/{connection}": {
+      "post": {
+        "operationId": "namedGitWebhook",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "ignored": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/webhooks/github-app/{app}": {
+      "post": {
+        "operationId": "gitHubAppWebhook",
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "ignored": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -7839,6 +8165,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "connection_id": {
+                    "type": "string"
+                  },
                   "provider": {
                     "type": "string",
                     "enum": [
@@ -11555,6 +11884,9 @@
       "BuildConfig": {
         "type": "object",
         "properties": {
+          "connection_id": {
+            "type": "string"
+          },
           "architecture": {
             "type": "string",
             "enum": [
@@ -11648,6 +11980,7 @@
           }
         },
         "required": [
+          "connection_id",
           "architecture",
           "id",
           "project",
@@ -11674,6 +12007,9 @@
       "BuildInput": {
         "type": "object",
         "properties": {
+          "connection_id": {
+            "type": "string"
+          },
           "architecture": {
             "type": "string",
             "enum": [
@@ -12301,6 +12637,161 @@
           "verification_name",
           "verification_value",
           "target"
+        ]
+      },
+      "GitConnectionCapabilities": {
+        "type": "object",
+        "properties": {
+          "read_source": {
+            "type": "boolean"
+          },
+          "builds": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "read_source",
+          "builds"
+        ]
+      },
+      "GitConnection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
+          "auth_kind": {
+            "type": "string",
+            "enum": [
+              "token",
+              "github_app",
+              "gitlab_oauth"
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "account": {
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "integer"
+          },
+          "github_app_id": {
+            "type": "integer"
+          },
+          "installation_id": {
+            "type": "integer"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "token_configured": {
+            "type": "boolean"
+          },
+          "private_repositories": {
+            "type": "boolean"
+          },
+          "webhook_path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/GitConnectionCapabilities"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "webhook_secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "auth_kind",
+          "revision",
+          "enabled",
+          "account",
+          "subject_id",
+          "github_app_id",
+          "installation_id",
+          "legacy",
+          "configured",
+          "token_configured",
+          "private_repositories",
+          "webhook_path",
+          "status",
+          "capabilities",
+          "updated_at"
+        ]
+      },
+      "GitConnectionInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
+          "auth_kind": {
+            "type": "string",
+            "enum": [
+              "token",
+              "github_app"
+            ]
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "token": {
+            "type": "string"
+          },
+          "webhook_secret": {
+            "type": "string"
+          },
+          "github_app_id": {
+            "type": "string"
+          },
+          "github_private_key": {
+            "type": "string"
+          },
+          "github_installation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "auth_kind"
         ]
       },
       "LicenseFeature": {
@@ -13708,6 +14199,9 @@
           "application_id": {
             "type": "string"
           },
+          "connection_id": {
+            "type": "string"
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -13746,6 +14240,7 @@
         },
         "required": [
           "application_id",
+          "connection_id",
           "provider",
           "repository",
           "branch",
@@ -13866,6 +14361,9 @@
             "type": "string"
           },
           "environment": {
+            "type": "string"
+          },
+          "connection_id": {
             "type": "string"
           },
           "provider": {

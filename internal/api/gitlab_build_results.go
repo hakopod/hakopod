@@ -20,7 +20,7 @@ func (s *Server) matchesGitLabManualRun(ctx context.Context, run buildRun, pipel
 		Key   string `json:"key"`
 		Value string `json:"value"`
 	}
-	if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(pipeline.ID, 10)+"/variables", &variables); err != nil {
+	if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(pipeline.ID, 10)+"/variables", &variables, run.Config.ConnectionID); err != nil {
 		return false, err
 	}
 	if len(variables) > 128 {
@@ -41,7 +41,7 @@ func (s *Server) matchesGitLabManualRun(ctx context.Context, run buildRun, pipel
 func (s *Server) gitlabPipelineForRun(ctx context.Context, run buildRun) (gitlabPipeline, error) {
 	var pipeline gitlabPipeline
 	if run.RemoteRunID != 0 {
-		if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10), &pipeline); err != nil {
+		if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10), &pipeline, run.Config.ConnectionID); err != nil {
 			return pipeline, err
 		}
 		if pipeline.ID != run.RemoteRunID {
@@ -49,7 +49,7 @@ func (s *Server) gitlabPipelineForRun(ctx context.Context, run buildRun) (gitlab
 		}
 	} else {
 		var pipelines []gitlabPipeline
-		if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines?source=api&order_by=id&sort=desc&per_page=25", &pipelines); err != nil {
+		if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines?source=api&order_by=id&sort=desc&per_page=25", &pipelines, run.Config.ConnectionID); err != nil {
 			return pipeline, err
 		}
 		lookups := 0
@@ -119,7 +119,7 @@ func (s *Server) readGitLabBuildArtifact(ctx context.Context, run buildRun, work
 			ID int64 `json:"id"`
 		} `json:"pipeline"`
 	}
-	if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10)+"/jobs?include_retried=false&per_page=50", &jobs); err != nil {
+	if err := s.gitlabGET(ctx, run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10)+"/jobs?include_retried=false&per_page=50", &jobs, run.Config.ConnectionID); err != nil {
 		return "", err
 	}
 	if len(jobs) > 50 {
@@ -138,7 +138,7 @@ func (s *Server) readGitLabBuildArtifact(ctx context.Context, run buildRun, work
 	if jobID == 0 {
 		return "", errors.New("GitLab build-result job is missing")
 	}
-	response, err := s.gitlabBuildRequest(ctx, "GET", run.Config.gitlabProjectPath()+"/jobs/"+strconv.FormatInt(jobID, 10)+"/artifacts/result.json", nil)
+	response, err := s.gitlabBuildRequest(ctx, "GET", run.Config.gitlabProjectPath()+"/jobs/"+strconv.FormatInt(jobID, 10)+"/artifacts/result.json", nil, run.Config.ConnectionID)
 	if err != nil {
 		return "", err
 	}
@@ -229,7 +229,7 @@ func (s *Server) cancelGitLabBuildRun(w http.ResponseWriter, r *http.Request, ru
 		problem(w, 409, "workflow_changed", err.Error())
 		return
 	}
-	response, err := s.gitlabBuildRequest(r.Context(), "POST", run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10)+"/cancel", map[string]any{})
+	response, err := s.gitlabBuildRequest(r.Context(), "POST", run.Config.gitlabProjectPath()+"/pipelines/"+strconv.FormatInt(run.RemoteRunID, 10)+"/cancel", map[string]any{}, run.Config.ConnectionID)
 	if err != nil {
 		problem(w, 503, "cancel_unknown", err.Error())
 		return
