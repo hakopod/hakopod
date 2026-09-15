@@ -1,34 +1,44 @@
-Hakopod alpha.5 adds shared templates, deployment lifecycle primitives, Git App connections, and self-hosted installation controls.
+Hakopod 0.1.0-alpha.7 adds Compose import, clearer Git deployments, runtime controls before deployment, and new build and release workflows.
 
-## Deployment and catalog
+## Deploy applications
 
-- Shared public [template catalog](https://github.com/hakopod/templates), pinned into this release: 71 entries, including 35 deployable presets and 36 guides. Complex migrations remain guides until their requirements are supported and verified.
-- Bounded one-shot deployment Jobs and dependency gates for migrations and initialization. Completed jobs are shown separately from running service replicas.
-- Read-only configuration and scoped secret file mounts; derived private PostgreSQL, MySQL, Redis and HTTP connection URLs.
-- Additional named HTTP endpoints, public build arguments, and preflight checks for resources, architecture, taints, storage and observed disk headroom.
-- Custom domains can be staged before ownership verification; routing activates only after verification.
+- Import image-based Docker Compose into reviewed `config.toml`, either as a new application or by adding services to an existing one. Supported settings include per-service replicas, entrypoint/command overrides, explicit environment interpolation, private ports, networks and named volumes. Unsupported options produce actionable errors. Host publishing and existing Docker volume data are not copied.
+- New application setup links directly to **Build from Git** and **Import Git configuration**. Source builds offer Dockerfiles, Cloud Native Buildpacks and framework detection for supported JavaScript/static projects. An existing Dockerfile takes precedence; detected settings remain editable.
+- Set runtime commands, arguments and plain environment variables before deployment. Linked builds preserve existing variables unless explicitly replaced. Runtime variables are not inserted into build workflows; secrets use their separate binding and provider-secret paths.
+- Configure replicas per service in TOML. Stop and resume preserve configuration, storage and the saved replica count while suspending autoscaling. Service deletion follows the normal revision-checked deployment plan.
+- Rename projects, applications and services through reviewed controls. Application actions are grouped in the three-dot menu, and project card actions are aligned.
 
-## Connections, settings and operations
+## Build and release workflows
 
-- Named GitHub/GitLab connections across imports, sources and builds. GitHub App registration and installation use GitHub's manifest flow, with the App owned by the user or organization. GitLab uses OAuth and still requires one-time application registration. Existing token connections remain compatible.
-- Encrypted self-hosted SMTP settings, licensed OAuth login and OpenID Connect SSO. Free self-hosted installations allow one new team; additional teams require a valid multi-team license. Existing teams remain accessible after downgrade. First-admin setup and invitations remain available; public binaries do not enable open signup.
-- Owner-only API log explorer with bounded queries and a direct-process fallback; installation setup and upgrade controls; optional local storage and cert-manager module helpers.
-- Reviewed resource deletion, compact account/settings controls, and self-hosted HAProxy request body limits.
+- Framework recipes build static sites into a non-root nginx runtime or supported server applications into a Node runtime. GitHub Actions or GitLab CI performs the build; the production API host does not execute repository builds.
+- Scoped MCP tools let coding agents inspect applications and review or submit explicitly authorized deployment operations.
+- Scheduled jobs support five-field cron expressions, timezones, bounded retries, execution limits and retained run history. Pause/resume controls and observed status are available in the dashboard.
+- Preview environments use isolated application namespaces, explicit configuration and bounded lifetimes. Creation does not copy production secrets, volumes or data. CI can call the API after a trusted build; automatic pull-request/merge-request lifecycle is not included.
+- Durable release recovery can restore a compatible prior stateless release after failure. The failed attempt and recovery result remain distinct. Recovery does not reverse database migrations or restore previous secret values.
+- Build-secret references keep secret values in the selected CI provider's secret store rather than in saved build configuration.
+
+## Fixes and shared engine
+
+- Restore scoped Git and application-management capabilities when identity responses hide installation-wide administrator flags.
+- Forward dashboard stop/resume actions correctly, guard cancelled job creation, and retry owned-resource cleanup conflicts.
+- Wait for PostgreSQL's final TCP listener during local setup.
+- Simplify self-hosted focus styling and remove decorative brackets. Shared dashboard edition hooks let the private Cloud distribution reuse the public interface without including private Cloud pages in these archives.
+- Trusted runtime hooks support workspace isolation, HTTP idle sleep/wake and explicitly bound dedicated BYO TCP listeners. These do not grant ordinary workload credentials installation-wide administration.
 
 ## Prebuilt artifacts
 
-Linux amd64/arm64 server, CLI and dashboard bundles and macOS CLI archives are included. Installation does not compile Go or frontend sources on the target. The release also publishes the tested multi-platform readiness helper at `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.5`; use the immutable reference in `probe-image.txt` when configuring Infrastructure > Setup.
+This release includes Linux amd64/arm64 server, CLI and dashboard bundles, macOS amd64/arm64 CLI archives, and the installer kit. Installation does not compile Go or frontend sources on the target.
 
-Download and review this release's `installer.sh`, then run `sh installer.sh --help`. The website bootstrap is deployed separately; GitHub publication does not update `hakopod.com/scripts/installer.sh`.
+The multi-platform readiness helper is published at `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.7`. Use the immutable reference in the attached `probe-image.txt` for Infrastructure > Setup.
 
-`SHA256SUMS`, dependency inventories, license notices, source provenance, native smoke reports and host acceptance reports accompany the artifacts. Verify publisher provenance with `gh attestation verify FILE --repo hakopod/hakopod`; checksums alone establish consistency. The attestation bundle is excluded from the checksum manifest to avoid a circular digest.
+Download this release's `installer.sh` and run `sh installer.sh --help`. Select this version explicitly with `--version 0.1.0-alpha.7`. The website bootstrap is deployed separately from GitHub publication.
 
-## Compatibility and verification limits
+The assets include `SHA256SUMS`, SBOMs, dependency/license notices, build provenance, native smoke reports and host acceptance reports. Verify publisher provenance with `gh attestation verify FILE --repo hakopod/hakopod`.
 
-- This prerelease is for evaluation. Preserve database/configuration backups before any manual upgrade. Upgrade support is implemented, but the compatibility manifest advertises no source-to-target upgrade until that exact path has passed live acceptance; alpha.4 cannot upgrade itself through its old dashboard.
-- Jobs run again on new revisions and must be idempotent. Rollback does not reverse database migrations. Mounted file changes require deployment; no hot reload is promised.
-- Lifecycle behavior and Redis persistence were verified on a real ARM64 development cluster. The PR adds native amd64/arm64 runtime checks. Publication additionally requires packaged runtime smoke and native Ubuntu 24.04 systemd/K3s host acceptance on both architectures.
-- The complete catalog is not runtime-certified. Automatic multi-build template orchestration and broad upstream upgrade testing remain open. Shared storage needs an appropriate CSI driver; preflight is not a complete scheduler or image-size forecast.
-- Real hosted GitHub App/GitLab OAuth setup and provider-hosted builds with public arguments still need end-to-end verification. SSO implements OpenID Connect, not SAML or SCIM.
-- Reboot recovery, public DNS/ACME issuance, physical RDS, restore drills, other Linux distributions and existing-database host modes on arm64 remain outside release acceptance.
-- Arbitrary public TCP/SMTP and installation operator controls remain self-hosted features. Managed Cloud retains its HTTP/HTTPS and private-networking boundary.
+## Verification and compatibility
+
+Compose deployment acceptance passed on native amd64 and arm64 Kubernetes clusters, including two replicas, runtime variables, private DNS, persistent data and additive service imports. The shared dashboard passed independent desktop/mobile, light/dark and keyboard review. Publication additionally requires the exact release archives to pass native packaged smoke, Ubuntu 24.04 systemd/K3s host acceptance and probe-image checks.
+
+This is an alpha release. Public binaries retain first-administrator setup and invitation-based access; open signup remains disabled. Existing installations should consult the attached `upgrade.json` for verified upgrade paths. A new version being available does not establish compatibility with every earlier release.
+
+Compose is not a universal Docker runtime translator. The complete template catalog and arbitrary private repositories are not runtime-certified. Public DNS/ACME, host reboot, restore drills, physical RDS, other Linux distributions and existing-database host modes on arm64 remain outside release acceptance. OAuth/SSO provider setup and CI permissions still require configuration in the respective provider.
