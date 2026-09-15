@@ -416,6 +416,8 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 			}
 			current.Annotations[key] = value
 		}
+		// A new desired revision, including manual stop/resume, owns runtime state.
+		delete(current.Annotations, idleHTTPAnnotation)
 		current.Labels = wanted.Labels
 		current.Spec = wanted.Spec
 		updated, err := api.Update(ctx, current, metav1.UpdateOptions{})

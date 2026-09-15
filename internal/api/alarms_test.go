@@ -91,3 +91,19 @@ func TestAlarmNodeConditionsPreserveUnknownAndPressure(t *testing.T) {
 		}
 	}
 }
+
+func TestSleepingZeroDoesNotTriggerAlarm(t *testing.T) {
+	app := store.Application{ID: "idle", Name: "idle", Spec: spec.Application{Services: map[string]spec.Service{"web": {Replicas: 1}}}}
+	for _, status := range []string{"sleeping", "deploying", "failed"} {
+		o := cluster.Observation{Services: []cluster.ServiceStatus{{Name: "web", Status: status, Ready: 0, Desired: 0, Message: "Sleeping after HTTP inactivity"}}}
+		for _, alarm := range applicationAlarmObservations(app, o, nil, time.Now()) {
+			expected := "unhealthy"
+			if status == "sleeping" {
+				expected = "healthy"
+			}
+			if alarm.Health != expected {
+				t.Fatal(status, alarm)
+			}
+		}
+	}
+}

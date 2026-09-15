@@ -15,6 +15,7 @@ import (
 // The embedding owns admission and plan rules; the engine enforces placement,
 // sandbox selection and resource limits on every reconciliation.
 type WorkloadPolicy struct {
+	IdleHTTP          bool
 	NodeName          string
 	Pool              string
 	RuntimeClass      string

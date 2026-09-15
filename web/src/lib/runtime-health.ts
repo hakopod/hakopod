@@ -21,6 +21,7 @@ export type RuntimeHealth = {
 export function runtimeReplicaSummary(health: RuntimeHealth, job = false) {
   if (health.ready === undefined || health.desired === undefined)
     return health.observed ? 'Unavailable' : 'Not observed'
+  if (health.status === 'sleeping') return 'Wakes on request'
   if (health.status === 'scheduled') return 'Scheduled'
   if (job && health.status === 'stopped') return 'Paused'
   if (health.status === 'completed') return 'Completed'
@@ -71,25 +72,27 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
     observed: true,
     ...counts,
     status:
-      state === 'scheduled'
-        ? 'scheduled'
-        : state === 'stopped'
-          ? 'stopped'
-          : failed
-            ? 'failed'
-            : inspect
-              ? 'blocked'
-              : ready
-                ? state === 'completed'
-                  ? 'completed'
-                  : counts.desired === 0
-                    ? 'scaled down'
-                    : 'ready'
-                : state === 'missing'
-                  ? 'missing'
-                  : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
-                    ? state
-                    : 'pending',
+      state === 'sleeping' && counts.desired === 0
+        ? 'sleeping'
+        : state === 'scheduled'
+          ? 'scheduled'
+          : state === 'stopped'
+            ? 'stopped'
+            : failed
+              ? 'failed'
+              : inspect
+                ? 'blocked'
+                : ready
+                  ? state === 'completed'
+                    ? 'completed'
+                    : counts.desired === 0
+                      ? 'scaled down'
+                      : 'ready'
+                  : state === 'missing'
+                    ? 'missing'
+                    : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
+                      ? state
+                      : 'pending',
     issues:
       inspect || failed
         ? [
@@ -166,7 +169,7 @@ export function applicationRuntimeHealth(
   const services = names.map((name) => assessService(observations.get(name)))
   const observed = services.filter((service) => service.observed).length
   const ready = services.filter((service) =>
-    ['ready', 'completed', 'stopped', 'scheduled'].includes(service.status),
+    ['ready', 'completed', 'stopped', 'scheduled', 'sleeping'].includes(service.status),
   ).length
   const counts =
     services.length &&
@@ -181,21 +184,23 @@ export function applicationRuntimeHealth(
       observed: observed > 0,
       ...counts,
       status:
-        services.length > 0 && services.every((service) => service.status === 'stopped')
-          ? 'stopped'
-          : !observed
-            ? 'not observed'
-            : services.some((service) => service.status === 'failed')
-              ? 'failed'
-              : services.some((service) => service.status === 'blocked')
-                ? 'blocked'
-                : ready === names.length
-                  ? 'healthy'
-                  : services.every((service) => service.status === 'scaled down')
-                    ? 'scaled down'
-                    : ready || observed < names.length
-                      ? 'partial'
-                      : 'pending',
+        services.length > 0 && services.every((service) => service.status === 'sleeping')
+          ? 'sleeping'
+          : services.length > 0 && services.every((service) => service.status === 'stopped')
+            ? 'stopped'
+            : !observed
+              ? 'not observed'
+              : services.some((service) => service.status === 'failed')
+                ? 'failed'
+                : services.some((service) => service.status === 'blocked')
+                  ? 'blocked'
+                  : ready === names.length
+                    ? 'healthy'
+                    : services.every((service) => service.status === 'scaled down')
+                      ? 'scaled down'
+                      : ready || observed < names.length
+                        ? 'partial'
+                        : 'pending',
       issues: services.flatMap((service) => service.issues),
       ...(observed > 0 && observed < names.length
         ? {
