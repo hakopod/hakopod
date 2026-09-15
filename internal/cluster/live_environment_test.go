@@ -11,6 +11,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/logquery"
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/pelletier/go-toml/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -43,6 +44,18 @@ func TestLiveApplicationEnvironmentAndPodLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Import a file exactly as CLI/dashboard inputs do, then exercise the real
+	// environment and secret projection in all four workload kinds.
+	app.Env, app.Secrets = nil, nil
+	encoded, err := toml.Marshal(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, err := spec.ImportEnvironmentFiles(append([]byte("env_file = '.env'\n"), encoded...), map[string]string{".env": "DEFAULT=shared\nOVERRIDE=default\nREGION=one\nSHARED_TOKEN=fixture-secret"}, func(string, string) string { return "shared" })
+	if err != nil || imported.Secrets["shared"] != "fixture-secret" {
+		t.Fatal("environment file import failed", err)
+	}
+	app = imported.Spec
 	target := Target{ApplicationID: app.Name, Project: "env-acceptance", Environment: "test", OperationID: "environment-initial", Revision: 1, Spec: app}
 	ns := Namespace(target.ApplicationID)
 	t.Cleanup(func() {

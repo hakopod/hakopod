@@ -54,7 +54,7 @@ export function importDotenv(
           (_, escaped: string) => ({ n: '\n', r: '\r', t: '\t', '"': '"', '\\': '\\' })[escaped]!,
         )
     } else {
-      value = value.split('#', 1)[0].trimEnd()
+      value = value.replace(/(^|[ \t])#.*$/, '').trimEnd()
     }
     imported.push({ id: crypto.randomUUID(), name, value })
   }

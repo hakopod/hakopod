@@ -171,7 +171,7 @@ func (s *Server) gitlabGET(ctx context.Context, endpoint string, output any, con
 	}
 	return json.Unmarshal(body, output)
 }
-func (s *Server) gitlabSourceSpec(ctx context.Context, b sourceBinding, commit string) (spec.Application, string, error) {
+func (s *Server) gitlabSourceSpec(ctx context.Context, b sourceBinding, commit string, importScope environmentImportScope) (spec.Application, string, error) {
 	base := "/projects/" + url.PathEscape(b.Repository)
 	if commit == "" {
 		var ref struct {
@@ -203,7 +203,7 @@ func (s *Server) gitlabSourceSpec(ctx context.Context, b sourceBinding, commit s
 	if err != nil || len(body) > spec.MaxBytes {
 		return spec.Application{}, commit, fmt.Errorf("invalid or oversized GitLab TOML file")
 	}
-	application, err := spec.Parse(body)
+	application, err := s.importSourceEnvironment(ctx, b, commit, body, importScope)
 	return application, commit, err
 }
 func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {

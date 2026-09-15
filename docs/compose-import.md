@@ -9,6 +9,8 @@ review the normal deployment plan. Conversion itself never creates a workload,
 runs Docker, builds an image, or changes the existing application. Imports into
 an existing application preserve its services and reject duplicate names or
 conflicting network/volume definitions. Reload after a concurrent revision change.
+Attached environment files can stage application-scoped secrets during
+conversion; unused references remain available for cleanup in Application secrets.
 
 For repositories that need an image built first, use **Build from Git**. It offers
 framework detection, Dockerfiles and Cloud Native Buildpacks. Compose import
@@ -17,9 +19,15 @@ requires an `image` for each service and does not execute `build` instructions.
 ## Supported settings
 
 - Images, string/list command and entrypoint overrides, plain environment values,
-  and explicit interpolation variables. The host environment and `.env` files are
-  never read. `$VAR`, `${VAR}`, default/required/alternate forms, and `$$` work;
+  and explicit interpolation variables. The host environment is never read.
+  `$VAR`, `${VAR}`, default/required/alternate forms, and `$$` work;
   nested substitutions require expansion before import.
+- Service `env_file: .env` or `env_file: [.env, production.env]`, supplied through
+  the **Environment files** attachment/paste control. Later files override earlier
+  ones; explicit `environment` and `x-hakopod.secrets` override file values.
+  File contents are literal service variables, separate from Compose placeholder
+  interpolation. Sensitive file values become scoped secret references. See
+  [environment file limits and precedence](environment-and-build-reuse.md#import-environment-files).
 - Per-service replicas, working directory, non-root numeric user/group, read-only
   root filesystem, and Linux amd64/arm64 placement.
 - Application networks and list-form dependencies. Hakopod waits for dependency
@@ -83,7 +91,8 @@ pass through the same deployment policy checks as handwritten TOML.
 ## API
 
 `POST /api/v1/compose/convert` accepts `project`, `environment`, `yaml`, an optional
-`name`, and an optional string map of `variables`. To add services, also supply
+`name`, an optional string map of `variables`, and an optional map of filenames
+to literal file contents in `env_files`. To add services, also supply
 `application_id` and its `expected_revision`. The response contains the generated
 `toml`, normalized `spec`, `warnings` and base revision. Use `/plan` and
 `/deployments` to review and apply the draft. Conversion requires deployment

@@ -465,6 +465,7 @@ func (s *Server) application(w http.ResponseWriter, r *http.Request) {
 }
 
 type input struct {
+	EnvFiles         map[string]string `json:"env_files,omitempty"`
 	Project          string            `json:"project"`
 	Environment      string            `json:"environment"`
 	Spec             *spec.Application `json:"spec,omitempty"`
@@ -485,11 +486,19 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 	var next spec.Application
 	var err error
 	if in.Spec != nil {
+		if len(in.EnvFiles) != 0 {
+			problem(w, 400, "invalid_spec", "env_files require TOML with env_file references")
+			return next, nil, false
+		}
 		next, err = spec.Normalize(*in.Spec)
 	} else {
-		next, err = spec.Parse([]byte(in.TOML))
+		next, err = s.importEnvironment(r.Context(), who(r), in.Project, in.Environment, "", []byte(in.TOML), in.EnvFiles)
 	}
 	if err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			failure(w, err)
+			return next, nil, false
+		}
 		problem(w, 400, "invalid_spec", err.Error())
 		return next, nil, false
 	}

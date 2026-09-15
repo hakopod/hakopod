@@ -68,3 +68,8 @@ test('mixed dotenv import keeps values for scoped secret storage and ignores a b
     )
   }
 })
+
+test('unquoted hash characters are preserved unless preceded by whitespace', () => {
+  const rows = importDotenv('URL=https://example.test/#fragment # comment', [])
+  assert.equal(rows[0].value, 'https://example.test/#fragment')
+})

@@ -7,12 +7,14 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
+	"github.com/pelletier/go-toml/v2"
 )
 
-// Conversion is read-only. The generated draft must still pass the ordinary
-// planner and optimistic revision check before it can be deployed.
+// Conversion stages uploaded sensitive environment values as scoped secrets.
+// The generated draft must still pass planning and revision checks to deploy.
 func (s *Server) convertCompose(w http.ResponseWriter, r *http.Request) {
 	var in struct {
+		EnvFiles         map[string]string `json:"env_files,omitempty"`
 		Project          string            `json:"project"`
 		Environment      string            `json:"environment"`
 		Name             string            `json:"name"`
@@ -47,7 +49,7 @@ func (s *Server) convertCompose(w http.ResponseWriter, r *http.Request) {
 		revision = current.Revision
 		in.Name = current.Name
 	}
-	result, err := spec.ImportCompose([]byte(in.YAML), in.Name, in.Variables, base)
+	result, err := spec.ImportComposeWithEnvironmentFiles([]byte(in.YAML), in.Name, in.Variables, base, in.EnvFiles, func(string, string) string { return "envfile-" + store.NewID() })
 	if err != nil {
 		problem(w, 400, "invalid_compose", err.Error())
 		return
@@ -67,5 +69,16 @@ func (s *Server) convertCompose(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	result.Spec, err = s.saveImportedEnvironment(r.Context(), who(r), in.Project, in.Environment, in.Name, result.Spec, result.Secrets)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	encoded, err := toml.Marshal(result.Spec)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	result.TOML = string(encoded)
 	write(w, 200, map[string]any{"spec": result.Spec, "toml": result.TOML, "warnings": result.Warnings, "expected_revision": revision, "application_id": in.ApplicationID})
 }

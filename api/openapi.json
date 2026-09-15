@@ -5212,7 +5212,7 @@
             }
           }
         },
-        "description": "Convert one bounded, image-based Docker Compose document into an editable TOML draft. Read-only: does not build, provision or deploy. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments."
+        "description": "Convert one bounded, image-based Docker Compose document into an editable TOML draft. Does not build or deploy. Explicit env_file uploads save sensitive values as scoped secret references before returning the draft. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments."
       }
     },
     "/applications/{id}/services/{service}/delivery": {
@@ -12104,6 +12104,13 @@
           },
           "expected_revision": {
             "type": "integer"
+          },
+          "env_files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "writeOnly": true
+            }
           }
         },
         "required": [
@@ -12132,6 +12139,13 @@
           },
           "expected_revision": {
             "type": "integer"
+          },
+          "env_files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "writeOnly": true
+            }
           }
         },
         "required": [
@@ -13670,6 +13684,21 @@
           "framework": {
             "$ref": "#/components/schemas/FrameworkPlan"
           },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            }
+          },
+          "reuse_services": {
+            "type": "array",
+            "maxItems": 19,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
+          },
           "command": {
             "type": "array",
             "items": {
@@ -13691,21 +13720,6 @@
             },
             "maxProperties": 128,
             "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
-          },
-          "secrets": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/SecretRef"
-            }
-          },
-          "reuse_services": {
-            "type": "array",
-            "maxItems": 19,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
           }
         },
         "required": [
@@ -13839,6 +13853,21 @@
           "framework": {
             "$ref": "#/components/schemas/FrameworkPlan"
           },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            }
+          },
+          "reuse_services": {
+            "type": "array",
+            "maxItems": 19,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
+          },
           "command": {
             "type": "array",
             "items": {
@@ -13860,21 +13889,6 @@
             },
             "maxProperties": 128,
             "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
-          },
-          "secrets": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/SecretRef"
-            }
-          },
-          "reuse_services": {
-            "type": "array",
-            "maxItems": 19,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
           }
         },
         "required": [
@@ -14153,6 +14167,13 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "env_files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "writeOnly": true
             }
           },
           "application_id": {

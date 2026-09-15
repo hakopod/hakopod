@@ -1,6 +1,7 @@
+import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
 import { EnvironmentFields } from './runtime-settings-fields'
 import { parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Application } from '../lib/types'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
@@ -18,19 +19,26 @@ export function ComposeImport({
   environment,
   name: initialName,
   onUse,
+  onBusyChange,
 }: {
   application?: Application
   project: string
   environment: string
   name: string
   onUse: (draft: ComposeDraft) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const [name, setName] = useState(application?.name || initialName)
   const [yaml, setYAML] = useState('')
+  const [envFiles, setEnvFiles] = useState<EnvironmentFile[]>([])
   const [variables, setVariables] = useState<EnvironmentRow[]>([])
   const [draft, setDraft] = useState<ComposeDraft | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    onBusyChange?.(busy)
+    return () => onBusyChange?.(false)
+  }, [busy, onBusyChange])
   const [error, setError] = useState('')
   function reset() {
     setDraft(null)
@@ -55,6 +63,7 @@ export function ComposeImport({
               environment,
               name,
               yaml,
+              env_files: environmentFilePayload(envFiles),
               variables: values,
               ...(application
                 ? { application_id: application.id, expected_revision: application.revision }
@@ -131,6 +140,15 @@ export function ComposeImport({
           }}
         />
       </label>
+      <EnvironmentFiles
+        files={envFiles}
+        onChange={(files) => {
+          setEnvFiles(files)
+          reset()
+        }}
+        disabled={busy}
+        onBusyChange={setBusy}
+      />
       <details>
         <summary className="cursor-pointer">Interpolation variables</summary>
         <div className="mt-2">

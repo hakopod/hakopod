@@ -79,3 +79,10 @@ for method in ['get','delete']:
  paths['/previews/{preview}'][method]['parameters'].append({'name':'preview','in':'path','required':True,'schema':S})
 
 schemas['Principal']['properties']['can_manage_previews'] = B
+
+for name in ["BuildConfig", "BuildInput"]:
+    schemas[name]["properties"]["secrets"] = mapping(ref("SecretRef"))
+    schemas[name]["properties"]["reuse_services"] = {
+        "type": "array", "maxItems": 19, "uniqueItems": True, "items": S,
+        "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained.",
+    }

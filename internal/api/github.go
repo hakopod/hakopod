@@ -305,9 +305,9 @@ func (s *Server) githubGET(ctx context.Context, endpoint string, output any, con
 	}
 	return json.Unmarshal(body, output)
 }
-func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string) (spec.Application, string, error) {
+func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string, importScope environmentImportScope) (spec.Application, string, error) {
 	if b.Provider == "gitlab" {
-		return s.gitlabSourceSpec(ctx, b, commit)
+		return s.gitlabSourceSpec(ctx, b, commit, importScope)
 	}
 	if commit == "" {
 		var ref struct {
@@ -342,7 +342,7 @@ func (s *Server) sourceSpec(ctx context.Context, b sourceBinding, commit string)
 	if len(bytes) > spec.MaxBytes {
 		return spec.Application{}, commit, fmt.Errorf("source TOML exceeds 256 KiB")
 	}
-	application, err := spec.Parse(bytes)
+	application, err := s.importSourceEnvironment(ctx, b, commit, bytes, importScope)
 	return application, commit, err
 }
 func (s *Server) planSource(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +355,7 @@ func (s *Server) planSource(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	next, commit, err := s.sourceSpec(r.Context(), b, "")
+	next, commit, err := s.sourceSpec(r.Context(), b, "", environmentImportScope{who(r), a.Project, a.Environment, a.Name})
 	if err != nil {
 		problem(w, 400, "source_unavailable", err.Error())
 		return
@@ -395,7 +395,7 @@ func (s *Server) deploySource(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "source_conflict", "source binding changed; review it again")
 		return
 	}
-	next, commit, err := s.sourceSpec(r.Context(), b, in.CommitSHA)
+	next, commit, err := s.sourceSpec(r.Context(), b, in.CommitSHA, environmentImportScope{who(r), a.Project, a.Environment, a.Name})
 	if err != nil {
 		problem(w, 400, "source_unavailable", err.Error())
 		return
@@ -620,7 +620,7 @@ func (s *Server) runSource(parent context.Context) {
 			err = store.ErrForbidden
 		}
 		if err == nil {
-			next, _, err = s.sourceSpec(ctx, b, commit)
+			next, _, err = s.sourceSpec(ctx, b, commit, environmentImportScope{principal, app.Project, app.Environment, app.Name})
 		}
 		if err == nil && next.Name != app.Name {
 			err = errors.New("source application name does not match binding")
