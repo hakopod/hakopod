@@ -28,3 +28,10 @@ route('/git/github/install/complete','post','completeGitHubAppInstallation',ref(
 
 schemas['GitProviderSetup']=obj({'github_available':B,'public_url':S,'gitlab_callback_url':S,'github_notice':S,'gitlab_notice':S},['github_available','public_url','gitlab_callback_url'])
 route('/git/setup','get','getGitProviderSetup',ref('GitProviderSetup'))
+
+schemas['GitRepository']=obj({'full_name':S,'default_branch':S,'private':B},['full_name','default_branch','private'])
+schemas['GitRepositoryPage']=obj({'items':{'type':'array','items':ref('GitRepository')},'next_page':I},['items','next_page'])
+route('/git/connections/{id}/repositories','get','listGitRepositories',ref('GitRepositoryPage'))
+paths['/git/connections/{id}/repositories']['get']['parameters'].append({'name':'page','in':'query','schema':{'type':'integer','minimum':1,'maximum':100}})
+
+schemas['GitProviderSetup']['properties']['managed_registry_available']=B

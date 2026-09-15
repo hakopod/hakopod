@@ -160,6 +160,13 @@ func TestGitHubAppInstallationAuthentication(t *testing.T) {
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 	minted := 0
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/installation/repositories" {
+			if r.Header.Get("Authorization") != "Bearer installation-token" || r.URL.Query().Get("per_page") != "25" {
+				t.Error("invalid listing authentication or bounds")
+			}
+			write(w, 200, map[string]any{"repositories": []map[string]any{{"full_name": "example/repo", "default_branch": "main", "private": true}}})
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/repos/") {
 			if r.Header.Get("Authorization") != "Bearer installation-token" {
 				t.Error("source request did not use installation token")
@@ -197,7 +204,7 @@ func TestGitHubAppInstallationAuthentication(t *testing.T) {
 				Permissions  map[string]string `json:"permissions"`
 			}
 			json.NewDecoder(r.Body).Decode(&in)
-			if len(in.Repositories) != 1 || in.Repositories[0] != "repo" || in.Permissions["contents"] != "read" {
+			if !(len(in.Repositories) == 0 && len(in.Permissions) == 1 && in.Permissions["metadata"] == "read") && (len(in.Repositories) != 1 || in.Repositories[0] != "repo" || in.Permissions["contents"] != "read") {
 				t.Error("installation token not downscoped")
 			}
 			minted++
@@ -227,6 +234,15 @@ func TestGitHubAppInstallationAuthentication(t *testing.T) {
 	}
 	if e = s.githubGET(ctx, "/repos/other/repo/commits/main", &out, id); e == nil {
 		t.Fatal("installation account boundary missing")
+	}
+	listed := gitConnectionCall(t, h, raw, "GET", "/git/connections/"+id+"/repositories", nil, 200)
+	if !strings.Contains(string(store.JSON(listed)), "example/repo") || strings.Contains(string(store.JSON(listed)), "installation-token") {
+		t.Fatal("repository response invalid")
+	}
+	before := minted
+	gitConnectionCall(t, h, raw, "GET", "/git/connections/"+id+"/repositories?page=101", nil, 400)
+	if minted != before {
+		t.Fatal("invalid page contacted provider")
 	}
 	input["name"] = "wrong-app"
 	input["github_installation_id"] = 72

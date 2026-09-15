@@ -6237,6 +6237,52 @@
         }
       }
     },
+    "/git/connections/{id}/repositories": {
+      "get": {
+        "operationId": "listGitRepositories",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitRepositoryPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/installation/status": {
       "get": {
         "operationId": "getInstallationStatus",
@@ -13587,6 +13633,9 @@
               "gitlab"
             ]
           },
+          "managed_registry": {
+            "type": "string"
+          },
           "build_args": {
             "type": "object",
             "additionalProperties": {
@@ -14653,12 +14702,52 @@
           },
           "gitlab_notice": {
             "type": "string"
+          },
+          "managed_registry_available": {
+            "type": "boolean"
           }
         },
         "required": [
           "github_available",
           "public_url",
           "gitlab_callback_url"
+        ]
+      },
+      "GitRepository": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "private": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "full_name",
+          "default_branch",
+          "private"
+        ]
+      },
+      "GitRepositoryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitRepository"
+            }
+          },
+          "next_page": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_page"
         ]
       },
       "InstallationOperation": {

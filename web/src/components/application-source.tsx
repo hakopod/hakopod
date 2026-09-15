@@ -1,3 +1,4 @@
+import { GitRepositoryField } from './git-repository-field'
 import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -350,16 +351,13 @@ export function SourceForm({
               value={connectionId}
               onValueChange={setConnectionId}
             />
-            <label>
-              Repository
-              <Input
-                value={repository}
-                onChange={(e) => setRepository(e.target.value)}
-                placeholder="owner/repository"
-                maxLength={201}
-                required
-              />
-            </label>
+            <GitRepositoryField
+              provider={provider}
+              connectionId={connectionId}
+              value={repository}
+              onChange={setRepository}
+              onBranchChange={setBranch}
+            />
             <label>
               Branch
               <Input

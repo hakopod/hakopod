@@ -1,3 +1,4 @@
+import { GitRepositoryField } from '../components/git-repository-field'
 import { GitConnectionField } from '../components/git-connection-field'
 import { GitDeploymentPaths } from '../components/git-deployment-paths'
 import { Input } from '../components/ui/input'
@@ -182,20 +183,13 @@ function ImportRepository() {
                   value={connectionId}
                   onValueChange={setConnectionId}
                 />
-                <label>
-                  Repository
-                  <Input
-                    required
-                    value={repository}
-                    onChange={(event) => setRepository(event.target.value)}
-                    maxLength={201}
-                    placeholder={
-                      provider === 'gitlab' ? 'group/subgroup/project' : 'owner/repository'
-                    }
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                  />
-                </label>
+                <GitRepositoryField
+                  provider={provider}
+                  connectionId={connectionId}
+                  value={repository}
+                  onChange={setRepository}
+                  onBranchChange={setBranch}
+                />
                 <label>
                   Branch
                   <Input

@@ -88,7 +88,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	in.Repository = strings.ToLower(strings.TrimSpace(in.Repository))
+	in.Repository = normalizeSourceRepository(in.Repository)
 	in.ConnectionID = selectedGitConnection(in.Provider, in.ConnectionID)
 	if !s.sourceImportConfigured(w, r, in) {
 		return

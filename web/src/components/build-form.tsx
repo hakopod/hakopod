@@ -1,3 +1,5 @@
+import { useGitConnections, useGitProviderSetup } from '../lib/git-connections'
+import { GitRepositoryField } from './git-repository-field'
 import { EnvironmentFields } from './runtime-settings-fields'
 import { environmentRows, parseEnvironment } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
@@ -36,6 +38,8 @@ export default function BuildForm({
   onClose: () => void
 }) {
   const scope = useScope()
+  const gitSetup = useGitProviderSetup()
+  const gitConnections = useGitConnections()
   const navigate = useNavigate()
   const cache = useQueryClient()
   const project = build?.project || application?.project || scope.project
@@ -91,6 +95,16 @@ export default function BuildForm({
       unwrap(client.GET('/registries', { signal, params: { query: { project, environment } } })),
     gcTime: 0,
   })
+  const managedRegistryAvailable =
+    provider === 'github' &&
+    gitSetup.data?.managed_registry_available &&
+    gitConnections.data?.items.some(
+      (item) =>
+        item.id === connectionId &&
+        item.auth_kind === 'github_app' &&
+        item.enabled &&
+        item.configured,
+    )
   const linked = Boolean(build?.application_id || application)
   const sourceFingerprint = JSON.stringify([
     boundApplicationId,
@@ -219,8 +233,10 @@ export default function BuildForm({
                   value={name}
                   readOnly={Boolean(build || application)}
                   onChange={(e) => setName(e.target.value)}
-                  pattern="[a-z][a-z0-9\-]*"
-                  maxLength={63}
+                  pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
+                  data-build-source
+                  title="Use up to 40 lowercase letters, numbers or hyphens. Start with a letter and end with a letter or number."
+                  maxLength={40}
                   required
                 />
               </label>
@@ -278,16 +294,13 @@ export default function BuildForm({
               builds
             />
             <div className="grid gap-4 sm:grid-cols-2">
-              <label>
-                Repository
-                <Input
-                  value={repository}
-                  onChange={(e) => setRepository(e.target.value)}
-                  placeholder="owner/repository"
-                  maxLength={201}
-                  required
-                />
-              </label>
+              <GitRepositoryField
+                provider={provider}
+                connectionId={connectionId}
+                value={repository}
+                onChange={setRepository}
+                onBranchChange={setBranch}
+              />
               <label>
                 Source branch
                 <Input
@@ -309,7 +322,13 @@ export default function BuildForm({
                 !repository ||
                 (!(scope.identity.admin || scope.identity.can_manage_git) && !boundApplicationId)
               }
-              onClick={async () => {
+              onClick={async (event) => {
+                const form = event.currentTarget.closest('form')
+                for (const field of form?.querySelectorAll<HTMLInputElement>(
+                  '[data-build-source]',
+                ) || []) {
+                  if (!field.reportValidity()) return
+                }
                 setDetecting(true)
                 setDetectionError('')
                 setDetectionNotes([])
@@ -653,7 +672,9 @@ export default function BuildForm({
                 options={[
                   {
                     value: '',
-                    label: 'None · image must be publicly pullable',
+                    label: managedRegistryAvailable
+                      ? 'Automatic · Hakopod private registry'
+                      : 'None · image must be publicly pullable',
                   },
                   ...(registry && !registries.data?.items.some((item) => item.name === registry)
                     ? [{ value: registry, label: registry }]
@@ -665,7 +686,9 @@ export default function BuildForm({
                 ]}
               />
               <span className="field-help">
-                Private registry images need a saved credential with package read permission.
+                {managedRegistryAvailable
+                  ? 'GitHub App builds use the Hakopod private registry automatically. Worker pull credentials are configured for you. Choosing a saved credential uses your own registry instead.'
+                  : 'Private registry images need a saved credential with package read permission.'}
               </span>
             </label>
           </FormSection>

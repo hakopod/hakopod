@@ -19,6 +19,11 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 	if run.Status != "completed" || run.Conclusion != "success" || run.Image == "" || run.ConfigRevision != c.Revision {
 		return spec.Application{}, nil, fmt.Errorf("%w: a verified successful image from the current build configuration is required", store.ErrConflict)
 	}
+	credential, err := s.ensureBuildRegistry(ctx, c)
+	if err != nil {
+		return spec.Application{}, nil, err
+	}
+	c.RegistryCredential = credential
 	app, err := s.Store.FindApplication(ctx, c.Project, c.Environment, c.Name)
 	var next spec.Application
 	var current *store.Application

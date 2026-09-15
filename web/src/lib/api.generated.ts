@@ -1656,6 +1656,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/git/connections/{id}/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listGitRepositories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/installation/status": {
         parameters: {
             query?: never;
@@ -3473,6 +3489,7 @@ export interface components {
             installed_commit: string;
             /** @enum {string} */
             provider: "github" | "gitlab";
+            managed_registry?: string;
             build_args?: {
                 [key: string]: string;
             };
@@ -3761,6 +3778,16 @@ export interface components {
             gitlab_callback_url: string;
             github_notice?: string;
             gitlab_notice?: string;
+            managed_registry_available?: boolean;
+        };
+        GitRepository: {
+            full_name: string;
+            default_branch: string;
+            private: boolean;
+        };
+        GitRepositoryPage: {
+            items: components["schemas"]["GitRepository"][];
+            next_page: number;
         };
         InstallationOperation: {
             status: string;
@@ -8910,6 +8937,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GitProviderSetup"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listGitRepositories: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitRepositoryPage"];
                 };
             };
             /** @description Error */
