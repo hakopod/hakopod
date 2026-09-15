@@ -5,6 +5,7 @@ import {
   mergeEnvironment,
   parseEnvironment,
   sameEnvironment,
+  splitEnvironment,
 } from './service-environment'
 
 test('environment edits merge unrelated concurrent variables and identify same-key conflicts', () => {
@@ -53,4 +54,28 @@ test('environment validation rejects ambiguous, secret, and oversized entries be
     /128 plain variables/,
   )
   assert.equal(parseEnvironment([row('A', 'é'.repeat(2048))], []).A.length, 2048)
+})
+
+test('mixed environment rows separate secrets, reject collisions and preserve empty overrides', () => {
+  const row = (name: string, value: string) => ({ id: name, name, value })
+  const result = splitEnvironment([
+    row('MODE', ''),
+    row('API_TOKEN', 'fixture'),
+    row('URL', 'postgres://user:fixture@db/app'),
+  ])
+  assert.deepEqual({ ...result.env }, { MODE: '' })
+  assert.deepEqual(
+    result.secrets.map((row) => row.name),
+    ['API_TOKEN', 'URL'],
+  )
+  assert.throws(
+    () => splitEnvironment([row('API_TOKEN', 'fixture')], ['API_TOKEN']),
+    /already has a secret reference/,
+  )
+  assert.throws(() => splitEnvironment([row('MODE', ''), row('MODE', 'other')]), /more than once/)
+  assert.throws(
+    () =>
+      splitEnvironment(Array.from({ length: 33 }, (_, i) => row(`SERVICE_${i}_TOKEN`, 'fixture'))),
+    /32/,
+  )
 })

@@ -11469,6 +11469,23 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/NamedVolume"
             }
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Application-wide plain environment defaults. Service values override these defaults."
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            }
+          },
+          "inject_env": {
+            "type": "boolean",
+            "description": "Inject all application env defaults into services. Service values override these defaults."
           }
         },
         "required": [
@@ -13674,6 +13691,21 @@
             },
             "maxProperties": 128,
             "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            }
+          },
+          "reuse_services": {
+            "type": "array",
+            "maxItems": 19,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
           }
         },
         "required": [
@@ -13828,6 +13860,21 @@
             },
             "maxProperties": 128,
             "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            }
+          },
+          "reuse_services": {
+            "type": "array",
+            "maxItems": 19,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained."
           }
         },
         "required": [

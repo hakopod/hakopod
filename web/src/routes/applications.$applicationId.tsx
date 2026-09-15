@@ -201,6 +201,13 @@ function ApplicationDetail() {
         </div>
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
+          <Button asChild>
+            <Link to="/applications/$applicationId/environment" params={{ applicationId }}>
+              Environment
+            </Link>
+          </Button>
+        )}
+        {scope.can('deployments:write') && (
           <Button
             variant="primary"
             onClick={() =>

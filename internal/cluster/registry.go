@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,8 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+var errRegistryAccess = errors.New("registry access denied")
 
 const manifestTypes = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
 
@@ -41,7 +44,8 @@ func (c *Client) ResolveScoped(ctx context.Context, application spec.Application
 	if err != nil {
 		return spec.Application{}, err
 	}
-	resolved := make(map[string]string, len(app.Services))
+	type resolvedImage struct{ image, credential string }
+	resolved := make(map[string]resolvedImage, len(app.Services))
 	for _, name := range spec.Names(app) {
 		svc := app.Services[name]
 		selectedArchitectures := architectures
@@ -57,22 +61,16 @@ func (c *Client) ResolveScoped(ctx context.Context, application spec.Application
 		}
 		cacheKey := svc.Image + "\x00" + svc.RegistryCredential + "\x00" + strings.Join(selectedArchitectures, ",")
 		if value, ok := resolved[cacheKey]; ok {
-			svc.Image = value
+			svc.Image, svc.RegistryCredential = value.image, value.credential
 			app.Services[name] = svc
 			continue
 		}
-		var credentials *RegistryCredential
-		if svc.RegistryCredential != "" {
-			credentials, err = c.RegistryCredential(ctx, project, environment, svc.RegistryCredential, svc.Image)
-			if err != nil {
-				return spec.Application{}, fmt.Errorf("services.%s.image: scoped registry credential is unavailable or does not match the image registry", name)
-			}
-		}
-		value, err := c.resolveImage(ctx, svc.Image, selectedArchitectures, credentials)
+		value, selected, err := c.resolveWithCredentials(ctx, svc.Image, selectedArchitectures, project, environment, svc.RegistryCredential)
 		if err != nil {
 			return spec.Application{}, fmt.Errorf("services.%s.image: %w", name, err)
 		}
-		resolved[cacheKey], svc.Image = value, value
+		svc.Image, svc.RegistryCredential = value, selected
+		resolved[cacheKey] = resolvedImage{value, selected}
 		app.Services[name] = svc
 	}
 	return app, nil
@@ -254,10 +252,10 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		if response.StatusCode != http.StatusOK {
 			response.Body.Close()
 			if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-				return nil, "", fmt.Errorf("registry authentication was denied; verify the scoped credential and repository pull permission")
+				return nil, "", fmt.Errorf("%w: verify repository pull permission", errRegistryAccess)
 			}
 			if response.StatusCode == http.StatusNotFound {
-				return nil, "", fmt.Errorf("image repository, tag or digest was not found")
+				return nil, "", fmt.Errorf("%w: image repository, tag or digest was not found", errRegistryAccess)
 			}
 			if response.StatusCode == http.StatusTooManyRequests {
 				return nil, "", fmt.Errorf("public registry rate limit reached; retry later")
@@ -274,7 +272,7 @@ func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string
 		}
 		return data, token, nil
 	}
-	return nil, "", fmt.Errorf("registry authentication was denied")
+	return nil, "", errRegistryAccess
 }
 
 var bearerField = regexp.MustCompile(`([a-z]+)="([^"]*)"`)
@@ -285,7 +283,7 @@ func (c *Client) registryToken(ctx context.Context, challenge string, credential
 		credential = credentials[0]
 	}
 	if !strings.HasPrefix(strings.ToLower(challenge), "bearer ") || len(challenge) > 8192 {
-		return "", fmt.Errorf("registry requires unsupported authentication")
+		return "", fmt.Errorf("%w: registry requires authentication", errRegistryAccess)
 	}
 	fields := make(map[string]string)
 	for _, item := range bearerField.FindAllStringSubmatch(challenge, -1) {
@@ -323,7 +321,10 @@ func (c *Client) registryToken(ctx context.Context, challenge string, credential
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("registry token request was denied; verify repository pull permission")
+		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("%w: token request was denied; verify repository pull permission", errRegistryAccess)
+		}
+		return "", fmt.Errorf("registry token service returned HTTP %d; retry later", response.StatusCode)
 	}
 	var body struct {
 		Token       string `json:"token"`
@@ -391,4 +392,54 @@ func publicAddress(ip netip.Addr) bool {
 		}
 	}
 	return true
+}
+
+// Anonymous pulls avoid sending credentials for public images. On access denial,
+// try each same-host, same-scope credential in deterministic order. A saved
+// selection is tried first. The caller bounds the complete resolution.
+func (c *Client) resolveWithCredentials(ctx context.Context, image string, architectures []string, project, environment, selected string) (string, string, error) {
+	if selected != "" {
+		credential, err := c.RegistryCredential(ctx, project, environment, selected, image)
+		if err == nil {
+			resolved, resolveErr := c.resolveImage(ctx, image, architectures, credential)
+			if resolveErr == nil || !errors.Is(resolveErr, errRegistryAccess) {
+				return resolved, selected, resolveErr
+			}
+		}
+	}
+	resolved, err := c.resolveImage(ctx, image, architectures)
+	if err == nil || !errors.Is(err, errRegistryAccess) {
+		return resolved, "", err
+	}
+	if c.options.RegistryCredentialNames == nil || project == "" || environment == "" {
+		return "", "", fmt.Errorf("image requires registry access; add a matching credential in this project and environment")
+	}
+	ref, parseErr := parseReference(image)
+	if parseErr != nil {
+		return "", "", parseErr
+	}
+	names, lookupErr := c.options.RegistryCredentialNames(ctx, project, environment, ref.registry)
+	if lookupErr != nil || len(names) > 100 {
+		return "", "", fmt.Errorf("could not list scoped registry credentials; select a credential explicitly")
+	}
+	for _, name := range names {
+		if name == selected {
+			continue
+		}
+		if ctx.Err() != nil {
+			return "", "", fmt.Errorf("registry credential checks timed out; select a credential explicitly or retry")
+		}
+		credential, loadErr := c.RegistryCredential(ctx, project, environment, name, image)
+		if loadErr != nil {
+			continue
+		}
+		resolved, err = c.resolveImage(ctx, image, architectures, credential)
+		if err == nil {
+			return resolved, name, nil
+		}
+		if !errors.Is(err, errRegistryAccess) {
+			return "", "", err
+		}
+	}
+	return "", "", fmt.Errorf("anonymous access and all matching saved registry credentials failed; verify the image name and package pull permissions")
 }

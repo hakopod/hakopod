@@ -587,10 +587,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
     return <ErrorState error={run.error} retry={() => void run.refetch()} />
   const current = run.data
   const ready =
-    current.status === 'completed' &&
-    current.conclusion === 'success' &&
-    Boolean(current.image) &&
-    current.config_revision === build.revision
+    current.status === 'completed' && current.conclusion === 'success' && Boolean(current.image)
   const active = !['completed', 'failed', 'cancelled'].includes(current.status)
   const failed =
     current.status === 'failed' ||

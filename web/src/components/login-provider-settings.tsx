@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -73,9 +74,12 @@ export function LoginProviderSettingsPanel() {
 function ProviderCard({ provider }: { provider: LoginProvider }) {
   const query = useProvider(provider)
   const license = useLicense()
-  const entitled = Boolean(
-    license.data?.catalog.find((item) => item.id === loginProviderFeature(provider))?.enabled,
-  )
+  const features = useEditionFeatures()
+  const entitled =
+    features.operator ||
+    Boolean(
+      license.data?.catalog.find((item) => item.id === loginProviderFeature(provider))?.enabled,
+    )
   return (
     <Card className="grid content-start gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -138,6 +142,7 @@ export function LoginProviderEditor({ provider }: { provider: LoginProvider }) {
   )
 }
 function ProviderEditorLoader({ provider }: { provider: LoginProvider }) {
+  const features = useEditionFeatures()
   const query = useProvider(provider)
   const license = useLicense()
   if (query.isPending || license.isPending) return <Loading />
@@ -151,9 +156,11 @@ function ProviderEditorLoader({ provider }: { provider: LoginProvider }) {
         }}
       />
     )
-  const entitled = Boolean(
-    license.data?.catalog.find((item) => item.id === loginProviderFeature(provider))?.enabled,
-  )
+  const entitled =
+    features.operator ||
+    Boolean(
+      license.data?.catalog.find((item) => item.id === loginProviderFeature(provider))?.enabled,
+    )
   return <ProviderForm key={provider} current={query.data} entitled={entitled} />
 }
 function ProviderForm({

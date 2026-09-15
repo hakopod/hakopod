@@ -1,9 +1,13 @@
-import { parseEnvironment, type EnvironmentRow } from './service-environment'
+import { parseEnvironment, splitEnvironment, type EnvironmentRow } from './service-environment'
 
 export const MAX_ENV_FILE_BYTES = 512 * 1024
 
 // Parse data only: never evaluate shell commands or expand environment references.
-export function importDotenv(text: string, existing: EnvironmentRow[]): EnvironmentRow[] {
+export function importDotenv(
+  text: string,
+  existing: EnvironmentRow[],
+  allowSecrets = false,
+): EnvironmentRow[] {
   if (new TextEncoder().encode(text).length > MAX_ENV_FILE_BYTES)
     throw new Error('Choose a .env file smaller than 512 KiB.')
   const lines = text
@@ -56,7 +60,8 @@ export function importDotenv(text: string, existing: EnvironmentRow[]): Environm
   }
   if (!imported.length) throw new Error('This file contains no environment variables.')
   // Validate the complete change before returning it; no partial imports or overwrites.
-  const result = [...existing, ...imported]
-  parseEnvironment(result, [])
+  const result = [...existing.filter((row) => row.name !== '' || row.value !== ''), ...imported]
+  if (allowSecrets) splitEnvironment(result)
+  else parseEnvironment(result, [])
   return result
 }

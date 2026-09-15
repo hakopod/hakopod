@@ -5,6 +5,7 @@ import "fmt"
 // Preview limits apply to every revision, including updates through the normal
 // application API. Native secrets resolve against the new application name.
 func ValidatePreview(a Application) error {
+	a = RuntimeEnvironment(a)
 	if len(a.Services) > 4 {
 		return fmt.Errorf("previews support at most four small services")
 	}

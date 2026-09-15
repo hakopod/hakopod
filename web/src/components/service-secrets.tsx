@@ -1,3 +1,4 @@
+import { effectiveService } from '../lib/effective-service'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -41,14 +42,14 @@ export function ServiceSecrets({
   const [saving, setSaving] = useState(false)
   const [edit, setEdit] = useState<{ name: string; unbound: boolean } | null>(null)
   const [saved, setSaved] = useState<{ name: string; unbound: boolean } | null>(null)
-  const bindings = Object.entries(application.spec.services[serviceName]?.secrets || {}).sort(
-    ([left], [right]) => left.localeCompare(right),
-  )
+  const bindings = Object.entries(
+    effectiveService(application.spec, application.spec.services[serviceName]).secrets || {},
+  ).sort(([left], [right]) => left.localeCompare(right))
   const references = [...new Set(bindings.map(([, secret]) => secretReference(secret)))]
   const users = (reference: string) =>
     Object.entries(application.spec.services)
       .filter(([, service]) =>
-        Object.values(service.secrets || {}).some(
+        Object.values(effectiveService(application.spec, service).secrets || {}).some(
           (secret) => secretReference(secret) === reference,
         ),
       )
@@ -96,8 +97,9 @@ export function ServiceSecrets({
         )}
       </div>
       <p className="field-help">
-        Values are write-only. Bindings belong to this service; stored values belong to the
-        application and may be shared. Restart affected services after replacing a value.
+        Values are write-only. Application defaults are included unless overridden by this service;
+        stored values belong to the application and may be shared. Restart affected services after
+        replacing a value.
       </p>
       {secrets.error && <ErrorState error={secrets.error} retry={() => void secrets.refetch()} />}
       {saved && (

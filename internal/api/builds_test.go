@@ -287,7 +287,7 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 	web.Command = []string{"uvicorn"}
 	web.Args = []string{"main:app", "--host", "0.0.0.0"}
 	application.Services["web"] = web
-	application.Services["sidecar"] = spec.Service{Image: "python:3.13-alpine", Size: "small"}
+	application.Services["sidecar"] = spec.Service{Image: "python:3.13-alpine", Size: "small", Command: []string{"celery"}, Args: []string{"-A", "app", "worker"}, Env: map[string]string{"WORKER_MODE": "queue"}}
 	application, err = spec.Normalize(application)
 	if err != nil {
 		t.Fatal(err)
@@ -319,6 +319,16 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 		if next.Services["web"].Env["EXISTING"] != "kept" {
 			t.Fatal("omitted runtime env replaced existing variables")
 		}
+		currentConfig.ReuseServices = []string{"sidecar"}
+		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || next.Services["sidecar"].Image != currentRun.Image || strings.Join(next.Services["sidecar"].Command, " ") != "celery" || next.Services["sidecar"].Env["WORKER_MODE"] != "queue" || next.Services["web"].Env["EXISTING"] != "kept" {
+			t.Fatal("shared image deployment lost per-service configuration", err)
+		}
+		currentConfig.ReuseServices = []string{"missing"}
+		if _, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun); err == nil {
+			t.Fatal("missing image reuse target accepted")
+		}
+		currentConfig.ReuseServices = nil
 		replacement := map[string]string{"NEW": "value", "EMPTY": ""}
 		currentConfig.Env = &replacement
 		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)

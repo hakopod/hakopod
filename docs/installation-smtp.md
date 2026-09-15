@@ -3,8 +3,9 @@
 Self-hosted installation administrators can configure account and notification
 email at `/api/v1/installation/smtp`. These settings are available on the Free
 plan. Only an unscoped human browser administrator can read, change or test
-them. Hakopod Cloud uses operator SMTP configuration and rejects customer access
-to these endpoints.
+them. The Hakopod Cloud superadmin can use the same controls from the internal
+operator workspace or with no workspace selected. Saved settings apply to Cloud
+authentication and the internal runtime; customer nodes cannot read or change them.
 
 `GET` returns the current revision, enabled state, host, port, security, username,
 from_email, source (`operator` or `settings`), password_set and encryption_ready.

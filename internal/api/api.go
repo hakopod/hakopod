@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"regexp"
@@ -24,6 +25,8 @@ import (
 )
 
 type Server struct {
+	// CloudControlPlane enables shared auth settings only in the trusted Cloud embedding.
+	CloudControlPlane bool
 	// OperatorRuntime is set only by the trusted Cloud embedding, never an HTTP request.
 	// Customer runtimes keep installation administration disabled.
 	BuildRegistry   string
@@ -528,6 +531,10 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			failure(w, cloneErr)
 			return next, nil, false
 		}
+		if merged.InjectEnv != next.InjectEnv || !maps.Equal(merged.Env, next.Env) || !maps.Equal(merged.Secrets, next.Secrets) {
+			problem(w, 400, "shared_configuration", "Application variables and secret defaults must be changed in an application-wide plan. Clear the service target and review the full configuration.")
+			return next, nil, false
+		}
 		var previousResolved *spec.Application
 		err = s.Store.Pool.QueryRow(r.Context(), "SELECT resolved_spec FROM deployments WHERE application_id=$1 AND revision=$2", existing.ID, existing.Revision).Scan(&previousResolved)
 		if err != nil {
@@ -542,6 +549,7 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			if n != in.Service {
 				if prior, exists := previousResolved.Services[n]; exists {
 					unchanged.Image = prior.Image
+					unchanged.RegistryCredential = prior.RegistryCredential
 					merged.Services[n] = unchanged
 				}
 			}

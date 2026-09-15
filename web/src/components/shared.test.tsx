@@ -1,3 +1,4 @@
+import '../lib/effective-service.test'
 import '../lib/dotenv.test'
 import assert from 'node:assert/strict'
 import test from 'node:test'

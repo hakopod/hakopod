@@ -271,7 +271,7 @@ func templateURL(value string) (string, error) {
 func TemplateSecretNames(a Application) []string {
 	refs := map[string]bool{}
 	for _, s := range a.Services {
-		for _, r := range SecretReferences(s) {
+		for _, r := range SecretReferences(EffectiveService(a, s)) {
 			refs[r.Ref] = true
 		}
 	}

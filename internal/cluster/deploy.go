@@ -36,7 +36,7 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
-	target.Spec = normalized
+	target.Spec = spec.RuntimeEnvironment(normalized)
 	for name, svc := range target.Spec.Services {
 		if !strings.Contains(svc.Image, "@sha256:") {
 			return Observation{}, fmt.Errorf("%s: deployment requires a resolved immutable image digest", name)
@@ -284,6 +284,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 }
 
 func deployment(t Target, name string, svc spec.Service, deadline time.Duration, readinessImages ...string) *appsv1.Deployment {
+	svc = spec.EffectiveService(t.Spec, svc)
 	labels := labelsFor(t, name)
 	podLabels := labelsFor(t, name)
 	podLabels[applicationNameKey] = t.Spec.Name

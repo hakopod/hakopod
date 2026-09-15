@@ -53,7 +53,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +65,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	}
 	s.runtime = kube
 	s.store.ApplicationLimit = config.ApplicationLimit
-	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true}
+	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true}
 	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {
 		return nil, nil, err
 	}

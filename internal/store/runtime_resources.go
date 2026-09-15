@@ -218,3 +218,25 @@ func (s *Store) PruneExpiredEnrollments(ctx context.Context, p Principal) error 
 	}
 	return tx.Commit(ctx)
 }
+
+// RegistryCredentialNames returns only same-host credentials in the exact scope.
+// Secret values never leave the platform secret store through this query.
+func (s *Store) RegistryCredentialNames(ctx context.Context, project, environment, registry string) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, "SELECT name FROM runtime_resources WHERE kind='registry' AND project=$1 AND environment=$2 AND metadata->>'registry'=$3 ORDER BY name LIMIT 101", project, environment, registry)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if len(names) > 100 {
+		return nil, fmt.Errorf("too many matching registry credentials; select one explicitly")
+	}
+	return names, rows.Err()
+}

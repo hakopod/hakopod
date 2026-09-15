@@ -2914,6 +2914,15 @@ export interface components {
             volumes?: {
                 [key: string]: components["schemas"]["NamedVolume"];
             };
+            /** @description Application-wide plain environment defaults. Service values override these defaults. */
+            env?: {
+                [key: string]: string;
+            };
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description Inject all application env defaults into services. Service values override these defaults. */
+            inject_env?: boolean;
         };
         Event: {
             id: number;
@@ -3506,6 +3515,11 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
+            reuse_services?: string[];
         };
         BuildInput: {
             connection_id?: string;
@@ -3549,6 +3563,11 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
+            reuse_services?: string[];
         };
         BuildRun: {
             id: string;

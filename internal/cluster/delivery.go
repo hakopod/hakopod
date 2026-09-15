@@ -16,6 +16,7 @@ func (c *Client) ValidateDelivery(ctx context.Context, t Target) error {
 }
 
 func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (PreflightReport, error) {
+	t.Spec = spec.RuntimeEnvironment(t.Spec)
 	if err := c.validateDeliveryPolicy(ctx, t); err != nil {
 		return PreflightReport{}, err
 	}

@@ -45,7 +45,7 @@ func Open(ctx context.Context, databaseURL string, config Config) (*Service, err
 		db.Close()
 		return nil, err
 	}
-	server := &api.Server{Store: db, Auth: config}
+	server := &api.Server{Store: db, Auth: config, CloudControlPlane: config.DeploymentMode == cluster.DeploymentManagedCloud}
 	full := server.Handler()
 	service := &Service{store: db, control: full, config: config}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

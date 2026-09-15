@@ -33,7 +33,7 @@ function ServiceEnvironment() {
         description="Your project role does not allow environment changes."
       />
     )
-  if (!service || !application.data.spec.services[service])
+  if (service && !application.data.spec.services[service])
     return (
       <Empty
         title="Service not found"

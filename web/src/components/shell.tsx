@@ -474,7 +474,11 @@ function Workspace({
               </>
             )}
           </div>
-          <nav className="hako-global-nav" aria-label="Main navigation" ref={desktopNavigation}>
+          <nav
+            className={`hako-global-nav ${dashboardEdition.cloud ? 'justify-end!' : ''}`}
+            aria-label="Main navigation"
+            ref={desktopNavigation}
+          >
             {links()}
           </nav>
           <div className="hako-header-tools">

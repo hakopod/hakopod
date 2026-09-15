@@ -18,6 +18,9 @@ import (
 const MaxBytes = 256 << 10
 
 type Application struct {
+	InjectEnv     bool                   `json:"inject_env,omitempty" toml:"inject_env,omitempty"`
+	Secrets       map[string]SecretRef   `json:"secrets,omitempty" toml:"secrets,omitempty"`
+	Env           map[string]string      `json:"env,omitempty" toml:"env,omitempty"`
 	Recovery      *RecoveryPolicy        `json:"recovery,omitempty" toml:"recovery"`
 	SchemaVersion int                    `json:"schema_version" toml:"schema_version"`
 	Name          string                 `json:"name" toml:"name"`
@@ -201,13 +204,28 @@ func Normalize(input Application) (Application, error) {
 			return Application{}, fmt.Errorf("networks.%s: virtual_network and segment must both name a configured shared network", name)
 		}
 	}
+	if len(app.Secrets) > 32 {
+		return Application{}, fmt.Errorf("secrets: at most 32 application secret references")
+	}
+	for key, ref := range app.Secrets {
+		if !envPattern.MatchString(key) || len(key) > 128 || !ref.Valid() {
+			return Application{}, fmt.Errorf("secrets: invalid environment name or reference")
+		}
+		if _, exists := app.Env[key]; exists {
+			return Application{}, fmt.Errorf("env.%s: cannot also be an application secret reference", key)
+		}
+	}
+	if err := validateEnvironment("env", app.Env); err != nil {
+		return Application{}, err
+	}
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		field := "services." + name
 		if err := validateCertificateMounts(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
-		if err := validateAWSIdentity(svc); err != nil {
+		runtimeService := EffectiveService(app, svc)
+		if err := validateAWSIdentity(runtimeService); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
 		if err := validateRuntimeService(svc); err != nil {
@@ -249,18 +267,10 @@ func Normalize(input Application) (Application, error) {
 		if svc.UpdateStrategy != "" && svc.UpdateStrategy != "rolling" && svc.UpdateStrategy != "recreate" {
 			return Application{}, fmt.Errorf("%s.update_strategy: choose rolling or recreate", field)
 		}
-		if len(svc.Env) > 128 {
-			return Application{}, fmt.Errorf("%s.env: at most 128 variables are supported", field)
+		if err := validateEnvironment(field+".env", runtimeService.Env); err != nil {
+			return Application{}, err
 		}
-		for key, value := range svc.Env {
-			if sensitiveEnv(key, value) {
-				return Application{}, fmt.Errorf("%s.env.%s: secret values cannot be stored in TOML or deployment history; use an application-scoped secret reference", field, key)
-			}
-			if !envPattern.MatchString(key) || len(key) > 128 || strings.IndexByte(value, 0) >= 0 || len(value) > 4096 {
-				return Application{}, fmt.Errorf("%s.env.%s: invalid name or value (maximum 4096 bytes, no NUL)", field, key)
-			}
-		}
-		if len(svc.Secrets) > 32 {
+		if len(runtimeService.Secrets) > 32 {
 			return Application{}, fmt.Errorf("%s.secrets: at most 32 references", field)
 		}
 		for key, reference := range svc.Secrets {
@@ -431,6 +441,9 @@ func Diff(before *Application, after Application) []Change {
 		}
 		changes = append(changes, Change{service, field, a, b, sensitive})
 	}
+	add("", "inject_env", old.InjectEnv, after.InjectEnv, false)
+	add("", "env", old.Env, after.Env, true)
+	add("", "secrets", old.Secrets, after.Secrets, true)
 	add("", "recovery", old.Recovery, after.Recovery, false)
 	add("", "name", old.Name, after.Name, false)
 	add("", "networks", old.Networks, after.Networks, false)
@@ -573,4 +586,74 @@ func ValidateCommand(command, args []string) error {
 		return fmt.Errorf("command executable cannot be empty")
 	}
 	return nil
+}
+
+// EffectiveEnvironment preserves inheritance in stored specs. Service variables,
+// secret references and generated bindings override application defaults.
+func EffectiveEnvironment(defaults map[string]string, service Service) map[string]string {
+	env := make(map[string]string, len(defaults)+len(service.Env))
+	for k, v := range defaults {
+		env[k] = v
+	}
+	for k, v := range service.Env {
+		env[k] = v
+	}
+	for k := range service.Secrets {
+		delete(env, k)
+	}
+	for k := range service.Bindings {
+		delete(env, k)
+	}
+	return env
+}
+
+func validateEnvironment(field string, env map[string]string) error {
+	if len(env) > 128 {
+		return fmt.Errorf("%s: at most 128 effective variables are supported", field)
+	}
+	for key, value := range env {
+		if sensitiveEnv(key, value) {
+			return fmt.Errorf("%s.%s: secret values cannot be stored in TOML or deployment history; use an application-scoped secret reference", field, key)
+		}
+		if !envPattern.MatchString(key) || len(key) > 128 || strings.IndexByte(value, 0) >= 0 || len(value) > 4096 {
+			return fmt.Errorf("%s.%s: invalid name or value (maximum 4096 bytes, no NUL)", field, key)
+		}
+	}
+	return nil
+}
+
+func EffectiveService(app Application, service Service) Service {
+	refs := make(map[string]SecretRef, len(app.Secrets)+len(service.Secrets))
+	for k, v := range app.Secrets {
+		refs[k] = v
+	}
+	for k := range service.Env {
+		delete(refs, k)
+	}
+	for k, v := range service.Secrets {
+		refs[k] = v
+	}
+	for k := range service.Bindings {
+		delete(refs, k)
+	}
+	service.Secrets = refs
+	defaults := app.Env
+	if !app.InjectEnv {
+		defaults = nil
+	}
+	service.Env = EffectiveEnvironment(defaults, service)
+	return service
+}
+
+// RuntimeEnvironment expands defaults only for execution, never stored revisions.
+func RuntimeEnvironment(app Application) Application {
+	services := make(map[string]Service, len(app.Services))
+	for name, service := range app.Services {
+		services[name] = EffectiveService(app, service)
+	}
+	app.Services = services
+	app.Env = nil
+	app.Secrets = nil
+	app.InjectEnv = false
+	return app
 }
