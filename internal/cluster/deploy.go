@@ -60,6 +60,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.validateWorkloadKinds(ctx, target); err != nil {
 		return Observation{}, err
 	}
+	target.policy, err = c.workloadPolicy(ctx, target)
+	if err != nil {
+		return Observation{}, err
+	}
 	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
 		return Observation{}, err
 	}
@@ -254,6 +258,11 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	quota.Spec.Hard["count/configmaps"] = resource.MustParse("256")
 	quota.Spec.Hard["count/secrets"] = resource.MustParse("256")
 	workloadQuota(quota, t.Spec)
+	if t.policy != nil {
+		for name, value := range t.policy.Quota {
+			quota.Spec.Hard[corev1.ResourceName(name)] = resource.MustParse(value)
+		}
+	}
 	quotaAPI := c.kube.CoreV1().ResourceQuotas(ns)
 	if err := beforeStep(ctx, t); err != nil {
 		return err
@@ -335,6 +344,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		image = readinessImages[0]
 	}
 	configureReadiness(svc, &result.Spec.Template.Spec, image)
+	applyWorkloadPolicy(t.policy, &result.Spec.Template.Spec)
 	return result
 }
 

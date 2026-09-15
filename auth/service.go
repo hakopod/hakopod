@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/api"
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -26,6 +27,7 @@ type User struct {
 }
 
 type Service struct {
+	runtime *cluster.Client
 	store   *store.Store
 	handler http.Handler
 	control http.Handler

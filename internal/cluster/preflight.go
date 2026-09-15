@@ -43,11 +43,18 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	add := func(code, status, message string) { r.Checks = append(r.Checks, PreflightCheck{code, status, message}) }
+	policy, err := c.workloadPolicy(ctx, t)
+	if err != nil {
+		return r, err
+	}
 	var jobCPU, jobMemory int64
 	for _, s := range t.Spec.Services {
 		p := spec.Profiles[s.Size]
 		if p.CPURequest == "" {
 			p = spec.Profiles["small"]
+		}
+		if policy != nil && policy.MemoryRequest != "" {
+			p.MemoryRequest = policy.MemoryRequest
 		}
 		cpu := resource.MustParse(p.CPURequest)
 		memory := resource.MustParse(p.MemoryRequest)
@@ -92,6 +99,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	eligible := map[string]corev1.Node{}
 	var cpuFree, memoryFree int64
 	for _, node := range nodes.Items {
+		if policy != nil && (node.Name != policy.NodeName || policy.Pool != "" && node.Labels["hakopod.com/pool"] != policy.Pool) {
+			continue
+		}
 		ready := false
 		for _, cond := range node.Status.Conditions {
 			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
@@ -103,6 +113,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		}
 		blocked := false
 		for _, taint := range node.Spec.Taints {
+			if policy != nil && policy.Pool != "" && taint.Key == "hakopod.com/pool" && taint.Value == policy.Pool && taint.Effect == corev1.TaintEffectNoSchedule {
+				continue
+			}
 			if (taint.Effect == corev1.TaintEffectNoSchedule || taint.Effect == corev1.TaintEffectNoExecute) && taint.Key != "nvidia.com/gpu" {
 				blocked = true
 			}
@@ -122,6 +135,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		p := spec.Profiles[s.Size]
 		if p.CPURequest == "" {
 			p = spec.Profiles["small"]
+		}
+		if policy != nil && policy.MemoryRequest != "" {
+			p.MemoryRequest = policy.MemoryRequest
 		}
 		cpu := resource.MustParse(p.CPURequest)
 		memory := resource.MustParse(p.MemoryRequest)

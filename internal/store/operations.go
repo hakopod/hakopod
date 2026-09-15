@@ -142,8 +142,18 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM applications WHERE project=$1 AND environment=$2", project, env).Scan(&applicationCount); err != nil {
 			return Deployment{}, err
 		}
-		if applicationCount >= 200 {
-			return Deployment{}, errors.New("this milestone supports at most 200 applications per environment")
+		limit := 200
+		if s.ApplicationLimit != nil {
+			limit, err = s.ApplicationLimit(ctx, project, env)
+			if err != nil {
+				return Deployment{}, err
+			}
+			if limit < 1 || limit > 200 {
+				return Deployment{}, fmt.Errorf("invalid application limit")
+			}
+		}
+		if applicationCount >= limit {
+			return Deployment{}, fmt.Errorf("this environment supports at most %d applications", limit)
 		}
 		if expected != 0 {
 			return Deployment{}, fmt.Errorf("%w: application has revision 0", ErrConflict)
