@@ -1,3 +1,4 @@
+import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
 import { saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
 import { environmentRows, type EnvironmentRow } from '../lib/service-environment'
@@ -67,6 +68,7 @@ export function DeploymentForm({
   const [spec, setSpec] = useState<Spec>(newSpec)
   const [runtime, setRuntime] = useState<Record<string, RuntimeDraft>>({})
   const [toml, setToml] = useState('')
+  const [envFiles, setEnvFiles] = useState<EnvironmentFile[]>([])
   const [mode, setMode] = useState<'form' | 'toml' | 'compose'>('form')
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -97,6 +99,7 @@ export function DeploymentForm({
         ),
       )
       setPlan(null)
+      setEnvFiles([])
       setComposeDraft(null)
       setError('')
       setToml(application ? specToTOML(initial) : '')
@@ -126,7 +129,9 @@ export function DeploymentForm({
     project,
     environment,
     ...(serviceName ? { service: serviceName } : {}),
-    ...(mode === 'form' ? { spec: await formSpec() } : { toml }),
+    ...(mode === 'form'
+      ? { spec: await formSpec() }
+      : { toml, env_files: environmentFilePayload(envFiles) }),
   })
 
   async function changeMode(next: 'form' | 'toml' | 'compose') {
@@ -162,6 +167,8 @@ export function DeploymentForm({
       if (application && result.application_id !== application.id)
         throw new Error('Keep the original application name when editing this application.')
       setSpec(result.spec)
+      setEnvFiles([])
+      setToml(specToTOML(result.spec))
       setRuntime(
         Object.fromEntries(
           Object.entries(result.spec.services).map(([name, service]) => [
@@ -401,11 +408,13 @@ export function DeploymentForm({
             </div>
             {mode === 'compose' ? (
               <ComposeImport
+                onBusyChange={setBusy}
                 application={application}
                 project={project}
                 environment={environment}
                 name={spec.name}
                 onUse={(draft) => {
+                  setEnvFiles([])
                   setComposeDraft(draft)
                   setSpec(draft.spec)
                   setRuntime(
@@ -455,6 +464,19 @@ export function DeploymentForm({
                   here alongside images, health checks and secret references. Switching to the form
                   validates and keeps these settings.
                 </p>
+                <p className="field-help">
+                  Use env_file = ".env" above the service tables to share a file across services, or
+                  inside a service table for that service.
+                </p>
+                <EnvironmentFiles
+                  files={envFiles}
+                  onChange={(files) => {
+                    setEnvFiles(files)
+                    setPlan(null)
+                  }}
+                  disabled={busy}
+                  onBusyChange={setBusy}
+                />
               </div>
             ) : (
               <div className="field-stack">

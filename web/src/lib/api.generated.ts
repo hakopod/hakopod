@@ -1392,7 +1392,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Convert one bounded, image-based Docker Compose document into an editable TOML draft. Read-only: does not build, provision or deploy. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments. */
+        /** @description Convert one bounded, image-based Docker Compose document into an editable TOML draft. Does not build or deploy. Explicit env_file uploads save sensitive values as scoped secret references before returning the draft. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments. */
         post: operations["convertCompose"];
         delete?: never;
         options?: never;
@@ -3083,6 +3083,9 @@ export interface components {
             toml?: string;
             service?: string;
             expected_revision: number;
+            env_files?: {
+                [key: string]: string;
+            };
         };
         PlanInput: {
             project: string;
@@ -3091,6 +3094,9 @@ export interface components {
             toml?: string;
             service?: string;
             expected_revision?: number;
+            env_files?: {
+                [key: string]: string;
+            };
         };
         Change: {
             service: string;
@@ -3507,6 +3513,11 @@ export interface components {
                 [key: string]: string;
             };
             framework?: components["schemas"]["FrameworkPlan"];
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
+            reuse_services?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
             command?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
@@ -3515,11 +3526,6 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
-            secrets?: {
-                [key: string]: components["schemas"]["SecretRef"];
-            };
-            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
-            reuse_services?: string[];
         };
         BuildInput: {
             connection_id?: string;
@@ -3555,6 +3561,11 @@ export interface components {
                 [key: string]: string;
             };
             framework?: components["schemas"]["FrameworkPlan"];
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
+            reuse_services?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
             command?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
@@ -3563,11 +3574,6 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
-            secrets?: {
-                [key: string]: components["schemas"]["SecretRef"];
-            };
-            /** @description Additional existing services in the linked application that receive the same verified image. Their commands, variables, ports and volumes are retained. */
-            reuse_services?: string[];
         };
         BuildRun: {
             id: string;
@@ -3640,6 +3646,9 @@ export interface components {
             name?: string;
             yaml: string;
             variables?: {
+                [key: string]: string;
+            };
+            env_files?: {
                 [key: string]: string;
             };
             application_id?: string;

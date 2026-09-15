@@ -93,7 +93,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 	if !s.sourceImportConfigured(w, r, in) {
 		return
 	}
-	next, commit, err := s.sourceSpec(r.Context(), in.binding(), "")
+	next, commit, err := s.sourceSpec(r.Context(), in.binding(), "", environmentImportScope{who(r), in.Project, in.Environment, ""})
 	if err != nil {
 		problem(w, 400, "source_unavailable", err.Error())
 		return
@@ -209,7 +209,7 @@ func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	next, _, err := s.sourceSpec(r.Context(), review.Input.binding(), review.Commit)
+	next, _, err := s.sourceSpec(r.Context(), review.Input.binding(), review.Commit, environmentImportScope{who(r), review.Input.Project, review.Input.Environment, ""})
 	if err != nil {
 		problem(w, 400, "source_unavailable", err.Error())
 		return

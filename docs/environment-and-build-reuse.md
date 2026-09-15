@@ -52,6 +52,59 @@ only references enter the TOML or build configuration. Partially failed uploads
 retain the draft and reuse its newly created references on retry. Uploaded but
 unbound references remain visible in Application secrets for cleanup.
 
+## Import environment files
+
+Use an import-time `env_file` directive to avoid repeating values in TOML:
+
+```toml
+schema_version = 1
+name = "example"
+env_file = [".env", "production.env"]
+
+[env]
+APP_MODE = "production"
+
+[services.web]
+image = "python:3.13-alpine"
+
+[services.worker]
+image = "python:3.13-alpine"
+env_file = "worker.env"
+
+[services.worker.env]
+CONCURRENCY = "2"
+```
+
+A top-level file automatically enables `inject_env`. Do not combine it with
+`inject_env = false`. A service-level file applies only to that service. Later
+files override earlier ones; explicit `env` and `secrets` at that level override
+file values. Service values still override application defaults.
+
+The CLI reads filenames relative to `config.toml` when validating, planning or
+deploying. Git configuration imports read files relative to the configuration
+at the exact reviewed commit. Keep private `.env` files out of Git: attach or
+paste them in the dashboard's TOML/Compose importer instead. Enter the relative
+filename used by the configuration. Missing files fail clearly; server host
+files are never read. `env_file` accepts one filename or a list, including
+subdirectories inside the configuration directory. Absolute paths and parent
+traversal are rejected. Imports allow up to 8 files and 128 KiB combined.
+
+Imported files are literal UTF-8 assignments, with up to 128 variables per file
+and 4 KiB per value. Interpolation and shell commands are never evaluated. The
+importer removes `env_file` from the canonical deployment and stores ordinary
+values and scoped secret references. Sensitive-name and credential-URL detection
+is a safeguard; use explicit secret references for other confidential values.
+Changing a file value requires another reviewed deployment. The runtime does
+not watch the original file. Secrets staged during a failed review may be
+removed from Application secrets when no workload references them. Retrying the
+same import reuses its references; a changed secret gets a new reference so its
+consumers roll out with the new value. Importing secrets requires deployment
+write permission, configured auth encryption and Kubernetes secret storage.
+
+API callers send `env_files: {".env": "APP_MODE=production"}` alongside TOML
+containing `env_file = ".env"` to `/plan` or `/deployments`. JSON `spec` requests
+use already expanded values and references and do not accept `env_files`.
+
 For private images, Hakopod tries a selected credential first, then anonymous
 access, then matching saved credentials in deterministic order. The lookup uses
 only the exact project, environment and canonical registry host. Docker Hub

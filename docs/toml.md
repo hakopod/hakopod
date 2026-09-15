@@ -10,6 +10,13 @@ Required application fields are `name` and a `services` map. Each service needs
 an `image`. The minimum public service also needs `port` and `public=true`.
 One-service applications use exactly the same format as groups.
 
+Application `[env]` defaults are passed to all services when top-level
+`inject_env = true`; service values take precedence. Top-level `[secrets]` binds
+shared secret references independently. Import-time `env_file = ".env"` (or a
+list of filenames) works at application or service level and expands into
+values/references before deployment. See [environment files and shared
+variables](environment-and-build-reuse.md) for CLI, Git and dashboard usage.
+
 Set replicas independently inside each service table:
 
 ```toml

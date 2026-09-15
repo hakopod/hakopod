@@ -17,3 +17,9 @@ for endpoint in ["/secrets", "/secrets/{name}"]:
         method["parameters"].append({"name": "application", "in": "query", "required": True, "schema": S})
         if "{name}" in endpoint:
             method["parameters"].append({"name": "name", "in": "path", "required": True, "schema": S})
+
+schemas["Spec"]["properties"].update({
+    "env": {**mapping(S), "description": "Application-wide plain environment defaults. Service values override these defaults."},
+    "secrets": mapping(ref("SecretRef")),
+    "inject_env": {**B, "description": "Inject all application env defaults into services. Service values override these defaults."},
+})

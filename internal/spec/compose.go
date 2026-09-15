@@ -18,19 +18,35 @@ import (
 // ComposeImport is a draft, not an accepted deployment. No Docker daemon,
 // process environment, filesystem, or network is consulted during conversion.
 type ComposeImport struct {
-	Spec     Application `json:"spec"`
-	TOML     string      `json:"toml"`
-	Warnings []string    `json:"warnings"`
+	Spec     Application       `json:"spec"`
+	TOML     string            `json:"toml"`
+	Warnings []string          `json:"warnings"`
+	Secrets  map[string]string `json:"-"`
 }
 
 type composeReader struct {
 	variables map[string]string
 	warnings  []string
+	files     map[string]string
+	envRefs   map[string]any
+	bind      func(string, string) string
+	secrets   map[string]string
 }
 
 // ImportCompose converts a bounded image-based Compose document. base is copied
 // and only new services may be added; shared definitions must match exactly.
 func ImportCompose(data []byte, name string, variables map[string]string, base *Application) (ComposeImport, error) {
+	return ImportComposeWithEnvironmentFiles(data, name, variables, base, nil, nil)
+}
+
+func ImportComposeWithEnvironmentFiles(data []byte, name string, variables map[string]string, base *Application, files map[string]string, bind func(string, string) string) (ComposeImport, error) {
+	total := 0
+	for _, body := range files {
+		total += len(body)
+	}
+	if len(files) > 8 || total > MaxEnvironmentFileBytes {
+		return ComposeImport{}, errors.New("env_file: use at most 8 files totalling 128 KiB")
+	}
 	if len(data) == 0 || len(data) > MaxBytes {
 		return ComposeImport{}, errors.New("compose: provide a YAML document of at most 256 KiB")
 	}
@@ -58,7 +74,7 @@ func ImportCompose(data []byte, name string, variables map[string]string, base *
 	if len(doc.Content) != 1 {
 		return ComposeImport{}, errors.New("compose: expected a document")
 	}
-	r := &composeReader{variables: variables, warnings: []string{}}
+	r := &composeReader{variables: variables, warnings: []string{}, files: files, envRefs: map[string]any{}, bind: bind, secrets: map[string]string{}}
 	root, err := composeMap(doc.Content[0], "compose", "name", "version", "services", "networks", "volumes")
 	if err != nil {
 		return ComposeImport{}, err
@@ -159,6 +175,35 @@ func ImportCompose(data []byte, name string, variables map[string]string, base *
 		}
 		app.Services[n] = svc
 	}
+	if len(r.envRefs) > 0 || len(files) > 0 {
+		// Fill omitted defaults before the strict TOML round-trip, including
+		// default network membership for services without a networks declaration.
+		app, err = Normalize(app)
+		if err != nil {
+			return ComposeImport{}, err
+		}
+		raw, e := toml.Marshal(app)
+		if e != nil {
+			return ComposeImport{}, e
+		}
+		var doc map[string]any
+		if e = toml.Unmarshal(raw, &doc); e != nil {
+			return ComposeImport{}, e
+		}
+		for name, value := range r.envRefs {
+			doc["services"].(map[string]any)[name].(map[string]any)["env_file"] = value
+		}
+		raw, e = toml.Marshal(doc)
+		if e != nil {
+			return ComposeImport{}, e
+		}
+		imported, e := ImportEnvironmentFiles(raw, files, bind)
+		if e != nil {
+			return ComposeImport{}, e
+		}
+		app, r.secrets = imported.Spec, imported.Secrets
+	}
+
 	app, err = Normalize(app)
 	if err != nil {
 		return ComposeImport{}, err
@@ -172,7 +217,7 @@ func ImportCompose(data []byte, name string, variables map[string]string, base *
 		return ComposeImport{}, err
 	}
 	r.warn("Review resource sizes and container permissions before deploying. Services use Hakopod resource profiles and its non-root security defaults.")
-	return ComposeImport{Spec: app, TOML: string(encoded), Warnings: r.warnings}, nil
+	return ComposeImport{Spec: app, TOML: string(encoded), Warnings: r.warnings, Secrets: r.secrets}, nil
 }
 
 func composeTree(n *yaml.Node, depth int, count *int) error {
@@ -340,7 +385,7 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 	if !namePattern.MatchString(name) {
 		return Service{}, fmt.Errorf("%s: use lowercase letters, digits or hyphens; update references too", f)
 	}
-	m, err := composeMap(node, f, "image", "command", "entrypoint", "environment", "depends_on", "ports", "expose", "networks", "volumes", "deploy", "restart", "container_name", "working_dir", "user", "read_only", "stop_grace_period", "platform", "x-hakopod")
+	m, err := composeMap(node, f, "image", "command", "entrypoint", "environment", "env_file", "depends_on", "ports", "expose", "networks", "volumes", "deploy", "restart", "container_name", "working_dir", "user", "read_only", "stop_grace_period", "platform", "x-hakopod")
 	if err != nil {
 		return Service{}, err
 	}
@@ -566,6 +611,17 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 			s.Env[key] = v
 		}
 	}
+	if node := m["env_file"]; node != nil {
+		var value any
+		if node.Decode(&value) != nil {
+			return s, errors.New("env_file: invalid filename list")
+		}
+		if _, err := EnvironmentFilePaths(value); err != nil {
+			return s, err
+		}
+		r.envRefs[name] = value
+	}
+
 	return s, nil
 }
 

@@ -158,11 +158,14 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		app, err := spec.Parse(data)
+		app, envFiles, err := validateLocalConfiguration(*file, data)
 		if err != nil {
 			return &exitError{2, err.Error()}
 		}
 		if *outputJSON {
+			if len(envFiles) > 0 {
+				return printJSON(map[string]any{"valid": true, "name": app.Name, "service_count": len(app.Services), "env_file_count": len(envFiles), "message": "Run plan to upload files and create scoped secret references"})
+			}
 			return printJSON(app)
 		}
 		fmt.Printf("Valid: %s, %d service(s), schema v%d\n", app.Name, len(app.Services), app.SchemaVersion)
@@ -297,10 +300,29 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		parsedSpec, err := spec.Parse(data)
+		parsedSpec, envFiles, err := validateLocalConfiguration(*file, data)
 		if err != nil {
 			return &exitError{2, err.Error()}
 		}
+		var plan struct {
+			ApplicationID    string           `json:"application_id"`
+			ExpectedRevision int64            `json:"expected_revision"`
+			Spec             spec.Application `json:"spec"`
+			Changes          []spec.Change    `json:"changes"`
+			Warnings         []string         `json:"warnings"`
+			ResourceProfiles any              `json:"resource_profiles"`
+		}
+		if len(envFiles) > 0 {
+			request := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "toml": string(data), "env_files": envFiles}
+			if *service != "" {
+				request["service"] = *service
+			}
+			if err = c.request(ctx, "POST", "/plan", request, "", &plan); err != nil {
+				return err
+			}
+			parsedSpec = plan.Spec
+		}
+
 		if command == "deploy" && *idem != "" {
 			var previous store.Deployment
 			lookupErr := c.request(ctx, "GET", "/idempotency/"+url.PathEscape(*idem), nil, "", &previous)
@@ -335,16 +357,11 @@ func run() error {
 		if *service != "" {
 			in["service"] = *service
 		}
-		var plan struct {
-			ApplicationID    string           `json:"application_id"`
-			ExpectedRevision int64            `json:"expected_revision"`
-			Spec             spec.Application `json:"spec"`
-			Changes          []spec.Change    `json:"changes"`
-			Warnings         []string         `json:"warnings"`
-			ResourceProfiles any              `json:"resource_profiles"`
-		}
-		if err = c.request(ctx, "POST", "/plan", in, "", &plan); err != nil {
-			return err
+
+		if len(envFiles) == 0 {
+			if err = c.request(ctx, "POST", "/plan", in, "", &plan); err != nil {
+				return err
+			}
 		}
 		if command == "plan" {
 			return printJSON(plan)
@@ -586,7 +603,7 @@ func findApp(ctx context.Context, c *client, cfg config, name, file string) (sto
 		if err != nil {
 			return store.Application{}, err
 		}
-		a, err := spec.Parse(data)
+		a, _, err := validateLocalConfiguration(file, data)
 		if err != nil {
 			return store.Application{}, err
 		}
