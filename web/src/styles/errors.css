@@ -33,6 +33,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .hako-error-state :is(h2, p, code),
+.deployment-failure :is(strong, p),
 .hako-error-state > svg,
 [role='alert'] > .muted-text {
   color: var(--error-text);
