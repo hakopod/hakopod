@@ -95,7 +95,16 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/delivery", s.serviceDelivery)
 	s.registerTerminalRoutes(routes)
-	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) { p := who(r); p.Admin = p.IsAdmin(); write(w, 200, p) })
+	routes.HandleFunc("PUT /api/v1/applications/{id}/name", s.renameApplication)
+	routes.HandleFunc("PUT /api/v1/applications/{id}/services/{service}/name", s.renameApplication)
+	routes.HandleFunc("PUT /api/v1/projects/{id}/name", s.renameProject)
+	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
+		p := who(r)
+		p.Admin = p.IsAdmin()
+		p.CanManageGitConnections = p.CanManageGit()
+		p.CanManageApplications = p.IsAdmin() || p.CanManageApplication(p.Project, p.Environment, "")
+		write(w, 200, p)
+	})
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
 	routes.HandleFunc("GET /api/v1/cloud/capabilities", s.cloudCapabilities)
 	routes.HandleFunc("POST /api/v1/projects", s.createProject)
@@ -276,7 +285,7 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 	for _, role := range p.ProjectRoles {
 		visible = append(visible, role.Project)
 	}
-	rows, err := s.Store.Pool.Query(r.Context(), "SELECT e.project,e.name,p.display_name,p.description,EXISTS(SELECT 1 FROM personal_workspaces w WHERE w.project=e.project) FROM environments e JOIN projects p ON p.name=e.project WHERE ($1 OR e.project=ANY($2::text[])) AND ($3='' OR e.name=$3) ORDER BY e.project,e.name LIMIT 200", p.IsAdmin(), visible, p.Environment)
+	rows, err := s.Store.Pool.Query(r.Context(), "SELECT e.project,e.name,p.display_name,p.description,p.metadata_revision,EXISTS(SELECT 1 FROM personal_workspaces w WHERE w.project=e.project) FROM environments e JOIN projects p ON p.name=e.project WHERE ($1 OR e.project=ANY($2::text[])) AND ($3='' OR e.name=$3) ORDER BY e.project,e.name LIMIT 200", p.IsAdmin(), visible, p.Environment)
 	if err != nil {
 		failure(w, err)
 		return
@@ -286,18 +295,20 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	type project struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		DisplayName  string `json:"display_name"`
-		Description  string `json:"description"`
-		Personal     bool   `json:"personal"`
-		Environments []env  `json:"environments"`
+		MetadataRevision int64  `json:"metadata_revision"`
+		ID               string `json:"id"`
+		Name             string `json:"name"`
+		DisplayName      string `json:"display_name"`
+		Description      string `json:"description"`
+		Personal         bool   `json:"personal"`
+		Environments     []env  `json:"environments"`
 	}
 	out := []project{}
 	for rows.Next() {
 		var a, b, displayName, description string
 		var personal bool
-		if err = rows.Scan(&a, &b, &displayName, &description, &personal); err != nil {
+		var metadataRevision int64
+		if err = rows.Scan(&a, &b, &displayName, &description, &metadataRevision, &personal); err != nil {
 			failure(w, err)
 			return
 		}
@@ -310,7 +321,7 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 			if displayName == "" {
 				displayName = a
 			}
-			out = append(out, project{ID: a, Name: a, DisplayName: displayName, Description: description, Personal: personal, Environments: []env{}})
+			out = append(out, project{MetadataRevision: metadataRevision, ID: a, Name: a, DisplayName: displayName, Description: description, Personal: personal, Environments: []env{}})
 		}
 		out[len(out)-1].Environments = append(out[len(out)-1].Environments, env{Name: b})
 	}

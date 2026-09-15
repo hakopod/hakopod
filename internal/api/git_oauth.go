@@ -53,10 +53,10 @@ func (s *Server) gitOAuthRedirect(id string) (string, error) {
 	return strings.TrimSuffix(s.Auth.PublicURL, "/") + "/settings/git/callback", nil
 }
 func (s *Server) startGitOAuth(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
-	if who(r).CredentialType != "browser" {
+	if !gitInteractive(r) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) startGitOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
-	pending := gitOAuthPending{ConnectionID: c.ID, KeyID: who(r).KeyID, Revision: c.Revision, Verifier: verifier, RedirectURL: redirect}
+	pending := gitOAuthPending{ConnectionID: c.ID, KeyID: gitSession(r), Revision: c.Revision, Verifier: verifier, RedirectURL: redirect}
 	state, err := s.Store.NewChallenge(r.Context(), "git-source-oauth", pending, 5*time.Minute)
 	if err != nil {
 		authFailure(w, err)
@@ -91,10 +91,10 @@ func (s *Server) startGitOAuth(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"authorization_url": s.gitOAuthOrigin() + "/oauth/authorize?" + q.Encode(), "callback_url": redirect, "expires_at": time.Now().Add(5 * time.Minute)})
 }
 func (s *Server) completeGitOAuth(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
-	if who(r).CredentialType != "browser" {
+	if !gitInteractive(r) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}
@@ -115,7 +115,7 @@ func (s *Server) completeGitOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var pending gitOAuthPending
-	if json.Unmarshal(challenge.Data, &pending) != nil || (r.PathValue("id") != "" && pending.ConnectionID != r.PathValue("id")) || pending.KeyID != who(r).KeyID {
+	if json.Unmarshal(challenge.Data, &pending) != nil || (r.PathValue("id") != "" && pending.ConnectionID != r.PathValue("id")) || pending.KeyID != gitSession(r) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}

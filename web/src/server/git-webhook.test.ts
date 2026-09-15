@@ -7,7 +7,10 @@ test('named webhooks keep signed bytes and never forward browser credentials', a
   const bytes = new TextEncoder().encode('{"project":"example"}\n')
   t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
     count++
-    assert.match(String(url), /\/api\/v1\/webhooks\/(git\/fixture-id|github-app\/123)$/)
+    assert.match(
+      String(url),
+      /\/api\/v1\/webhooks\/(git\/fixture-id|github-app\/123|nodes\/[a-f0-9]{32}\/git\/[a-f0-9]{32})$/,
+    )
     assert.deepEqual(init.body, bytes)
     const headers = new Headers(init.headers)
     for (const name of ['Authorization', 'Cookie', 'Origin', 'X-Forwarded-For'])
@@ -20,7 +23,11 @@ test('named webhooks keep signed bytes and never forward browser credentials', a
       { status: 202, headers: { 'Set-Cookie': 'must-not-forward=1' } },
     )
   })
-  for (const endpoint of ['git/fixture-id', 'github-app/123']) {
+  for (const endpoint of [
+    'git/fixture-id',
+    'github-app/123',
+    `nodes/${'a'.repeat(32)}/git/${'b'.repeat(32)}`,
+  ]) {
     const response = await forwardNamedGitWebhook(
       new Request(`http://localhost/api/v1/webhooks/${endpoint}`, {
         method: 'POST',
@@ -38,7 +45,7 @@ test('named webhooks keep signed bytes and never forward browser credentials', a
     assert.equal(response.status, 202)
     assert.equal(response.headers.has('Set-Cookie'), false)
   }
-  assert.equal(count, 2)
+  assert.equal(count, 3)
 })
 test('named webhooks reject malformed paths, methods and oversized bodies', async (t) => {
   let called = false

@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Badge, Card } from './ui/surfaces'
@@ -7,6 +8,7 @@ import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-heal
 import { Icon } from './icons'
 import { HeadingHelp, Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
+  const features = useEditionFeatures()
   const names = Object.keys(app.spec.services).slice(0, 32)
   const [selected, setSelected] = useState(names[0] || '')
   const name = names.includes(selected) ? selected : names[0]
@@ -91,12 +93,14 @@ export default function ApplicationTopology({ application: app }: { application:
                 >
                   <Brackets />
                   <Status value={health.status} small />
-                  <div>
+                  <div className="min-w-0">
                     <Icon
                       name={config.public ? 'globe' : config.port ? 'box' : 'terminal'}
                       size={18}
                     />
-                    <strong>{item}</strong>
+                    <strong className="min-w-0 truncate">
+                      {app.service_display_names?.[item] || item}
+                    </strong>
                     <Icon name="chevron" size={13} />
                   </div>
                   <small>
@@ -117,7 +121,7 @@ export default function ApplicationTopology({ application: app }: { application:
           <Card className="topology-inspector inspector-card">
             <div className="inspector-heading">
               <Status value={selectedHealth.status} small />
-              <h2>{name}</h2>
+              <h2>{app.service_display_names?.[name] || name}</h2>
               <Copy value={name} label="Copy service slug" />
             </div>
             {observed?.message && !selectedHealth.note && (
@@ -184,14 +188,16 @@ export default function ApplicationTopology({ application: app }: { application:
               >
                 Logs
               </Link>
-              <Link
-                to="/applications/$applicationId"
-                params={{ applicationId: app.id }}
-                search={{ service: name, tab: 'terminal' }}
-                className="button button-secondary"
-              >
-                Terminal
-              </Link>
+              {features.terminal && (
+                <Link
+                  to="/applications/$applicationId"
+                  params={{ applicationId: app.id }}
+                  search={{ service: name, tab: 'terminal' }}
+                  className="button button-secondary"
+                >
+                  Terminal
+                </Link>
+              )}
             </div>
           </Card>
         )}

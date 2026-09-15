@@ -1,3 +1,4 @@
+import { dashboardEdition, useEditionFeatures } from '../lib/dashboard-edition'
 import {
   InstallationLogs,
   InstallationSetup,
@@ -60,11 +61,21 @@ function gib(bytes: number) {
 }
 
 function Infrastructure() {
+  const features = useEditionFeatures()
   const owner = useInstallationOwner()
   const scope = useScope()
   const { tab } = Route.useSearch()
   const navigationRoot = useActiveSection(tab || 'nodes', '.tab-list')
   const navigate = Route.useNavigate()
+  if (dashboardEdition.cloud && !features.operator)
+    return (
+      <div className="ops-page">
+        <PageHeader title="Infrastructure" />
+        <Suspense fallback={<Loading />}>
+          <RegistrySettings />
+        </Suspense>
+      </div>
+    )
   return (
     <div className="ops-page">
       <PageHeader

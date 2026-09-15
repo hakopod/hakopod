@@ -271,13 +271,8 @@ func Normalize(input Application) (Application, error) {
 				return Application{}, fmt.Errorf("%s: an environment variable cannot also be a secret reference", field)
 			}
 		}
-		if len(svc.Command) > 64 || len(svc.Args) > 128 {
-			return Application{}, fmt.Errorf("%s: command/args exceed the supported element count", field)
-		}
-		for _, word := range append(append([]string{}, svc.Command...), svc.Args...) {
-			if strings.IndexByte(word, 0) >= 0 || len(word) > 4096 {
-				return Application{}, fmt.Errorf("%s: command/args must contain no NUL and at most 4096 bytes per element", field)
-			}
+		if err := ValidateCommand(svc.Command, svc.Args); err != nil {
+			return Application{}, fmt.Errorf("%s: %s", field, err)
 		}
 		if svc.Networks == nil {
 			svc.Networks = []string{"default"}
@@ -560,4 +555,22 @@ func Warnings(app Application) []string {
 		}
 	}
 	return warnings
+}
+
+// ValidateCommand bounds exec-form process overrides. No implicit shell runs.
+func ValidateCommand(command, args []string) error {
+	if len(command) > 64 || len(args) > 128 {
+		return fmt.Errorf("command/args exceed the supported element count")
+	}
+	for _, words := range [][]string{command, args} {
+		for _, word := range words {
+			if strings.IndexByte(word, 0) >= 0 || len(word) > 4096 {
+				return fmt.Errorf("command/args must contain no NUL and at most 4096 bytes per element")
+			}
+		}
+	}
+	if len(command) > 0 && strings.TrimSpace(command[0]) == "" {
+		return fmt.Errorf("command executable cannot be empty")
+	}
+	return nil
 }

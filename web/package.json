@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "start": "node --max-old-space-size=192 --env-file-if-exists=.env.local scripts/serve.mjs",
     "generate:api": "openapi-typescript ../api/openapi.json -o src/lib/api.generated.ts",
-    "test": "node --experimental-strip-types --test src/server/*.test.ts && node scripts/test-ui.mjs",
+    "test": "node --experimental-strip-types --test src/server/*.test.ts src/lib/process-command.test.ts && node scripts/test-ui.mjs",
     "smoke": "node scripts/smoke-proxy.mjs",
     "format": "prettier --write src scripts vite.config.ts package.json tsconfig.json components.json",
     "format:check": "prettier --check src scripts vite.config.ts package.json tsconfig.json components.json"

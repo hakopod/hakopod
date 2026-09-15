@@ -6,6 +6,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^(?:projects\/[A-Za-z0-9_-]+|applications\/[A-Za-z0-9_-]+(?:\/services\/[A-Za-z0-9_-]+)?)\/name$/,
   /^applications\/[A-Za-z0-9_-]+\/previews$/,
   /^previews\/[A-Za-z0-9_-]+$/,
   /^builds\/detect$/,
@@ -61,7 +62,7 @@ export async function proxy({
   params: { _splat?: string }
 }) {
   try {
-    if (/^v1\/webhooks\/(?:git|github-app)\//.test(params._splat || ''))
+    if (/^v1\/webhooks\/(?:git|github-app|nodes)\//.test(params._splat || ''))
       return forwardNamedGitWebhook(request)
     if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)
     if (params._splat === 'v1/webhooks/gitlab') return forwardGitLabWebhook(request)

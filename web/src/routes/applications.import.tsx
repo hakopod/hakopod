@@ -27,12 +27,12 @@ function ImportRepository() {
   const [error, setError] = useState('')
   const [plan, setPlan] = useState<components['schemas']['SourceImportPlan'] | null>(null)
   const [key, setKey] = useState('')
-  if (!scope.identity.admin)
+  if (!(scope.identity.admin || scope.identity.can_manage_git))
     return (
       <Empty
         icon="lock"
-        title="Administrator access required"
-        description="Initial repository imports use the installation’s shared provider credentials. An administrator can create the first application; project members can manage its existing source mapping."
+        title="Repository management access required"
+        description="A workspace owner or installation administrator can import a repository. Project members can use an approved source binding."
       />
     )
   return (

@@ -230,8 +230,8 @@ function BuildDetail() {
                 />
               </div>
               <p className="muted-text">
-                Review the generated workflow before an administrator commits it to the repository’s
-                default branch.
+                Review the generated workflow before a repository manager commits it to the
+                repository’s default branch.
               </p>
               {build.installed_commit && (
                 <p className="field-help break-text">
@@ -377,8 +377,8 @@ function BuildDetail() {
               )}
             </>
           )}
-          {!scope.identity.admin && (
-            <Note>An installation administrator must install this reviewed workflow.</Note>
+          {!(scope.identity.admin || scope.identity.can_manage_git) && (
+            <Note>A repository manager must install this reviewed workflow.</Note>
           )}
           {error && (
             <div className="inline-error" role="alert">
@@ -390,7 +390,7 @@ function BuildDetail() {
           <Button disabled={busy} onClick={() => setPreview(null)}>
             Close preview
           </Button>
-          {scope.identity.admin && (
+          {(scope.identity.admin || scope.identity.can_manage_git) && (
             <Button
               variant="primary"
               disabled={busy || !preview}

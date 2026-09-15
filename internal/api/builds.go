@@ -23,6 +23,8 @@ import (
 )
 
 type buildConfig struct {
+	Command            *[]string         `json:"command,omitempty"`
+	Args               *[]string         `json:"args,omitempty"`
 	Framework          *framework.Plan   `json:"framework,omitempty"`
 	BuildSecrets       map[string]string `json:"build_secrets,omitempty"`
 	BuildArgs          map[string]string `json:"build_args,omitempty"`
@@ -53,6 +55,8 @@ type buildConfig struct {
 	InstalledCommit    string            `json:"installed_commit"`
 }
 type buildInput struct {
+	Command                *[]string         `json:"command,omitempty"`
+	Args                   *[]string         `json:"args,omitempty"`
 	Framework              *framework.Plan   `json:"framework,omitempty"`
 	BuildSecrets           map[string]string `json:"build_secrets,omitempty"`
 	BuildArgs              map[string]string `json:"build_args,omitempty"`
@@ -137,7 +141,7 @@ func validBuildPath(value string) bool {
 	return len(value) > 0 && len(value) <= 200 && buildPathPattern.MatchString(value) && path.Clean(value) == value && !strings.HasPrefix(value, "/") && value != ".." && !strings.HasPrefix(value, "../")
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
-	c := buildConfig{Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	c := buildConfig{Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	c.Repository = strings.ToLower(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
@@ -169,6 +173,16 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	}
 	if !validScope(c.Project, c.Environment) || !slug.MatchString(c.Name) || !slug.MatchString(c.Service) || !validSourceRepository(c.Provider, c.Repository) || len(c.Branch) > 200 || strings.ContainsAny(c.Branch, "\r\n\x00 ?#") || !validBuildPath(c.ContextPath) || !validBuildPath(c.Dockerfile) || c.Port < 1 || c.Port > 65535 || len(c.RegistryCredential) > 100 {
 		return c, fmt.Errorf("%w: select a valid project/environment/name, repository, branch, relative build paths and port", store.ErrInput)
+	}
+	var command, args []string
+	if c.Command != nil {
+		command = *c.Command
+	}
+	if c.Args != nil {
+		args = *c.Args
+	}
+	if err := spec.ValidateCommand(command, args); err != nil {
+		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 	}
 	if err := spec.ValidateBuildArguments(c.BuildArgs); err != nil {
 		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
@@ -311,7 +325,7 @@ func (s *Server) createBuild(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	if c.ConnectionID != defaultGitConnection(c.Provider) && !who(r).IsAdmin() {
+	if c.ConnectionID != defaultGitConnection(c.Provider) && !who(r).CanManageGit() {
 		problem(w, 403, "repository_approval_required", "An administrator must approve a named connection repository for this build")
 		return
 	}
@@ -386,7 +400,7 @@ func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	if (c.ConnectionID != defaultGitConnection(c.Provider) || old.ConnectionID != defaultGitConnection(old.Provider)) && (c.ConnectionID != old.ConnectionID || c.Repository != old.Repository || c.Provider != old.Provider) && !who(r).IsAdmin() {
+	if (c.ConnectionID != defaultGitConnection(c.Provider) || old.ConnectionID != defaultGitConnection(old.Provider)) && (c.ConnectionID != old.ConnectionID || c.Repository != old.Repository || c.Provider != old.Provider) && !who(r).CanManageGit() {
 		problem(w, 403, "repository_approval_required", "An administrator must approve changing this build repository or connection")
 		return
 	}
@@ -512,7 +526,7 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if who(r).CredentialType != "browser" || !who(r).IsAdmin() {
+	if !gitInteractive(r) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}

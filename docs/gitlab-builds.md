@@ -11,18 +11,18 @@ integrations; enabling OAuth sign-in does not grant repository access.
 1. Enable CI/CD and Container Registry on a GitLab.com project. Nested paths such
    as `group/subgroup/project` are supported. The project must use its default
    `.gitlab-ci.yml` CI configuration path.
-2. Configure the GitLab integration in Hakopod administration with an API token
-   authorized to read the repository, commit the CI file, start/cancel pipelines,
+2. Configure a named GitLab OAuth connection in **Settings → Git connections**,
+   or use an existing legacy API-token connection, authorized to read the repository, commit the CI file, start/cancel pipelines,
    and read jobs/artifacts. The token's user must be permitted to create pipelines
    with variables under the project's CI/CD settings. Protect this credential as
-   a repository-write credential; it stays in the platform Kubernetes Secret and
+   a repository-write credential; named OAuth credentials stay encrypted in PostgreSQL and
    is never embedded in generated CI or given to application pods.
 3. Create a build and select GitLab, the repository, source branch, context,
    Dockerfile or buildpack preset, and the target architecture. Select a persistent
    `read_registry` pull credential scoped to the deployment environment when the
    output image is private. The runner's short-lived `CI_JOB_TOKEN` cannot serve as
    a persistent runtime pull credential.
-4. Review the generated CI file. A global administrator explicitly installs it on
+4. Review the generated CI file. A repository manager explicitly installs it on
    the repository's default branch. Branch protection must permit that commit.
    Previewing or saving settings does not modify the repository or start a build.
 5. Start a build, inspect its GitLab pipeline, then review and apply Hakopod's

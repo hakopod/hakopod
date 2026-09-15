@@ -1,6 +1,6 @@
 # Named Git source connections
 
-Git connections are separate from account sign-in. An administrator creates a
+Git connections are separate from account sign-in. An installation administrator or scoped workspace owner creates a
 named GitHub or GitLab connection and selects its ID when importing a repository,
 binding an application's TOML source, or creating a source build. Source and build
 reads, workflow writes, run observation, cancellation and automatic work use that
@@ -33,7 +33,7 @@ or a properly configured development tunnel. The URL check is syntactic, not a
 public DNS or connectivity probe. GitHub will still reject an unreachable webhook.
 
 Setup saves a disabled connection first. One-use, 15-minute challenges bind each
-phase to the initiating administrator browser session, connection revision and
+phase to the initiating repository manager’s browser session, connection revision and
 configured origin. The server exchanges GitHub's temporary code, encrypts the
 returned App key and webhook secret, and retains them before installation. An
 unfinished connection can be reopened to resume. The connection remains unusable
@@ -132,7 +132,7 @@ existing source/build bindings or overwrite their credentials. An omitted
 connection ID
 means that fixed provider default; it never selects the first named connection.
 Default connection rows cannot be removed through the new API. An application
-repository or named connection change still needs administrator approval.
+repository or named connection change still needs repository-manager approval.
 
 ## API and verification
 
@@ -153,3 +153,36 @@ callbacks, resumable encrypted credentials, owner/permission/suspension/webhook
 rejections and verified activation. The dashboard proxies explicitly allow only the
 new setup paths and retain session and same-origin checks. A real provider App
 creation and webhook round trip still need verification on a public HTTPS instance.
+
+## Scoped workspace management
+
+Cloud owners manage connections within their selected project and environment.
+They cannot see or use another workspace’s connections or the installation’s
+legacy defaults. Self-hosted administrators retain installation-wide management;
+existing self-hosted approved source bindings continue to work.
+
+A BYO controller can delegate `git:manage` and `applications:manage` on an explicit
+project/environment key. These capabilities do not grant installation, SMTP,
+host or user administration. Provider callbacks additionally bind to the initiating
+Cloud browser session. BYO webhooks use the public dashboard’s node-specific
+route, retain signed body bytes and provider signature headers, and reach only the
+assigned node. The owning engine verifies every provider signature.
+
+## Runtime commands for Git builds
+
+Dockerfile, buildpack and framework builds support an optional runtime command in
+**Build settings → Runtime**. Choose **Use image defaults** to retain the image’s
+ENTRYPOINT and CMD, **Override runtime command** to replace them, or **Keep service
+settings** on a linked build to retain its current deployment command.
+
+For a FastAPI image, set Command to `uvicorn` and Arguments to
+`main:app --host 0.0.0.0 --port 8000`. Set the service’s container port to `8000`.
+Use the Python module path exported by your own repository. If the Dockerfile
+already starts Uvicorn correctly, use image defaults.
+
+Command replaces ENTRYPOINT and Arguments replaces CMD. Quotes group arguments;
+there is no implicit shell expansion. Use `sh -c` explicitly when a shell is needed.
+The choice applies when the built image is deployed, including automatic releases.
+In API inputs, omitted `command`/`args` preserve a linked service’s settings; empty
+arrays clear the corresponding override and restore image defaults. These are
+runtime overrides, separate from build commands and build arguments.

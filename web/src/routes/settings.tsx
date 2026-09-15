@@ -86,10 +86,18 @@ function Administration() {
     { id: 'appearance', label: 'Appearance', group: 'Personal' },
     { id: 'teams', label: 'Teams & access', group: 'Workspace' },
     { id: 'license', label: 'License & features', group: 'Workspace' },
+    ...(scope.identity.admin || scope.identity.can_manage_git
+      ? [
+          {
+            id: 'github',
+            label: 'Git providers',
+            group: scope.identity.admin ? 'Installation' : 'Workspace',
+          },
+        ]
+      : []),
     ...(scope.identity.admin
       ? [
           { id: 'users', label: 'People', group: 'Installation' },
-          { id: 'github', label: 'Git providers', group: 'Installation' },
           { id: 'secret-providers', label: 'Secret providers', group: 'Installation' },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
@@ -120,10 +128,12 @@ function Administration() {
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'teams' && <TeamSettings />}
           {tab === 'license' && <LicenseSettings />}
+          {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
+            <GitConnectionsPanel />
+          )}
           {scope.identity.admin && (
             <>
               {tab === 'users' && <InstallationUsers />}
-              {tab === 'github' && <GitConnectionsPanel />}
               {tab === 'secret-providers' && <SecretProviders />}
               {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}

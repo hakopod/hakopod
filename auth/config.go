@@ -63,7 +63,7 @@ func ConfigFrom(get func(string) string, cloudSignupAvailable bool) (api.AuthCon
 	if origin == "" {
 		origin = "http://127.0.0.1:4173"
 	}
-	c := api.AuthConfig{CloudSignupAvailable: cloudSignupAvailable, DeploymentMode: mode, SignupEnabled: get("HAKOPOD_SIGNUP_ENABLED") == "true", PublicURL: origin, SetupSecret: setup, EncryptionKey: encryption,
+	c := api.AuthConfig{CloudSignupAvailable: cloudSignupAvailable, DeploymentMode: mode, SignupEnabled: get("HAKOPOD_SIGNUP_ENABLED") == "true", PublicURL: origin, GitWebhookPrefix: get("HAKOPOD_GIT_WEBHOOK_PREFIX"), SetupSecret: setup, EncryptionKey: encryption,
 		GitHubClientID: get("HAKOPOD_GITHUB_CLIENT_ID"), GitHubClientSecret: secrets["HAKOPOD_GITHUB_CLIENT_SECRET"], GoogleClientID: get("HAKOPOD_GOOGLE_CLIENT_ID"), GoogleClientSecret: secrets["HAKOPOD_GOOGLE_CLIENT_SECRET"],
 		GitLabClientID: get("HAKOPOD_GITLAB_CLIENT_ID"), GitLabClientSecret: secrets["HAKOPOD_GITLAB_CLIENT_SECRET"],
 		OIDCClientID: get("HAKOPOD_OIDC_CLIENT_ID"), OIDCClientSecret: secrets["HAKOPOD_OIDC_CLIENT_SECRET"], OIDCIssuerURL: get("HAKOPOD_OIDC_ISSUER_URL"),
@@ -78,6 +78,13 @@ func ConfigFrom(get func(string) string, cloudSignupAvailable bool) (api.AuthCon
 		return c, fmt.Errorf("dashboard origin requires HTTPS except on loopback")
 	}
 	c.PublicURL = strings.TrimSuffix(c.PublicURL, "/")
+	if c.GitWebhookPrefix != "" {
+		hook, err := url.Parse(c.GitWebhookPrefix)
+		if err != nil || hook.Scheme != "https" || hook.Host != u.Host || hook.User != nil || hook.RawQuery != "" || hook.Fragment != "" || !strings.HasPrefix(hook.Path, "/api/v1/webhooks/nodes/") || strings.ContainsAny(hook.Path, "%\\") {
+			return api.AuthConfig{}, fmt.Errorf("Git webhook prefix must use the dashboard HTTPS origin and node webhook path")
+		}
+		c.GitWebhookPrefix = strings.TrimSuffix(c.GitWebhookPrefix, "/")
+	}
 	if setup != "" && len(setup) < 24 {
 		return c, fmt.Errorf("setup secret must contain at least 24 random characters")
 	}

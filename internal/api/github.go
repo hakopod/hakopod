@@ -220,7 +220,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	// project's authority. Only a global admin can approve the repository;
 	// project deployers may choose branch/path within that locked approval.
 	repositoryChanged := revision == 0 || approvedConnection != b.ConnectionID || approvedProvider != b.Provider || !strings.EqualFold(approvedRepository, b.Repository)
-	if repositoryChanged && !who(r).IsAdmin() {
+	if repositoryChanged && !who(r).CanManageGit() {
 		problem(w, 403, "repository_approval_required", "a platform administrator must approve the first repository binding or a repository change")
 		return
 	}

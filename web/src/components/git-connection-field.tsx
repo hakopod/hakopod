@@ -21,7 +21,7 @@ export function GitConnectionField({
 }) {
   const scope = useScope()
   const query = useGitConnections()
-  if (!scope.identity.admin)
+  if (!(scope.identity.admin || scope.identity.can_manage_git))
     return (
       <p className="field-help">
         Connection: {value || `${gitNames[provider]} default`}. An administrator manages repository

@@ -30,7 +30,7 @@ func (s *Server) detectBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	// Reuse an administrator-approved source binding for this exact application
 	// and repository. Never expose installation credentials to arbitrary paths.
-	if !who(r).IsAdmin() {
+	if !who(r).CanManageGit() {
 		if c.ApplicationID == "" || s.validateBuildApplication(r.Context(), c) != nil {
 			problem(w, 403, "repository_approval_required", "An administrator must approve this application's source repository before detection")
 			return

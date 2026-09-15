@@ -27,15 +27,15 @@ import { GitHubAppSetup, GitLabRegistrationCallback } from './git-app-setup'
 function AccessRequired() {
   return (
     <Empty
-      title="Administrator access required"
-      description="An installation administrator manages shared repository connections."
+      title="Repository management access required"
+      description="A workspace owner or installation administrator manages repository connections."
     />
   )
 }
 export function GitConnectionsPanel() {
   const scope = useScope()
   const query = useGitConnections()
-  if (!scope.identity.admin) return <AccessRequired />
+  if (!(scope.identity.admin || scope.identity.can_manage_git)) return <AccessRequired />
   return (
     <>
       <div className="section-toolbar">
@@ -122,7 +122,7 @@ export function GitConnectionEditor({
     queryKey: ['git-connection', id],
     queryFn: ({ signal }) =>
       unwrap(client.GET('/git/connections/{id}', { signal, params: { path: { id: id! } } })),
-    enabled: scope.identity.admin && Boolean(id),
+    enabled: (scope.identity.admin || scope.identity.can_manage_git) && Boolean(id),
     retry: false,
     gcTime: 0,
   })
@@ -130,15 +130,15 @@ export function GitConnectionEditor({
   const legacyProvider = query.data?.legacy ? query.data.provider : undefined
   // Keep the resolved redirect stable while query and route state update.
   useEffect(() => {
-    if (scope.identity.admin && legacyProvider) {
+    if ((scope.identity.admin || scope.identity.can_manage_git) && legacyProvider) {
       void navigate({
         to: '/settings/git/connections/new',
         search: { provider: legacyProvider },
         replace: true,
       })
     }
-  }, [navigate, legacyProvider, scope.identity.admin])
-  if (!scope.identity.admin) return <AccessRequired />
+  }, [navigate, legacyProvider, scope.identity.admin || scope.identity.can_manage_git])
+  if (!(scope.identity.admin || scope.identity.can_manage_git)) return <AccessRequired />
   if (id && query.isPending) return <Loading />
   if (id && query.error) return <ErrorState error={query.error} />
   if (legacyProvider) return <Loading />

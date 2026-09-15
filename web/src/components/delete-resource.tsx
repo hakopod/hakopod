@@ -39,6 +39,7 @@ export function DeleteResource({
   const name = (open ? reviewed?.name : application?.name) || project
   const allowed = application
     ? scope.identity.admin ||
+      scope.identity.can_manage_applications ||
       scope.identity.project_roles?.some(
         (role) => role.project === project && role.role === 'admin',
       )
@@ -153,11 +154,11 @@ export function DeleteResource({
                 : 'Only an empty project can be deleted. Remove applications, builds, networks and secret-provider scope grants across every environment first. Personal workspaces cannot be deleted.'}
             </p>
             <p className="field-help">
-              This cannot be undone. Its {application ? 'name' : 'ID'} stays reserved to prevent old
-              credentials or callbacks reaching another resource.
+              This cannot be undone. Its ID stays reserved to prevent old credentials or callbacks
+              reaching another resource.
             </p>
             <label>
-              Type <strong>{name}</strong> to confirm
+              Type the ID <strong>{name}</strong> to confirm
               <Input
                 autoComplete="off"
                 value={confirmation}

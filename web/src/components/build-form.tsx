@@ -1,3 +1,4 @@
+import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import {
   FrameworkBuildFields,
   defaultFrameworkPlan,
@@ -61,6 +62,13 @@ export default function BuildForm({
   )
   const [context, setContext] = useState(build?.context_path || '.')
   const [buildArgs, setBuildArgs] = useState(() => formatBuildArgs(build?.build_args))
+  const [runtimeMode, setRuntimeMode] = useState<'preserve' | 'default' | 'override'>(() => {
+    if (build?.command?.length || build?.args?.length) return 'override'
+    if (build?.command !== undefined || build?.args !== undefined) return 'default'
+    return boundApplicationId ? 'preserve' : 'default'
+  })
+  const [runtimeCommand, setRuntimeCommand] = useState(() => formatProcessCommand(build?.command))
+  const [runtimeArgs, setRuntimeArgs] = useState(() => formatProcessCommand(build?.args))
   const [dockerfile, setDockerfile] = useState(build?.dockerfile || 'Dockerfile')
   const [port, setPort] = useState(build?.port || 8080)
   const [isPublic, setPublic] = useState(build?.public || false)
@@ -135,6 +143,18 @@ export default function BuildForm({
               context_path: context,
               architecture: architecture || undefined,
               dockerfile,
+              command:
+                runtimeMode === 'override'
+                  ? parseProcessCommand(runtimeCommand)
+                  : runtimeMode === 'default'
+                    ? []
+                    : undefined,
+              args:
+                runtimeMode === 'override'
+                  ? parseProcessCommand(runtimeArgs)
+                  : runtimeMode === 'default'
+                    ? []
+                    : undefined,
               build_args: parseBuildArgs(buildArgs),
               framework:
                 mode === 'framework'
@@ -267,7 +287,7 @@ export default function BuildForm({
                 detecting ||
                 !name ||
                 !repository ||
-                (!scope.identity.admin && !boundApplicationId)
+                (!(scope.identity.admin || scope.identity.can_manage_git) && !boundApplicationId)
               }
               onClick={async () => {
                 setDetecting(true)
@@ -309,11 +329,10 @@ export default function BuildForm({
             >
               {detecting ? 'Reading repository…' : 'Detect framework'}
             </Button>
-            {!scope.identity.admin && (
+            {!(scope.identity.admin || scope.identity.can_manage_git) && (
               <p className="muted-text">
-                Detection uses this application's administrator-approved source repository. For a
-                new repository, ask an administrator to approve the source or enter a reviewed
-                recipe below.
+                Detection uses this application's approved source repository. For a new repository,
+                ask your workspace owner to approve the source or enter a reviewed recipe below.
               </p>
             )}
             {detectionError && (
@@ -497,6 +516,54 @@ export default function BuildForm({
             description="Choose resource and image-pull settings."
             icon="box"
           >
+            <SelectField
+              label="Runtime command"
+              value={runtimeMode}
+              onValueChange={(value) => setRuntimeMode(value as typeof runtimeMode)}
+              options={[
+                ...(linked ? [{ value: 'preserve', label: 'Keep service settings' }] : []),
+                { value: 'default', label: 'Use image defaults' },
+                { value: 'override', label: 'Override runtime command' },
+              ]}
+            />
+            {runtimeMode === 'preserve' && (
+              <p className="field-help">
+                The current service command and arguments are retained when this build is deployed.
+              </p>
+            )}
+            {runtimeMode === 'default' && (
+              <p className="field-help">
+                Use the image ENTRYPOINT and CMD. Deploying this build clears any existing service
+                command override.
+              </p>
+            )}
+            {runtimeMode === 'override' && (
+              <div className="grid gap-4">
+                <label>
+                  Command
+                  <Input
+                    value={runtimeCommand}
+                    onChange={(event) => setRuntimeCommand(event.target.value)}
+                    placeholder="uvicorn"
+                    maxLength={8192}
+                  />
+                </label>
+                <label>
+                  Arguments
+                  <Input
+                    value={runtimeArgs}
+                    onChange={(event) => setRuntimeArgs(event.target.value)}
+                    placeholder="main:app --host 0.0.0.0 --port 8000"
+                    maxLength={16384}
+                  />
+                </label>
+                <p className="field-help">
+                  Command replaces the image ENTRYPOINT; arguments replace CMD. Leave either blank
+                  to use that image default. Quotes group arguments; use an explicit shell for shell
+                  expressions. The override is applied when this build is deployed.
+                </p>
+              </div>
+            )}
             {!linked && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <label>
@@ -591,7 +658,7 @@ export default function BuildForm({
               {linked
                 ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
                 : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
-              Saving build settings prepares a workflow preview. An administrator explicitly
+              Saving build settings prepares a workflow preview. A repository manager explicitly
               installs the reviewed workflow in {provider === 'gitlab' ? 'GitLab' : 'GitHub'}.
             </Note>
             {provider === 'gitlab' && (

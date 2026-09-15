@@ -1,3 +1,4 @@
+import { RenameResource } from '../components/rename-resource'
 import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
@@ -119,6 +120,9 @@ function Projects() {
                     {project.personal !== undefined && (
                       <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
                     )}
+                    <div className="relative z-10 ml-auto">
+                      <RenameResource project={project} />
+                    </div>
                     {scope.identity.admin && !project.personal && (
                       <div className="ops-card-actions">
                         <DeleteResource project={project.name} trigger="icon" />

@@ -1,3 +1,4 @@
+import { RenameResource } from './rename-resource'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -193,10 +194,13 @@ export function ServiceDetail({
         <div>
           <div className="title-row hako-page-heading-title">
             <Status value={health.status} />
-            <h1>{serviceName}</h1>
+            <h1>{application.service_display_names?.[serviceName] || serviceName}</h1>
+            <RenameResource application={application} service={serviceName} />
           </div>
           <div className="application-metadata">
-            <span>{application.name}</span>
+            <span className="min-w-0 max-w-full break-all">
+              {application.display_name || application.name}
+            </span>
             <span>Revision {application.revision}</span>
           </div>
         </div>
