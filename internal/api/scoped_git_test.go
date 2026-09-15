@@ -11,6 +11,39 @@ import (
 	"time"
 )
 
+func TestDelegatedEmailOwnerCapabilityResponse(t *testing.T) {
+	db := sourceDatabase(t)
+	ctx := context.Background()
+	raw, err := db.Bootstrap(ctx, "node-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool.Exec(ctx, "UPDATE identities SET email='node-owner@example.test',email_verified=true WHERE id=$1", admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Store: db}
+	h := s.Handler()
+	for _, management := range []bool{false, true} {
+		permissions := []string{"deployments:read", "deployments:write"}
+		if management {
+			permissions = append(permissions, "git:manage", "applications:manage")
+		}
+		_, key, err := db.CreateKey(ctx, admin, store.KeyInput{Name: "workspace", Project: "demo", Environment: "development", Permissions: permissions, ExpiresAt: time.Now().Add(time.Hour)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := gitConnectionCall(t, h, key, "GET", "/me", nil, 200)
+		if result["admin"] != false || result["can_manage_git"] != management || result["can_manage_applications"] != management {
+			t.Fatalf("scoped capability mismatch: admin=%v git=%v applications=%v", result["admin"], result["can_manage_git"], result["can_manage_applications"])
+		}
+		gitConnectionCall(t, h, key, "GET", "/keys", nil, 403)
+	}
+}
+
 func TestScopedGitManagementPrivateDockerfileAndIsolation(t *testing.T) {
 	db := sourceDatabase(t)
 	ctx := context.Background()

@@ -100,9 +100,11 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("PUT /api/v1/projects/{id}/name", s.renameProject)
 	routes.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
 		p := who(r)
-		p.Admin = p.IsAdmin()
 		p.CanManageGitConnections = p.CanManageGit()
 		p.CanManageApplications = p.IsAdmin() || p.CanManageApplication(p.Project, p.Environment, "")
+		// Compute capabilities before redacting the backing identity's admin
+		// authority from a scoped key's public representation.
+		p.Admin = p.IsAdmin()
 		write(w, 200, p)
 	})
 	routes.HandleFunc("GET /api/v1/projects", s.projects)
