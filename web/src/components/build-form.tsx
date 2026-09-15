@@ -278,7 +278,7 @@ export default function BuildForm({
                 options={[
                   {
                     value: 'github',
-                    label: 'GitHub Actions + GHCR',
+                    label: 'GitHub Actions',
                   },
                   {
                     value: 'gitlab',
