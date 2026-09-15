@@ -9,6 +9,7 @@
 @import './styles/settings.css';
 @import './styles/code.css';
 @import './styles/alarms.css';
+@import './styles/errors.css';
 
 /* Match the source set for browser and server builds. */
 @source './';

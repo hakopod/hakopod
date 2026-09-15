@@ -176,3 +176,26 @@ func catalogTestValues(template Template) map[string]string {
 	}
 	return values
 }
+
+func TestTemplateComputeRequirementsDescribeWorkloads(t *testing.T) {
+	byID := map[string]Template{}
+	for _, item := range Templates() {
+		if item.WorkloadRequirements == nil {
+			t.Fatalf("template %s has null workload requirements", item.ID)
+		}
+		byID[item.ID] = item
+	}
+	found := false
+	for _, required := range byID["postgresql"].WorkloadRequirements {
+		if required == "persistent_storage" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("PostgreSQL must disclose its persistent storage requirement before configuration")
+	}
+	nginx, exists := byID["nginx"]
+	if !exists || len(nginx.WorkloadRequirements) != 0 {
+		t.Fatalf("stateless nginx unexpectedly gated: %v", nginx.WorkloadRequirements)
+	}
+}

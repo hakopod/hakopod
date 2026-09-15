@@ -208,6 +208,12 @@ input[type='radio']:focus-visible {
   gap: 20px;
   align-items: start;
 }
+.form-disclosure > summary {
+  @apply cursor-pointer border-b border-border py-4 text-sm;
+}
+.form-disclosure > summary > span {
+  @apply ml-2 text-xs;
+}
 .button:not(.button-sm, .button-md, .button-lg, .button-icon, .button-chip) {
   min-height: 40px;
   padding: 0 16px;

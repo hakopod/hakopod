@@ -9,8 +9,8 @@ import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { passkeyCredential } from '../lib/webauthn'
 import { AuthCard } from '@hakopod/hatch-ui/blocks/auth-card'
-import { Field } from '@hakopod/hatch-ui/components/field'
-import { PasswordField } from '@hakopod/hatch-ui/components/password-field'
+import { Field } from './ui/field'
+import { PasswordField } from './ui/password-field'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { ErrorState, Loading } from './shared'
@@ -312,7 +312,7 @@ export function AuthScreen({
               ) : (
                 <>
                   {register && !setup && !status.data?.signup_enabled ? (
-                    <p className="inline-error">
+                    <p className="inline-error" role="alert">
                       Registration is closed. Use an invitation from your administrator.
                     </p>
                   ) : null}

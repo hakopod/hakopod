@@ -347,7 +347,6 @@ function Workspace({
       .filter(
         ({ to }) =>
           dashboardEdition.navigation(to, features) &&
-          (features.git || to !== '/builds') &&
           (scopedNavigation || to === dashboardEdition.home || to === '/settings'),
       )
       .map(({ to, search, icon, label }) => (

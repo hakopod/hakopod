@@ -70,7 +70,14 @@ function Infrastructure() {
   if (dashboardEdition.cloud && !features.operator)
     return (
       <div className="ops-page">
-        <PageHeader title="Infrastructure" />
+        <PageHeader
+          title="Infrastructure"
+          action={
+            <Button asChild>
+              <a href={features.computeURL}>Compute &amp; servers</a>
+            </Button>
+          }
+        />
         <Suspense fallback={<Loading />}>
           <RegistrySettings />
         </Suspense>

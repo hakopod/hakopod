@@ -1,4 +1,6 @@
 import { Icon } from './icons'
+import { ComputeNotice } from './compute-notice'
+import { fieldError } from '../lib/form-errors'
 import { useGitConnections, useGitProviderSetup } from '../lib/git-connections'
 import { GitRepositoryField } from './git-repository-field'
 import { saveEnvironment } from '../lib/save-environment'
@@ -148,8 +150,9 @@ export default function BuildForm({
             digest.
           </FormHint>
           <FormHint title="Private images">
-            Save a registry credential for the selected provider before deploying images that
-            require authentication.
+            {managedRegistryAvailable
+              ? 'Hakopod can supply the private registry and scoped pull credentials. Leave Registry on its automatic option to use it.'
+              : 'For private images in an external registry, save a credential with pull access or select an existing credential.'}
           </FormHint>
         </>
       }
@@ -159,6 +162,7 @@ export default function BuildForm({
       {!build && (scope.identity.admin || scope.identity.can_manage_git) && (
         <GitDeploymentPaths active="build" />
       )}
+      <ComputeNotice />
       <form
         onSubmit={async (e) => {
           e.preventDefault()
@@ -248,6 +252,7 @@ export default function BuildForm({
                 Application name
                 <Input
                   value={name}
+                  error={fieldError(error, 'name', 'application')}
                   readOnly={Boolean(build || application)}
                   onChange={(e) => setName(e.target.value)}
                   pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
@@ -548,28 +553,34 @@ export default function BuildForm({
               </span>
             </label>
           </FormSection>
-          <FormSection
-            title="Build secrets"
-            description="Reference secrets already configured in your repository's GitHub Actions settings or GitLab CI variables."
-            icon="lock"
-          >
-            <label>
-              Secret references
-              <Textarea
-                rows={3}
-                value={buildSecrets}
-                onChange={(e) => setBuildSecrets(e.target.value)}
-                placeholder="npm_token=NPM_TOKEN"
-                aria-describedby="build-secrets-help"
-              />
-            </label>
-            <p id="build-secrets-help" className="muted-text">
-              Configure secret values in GitHub Actions secrets or GitLab CI variables first. Enter
-              mount_id=CI_SECRET_NAME, never a secret value. Dockerfile builds read
-              /run/secrets/mount_id; framework build steps also receive the named variable.
-              Buildpacks do not support secret mounts.
-            </p>
-          </FormSection>
+          <details className="form-disclosure" open={Boolean(buildSecrets) || undefined}>
+            <summary>
+              Build secrets{' '}
+              <span className="muted-text">Optional · private dependencies and build tools</span>
+            </summary>
+            <FormSection
+              title="Build secrets"
+              description="Reference secrets already configured in your repository's GitHub Actions settings or GitLab CI variables."
+              icon="lock"
+            >
+              <label>
+                Secret references
+                <Textarea
+                  rows={3}
+                  value={buildSecrets}
+                  onChange={(e) => setBuildSecrets(e.target.value)}
+                  placeholder="npm_token=NPM_TOKEN"
+                  aria-describedby="build-secrets-help"
+                />
+              </label>
+              <p id="build-secrets-help" className="muted-text">
+                Configure secret values in GitHub Actions secrets or GitLab CI variables first.
+                Enter mount_id=CI_SECRET_NAME, never a secret value. Dockerfile builds read
+                /run/secrets/mount_id; framework build steps also receive the named variable.
+                Buildpacks do not support secret mounts.
+              </p>
+            </FormSection>
+          </details>
           <FormSection
             title="Runtime"
             description="Choose resource and image-pull settings."
@@ -632,6 +643,7 @@ export default function BuildForm({
                     min={1}
                     max={65535}
                     value={mode === 'framework' && framework.runtime === 'static' ? 8080 : port}
+                    error={fieldError(error, 'port', `services.${service}.port`)}
                     readOnly={mode === 'framework' && framework.runtime === 'static'}
                     onChange={(e) => setPort(Number(e.target.value))}
                     required

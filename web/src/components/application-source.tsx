@@ -117,7 +117,7 @@ export default function ApplicationSource({ application }: { application: Applic
               <dd>{timestamp(binding.updated_at)}</dd>
             </div>
           </dl>
-          {binding.last_error && <Note>{binding.last_error}</Note>}
+          {binding.last_error && <ErrorState error={binding.last_error} />}
           {scope.can('deployments:write') && (
             <Button
               variant="primary"

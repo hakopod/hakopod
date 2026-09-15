@@ -14,6 +14,9 @@ import { TemplateSecretField } from './template-secret-field'
 import { TOMLCode } from './toml-code'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { ServiceIcon } from './service-icon'
+import { ComputeNotice } from './compute-notice'
+import { useEditionFeatures } from '../lib/dashboard-edition'
+import { workloadRequirementLabel } from '../lib/template-requirements'
 
 export default function TemplateForm({
   template,
@@ -23,6 +26,7 @@ export default function TemplateForm({
   onClose: () => void
 }) {
   const scope = useScope()
+  const features = useEditionFeatures()
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [name, setName] = useState('')
@@ -129,6 +133,32 @@ export default function TemplateForm({
       setBusy(false)
     }
   }
+  if (template.deployable && features.hostedFree && Boolean(template.workload_requirements?.length))
+    return (
+      <FormPage title={template.name} description={template.description} breadcrumbs={[]}>
+        <section className="grid gap-4 py-6">
+          <h2>Requires your own server</h2>
+          <p>{template.name} needs capabilities outside hosted Free compute:</p>
+          <ul className="list-disc pl-5">
+            {template.workload_requirements?.map((requirement) => (
+              <li key={requirement}>
+                {workloadRequirementLabel[requirement] || requirement.replaceAll('_', ' ')}
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm muted-text">
+            Connect a server you own to use this template. Existing hosted resources must be
+            released before changing compute.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" asChild>
+              <a href={features.computeURL}>Choose compute</a>
+            </Button>
+            <Button onClick={onClose}>Back to catalog</Button>
+          </div>
+        </section>
+      </FormPage>
+    )
   if (!template.deployable)
     return (
       <FormPage
@@ -179,7 +209,7 @@ export default function TemplateForm({
               <p>{template.description}</p>
               <small>{template.license}</small>
             </div>
-            <FormHint title="Your own installation">
+            <FormHint title="What this creates">
               This creates a regular Hakopod application with an immutable image and an explicit
               configuration.
             </FormHint>
@@ -206,6 +236,7 @@ export default function TemplateForm({
       description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
     >
       <div className="form-body auth-form">
+        <ComputeNotice />
         {plan ? (
           <>
             {!!plan.warnings.length && (

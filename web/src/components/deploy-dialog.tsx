@@ -18,6 +18,8 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { FormPage, FormHint } from './form-page'
+import { ComputeNotice } from './compute-notice'
+import { fieldError } from '../lib/form-errors'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
@@ -290,6 +292,7 @@ export function DeploymentForm({
         </span>
       </div>
       <div className="form-body deploy-body">
+        <ComputeNotice />
         {serviceName && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
@@ -616,6 +619,7 @@ export function DeploymentForm({
                             placeholder="No port"
                             disabled={Boolean(service.job)}
                             value={service.port || ''}
+                            error={fieldError(error, `services.${name}.port`)}
                             onChange={(event) =>
                               updateService(name, {
                                 port: Number(event.target.value) || 0,

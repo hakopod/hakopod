@@ -17077,6 +17077,12 @@
           "resource_summary": {
             "type": "string"
           },
+          "workload_requirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "verification": {
             "type": "string"
           },

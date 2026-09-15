@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react'
-import { Field } from '@hakopod/hatch-ui/components/field'
+import { Field } from './ui/field'
 import {
   Dialog,
   DialogContent,

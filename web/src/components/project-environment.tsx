@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Field } from '@hakopod/hatch-ui/components/field'
+import { Field } from './ui/field'
 import type { Project } from '../lib/types'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'

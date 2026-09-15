@@ -64,8 +64,9 @@ export default function AccountSettings() {
           <>
             {!security.data.password_enabled && (
               <Note>
-                A password must be enrolled before changing authenticators or passkeys. Existing
-                passkeys can still be used for sign-in.
+                Set a password before adding an authenticator or passkey.{' '}
+                <a href="/login/forgot">Set a password by email</a>. Existing passkeys still work
+                for sign-in.
               </Note>
             )}
             <div className="security-grid">

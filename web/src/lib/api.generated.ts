@@ -4439,6 +4439,7 @@ export interface components {
             requirements: string[];
             architectures: string[];
             resource_summary: string;
+            workload_requirements?: string[];
             verification: string;
             providers: string[];
             configuration: string;

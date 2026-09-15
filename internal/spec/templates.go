@@ -28,25 +28,26 @@ type Template struct {
 	Logo           string                `json:"logo,omitempty"`
 	ConfigFields   []TemplateConfigField `json:"config_fields"`
 
-	ID               string                `json:"id"`
-	Name             string                `json:"name"`
-	Category         string                `json:"category"`
-	Description      string                `json:"description"`
-	License          string                `json:"license"`
-	Upstream         string                `json:"upstream"`
-	RequiredSecrets  []string              `json:"required_secrets"`
-	Requirements     []string              `json:"requirements"`
-	Architectures    []string              `json:"architectures"`
-	ResourceSummary  string                `json:"resource_summary"`
-	Verification     string                `json:"verification"`
-	Providers        []string              `json:"providers"`
-	Configuration    string                `json:"configuration"`
-	SiteURLRequired  bool                  `json:"site_url_required"`
-	Deployable       bool                  `json:"deployable"`
-	SiteURLSupported bool                  `json:"site_url_supported"`
-	DatabaseConfig   bool                  `json:"database_config"`
-	SecretFields     []TemplateSecretField `json:"secret_fields"`
-	Sources          []string              `json:"sources"`
+	ID                   string                `json:"id"`
+	Name                 string                `json:"name"`
+	Category             string                `json:"category"`
+	Description          string                `json:"description"`
+	License              string                `json:"license"`
+	Upstream             string                `json:"upstream"`
+	RequiredSecrets      []string              `json:"required_secrets"`
+	Requirements         []string              `json:"requirements"`
+	Architectures        []string              `json:"architectures"`
+	ResourceSummary      string                `json:"resource_summary"`
+	Verification         string                `json:"verification"`
+	Providers            []string              `json:"providers"`
+	Configuration        string                `json:"configuration"`
+	SiteURLRequired      bool                  `json:"site_url_required"`
+	Deployable           bool                  `json:"deployable"`
+	SiteURLSupported     bool                  `json:"site_url_supported"`
+	DatabaseConfig       bool                  `json:"database_config"`
+	SecretFields         []TemplateSecretField `json:"secret_fields"`
+	Sources              []string              `json:"sources"`
+	WorkloadRequirements []string              `json:"workload_requirements"`
 }
 
 // Templates returns a fresh copy so callers cannot mutate the embedded catalog.
@@ -63,8 +64,67 @@ func Templates() []Template {
 		if items[i].ConfigFields == nil {
 			items[i].ConfigFields = []TemplateConfigField{}
 		}
+		items[i].WorkloadRequirements = templateWorkloadRequirements(items[i].ID)
 	}
 	return items
+}
+
+// Describe requirements from the embedded workload, not marketing text. Editions
+// can explain unsupported compute choices before users fill out a deployment form.
+func templateWorkloadRequirements(id string) []string {
+	data, err := catalog.Files.ReadFile("blueprints/" + id + "/hakopod.toml")
+	var app Application
+	if err != nil || toml.Unmarshal(data, &app) != nil {
+		return []string{}
+	}
+	required := map[string]bool{}
+	if len(app.Services) > 1 {
+		required["multiple_services"] = true
+	}
+	if len(app.Volumes) > 0 {
+		required["persistent_storage"] = true
+	}
+	for _, n := range app.Networks {
+		if n.VirtualNetwork != "" {
+			required["virtual_networks"] = true
+		}
+	}
+	for _, s := range app.Services {
+		for capability, needed := range map[string]bool{
+			"persistent_storage": s.Volume != nil || len(s.Mounts) > 0,
+			"larger_service":     s.Size != "" && s.Size != "small",
+			"multiple_replicas":  s.Replicas > 1,
+			"jobs":               s.Job != nil,
+			"autoscaling":        s.Autoscaling != nil,
+			"public_tcp":         len(s.PublicTCP) > 0,
+			"certificate_mounts": len(s.CertificateMounts) > 0,
+			"cloud_identity":     s.AWSIdentity != "",
+			"gpu":                s.GPU != nil,
+			"service_bindings":   len(s.Bindings) > 0,
+			"custom_networking":  s.NetworkAccess != nil,
+			"custom_readiness":   s.Readiness != nil,
+		} {
+			if needed {
+				required[capability] = true
+			}
+		}
+		for _, ref := range s.Secrets {
+			if ref.Provider != "" {
+				required["external_secrets"] = true
+			}
+		}
+	}
+	for _, ref := range app.Secrets {
+		if ref.Provider != "" {
+			required["external_secrets"] = true
+		}
+	}
+	result := []string{}
+	for key := range required {
+		result = append(result, key)
+	}
+	sort.Strings(result)
+	return result
 }
 
 var modelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$`)

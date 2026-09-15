@@ -117,7 +117,7 @@ function Administration() {
   const navigationRoot = useActiveSection(tab)
   return (
     <div className="settings-page" ref={navigationRoot}>
-      <PageHeader title={features.operator ? 'Installation settings' : 'Workspace settings'} />
+      <PageHeader title={features.operator ? 'Installation settings' : 'Settings'} />
       <SettingsLayout
         sections={visibleSections}
         active={tab}
@@ -550,7 +550,11 @@ function CreateKey({
               </Note>
             </>
           )}
-          {error && <div className="inline-error">{error}</div>}
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
           {created ? (

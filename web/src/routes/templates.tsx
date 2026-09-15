@@ -7,6 +7,8 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { ServiceIcon } from '../components/service-icon'
+import { ComputeNotice } from '../components/compute-notice'
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Dialog } from '../components/ui/dialog'
@@ -30,6 +32,7 @@ const labels: Record<string, string> = {
 }
 function Templates() {
   const scope = useScope()
+  const features = useEditionFeatures()
   const { q = '', category = '' } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [selected, setSelected] = useState('')
@@ -92,6 +95,7 @@ function Templates() {
       <div className="catalog-result-count" role="status">
         {matches.length} {matches.length === 1 ? 'template' : 'templates'}
       </div>
+      <ComputeNotice />
       {templates.isPending ? (
         <Loading rows={4} />
       ) : templates.error ? (
@@ -126,7 +130,11 @@ function Templates() {
               <span className="catalog-slug">{template.id}</span>
               <p className="catalog-description">{template.description}</p>
               <span className="catalog-card-meta">
-                {template.deployable ? template.architectures.join(' / ') : 'Deployment guide'}
+                {features.hostedFree && template.workload_requirements?.length
+                  ? 'Requires your server'
+                  : template.deployable
+                    ? template.architectures.join(' / ')
+                    : 'Deployment guide'}
                 <Icon name="arrow" size={16} />
               </span>
             </button>
@@ -222,7 +230,11 @@ function Templates() {
               {scope.can('deployments:write') || !detail.deployable ? (
                 <Button asChild variant="primary">
                   <Link to="/templates/$templateId" params={{ templateId: detail.id }}>
-                    {detail.deployable ? 'Use template' : 'Open deployment guide'}
+                    {features.hostedFree && detail.workload_requirements?.length
+                      ? 'View requirements'
+                      : detail.deployable
+                        ? 'Use template'
+                        : 'Open deployment guide'}
                     <Icon name="arrow" size={14} />
                   </Link>
                 </Button>
