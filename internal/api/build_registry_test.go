@@ -7,9 +7,11 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"k8s.io/client-go/tools/clientcmd"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -158,5 +160,53 @@ func TestManagedRegistryBackfillIsIdempotentAndPreservesExplicitCredentials(t *t
 	}
 	if explicit.ManagedRegistry != "" || explicit.RegistryCredential != "my-registry" || explicit.Revision != 1 {
 		t.Fatal("explicit registry changed")
+	}
+}
+
+func TestManagedBuildRegistrySecretLive(t *testing.T) {
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	if path == "" {
+		t.Skip("named development Kubernetes fixture required")
+	}
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("refusing unnamed Kubernetes fixture")
+	}
+	db := sourceDatabase(t)
+	kube, err := cluster.New(path, cluster.Options{RegistrySecretName: db.RegistrySecretName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	raw, err := db.Bootstrap(ctx, "registry-live-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = context.WithValue(ctx, principalKey{}, principal)
+	s := &Server{Store: db, Cluster: kube, BuildRegistry: "cloud.example.test/internal", Auth: AuthConfig{EncryptionKey: strings.Repeat("32", 32)}}
+	c := buildConfig{ID: store.NewID(), Project: "demo", Environment: "development"}
+	c.ManagedRegistry = s.BuildRegistry + "/" + c.ID
+	t.Cleanup(func() { _ = kube.DeletePlatformSecret(context.Background(), "hp-build-registry-"+c.ID) })
+	name, err := s.ensureBuildRegistry(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.ensureBuildRegistry(ctx, c)
+	if err != nil || name != again {
+		t.Fatal("credential was not reused", err)
+	}
+	credential, err := kube.RegistryCredential(ctx, c.Project, c.Environment, name, c.ManagedRegistry+":latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Username != c.registryUsername("pull") || credential.Password != s.buildPullPassword(c) {
+		t.Fatal("wrong pull credential")
+	}
+	if _, err = kube.RegistryCredential(ctx, "other", c.Environment, name, c.ManagedRegistry+":latest"); err == nil {
+		t.Fatal("cross-project credential exposed")
 	}
 }
