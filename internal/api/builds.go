@@ -23,6 +23,7 @@ import (
 )
 
 type buildConfig struct {
+	ManagedRegistry    string             `json:"managed_registry,omitempty"`
 	Env                *map[string]string `json:"env,omitempty"`
 	Command            *[]string          `json:"command,omitempty"`
 	Args               *[]string          `json:"args,omitempty"`
@@ -144,7 +145,7 @@ func validBuildPath(value string) bool {
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
 	c := buildConfig{Env: in.Env, Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
-	c.Repository = strings.ToLower(c.Repository)
+	c.Repository = normalizeSourceRepository(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
 		c.Provider = "github"
@@ -173,9 +174,25 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	if c.Port == 0 {
 		c.Port = 8080
 	}
-	if !validScope(c.Project, c.Environment) || !slug.MatchString(c.Name) || !slug.MatchString(c.Service) || !validSourceRepository(c.Provider, c.Repository) || len(c.Branch) > 200 || strings.ContainsAny(c.Branch, "\r\n\x00 ?#") || !validBuildPath(c.ContextPath) || !validBuildPath(c.Dockerfile) || c.Port < 1 || c.Port > 65535 || len(c.RegistryCredential) > 100 {
-		return c, fmt.Errorf("%w: select a valid project/environment/name, repository, branch, relative build paths and port", store.ErrInput)
+	checks := []struct {
+		valid   bool
+		message string
+	}{
+		{validScope(c.Project, c.Environment), "Select a valid project and environment"},
+		{slug.MatchString(c.Name), "Application name must start with a lowercase letter, use only lowercase letters, numbers and hyphens, end with a letter or number, and contain at most 40 characters"},
+		{slug.MatchString(c.Service), "Service name must use lowercase letters, numbers and hyphens, start with a letter, end with a letter or number, and contain at most 40 characters"},
+		{validSourceRepository(c.Provider, c.Repository), "Enter a valid owner/repository (GitLab also accepts nested groups)"},
+		{len(c.Branch) <= 200 && !strings.ContainsAny(c.Branch, "\r\n\x00 ?#"), "Enter a valid source branch without spaces or URL query characters"},
+		{validBuildPath(c.ContextPath) && validBuildPath(c.Dockerfile), "Build context and Dockerfile must use relative paths inside the repository"},
+		{c.Port >= 1 && c.Port <= 65535, "Service port must be between 1 and 65535"},
+		{len(c.RegistryCredential) <= 100, "Select a valid registry credential"},
 	}
+	for _, check := range checks {
+		if !check.valid {
+			return c, fmt.Errorf("%w: %s", store.ErrInput, check.message)
+		}
+	}
+
 	var command, args []string
 	if c.Command != nil {
 		command = *c.Command
@@ -343,6 +360,10 @@ func (s *Server) createBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	c.ID = store.NewID()
 	c.Revision = 1
+	if err = s.assignBuildRegistry(r.Context(), &c); err != nil {
+		authFailure(w, err)
+		return
+	}
 	tx, err := s.Store.Pool.Begin(r.Context())
 	if err != nil {
 		authFailure(w, err)
@@ -414,6 +435,10 @@ func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	c.ID = old.ID
 	c.Revision = old.Revision + 1
+	if err = s.assignBuildRegistry(r.Context(), &c); err != nil {
+		authFailure(w, err)
+		return
+	}
 	tx, err := s.Store.Pool.Begin(r.Context())
 	if err != nil {
 		authFailure(w, err)

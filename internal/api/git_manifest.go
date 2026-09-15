@@ -63,7 +63,7 @@ func (s *Server) gitProviderSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	origin, githubErr := s.gitAppOrigin()
 	callback, gitlabErr := s.gitOAuthRedirect("")
-	out := map[string]any{"github_available": githubErr == nil, "public_url": origin, "gitlab_callback_url": callback}
+	out := map[string]any{"managed_registry_available": s.BuildRegistry != "", "github_available": githubErr == nil, "public_url": origin, "gitlab_callback_url": callback}
 	if githubErr != nil {
 		out["github_notice"] = githubErr.Error()
 	}

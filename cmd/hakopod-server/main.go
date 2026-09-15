@@ -160,6 +160,9 @@ func run() error {
 		return err
 	}
 	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig, ProcessLogs: processLogs}
+	if err = management.ConfigureBuildRegistry(ctx, os.Getenv("HAKOPOD_BUILD_REGISTRY")); err != nil {
+		return err
+	}
 	management.ConfigureBackups(api.BackupConfig{DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true"})
 	handler, wait := runtime.Start(ctx, management, domain, rollout)
 	srv := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}

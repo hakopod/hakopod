@@ -25,3 +25,5 @@ for path in ["/builds/{id}/runs/{run}","/builds/{id}/runs/{run}/deploy","/builds
 schemas["BuildDeployPlan"] = obj({**schemas["Plan"]["properties"],"expected_config_revision":I},schemas["Plan"]["required"]+["expected_config_revision"])
 route("/builds/{id}/runs/{run}/plan","post","planSourceBuildDeployment",ref("BuildDeployPlan"),obj({}))
 paths["/builds/{id}/runs/{run}/plan"]["post"]["parameters"].append({"name":"run","in":"path","required":True,"schema":S})
+
+schemas['BuildConfig']['properties']['managed_registry']=S

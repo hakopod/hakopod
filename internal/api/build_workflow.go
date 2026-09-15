@@ -22,6 +22,9 @@ func (c buildConfig) workflowPath() string {
 	return ".github/workflows/hakopod-build-" + c.ID + ".yml"
 }
 func (c buildConfig) imageName() string {
+	if c.ManagedRegistry != "" {
+		return c.ManagedRegistry
+	}
 	if c.Provider == "gitlab" {
 		return "registry.gitlab.com/" + strings.ToLower(c.Repository) + "/hakopod-" + c.ID[:12]
 	}
@@ -135,6 +138,12 @@ jobs:
 	runner := "ubuntu-24.04"
 	if c.Architecture == "arm64" {
 		runner = "ubuntu-24.04-arm"
+	}
+	if c.ManagedRegistry != "" {
+		text = strings.Replace(text, "  packages: write", "  id-token: write", 1)
+		start := strings.Index(text, "      - name: Sign in to GitHub Container Registry")
+		end := strings.Index(text, "      - name: Set up Buildx")
+		text = text[:start] + managedRegistryLogin(c) + text[end:]
 	}
 	text = strings.ReplaceAll(text, "{{RUNNER}}", runner)
 	text = strings.ReplaceAll(text, "{{PUSH_TRIGGER}}", push)

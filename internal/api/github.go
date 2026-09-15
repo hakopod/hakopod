@@ -180,7 +180,7 @@ func (s *Server) setSource(w http.ResponseWriter, r *http.Request) {
 	if in.Provider == "" {
 		in.Provider = "github"
 	}
-	b := sourceBinding{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Provider: in.Provider, Repository: strings.ToLower(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
+	b := sourceBinding{ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Provider: in.Provider, Repository: normalizeSourceRepository(in.Repository), Branch: in.Branch, Path: in.Path, AutoDeploy: in.AutoDeploy}
 	if !validSource(b) {
 		problem(w, 400, "invalid_source", "use owner/repository, a branch, and a relative .toml path without traversal")
 		return

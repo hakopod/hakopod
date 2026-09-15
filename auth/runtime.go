@@ -15,6 +15,7 @@ type WorkloadPolicy = cluster.WorkloadPolicy
 type WorkloadSpec = spec.Application
 
 type RuntimeConfig struct {
+	BuildRegistry    string
 	WorkloadPolicy   cluster.WorkloadPolicyResolver
 	ApplicationLimit func(context.Context, string, string) (int, error)
 	// NodeLimit bounds the private operator cluster. Zero defaults to one.
@@ -65,6 +66,9 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	s.runtime = kube
 	s.store.ApplicationLimit = config.ApplicationLimit
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true}
+	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {
+		return nil, nil, err
+	}
 	handler, wait := management.Start(ctx, server, config.AppDomain, rollout)
 	return handler, wait, nil
 }

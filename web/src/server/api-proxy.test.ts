@@ -24,6 +24,7 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases = [
+    { path: 'git/connections/connection-a/repositories', method: 'GET', query: '?page=2' },
     {
       path: 'compose/convert',
       method: 'POST',

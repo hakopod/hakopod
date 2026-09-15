@@ -95,11 +95,18 @@ func (s *Server) enqueueAutomaticBuild(ctx context.Context, c buildConfig, runID
 // This lightweight inbox reader does no builds. Provider-hosted runners are
 // started only by installed workflows; idle work is bounded PostgreSQL queries.
 func (s *Server) RunBuilds(ctx context.Context) {
+	lastRegistryBackfill := time.Time{}
 	timer := time.NewTicker(5 * time.Second)
 	defer timer.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
+		}
+		if time.Since(lastRegistryBackfill) > time.Minute {
+			bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+			_ = s.backfillBuildRegistry(bounded)
+			cancel()
+			lastRegistryBackfill = time.Now()
 		}
 		_ = s.processBuildQueue(ctx)
 		select {

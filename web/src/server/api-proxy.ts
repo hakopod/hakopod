@@ -12,7 +12,7 @@ const allowed = [
   /^previews\/[A-Za-z0-9_-]+$/,
   /^builds\/detect$/,
   /^installation\/(?:status|logs(?:\/query)?|setup|upgrade)$/,
-  /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete|github\/setup))?)?$/,
+  /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete|github\/setup|repositories))?)?$/,
   /^git\/setup$/,
   /^git\/oauth\/complete$/,
   /^git\/github\/(?:start|complete|install\/complete)$/,

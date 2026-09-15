@@ -26,6 +26,7 @@ import (
 type Server struct {
 	// OperatorRuntime is set only by the trusted Cloud embedding, never an HTTP request.
 	// Customer runtimes keep installation administration disabled.
+	BuildRegistry   string
 	OperatorRuntime bool
 	Store           *store.Store
 	Cluster         *cluster.Client
@@ -62,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	s.concurrent = make(chan struct{}, 64)
 	s.streams = make(chan struct{}, 16)
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/build-registry/authorize", s.authorizeBuildRegistry)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

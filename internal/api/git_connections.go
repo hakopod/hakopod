@@ -197,6 +197,7 @@ func (s *Server) describeGitConnection(ctx context.Context, c gitConnection) (gi
 	return c, nil
 }
 func (s *Server) registerGitConnectionRoutes(public, protected *http.ServeMux) {
+	protected.HandleFunc("GET /api/v1/git/connections/{id}/repositories", s.gitConnectionHandler(s.listGitRepositories))
 	protected.HandleFunc("GET /api/v1/git/connections", s.gitConnectionHandler(s.listGitConnections))
 	protected.HandleFunc("GET /api/v1/git/connections/{id}", s.gitConnectionHandler(s.getGitConnection))
 	protected.HandleFunc("POST /api/v1/git/connections", s.gitConnectionHandler(s.saveGitConnection))
