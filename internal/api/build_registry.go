@@ -196,8 +196,8 @@ func (s *Server) authorizeBuildRegistry(w http.ResponseWriter, r *http.Request) 
 		}
 		branch = c.Branch
 	}
-	expected := c.Repository + "/" + c.workflowPath() + "@refs/heads/" + branch
-	if claims.RepositoryID == "" || claims.RepositoryID != repo.ID.String() || !strings.EqualFold(claims.WorkflowRef, expected) {
+	workflow, ref, ok := strings.Cut(claims.WorkflowRef, "@")
+	if claims.RepositoryID == "" || claims.RepositoryID != repo.ID.String() || !ok || !strings.EqualFold(workflow, c.Repository+"/"+c.workflowPath()) || ref != "refs/heads/"+branch {
 		failure(w, store.ErrForbidden)
 		return
 	}
