@@ -282,6 +282,10 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 	if application.Services["web"].Architecture != "arm64" {
 		t.Fatal("built image architecture was not preserved in runtime placement")
 	}
+	web := application.Services["web"]
+	web.Command = []string{"uvicorn"}
+	web.Args = []string{"main:app", "--host", "0.0.0.0"}
+	application.Services["web"] = web
 	application.Services["sidecar"] = spec.Service{Image: "python:3.13-alpine", Size: "small"}
 	application, err = spec.Normalize(application)
 	if err != nil {
@@ -296,6 +300,34 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 	}
 	if _, err = db.Pool.Exec(ctx, "UPDATE applications SET spec=$2,status='healthy' WHERE id=$1", deployed["application_id"], store.JSON(application)); err != nil {
 		t.Fatal(err)
+	}
+	{
+		// Linked builds preserve overrides unless an explicit replacement or reset is saved.
+		currentConfig, err := server.readBuild(ctx, config.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		currentRun, err := server.readBuildRun(ctx, config.ID, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, _, err := server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || strings.Join(next.Services["web"].Command, " ") != "uvicorn" || strings.Join(next.Services["web"].Args, " ") != "main:app --host 0.0.0.0" {
+			t.Fatal("linked runtime override lost", err)
+		}
+		override := []string{"python", "-m", "uvicorn"}
+		args := []string{"other:app", "--port", "8000"}
+		currentConfig.Command, currentConfig.Args = &override, &args
+		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || strings.Join(next.Services["web"].Command, " ") != "python -m uvicorn" || strings.Join(next.Services["web"].Args, " ") != "other:app --port 8000" {
+			t.Fatal("linked command not replaced", err)
+		}
+		empty := []string{}
+		currentConfig.Command, currentConfig.Args = &empty, &empty
+		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || len(next.Services["web"].Command) != 0 || len(next.Services["web"].Args) != 0 {
+			t.Fatal("linked image defaults not restored", err)
+		}
 	}
 	enqueue := func(id int64, sha string) {
 		t.Helper()

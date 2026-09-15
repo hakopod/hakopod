@@ -90,7 +90,7 @@ export function GitOAuthCallback() {
   const [result, setResult] = useState<GitConnection | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    if (!scope.identity.admin || started.current) return
+    if (!(scope.identity.admin || scope.identity.can_manage_git) || started.current) return
     started.current = true
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code') || ''
@@ -111,12 +111,12 @@ export function GitOAuthCallback() {
         void cache.invalidateQueries({ queryKey: ['git-connection', connection.id] })
       })
       .catch((cause) => setError(message(cause)))
-  }, [scope.identity.admin, cache])
-  if (!scope.identity.admin)
+  }, [scope.identity.admin || scope.identity.can_manage_git, cache])
+  if (!(scope.identity.admin || scope.identity.can_manage_git))
     return (
       <Empty
-        title="Administrator access required"
-        description="Complete repository authorization in the same administrator session that started it."
+        title="Repository management access required"
+        description="Complete repository authorization in the same browser session that started it."
       />
     )
   return (

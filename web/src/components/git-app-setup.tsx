@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { useScope } from '../lib/scope'
 import { useGitProviderSetup } from '../lib/git-connections'
 import { Button } from './ui/button'
@@ -57,14 +58,18 @@ export function GitLabRegistrationCallback() {
   if (!query.data.gitlab_callback_url)
     return (
       <Note>
-        {query.data.gitlab_notice}{' '}
-        <Link
-          className="underline! underline-offset-2"
-          to="/infrastructure"
-          search={{ tab: 'setup' }}
-        >
-          Open installation setup
-        </Link>
+        {dashboardEdition.cloud
+          ? 'GitLab setup is unavailable. Contact Hakopod support to enable this provider.'
+          : query.data.gitlab_notice}{' '}
+        {!dashboardEdition.cloud && (
+          <Link
+            className="underline! underline-offset-2"
+            to="/infrastructure"
+            search={{ tab: 'setup' }}
+          >
+            Open installation setup
+          </Link>
+        )}
         .
       </Note>
     )
@@ -162,20 +167,30 @@ export function GitHubAppSetup({ id, footerActions }: { id?: string; footerActio
           </Note>
         )}
         <p className="field-help">
-          Requires a publicly reachable HTTPS dashboard.{' '}
-          <Link
-            className="underline! underline-offset-2"
-            to="/infrastructure"
-            search={{ tab: 'setup' }}
-          >
-            Check installation setup
-          </Link>
-          .
+          {dashboardEdition.cloud ? (
+            'If GitHub setup is unavailable, contact Hakopod support.'
+          ) : (
+            <>
+              Requires a publicly reachable HTTPS dashboard.{' '}
+              <Link
+                className="underline! underline-offset-2"
+                to="/infrastructure"
+                search={{ tab: 'setup' }}
+              >
+                Check installation setup
+              </Link>
+              .
+            </>
+          )}
         </p>
         {providerSetup.isPending && <Loading />}
         {providerSetup.error && <ErrorState error={providerSetup.error} />}
         {providerSetup.data && !providerSetup.data.github_available && (
-          <Note>{providerSetup.data.github_notice}</Note>
+          <Note>
+            {dashboardEdition.cloud
+              ? 'GitHub App setup is currently unavailable. Contact Hakopod support.'
+              : providerSetup.data.github_notice}
+          </Note>
         )}
         {error && <ErrorState error={error} />}
       </FormSection>
@@ -200,7 +215,7 @@ export function GitHubAppCallback({ installed = false }: { installed?: boolean }
   const [setup, setSetup] = useState<Setup | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    if (!scope.identity.admin || started.current) return
+    if (!(scope.identity.admin || scope.identity.can_manage_git) || started.current) return
     started.current = true
     const params = new URLSearchParams(window.location.search)
     window.history.replaceState(window.history.state, '', window.location.pathname)
@@ -238,7 +253,7 @@ export function GitHubAppCallback({ installed = false }: { installed?: boolean }
         })
         .catch((cause) => setError(message(cause)))
     }
-  }, [scope.identity.admin, cache, installed])
+  }, [scope.identity.admin || scope.identity.can_manage_git, cache, installed])
   return (
     <FormPage
       title="GitHub App setup"
@@ -256,8 +271,8 @@ export function GitHubAppCallback({ installed = false }: { installed?: boolean }
                 : 'Verifying GitHub'
         }
       >
-        {!scope.identity.admin ? (
-          <Note>Complete setup in the same administrator browser session that started it.</Note>
+        {!(scope.identity.admin || scope.identity.can_manage_git) ? (
+          <Note>Complete setup in the same browser session that started it.</Note>
         ) : result ? (
           <>
             <p>

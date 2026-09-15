@@ -14,7 +14,7 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	if err != nil {
 		return err
 	}
-	if !p.CanManageProject(a.Project) || !p.Allows("deployments:write", a.Project, a.Environment, a.Name) {
+	if !p.CanManageApplication(a.Project, a.Environment, a.Name) {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)

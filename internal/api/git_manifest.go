@@ -28,10 +28,10 @@ type gitAppPending struct {
 }
 
 func gitBrowserAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return false
 	}
-	if who(r).CredentialType != "browser" {
+	if !gitInteractive(r) {
 		authFailure(w, store.ErrForbidden)
 		return false
 	}
@@ -58,7 +58,7 @@ func gitAppProblem(w http.ResponseWriter, err error) {
 	authFailure(w, err)
 }
 func (s *Server) gitProviderSetup(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
 	origin, githubErr := s.gitAppOrigin()
@@ -111,13 +111,13 @@ func (s *Server) startGitHubManifest(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(724891023)")
 	var count int
 	if err == nil {
-		err = tx.QueryRow(r.Context(), "SELECT count(*) FROM git_connections").Scan(&count)
+		err = tx.QueryRow(r.Context(), "SELECT count(*) FROM git_connections WHERE project=$1 AND environment=$2", who(r).Project, who(r).Environment).Scan(&count)
 	}
 	if err == nil && count >= 100 {
 		err = store.ErrBusy
 	}
 	if err == nil {
-		_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,credentials) VALUES($1,$2,'github','github_app',false,$3)", id, in.Name, sealed)
+		_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,credentials,project,environment) VALUES($1,$2,'github','github_app',false,$3,$4,$5)", id, in.Name, sealed, who(r).Project, who(r).Environment)
 	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'git.app.start',$3)", who(r).ID, who(r).KeyID, id)
@@ -166,7 +166,7 @@ func (s *Server) writeGitAppSetup(w http.ResponseWriter, r *http.Request, c gitC
 	if c.AppID > 0 {
 		phase = "install"
 	}
-	state, err := s.Store.NewChallenge(r.Context(), "git-app-"+phase+":"+who(r).KeyID, gitAppPending{c.ID, c.Revision, origin}, 15*time.Minute)
+	state, err := s.Store.NewChallenge(r.Context(), "git-app-"+phase+":"+gitSession(r), gitAppPending{c.ID, c.Revision, origin}, 15*time.Minute)
 	if err != nil {
 		authFailure(w, err)
 		return
@@ -185,7 +185,7 @@ func (s *Server) writeGitAppSetup(w http.ResponseWriter, r *http.Request, c gitC
 			permissions["workflows"] = "write"
 			events = append(events, "workflow_run")
 		}
-		manifest := map[string]any{"name": "Hakopod " + c.ID[:8], "url": origin, "hook_attributes": map[string]any{"url": origin + "/api/v1/webhooks/git/" + c.ID, "active": true}, "redirect_url": origin + "/settings/git/github/callback", "setup_url": origin + "/settings/git/github/installed", "public": false, "request_oauth_on_install": false, "default_permissions": permissions, "default_events": events}
+		manifest := map[string]any{"name": "Hakopod " + c.ID[:8], "url": origin, "hook_attributes": map[string]any{"url": s.gitWebhookURL(origin, c.ID), "active": true}, "redirect_url": origin + "/settings/git/github/callback", "setup_url": origin + "/settings/git/github/installed", "public": false, "request_oauth_on_install": false, "default_permissions": permissions, "default_events": events}
 		result["action_url"] = "https://github.com" + path + "?state=" + url.QueryEscape(state)
 		result["manifest"] = string(store.JSON(manifest))
 	} else {
@@ -225,7 +225,7 @@ func (s *Server) lockGitApp(ctx context.Context, id string) (func(), error) {
 }
 func (s *Server) readGitAppPending(w http.ResponseWriter, r *http.Request, state, phase string) (gitConnection, gitConnectionCredentials, func(), bool) {
 	empty := func() {}
-	challenge, err := s.Store.ConsumeChallenge(r.Context(), state, "git-app-"+phase+":"+who(r).KeyID)
+	challenge, err := s.Store.ConsumeChallenge(r.Context(), state, "git-app-"+phase+":"+gitSession(r))
 	if err != nil {
 		authFailure(w, err)
 		return gitConnection{}, gitConnectionCredentials{}, empty, false
@@ -392,7 +392,7 @@ func (s *Server) completeGitHubInstall(w http.ResponseWriter, r *http.Request) {
 		problem(w, 502, "github_webhook_unavailable", err.Error())
 		return
 	}
-	if hook.URL != v.SetupOrigin+"/api/v1/webhooks/git/"+c.ID || hook.InsecureSSL != "0" || hook.ContentType != "json" {
+	if hook.URL != s.gitWebhookURL(v.SetupOrigin, c.ID) || hook.InsecureSSL != "0" || hook.ContentType != "json" {
 		problem(w, 400, "github_webhook_invalid", "Restore the App webhook URL and secure JSON delivery configured by Hakopod before completing installation")
 		return
 	}

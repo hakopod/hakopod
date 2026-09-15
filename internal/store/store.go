@@ -129,26 +129,29 @@ func JSON(v any) []byte {
 }
 
 type Principal struct {
-	ID                  string           `json:"id"`
-	Name                string           `json:"name"`
-	Admin               bool             `json:"admin"`
-	Owner               bool             `json:"owner"`
-	Email               string           `json:"email,omitempty"`
-	CredentialType      string           `json:"credential_type"`
-	ProjectRoles        []ProjectRole    `json:"project_roles,omitempty"`
-	AvatarStyle         string           `json:"avatar_style,omitempty"`
-	AvatarSeed          string           `json:"avatar_seed,omitempty"`
-	AvatarURL           string           `json:"avatar_url,omitempty"`
-	ProfileRevision     int64            `json:"profile_revision"`
-	HostPermissions     []HostPermission `json:"host_permissions"`
-	KeyID               string           `json:"-"`
-	Project             string           `json:"project"`
-	Environment         string           `json:"environment"`
-	Application         string           `json:"application,omitempty"`
-	Permissions         []string         `json:"permissions"`
-	IdentityProject     string           `json:"-"`
-	IdentityEnvironment string           `json:"-"`
-	IdentityPermissions []string         `json:"-"`
+	RuntimeScoped           bool             `json:"-"`
+	CanManageGitConnections bool             `json:"can_manage_git"`
+	CanManageApplications   bool             `json:"can_manage_applications"`
+	ID                      string           `json:"id"`
+	Name                    string           `json:"name"`
+	Admin                   bool             `json:"admin"`
+	Owner                   bool             `json:"owner"`
+	Email                   string           `json:"email,omitempty"`
+	CredentialType          string           `json:"credential_type"`
+	ProjectRoles            []ProjectRole    `json:"project_roles,omitempty"`
+	AvatarStyle             string           `json:"avatar_style,omitempty"`
+	AvatarSeed              string           `json:"avatar_seed,omitempty"`
+	AvatarURL               string           `json:"avatar_url,omitempty"`
+	ProfileRevision         int64            `json:"profile_revision"`
+	HostPermissions         []HostPermission `json:"host_permissions"`
+	KeyID                   string           `json:"-"`
+	Project                 string           `json:"project"`
+	Environment             string           `json:"environment"`
+	Application             string           `json:"application,omitempty"`
+	Permissions             []string         `json:"permissions"`
+	IdentityProject         string           `json:"-"`
+	IdentityEnvironment     string           `json:"-"`
+	IdentityPermissions     []string         `json:"-"`
 }
 
 func contains(xs []string, s string) bool {
@@ -226,15 +229,15 @@ func validKeyInput(in KeyInput) error {
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range in.Permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
 	if !contains(in.Permissions, "admin") && (in.Project == "" || in.Environment == "") {
 		return errors.New("machine keys require explicit project and environment")
 	}
-	if contains(in.Permissions, "networks:write") && (in.Project == "" || in.Environment == "" || in.Application != "") {
-		return errors.New("network management keys require a project and environment without an application restriction")
+	if (contains(in.Permissions, "networks:write") || contains(in.Permissions, "git:manage") || contains(in.Permissions, "applications:manage")) && (in.Project == "" || in.Environment == "" || in.Application != "") {
+		return errors.New("scoped management keys require a project and environment without an application restriction")
 	}
 	return nil
 }
@@ -384,17 +387,20 @@ func (s *Store) Keys(ctx context.Context) ([]Key, error) {
 }
 
 type Application struct {
-	ID          string              `json:"id"`
-	Name        string              `json:"name"`
-	Project     string              `json:"project"`
-	Environment string              `json:"environment"`
-	Revision    int64               `json:"revision"`
-	Status      string              `json:"status"`
-	Spec        spec.Application    `json:"spec"`
-	Observed    json.RawMessage     `json:"observed"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
-	Deployments []DeploymentSummary `json:"deployments,omitempty"`
+	DisplayName         string              `json:"display_name"`
+	ServiceDisplayNames map[string]string   `json:"service_display_names"`
+	MetadataRevision    int64               `json:"metadata_revision"`
+	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
+	Project             string              `json:"project"`
+	Environment         string              `json:"environment"`
+	Revision            int64               `json:"revision"`
+	Status              string              `json:"status"`
+	Spec                spec.Application    `json:"spec"`
+	Observed            json.RawMessage     `json:"observed"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
+	Deployments         []DeploymentSummary `json:"deployments,omitempty"`
 }
 
 // DeploymentSummary keeps immutable configuration bodies off history lists.
@@ -441,14 +447,14 @@ type Event struct {
 	Service string    `json:"service"`
 }
 
-const appCols = "id,name,project,environment,revision,status,spec,observed,created_at,updated_at"
+const appCols = "id,name,project,environment,revision,status,spec,observed,created_at,updated_at,display_name,service_display_names,metadata_revision"
 const depCols = "recovery_state,recovery_revision,recovery_spec,recovery_error,id,application_id,identity_id,key_id,revision,status,spec,resolved_spec,result,error,cancel_requested,created_at,started_at,finished_at"
 
 type scanner interface{ Scan(...any) error }
 
 func scanApp(r scanner) (Application, error) {
 	var a Application
-	err := r.Scan(&a.ID, &a.Name, &a.Project, &a.Environment, &a.Revision, &a.Status, &a.Spec, &a.Observed, &a.CreatedAt, &a.UpdatedAt)
+	err := r.Scan(&a.ID, &a.Name, &a.Project, &a.Environment, &a.Revision, &a.Status, &a.Spec, &a.Observed, &a.CreatedAt, &a.UpdatedAt, &a.DisplayName, &a.ServiceDisplayNames, &a.MetadataRevision)
 	return a, err
 }
 func scanDep(r scanner) (Deployment, error) {

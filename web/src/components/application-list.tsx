@@ -1,3 +1,4 @@
+import { RenameResource } from './rename-resource'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -79,7 +80,7 @@ export function ApplicationList({
   const replicas = items.reduce((sum, app) => sum + (healthByID.get(app.id)?.ready || 0), 0)
   const filtered = items.filter(
     (app) =>
-      app.name.toLowerCase().includes(search.toLowerCase()) &&
+      `${app.display_name || ''} ${app.name}`.toLowerCase().includes(search.toLowerCase()) &&
       (health === 'all' ||
         (health === 'healthy'
           ? healthByID.get(app.id)?.status === 'healthy'
@@ -229,12 +230,13 @@ export function ApplicationList({
                     </div>
                     <Status value={healthByID.get(app.id)?.status} small />
                     <div className="ops-card-actions">
+                      <RenameResource application={app} />
                       <Menu
                         trigger={
                           <Button
                             variant="ghost"
                             size="icon"
-                            aria-label={`Actions for ${app.name}`}
+                            aria-label={`Actions for ${app.display_name || app.name}`}
                             id={`application-actions-${app.id}`}
                           >
                             <span aria-hidden="true">···</span>
@@ -279,6 +281,7 @@ export function ApplicationList({
                           </MenuItem>
                         )}
                         {(scope.identity.admin ||
+                          scope.identity.can_manage_applications ||
                           scope.identity.project_roles?.some(
                             (role) => role.project === app.project && role.role === 'admin',
                           )) && (
@@ -295,9 +298,9 @@ export function ApplicationList({
                       to="/applications/$applicationId"
                       params={{ applicationId: app.id }}
                       className="ops-card-link"
-                      aria-label={`Open ${app.name}`}
+                      aria-label={`Open ${app.display_name || app.name}`}
                     >
-                      {app.name}
+                      {app.display_name || app.name}
                     </Link>
                   </h2>
                   <div className="ops-object-id">

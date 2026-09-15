@@ -59,7 +59,7 @@ func (s *Server) registerSourceImportRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/sources/deploy", s.deploySourceImport)
 }
 func (s *Server) sourceImportConfigured(w http.ResponseWriter, r *http.Request, in sourceImportInput) bool {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return false
 	}
 	if len(s.authEncryptionKey()) != 32 {
@@ -123,7 +123,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"application_id": "", "expected_revision": 0, "spec": next, "changes": spec.Diff(nil, next), "warnings": warnings, "resource_profiles": spec.Profiles, "commit_sha": commit, "review_token": s.signSourceReview(store.JSON(review)), "expires_at": expires, "source": in})
 }
 func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
 	var in struct {
@@ -156,12 +156,12 @@ func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "idempotency_key_required", "Idempotency-Key must contain 8–128 characters")
 		return
 	}
-	p, err := s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
+	p, err := s.freshRuntimePrincipal(r)
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	if !p.IsAdmin() {
+	if !p.CanBindGit(review.Input.Project, review.Input.Environment) {
 		failure(w, store.ErrForbidden)
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "source_changed", "Repository content no longer matches the reviewed commit")
 		return
 	}
-	p, err = s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
+	p, err = s.freshRuntimePrincipal(r)
 	if err != nil {
 		failure(w, err)
 		return

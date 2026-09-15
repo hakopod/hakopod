@@ -16,7 +16,7 @@ export function useGitConnections() {
   return useQuery({
     queryKey: ['git-connections'],
     queryFn: ({ signal }) => unwrap(client.GET('/git/connections', { signal })),
-    enabled: scope.identity.admin,
+    enabled: scope.identity.admin || scope.identity.can_manage_git,
     staleTime: 15000,
     retry: false,
   })
@@ -38,7 +38,7 @@ export function gitConnectionOptions(
         !item.enabled || (builds ? !item.capabilities.builds : !item.capabilities.read_source),
     }))
   if (!options.some((option) => option.value === ''))
-    options.unshift({ value: '', label: `${gitNames[provider]} default`, disabled: false })
+    options.unshift({ value: '', label: 'Choose a connection', disabled: true })
   if (selected && !options.some((option) => option.value === selected))
     options.push({ value: current, label: `Unavailable connection · ${current}`, disabled: true })
   return options
@@ -49,7 +49,7 @@ export function useGitProviderSetup() {
   return useQuery({
     queryKey: ['git-provider-setup'],
     queryFn: ({ signal }) => unwrap(client.GET('/git/setup', { signal })),
-    enabled: scope.identity.admin,
+    enabled: scope.identity.admin || scope.identity.can_manage_git,
     retry: false,
     staleTime: 15000,
   })

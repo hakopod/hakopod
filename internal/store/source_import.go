@@ -20,7 +20,7 @@ type InitialSource struct {
 }
 
 func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, environment string, next spec.Application, source InitialSource, idem string) (Deployment, error) {
-	if !p.IsAdmin() {
+	if !p.CanBindGit(project, environment) {
 		return Deployment{}, ErrForbidden
 	}
 	if (source.Provider != "github" && source.Provider != "gitlab") || source.Repository == "" || source.Branch == "" || source.Path == "" || source.CommitSHA == "" {
@@ -29,7 +29,7 @@ func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, en
 	return s.accept(ctx, p, project, environment, next, 0, idem, &source, nil, nil)
 }
 func (s *Store) bindInitialSource(ctx context.Context, tx pgx.Tx, p Principal, a Application, deployment string, source InitialSource) error {
-	if a.Revision != 0 || !p.IsAdmin() {
+	if a.Revision != 0 || !p.CanBindGit(a.Project, a.Environment) {
 		return ErrForbidden
 	}
 	connectionID := source.ConnectionID
@@ -38,13 +38,13 @@ func (s *Store) bindInitialSource(ctx context.Context, tx pgx.Tx, p Principal, a
 	}
 	var enabled bool
 	var revision int64
-	var provider string
+	var provider, connectionProject, connectionEnvironment string
 	// Share-lock the exact connection until acceptance commits. Disabling or
 	// rotating it cannot race the final provider-independent acceptance boundary.
-	if err := tx.QueryRow(ctx, "SELECT enabled,revision,provider FROM git_connections WHERE id=$1 FOR SHARE", connectionID).Scan(&enabled, &revision, &provider); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT enabled,revision,provider,project,environment FROM git_connections WHERE id=$1 FOR SHARE", connectionID).Scan(&enabled, &revision, &provider, &connectionProject, &connectionEnvironment); err != nil {
 		return err
 	}
-	if !enabled || provider != source.Provider {
+	if !enabled || provider != source.Provider || (!p.IsAdmin() && (connectionProject != a.Project || connectionEnvironment != a.Environment)) {
 		return ErrForbidden
 	}
 	if source.ExpectedConnectionRevision > 0 && revision != source.ExpectedConnectionRevision {

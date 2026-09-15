@@ -14,7 +14,7 @@ func (s *Server) cloudOperator(p store.Principal) bool {
 
 func cloudInstallationPath(path string) bool {
 	path = strings.TrimPrefix(path, "/api/v1/")
-	for _, prefix := range []string{"host-access", "installation", "users", "backup-destinations", "backup-targets", "backups", "backup-artifacts", "backup-schedules", "registries", "tls/issuers", "settings/haproxy"} {
+	for _, prefix := range []string{"host-access", "installation", "users", "backup-destinations", "backup-targets", "backups", "backup-artifacts", "backup-schedules", "tls/issuers", "settings/haproxy"} {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}

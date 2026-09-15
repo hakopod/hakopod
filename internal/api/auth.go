@@ -19,6 +19,7 @@ type AuthConfig struct {
 	DeploymentMode                                string
 	SignupEnabled                                 bool
 	PublicURL                                     string
+	GitWebhookPrefix                              string
 	SetupSecret                                   string
 	EncryptionKey                                 string
 	GitHubClientID                                string

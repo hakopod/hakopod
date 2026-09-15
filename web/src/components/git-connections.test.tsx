@@ -22,7 +22,7 @@ const connection = (id: string, provider: 'github' | 'gitlab', builds = true): G
   capabilities: { read_source: true, builds },
   updated_at: '',
 })
-test('Git selection preserves explicit defaults and never substitutes the first named connection', () => {
+test('Git selection requires an accessible connection and never substitutes a missing default', () => {
   const options = gitConnectionOptions(
     [connection('named-github', 'github'), connection('named-gitlab', 'gitlab')],
     'github',
@@ -30,7 +30,8 @@ test('Git selection preserves explicit defaults and never substitutes the first 
     false,
   )
   assert.equal(options[0].value, '')
-  assert.equal(options[0].label, 'GitHub default')
+  assert.equal(options[0].label, 'Choose a connection')
+  assert.equal(options[0].disabled, true)
   assert.deepEqual(
     options.map((item) => item.value),
     ['', 'named-github'],

@@ -24,6 +24,7 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 			permissions = append(permissions, value)
 		}
 	}
+	p.RuntimeScoped = true
 	p.Admin = false
 	p.Owner = false
 	p.HostPermissions = nil
@@ -41,4 +42,14 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 	}
 	p.ProjectRoles = roles
 	return p, nil
+}
+
+func (s *Server) freshRuntimePrincipal(r *http.Request) (store.Principal, error) {
+	p, err := s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
+	if err == nil {
+		if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+			return scopedRuntimePrincipal(p, scope)
+		}
+	}
+	return p, err
 }

@@ -1,3 +1,4 @@
+import { RenameResource } from '../components/rename-resource'
 import { ApplicationPreviews } from '../components/application-previews'
 import { ServicePowerDialog } from '../components/service-power-dialog'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -170,7 +171,8 @@ function ApplicationDetail() {
         <div>
           <div className="title-row hako-page-heading-title">
             <Status value={health.status} />
-            <h1>{app.name}</h1>
+            <h1>{app.display_name || app.name}</h1>
+            <RenameResource application={app} />
           </div>
           <div className="application-metadata">
             <code>{app.id}</code>
@@ -288,9 +290,14 @@ function ApplicationDetail() {
                     <ServiceImageIcon image={runtime?.image || service.image} />
                     <Status value={serviceHealth.status} small />
                     <div className="ops-card-actions">
+                      <RenameResource application={app} service={name} />
                       <Menu
                         trigger={
-                          <Button variant="ghost" size="icon" aria-label={`Actions for ${name}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Actions for ${app.service_display_names?.[name] || name}`}
+                          >
                             <span aria-hidden="true">···</span>
                           </Button>
                         }
@@ -370,9 +377,9 @@ function ApplicationDetail() {
                       to="/applications/$applicationId"
                       params={{ applicationId: app.id }}
                       search={{ service: name }}
-                      aria-label={`Open ${name} service`}
+                      aria-label={`Open ${app.service_display_names?.[name] || name} service`}
                     >
-                      {name}
+                      {app.service_display_names?.[name] || name}
                     </Link>
                   </h2>
                   <div className="ops-object-id">
@@ -429,17 +436,21 @@ function ApplicationDetail() {
               mean the services are running.
             </Note>
           )}
-          <Link className="resource-note interactive" to="/infrastructure">
-            <Icon name="activity" size={18} />
-            <div>
-              <strong>Resource metrics</strong>
-              <p>
-                Open a service to inspect its live CPU, memory, pods, and events. Node capacity is
-                available in Infrastructure.
-              </p>
-            </div>
-            <Icon name="arrow" size={18} />
-          </Link>
+          {serviceNames.length > 0 && (
+            <Link
+              className="resource-note interactive"
+              to="/applications/$applicationId"
+              params={{ applicationId: app.id }}
+              search={{ service: serviceNames[0], tab: 'overview' }}
+            >
+              <Icon name="activity" size={18} />
+              <div>
+                <strong>Resource metrics</strong>
+                <p>Inspect live CPU, memory, pods, and events.</p>
+              </div>
+              <Icon name="arrow" size={18} />
+            </Link>
+          )}
           <ApplicationAlarmLinks application={app} />
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">

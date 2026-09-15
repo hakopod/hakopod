@@ -109,7 +109,7 @@ export default function CommandPalette({
       : []),
     ...(apps.data?.items || []).map((app) => ({
       id: app.id,
-      label: app.name,
+      label: app.display_name ? `${app.display_name} · ${app.name}` : app.name,
       icon: 'box',
       group: 'Applications',
       action: () =>

@@ -24,10 +24,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Named connections are installation resources. Saving a source/build binding
+// Named connections belong to an installation or one explicit project/environment. Saving a source/build binding
 // grants access to that exact connection and repository, never to a provider's
 // first available credential. Legacy IDs always refer to their original Secret.
 type gitConnection struct {
+	Project              string          `json:"project,omitempty"`
+	Environment          string          `json:"environment,omitempty"`
 	ManagedApp           bool            `json:"managed_app,omitempty"`
 	ID                   string          `json:"id"`
 	Name                 string          `json:"name"`
@@ -87,7 +89,7 @@ type gitConnectionInput struct {
 	Scopes           string `json:"oauth_scopes"`
 }
 
-const gitConnectionColumns = "id,name,provider,auth_kind,revision,enabled,account,subject_id,github_app_id,installation_id,credentials,legacy_secret_ref,updated_at,oauth_client_id,credential_generation,refresh_state"
+const gitConnectionColumns = "id,name,provider,auth_kind,revision,enabled,account,subject_id,github_app_id,installation_id,credentials,legacy_secret_ref,updated_at,oauth_client_id,credential_generation,refresh_state,project,environment"
 
 func defaultGitConnection(provider string) string {
 	if provider == "gitlab" {
@@ -103,7 +105,7 @@ func selectedGitConnection(provider string, ids ...string) string {
 }
 func scanGitConnection(row pgx.Row) (gitConnection, error) {
 	var c gitConnection
-	err := row.Scan(&c.ID, &c.Name, &c.Provider, &c.AuthKind, &c.Revision, &c.Enabled, &c.Account, &c.SubjectID, &c.AppID, &c.InstallationID, &c.encrypted, &c.legacyRef, &c.UpdatedAt, &c.OAuthClientID, &c.CredentialGeneration, &c.RefreshState)
+	err := row.Scan(&c.ID, &c.Name, &c.Provider, &c.AuthKind, &c.Revision, &c.Enabled, &c.Account, &c.SubjectID, &c.AppID, &c.InstallationID, &c.encrypted, &c.legacyRef, &c.UpdatedAt, &c.OAuthClientID, &c.CredentialGeneration, &c.RefreshState, &c.Project, &c.Environment)
 	c.Legacy = c.legacyRef != ""
 	c.WebhookPath = "/api/v1/webhooks/git/" + c.ID
 	if c.AuthKind == "github_app" {
@@ -115,7 +117,11 @@ func scanGitConnection(row pgx.Row) (gitConnection, error) {
 	return c, err
 }
 func (s *Server) readGitConnection(ctx context.Context, id string) (gitConnection, error) {
-	return scanGitConnection(s.Store.Pool.QueryRow(ctx, "SELECT "+gitConnectionColumns+" FROM git_connections WHERE id=$1", id))
+	c, err := scanGitConnection(s.Store.Pool.QueryRow(ctx, "SELECT "+gitConnectionColumns+" FROM git_connections WHERE id=$1", id))
+	if err == nil {
+		err = authorizeGitConnection(ctx, c)
+	}
+	return c, err
 }
 func (s *Server) decodeGitCredentials(c gitConnection) (gitConnectionCredentials, error) {
 	var v gitConnectionCredentials
@@ -156,6 +162,9 @@ func (s *Server) describeGitConnection(ctx context.Context, c gitConnection) (gi
 	c.ManagedApp = v.Manifest
 	if v.Manifest {
 		c.WebhookPath = "/api/v1/webhooks/git/" + c.ID
+	}
+	if s.Auth.GitWebhookPrefix != "" {
+		c.WebhookPath = strings.TrimPrefix(s.Auth.GitWebhookPrefix, s.Auth.PublicURL) + "/git/" + c.ID
 	}
 	c.OAuthScopes = v.Scopes
 	c.TokenConfigured = v.Token != "" || (c.AuthKind == "github_app" && v.PrivateKey != "" && c.InstallationID > 0)
@@ -205,10 +214,10 @@ func (s *Server) registerGitConnectionRoutes(public, protected *http.ServeMux) {
 	public.HandleFunc("POST /api/v1/webhooks/github-app/{app}", s.gitHubAppWebhook)
 }
 func (s *Server) listGitConnections(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
-	rows, err := s.Store.Pool.Query(r.Context(), "SELECT "+gitConnectionColumns+" FROM git_connections ORDER BY lower(name),id LIMIT 100")
+	rows, err := s.Store.Pool.Query(r.Context(), "SELECT "+gitConnectionColumns+" FROM git_connections WHERE project=$1 AND environment=$2 ORDER BY lower(name),id LIMIT 100", who(r).Project, who(r).Environment)
 	if err != nil {
 		failure(w, err)
 		return
@@ -238,7 +247,7 @@ func (s *Server) listGitConnections(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": out})
 }
 func (s *Server) getGitConnection(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
 	c, e := s.readGitConnection(r.Context(), r.PathValue("id"))
@@ -252,7 +261,7 @@ func (s *Server) getGitConnection(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, c)
 }
 func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
 	var in gitConnectionInput
@@ -268,7 +277,7 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "unexpected_git_token", "Use the selected App authentication flow instead of supplying a token")
 		return
 	}
-	c := gitConnection{ID: store.NewID(), Name: in.Name, Provider: in.Provider, AuthKind: in.AuthKind, Revision: 1, Enabled: true}
+	c := gitConnection{Project: who(r).Project, Environment: who(r).Environment, ID: store.NewID(), Name: in.Name, Provider: in.Provider, AuthKind: in.AuthKind, Revision: 1, Enabled: true}
 	var v gitConnectionCredentials
 	updating := r.PathValue("id") != ""
 	if updating {
@@ -409,6 +418,10 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if existing != nil {
+			if authorizeGitConnection(r.Context(), *existing) != nil {
+				authFailure(w, store.ErrForbidden)
+				return
+			}
 			other, e := s.decodeGitCredentials(*existing)
 			if e != nil {
 				failure(w, e)
@@ -435,12 +448,12 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var n int
-		err = tx.QueryRow(r.Context(), "SELECT count(*) FROM git_connections").Scan(&n)
+		err = tx.QueryRow(r.Context(), "SELECT count(*) FROM git_connections WHERE project=$1 AND environment=$2", c.Project, c.Environment).Scan(&n)
 		if err == nil && n >= 100 {
 			err = store.ErrBusy
 		}
 		if err == nil {
-			_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,account,subject_id,installation_id,credentials,github_app_id,oauth_client_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", c.ID, c.Name, c.Provider, c.AuthKind, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.AppID, c.OAuthClientID)
+			_, err = tx.Exec(r.Context(), "INSERT INTO git_connections(id,name,provider,auth_kind,enabled,account,subject_id,installation_id,credentials,github_app_id,oauth_client_id,project,environment) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", c.ID, c.Name, c.Provider, c.AuthKind, c.Enabled, c.Account, c.SubjectID, c.InstallationID, sealed, c.AppID, c.OAuthClientID, c.Project, c.Environment)
 		}
 	}
 	if err == nil {
@@ -476,7 +489,7 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 	}{c, once})
 }
 func (s *Server) deleteGitConnection(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !gitManager(w, r) {
 		return
 	}
 	revision, err := strconv.ParseInt(r.URL.Query().Get("expected_revision"), 10, 64)
@@ -493,6 +506,10 @@ func (s *Server) deleteGitConnection(w http.ResponseWriter, r *http.Request) {
 	c, err := scanGitConnection(tx.QueryRow(r.Context(), "SELECT "+gitConnectionColumns+" FROM git_connections WHERE id=$1 FOR UPDATE", r.PathValue("id")))
 	if err != nil {
 		authFailure(w, err)
+		return
+	}
+	if authorizeGitConnection(r.Context(), c) != nil {
+		authFailure(w, store.ErrForbidden)
 		return
 	}
 	if c.Legacy {
@@ -525,6 +542,9 @@ func (s *Server) deleteGitConnection(w http.ResponseWriter, r *http.Request) {
 func (s *Server) connectionCredentials(ctx context.Context, provider, id, repository string, permissions map[string]string) (map[string][]byte, error) {
 	id = selectedGitConnection(provider, id)
 	if id == defaultGitConnection(provider) {
+		if p, ok := ctx.Value(principalKey{}).(store.Principal); ok && scopedGitCredentials(p) {
+			return nil, store.ErrForbidden
+		}
 		return s.sourceCredentials(ctx, provider)
 	}
 	c, err := s.readGitConnection(ctx, id)
@@ -793,6 +813,9 @@ func decodeGitInput(w http.ResponseWriter, r *http.Request, out any) bool {
 func (s *Server) gitWebhookCredentials(ctx context.Context, provider, id string) (map[string][]byte, error) {
 	id = selectedGitConnection(provider, id)
 	if id == defaultGitConnection(provider) {
+		if p, ok := ctx.Value(principalKey{}).(store.Principal); ok && scopedGitCredentials(p) {
+			return nil, store.ErrForbidden
+		}
 		return s.sourceCredentials(ctx, provider)
 	}
 	c, err := s.readGitConnection(ctx, id)

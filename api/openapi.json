@@ -10887,6 +10887,169 @@
           }
         }
       }
+    },
+    "/applications/{id}/name": {
+      "put": {
+        "operationId": "renameApplication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "display_name",
+                  "expected_metadata_revision"
+                ],
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "expected_metadata_revision": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Name saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/name": {
+      "put": {
+        "operationId": "renameService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "display_name",
+                  "expected_metadata_revision"
+                ],
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "expected_metadata_revision": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Name saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/name": {
+      "put": {
+        "operationId": "renameProject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "display_name",
+                  "expected_metadata_revision"
+                ],
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "expected_metadata_revision": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Name saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11478,6 +11641,19 @@
             "items": {
               "$ref": "#/components/schemas/DeploymentSummary"
             }
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "service_display_names": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "metadata_revision": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "required": [
@@ -11529,6 +11705,10 @@
             "type": "boolean",
             "readOnly": true,
             "description": "Personal projects cannot be shared through invitations or team membership."
+          },
+          "metadata_revision": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "required": [
@@ -11604,6 +11784,12 @@
             }
           },
           "can_manage_previews": {
+            "type": "boolean"
+          },
+          "can_manage_git": {
+            "type": "boolean"
+          },
+          "can_manage_applications": {
             "type": "boolean"
           }
         },
@@ -13378,6 +13564,20 @@
           },
           "framework": {
             "$ref": "#/components/schemas/FrameworkPlan"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
           }
         },
         "required": [
@@ -13510,6 +13710,20 @@
           },
           "framework": {
             "$ref": "#/components/schemas/FrameworkPlan"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
           }
         },
         "required": [

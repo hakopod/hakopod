@@ -1,6 +1,7 @@
 import { apiURL, boundedBytes, privateHeaders } from './session.ts'
 
-const endpoint = /^\/api\/v1\/webhooks\/(git\/[A-Za-z0-9_-]+|github-app\/[1-9][0-9]*)$/
+const endpoint =
+  /^\/api\/v1\/webhooks\/(git\/[A-Za-z0-9_-]+|github-app\/[1-9][0-9]*|nodes\/[a-f0-9]{32}\/git\/[a-f0-9]{32})$/
 // Go verifies the provider signature. Public callbacks never inherit browser authority.
 export async function forwardNamedGitWebhook(request: Request) {
   const match = new URL(request.url).pathname.match(endpoint)

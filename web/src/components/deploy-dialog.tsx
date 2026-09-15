@@ -284,13 +284,15 @@ export function DeploymentForm({
                 <Icon name="code" size={15} />
                 Import TOML
               </button>
-              {!application && scope.identity.admin && features.git && (
-                <button onClick={() => void navigate({ to: '/applications/import' })}>
-                  <ServiceIcon name="github" size={15} />
-                  <ServiceIcon name="gitlab" size={15} />
-                  Git repository
-                </button>
-              )}
+              {!application &&
+                (scope.identity.admin || scope.identity.can_manage_git) &&
+                features.git && (
+                  <button onClick={() => void navigate({ to: '/applications/import' })}>
+                    <ServiceIcon name="github" size={15} />
+                    <ServiceIcon name="gitlab" size={15} />
+                    Git repository
+                  </button>
+                )}
             </div>
             {mode === 'toml' ? (
               <div className="field-stack deploy-toml-field">

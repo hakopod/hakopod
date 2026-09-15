@@ -2734,6 +2734,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["renameApplication"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["renameService"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["renameProject"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2900,6 +2948,12 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             deployments?: components["schemas"]["DeploymentSummary"][];
+            display_name?: string;
+            service_display_names?: {
+                [key: string]: string;
+            };
+            /** Format: int64 */
+            metadata_revision?: number;
         };
         Project: {
             id: string;
@@ -2911,6 +2965,8 @@ export interface components {
             description?: string;
             /** @description Personal projects cannot be shared through invitations or team membership. */
             readonly personal?: boolean;
+            /** Format: int64 */
+            metadata_revision?: number;
         };
         Principal: {
             id: string;
@@ -2931,6 +2987,8 @@ export interface components {
             profile_revision?: number;
             host_permissions?: components["schemas"]["HostPermission"][];
             can_manage_previews?: boolean;
+            can_manage_git?: boolean;
+            can_manage_applications?: boolean;
         };
         Node: {
             name: string;
@@ -3406,6 +3464,10 @@ export interface components {
                 [key: string]: string;
             };
             framework?: components["schemas"]["FrameworkPlan"];
+            /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
+            command?: string[];
+            /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
+            args?: string[];
         };
         BuildInput: {
             connection_id?: string;
@@ -3441,6 +3503,10 @@ export interface components {
                 [key: string]: string;
             };
             framework?: components["schemas"]["FrameworkPlan"];
+            /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
+            command?: string[];
+            /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
+            args?: string[];
         };
         BuildRun: {
             id: string;
@@ -12022,6 +12088,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    renameApplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    display_name: string;
+                    /** Format: int64 */
+                    expected_metadata_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Name saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Application"];
+                };
+            };
+        };
+    };
+    renameService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    display_name: string;
+                    /** Format: int64 */
+                    expected_metadata_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Name saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Application"];
+                };
+            };
+        };
+    };
+    renameProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    display_name: string;
+                    /** Format: int64 */
+                    expected_metadata_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Name saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                    };
                 };
             };
         };

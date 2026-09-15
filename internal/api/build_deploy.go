@@ -67,6 +67,14 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 		}
 		next.Services[c.Service] = service
 	}
+	service := next.Services[c.Service]
+	if c.Command != nil {
+		service.Command = append([]string{}, (*c.Command)...)
+	}
+	if c.Args != nil {
+		service.Args = append([]string{}, (*c.Args)...)
+	}
+	next.Services[c.Service] = service
 	next, err = spec.Normalize(next)
 	return next, current, err
 }
