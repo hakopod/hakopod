@@ -99,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/projects/{project}/environments", s.createEnvironment)
 	routes.HandleFunc("GET /api/v1/applications", s.applications)
 	routes.HandleFunc("GET /api/v1/applications/{id}", s.application)
+	s.registerPreviewRoutes(routes)
 	routes.HandleFunc("POST /api/v1/plan", s.plan)
 	routes.HandleFunc("POST /api/v1/deployments", s.deploy)
 	routes.HandleFunc("GET /api/v1/deployments/{id}", s.deployment)

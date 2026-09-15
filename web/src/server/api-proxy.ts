@@ -6,6 +6,9 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^applications\/[A-Za-z0-9_-]+\/previews$/,
+  /^previews\/[A-Za-z0-9_-]+$/,
+  /^builds\/detect$/,
   /^installation\/(?:status|logs(?:\/query)?|setup|upgrade)$/,
   /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete|github\/setup))?)?$/,
   /^git\/setup$/,

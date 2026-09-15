@@ -207,6 +207,14 @@ func backupRequestHash(j backup.Job) string {
 	return hex.EncodeToString(sum[:])
 }
 func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, idem string) (backup.Job, error) {
+	if err := rejectPreviewBackup(ctx, tx, j.Source.ApplicationID); err != nil {
+		return j, err
+	}
+	if j.Target != nil {
+		if err := rejectPreviewBackup(ctx, tx, j.Target.ApplicationID); err != nil {
+			return j, err
+		}
+	}
 	var oldHash string
 	var existing string
 	err := tx.QueryRow(ctx, "SELECT id,request_hash FROM backup_jobs WHERE identity_id=$1 AND idempotency_key=$2", p.ID, idem).Scan(&existing, &oldHash)
@@ -434,4 +442,20 @@ func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID
 		return j, err
 	}
 	return result, tx.Commit(ctx)
+}
+
+// Preview data has an explicit expiry lifecycle. Do not create backup/restore
+// jobs that race namespace cleanup or silently extend that data lifetime.
+func rejectPreviewBackup(ctx context.Context, tx pgx.Tx, application string) error {
+	if application == "" {
+		return nil
+	}
+	var preview bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM previews WHERE application_id=$1)", application).Scan(&preview); err != nil {
+		return err
+	}
+	if preview {
+		return fmt.Errorf("%w: backups and restores are unavailable for temporary previews", backup.ErrInput)
+	}
+	return nil
 }

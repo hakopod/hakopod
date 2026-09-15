@@ -54,7 +54,7 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", c.url+"/api/v1"+base+"/output", nil)
-	req.Header.Set("Authorization", "Bearer "+c.key)
+	c.authorizeRequest(req)
 	streamClient := *c.http
 	streamClient.Timeout = 11 * time.Minute
 	res, err := streamClient.Do(req)

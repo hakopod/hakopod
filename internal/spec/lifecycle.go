@@ -2,14 +2,23 @@ package spec
 
 import (
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"strings"
+	"time"
+	_ "time/tzdata"
 )
 
 // Job runs to completion once per release revision. DependsOn waits for jobs
 // to complete and for long-running services to become ready.
+type JobSchedule struct {
+	Cron         string `json:"cron" toml:"cron"`
+	Timezone     string `json:"timezone" toml:"timezone"`
+	HistoryLimit int32  `json:"history_limit" toml:"history_limit"`
+}
 type Job struct {
-	TimeoutSeconds int64 `json:"timeout_seconds" toml:"timeout_seconds"`
-	Retries        int32 `json:"retries" toml:"retries"`
+	Schedule       *JobSchedule `json:"schedule,omitempty" toml:"schedule"`
+	TimeoutSeconds int64        `json:"timeout_seconds" toml:"timeout_seconds"`
+	Retries        int32        `json:"retries" toml:"retries"`
 }
 
 // File mounts exactly one read-only file, not an operator host directory.
@@ -44,6 +53,29 @@ func SecretReferences(s Service) map[string]SecretRef {
 
 func normalizeJobAndFiles(s *Service) error {
 	if j := s.Job; j != nil {
+		if schedule := j.Schedule; schedule != nil {
+			if len(schedule.Cron) > 100 || len(strings.Fields(schedule.Cron)) != 5 {
+				return fmt.Errorf("job.schedule.cron: use a five-field cron expression")
+			}
+			if _, err := cron.ParseStandard(schedule.Cron); err != nil {
+				return fmt.Errorf("job.schedule.cron: invalid cron expression")
+			}
+			if schedule.Timezone == "" {
+				schedule.Timezone = "UTC"
+			}
+			if len(schedule.Timezone) > 100 {
+				return fmt.Errorf("job.schedule.timezone: invalid timezone")
+			}
+			if _, err := time.LoadLocation(schedule.Timezone); err != nil {
+				return fmt.Errorf("job.schedule.timezone: use an IANA timezone")
+			}
+			if schedule.HistoryLimit == 0 {
+				schedule.HistoryLimit = 1
+			}
+			if schedule.HistoryLimit < 1 || schedule.HistoryLimit > 2 {
+				return fmt.Errorf("job.schedule.history_limit: use 1 or 2 retained successes and failures")
+			}
+		}
 		if j.TimeoutSeconds == 0 {
 			j.TimeoutSeconds = 300
 		}

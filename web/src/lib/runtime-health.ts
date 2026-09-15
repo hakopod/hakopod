@@ -21,6 +21,8 @@ export type RuntimeHealth = {
 export function runtimeReplicaSummary(health: RuntimeHealth, job = false) {
   if (health.ready === undefined || health.desired === undefined)
     return health.observed ? 'Unavailable' : 'Not observed'
+  if (health.status === 'scheduled') return 'Scheduled'
+  if (job && health.status === 'stopped') return 'Paused'
   if (health.status === 'completed') return 'Completed'
   if (health.status === 'running') return 'Running'
   if (job) return health.status === 'failed' ? 'Failed' : 'Not completed'
@@ -69,23 +71,25 @@ function assessService(service?: ServiceStatus): RuntimeHealth {
     observed: true,
     ...counts,
     status:
-      state === 'stopped'
-        ? 'stopped'
-        : failed
-          ? 'failed'
-          : inspect
-            ? 'blocked'
-            : ready
-              ? state === 'completed'
-                ? 'completed'
-                : counts.desired === 0
-                  ? 'scaled down'
-                  : 'ready'
-              : state === 'missing'
-                ? 'missing'
-                : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
-                  ? state
-                  : 'pending',
+      state === 'scheduled'
+        ? 'scheduled'
+        : state === 'stopped'
+          ? 'stopped'
+          : failed
+            ? 'failed'
+            : inspect
+              ? 'blocked'
+              : ready
+                ? state === 'completed'
+                  ? 'completed'
+                  : counts.desired === 0
+                    ? 'scaled down'
+                    : 'ready'
+                : state === 'missing'
+                  ? 'missing'
+                  : ['deploying', 'progressing', 'terminating', 'running'].includes(state)
+                    ? state
+                    : 'pending',
     issues:
       inspect || failed
         ? [
@@ -162,7 +166,7 @@ export function applicationRuntimeHealth(
   const services = names.map((name) => assessService(observations.get(name)))
   const observed = services.filter((service) => service.observed).length
   const ready = services.filter((service) =>
-    ['ready', 'completed', 'stopped'].includes(service.status),
+    ['ready', 'completed', 'stopped', 'scheduled'].includes(service.status),
   ).length
   const counts =
     services.length &&

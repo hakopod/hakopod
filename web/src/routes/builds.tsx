@@ -157,7 +157,11 @@ function BuildList() {
                       <small className="ops-table-sub mono">{build.branch}</small>
                     </td>
                     <td>
-                      {build.mode === 'buildpacks' ? `Buildpacks · ${build.preset}` : 'Dockerfile'}
+                      {build.mode === 'framework'
+                        ? `${build.framework?.framework} · ${build.framework?.runtime}`
+                        : build.mode === 'buildpacks'
+                          ? `Buildpacks · ${build.preset}`
+                          : 'Dockerfile'}
                       <small className="ops-table-sub mono">{build.architecture}</small>
                     </td>
                     <td>

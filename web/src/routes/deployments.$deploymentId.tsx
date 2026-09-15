@@ -209,6 +209,18 @@ function DeploymentDetail() {
           <Icon name="refresh" size={16} className={deployment.isFetching ? 'spin' : ''} />
         </Button>
       </div>
+      {release.recovery_state && (
+        <div className="note hako-note" role="status">
+          <strong>Release recovery: {release.recovery_state}</strong>
+          <p>
+            {release.recovery_state === 'succeeded'
+              ? `Workload configuration from revision ${release.recovery_revision} was restored. This release remains failed. External data and secret values were not rolled back.`
+              : release.recovery_state === 'running'
+                ? `Restoring workload configuration from revision ${release.recovery_revision}.`
+                : release.recovery_error}
+          </p>
+        </div>
+      )}
       {runtimeHealth && (
         <>
           <div className="application-metadata runtime-summary">

@@ -80,7 +80,7 @@ func (s *Store) AcceptShowcase(ctx context.Context, item Showcase) (Deployment, 
 	if err != nil {
 		return Deployment{}, err
 	}
-	return s.accept(ctx, p, "demo", "development", item.Spec, 0, "showcase-"+item.ID, nil, &item)
+	return s.accept(ctx, p, "demo", "development", item.Spec, 0, "showcase-"+item.ID, nil, &item, nil)
 }
 
 // Acceptance holds the same transaction lock as removal and commits its

@@ -10429,6 +10429,245 @@
         }
       }
     },
+    "/builds/detect": {
+      "post": {
+        "operationId": "detectBuildFramework",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildDetection"
+                }
+              }
+            },
+            "description": "Reviewable suggestions from repository metadata; no repository code is executed."
+          }
+        }
+      }
+    },
+    "/applications/{id}/previews": {
+      "get": {
+        "operationId": "listApplicationPreviews",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Preview"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/previews/{preview}": {
+      "get": {
+        "operationId": "getPreview",
+        "parameters": [
+          {
+            "name": "preview",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePreview",
+        "parameters": [
+          {
+            "name": "preview",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirmation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/secrets": {
       "get": {
         "operationId": "listWorkloadSecrets",
@@ -10974,6 +11213,9 @@
               "type": "string"
             }
           },
+          "recovery": {
+            "$ref": "#/components/schemas/RecoveryPolicy"
+          },
           "volumes": {
             "type": "object",
             "additionalProperties": {
@@ -11047,6 +11289,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "job_runs": {
+            "items": {
+              "$ref": "#/components/schemas/JobRun"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -11157,6 +11405,25 @@
             "items": {
               "$ref": "#/components/schemas/Event"
             }
+          },
+          "recovery_error": {
+            "type": "string"
+          },
+          "recovery_revision": {
+            "type": "integer"
+          },
+          "recovery_spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "recovery_state": {
+            "enum": [
+              "",
+              "running",
+              "succeeded",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -11335,6 +11602,9 @@
             "items": {
               "$ref": "#/components/schemas/HostPermission"
             }
+          },
+          "can_manage_previews": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -13032,11 +13302,12 @@
             "type": "string"
           },
           "mode": {
-            "type": "string",
             "enum": [
               "dockerfile",
-              "buildpacks"
-            ]
+              "buildpacks",
+              "framework"
+            ],
+            "type": "string"
           },
           "preset": {
             "type": "string",
@@ -13096,6 +13367,17 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "build_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "BuildKit mount IDs mapped to GitHub Actions secrets or GitLab CI variable names; never secret values.",
+            "maxProperties": 16,
+            "type": "object"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/FrameworkPlan"
           }
         },
         "required": [
@@ -13158,11 +13440,12 @@
             "type": "string"
           },
           "mode": {
-            "type": "string",
             "enum": [
               "dockerfile",
-              "buildpacks"
-            ]
+              "buildpacks",
+              "framework"
+            ],
+            "type": "string"
           },
           "preset": {
             "type": "string",
@@ -13216,6 +13499,17 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "build_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "BuildKit mount IDs mapped to GitHub Actions secrets or GitLab CI variable names; never secret values.",
+            "maxProperties": 16,
+            "type": "object"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/FrameworkPlan"
           }
         },
         "required": [
@@ -14546,6 +14840,9 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 3
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/JobSchedule"
           }
         },
         "required": []
@@ -16822,6 +17119,294 @@
           "toml",
           "expected_id",
           "expected_revision"
+        ]
+      },
+      "FrameworkPlan": {
+        "properties": {
+          "build_command": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "framework": {
+            "enum": [
+              "astro",
+              "nextjs",
+              "sveltekit",
+              "tanstack-start",
+              "vite",
+              "node",
+              "static"
+            ],
+            "type": "string"
+          },
+          "install_command": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "output_directory": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "package_manager": {
+            "enum": [
+              "npm",
+              "pnpm",
+              "yarn",
+              "bun",
+              "none"
+            ],
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "runtime": {
+            "enum": [
+              "node",
+              "static"
+            ],
+            "type": "string"
+          },
+          "start_command": {
+            "maxLength": 1024,
+            "type": "string"
+          }
+        },
+        "required": [
+          "framework",
+          "runtime",
+          "package_manager",
+          "install_command",
+          "build_command",
+          "port"
+        ],
+        "type": "object"
+      },
+      "BuildDetection": {
+        "properties": {
+          "commit_sha": {
+            "type": "string"
+          },
+          "dockerfile": {
+            "type": "string"
+          },
+          "dockerfile_content": {
+            "type": "string"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/FrameworkPlan"
+          },
+          "mode": {
+            "enum": [
+              "dockerfile",
+              "framework"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "commit_sha",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "JobSchedule": {
+        "properties": {
+          "cron": {
+            "description": "Five cron fields: minute hour day month weekday.",
+            "type": "string"
+          },
+          "history_limit": {
+            "default": 1,
+            "maximum": 2,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "timezone": {
+            "default": "UTC",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron"
+        ],
+        "type": "object"
+      },
+      "JobRun": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "revision",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "RecoveryPolicy": {
+        "properties": {
+          "on_failure": {
+            "enum": [
+              "safe",
+              "disabled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "on_failure"
+        ],
+        "type": "object"
+      },
+      "Preview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "application_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deleting",
+              "deleted"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cleanup_error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "application_id",
+          "project",
+          "environment",
+          "name",
+          "branch",
+          "state",
+          "created_at",
+          "expires_at",
+          "deleted_at"
+        ]
+      },
+      "PreviewInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "ttl_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 72
+          },
+          "expected_parent_revision": {
+            "type": "integer"
+          },
+          "discard_on_expiry": {
+            "type": "boolean"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          }
+        },
+        "required": [
+          "name",
+          "ttl_hours",
+          "expected_parent_revision",
+          "discard_on_expiry"
+        ]
+      },
+      "PreviewCreated": {
+        "type": "object",
+        "properties": {
+          "preview": {
+            "$ref": "#/components/schemas/Preview"
+          },
+          "deployment": {
+            "$ref": "#/components/schemas/Deployment"
+          }
+        },
+        "required": [
+          "preview",
+          "deployment"
         ]
       },
       "Volume": {

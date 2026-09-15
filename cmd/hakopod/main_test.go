@@ -1,9 +1,35 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 )
+
+func TestWorkspaceHeaderDoesNotReplaceCredential(t *testing.T) {
+	workspace := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Hakopod-Workspace") != workspace || r.Header.Get("Authorization") != "Bearer fixture-session" {
+			t.Error("workspace and session authority must both be forwarded")
+		}
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	c, err := newClient(config{URL: server.URL, Key: "fixture-session", Workspace: workspace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.request(context.Background(), "GET", "/me", nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []string{"other", workspace + "\r\n", "../../keys"} {
+		if _, err = newClient(config{URL: server.URL, Key: "fixture", Workspace: invalid}); err == nil {
+			t.Fatal("invalid workspace accepted")
+		}
+	}
+}
 
 func TestCredentialTransport(t *testing.T) {
 	for _, raw := range []string{"http://example.com", "https://user:password@example.com", "https://example.com/?key=x", "https://example.com/api", "file:///etc/passwd"} {

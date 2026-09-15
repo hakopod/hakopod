@@ -1,3 +1,4 @@
+import { ApplicationPreviews } from '../components/application-previews'
 import { ServicePowerDialog } from '../components/service-power-dialog'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { DeleteServiceDialog } from '../components/delete-service-dialog'
@@ -47,6 +48,7 @@ export const Route = createFileRoute('/applications/$applicationId')({
         'topology',
         'services',
         'deployments',
+        'previews',
         'logs',
         'terminal',
         'networking',
@@ -235,6 +237,7 @@ function ApplicationDetail() {
             ['services', 'box', 'Services'],
             ['topology', 'network', 'Topology'],
             ['deployments', 'branch', 'Deployments'],
+            ['previews', 'external', 'Previews'],
             ['logs', 'activity', 'Logs'],
             ['terminal', 'terminal', 'Terminal'],
             ['networking', 'network', 'Networking'],
@@ -253,6 +256,9 @@ function ApplicationDetail() {
               </Tabs.Trigger>
             ))}
         </Tabs.List>
+        <Tabs.Content value="previews" className="tab-content">
+          <ApplicationPreviews application={app} />
+        </Tabs.Content>
         <Tabs.Content value="topology" className="tab-content">
           <Suspense fallback={<Loading />}>
             <ApplicationTopology application={app} />
@@ -336,12 +342,19 @@ function ApplicationDetail() {
                             Open endpoint
                           </MenuItem>
                         )}
-                        {scope.can('deployments:write') && !service.job && (
-                          <MenuItem onSelect={() => setPowerService(name)}>
-                            <Icon name={service.suspended ? 'play' : 'pause'} size={14} />
-                            {service.suspended ? 'Resume service' : 'Stop service'}
-                          </MenuItem>
-                        )}
+                        {scope.can('deployments:write') &&
+                          (!service.job || service.job.schedule) && (
+                            <MenuItem onSelect={() => setPowerService(name)}>
+                              <Icon name={service.suspended ? 'play' : 'pause'} size={14} />
+                              {service.job?.schedule
+                                ? service.suspended
+                                  ? 'Resume schedule'
+                                  : 'Pause schedule'
+                                : service.suspended
+                                  ? 'Resume service'
+                                  : 'Stop service'}
+                            </MenuItem>
+                          )}
                         {scope.can('deployments:write') && (
                           <MenuItem destructive onSelect={() => setDeletingService(name)}>
                             <Icon name="trash" size={14} />
@@ -384,7 +397,9 @@ function ApplicationDetail() {
                           : service.port || service.ports?.length
                             ? 'Private'
                             : service.job
-                              ? 'Deployment job'
+                              ? service.job.schedule
+                                ? 'Scheduled job'
+                                : 'Deployment job'
                               : 'Worker'}
                       </dd>
                     </div>

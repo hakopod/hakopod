@@ -26,7 +26,7 @@ func (s *Store) AcceptSourceImport(ctx context.Context, p Principal, project, en
 	if (source.Provider != "github" && source.Provider != "gitlab") || source.Repository == "" || source.Branch == "" || source.Path == "" || source.CommitSHA == "" {
 		return Deployment{}, fmt.Errorf("%w: initial source is incomplete", ErrInput)
 	}
-	return s.accept(ctx, p, project, environment, next, 0, idem, &source, nil)
+	return s.accept(ctx, p, project, environment, next, 0, idem, &source, nil, nil)
 }
 func (s *Store) bindInitialSource(ctx context.Context, tx pgx.Tx, p Principal, a Application, deployment string, source InitialSource) error {
 	if a.Revision != 0 || !p.IsAdmin() {

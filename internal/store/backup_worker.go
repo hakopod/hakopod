@@ -163,6 +163,9 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044230)"); err != nil {
 		return schedule, err
 	}
+	if err = rejectPreviewBackup(ctx, tx, schedule.Source.ApplicationID); err != nil {
+		return schedule, err
+	}
 	var revision int64
 	err = tx.QueryRow(ctx, "SELECT revision FROM backup_schedules WHERE id=$1 FOR UPDATE", schedule.ID).Scan(&revision)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {

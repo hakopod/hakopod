@@ -18,6 +18,7 @@ import (
 const MaxBytes = 256 << 10
 
 type Application struct {
+	Recovery      *RecoveryPolicy        `json:"recovery,omitempty" toml:"recovery"`
 	SchemaVersion int                    `json:"schema_version" toml:"schema_version"`
 	Name          string                 `json:"name" toml:"name"`
 	Services      map[string]Service     `json:"services" toml:"services"`
@@ -161,6 +162,9 @@ func Normalize(input Application) (Application, error) {
 	if err := json.Unmarshal(data, &app); err != nil {
 		return Application{}, err
 	}
+	if app.Recovery != nil && app.Recovery.OnFailure != "safe" && app.Recovery.OnFailure != "disabled" {
+		return Application{}, fmt.Errorf("recovery.on_failure: choose safe or disabled")
+	}
 	if app.SchemaVersion == 0 {
 		app.SchemaVersion = 1
 	}
@@ -227,7 +231,7 @@ func Normalize(input Application) (Application, error) {
 		if _, ok := Profiles[svc.Size]; !ok {
 			return Application{}, fmt.Errorf("%s.size: choose small, medium, large, compute or gpu", field)
 		}
-		if svc.Suspended && svc.Job != nil {
+		if svc.Suspended && svc.Job != nil && svc.Job.Schedule == nil {
 			return Application{}, fmt.Errorf("%s: deployment jobs cannot be stopped or resumed", field)
 		}
 		if svc.Replicas == 0 {
@@ -283,7 +287,10 @@ func Normalize(input Application) (Application, error) {
 		if err := validateMembers(svc.Networks, field+".networks", func(n string) bool { _, ok := app.Networks[n]; return ok }); err != nil {
 			return Application{}, err
 		}
-		if err := validateMembers(svc.DependsOn, field+".depends_on", func(n string) bool { _, ok := app.Services[n]; return ok && n != name }); err != nil {
+		if err := validateMembers(svc.DependsOn, field+".depends_on", func(n string) bool {
+			dependency, ok := app.Services[n]
+			return ok && n != name && (dependency.Job == nil || dependency.Job.Schedule == nil)
+		}); err != nil {
 			return Application{}, err
 		}
 		sort.Strings(svc.Networks)
@@ -429,6 +436,7 @@ func Diff(before *Application, after Application) []Change {
 		}
 		changes = append(changes, Change{service, field, a, b, sensitive})
 	}
+	add("", "recovery", old.Recovery, after.Recovery, false)
 	add("", "name", old.Name, after.Name, false)
 	add("", "networks", old.Networks, after.Networks, false)
 	add("", "volumes", old.Volumes, after.Volumes, false)
@@ -522,7 +530,9 @@ func Warnings(app Application) []string {
 	}
 	for _, name := range Names(app) {
 		svc := app.Services[name]
-		if svc.Job != nil {
+		if svc.Job != nil && svc.Job.Schedule != nil {
+			warnings = append(warnings, name+": scheduled job uses "+svc.Job.Schedule.Timezone+" and skips overlapping runs. Pause stops future scheduling; an active run finishes independently.")
+		} else if svc.Job != nil {
 			warnings = append(warnings, name+": deployment job must finish before dependent services start. Retries and new revisions can repeat side effects; make migrations idempotent. Rollback does not undo database changes.")
 		}
 		if len(svc.Files) > 0 {

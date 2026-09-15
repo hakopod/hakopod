@@ -18,10 +18,10 @@ import (
 // Accept uses one transaction for revision allocation, immutable specification,
 // queue entry and audit record. Advisory locking also covers first creation.
 func (s *Store) Accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, seedResolved ...spec.Application) (Deployment, error) {
-	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, seedResolved...)
+	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, nil, seedResolved...)
 }
 
-func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, seedResolved ...spec.Application) (Deployment, error) {
+func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, seedResolved ...spec.Application) (Deployment, error) {
 	if len(idem) < 8 || len(idem) > 128 {
 		return Deployment{}, errors.New("Idempotency-Key must contain 8–128 characters")
 	}
@@ -59,10 +59,11 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 		Expected             int64
 		// Omission preserves hashes for ordinary pre-seeding deployment calls;
 		// presence distinguishes rollback intent even when the desired spec is identical.
-		SeedResolved  *spec.Application `json:",omitempty"`
-		InitialSource *InitialSource    `json:",omitempty"`
-		ShowcaseID    string            `json:",omitempty"`
-	}{project, env, next, expected, seed, initialSource, showcaseID}))
+		SeedResolved   *spec.Application `json:",omitempty"`
+		InitialSource  *InitialSource    `json:",omitempty"`
+		InitialPreview *InitialPreview   `json:",omitempty"`
+		ShowcaseID     string            `json:",omitempty"`
+	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
@@ -154,6 +155,9 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	} else if err != nil {
 		return Deployment{}, err
 	}
+	if err = validatePreviewAcceptance(ctx, tx, a, next, initialPreview); err != nil {
+		return Deployment{}, err
+	}
 	if a.Revision != expected {
 		return Deployment{}, fmt.Errorf("%w: expected %d, current revision is %d; plan again", ErrConflict, expected, a.Revision)
 	}
@@ -187,6 +191,12 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	}
 	if _, err = tx.Exec(ctx, "UPDATE applications SET revision=$2,spec=$3,observed='{}'::jsonb,updated_at=now(),status='queued' WHERE id=$1", a.ID, revision, JSON(next)); err != nil {
 		return Deployment{}, err
+	}
+	if initialPreview != nil {
+		_, err = tx.Exec(ctx, "INSERT INTO previews(id,parent_id,application_id,project,environment,name,branch,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,now()+make_interval(hours=>$8))", initialPreview.ID, initialPreview.ParentID, a.ID, a.Project, a.Environment, initialPreview.Name, initialPreview.Branch, initialPreview.TTLHours)
+		if err != nil {
+			return Deployment{}, err
+		}
 	}
 	if initialSource != nil {
 		if err = s.bindInitialSource(ctx, tx, p, a, id, *initialSource); err != nil {
@@ -223,7 +233,7 @@ type Claim struct {
 var ErrClaimLost = errors.New("durable application claim is no longer held")
 
 func (s *Store) Claim(ctx context.Context) (*Claim, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.application_id FROM deployments d WHERE d.status IN ('queued','running') AND NOT EXISTS (SELECT 1 FROM deployments older WHERE older.application_id=d.application_id AND older.revision<d.revision AND older.status IN ('queued','running')) ORDER BY d.created_at LIMIT 16`)
+	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.application_id FROM deployments d WHERE d.status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM previews p WHERE p.application_id=d.application_id AND (p.state<>'active' OR p.expires_at<=now())) AND NOT EXISTS (SELECT 1 FROM deployments older WHERE older.application_id=d.application_id AND older.revision<d.revision AND older.status IN ('queued','running')) ORDER BY d.created_at LIMIT 16`)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +313,17 @@ func (c *Claim) Check(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return c.Conn.Ping(ctx)
+	if err := c.Conn.Ping(ctx); err != nil {
+		return err
+	}
+	var expired bool
+	if err := c.Conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM previews WHERE application_id=$1 AND (state<>'active' OR expires_at<=now()))", c.App.ID).Scan(&expired); err != nil {
+		return err
+	}
+	if expired {
+		return ErrClaimLost
+	}
+	return nil
 }
 
 // SetResolved returns the immutable winner, including when a previous attempt
@@ -363,6 +383,9 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 		return fmt.Errorf("%w: operation is no longer running or available", ErrClaimLost)
 	}
 	appStatus := status
+	if status == "failed" && d.RecoveryState == "succeeded" {
+		appStatus = "recovered"
+	}
 	if status == "succeeded" {
 		appStatus = "healthy"
 		if len(d.Spec.Services) == 0 {

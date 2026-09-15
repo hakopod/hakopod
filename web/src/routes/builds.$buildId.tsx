@@ -1,3 +1,4 @@
+import { frameworkLabel } from '../components/framework-build-fields'
 import { Input } from '../components/ui/input'
 import { useEffect, useState } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -129,7 +130,11 @@ function BuildDetail() {
                 <div>
                   <dt>Method</dt>
                   <dd>
-                    {build.mode === 'buildpacks' ? `Buildpacks · ${build.preset}` : 'Dockerfile'}
+                    {build.mode === 'framework'
+                      ? `${frameworkLabel(build.framework?.framework || '')} · ${build.framework?.runtime}`
+                      : build.mode === 'buildpacks'
+                        ? `Buildpacks · ${build.preset}`
+                        : 'Dockerfile'}
                   </dd>
                 </div>
                 <div>
@@ -147,6 +152,39 @@ function BuildDetail() {
                     <dt>Dockerfile</dt>
                     <dd>
                       <code>{build.dockerfile}</code>
+                    </dd>
+                  </div>
+                )}
+                {build.mode === 'framework' &&
+                  build.framework &&
+                  Object.entries({
+                    Framework: frameworkLabel(build.framework.framework),
+                    'Package manager': build.framework.package_manager,
+                    Install: build.framework.install_command,
+                    Build: build.framework.build_command,
+                    Start: build.framework.start_command,
+                    Output: build.framework.output_directory,
+                  })
+                    .filter(([, value]) => value)
+                    .map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>
+                          <code className="break-all">{value}</code>
+                        </dd>
+                      </div>
+                    ))}
+                {Object.keys(build.build_secrets || {}).length > 0 && (
+                  <div>
+                    <dt>Build secret references</dt>
+                    <dd>
+                      {Object.entries(build.build_secrets || {}).map(([id, ref]) => (
+                        <div key={id}>
+                          <code className="break-all">
+                            {id} → {ref}
+                          </code>
+                        </div>
+                      ))}
                     </dd>
                   </div>
                 )}
