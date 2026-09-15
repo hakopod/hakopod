@@ -1,9 +1,17 @@
 package api
 
-import "strings"
+import (
+	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/store"
+	"strings"
+)
 
-// Installation administration is never exposed through the managed dashboard,
-// including to the first Cloud account. Operator configuration is out of band.
+// Customer Cloud runtimes deny installation administration. The trusted internal
+// runtime may serve its live, verified installation owner.
+func (s *Server) cloudOperator(p store.Principal) bool {
+	return s.OperatorRuntime && s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && p.IsSuperAdmin()
+}
+
 func cloudInstallationPath(path string) bool {
 	path = strings.TrimPrefix(path, "/api/v1/")
 	for _, prefix := range []string{"host-access", "installation", "users", "backup-destinations", "backup-targets", "backups", "backup-artifacts", "backup-schedules", "registries", "tls/issuers", "settings/haproxy"} {

@@ -1,4 +1,4 @@
-import { dashboardEdition } from '../lib/dashboard-edition'
+import { dashboardEdition, useEditionFeatures } from '../lib/dashboard-edition'
 import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
@@ -76,6 +76,7 @@ function AdministrationRoute() {
   return useLocation().pathname === '/settings' ? <Administration /> : <Outlet />
 }
 function Administration() {
+  const features = useEditionFeatures()
   const scope = useScope()
   const installation = useInstallationAccess()
   const selected = Route.useSearch().tab || 'account'
@@ -101,7 +102,9 @@ function Administration() {
         ]
       : []),
   ]
-  const visibleSections = sections.filter((section) => dashboardEdition.settings(section.id))
+  const visibleSections = sections.filter((section) =>
+    dashboardEdition.settings(section.id, features),
+  )
   const tab = visibleSections.some((section) => section.id === selected) ? selected : 'account'
   const navigationRoot = useActiveSection(tab)
   return (

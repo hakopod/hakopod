@@ -44,7 +44,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	if caps.NodeCount != 1 || !caps.NodeCountComplete {
 		return nil, nil, errors.New("the internal runtime requires exactly one registered node")
 	}
-	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config}
+	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true}
 	handler, wait := management.Start(ctx, server, config.AppDomain, rollout)
 	return handler, wait, nil
 }

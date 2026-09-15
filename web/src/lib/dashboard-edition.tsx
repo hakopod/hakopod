@@ -11,9 +11,9 @@ export const dashboardEdition = {
   brandSuffix: '',
   releaseChannel: '',
   authAside: false,
-  navigation: (_path: string) => true,
+  navigation: (_path: string, _features?: { operator: boolean }) => true,
   scopedNavigation: (_path: string) => true,
-  settings: (_section: string) => true,
+  settings: (_section: string, _features?: { operator: boolean }) => true,
 }
 
 export function EditionControls() {
@@ -26,7 +26,7 @@ export function EditionGate({ children }: { children: ReactNode }) {
 export function useEditionAuth() {}
 
 export function useEditionFeatures() {
-  return { git: true, terminal: true }
+  return { git: true, terminal: true, operator: false }
 }
 
 export function EditionAuthAside(_props: { view: AuthView }) {
