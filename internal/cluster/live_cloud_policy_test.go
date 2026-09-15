@@ -50,3 +50,30 @@ func TestLiveCloudPolicy(t *testing.T) {
 		t.Fatal("additional-node invitation accepted", err)
 	}
 }
+
+func TestLiveOperatorTwoNodeCapacity(t *testing.T) {
+	if os.Getenv("HAKOPOD_OPERATOR_TWO_NODE_TEST") != "1" {
+		t.Skip("requires two nodes in the named development cluster")
+	}
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("requires k3d-hakopod-dev")
+	}
+	c, err := New(path, Options{DeploymentMode: DeploymentManagedCloud, OperatorNodeLimit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	caps, err := c.CloudCapabilities(ctx)
+	if err != nil || caps.NodeCount != 2 || !caps.NodeCountComplete {
+		t.Fatal("requires two real nodes", caps, err)
+	}
+	if err := c.ValidateCloudCapacity(ctx); err != nil {
+		t.Fatal(err)
+	}
+	c.options.OperatorNodeLimit = 0
+	if err := c.ValidateCloudCapacity(ctx); !errors.Is(err, ErrCloudLimit) {
+		t.Fatalf("customer accepted second node: %v", err)
+	}
+}

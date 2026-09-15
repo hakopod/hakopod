@@ -11,6 +11,8 @@ import (
 )
 
 type RuntimeConfig struct {
+	// NodeLimit bounds the private operator cluster. Zero defaults to one.
+	NodeLimit       int
 	Kubeconfig      string
 	AppDomain       string
 	IngressClass    string
@@ -44,19 +46,15 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}
 	if err = kube.ValidatePublicTCPInstallation(ctx); err != nil {
 		return nil, nil, err
 	}
-	caps, err := kube.CloudCapabilities(ctx)
-	if err != nil {
+	if err := kube.ValidateCloudCapacity(ctx); err != nil {
 		return nil, nil, err
-	}
-	if caps.NodeCount != 1 || !caps.NodeCountComplete {
-		return nil, nil, errors.New("the internal runtime requires exactly one registered node")
 	}
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true}
 	handler, wait := management.Start(ctx, server, config.AppDomain, rollout)
