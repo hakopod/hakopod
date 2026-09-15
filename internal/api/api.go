@@ -24,11 +24,14 @@ import (
 )
 
 type Server struct {
-	Store       *store.Store
-	Cluster     *cluster.Client
-	Auth        AuthConfig
-	Backups     *backup.Service
-	ProcessLogs *serverlogs.Buffer
+	// OperatorRuntime is set only by the trusted Cloud embedding, never an HTTP request.
+	// Customer runtimes keep installation administration disabled.
+	OperatorRuntime bool
+	Store           *store.Store
+	Cluster         *cluster.Client
+	Auth            AuthConfig
+	Backups         *backup.Service
+	ProcessLogs     *serverlogs.Buffer
 	// Overrides are only set by in-process tests, never by an API request.
 	maintenanceHTTP       *http.Client
 	githubHTTP            *http.Client
@@ -226,7 +229,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			failure(w, err)
 			return
 		}
-		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationPath(r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) {
+		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationPath(r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) && !s.cloudOperator(p) {
 			failure(w, store.ErrForbidden)
 			return
 		}

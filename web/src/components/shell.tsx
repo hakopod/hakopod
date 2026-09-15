@@ -346,7 +346,7 @@ function Workspace({
     navigation
       .filter(
         ({ to }) =>
-          dashboardEdition.navigation(to) &&
+          dashboardEdition.navigation(to, features) &&
           (features.git || to !== '/builds') &&
           (scopedNavigation || to === dashboardEdition.home || to === '/settings'),
       )
@@ -544,7 +544,7 @@ function Workspace({
                 <Icon name="shield" />
                 Account security
               </MenuItem>
-              {identity.admin && dashboardEdition.settings('keys') && (
+              {identity.admin && dashboardEdition.settings('keys', features) && (
                 <MenuItem
                   onSelect={() => void navigate({ to: '/settings', search: { tab: 'keys' } })}
                 >

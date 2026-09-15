@@ -86,7 +86,9 @@ export default function CommandPalette({
       { to: '/settings', icon: 'settings', label: 'Settings' },
       { to: '/alarms', icon: 'alert', label: 'Alarms' },
     ]
-      .filter(({ to }) => dashboardEdition.navigation(to) && (features.git || to !== '/builds'))
+      .filter(
+        ({ to }) => dashboardEdition.navigation(to, features) && (features.git || to !== '/builds'),
+      )
       .map(({ to, icon, label }) => ({
         id: to,
         label,
