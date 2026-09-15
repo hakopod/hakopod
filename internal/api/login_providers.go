@@ -48,7 +48,7 @@ func (s *Server) registerLoginProviderRoutes(m *http.ServeMux) {
 }
 func (s *Server) loginSettingsAllowed(w http.ResponseWriter, r *http.Request) bool {
 	mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
-	if who(r).CredentialType != "browser" || !who(r).IsAdmin() || modeErr != nil || mode != cluster.DeploymentSelfHosted {
+	if who(r).CredentialType != "browser" || !who(r).IsAdmin() || modeErr != nil || mode != cluster.DeploymentSelfHosted && !s.cloudOperator(who(r)) {
 		authFailure(w, store.ErrForbidden)
 		return false
 	}
@@ -79,7 +79,7 @@ func (s *Server) readLoginProviderFrom(ctx context.Context, provider string, q l
 		p.ClientID, p.ClientSecret, p.IssuerURL = s.Auth.OIDCClientID, s.Auth.OIDCClientSecret, s.Auth.OIDCIssuerURL
 	}
 	p.Enabled = p.ClientID != "" && p.ClientSecret != ""
-	if s.Auth.DeploymentMode != cluster.DeploymentManagedCloud {
+	if s.Auth.DeploymentMode != cluster.DeploymentManagedCloud || s.CloudControlPlane {
 		var encrypted []byte
 		err := q.QueryRow(ctx, "SELECT revision,configuration FROM installation_login_providers WHERE provider=$1", provider).Scan(&p.Revision, &encrypted)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -170,7 +170,7 @@ func (s *Server) putLoginProvider(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	if in.Enabled {
+	if in.Enabled && !s.cloudOperator(who(r)) {
 		if _, err = tx.Exec(r.Context(), "SELECT singleton FROM installation_license WHERE singleton FOR SHARE"); err != nil {
 			authFailure(w, err)
 			return

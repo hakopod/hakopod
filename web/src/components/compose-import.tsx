@@ -1,3 +1,5 @@
+import { EnvironmentFields } from './runtime-settings-fields'
+import { parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
 import { useState } from 'react'
 import type { Application } from '../lib/types'
 import type { components } from '../lib/api.generated'
@@ -25,7 +27,7 @@ export function ComposeImport({
 }) {
   const [name, setName] = useState(application?.name || initialName)
   const [yaml, setYAML] = useState('')
-  const [variables, setVariables] = useState('')
+  const [variables, setVariables] = useState<EnvironmentRow[]>([])
   const [draft, setDraft] = useState<ComposeDraft | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,15 +43,10 @@ export function ComposeImport({
     setDraft(null)
     setAcknowledged(false)
     try {
-      const values: Record<string, string> = Object.create(null)
-      for (const line of variables.split('\n')) {
-        if (!line.trim() || line.trimStart().startsWith('#')) continue
-        const separator = line.indexOf('=')
-        const key = line.slice(0, separator).trim()
-        if (separator < 1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key in values)
-          throw new Error('Provide one unique VARIABLE=value per line.')
-        values[key] = line.slice(separator + 1)
-      }
+      const values = parseEnvironment(
+        variables.filter((row) => row.name || row.value),
+        [],
+      )
       setDraft(
         await unwrap(
           client.POST('/compose/convert', {
@@ -136,25 +133,21 @@ export function ComposeImport({
       </label>
       <details>
         <summary className="cursor-pointer">Interpolation variables</summary>
-        <label className="field-stack mt-2">
-          One VARIABLE=value per line
-          <Textarea
-            value={variables}
-            disabled={busy}
-            maxLength={262144}
-            rows={4}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="IMAGE_TAG=stable"
-            onChange={(event) => {
-              setVariables(event.target.value)
+        <div className="mt-2">
+          <EnvironmentFields
+            rows={variables}
+            onChange={(rows) => {
+              setVariables(rows)
               reset()
             }}
+            label="Compose interpolation"
+            disabled={busy}
+            allowSecrets={false}
           />
-        </label>
+        </div>
         <p className="field-help">
-          Values are literal; omit surrounding quotes. Hakopod never reads the host environment or
-          .env files. Use application secret references for passwords and tokens.
+          Paste or import .env values for Compose placeholders. Host variables and shell commands
+          are never evaluated. Use application secret references for passwords and tokens.
         </p>
       </details>
       <p className="field-help">

@@ -1,3 +1,4 @@
+import { effectiveService } from '../lib/effective-service'
 import { RenameResource } from './rename-resource'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { lazy, Suspense, useEffect, useState } from 'react'
@@ -157,6 +158,7 @@ export function ServiceDetail({
         />
       </>
     )
+  const effective = effectiveService(application.spec, service)
   const metrics = runtime.data?.metrics
   const hasPorts = Boolean(service.port || service.ports?.length)
   const sampleAge = metricSampleAge(
@@ -740,7 +742,7 @@ export function ServiceDetail({
               <div className="hako-section-heading-title">
                 <h2>Environment variables</h2>
                 <HeadingHelp title="Environment variables">
-                  Plain values passed to this service’s containers.
+                  Application defaults and service overrides passed to this service’s containers.
                 </HeadingHelp>
               </div>
             </div>
@@ -757,7 +759,7 @@ export function ServiceDetail({
               </Button>
             )}
           </div>
-          {Object.keys(service.env || {}).length ? (
+          {Object.keys(effective.env || {}).length ? (
             <div className="table-container env-review-table">
               <table>
                 <thead>
@@ -767,12 +769,15 @@ export function ServiceDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(service.env || {})
+                  {Object.entries(effective.env || {})
                     .sort(([left], [right]) => left.localeCompare(right))
                     .map(([name, value]) => (
                       <tr key={name}>
                         <th scope="row">
                           <code className="break-text">{name}</code>
+                          {!Object.hasOwn(service.env || {}, name) && (
+                            <small className="block text-muted-foreground">From application</small>
+                          )}
                         </th>
                         <td>
                           <pre>{value === '' ? '(empty string)' : value}</pre>

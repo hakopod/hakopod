@@ -27,23 +27,8 @@ export function parseEnvironment(rows: EnvironmentRow[], secretNames: string[]):
       throw new Error(
         `${row.name} must be at most 4,096 bytes and cannot contain a null character.`,
       )
-    if (
-      /(^|_)(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY|ACCESS_KEY_ID|SECRET_KEY)$/i.test(
-        row.name,
-      )
-    )
+    if (sensitiveEnvironment(row.name, row.value))
       throw new Error(`${row.name} belongs in application secrets, not plain variables.`)
-    let credentialURL = false
-    try {
-      const url = new URL(row.value)
-      credentialURL = Boolean(url.username || url.password)
-    } catch {
-      /* Non-URL values are valid plain variables. */
-    }
-    if (credentialURL)
-      throw new Error(
-        `${row.name} contains registry or connection credentials. Use application secrets.`,
-      )
     result[row.name] = row.value
   }
   return result
@@ -78,4 +63,46 @@ export function environmentChanges(before: Environment = {}, after: Environment 
     .sort()
     .filter((name) => valueOf(before, name) !== valueOf(after, name))
     .map((name) => ({ name, before: valueOf(before, name), after: valueOf(after, name) }))
+}
+
+export function sensitiveEnvironment(name: string, value: string): boolean {
+  if (
+    /(^|_)(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY|ACCESS_KEY_ID|SECRET_KEY)$/i.test(
+      name,
+    )
+  )
+    return true
+  try {
+    const url = new URL(value)
+    return Boolean(url.username || url.password)
+  } catch {
+    return false
+  }
+}
+
+export function splitEnvironment(rows: EnvironmentRow[], secretNames: string[] = []) {
+  const plain: EnvironmentRow[] = [],
+    secrets: EnvironmentRow[] = []
+  const seen = new Set<string>()
+  for (const row of rows.filter((row) => row.name !== '' || row.value !== '')) {
+    if (seen.has(row.name)) throw new Error(`${row.name} appears more than once.`)
+    seen.add(row.name)
+    if (sensitiveEnvironment(row.name, row.value)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(row.name))
+        throw new Error('Use a valid environment variable name.')
+      if (
+        !row.value ||
+        row.value.includes('\0') ||
+        new TextEncoder().encode(row.value).length > 4096
+      )
+        throw new Error(
+          `${row.name} must have a nonempty secret value up to 4,096 bytes without NUL.`,
+        )
+      if (secretNames.includes(row.name))
+        throw new Error(`${row.name} already has a secret reference. Replace its value in Secrets.`)
+      secrets.push(row)
+    } else plain.push(row)
+  }
+  if (secrets.length > 32) throw new Error('At most 32 secret variables can be imported.')
+  return { env: parseEnvironment(plain, secretNames), secrets }
 }

@@ -1,3 +1,4 @@
+import { useEditionFeatures } from './dashboard-edition'
 import { useQuery } from '@tanstack/react-query'
 import type { components } from './api.generated'
 import { client, unwrap } from './client'
@@ -27,10 +28,12 @@ export function useAuthStatus() {
 export function useInstallationAccess() {
   const scope = useScope()
   const status = useAuthStatus()
+  const features = useEditionFeatures()
   return {
     status,
     admin: scope.identity.admin,
-    allowed: scope.identity.admin && status.data?.deployment_mode === 'self-hosted',
+    allowed:
+      scope.identity.admin && (status.data?.deployment_mode === 'self-hosted' || features.operator),
   }
 }
 

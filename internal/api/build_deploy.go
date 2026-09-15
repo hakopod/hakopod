@@ -7,7 +7,9 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
+	"maps"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -16,7 +18,7 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 	if err := s.validateGitConnection(ctx, c.Provider, c.ConnectionID); err != nil {
 		return spec.Application{}, nil, err
 	}
-	if run.Status != "completed" || run.Conclusion != "success" || run.Image == "" || run.ConfigRevision != c.Revision {
+	if run.Status != "completed" || run.Conclusion != "success" || run.Image == "" || !compatibleBuildImage(c, run) {
 		return spec.Application{}, nil, fmt.Errorf("%w: a verified successful image from the current build configuration is required", store.ErrConflict)
 	}
 	credential, err := s.ensureBuildRegistry(ctx, c)
@@ -63,6 +65,7 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 				return next, current, fmt.Errorf("%w: an unaffected service has no preserved immutable image", store.ErrConflict)
 			}
 			unchanged.Image = prior.Image
+			unchanged.RegistryCredential = prior.RegistryCredential
 			next.Services[name] = unchanged
 		}
 		service.Image = run.Image
@@ -79,6 +82,9 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 			service.Env[key] = value
 		}
 	}
+	if c.Secrets != nil {
+		service.Secrets = maps.Clone(*c.Secrets)
+	}
 	if c.Command != nil {
 		service.Command = append([]string{}, (*c.Command)...)
 	}
@@ -86,6 +92,14 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 		service.Args = append([]string{}, (*c.Args)...)
 	}
 	next.Services[c.Service] = service
+	for _, name := range c.ReuseServices {
+		reused, ok := next.Services[name]
+		if !ok {
+			return next, current, fmt.Errorf("%w: an image reuse service no longer exists; update the build targets", store.ErrConflict)
+		}
+		reused.Image, reused.RegistryCredential, reused.Architecture = run.Image, c.RegistryCredential, c.Architecture
+		next.Services[name] = reused
+	}
 	next, err = spec.Normalize(next)
 	return next, current, err
 }
@@ -181,7 +195,7 @@ func (s *Server) deployBuildRun(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	if run.ConfigRevision != c.Revision {
+	if !compatibleBuildImage(c, run) {
 		authFailure(w, store.ErrConflict)
 		return
 	}
@@ -191,4 +205,42 @@ func (s *Server) deployBuildRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 202, d)
+}
+
+// Runtime-only edits can reuse an already verified artifact. Any change to its
+// source, build inputs or registry destination still requires a fresh build.
+func compatibleBuildImage(current buildConfig, run buildRun) bool {
+	if run.ConfigRevision == current.Revision {
+		return true
+	}
+	if run.Config.ID == "" || run.Config.ID != current.ID {
+		return false
+	}
+	artifact := func(c buildConfig) buildConfig {
+		// Omitted maps in stored JSON and empty maps submitted by the editor
+		// represent the same build inputs.
+		if len(c.BuildArgs) == 0 {
+			c.BuildArgs = nil
+		}
+		if len(c.BuildSecrets) == 0 {
+			c.BuildSecrets = nil
+		}
+		c.ReuseServices = nil
+		c.Env = nil
+		c.Secrets = nil
+		c.Command = nil
+		c.Args = nil
+		c.Revision = 0
+		c.InstalledRevision = 0
+		c.InstalledCommit = ""
+		c.GrantID = ""
+		c.ApplicationID = ""
+		c.AutoBuild = false
+		c.AutoDeploy = false
+		c.Port = 0
+		c.Public = false
+		c.Size = ""
+		return c
+	}
+	return reflect.DeepEqual(artifact(current), artifact(run.Config))
 }

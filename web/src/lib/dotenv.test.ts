@@ -46,3 +46,25 @@ test('dotenv bounds and existing variable validation apply before import', () =>
     /128/,
   )
 })
+
+test('mixed dotenv import keeps values for scoped secret storage and ignores a blank draft row', () => {
+  const existing = [{ id: 'blank', name: '', value: '' }]
+  const rows = importDotenv(
+    'MODE=production\nAPI_TOKEN=fixture-value\nDB_URL=postgres://name:fixture@db/app\nEMPTY=',
+    existing,
+    true,
+  )
+  assert.equal(rows.length, 4)
+  assert.equal(rows.find((row) => row.name === 'API_TOKEN')?.value, 'fixture-value')
+  assert.deepEqual(existing, [{ id: 'blank', name: '', value: '' }])
+  for (const input of [
+    'API_TOKEN=one\nAPI_TOKEN=two',
+    'INVALID-NAME=fixture-value',
+    'MODE=production\nAPI_TOKEN=',
+  ]) {
+    assert.throws(
+      () => importDotenv(input, [], true),
+      (error: Error) => !error.message.includes('fixture-value'),
+    )
+  }
+})

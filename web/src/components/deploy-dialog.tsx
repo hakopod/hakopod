@@ -1,5 +1,6 @@
+import { saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
-import { environmentRows, parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
+import { environmentRows, type EnvironmentRow } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import { ComposeImport, type ComposeDraft } from './compose-import'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -102,71 +103,50 @@ export function DeploymentForm({
       setMode(initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService])
-  const formSpec = (): Spec => ({
-    ...spec,
-    services: Object.fromEntries(
-      Object.entries(spec.services).map(([name, service]) => {
-        const draft = runtime[name]
-        return [
-          name,
-          draft
-            ? {
-                ...service,
-                command: parseProcessCommand(draft.command),
-                args: parseProcessCommand(draft.args),
-                env: parseEnvironment(draft.variables, Object.keys(service.secrets || {})),
-              }
-            : service,
-        ]
-      }),
-    ),
-  })
-  const payload = () => ({
+  const formSpec = async (): Promise<Spec> => {
+    const next = structuredClone(spec)
+    for (const [name, service] of Object.entries(next.services)) {
+      const draft = runtime[name]
+      if (!draft) continue
+      const saved = await saveEnvironment(
+        draft.variables,
+        { project, environment, application: next.name },
+        service.secrets,
+      )
+      next.services[name] = {
+        ...service,
+        command: parseProcessCommand(draft.command),
+        args: parseProcessCommand(draft.args),
+        ...saved,
+      }
+    }
+    return next
+  }
+  const payload = async () => ({
     project,
     environment,
     ...(serviceName ? { service: serviceName } : {}),
-    ...(mode === 'form' ? { spec: formSpec() } : { toml }),
+    ...(mode === 'form' ? { spec: await formSpec() } : { toml }),
   })
+
   async function changeMode(next: 'form' | 'toml' | 'compose') {
     if (busy || mode === next) return
     setError('')
     setPlan(null)
-    if (next === 'compose') {
-      if (mode === 'form') {
-        try {
-          const nextSpec = formSpec()
-          setSpec(nextSpec)
-          setToml(specToTOML(nextSpec))
-        } catch (cause) {
-          setError(message(cause))
-          return
-        }
-      }
-      setMode(next)
-      return
-    }
-    if (mode === 'compose') {
-      setMode(next)
-      return
-    }
-    if (next === 'toml') {
-      try {
-        const nextSpec = formSpec()
+    setBusy(true)
+    try {
+      if (mode === 'form' && (next === 'toml' || next === 'compose')) {
+        const nextSpec = await formSpec()
         setSpec(nextSpec)
         setToml(specToTOML(nextSpec))
         setMode(next)
-      } catch (cause) {
-        setError(message(cause))
+        return
       }
-      return
-    }
-    if (!toml.trim()) {
-      setMode(next)
-      return
-    }
-    setBusy(true)
-    try {
-      const result = await unwrap(client.POST('/plan', { body: payload() }))
+      if (next === 'compose' || mode === 'compose' || !toml.trim()) {
+        setMode(next)
+        return
+      }
+      const result = await unwrap(client.POST('/plan', { body: await payload() }))
       if (application && result.expected_revision !== application.revision)
         throw new Error(
           'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
@@ -201,7 +181,7 @@ export function DeploymentForm({
     setBusy(true)
     setError('')
     try {
-      const result = await unwrap(client.POST('/plan', { body: payload() }))
+      const result = await unwrap(client.POST('/plan', { body: await payload() }))
       if (application && result.expected_revision !== application.revision)
         throw new Error(
           'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
@@ -375,7 +355,7 @@ export function DeploymentForm({
             </Note>
           </>
         ) : (
-          <>
+          <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
             <div
               className="segmented-control deployment-methods"
               data-method-count={canBuildFromGit ? (serviceName ? 4 : 5) : serviceName ? 2 : 3}
@@ -494,6 +474,7 @@ export function DeploymentForm({
                 <label>
                   Automatic release recovery
                   <SelectField
+                    disabled={busy}
                     label="Automatic release recovery"
                     aria-describedby="release-recovery-help"
                     value={spec.recovery?.on_failure || 'safe'}
@@ -562,6 +543,7 @@ export function DeploymentForm({
                       <label>
                         Registry credential
                         <SelectField
+                          disabled={busy}
                           label="Registry credential"
                           value={service.registry_credential || ''}
                           onValueChange={(value) =>
@@ -572,7 +554,7 @@ export function DeploymentForm({
                           options={[
                             {
                               value: '',
-                              label: 'Public image / no credential',
+                              label: 'Automatic · public or matching saved credential',
                             },
                             ...(service.registry_credential &&
                             !registries.data?.items.some(
@@ -623,6 +605,7 @@ export function DeploymentForm({
                         <label>
                           Size
                           <SelectField
+                            disabled={busy}
                             label="Size"
                             value={service.size || 'small'}
                             onValueChange={(value) => updateService(name, { size: value })}
@@ -744,7 +727,7 @@ export function DeploymentForm({
                 </Note>
               </div>
             )}
-          </>
+          </fieldset>
         )}
         {error && (
           <div className="inline-error" role="alert">
@@ -755,7 +738,9 @@ export function DeploymentForm({
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
-          {plan ? 'Only reviewed changes will be submitted' : 'Nothing changes until you deploy'}
+          {plan
+            ? 'Only reviewed changes will be submitted'
+            : 'Imported secrets are saved at review; containers change on deployment'}
         </span>
         <div className="deploy-footer-actions">
           <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>

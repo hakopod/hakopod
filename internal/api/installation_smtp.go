@@ -43,7 +43,7 @@ func (s *Server) smtpAdministrator(w http.ResponseWriter, r *http.Request) bool 
 		return false
 	}
 	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
-	if err != nil || mode != cluster.DeploymentSelfHosted {
+	if err != nil || mode != cluster.DeploymentSelfHosted && !s.cloudOperator(p) {
 		problem(w, 403, "forbidden", "SMTP settings are managed by the operator in Hakopod Cloud")
 		return false
 	}
@@ -66,7 +66,7 @@ func (s *Server) operatorSMTP() smtpConfiguration {
 }
 
 // A database failure never silently re-enables operator fallback. Cloud mail
-// always uses operator configuration, even after a change of deployment mode.
+// uses saved settings only in the trusted control plane, never a customer node.
 func (s *Server) smtpSettings(ctx context.Context) (smtpSettingsView, error) {
 	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *Server) smtpSettings(ctx context.Context) (smtpSettingsView, error) {
 	}
 	op := s.operatorSMTP()
 	view := smtpSettingsView{SMTPSettings: op.SMTPSettings, Source: "operator", PasswordSet: op.Password != "", EncryptionReady: len(s.authEncryptionKey()) == 32}
-	if mode == cluster.DeploymentManagedCloud || s.Store == nil || s.Store.Pool == nil {
+	if mode == cluster.DeploymentManagedCloud && !s.CloudControlPlane || s.Store == nil || s.Store.Pool == nil {
 		return view, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)

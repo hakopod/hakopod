@@ -23,67 +23,71 @@ import (
 )
 
 type buildConfig struct {
-	ManagedRegistry    string             `json:"managed_registry,omitempty"`
-	Env                *map[string]string `json:"env,omitempty"`
-	Command            *[]string          `json:"command,omitempty"`
-	Args               *[]string          `json:"args,omitempty"`
-	Framework          *framework.Plan    `json:"framework,omitempty"`
-	BuildSecrets       map[string]string  `json:"build_secrets,omitempty"`
-	BuildArgs          map[string]string  `json:"build_args,omitempty"`
-	Provider           string             `json:"provider"`
-	ConnectionID       string             `json:"connection_id"`
-	Architecture       string             `json:"architecture"`
-	AutoBuild          bool               `json:"auto_build"`
-	AutoDeploy         bool               `json:"auto_deploy"`
-	GrantID            string             `json:"-"`
-	ID                 string             `json:"id"`
-	ApplicationID      string             `json:"application_id,omitempty"`
-	Project            string             `json:"project"`
-	Environment        string             `json:"environment"`
-	Name               string             `json:"name"`
-	Service            string             `json:"service"`
-	Repository         string             `json:"repository"`
-	Branch             string             `json:"branch"`
-	Mode               string             `json:"mode"`
-	Preset             string             `json:"preset"`
-	ContextPath        string             `json:"context_path"`
-	Dockerfile         string             `json:"dockerfile"`
-	RegistryCredential string             `json:"registry_credential,omitempty"`
-	Port               int                `json:"port"`
-	Public             bool               `json:"public"`
-	Size               string             `json:"size"`
-	Revision           int64              `json:"revision"`
-	InstalledRevision  int64              `json:"installed_revision"`
-	InstalledCommit    string             `json:"installed_commit"`
+	ReuseServices      []string                   `json:"reuse_services,omitempty"`
+	Secrets            *map[string]spec.SecretRef `json:"secrets,omitempty"`
+	ManagedRegistry    string                     `json:"managed_registry,omitempty"`
+	Env                *map[string]string         `json:"env,omitempty"`
+	Command            *[]string                  `json:"command,omitempty"`
+	Args               *[]string                  `json:"args,omitempty"`
+	Framework          *framework.Plan            `json:"framework,omitempty"`
+	BuildSecrets       map[string]string          `json:"build_secrets,omitempty"`
+	BuildArgs          map[string]string          `json:"build_args,omitempty"`
+	Provider           string                     `json:"provider"`
+	ConnectionID       string                     `json:"connection_id"`
+	Architecture       string                     `json:"architecture"`
+	AutoBuild          bool                       `json:"auto_build"`
+	AutoDeploy         bool                       `json:"auto_deploy"`
+	GrantID            string                     `json:"-"`
+	ID                 string                     `json:"id"`
+	ApplicationID      string                     `json:"application_id,omitempty"`
+	Project            string                     `json:"project"`
+	Environment        string                     `json:"environment"`
+	Name               string                     `json:"name"`
+	Service            string                     `json:"service"`
+	Repository         string                     `json:"repository"`
+	Branch             string                     `json:"branch"`
+	Mode               string                     `json:"mode"`
+	Preset             string                     `json:"preset"`
+	ContextPath        string                     `json:"context_path"`
+	Dockerfile         string                     `json:"dockerfile"`
+	RegistryCredential string                     `json:"registry_credential,omitempty"`
+	Port               int                        `json:"port"`
+	Public             bool                       `json:"public"`
+	Size               string                     `json:"size"`
+	Revision           int64                      `json:"revision"`
+	InstalledRevision  int64                      `json:"installed_revision"`
+	InstalledCommit    string                     `json:"installed_commit"`
 }
 type buildInput struct {
-	Env                    *map[string]string `json:"env,omitempty"`
-	Command                *[]string          `json:"command,omitempty"`
-	Args                   *[]string          `json:"args,omitempty"`
-	Framework              *framework.Plan    `json:"framework,omitempty"`
-	BuildSecrets           map[string]string  `json:"build_secrets,omitempty"`
-	BuildArgs              map[string]string  `json:"build_args,omitempty"`
-	Provider               string             `json:"provider"`
-	ConnectionID           string             `json:"connection_id"`
-	Architecture           string             `json:"architecture"`
-	AutoBuild              bool               `json:"auto_build"`
-	AutoDeploy             bool               `json:"auto_deploy"`
-	ApplicationID          string             `json:"application_id"`
-	Project                string             `json:"project"`
-	Environment            string             `json:"environment"`
-	Name                   string             `json:"name"`
-	Service                string             `json:"service"`
-	Repository             string             `json:"repository"`
-	Branch                 string             `json:"branch"`
-	Mode                   string             `json:"mode"`
-	Preset                 string             `json:"preset"`
-	ContextPath            string             `json:"context_path"`
-	Dockerfile             string             `json:"dockerfile"`
-	RegistryCredential     string             `json:"registry_credential"`
-	Port                   int                `json:"port"`
-	Public                 bool               `json:"public"`
-	Size                   string             `json:"size"`
-	ExpectedConfigRevision *int64             `json:"expected_config_revision"`
+	ReuseServices          []string                   `json:"reuse_services,omitempty"`
+	Secrets                *map[string]spec.SecretRef `json:"secrets,omitempty"`
+	Env                    *map[string]string         `json:"env,omitempty"`
+	Command                *[]string                  `json:"command,omitempty"`
+	Args                   *[]string                  `json:"args,omitempty"`
+	Framework              *framework.Plan            `json:"framework,omitempty"`
+	BuildSecrets           map[string]string          `json:"build_secrets,omitempty"`
+	BuildArgs              map[string]string          `json:"build_args,omitempty"`
+	Provider               string                     `json:"provider"`
+	ConnectionID           string                     `json:"connection_id"`
+	Architecture           string                     `json:"architecture"`
+	AutoBuild              bool                       `json:"auto_build"`
+	AutoDeploy             bool                       `json:"auto_deploy"`
+	ApplicationID          string                     `json:"application_id"`
+	Project                string                     `json:"project"`
+	Environment            string                     `json:"environment"`
+	Name                   string                     `json:"name"`
+	Service                string                     `json:"service"`
+	Repository             string                     `json:"repository"`
+	Branch                 string                     `json:"branch"`
+	Mode                   string                     `json:"mode"`
+	Preset                 string                     `json:"preset"`
+	ContextPath            string                     `json:"context_path"`
+	Dockerfile             string                     `json:"dockerfile"`
+	RegistryCredential     string                     `json:"registry_credential"`
+	Port                   int                        `json:"port"`
+	Public                 bool                       `json:"public"`
+	Size                   string                     `json:"size"`
+	ExpectedConfigRevision *int64                     `json:"expected_config_revision"`
 }
 type buildRun struct {
 	Provider       string      `json:"provider"`
@@ -144,14 +148,24 @@ func validBuildPath(value string) bool {
 	return len(value) > 0 && len(value) <= 200 && buildPathPattern.MatchString(value) && path.Clean(value) == value && !strings.HasPrefix(value, "/") && value != ".." && !strings.HasPrefix(value, "../")
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
-	c := buildConfig{Env: in.Env, Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	c := buildConfig{ReuseServices: append([]string(nil), in.ReuseServices...), Secrets: in.Secrets, Env: in.Env, Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	if len(c.ReuseServices) > 19 || len(c.ReuseServices) > 0 && c.ApplicationID == "" {
+		return c, fmt.Errorf("%w: image reuse needs an existing application and at most 19 additional services", store.ErrInput)
+	}
+	if c.Service == "" {
+		c.Service = "web"
+	}
+	seen := map[string]bool{c.Service: true}
+	for _, name := range c.ReuseServices {
+		if !slug.MatchString(name) || seen[name] {
+			return c, fmt.Errorf("%w: choose unique additional services in this application", store.ErrInput)
+		}
+		seen[name] = true
+	}
 	c.Repository = normalizeSourceRepository(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
 		c.Provider = "github"
-	}
-	if c.Service == "" {
-		c.Service = "web"
 	}
 	if c.Branch == "" {
 		c.Branch = "main"
@@ -203,8 +217,15 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	if err := spec.ValidateCommand(command, args); err != nil {
 		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 	}
-	if c.Env != nil {
-		_, err := spec.Normalize(spec.Application{Name: "runtime", Services: map[string]spec.Service{"runtime": {Image: "busybox:stable", Env: *c.Env}}})
+	if c.Env != nil || c.Secrets != nil {
+		runtimeService := spec.Service{Image: "busybox:stable"}
+		if c.Env != nil {
+			runtimeService.Env = *c.Env
+		}
+		if c.Secrets != nil {
+			runtimeService.Secrets = *c.Secrets
+		}
+		_, err := spec.Normalize(spec.Application{Name: "runtime", Services: map[string]spec.Service{"runtime": runtimeService}})
 		if err != nil {
 			return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 		}
@@ -326,6 +347,11 @@ func (s *Server) validateBuildApplication(ctx context.Context, c buildConfig) er
 	if _, ok := a.Spec.Services[c.Service]; !ok {
 		return fmt.Errorf("%w: service does not exist in the linked application", store.ErrInput)
 	}
+	for _, name := range c.ReuseServices {
+		if _, ok := a.Spec.Services[name]; !ok {
+			return fmt.Errorf("%w: an image reuse service does not exist in the linked application", store.ErrInput)
+		}
+	}
 	return nil
 }
 func (s *Server) createBuild(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +457,10 @@ func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if (c.ConnectionID != defaultGitConnection(c.Provider) || old.ConnectionID != defaultGitConnection(old.Provider)) && (c.ConnectionID != old.ConnectionID || c.Repository != old.Repository || c.Provider != old.Provider) && !who(r).CanManageGit() {
 		problem(w, 403, "repository_approval_required", "An administrator must approve changing this build repository or connection")
+		return
+	}
+	if err = s.validateBuildApplication(r.Context(), c); err != nil {
+		authFailure(w, err)
 		return
 	}
 	c.ID = old.ID

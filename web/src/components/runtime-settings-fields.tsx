@@ -4,18 +4,20 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { Icon } from './icons'
-import type { EnvironmentRow } from '../lib/service-environment'
+import { sensitiveEnvironment, type EnvironmentRow } from '../lib/service-environment'
 
 export function EnvironmentFields({
   rows,
   onChange,
   label,
   disabled = false,
+  allowSecrets = true,
 }: {
   rows: EnvironmentRow[]
   onChange: (rows: EnvironmentRow[]) => void
   label: string
   disabled?: boolean
+  allowSecrets?: boolean
 }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const latest = useRef({ rows, disabled })
@@ -23,6 +25,7 @@ export function EnvironmentFields({
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState(false)
+  const [paste, setPaste] = useState('')
   return (
     <div className="grid min-w-0 gap-3">
       <strong className="text-sm">Environment variables</strong>
@@ -50,23 +53,47 @@ export function EnvironmentFields({
           </label>
           <label>
             Value
-            <Textarea
-              className="runtime-variable-value"
-              aria-label={`${label} variable ${index + 1} value`}
-              value={row.value}
-              disabled={disabled}
-              rows={1}
-              maxLength={4096}
-              placeholder="production"
-              autoComplete="off"
-              onChange={(event) =>
-                onChange(
-                  rows.map((item) =>
-                    item.id === row.id ? { ...item, value: event.target.value } : item,
-                  ),
-                )
-              }
-            />
+            {sensitiveEnvironment(row.name, row.value) ? (
+              <Input
+                type="password"
+                aria-label={`${label} variable ${index + 1} secret value`}
+                value={row.value}
+                autoComplete="new-password"
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange(
+                    rows.map((item) =>
+                      item.id === row.id ? { ...item, value: event.target.value } : item,
+                    ),
+                  )
+                }
+              />
+            ) : (
+              <Textarea
+                className="runtime-variable-value"
+                aria-label={`${label} variable ${index + 1} value`}
+                value={row.value}
+                disabled={disabled}
+                rows={1}
+                maxLength={4096}
+                placeholder="production"
+                autoComplete="off"
+                onChange={(event) =>
+                  onChange(
+                    rows.map((item) =>
+                      item.id === row.id ? { ...item, value: event.target.value } : item,
+                    ),
+                  )
+                }
+              />
+            )}
+            {sensitiveEnvironment(row.name, row.value) && (
+              <span className="field-help">
+                {allowSecrets
+                  ? 'Stored as an application secret when reviewed.'
+                  : 'Use an application secret reference instead of a Compose interpolation value.'}
+              </span>
+            )}
           </label>
           <Button
             variant="ghost"
@@ -109,7 +136,7 @@ export function EnvironmentFields({
                 throw new Error(
                   'The variables changed while reading the file. Import it again to use the latest values.',
                 )
-              const merged = importDotenv(text, initialRows)
+              const merged = importDotenv(text, initialRows, allowSecrets)
               onChange(merged)
               setImportError(false)
               setImportMessage(
@@ -132,6 +159,39 @@ export function EnvironmentFields({
           {importing ? 'Importing…' : 'Import .env'}
         </Button>
       </div>
+      <details className="grid gap-2">
+        <summary className="cursor-pointer text-sm">Paste .env</summary>
+        <Textarea
+          aria-label={`Paste ${label} .env`}
+          value={paste}
+          onChange={(event) => setPaste(event.target.value)}
+          disabled={disabled || importing}
+          rows={5}
+          placeholder={'APP_ENV=production\nPORT=8000'}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <Button
+          className="mt-2"
+          disabled={disabled || importing || !paste.trim()}
+          onClick={() => {
+            try {
+              const merged = importDotenv(paste, rows, allowSecrets)
+              onChange(merged)
+              setPaste('')
+              setImportError(false)
+              setImportMessage('Variables imported. Review them before saving.')
+            } catch (error) {
+              setImportError(true)
+              setImportMessage(
+                error instanceof Error ? error.message : 'Could not import variables.',
+              )
+            }
+          }}
+        >
+          Import pasted variables
+        </Button>
+      </details>
       {importMessage && (
         <p className="field-help" role={importError ? 'alert' : 'status'}>
           {importMessage}
@@ -142,8 +202,9 @@ export function EnvironmentFields({
         kept literally.
       </p>
       <p className="field-help">
-        These values are available when the service starts. Passwords and tokens must use
-        application secrets; plain variables are saved in deployment history.
+        {allowSecrets
+          ? 'These values are available when the service starts. Passwords, tokens and credential URLs are stored as application secret references when you review. Plain variables are saved in deployment history.'
+          : 'These values substitute Compose placeholders during conversion. They are not automatically injected into services. Use application secret references for passwords and tokens.'}
       </p>
     </div>
   )

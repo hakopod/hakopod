@@ -34,18 +34,19 @@ type Options struct {
 	DeploymentMode      string
 	PublicTCPPorts      []int32
 	// DedicatedPublicTCPNode is operator-only: an isolated BYO cluster with exactly this node.
-	DedicatedPublicTCPNode string
-	AWSIdentityBindings    []AWSIdentityBinding
-	SupervisorURL          string
-	ProxyNamespace         string
-	ProxyConfigMap         string
-	ProxyRelease           string
-	RegistrySecretName     func(context.Context, string, string, string) (string, error)
-	ExternalSecrets        func(context.Context, string, string, spec.Application) (map[string]map[string][]byte, error)
-	VirtualNetworks        func(context.Context, string, string, spec.Application) (map[string]string, error)
-	AppDomain              string
-	IngressClass           string
-	RolloutTimeout         time.Duration
+	DedicatedPublicTCPNode  string
+	AWSIdentityBindings     []AWSIdentityBinding
+	SupervisorURL           string
+	ProxyNamespace          string
+	ProxyConfigMap          string
+	ProxyRelease            string
+	RegistrySecretName      func(context.Context, string, string, string) (string, error)
+	RegistryCredentialNames func(context.Context, string, string, string) ([]string, error)
+	ExternalSecrets         func(context.Context, string, string, spec.Application) (map[string]map[string][]byte, error)
+	VirtualNetworks         func(context.Context, string, string, spec.Application) (map[string]string, error)
+	AppDomain               string
+	IngressClass            string
+	RolloutTimeout          time.Duration
 	// TLSIssuer must identify an operator-provisioned cert-manager ClusterIssuer.
 	// Empty leaves HTTP explicit; the local development cluster uses this mode.
 	TLSIssuer       string

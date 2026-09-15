@@ -117,7 +117,7 @@ function Administration() {
   const navigationRoot = useActiveSection(tab)
   return (
     <div className="settings-page" ref={navigationRoot}>
-      <PageHeader title="Workspace settings" />
+      <PageHeader title={features.operator ? 'Installation settings' : 'Workspace settings'} />
       <SettingsLayout
         sections={visibleSections}
         active={tab}

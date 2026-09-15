@@ -1544,6 +1544,7 @@
   max-height: 560px;
 }
 .ops-live-logs .log-window pre {
+  color: var(--foreground);
   font: 13px/1.8 var(--font-mono);
   white-space: pre;
 }

@@ -1,15 +1,17 @@
+import { Input } from './ui/input'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import type { Application, Plan } from '../lib/types'
+import type { Application, Plan, Service } from '../lib/types'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
+import { saveEnvironment } from '../lib/save-environment'
 import { secretReference } from '../lib/secret-reference'
 import {
   environmentChanges,
   environmentRows,
   mergeEnvironment,
-  parseEnvironment,
+  splitEnvironment,
   sameEnvironment,
   type Environment,
 } from '../lib/service-environment'
@@ -18,19 +20,22 @@ import { DiffTable } from './deploy-dialog'
 import { Icon } from './icons'
 import { Note } from './shared'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
+import { EnvironmentFields } from './runtime-settings-fields'
 
 export function ServiceEnvironmentForm({
   application,
   serviceName,
 }: {
   application: Application
-  serviceName: string
+  serviceName?: string
 }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
-  const service = application.spec.services[serviceName]
+  const service: Pick<Service, 'env' | 'secrets'> = serviceName
+    ? application.spec.services[serviceName]
+    : { env: application.spec.env, secrets: application.spec.secrets }
+  const label = serviceName || 'Application'
+  const [injectEnv, setInjectEnv] = useState(application.spec.inject_env ?? false)
   const [base] = useState(() => ({ ...service.env }))
   const [rows, setRows] = useState(() => environmentRows(service.env))
   const [reviewed, setReviewed] = useState<{ plan: Plan; before: Environment } | null>(null)
@@ -46,7 +51,7 @@ export function ServiceEnvironmentForm({
     void navigate({
       to: '/applications/$applicationId',
       params: { applicationId: application.id },
-      search: { service: serviceName, tab: 'environment' },
+      search: { service: serviceName, tab: serviceName ? 'environment' : 'services' },
     })
   async function review(keepDraft = false) {
     setBusy(true)
@@ -60,12 +65,14 @@ export function ServiceEnvironmentForm({
           params: { path: { id: application.id } },
         }),
       )
-      const currentService = current.spec.services[serviceName]
+      const currentService = serviceName
+        ? current.spec.services[serviceName]
+        : { env: current.spec.env, secrets: current.spec.secrets }
       if (!currentService)
         throw new Error(
           'This service was removed. Your draft is still here; return to the application to inspect its current revision.',
         )
-      const draft = parseEnvironment(rows, Object.keys(currentService.secrets || {}))
+      const draft = splitEnvironment(rows, Object.keys(currentService.secrets || {})).env
       const before = currentService.env || {}
       const merged = mergeEnvironment(base, draft, before)
       if (
@@ -75,8 +82,24 @@ export function ServiceEnvironmentForm({
         setConflict({ names: merged.conflicts, environment: before })
         return
       }
+      const saved = await saveEnvironment(
+        rows,
+        { project: current.project, environment: current.environment, application: current.name },
+        currentService.secrets,
+        controller.signal,
+      )
       const spec = structuredClone(current.spec)
-      spec.services[serviceName].env = merged.environment
+      if (serviceName) {
+        spec.services[serviceName].env = merged.environment
+        spec.services[serviceName].secrets = saved.secrets
+      } else {
+        spec.inject_env =
+          injectEnv === Boolean(application.spec.inject_env)
+            ? Boolean(current.spec.inject_env)
+            : injectEnv
+        spec.env = merged.environment
+        spec.secrets = saved.secrets
+      }
       const plan = await unwrap(
         client.POST('/plan', {
           signal: controller.signal,
@@ -138,28 +161,36 @@ export function ServiceEnvironmentForm({
     }
   }
   const changes = reviewed
-    ? environmentChanges(reviewed.before, reviewed.plan.spec.services[serviceName].env)
+    ? environmentChanges(
+        reviewed.before,
+        serviceName ? reviewed.plan.spec.services[serviceName].env : reviewed.plan.spec.env,
+      )
     : []
+  const secretChanges =
+    reviewed?.plan.changes.filter(
+      (change) => change.field === 'secrets' || change.field === 'inject_env',
+    ) || []
   const secrets = Object.entries(service.secrets || {})
   return (
     <FormPage
-      title={reviewed ? 'Review environment changes' : `${serviceName} environment`}
-      description={`${application.name} · Plain variables passed to this service’s containers.`}
+      title={reviewed ? 'Review environment changes' : `${label} environment`}
+      description={`${application.name} · Application defaults are inherited by services; service values take precedence.`}
       icon="code"
       breadcrumbs={[
         { label: 'Applications', to: `/projects/${encodeURIComponent(application.project)}` },
         { label: application.name, to: `/applications/${application.id}` },
-        { label: `${serviceName} environment` },
+        { label: `${label} environment` },
       ]}
       help={
         <>
           <FormHint title="Keep credentials in secrets">
-            Plain variables are stored in application revisions. Use a secret reference for
-            passwords, tokens, keys, and connection strings with credentials.
+            Plain variables are stored in application revisions. Imported passwords, tokens and
+            credential URLs are stored as secret references when you review, before deployment.
           </FormHint>
           <FormHint title="A reviewed deployment">
-            Changes create an immutable revision and replace this service’s pods. Your draft stays
-            here if validation or deployment fails.
+            Changes create an immutable revision. Application defaults update all inheriting
+            services; service overrides update that service. Your draft stays here if validation or
+            deployment fails.
           </FormHint>
         </>
       }
@@ -169,8 +200,8 @@ export function ServiceEnvironmentForm({
           <>
             <div className="review-summary">
               <div>
-                <span className="muted-text">SERVICE</span>
-                <strong>{serviceName}</strong>
+                <span className="muted-text">SCOPE</span>
+                <strong>{label}</strong>
               </div>
               <div>
                 <span className="muted-text">REVISION</span>
@@ -180,7 +211,7 @@ export function ServiceEnvironmentForm({
               </div>
               <div>
                 <span className="muted-text">VARIABLES CHANGED</span>
-                <strong>{changes.length}</strong>
+                <strong>{changes.length + secretChanges.length}</strong>
               </div>
             </div>
             {changes.length ? (
@@ -223,7 +254,11 @@ export function ServiceEnvironmentForm({
                 </table>
               </div>
             ) : (
-              <Note>No environment changes to deploy.</Note>
+              <Note>
+                {secretChanges.length
+                  ? 'Environment settings are ready to deploy. Secret values are hidden.'
+                  : 'No environment changes to deploy.'}
+              </Note>
             )}
             {reviewed.plan.changes.some((change) => change.field !== 'env') && (
               <details className="env-additional-changes">
@@ -240,85 +275,67 @@ export function ServiceEnvironmentForm({
         ) : (
           <>
             <FormSection
-              title="Plain variables"
+              title="Variables"
               description={`${rows.length} / 128 variables. Empty values are allowed.`}
               icon="code"
             >
-              {rows.length ? (
-                <div className="env-variable-list">
-                  {rows.map((row, index) => (
-                    <div className="env-variable-row" key={row.id}>
-                      <label>
-                        Name
-                        <Input
-                          className="mono"
-                          aria-label={`Variable ${index + 1} name`}
-                          value={row.name}
-                          maxLength={128}
-                          autoComplete="off"
-                          spellCheck={false}
-                          disabled={busy}
-                          onChange={(event) => {
-                            setRows((previous) =>
-                              previous.map((item) =>
-                                item.id === row.id ? { ...item, name: event.target.value } : item,
-                              ),
-                            )
-                            setConflict(null)
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Value
-                        <Textarea
-                          aria-label={`Variable ${index + 1} value`}
-                          value={row.value}
-                          maxLength={4096}
-                          rows={2}
-                          spellCheck={false}
-                          disabled={busy}
-                          onChange={(event) => {
-                            setRows((previous) =>
-                              previous.map((item) =>
-                                item.id === row.id ? { ...item, value: event.target.value } : item,
-                              ),
-                            )
-                            setConflict(null)
-                          }}
-                        />
-                      </label>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Remove variable ${row.name || index + 1}`}
-                        disabled={busy}
-                        onClick={() => {
-                          setRows((previous) => previous.filter((item) => item.id !== row.id))
-                          setConflict(null)
-                        }}
-                      >
-                        <Icon name="trash" size={15} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="field-help">This service has no plain variables yet.</p>
+              {!serviceName && (
+                <label className="checkbox-label mb-4">
+                  <Input
+                    type="checkbox"
+                    checked={injectEnv}
+                    onChange={(event) => setInjectEnv(event.target.checked)}
+                    disabled={busy}
+                  />
+                  <span>
+                    Inject application variables into every service <code>inject_env = true</code>
+                  </span>
+                </label>
               )}
-              <Button
-                size="sm"
-                disabled={busy || rows.length >= 128}
-                onClick={() => {
-                  setRows((previous) => [
-                    ...previous,
-                    { id: crypto.randomUUID(), name: '', value: '' },
-                  ])
+              <EnvironmentFields
+                rows={rows}
+                onChange={(next) => {
+                  setRows(next)
                   setConflict(null)
                 }}
-              >
-                <Icon name="plus" size={14} />
-                Add variable
-              </Button>
+                label={label}
+                disabled={busy}
+              />
+              {serviceName &&
+                Object.keys({
+                  ...(application.spec.inject_env ? application.spec.env : {}),
+                  ...application.spec.secrets,
+                }).length > 0 && (
+                  <div className="mt-4 grid gap-2">
+                    <strong className="text-sm">Inherited from application</strong>
+                    <p className="field-help">
+                      Add a service variable with the same name to override a default. Empty strings
+                      also override defaults.
+                    </p>
+                    {Object.keys({
+                      ...(application.spec.inject_env ? application.spec.env : {}),
+                      ...application.spec.secrets,
+                    })
+                      .sort()
+                      .map((name) => (
+                        <code key={name}>
+                          {name}
+                          {rows.some((row) => row.name === name) ||
+                          Object.hasOwn(service.secrets || {}, name)
+                            ? ' · overridden'
+                            : ''}
+                        </code>
+                      ))}
+                    <Button asChild>
+                      <Link
+                        to="/applications/$applicationId/environment"
+                        params={{ applicationId: application.id }}
+                      >
+                        Edit application variables
+                      </Link>
+                    </Button>
+                  </div>
+                )}
             </FormSection>
             <FormSection
               title="Secret references"
@@ -340,7 +357,7 @@ export function ServiceEnvironmentForm({
                   ))}
                 </dl>
               ) : (
-                <p className="field-help">No secret references attached to this service.</p>
+                <p className="field-help">No secret references attached at this scope.</p>
               )}
               <Button asChild>
                 <Link
@@ -348,7 +365,7 @@ export function ServiceEnvironmentForm({
                   params={{ applicationId: application.id }}
                   search={{ service: serviceName, tab: 'secrets' }}
                 >
-                  Manage service secrets
+                  Manage application secrets
                   <Icon name="arrow" size={14} />
                 </Link>
               </Button>
@@ -377,8 +394,10 @@ export function ServiceEnvironmentForm({
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
           {reviewed
-            ? 'Only this service’s environment changes'
-            : 'Nothing changes until you deploy'}
+            ? serviceName
+              ? 'Only this service’s environment changes'
+              : 'Application defaults update all inheriting services'
+            : 'Values are saved securely at review; containers change on deployment'}
         </span>
         <div className="deploy-footer-actions">
           <Button disabled={busy} onClick={() => (reviewed ? setReviewed(null) : close())}>
@@ -386,7 +405,7 @@ export function ServiceEnvironmentForm({
           </Button>
           <Button
             variant="primary"
-            disabled={busy || Boolean(reviewed && !changes.length)}
+            disabled={busy || Boolean(reviewed && !changes.length && !secretChanges.length)}
             onClick={() => void (reviewed ? deploy() : review())}
           >
             {busy

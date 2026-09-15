@@ -1,7 +1,9 @@
+import { Icon } from './icons'
 import { useGitConnections, useGitProviderSetup } from '../lib/git-connections'
 import { GitRepositoryField } from './git-repository-field'
+import { saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields } from './runtime-settings-fields'
-import { environmentRows, parseEnvironment } from '../lib/service-environment'
+import { environmentRows } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import { GitDeploymentPaths } from './git-deployment-paths'
 import {
@@ -48,6 +50,7 @@ export default function BuildForm({
   const [service, setService] = useState(
     build?.service || Object.keys(application?.spec.services || {})[0] || 'web',
   )
+  const [reuseServices, setReuseServices] = useState<string[]>(build?.reuse_services || [])
   const [provider, setProvider] = useState<'github' | 'gitlab'>(build?.provider || 'github')
   const [connectionId, setConnectionId] = useState(build?.connection_id || '')
   const [repository, setRepository] = useState(build?.repository || '')
@@ -56,6 +59,16 @@ export default function BuildForm({
   const [framework, setFramework] = useState(build?.framework || defaultFrameworkPlan)
   const [buildSecrets, setBuildSecrets] = useState(() => formatBuildSecrets(build?.build_secrets))
   const boundApplicationId = application?.id || build?.application_id
+  const linkedApp = useQuery({
+    queryKey: ['application', boundApplicationId],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/applications/{id}', { signal, params: { path: { id: boundApplicationId! } } }),
+      ),
+    enabled: Boolean(boundApplicationId),
+    initialData: application,
+  })
+  const reuseApplication = linkedApp.data || application
   const [detecting, setDetecting] = useState(false)
   const [detectionError, setDetectionError] = useState('')
   const [detectionNotes, setDetectionNotes] = useState<string[]>([])
@@ -153,11 +166,19 @@ export default function BuildForm({
           setBusy(true)
           setError('')
           try {
+            const savedRuntime = runtimeEnvEnabled
+              ? await saveEnvironment(
+                  runtimeEnv,
+                  { project, environment, application: application?.name || name },
+                  build?.secrets || application?.spec.services[service]?.secrets,
+                )
+              : undefined
             const body = {
               project,
               environment,
               name,
               service,
+              reuse_services: reuseServices.filter((name) => name !== service),
               provider,
               connection_id: connectionId,
               repository,
@@ -179,12 +200,8 @@ export default function BuildForm({
                   : runtimeMode === 'default'
                     ? []
                     : undefined,
-              env: runtimeEnvEnabled
-                ? parseEnvironment(
-                    runtimeEnv,
-                    Object.keys(application?.spec.services[service]?.secrets || {}),
-                  )
-                : undefined,
+              env: savedRuntime?.env,
+              secrets: savedRuntime?.secrets,
               build_args: parseBuildArgs(buildArgs),
               framework:
                 mode === 'framework'
@@ -293,7 +310,7 @@ export default function BuildForm({
               onValueChange={setConnectionId}
               builds
             />
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid items-start gap-4 sm:grid-cols-2">
               <GitRepositoryField
                 provider={provider}
                 connectionId={connectionId}
@@ -309,6 +326,9 @@ export default function BuildForm({
                   maxLength={200}
                   required
                 />
+                <span className="field-help">
+                  Build this branch. Use the same branch when installing the repository workflow.
+                </span>
               </label>
             </div>
           </FormSection>
@@ -674,7 +694,7 @@ export default function BuildForm({
                     value: '',
                     label: managedRegistryAvailable
                       ? 'Automatic · Hakopod private registry'
-                      : 'None · image must be publicly pullable',
+                      : 'Automatic · public or matching saved credential',
                   },
                   ...(registry && !registries.data?.items.some((item) => item.name === registry)
                     ? [{ value: registry, label: registry }]
@@ -688,10 +708,81 @@ export default function BuildForm({
               <span className="field-help">
                 {managedRegistryAvailable
                   ? 'GitHub App builds use the Hakopod private registry automatically. Worker pull credentials are configured for you. Choosing a saved credential uses your own registry instead.'
-                  : 'Private registry images need a saved credential with package read permission.'}
+                  : 'Matching saved registry credentials are tried automatically for private images. You can choose which credential to try first.'}
               </span>
             </label>
+            <Button type="button" asChild>
+              <a href="/infrastructure/registries/new" target="_blank" rel="noopener noreferrer">
+                Create registry credential <Icon name="external" size={14} />
+              </a>
+            </Button>
+            <span className="field-help">
+              Opens in a new tab so your build draft stays here. Return and refresh the credential
+              list after saving.
+            </span>
+            <Button
+              type="button"
+              disabled={registries.isFetching}
+              onClick={() => void registries.refetch()}
+            >
+              Refresh credentials
+            </Button>
           </FormSection>
+          {boundApplicationId && (
+            <FormSection
+              title="Reuse this image"
+              description="Build once for your web process, workers and migrations."
+              icon="box"
+            >
+              <p className="field-help">
+                Selected services receive the same verified image on deployment. Each keeps its own
+                run command, variables, ports and volumes.
+              </p>
+              {linkedApp.error && (
+                <Note>
+                  The application services could not be loaded. Your saved selections are retained;
+                  reload before changing them.
+                </Note>
+              )}
+              {Object.keys(reuseApplication?.spec.services || {})
+                .filter((name) => name !== service)
+                .map((name) => (
+                  <label key={name} className="checkbox-label">
+                    <Input
+                      type="checkbox"
+                      checked={reuseServices.includes(name)}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setReuseServices((current) =>
+                          event.target.checked
+                            ? [...current, name]
+                            : current.filter((value) => value !== name),
+                        )
+                      }
+                    />
+                    <span>{name}</span>
+                  </label>
+                ))}
+              {reuseApplication && (
+                <Button type="button" asChild>
+                  <a
+                    href={`/applications/${reuseApplication.id}/configure`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Add another service <Icon name="external" size={14} />
+                  </a>
+                </Button>
+              )}
+              <Button
+                type="button"
+                disabled={linkedApp.isFetching}
+                onClick={() => void linkedApp.refetch()}
+              >
+                Refresh services
+              </Button>
+            </FormSection>
+          )}
           <FormSection
             title="Automation"
             description="Choose how verified commits become deployments."
