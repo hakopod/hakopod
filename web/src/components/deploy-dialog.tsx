@@ -50,6 +50,8 @@ export function DeploymentForm({
 }) {
   const features = useEditionFeatures()
   const scope = useScope()
+  const canBuildFromGit =
+    !application && (scope.identity.admin || scope.identity.can_manage_git) && features.git
   const project = application?.project || scope.project
   const environment = application?.environment || scope.environment
   const navigate = useNavigate()
@@ -71,7 +73,15 @@ export function DeploymentForm({
   const [busy, setBusy] = useState(false)
   const [editorExpanded, setEditorExpanded] = useState(false)
   const expandedEditor = useRef<HTMLTextAreaElement>(null)
+  const tomlEditor = useRef<HTMLTextAreaElement>(null)
+  const focusGeneratedTOML = useRef(false)
   const requestKey = useRef('')
+  useEffect(() => {
+    if (mode === 'toml' && focusGeneratedTOML.current) {
+      focusGeneratedTOML.current = false
+      tomlEditor.current?.focus()
+    }
+  }, [mode])
   useEffect(() => {
     {
       const initial = application
@@ -366,7 +376,10 @@ export function DeploymentForm({
           </>
         ) : (
           <>
-            <div className="segmented-control deployment-methods">
+            <div
+              className="segmented-control deployment-methods"
+              data-method-count={canBuildFromGit ? (serviceName ? 4 : 5) : serviceName ? 2 : 3}
+            >
               <button
                 disabled={busy}
                 className={mode === 'form' ? 'selected' : ''}
@@ -393,20 +406,18 @@ export function DeploymentForm({
                   Import Compose
                 </button>
               )}
-              {!application &&
-                (scope.identity.admin || scope.identity.can_manage_git) &&
-                features.git && (
-                  <>
-                    <button onClick={() => void navigate({ to: '/builds/new' })}>
-                      <ServiceIcon name="github" size={15} />
-                      Build from Git
-                    </button>
-                    <button onClick={() => void navigate({ to: '/applications/import' })}>
-                      <Icon name="code" size={15} />
-                      Import Git configuration
-                    </button>
-                  </>
-                )}
+              {canBuildFromGit && (
+                <>
+                  <button onClick={() => void navigate({ to: '/builds/new' })}>
+                    <ServiceIcon name="github" size={15} />
+                    Build from Git
+                  </button>
+                  <button onClick={() => void navigate({ to: '/applications/import' })}>
+                    <Icon name="code" size={15} />
+                    Import Git configuration
+                  </button>
+                </>
+              )}
             </div>
             {mode === 'compose' ? (
               <ComposeImport
@@ -426,6 +437,7 @@ export function DeploymentForm({
                     ),
                   )
                   setToml(draft.toml)
+                  focusGeneratedTOML.current = true
                   setMode('toml')
                   setPlan(null)
                   setError('')
@@ -448,6 +460,7 @@ export function DeploymentForm({
                 </div>
                 <Textarea
                   id="toml-import"
+                  ref={tomlEditor}
                   className="code-editor"
                   value={toml}
                   onChange={(event) => setToml(event.target.value)}

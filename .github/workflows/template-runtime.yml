@@ -52,6 +52,10 @@ jobs:
           set -o pipefail
           HAKOPOD_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=redis go test ./internal/cluster -run '^TestLiveCatalogTemplates$' -count=1 -json | tee .local/runtime-results/redis.jsonl
           HAKOPOD_SHARED_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=nginx go test ./internal/cluster -run '^TestLiveSharedCatalog$' -count=1 -json | tee .local/runtime-results/nginx.jsonl
+      - name: Verify Compose import and additive service deployment
+        run: |
+          set -o pipefail
+          HAKOPOD_COMPOSE_TEST=1 go test ./internal/cluster -run '^TestLiveComposeImport$' -count=1 -json | tee .local/runtime-results/compose.jsonl
       - name: Save verification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
