@@ -809,6 +809,15 @@ a.resource-note:focus-visible {
   }
   @variant xl {
     @apply grid-cols-4;
+    &[data-method-count='2'] {
+      @apply grid-cols-2;
+    }
+    &[data-method-count='3'] {
+      @apply grid-cols-3;
+    }
+    &[data-method-count='5'] {
+      @apply grid-cols-5;
+    }
   }
 }
 .segmented-control button {
