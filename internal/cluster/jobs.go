@@ -176,6 +176,22 @@ func (c *Client) observeJob(ctx context.Context, t Target, name string, s spec.S
 
 func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
 	for name, s := range t.Spec.Services {
+		cron, err := c.kube.BatchV1().CronJobs(Namespace(t.ApplicationID)).Get(ctx, scheduledJobName(name), metav1.GetOptions{})
+		if err == nil && cron != nil && (s.Job == nil || s.Job.Schedule == nil) {
+			return fmt.Errorf("%s: remove the scheduled job before changing workload kind", name)
+		}
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		if s.Job != nil && s.Job.Schedule != nil {
+			prior, e := c.kube.BatchV1().Jobs(Namespace(t.ApplicationID)).Get(ctx, jobName(name), metav1.GetOptions{})
+			if e == nil && prior != nil {
+				return fmt.Errorf("%s: remove the deployment job before scheduling it", name)
+			}
+			if e != nil && !apierrors.IsNotFound(e) {
+				return e
+			}
+		}
 		if s.Job != nil {
 			d, err := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
 			if err == nil && d != nil {
@@ -199,11 +215,11 @@ func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
 
 func (c *Client) cleanupJobs(ctx context.Context, t Target) error {
 	api := c.kube.BatchV1().Jobs(Namespace(t.ApplicationID))
-	jobs, err := api.List(ctx, metav1.ListOptions{LabelSelector: managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID), Limit: 101})
+	jobs, err := api.List(ctx, metav1.ListOptions{LabelSelector: managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID), Limit: 201})
 	if err != nil {
 		return err
 	}
-	if jobs.Continue != "" || len(jobs.Items) > 100 {
+	if jobs.Continue != "" || len(jobs.Items) > 200 {
 		return fmt.Errorf("too many owned jobs for bounded cleanup")
 	}
 	for _, j := range jobs.Items {

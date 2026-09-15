@@ -16,6 +16,7 @@ export function ServicePowerDialog({
   onClose: () => void
 }) {
   const [snapshot] = useState(application)
+  const scheduled = Boolean(snapshot.spec.services[service]?.job?.schedule)
   const resume = Boolean(snapshot.spec.services[service]?.suspended)
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState(false),
@@ -65,11 +66,15 @@ export function ServicePowerDialog({
       onOpenChange={(open) => {
         if (!open && !busy) onClose()
       }}
-      title={`${resume ? 'Resume' : 'Stop'} ${service}?`}
+      title={`${resume ? 'Resume' : scheduled ? 'Pause' : 'Stop'} ${service}${scheduled ? ' schedule' : ''}?`}
       description={
-        resume
-          ? 'Restore the saved replica count and autoscaling configuration through a new deployment.'
-          : 'Scale this service to zero and suspend autoscaling. Configuration, domains, volumes and the saved replica count are retained. Dependent services may become unavailable.'
+        scheduled
+          ? resume
+            ? 'Enable future scheduled runs. Missed runs older than one minute are skipped.'
+            : 'Pause future scheduled runs. Any active job is allowed to finish; configuration and volumes are retained.'
+          : resume
+            ? 'Restore the saved replica count and autoscaling configuration through a new deployment.'
+            : 'Scale this service to zero and suspend autoscaling. Configuration, domains, volumes and the saved replica count are retained. Dependent services may become unavailable.'
       }
     >
       {error && (
@@ -86,7 +91,15 @@ export function ServicePowerDialog({
           disabled={busy || conflict}
           onClick={() => void submit()}
         >
-          {busy ? 'Submitting…' : resume ? 'Resume service' : 'Stop service'}
+          {busy
+            ? 'Submitting…'
+            : scheduled
+              ? resume
+                ? 'Resume schedule'
+                : 'Pause schedule'
+              : resume
+                ? 'Resume service'
+                : 'Stop service'}
         </Button>
       </div>
     </Dialog>

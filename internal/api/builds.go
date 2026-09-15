@@ -16,12 +16,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/framework"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 )
 
 type buildConfig struct {
+	Framework          *framework.Plan   `json:"framework,omitempty"`
+	BuildSecrets       map[string]string `json:"build_secrets,omitempty"`
 	BuildArgs          map[string]string `json:"build_args,omitempty"`
 	Provider           string            `json:"provider"`
 	ConnectionID       string            `json:"connection_id"`
@@ -50,6 +53,8 @@ type buildConfig struct {
 	InstalledCommit    string            `json:"installed_commit"`
 }
 type buildInput struct {
+	Framework              *framework.Plan   `json:"framework,omitempty"`
+	BuildSecrets           map[string]string `json:"build_secrets,omitempty"`
 	BuildArgs              map[string]string `json:"build_args,omitempty"`
 	Provider               string            `json:"provider"`
 	ConnectionID           string            `json:"connection_id"`
@@ -110,6 +115,7 @@ func scanBuildRun(row pgx.Row) (buildRun, error) {
 	return b, err
 }
 func (s *Server) registerBuildRoutes(routes *http.ServeMux) {
+	routes.HandleFunc("POST /api/v1/builds/detect", s.detectBuild)
 	routes.HandleFunc("GET /api/v1/builds", s.listBuilds)
 	routes.HandleFunc("POST /api/v1/builds", s.createBuild)
 	routes.HandleFunc("GET /api/v1/builds/{id}", s.getBuild)
@@ -131,7 +137,7 @@ func validBuildPath(value string) bool {
 	return len(value) > 0 && len(value) <= 200 && buildPathPattern.MatchString(value) && path.Clean(value) == value && !strings.HasPrefix(value, "/") && value != ".." && !strings.HasPrefix(value, "../")
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
-	c := buildConfig{BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	c := buildConfig{Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	c.Repository = strings.ToLower(c.Repository)
 	c.Provider = in.Provider
 	if c.Provider == "" {
@@ -173,8 +179,25 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	if c.AutoDeploy && !c.AutoBuild {
 		return c, fmt.Errorf("%w: automatic deployment requires automatic builds", store.ErrInput)
 	}
-	if c.Mode != "dockerfile" && c.Mode != "buildpacks" {
-		return c, fmt.Errorf("%w: mode must be dockerfile or buildpacks", store.ErrInput)
+	if c.Mode != "dockerfile" && c.Mode != "buildpacks" && c.Mode != "framework" {
+		return c, fmt.Errorf("%w: mode must be dockerfile, buildpacks or framework", store.ErrInput)
+	}
+	if err := framework.ValidateSecrets(c.BuildSecrets); err != nil {
+		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
+	}
+	if c.Mode == "buildpacks" && len(c.BuildSecrets) > 0 {
+		return c, fmt.Errorf("%w: BuildKit secrets require a Dockerfile or framework build", store.ErrInput)
+	}
+	if c.Mode == "framework" {
+		if c.Framework == nil {
+			return c, fmt.Errorf("%w: review a framework build plan", store.ErrInput)
+		}
+		if err := framework.Validate(*c.Framework); err != nil {
+			return c, fmt.Errorf("%w: %s", store.ErrInput, err)
+		}
+		c.Port = c.Framework.Port
+	} else if c.Framework != nil {
+		return c, fmt.Errorf("%w: framework settings require framework mode", store.ErrInput)
 	}
 	switch c.Preset {
 	case "auto", "nodejs", "python", "go", "java", "dotnet", "ruby", "static":

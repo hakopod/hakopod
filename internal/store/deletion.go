@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 )
 
 // DeleteEmptyApplication only removes metadata after a successful empty release.
@@ -38,6 +39,13 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	if a.Name != confirmation || a.Revision != expected {
 		return fmt.Errorf("%w: application changed; review it again and confirm its name", ErrConflict)
 	}
+	var preview bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM previews WHERE (application_id=$1 OR parent_id=$1) AND state<>'deleted')", a.ID).Scan(&preview); err != nil {
+		return err
+	}
+	if preview {
+		return fmt.Errorf("%w: delete previews through their expiry controls first", ErrConflict)
+	}
 	if len(a.Spec.Services) != 0 {
 		return fmt.Errorf("%w: remove all services through a reviewed deployment before deleting this application", ErrConflict)
 	}
@@ -71,29 +79,8 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	if busy {
 		return fmt.Errorf("%w: stop active builds, source imports and backup schedules before deletion", ErrConflict)
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,environment,name,resource_id) VALUES('application',$1,$2,$3,$4)`, a.Project, a.Environment, a.Name, id); err != nil {
+	if err = deleteApplicationMetadata(ctx, tx, a); err != nil {
 		return err
-	}
-	// Revoke all resource grants before detaching callbacks and their history.
-	if _, err = tx.Exec(ctx, `UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE (project=$2 AND environment=$3 AND application=$4) OR id IN (SELECT grant_id FROM application_sources WHERE application_id=$1) OR id IN (SELECT grant_id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`, id, a.Project, a.Environment, a.Name); err != nil {
-		return err
-	}
-	for _, query := range []string{
-		`DELETE FROM source_jobs WHERE application_id=$1`,
-		`DELETE FROM application_sources WHERE application_id=$1`,
-		`DELETE FROM build_runs WHERE build_id IN (SELECT id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`,
-		`DELETE FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)`,
-		`DELETE FROM deployment_events WHERE deployment_id IN (SELECT id FROM deployments WHERE application_id=$1)`,
-		`DELETE FROM deployments WHERE application_id=$1`,
-		`DELETE FROM applications WHERE id=$1`,
-	} {
-		args := []any{id}
-		if query == `DELETE FROM build_runs WHERE build_id IN (SELECT id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))` || query == `DELETE FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)` {
-			args = append(args, a.Project, a.Environment, a.Name)
-		}
-		if _, err = tx.Exec(ctx, query, args...); err != nil {
-			return err
-		}
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'application.delete',$3,$4)`, p.ID, p.KeyID, id, JSON(map[string]any{"project": a.Project, "environment": a.Environment, "name": a.Name, "revision": expected})); err != nil {
 		return err
@@ -175,4 +162,35 @@ func (s *Store) RetiredName(ctx context.Context, kind, project, environment, nam
 	var retired bool
 	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM retired_resource_names WHERE kind=$1 AND project=$2 AND environment=$3 AND name=$4)`, kind, project, environment, name).Scan(&retired)
 	return retired, err
+}
+
+func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) error {
+	id := a.ID
+	var err error
+	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,environment,name,resource_id) VALUES('application',$1,$2,$3,$4)`, a.Project, a.Environment, a.Name, id); err != nil {
+		return err
+	}
+	// Revoke all resource grants before detaching callbacks and their history.
+	if _, err = tx.Exec(ctx, `UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE (project=$2 AND environment=$3 AND application=$4) OR id IN (SELECT grant_id FROM application_sources WHERE application_id=$1) OR id IN (SELECT grant_id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`, id, a.Project, a.Environment, a.Name); err != nil {
+		return err
+	}
+	for _, query := range []string{
+		`DELETE FROM source_jobs WHERE application_id=$1`,
+		`DELETE FROM application_sources WHERE application_id=$1`,
+		`DELETE FROM build_runs WHERE build_id IN (SELECT id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`,
+		`DELETE FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)`,
+		`DELETE FROM deployment_events WHERE deployment_id IN (SELECT id FROM deployments WHERE application_id=$1)`,
+		`DELETE FROM deployments WHERE application_id=$1`,
+		`DELETE FROM applications WHERE id=$1`,
+	} {
+		args := []any{id}
+		if query == `DELETE FROM build_runs WHERE build_id IN (SELECT id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))` || query == `DELETE FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)` {
+			args = append(args, a.Project, a.Environment, a.Name)
+		}
+		if _, err = tx.Exec(ctx, query, args...); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

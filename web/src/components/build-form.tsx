@@ -1,9 +1,15 @@
+import {
+  FrameworkBuildFields,
+  defaultFrameworkPlan,
+  frameworkLabel,
+} from './framework-build-fields'
+import { formatBuildSecrets, parseBuildSecrets } from '../lib/build-secrets'
 import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { formatBuildArgs, parseBuildArgs } from '../lib/build-args'
 import { SelectField } from './ui/select'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
@@ -39,6 +45,16 @@ export default function BuildForm({
   const [repository, setRepository] = useState(build?.repository || '')
   const [branch, setBranch] = useState(build?.branch || 'main')
   const [mode, setMode] = useState<Build['mode']>(build?.mode || 'dockerfile')
+  const [framework, setFramework] = useState(build?.framework || defaultFrameworkPlan)
+  const [buildSecrets, setBuildSecrets] = useState(() => formatBuildSecrets(build?.build_secrets))
+  const boundApplicationId = application?.id || build?.application_id
+  const [detecting, setDetecting] = useState(false)
+  const [detectionError, setDetectionError] = useState('')
+  const [detectionNotes, setDetectionNotes] = useState<string[]>([])
+  const [suggestion, setSuggestion] = useState<{
+    source: string
+    result: components['schemas']['BuildDetection']
+  } | null>(null)
   const [preset, setPreset] = useState<Build['preset']>(build?.preset || 'auto')
   const [architecture, setArchitecture] = useState<Build['architecture'] | ''>(
     build?.architecture || '',
@@ -61,6 +77,20 @@ export default function BuildForm({
     gcTime: 0,
   })
   const linked = Boolean(build?.application_id || application)
+  const sourceFingerprint = JSON.stringify([
+    boundApplicationId,
+    project,
+    environment,
+    name,
+    service,
+    provider,
+    connectionId,
+    repository,
+    branch,
+    context,
+  ])
+  const currentSource = useRef(sourceFingerprint)
+  currentSource.current = sourceFingerprint
   return (
     <FormPage
       breadcrumbs={[
@@ -82,12 +112,12 @@ export default function BuildForm({
         </>
       }
       title={build ? 'Edit source build' : 'Build an application from source'}
-      description={`${project} / ${environment} · Build with a Dockerfile or Cloud Native Buildpacks.`}
+      description={`${project} / ${environment} · Build with a framework recipe, Dockerfile or Cloud Native Buildpacks.`}
     >
       <form
         onSubmit={async (e) => {
           e.preventDefault()
-          if (busy) return
+          if (busy || detecting) return
           setBusy(true)
           setError('')
           try {
@@ -106,7 +136,12 @@ export default function BuildForm({
               architecture: architecture || undefined,
               dockerfile,
               build_args: parseBuildArgs(buildArgs),
-              port,
+              framework:
+                mode === 'framework'
+                  ? { ...framework, port: framework.runtime === 'static' ? 8080 : port }
+                  : undefined,
+              build_secrets: parseBuildSecrets(buildSecrets),
+              port: mode === 'framework' && framework.runtime === 'static' ? 8080 : port,
               public: isPublic,
               size,
               registry_credential: registry,
@@ -137,7 +172,7 @@ export default function BuildForm({
             description="Select the application, provider, and source branch."
             icon="branch"
           >
-            <div className="form-grid">
+            <div className="grid gap-4 sm:grid-cols-2">
               <label>
                 Application name
                 <Input
@@ -202,7 +237,7 @@ export default function BuildForm({
               onValueChange={setConnectionId}
               builds
             />
-            <div className="form-grid">
+            <div className="grid gap-4 sm:grid-cols-2">
               <label>
                 Repository
                 <Input
@@ -224,12 +259,113 @@ export default function BuildForm({
               </label>
             </div>
           </FormSection>
+          <div className="grid gap-2">
+            <Button
+              type="button"
+              disabled={
+                busy ||
+                detecting ||
+                !name ||
+                !repository ||
+                (!scope.identity.admin && !boundApplicationId)
+              }
+              onClick={async () => {
+                setDetecting(true)
+                setDetectionError('')
+                setDetectionNotes([])
+                setSuggestion(null)
+                const source = sourceFingerprint
+                try {
+                  const result = await unwrap(
+                    client.POST('/builds/detect', {
+                      body: {
+                        project,
+                        environment,
+                        name,
+                        service,
+                        provider,
+                        connection_id: connectionId,
+                        repository,
+                        branch,
+                        context_path: context,
+                        application_id: boundApplicationId,
+                        mode: 'dockerfile',
+                      },
+                    }),
+                  )
+                  if (source !== currentSource.current)
+                    throw new Error('Source changed while detecting. Read the repository again.')
+                  setSuggestion({ source, result })
+                  setDetectionNotes([
+                    ...result.warnings,
+                    'Detected at commit ' + result.commit_sha.slice(0, 12),
+                  ])
+                } catch (err) {
+                  setDetectionError(message(err))
+                } finally {
+                  setDetecting(false)
+                }
+              }}
+            >
+              {detecting ? 'Reading repository…' : 'Detect framework'}
+            </Button>
+            {!scope.identity.admin && (
+              <p className="muted-text">
+                Detection uses this application's administrator-approved source repository. For a
+                new repository, ask an administrator to approve the source or enter a reviewed
+                recipe below.
+              </p>
+            )}
+            {detectionError && (
+              <p role="alert" className="inline-error">
+                {detectionError}
+              </p>
+            )}
+            {suggestion && suggestion.source === sourceFingerprint && (
+              <div className="grid gap-2">
+                <p className="text-sm">
+                  Suggested:{' '}
+                  {suggestion.result.framework
+                    ? frameworkLabel(suggestion.result.framework.framework) +
+                      ' · ' +
+                      suggestion.result.framework.runtime +
+                      ' · ' +
+                      (suggestion.result.framework.output_directory ||
+                        suggestion.result.framework.start_command)
+                    : 'Existing Dockerfile'}
+                </p>
+                <Button
+                  type="button"
+                  disabled={busy || detecting}
+                  onClick={() => {
+                    const result = suggestion.result
+                    setMode(result.mode)
+                    if (result.framework) {
+                      setFramework(result.framework)
+                      setPort(result.framework.port)
+                    }
+                    if (result.dockerfile) setDockerfile(result.dockerfile)
+                    setSuggestion(null)
+                  }}
+                >
+                  Use detected settings
+                </Button>
+              </div>
+            )}
+            {detectionNotes.length > 0 && (
+              <ul className="grid gap-1 text-sm" aria-live="polite">
+                {detectionNotes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+          </div>
           <FormSection
             title="Build recipe"
             description="Paths are relative to the repository root."
             icon="code"
           >
-            <div className="form-grid">
+            <div className="grid gap-4 sm:grid-cols-2">
               <label>
                 Build method
                 <SelectField
@@ -245,6 +381,7 @@ export default function BuildForm({
                       value: 'buildpacks',
                       label: 'Cloud Native Buildpacks',
                     },
+                    { value: 'framework', label: 'Framework recipe' },
                   ]}
                 />
               </label>
@@ -280,6 +417,15 @@ export default function BuildForm({
                 ]}
               />
             </label>
+            {mode === 'framework' && (
+              <FrameworkBuildFields
+                value={framework}
+                onChange={(next) => {
+                  setFramework(next)
+                  if (next.runtime !== framework.runtime) setPort(next.port)
+                }}
+              />
+            )}
             {mode === 'dockerfile' ? (
               <label>
                 Dockerfile path
@@ -290,7 +436,7 @@ export default function BuildForm({
                   required
                 />
               </label>
-            ) : (
+            ) : mode === 'buildpacks' ? (
               <label>
                 Buildpack preset
                 <SelectField
@@ -307,7 +453,7 @@ export default function BuildForm({
                   }
                 />
               </label>
-            )}
+            ) : null}
             <label>
               Public build values
               <Textarea
@@ -325,19 +471,42 @@ export default function BuildForm({
             </label>
           </FormSection>
           <FormSection
+            title="Build secrets"
+            description="Reference secrets already configured in your repository's GitHub Actions settings or GitLab CI variables."
+            icon="lock"
+          >
+            <label>
+              Secret references
+              <Textarea
+                rows={3}
+                value={buildSecrets}
+                onChange={(e) => setBuildSecrets(e.target.value)}
+                placeholder="npm_token=NPM_TOKEN"
+                aria-describedby="build-secrets-help"
+              />
+            </label>
+            <p id="build-secrets-help" className="muted-text">
+              Configure secret values in GitHub Actions secrets or GitLab CI variables first. Enter
+              mount_id=CI_SECRET_NAME, never a secret value. Dockerfile builds read
+              /run/secrets/mount_id; framework build steps also receive the named variable.
+              Buildpacks do not support secret mounts.
+            </p>
+          </FormSection>
+          <FormSection
             title="Runtime"
             description="Choose resource and image-pull settings."
             icon="box"
           >
             {!linked && (
-              <div className="form-grid">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <label>
                   Service port
                   <Input
                     type="number"
                     min={1}
                     max={65535}
-                    value={port}
+                    value={mode === 'framework' && framework.runtime === 'static' ? 8080 : port}
+                    readOnly={mode === 'framework' && framework.runtime === 'static'}
                     onChange={(e) => setPort(Number(e.target.value))}
                     required
                   />
@@ -450,10 +619,10 @@ export default function BuildForm({
           )}
         </div>
         <div className="form-footer">
-          <Button type="button" disabled={busy} onClick={onClose}>
+          <Button type="button" disabled={busy || detecting} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={busy || detecting}>
             {busy ? 'Saving…' : build ? 'Save build configuration' : 'Create source build'}
           </Button>
         </div>

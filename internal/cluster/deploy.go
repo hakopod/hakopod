@@ -95,6 +95,13 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		if err := ctx.Err(); err != nil {
 			return c.observationAfterFailure(target), err
 		}
+		if svc.Job != nil && svc.Job.Schedule != nil {
+			if err := c.applyScheduledJob(ctx, target, name, svc); err != nil {
+				return c.observationAfterFailure(target), err
+			}
+			emit(Event{Type: "scheduled", Service: name, Message: "Scheduled job configured with overlap prevention and bounded history"})
+			continue
+		}
 		if svc.Job != nil {
 			emit(Event{Type: "applying", Service: name, Message: "Running deployment job; dependent services wait for successful completion"})
 			if err := c.runJob(ctx, target, name, svc); err != nil {
@@ -152,6 +159,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.ReconcilePublicTCP(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
+	if err := c.cleanupScheduledJobs(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
 	if err := c.cleanupJobs(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
@@ -165,6 +175,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
+	if err := c.activateScheduledJobs(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	observed, err := c.Observe(ctx, target)
@@ -230,7 +243,14 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 		corev1.ResourceRequestsEphemeralStorage: resource.MustParse("4Gi"), corev1.ResourceLimitsEphemeralStorage: resource.MustParse("8Gi"),
 		corev1.ResourcePods: resource.MustParse("64"), corev1.ResourceServices: resource.MustParse("25"), corev1.ResourcePersistentVolumeClaims: resource.MustParse("0"),
 	}}}
-	quota.Spec.Hard["count/jobs.batch"] = resource.MustParse("20")
+	jobBudget := 20
+	for _, svc := range t.Spec.Services {
+		if svc.Job != nil && svc.Job.Schedule != nil {
+			jobBudget += int(2*svc.Job.Schedule.HistoryLimit + 1)
+		}
+	}
+	quota.Spec.Hard["count/jobs.batch"] = resource.MustParse(strconv.Itoa(jobBudget))
+	quota.Spec.Hard["count/cronjobs.batch"] = resource.MustParse("20")
 	quota.Spec.Hard["count/configmaps"] = resource.MustParse("256")
 	quota.Spec.Hard["count/secrets"] = resource.MustParse("256")
 	workloadQuota(quota, t.Spec)

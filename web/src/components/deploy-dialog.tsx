@@ -238,8 +238,12 @@ export function DeploymentForm({
                   <div key={name}>
                     <strong>{name}</strong>
                     <span>
-                      {service.job ? 'Deployment job' : `${service.replicas ?? 1} replica`} ·{' '}
-                      {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
+                      {service.job?.schedule
+                        ? 'Scheduled job'
+                        : service.job
+                          ? 'Deployment job'
+                          : `${service.replicas ?? 1} replica`}{' '}
+                      · {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
                     </span>
                     <small>
                       Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per{' '}
@@ -335,6 +339,29 @@ export function DeploymentForm({
                     maxLength={63}
                   />
                 </label>
+                <label>
+                  Automatic release recovery
+                  <SelectField
+                    label="Automatic release recovery"
+                    aria-describedby="release-recovery-help"
+                    value={spec.recovery?.on_failure || 'safe'}
+                    onValueChange={(value) =>
+                      setSpec((previous) => ({
+                        ...previous,
+                        recovery: { on_failure: value as 'safe' | 'disabled' },
+                      }))
+                    }
+                    options={[
+                      { value: 'safe', label: 'Restore the last successful stateless release' },
+                      { value: 'disabled', label: 'Disabled' },
+                    ]}
+                  />
+                </label>
+                <p id="release-recovery-help" className="field-help">
+                  Automatic recovery skips jobs, volumes and service additions or removals. It
+                  restores workload configuration only; external data and secret values are
+                  unchanged.
+                </p>
                 {application && Object.keys(spec.services).length === 0 && (
                   <Note>
                     Deploying this revision removes every service and stops application traffic.
@@ -495,7 +522,9 @@ export function DeploymentForm({
                             : service.port
                               ? 'Private to this application'
                               : service.job
-                                ? 'Deployment job · configure timeout and retries in TOML'
+                                ? service.job.schedule
+                                  ? `Schedule: ${service.job.schedule.cron} · ${service.job.schedule.timezone || 'UTC'}`
+                                  : 'Deployment job · configure timeout and retries in TOML'
                                 : 'Background worker'}
                         </span>
                       </div>

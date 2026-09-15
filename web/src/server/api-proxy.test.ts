@@ -22,6 +22,88 @@ function request(
   })
 }
 
+test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
+  const cases = [
+    { path: 'applications/app-a/previews', method: 'GET', query: '?cursor=next' },
+    { path: 'previews/preview-a', method: 'GET' },
+    {
+      path: 'applications/app-a/previews',
+      method: 'POST',
+      body: {
+        name: 'pr-12',
+        expected_parent_revision: 3,
+        discard_on_expiry: true,
+        toml: 'schema = 1',
+      },
+    },
+    { path: 'previews/preview-a', method: 'DELETE', body: { confirmation: 'pr-12' } },
+    {
+      path: 'builds/detect',
+      method: 'POST',
+      body: { project: 'demo', environment: 'preview', repository: 'team/app', branch: 'main' },
+    },
+  ]
+  for (const entry of cases) {
+    let calls = 0
+    const mock = t.mock.method(
+      globalThis,
+      'fetch',
+      async (url: unknown, init: RequestInit = {}) => {
+        calls++
+        assert.equal(new URL(String(url)).pathname, `/api/v1/${entry.path}`)
+        assert.equal(new URL(String(url)).search, entry.query || '')
+        assert.equal(init.method, entry.method)
+        assert.equal(init.body, entry.body ? JSON.stringify(entry.body) : undefined)
+        const headers = new Headers(init.headers)
+        assert.equal(headers.get('Authorization'), `Bearer ${token}`)
+        assert.equal(headers.has('Cookie'), false)
+        if (entry.method !== 'GET') assert.equal(headers.get('Idempotency-Key'), 'reviewed-preview')
+        return Response.json({ accepted: true })
+      },
+    )
+    const input = request(entry.path + (entry.query || ''), entry.method, entry.body)
+    input.headers.set('Idempotency-Key', 'reviewed-preview')
+    assert.equal((await proxy({ request: input, params: { _splat: entry.path } })).status, 200)
+    assert.equal(
+      (
+        await proxy({
+          request: request(entry.path, entry.method, entry.body, false),
+          params: { _splat: entry.path },
+        })
+      ).status,
+      401,
+    )
+    if (entry.method !== 'GET') {
+      assert.equal(
+        (
+          await proxy({
+            request: request(
+              entry.path,
+              entry.method,
+              entry.body,
+              true,
+              'https://untrusted.invalid',
+            ),
+            params: { _splat: entry.path },
+          })
+        ).status,
+        403,
+      )
+    }
+    assert.equal(
+      (
+        await proxy({
+          request: request(entry.path + '/extra'),
+          params: { _splat: entry.path + '/extra' },
+        })
+      ).status,
+      404,
+    )
+    assert.equal(calls, 1)
+    mock.mock.restore()
+  }
+})
+
 test('secret provider proxy keeps configuration behind session and origin checks', async (t) => {
   let calls = 0
   t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {

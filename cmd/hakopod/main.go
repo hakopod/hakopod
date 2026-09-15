@@ -28,14 +28,15 @@ import (
 var version = "0.1.0-dev"
 
 type config struct {
+	Workspace   string `json:"workspace,omitempty"`
 	URL         string `json:"url"`
 	Key         string `json:"key"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
 }
 type client struct {
-	url, key string
-	http     *http.Client
+	url, key, workspace string
+	http                *http.Client
 }
 
 func main() {
@@ -75,8 +76,12 @@ func run() error {
 	fs.SetOutput(os.Stderr)
 	file := fs.String("file", "hakopod.toml", "application TOML path")
 	project := fs.String("project", "", "project context")
+	workspace := fs.String("workspace", "", "Cloud workspace ID; does not grant access")
 	environment := fs.String("environment", "", "environment context")
 	service := fs.String("service", "", "service name")
+	branch := fs.String("branch", "", "branch/reference label for a preview image")
+	discardPreview := fs.Bool("acknowledge-data-expiry", false, "allow automatic deletion of preview workloads, volumes and native secrets")
+	allowDeploy := fs.Bool("allow-deploy", false, "enable reviewed MCP deployment tool")
 	outputJSON := fs.Bool("json", false, "machine-readable JSON")
 	wait := fs.Bool("wait", false, "wait for final deployment outcome")
 	idem := fs.String("idempotency-key", "", "stable retry key (generated if omitted)")
@@ -113,6 +118,12 @@ func run() error {
 	}
 	if value := os.Getenv("HAKOPOD_API_KEY"); value != "" {
 		cfg.Key = value
+	}
+	if value := os.Getenv("HAKOPOD_WORKSPACE"); value != "" {
+		cfg.Workspace = value
+	}
+	if *workspace != "" {
+		cfg.Workspace = *workspace
 	}
 	if *apiURL != "" {
 		cfg.URL = *apiURL
@@ -230,6 +241,10 @@ func run() error {
 		arg = fs.Arg(0)
 	}
 	switch command {
+	case "previews", "preview-create", "preview-delete":
+		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
+	case "mcp":
+		return serveAgent(ctx, c, cfg, *allowDeploy, os.Stdin, os.Stdout)
 	case "projects", "nodes", "keys", "audit":
 		var out any
 		if err = c.request(ctx, "GET", "/"+command, nil, "", &out); err != nil {
@@ -420,7 +435,7 @@ func run() error {
 			}
 			path := "/applications/" + a.ID + "/logs?" + url.Values{"service": {*service}, "tail": {fmt.Sprint(*tail)}, "follow": {fmt.Sprint(*follow)}}.Encode()
 			req, _ := http.NewRequestWithContext(ctx, "GET", c.url+"/api/v1"+path, nil)
-			req.Header.Set("Authorization", "Bearer "+c.key)
+			c.authorizeRequest(req)
 			streamClient := *c.http
 			streamClient.Timeout = 11 * time.Minute
 			res, err := streamClient.Do(req)
@@ -475,11 +490,14 @@ func anonymousClient(cfg config) (*client, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
 		return nil, &exitError{2, "API keys require verified HTTPS; HTTP is allowed only on local loopback for development"}
 	}
+	if cfg.Workspace != "" && (len(cfg.Workspace) != 32 || strings.Trim(cfg.Workspace, "0123456789abcdef") != "") {
+		return nil, &exitError{2, "workspace must be a 32-character Cloud workspace ID"}
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 4
 	transport.MaxIdleConnsPerHost = 2
 	transport.ResponseHeaderTimeout = 20 * time.Second
-	return &client{url: strings.TrimRight(cfg.URL, "/"), key: cfg.Key, http: &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("API redirects are not allowed") }}}, nil
+	return &client{url: strings.TrimRight(cfg.URL, "/"), key: cfg.Key, workspace: cfg.Workspace, http: &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("API redirects are not allowed") }}}, nil
 }
 func (c *client) request(ctx context.Context, method, path string, in any, idem string, out any) error {
 	var body io.Reader
@@ -494,9 +512,7 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 	if err != nil {
 		return err
 	}
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
-	}
+	c.authorizeRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	if idem != "" {
 		req.Header.Set("Idempotency-Key", idem)
@@ -635,7 +651,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -680,8 +696,23 @@ func help() {
   hakopod cancel DEPLOYMENT_ID
 
 CI: set HAKOPOD_API_URL and HAKOPOD_API_KEY in the CI secret store.
+Previews: hakopod preview-create APP --name pr-123 --file preview.toml --ttl 24h --acknowledge-data-expiry
+          hakopod previews APP
+          hakopod preview-delete ID --name pr-123
+
+Agent integration: hakopod mcp --project PROJECT --environment ENV [--allow-deploy]
+
 Common flags: --file, --project, --environment, --service, --json.
 Exit codes: 0 success/accepted, 1 transport/server, 2 input, 3 forbidden,
 4 revision conflict, 5 failed/cancelled release. --wait exits only at terminal state.
 Logs are live and ephemeral; disconnecting does not cancel deployments.`)
+}
+
+func (c *client) authorizeRequest(req *http.Request) {
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
+	if c.workspace != "" {
+		req.Header.Set("X-Hakopod-Workspace", c.workspace)
+	}
 }

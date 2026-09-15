@@ -33,13 +33,13 @@ func buildWorkflow(c buildConfig) string {
 	}
 	build := `      - name: Build and publish Dockerfile
         uses: {{BUILD_PUSH}}
-        with:
+{{SECRET_ENV}}        with:
           context: {{CONTEXT}}
           file: {{DOCKERFILE}}
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.REQUEST_ID }}
           provenance: mode=min
-{{BUILD_ARGS}}`
+{{BUILD_ARGS}}{{SECRET_INPUTS}}`
 	if c.Mode == "buildpacks" {
 		build = `      - name: Install verified Cloud Native Buildpacks pack
         uses: {{PACK}}
@@ -53,6 +53,15 @@ func buildWorkflow(c buildConfig) string {
 {{PACK_SETUP}}          pack build "$IMAGE_NAME:$REQUEST_ID" --path "$BUILD_CONTEXT" --builder {{BUILDER}} --buildpack "$PACK_IMAGE" --env BP_WEB_SERVER=nginx{{PACK_ARGS}} --publish --pull-policy if-not-present
 `
 	}
+	if c.Mode == "framework" {
+		setup := frameworkSetup(c, `"$RUNNER_TEMP/hakopod.Dockerfile"`)
+		var lines strings.Builder
+		for _, line := range strings.Split(strings.TrimSuffix(setup, "\n"), "\n") {
+			lines.WriteString("          " + line + "\n")
+		}
+		build = "      - name: Prepare reviewed framework recipe\n        run: |\n          set -eu\n" + lines.String() + strings.Replace(build, "{{DOCKERFILE}}", "${{ runner.temp }}/hakopod.Dockerfile", 1)
+	}
+	build = buildSecretCheck(c.BuildSecrets) + build
 	text := `# Managed by Hakopod build {{BUILD_ID}}. Review through Hakopod before reinstalling.
 name: Hakopod build {{BUILD_ID}}
 run-name: ${{ github.event_name == 'push' && format('Hakopod push {0}', github.sha) || format('Hakopod {0}', inputs.request_id) }}
@@ -131,6 +140,8 @@ jobs:
 	text = strings.ReplaceAll(text, "{{PUSH_TRIGGER}}", push)
 	text = strings.ReplaceAll(text, "{{BUILD_STEP}}", build)
 	text = strings.ReplaceAll(text, "{{BUILD_ARGS}}", workflowBuildArguments(c.BuildArgs))
+	text = strings.ReplaceAll(text, "{{SECRET_ENV}}", buildSecretEnvironment(c.BuildSecrets))
+	text = strings.ReplaceAll(text, "{{SECRET_INPUTS}}", buildSecretInputs(c.BuildSecrets))
 	text = strings.ReplaceAll(text, "{{PACK_ARGS}}", shellBuildArguments(c.BuildArgs, "--env"))
 	return strings.NewReplacer("{{BUILD_ID}}", c.ID, "{{IMAGE}}", strconv.Quote(c.imageName()), "{{CHECKOUT}}", checkoutAction, "{{LOGIN}}", loginAction, "{{BUILDX}}", buildxAction, "{{UPLOAD}}", uploadAction, "{{BUILD_PUSH}}", buildPushAction, "{{PACK}}", packAction, "{{CONTEXT}}", strconv.Quote(c.ContextPath), "{{DOCKERFILE}}", strconv.Quote(c.Dockerfile), "{{BUILDER}}", paketoBuilder, "{{PACK_SETUP}}", buildpackSetup(c.Preset)).Replace(text)
 }

@@ -282,19 +282,79 @@ export function ServiceDetail({
             ))}
         </Tabs.List>
         <Tabs.Content value="overview" className="tab-content">
+          {service.job?.schedule && (
+            <section className="panel service-summary-panel mb-4">
+              <div className="panel-heading">
+                <h2>Recent scheduled runs</h2>
+              </div>
+              {application.observed.observed_at && (
+                <p className="px-4 text-sm muted-text">
+                  Last snapshot: {new Date(application.observed.observed_at).toLocaleString()}
+                  {health.status === 'stale' ? ' · Stale; refresh to verify current runs' : ''}
+                </p>
+              )}
+              {observed?.job_runs?.length ? (
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Run</th>
+                        <th>Revision</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {observed.job_runs.map((run) => (
+                        <tr key={run.name}>
+                          <td>
+                            <code>{run.name}</code>
+                          </td>
+                          <td>r{run.revision}</td>
+                          <td>
+                            <Status value={run.status} />
+                          </td>
+                          <td>{new Date(run.created_at).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="p-4 text-sm muted-text">
+                  {!observed || ['unknown', 'stale', 'not observed'].includes(health.status)
+                    ? 'Current run history is unavailable. Refresh the runtime observation.'
+                    : 'No retained runs in this observation. Scheduled runs appear here after Kubernetes starts them; inspect their output in Logs.'}
+                </p>
+              )}
+            </section>
+          )}
+
           <div className="service-overview-grid">
             <section className="panel service-summary-panel">
               <div className="panel-heading">
                 <h2>Runtime</h2>
                 <span className="label-chip">{service.size || 'small'} profile</span>
               </div>
+              {service.job?.schedule && (
+                <p className="px-4 text-sm muted-text">
+                  Overlapping runs are skipped. Timeout: {service.job.timeout_seconds || 300}s.
+                  Retries: {service.job.retries || 0}.
+                </p>
+              )}
               <dl className="service-definition-list">
                 <div>
                   <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
                   <dd>{runtimeReplicaSummary(health, Boolean(service.job))}</dd>
                 </div>
                 <div>
-                  <dt>{service.job ? 'Completion gate' : 'Readiness'}</dt>
+                  <dt>
+                    {service.job?.schedule
+                      ? 'Schedule'
+                      : service.job
+                        ? 'Completion gate'
+                        : 'Readiness'}
+                  </dt>
                   <dd>{readinessLabel(service)}</dd>
                 </div>
                 <div>

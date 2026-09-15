@@ -51,7 +51,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		}
 		cpu := resource.MustParse(p.CPURequest)
 		memory := resource.MustParse(p.MemoryRequest)
-		if s.Job != nil {
+		if s.Job != nil && s.Job.Schedule == nil {
 			jobCPU = max(jobCPU, cpu.MilliValue())
 			jobMemory = max(jobMemory, memory.Value())
 		} else {

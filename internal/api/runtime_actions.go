@@ -42,6 +42,11 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, action st
 		failure(w, err)
 		return
 	}
+	if base.RecoveryState == "succeeded" && base.RecoverySpec != nil {
+		base.Spec = *base.RecoverySpec
+		base.ResolvedSpec = base.RecoverySpec
+		base.Status = "succeeded"
+	}
 	if (base.Status != "succeeded" && !(action == "stop" && base.Status == "failed")) || base.ResolvedSpec == nil {
 		problem(w, 409, "revision_not_ready", "This action requires a completed resolved deployment. Stop also supports failed resolved deployments; finish or cancel an active rollout first.")
 		return
@@ -63,7 +68,7 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, action st
 		return
 	}
 	artifact := resolved.Services[name]
-	if svc.Job != nil {
+	if svc.Job != nil && (svc.Job.Schedule == nil || !power) {
 		problem(w, 409, "deployment_job", "Deployment jobs do not support runtime actions")
 		return
 	}

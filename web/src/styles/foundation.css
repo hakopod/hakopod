@@ -615,3 +615,11 @@ html[data-edition='self-hosted'] .ops-card-link:focus-visible {
 html[data-edition='self-hosted'] .ops-card-link:focus-visible::after {
   outline-color: var(--navigation-active);
 }
+
+/* Code forms need enough visible source for a meaningful review. */
+.input-wrap textarea.code-editor {
+  @apply min-h-64 resize-y;
+}
+.toml-editor-body .input-wrap textarea.code-editor {
+  @apply min-h-0 resize-none;
+}

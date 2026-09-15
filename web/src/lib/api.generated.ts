@@ -2654,6 +2654,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/builds/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["detectBuildFramework"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApplicationPreviews"];
+        put?: never;
+        post: operations["createPreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/previews/{preview}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPreview"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePreview"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/secrets": {
         parameters: {
             query?: never;
@@ -2781,6 +2829,7 @@ export interface components {
             domains?: {
                 [key: string]: string;
             };
+            recovery?: components["schemas"]["RecoveryPolicy"];
             volumes?: {
                 [key: string]: components["schemas"]["NamedVolume"];
             };
@@ -2805,6 +2854,7 @@ export interface components {
             endpoints?: {
                 [key: string]: string;
             };
+            job_runs?: components["schemas"]["JobRun"][];
         };
         Observation: {
             status?: string;
@@ -2830,6 +2880,11 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
             events: components["schemas"]["Event"][];
+            recovery_error?: string;
+            recovery_revision?: number;
+            recovery_spec?: components["schemas"]["Spec"];
+            /** @enum {string} */
+            recovery_state?: "" | "running" | "succeeded" | "failed" | "skipped";
         };
         Application: {
             id: string;
@@ -2875,6 +2930,7 @@ export interface components {
             avatar_url?: string;
             profile_revision?: number;
             host_permissions?: components["schemas"]["HostPermission"][];
+            can_manage_previews?: boolean;
         };
         Node: {
             name: string;
@@ -3326,7 +3382,7 @@ export interface components {
             repository: string;
             branch: string;
             /** @enum {string} */
-            mode: "dockerfile" | "buildpacks";
+            mode: "dockerfile" | "buildpacks" | "framework";
             /** @enum {string} */
             preset: "auto" | "nodejs" | "python" | "go" | "java" | "dotnet" | "ruby" | "static";
             context_path: string;
@@ -3345,6 +3401,11 @@ export interface components {
             build_args?: {
                 [key: string]: string;
             };
+            /** @description BuildKit mount IDs mapped to GitHub Actions secrets or GitLab CI variable names; never secret values. */
+            build_secrets?: {
+                [key: string]: string;
+            };
+            framework?: components["schemas"]["FrameworkPlan"];
         };
         BuildInput: {
             connection_id?: string;
@@ -3358,7 +3419,7 @@ export interface components {
             repository: string;
             branch?: string;
             /** @enum {string} */
-            mode?: "dockerfile" | "buildpacks";
+            mode?: "dockerfile" | "buildpacks" | "framework";
             /** @enum {string} */
             preset?: "auto" | "nodejs" | "python" | "go" | "java" | "dotnet" | "ruby" | "static";
             context_path?: string;
@@ -3375,6 +3436,11 @@ export interface components {
             build_args?: {
                 [key: string]: string;
             };
+            /** @description BuildKit mount IDs mapped to GitHub Actions secrets or GitLab CI variable names; never secret values. */
+            build_secrets?: {
+                [key: string]: string;
+            };
+            framework?: components["schemas"]["FrameworkPlan"];
         };
         BuildRun: {
             id: string;
@@ -3715,6 +3781,7 @@ export interface components {
         DeploymentJob: {
             timeout_seconds?: number;
             retries?: number;
+            schedule?: components["schemas"]["JobSchedule"];
         };
         ConfigurationFile: {
             mount_path: string;
@@ -4343,6 +4410,79 @@ export interface components {
             toml: string;
             expected_id: string;
             expected_revision: number;
+        };
+        FrameworkPlan: {
+            build_command: string;
+            /** @enum {string} */
+            framework: "astro" | "nextjs" | "sveltekit" | "tanstack-start" | "vite" | "node" | "static";
+            install_command: string;
+            output_directory?: string;
+            /** @enum {string} */
+            package_manager: "npm" | "pnpm" | "yarn" | "bun" | "none";
+            port: number;
+            /** @enum {string} */
+            runtime: "node" | "static";
+            start_command?: string;
+        };
+        BuildDetection: {
+            commit_sha: string;
+            dockerfile?: string;
+            dockerfile_content?: string;
+            framework?: components["schemas"]["FrameworkPlan"];
+            /** @enum {string} */
+            mode: "dockerfile" | "framework";
+            warnings: string[];
+        };
+        JobSchedule: {
+            /** @description Five cron fields: minute hour day month weekday. */
+            cron: string;
+            /** @default 1 */
+            history_limit: number;
+            /** @default UTC */
+            timezone: string;
+        };
+        JobRun: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            finished_at?: string;
+            name: string;
+            revision: number;
+            status: string;
+        };
+        RecoveryPolicy: {
+            /** @enum {string} */
+            on_failure: "safe" | "disabled";
+        };
+        Preview: {
+            id: string;
+            parent_id: string;
+            application_id: string | null;
+            project: string;
+            environment: string;
+            name: string;
+            branch: string;
+            /** @enum {string} */
+            state: "active" | "deleting" | "deleted";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            deleted_at: string | null;
+            cleanup_error?: string;
+        };
+        PreviewInput: {
+            name: string;
+            branch?: string;
+            ttl_hours: number;
+            expected_parent_revision: number;
+            discard_on_expiry: boolean;
+            toml?: string;
+            spec?: components["schemas"]["Spec"];
+        };
+        PreviewCreated: {
+            preview: components["schemas"]["Preview"];
+            deployment: components["schemas"]["Deployment"];
         };
         Volume: {
             mount_path: string;
@@ -11589,6 +11729,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VirtualNetworkPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    detectBuildFramework: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildInput"];
+            };
+        };
+        responses: {
+            /** @description Reviewable suggestions from repository metadata; no repository code is executed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildDetection"];
+                };
+            };
+        };
+    };
+    listApplicationPreviews: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Preview"][];
+                        next_cursor: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createPreview: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewCreated"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preview: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deletePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preview: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirmation: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
                 };
             };
             /** @description Error */

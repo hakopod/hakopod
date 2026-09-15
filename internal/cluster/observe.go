@@ -36,12 +36,18 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 	for _, name := range spec.Names(t.Spec) {
 		svc := t.Spec.Services[name]
 		if svc.Job != nil {
-			status, err := c.observeJob(ctx, t, name, svc)
+			var status ServiceStatus
+			var err error
+			if svc.Job.Schedule != nil {
+				status, err = c.observeScheduledJob(ctx, t, name, svc)
+			} else {
+				status, err = c.observeJob(ctx, t, name, svc)
+			}
 			if err != nil {
 				return result, err
 			}
 			result.Services = append(result.Services, status)
-			if status.Status == "completed" {
+			if status.Status == "completed" || status.Status == "scheduled" || status.Status == "stopped" {
 				healthy++
 			}
 			continue

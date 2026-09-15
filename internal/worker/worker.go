@@ -14,9 +14,17 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
+type Runtime interface {
+	ResolveScoped(context.Context, spec.Application, string, string) (spec.Application, error)
+	Deploy(context.Context, cluster.Target, func(cluster.Event)) (cluster.Observation, error)
+	Observe(context.Context, cluster.Target) (cluster.Observation, error)
+	RenewBackendCertificates(context.Context, cluster.Target, func(cluster.Event), ...string) error
+	DeletePreview(context.Context, cluster.Target) error
+}
+
 type Worker struct {
 	Store       *store.Store
-	Cluster     *cluster.Client
+	Cluster     Runtime
 	Concurrency int
 	Timeout     time.Duration
 }
@@ -34,6 +42,25 @@ func (w *Worker) Run(ctx context.Context) {
 		n = 4
 	}
 	var wg sync.WaitGroup
+	// Namespace deletion can wait for Kubernetes finalizers. Give expiry its own
+	// single bounded lane so a stuck preview does not delay normal deployments.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		timer := time.NewTicker(5 * time.Second)
+		defer timer.Stop()
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			w.cleanupPreview(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+			}
+		}
+	}()
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
@@ -132,10 +159,14 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}()
 	defer func() { cancel(nil); <-guardDone }()
 	emit(cluster.Event{Type: "running", Message: "Reconciling immutable application release"})
-	previous, err := w.Store.LastHealthy(ctx, a.ID, d.Revision)
+	previousRelease, err := w.Store.LastHealthyRelease(ctx, a.ID, d.Revision)
 	if err != nil {
 		cancel(errDatabase)
 		return
+	}
+	var previous *spec.Application
+	if previousRelease != nil {
+		previous = previousRelease.ResolvedSpec
 	}
 	resolved := d.ResolvedSpec
 	if resolved == nil {
@@ -188,6 +219,10 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 		}
 		return nil
 	}
+	if d.RecoveryState != "" {
+		w.recoverRelease(parent, ctx, c, target, emit)
+		return
+	}
 	deployCtx, endDeploy := context.WithTimeout(ctx, timeout*2/3)
 	observation, err := w.Cluster.Deploy(deployCtx, target, emit)
 	endDeploy()
@@ -204,33 +239,66 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 		w.handleFailure(parent, ctx, c, err, &observation)
 		return
 	}
-	// Kubernetes does not automatically undo a stalled group. Recover the full
-	// last successful revision; failed release and recovery stay in its event log.
 	message := err.Error()
 	emit(cluster.Event{Type: "failed", Message: message})
-	if previous != nil {
-		emit(cluster.Event{Type: "recovery_started", Message: "Restoring the complete last successful group; multi-service updates are not atomic"})
-		// Failed rollout must not exhaust the separate, bounded recovery window.
-		recoveryCtx, stop := context.WithTimeout(ctx, timeout/2)
-		target.Spec = *previous
-		target.Previous = resolved
-		recovery, recoveryErr := w.Cluster.Deploy(recoveryCtx, target, emit)
-		stop()
-		if recoveryErr == nil {
-			observation = recovery
-			message += "; previous healthy release restored"
-			emit(cluster.Event{Type: "recovered", Message: "Previous healthy service configuration restored"})
-		} else {
-			message += "; recovery failed: " + recoveryErr.Error()
-			emit(cluster.Event{Type: "recovery_failed", Message: recoveryErr.Error()})
-		}
-	}
-	if ctx.Err() != nil {
-		w.handleFailure(parent, ctx, c, errors.New(message), &observation)
+	skip := spec.RecoveryBlocked(*resolved, previous)
+	if err := c.BeginRecovery(ctx, previousRelease, message, skip); err != nil {
+		cancel(errDatabase)
 		return
 	}
-	w.finish(parent, c, "failed", message, observation)
+	if skip != "" {
+		emit(cluster.Event{Type: "recovery_skipped", Message: skip})
+		w.finish(parent, c, "failed", message+"; "+skip, observation)
+		return
+	}
+	w.recoverRelease(parent, ctx, c, target, emit)
 }
+
+func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, target cluster.Target, emit func(cluster.Event)) {
+	d := c.Deployment
+	if d.RecoveryState == "running" {
+		if d.RecoverySpec == nil {
+			return
+		}
+		emit(cluster.Event{Type: "recovery_started", Message: fmt.Sprintf("Restoring workload configuration from revision %d. External data and secret values are not rolled back", d.RecoveryRevision)})
+		failedSpec := target.Spec
+		target.Previous = &failedSpec
+		target.Spec = *d.RecoverySpec
+		timeout := w.Timeout / 2
+		if timeout == 0 {
+			timeout = 5 * time.Minute
+		}
+		bounded, stop := context.WithTimeout(ctx, timeout)
+		result, err := w.Cluster.Deploy(bounded, target, emit)
+		stop()
+		if ctx.Err() != nil {
+			w.handleFailure(parent, ctx, c, context.Cause(ctx), &result)
+			return
+		}
+		state, message := "succeeded", ""
+		if err != nil {
+			state = "failed"
+			message = err.Error()
+		}
+		if e := c.FinishRecovery(ctx, state, message, result); e != nil {
+			return
+		}
+		d = c.Deployment
+		if state == "succeeded" {
+			emit(cluster.Event{Type: "recovered", Message: fmt.Sprintf("Revision %d workload configuration restored; the attempted release remains failed", d.RecoveryRevision)})
+		} else {
+			emit(cluster.Event{Type: "recovery_failed", Message: message})
+		}
+	}
+	message := d.Error
+	if d.RecoveryState == "succeeded" {
+		message += "; previous healthy workload configuration restored"
+	} else {
+		message += "; recovery " + d.RecoveryState + ": " + d.RecoveryError
+	}
+	w.finish(parent, c, "failed", message, d.Result)
+}
+
 func (w *Worker) handleFailure(parent, ctx context.Context, c *store.Claim, err error, result any) {
 	cause := context.Cause(ctx)
 	if parent.Err() != nil || errors.Is(cause, errDatabase) {
@@ -251,6 +319,14 @@ func (w *Worker) finish(ctx context.Context, c *store.Claim, status, message str
 	d := c.Deployment
 	finishCtx, done := context.WithTimeout(ctx, 5*time.Second)
 	defer done()
+	if d.RecoveryState == "running" && status != "succeeded" {
+		// Cancellation, revoked authority or a timeout terminates recovery too.
+		// Process/database interruptions never reach finish and remain resumable.
+		if err := c.FinishRecovery(finishCtx, "failed", "Recovery stopped: "+message, result); err != nil {
+			slog.Warn("recovery finalization deferred until database recovery", "operation", d.ID)
+			return
+		}
+	}
 	if err := c.Finish(finishCtx, status, message, result); err != nil {
 		slog.Warn("operation finalization deferred until database recovery", "operation", d.ID)
 		return
@@ -299,6 +375,11 @@ func (w *Worker) Resync(ctx context.Context) {
 				if err != nil {
 					continue
 				}
+				effective, e := w.Store.ObservedSpec(ctx, a)
+				if e != nil {
+					continue
+				}
+				a.Spec = effective
 				w.renewCertificates(ctx, a, renewalRound)
 				observeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				o, err := w.Cluster.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})

@@ -145,15 +145,25 @@ func (c *Client) cleanupFiles(ctx context.Context, t Target) error {
 	for _, d := range deps.Items {
 		mark(d.Spec.Template.Spec)
 	}
-	jobs, err := c.kube.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 101})
+	jobs, err := c.kube.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 201})
 	if err != nil {
 		return err
 	}
-	if jobs.Continue != "" || len(jobs.Items) > 100 {
+	if jobs.Continue != "" || len(jobs.Items) > 200 {
 		return fmt.Errorf("too many jobs for file cleanup")
 	}
 	for _, j := range jobs.Items {
 		mark(j.Spec.Template.Spec)
+	}
+	schedules, e := c.kube.BatchV1().CronJobs(ns).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 21})
+	if e != nil {
+		return e
+	}
+	if schedules.Continue != "" || len(schedules.Items) > 20 {
+		return fmt.Errorf("too many scheduled jobs for file cleanup")
+	}
+	for _, j := range schedules.Items {
+		mark(j.Spec.JobTemplate.Spec.Template.Spec)
 	}
 	opts := metav1.ListOptions{LabelSelector: selector + "," + fileObjectLabel + "=true", Limit: 401}
 	cms, err := c.kube.CoreV1().ConfigMaps(ns).List(ctx, opts)

@@ -170,3 +170,70 @@ func TestRuntimeResourceScopeCASHistoryAndExpiry(t *testing.T) {
 		t.Fatal("restricted registry deletion accepted")
 	}
 }
+
+func TestScheduledRuntimeActionsPreserveScheduleAndDigest(t *testing.T) {
+	db, _ := database(t)
+	ctx := context.Background()
+	raw, err := db.Bootstrap(ctx, "schedule-operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := spec.Parse([]byte("name='schedule'\n[services.report]\nimage='python:3.13-alpine'\ncommand=['python','-c','print(1)']\n[services.report.job]\ntimeout_seconds=60\nretries=1\n[services.report.job.schedule]\ncron='0 * * * *'\ntimezone='UTC'\nhistory_limit=1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := spec.Normalize(app)
+	service := resolved.Services["report"]
+	service.Image = "docker.io/library/python@sha256:" + strings.Repeat("a", 64)
+	resolved.Services["report"] = service
+	initial, err := db.Accept(ctx, p, "demo", "development", app, 0, "schedule-initial", resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish := func() {
+		t.Helper()
+		claim, err := db.Claim(ctx)
+		if err != nil || claim == nil {
+			t.Fatal("missing scheduled action", err)
+		}
+		defer claim.Release()
+		if err = claim.Finish(ctx, "succeeded", "", map[string]string{"status": "healthy"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finish()
+	handler := (&api.Server{Store: db}).Handler()
+	call := func(action string, revision int, replicas bool) *httptest.ResponseRecorder {
+		body := map[string]any{"expected_revision": revision}
+		if replicas {
+			body["replicas"] = 2
+		}
+		r := httptest.NewRequest("POST", "/api/v1/applications/"+initial.ApplicationID+"/services/report/"+action, strings.NewReader(string(store.JSON(body))))
+		r.Header.Set("Authorization", "Bearer "+raw)
+		r.Header.Set("Idempotency-Key", "scheduled-action-"+action)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	for _, action := range []string{"restart", "scale"} {
+		if result := call(action, 1, action == "scale"); result.Code != 409 {
+			t.Fatal(action, "must not mutate scheduled jobs", result.Code, result.Body.String())
+		}
+	}
+	for index, action := range []string{"stop", "resume"} {
+		result := call(action, index+1, false)
+		var d store.Deployment
+		if result.Code != 202 || json.Unmarshal(result.Body.Bytes(), &d) != nil {
+			t.Fatal(action, result.Code, result.Body.String())
+		}
+		actual := d.Spec.Services["report"]
+		if actual.Suspended != (action == "stop") || actual.Job == nil || actual.Job.Schedule == nil || actual.Job.Schedule.Cron != "0 * * * *" || d.ResolvedSpec.Services["report"].Image != service.Image {
+			t.Fatal("schedule or artifact lost", d)
+		}
+		finish()
+	}
+}

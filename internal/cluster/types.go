@@ -96,7 +96,16 @@ type Observation struct {
 	ObservedAt time.Time       `json:"observed_at"`
 }
 
+type JobRun struct {
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	Revision   int64      `json:"revision"`
+	CreatedAt  time.Time  `json:"created_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
 type ServiceStatus struct {
+	JobRuns         []JobRun          `json:"job_runs,omitempty"`
 	Endpoints       map[string]string `json:"endpoints,omitempty"`
 	Name            string            `json:"name"`
 	Status          string            `json:"status"`

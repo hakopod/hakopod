@@ -220,3 +220,5 @@ See the [local guide](docs/local-development.md), [architecture](docs/architectu
 [OpenAPI contract](api/openapi.json), and [contributor instructions](CONTRIBUTING.md).
 The project uses Apache-2.0 for original code; dependencies retain their own
 [licenses and notices](docs/licenses.md).
+
+Build and release workflows: [framework setup, MCP, schedules, previews, recovery and build secrets](docs/engine-workflows.md).
