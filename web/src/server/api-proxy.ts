@@ -6,6 +6,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 const allowed = [
+  /^compose\/convert$/,
   /^(?:projects\/[A-Za-z0-9_-]+|applications\/[A-Za-z0-9_-]+(?:\/services\/[A-Za-z0-9_-]+)?)\/name$/,
   /^applications\/[A-Za-z0-9_-]+\/previews$/,
   /^previews\/[A-Za-z0-9_-]+$/,

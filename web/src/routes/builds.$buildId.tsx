@@ -1,6 +1,6 @@
 import { frameworkLabel } from '../components/framework-build-fields'
 import { Input } from '../components/ui/input'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { Pipeline, type PipelineStage } from '@hakopod/hatch-ui/blocks/pipeline'
@@ -26,7 +26,12 @@ function runStatus(run: Run) {
   if (run.status === 'in_progress') return 'building'
   return run.status
 }
-export const Route = createFileRoute('/builds/$buildId')({ component: BuildRoute })
+export const Route = createFileRoute('/builds/$buildId')({
+  validateSearch: (search: Record<string, unknown>): { review?: 'workflow' } => ({
+    review: search.review === 'workflow' ? 'workflow' : undefined,
+  }),
+  component: BuildRoute,
+})
 function BuildRoute() {
   const { buildId } = Route.useParams()
   return useLocation().pathname === `/builds/${buildId}` ? <BuildDetail /> : <Outlet />
@@ -34,8 +39,11 @@ function BuildRoute() {
 function BuildDetail() {
   const { buildId } = Route.useParams()
   const scope = useScope()
+  const { review } = Route.useSearch()
+  const navigate = useNavigate()
+  const reviewed = useRef('')
   const [start, setStart] = useState(false)
-  const [tab, setTab] = useState('runs')
+  const [tab, setTab] = useState(review === 'workflow' ? 'configuration' : 'runs')
   const navigationRoot = useActiveSection(tab, '.tab-list')
   const [preview, setPreview] = useState<components['schemas']['BuildPreview'] | null>(null)
   const [selected, setSelected] = useState('')
@@ -58,6 +66,24 @@ function BuildDetail() {
   useEffect(() => {
     if (config.data) scope.syncScope(config.data.project, config.data.environment)
   }, [config.data?.project, config.data?.environment, scope.syncScope])
+  useEffect(() => {
+    if (review !== 'workflow' || !config.data || reviewed.current === buildId) return
+    reviewed.current = buildId
+    setTab('configuration')
+    void navigate({ to: '/builds/$buildId', params: { buildId }, search: {}, replace: true })
+    if (!scope.can('deployments:write')) return
+    setBusy(true)
+    setError('')
+    void unwrap(
+      client.POST('/builds/{id}/preview', {
+        params: { path: { id: buildId } },
+        body: {},
+      }),
+    )
+      .then(setPreview)
+      .catch((err) => setError(message(err)))
+      .finally(() => setBusy(false))
+  }, [review, config.data, buildId])
   if (config.isPending) return <Loading />
   if (config.error || !config.data) return <ErrorState error={config.error} />
   const build = config.data

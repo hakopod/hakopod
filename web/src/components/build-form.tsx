@@ -194,7 +194,11 @@ export default function BuildForm({
             void cache.invalidateQueries({ queryKey: ['builds'] })
             void cache.invalidateQueries({ queryKey: ['build', result.id] })
             onClose()
-            void navigate({ to: '/builds/$buildId', params: { buildId: result.id } })
+            void navigate({
+              to: '/builds/$buildId',
+              params: { buildId: result.id },
+              search: { review: 'workflow' },
+            })
           } catch (err) {
             setError(message(err))
           } finally {

@@ -24,6 +24,11 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases = [
+    {
+      path: 'compose/convert',
+      method: 'POST',
+      body: { compose: 'services:\n  web:\n    image: nginx:alpine', name: 'web' },
+    },
     { path: 'applications/app-a/previews', method: 'GET', query: '?cursor=next' },
     { path: 'previews/preview-a', method: 'GET' },
     {
