@@ -6,11 +6,17 @@ import (
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/management"
+	"github.com/hakopod/hakopod/internal/spec"
 	"net/http"
 	"time"
 )
 
+type WorkloadPolicy = cluster.WorkloadPolicy
+type WorkloadSpec = spec.Application
+
 type RuntimeConfig struct {
+	WorkloadPolicy   cluster.WorkloadPolicyResolver
+	ApplicationLimit func(context.Context, string, string) (int, error)
 	// NodeLimit bounds the private operator cluster. Zero defaults to one.
 	NodeLimit       int
 	Kubeconfig      string
@@ -46,7 +52,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -56,7 +62,18 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	if err := kube.ValidateCloudCapacity(ctx); err != nil {
 		return nil, nil, err
 	}
+	s.runtime = kube
+	s.store.ApplicationLimit = config.ApplicationLimit
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true}
 	handler, wait := management.Start(ctx, server, config.AppDomain, rollout)
 	return handler, wait, nil
+}
+
+func (s *Service) CheckWorkloadPool(ctx context.Context, node, pool, runtime string) error {
+	if s.runtime == nil {
+		return errors.New("runtime is unavailable")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return s.runtime.CheckWorkloadPool(bounded, node, pool, runtime)
 }

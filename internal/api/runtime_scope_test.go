@@ -1,0 +1,26 @@
+package api
+
+import (
+	"github.com/hakopod/hakopod/internal/store"
+	"testing"
+)
+
+func TestRuntimeScopeCannotGrantOrCrossWorkspaceAuthority(t *testing.T) {
+	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "browser", Permissions: []string{"admin"}, ProjectRoles: []store.ProjectRole{{Project: "free-alice", Role: "developer"}, {Project: "other", Role: "developer"}}}
+	narrowed, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "free-alice", Environment: "production"})
+	if err != nil || !narrowed.Allows("deployments:write", "free-alice", "production", "") {
+		t.Fatal(err)
+	}
+	if narrowed.IsAdmin() || narrowed.Owner || narrowed.Allows("deployments:read", "other", "production", "") || narrowed.Allows("deployments:write", "free-alice", "development", "") {
+		t.Fatal("scope widened")
+	}
+	for _, scope := range []RuntimeScope{{Identity: "bob", Project: "free-alice", Environment: "production"}, {Identity: "alice", Project: "unowned", Environment: "production"}, {Identity: "alice", Project: "free-alice"}} {
+		if _, err := scopedRuntimePrincipal(p, scope); err == nil {
+			t.Fatal("accepted invalid scope", scope)
+		}
+	}
+	p.CredentialType = "machine"
+	if _, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "free-alice", Environment: "production"}); err == nil {
+		t.Fatal("machine key accepted as customer browser")
+	}
+}

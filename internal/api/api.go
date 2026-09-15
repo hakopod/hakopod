@@ -229,6 +229,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			failure(w, err)
 			return
 		}
+		if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+			p, err = scopedRuntimePrincipal(p, scope)
+			if err != nil {
+				failure(w, err)
+				return
+			}
+		}
 		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationPath(r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) && !s.cloudOperator(p) {
 			failure(w, store.ErrForbidden)
 			return

@@ -28,6 +28,8 @@ var ErrUnauthorized = errors.New("credential is invalid, expired, revoked, or di
 var ErrForbidden = errors.New("credential does not allow this operation in the requested scope")
 
 type Store struct {
+	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.
+	ApplicationLimit func(context.Context, string, string) (int, error)
 	Pool             *pgxpool.Pool
 	ShowcaseEnabled  bool
 	ManagedCloud     bool

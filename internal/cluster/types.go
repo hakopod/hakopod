@@ -25,6 +25,7 @@ const (
 )
 
 type Options struct {
+	WorkloadPolicy WorkloadPolicyResolver
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
 	// Zero preserves the single-node customer policy; supported values are 1 or 2.
 	OperatorNodeLimit   int
@@ -65,6 +66,7 @@ type Client struct {
 }
 
 type Target struct {
+	policy                                           *WorkloadPolicy
 	Project, Environment, ApplicationID, OperationID string
 	Revision                                         int64
 	Spec                                             spec.Application
