@@ -211,6 +211,14 @@ print('Migration fixture completed')`
 		time.Sleep(500 * time.Millisecond)
 	}
 	if !apierrors.IsNotFound(err) {
+		if job, e := c.kube.BatchV1().Jobs(Namespace(target.ApplicationID)).Get(ctx, jobName("migrate"), metav1.GetOptions{}); e == nil {
+			t.Logf("Job cleanup: deleting=%t active=%d finalizers=%v", job.DeletionTimestamp != nil, job.Status.Active, job.Finalizers)
+		}
+		if pods, e := c.kube.CoreV1().Pods(Namespace(target.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + jobName("migrate")}); e == nil {
+			for _, pod := range pods.Items {
+				t.Logf("Job pod cleanup: phase=%s deleting=%t finalizers=%v grace=%v", pod.Status.Phase, pod.DeletionTimestamp != nil, pod.Finalizers, pod.Spec.TerminationGracePeriodSeconds)
+			}
+		}
 		t.Fatal("cancelled job remained active", err)
 	}
 	t.Log("Verified recovery/file update and cancellation. Verified real job completion/reuse/failure gating, scoped file mounts, derived credentials, log access and two HTTP ingress ports")
