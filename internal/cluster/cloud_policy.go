@@ -12,7 +12,8 @@ import (
 
 var ErrCloudLimit = errors.New("managed-cloud limit exceeded")
 
-// CloudCapabilities describes the initial BYO-node plan, not future managed compute.
+// CloudCapabilities describes enforced capacity for this runtime. Customers
+// retain the initial single-node BYO policy.
 type CloudCapabilities struct {
 	Version                int      `json:"version"`
 	Mode                   string   `json:"mode"`
@@ -37,17 +38,24 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 	if c.kube == nil {
 		return CloudCapabilities{}, errors.New("Kubernetes client is unavailable")
 	}
-	result := CloudCapabilities{Version: 1, Mode: DeploymentManagedCloud, Enforced: true, NodeLimit: 1, ServicesPerApplication: 10, ReplicasPerService: 3, Profiles: []string{"small", "medium", "large"}}
+	limit := c.options.OperatorNodeLimit
+	if limit == 0 {
+		limit = 1
+	}
+	if limit < 1 || limit > 2 {
+		return CloudCapabilities{}, fmt.Errorf("%w: invalid operator node limit", ErrCloudLimit)
+	}
+	result := CloudCapabilities{Version: 1, Mode: DeploymentManagedCloud, Enforced: true, NodeLimit: limit, ServicesPerApplication: 10, ReplicasPerService: 3, Profiles: []string{"small", "medium", "large"}}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 2})
+	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: int64(limit + 1)})
 	if err != nil {
 		return CloudCapabilities{}, fmt.Errorf("read managed-cloud node capacity: %w", err)
 	}
 	result.NodeCount = len(nodes.Items)
 	result.NodeCountComplete = nodes.Continue == ""
-	if result.NodeCount > 2 {
-		result.NodeCount = 2
+	if result.NodeCount > limit+1 {
+		result.NodeCount = limit + 1
 		result.NodeCountComplete = false
 	}
 	return result, nil
@@ -85,8 +93,8 @@ func (c *Client) ValidateCloudCapacity(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if value.NodeCount != 1 || !value.NodeCountComplete {
-		return fmt.Errorf("%w: the initial Cloud plan requires exactly one registered node", ErrCloudLimit)
+	if value.NodeCount < 1 || value.NodeCount > value.NodeLimit || !value.NodeCountComplete {
+		return fmt.Errorf("%w: this runtime requires between one and %d registered nodes", ErrCloudLimit, value.NodeLimit)
 	}
 	return nil
 }

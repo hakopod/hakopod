@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 )
 
 func cloudClient(nodes int) *Client {
@@ -67,5 +68,39 @@ func TestCloudReconciliationRejectsBeforeMutation(t *testing.T) {
 	}
 	if len(c.kube.(*fake.Clientset).Actions()) != 0 {
 		t.Fatal("invalid specification reached Kubernetes")
+	}
+}
+
+func TestOperatorNodeCapacityIsBoundedAndDoesNotRelaxCustomerPolicy(t *testing.T) {
+	for _, limit := range []int{-1, 0, 1, 2, 3} {
+		for _, count := range []int{0, 1, 2, 3, 4} {
+			t.Run(fmt.Sprintf("limit=%d/count=%d", limit, count), func(t *testing.T) {
+				c := cloudClient(count)
+				c.options.OperatorNodeLimit = limit
+				allowed := (limit == 0 || limit == 1) && count == 1 || limit == 2 && count >= 1 && count <= 2
+				err := c.ValidateCloudCapacity(context.Background())
+				if (err == nil) != allowed {
+					t.Fatalf("allowed=%v err=%v", allowed, err)
+				}
+				if allowed {
+					caps, err := c.CloudCapabilities(context.Background())
+					expected := limit
+					if expected == 0 {
+						expected = 1
+					}
+					if err != nil || caps.NodeLimit != expected || caps.NodeCount != count || !caps.NodeCountComplete {
+						t.Fatalf("%+v %v", caps, err)
+					}
+				}
+			})
+		}
+	}
+	c := cloudClient(2)
+	c.options.OperatorNodeLimit = 2
+	c.kube.(*fake.Clientset).PrependReactor("list", "nodes", func(action ktesting.Action) (bool, runtime.Object, error) {
+		return true, &corev1.NodeList{ListMeta: metav1.ListMeta{Continue: "more"}, Items: []corev1.Node{{}, {}}}, nil
+	})
+	if err := c.ValidateCloudCapacity(context.Background()); !errors.Is(err, ErrCloudLimit) {
+		t.Fatalf("incomplete inventory accepted: %v", err)
 	}
 }
