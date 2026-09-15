@@ -1,6 +1,7 @@
 import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
 import { environmentRows, parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
+import { ComposeImport, type ComposeDraft } from './compose-import'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
@@ -43,7 +44,7 @@ export function DeploymentForm({
 }: {
   onClose: () => void
   application?: Application
-  initialMode?: 'form' | 'toml'
+  initialMode?: 'form' | 'toml' | 'compose'
   serviceName?: string
   removeService?: string
 }) {
@@ -63,7 +64,8 @@ export function DeploymentForm({
   const [spec, setSpec] = useState<Spec>(newSpec)
   const [runtime, setRuntime] = useState<Record<string, RuntimeDraft>>({})
   const [toml, setToml] = useState('')
-  const [mode, setMode] = useState<'form' | 'toml'>('form')
+  const [mode, setMode] = useState<'form' | 'toml' | 'compose'>('form')
+  const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,6 +86,7 @@ export function DeploymentForm({
         ),
       )
       setPlan(null)
+      setComposeDraft(null)
       setError('')
       setToml(application ? specToTOML(initial) : '')
       setMode(initialMode)
@@ -114,10 +117,28 @@ export function DeploymentForm({
     ...(serviceName ? { service: serviceName } : {}),
     ...(mode === 'form' ? { spec: formSpec() } : { toml }),
   })
-  async function changeMode(next: 'form' | 'toml') {
+  async function changeMode(next: 'form' | 'toml' | 'compose') {
     if (busy || mode === next) return
     setError('')
     setPlan(null)
+    if (next === 'compose') {
+      if (mode === 'form') {
+        try {
+          const nextSpec = formSpec()
+          setSpec(nextSpec)
+          setToml(specToTOML(nextSpec))
+        } catch (cause) {
+          setError(message(cause))
+          return
+        }
+      }
+      setMode(next)
+      return
+    }
+    if (mode === 'compose') {
+      setMode(next)
+      return
+    }
     if (next === 'toml') {
       try {
         const nextSpec = formSpec()
@@ -139,6 +160,14 @@ export function DeploymentForm({
       if (application && result.expected_revision !== application.revision)
         throw new Error(
           'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
+        )
+      if (
+        composeDraft &&
+        (result.expected_revision !== composeDraft.expected_revision ||
+          result.application_id !== composeDraft.application_id)
+      )
+        throw new Error(
+          'The application changed after conversion. Reload it and import Compose again before reviewing.',
         )
       if (application && result.application_id !== application.id)
         throw new Error('Keep the original application name when editing this application.')
@@ -166,6 +195,14 @@ export function DeploymentForm({
       if (application && result.expected_revision !== application.revision)
         throw new Error(
           'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
+        )
+      if (
+        composeDraft &&
+        (result.expected_revision !== composeDraft.expected_revision ||
+          result.application_id !== composeDraft.application_id)
+      )
+        throw new Error(
+          'The application changed after conversion. Reload it and import Compose again before reviewing.',
         )
       if (application && result.application_id !== application.id)
         throw new Error(
@@ -262,6 +299,11 @@ export function DeploymentForm({
             application networks and volumes retain their accepted configuration.
           </Note>
         )}
+        {composeDraft &&
+          mode !== 'compose' &&
+          composeDraft.warnings.map((warning, index) => (
+            <Note key={`compose-${index}`}>{warning}</Note>
+          ))}
         {plan ? (
           <>
             <div className="review-summary">
@@ -341,6 +383,16 @@ export function DeploymentForm({
                 <Icon name="code" size={15} />
                 Import TOML
               </button>
+              {!serviceName && (
+                <button
+                  disabled={busy}
+                  className={mode === 'compose' ? 'selected' : ''}
+                  onClick={() => void changeMode('compose')}
+                >
+                  <Icon name="code" size={15} />
+                  Import Compose
+                </button>
+              )}
               {!application &&
                 (scope.identity.admin || scope.identity.can_manage_git) &&
                 features.git && (
@@ -356,7 +408,30 @@ export function DeploymentForm({
                   </>
                 )}
             </div>
-            {mode === 'toml' ? (
+            {mode === 'compose' ? (
+              <ComposeImport
+                application={application}
+                project={project}
+                environment={environment}
+                name={spec.name}
+                onUse={(draft) => {
+                  setComposeDraft(draft)
+                  setSpec(draft.spec)
+                  setRuntime(
+                    Object.fromEntries(
+                      Object.entries(draft.spec.services).map(([name, service]) => [
+                        name,
+                        runtimeDraft(service),
+                      ]),
+                    ),
+                  )
+                  setToml(draft.toml)
+                  setMode('toml')
+                  setPlan(null)
+                  setError('')
+                }}
+              />
+            ) : mode === 'toml' ? (
               <div className="field-stack deploy-toml-field">
                 <div className="toml-editor-heading">
                   <label htmlFor="toml-import">hakopod.toml</label>
@@ -677,6 +752,7 @@ export function DeploymentForm({
             variant="primary"
             disabled={
               busy ||
+              mode === 'compose' ||
               (!plan &&
                 mode === 'form' &&
                 (!spec.name || Object.values(spec.services).some((service) => !service.image))) ||

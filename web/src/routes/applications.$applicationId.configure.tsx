@@ -9,8 +9,8 @@ import { useScope, useResourceScope } from '../lib/scope'
 export const Route = createFileRoute('/applications/$applicationId/configure')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { mode?: 'form' | 'toml'; service?: string; remove?: string } => ({
-    mode: search.mode === 'toml' ? 'toml' : 'form',
+  ): { mode?: 'form' | 'toml' | 'compose'; service?: string; remove?: string } => ({
+    mode: search.mode === 'toml' || search.mode === 'compose' ? search.mode : 'form',
     service: typeof search.service === 'string' ? search.service : undefined,
     remove: typeof search.remove === 'string' ? search.remove : undefined,
   }),
@@ -61,7 +61,7 @@ function ConfigureApplication() {
   return (
     <DeploymentForm
       application={application.data}
-      initialMode={mode}
+      initialMode={service && mode === 'compose' ? 'form' : mode}
       serviceName={remove ? undefined : service}
       removeService={remove}
       onClose={() =>
