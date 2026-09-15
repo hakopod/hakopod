@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react'
+import { importDotenv, MAX_ENV_FILE_BYTES } from '../lib/dotenv'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
@@ -15,6 +17,12 @@ export function EnvironmentFields({
   label: string
   disabled?: boolean
 }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const latest = useRef({ rows, disabled })
+  latest.current = { rows, disabled }
+  const [importing, setImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState('')
+  const [importError, setImportError] = useState(false)
   return (
     <div className="grid min-w-0 gap-3">
       <strong className="text-sm">Environment variables</strong>
@@ -72,7 +80,7 @@ export function EnvironmentFields({
           </Button>
         </div>
       ))}
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button
           disabled={disabled || rows.length >= 128}
           onClick={() => onChange([...rows, { id: crypto.randomUUID(), name: '', value: '' }])}
@@ -80,7 +88,59 @@ export function EnvironmentFields({
           <Icon name="plus" size={14} />
           Add variable
         </Button>
+        <input
+          ref={fileInput}
+          type="file"
+          className="hidden!"
+          accept=".env,.txt,text/plain"
+          aria-label={`Import ${label} environment file`}
+          onChange={async (event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            const initialRows = rows
+            setImporting(true)
+            setImportMessage('')
+            try {
+              if (file.size > MAX_ENV_FILE_BYTES)
+                throw new Error('Choose a .env file smaller than 512 KiB.')
+              const text = await file.text()
+              if (latest.current.rows !== initialRows || latest.current.disabled)
+                throw new Error(
+                  'The variables changed while reading the file. Import it again to use the latest values.',
+                )
+              const merged = importDotenv(text, initialRows)
+              onChange(merged)
+              setImportError(false)
+              setImportMessage(
+                `Imported ${merged.length - initialRows.length} variables. Review them before saving.`,
+              )
+            } catch (error) {
+              setImportError(true)
+              setImportMessage(
+                error instanceof Error ? error.message : 'Could not read this file. Try again.',
+              )
+            } finally {
+              setImporting(false)
+            }
+          }}
+        />
+        <Button
+          disabled={disabled || importing || rows.length >= 128}
+          onClick={() => fileInput.current?.click()}
+        >
+          {importing ? 'Importing…' : 'Import .env'}
+        </Button>
       </div>
+      {importMessage && (
+        <p className="field-help" role={importError ? 'alert' : 'status'}>
+          {importMessage}
+        </p>
+      )}
+      <p className="field-help">
+        Import adds variables without replacing existing names. References such as ${'{NAME}'} are
+        kept literally.
+      </p>
       <p className="field-help">
         These values are available when the service starts. Passwords and tokens must use
         application secrets; plain variables are saved in deployment history.
