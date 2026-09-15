@@ -33,6 +33,17 @@ export function parseEnvironment(rows: EnvironmentRow[], secretNames: string[]):
       )
     )
       throw new Error(`${row.name} belongs in application secrets, not plain variables.`)
+    let credentialURL = false
+    try {
+      const url = new URL(row.value)
+      credentialURL = Boolean(url.username || url.password)
+    } catch {
+      /* Non-URL values are valid plain variables. */
+    }
+    if (credentialURL)
+      throw new Error(
+        `${row.name} contains registry or connection credentials. Use application secrets.`,
+      )
     result[row.name] = row.value
   }
   return result
