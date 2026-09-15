@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
 import { APIError, activeDeployment, message, relative, timestamp } from '../lib/api'
-import { useScope } from '../lib/scope'
+import { canAccess, useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -71,7 +71,7 @@ function BuildDetail() {
     reviewed.current = buildId
     setTab('configuration')
     void navigate({ to: '/builds/$buildId', params: { buildId }, search: {}, replace: true })
-    if (!scope.can('deployments:write')) return
+    if (!canAccess(scope.identity, config.data.project, 'deployments:write')) return
     setBusy(true)
     setError('')
     void unwrap(
