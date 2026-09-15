@@ -1,3 +1,6 @@
+import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
+import { environmentRows, parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
+import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
@@ -17,6 +20,13 @@ import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Note } from './shared'
 import { ServiceIcon } from './service-icon'
+
+type RuntimeDraft = { command: string; args: string; variables: EnvironmentRow[] }
+const runtimeDraft = (service: Service): RuntimeDraft => ({
+  command: formatProcessCommand(service.command),
+  args: formatProcessCommand(service.args),
+  variables: environmentRows(service.env),
+})
 
 const newSpec = (): Spec => ({
   schema_version: 1,
@@ -51,6 +61,7 @@ export function DeploymentForm({
     gcTime: 0,
   })
   const [spec, setSpec] = useState<Spec>(newSpec)
+  const [runtime, setRuntime] = useState<Record<string, RuntimeDraft>>({})
   const [toml, setToml] = useState('')
   const [mode, setMode] = useState<'form' | 'toml'>('form')
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -67,25 +78,55 @@ export function DeploymentForm({
           : structuredClone(application.spec)
         : newSpec()
       setSpec(initial)
+      setRuntime(
+        Object.fromEntries(
+          Object.entries(initial.services).map(([name, service]) => [name, runtimeDraft(service)]),
+        ),
+      )
       setPlan(null)
       setError('')
       setToml(application ? specToTOML(initial) : '')
       setMode(initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService])
+  const formSpec = (): Spec => ({
+    ...spec,
+    services: Object.fromEntries(
+      Object.entries(spec.services).map(([name, service]) => {
+        const draft = runtime[name]
+        return [
+          name,
+          draft
+            ? {
+                ...service,
+                command: parseProcessCommand(draft.command),
+                args: parseProcessCommand(draft.args),
+                env: parseEnvironment(draft.variables, Object.keys(service.secrets || {})),
+              }
+            : service,
+        ]
+      }),
+    ),
+  })
   const payload = () => ({
     project,
     environment,
     ...(serviceName ? { service: serviceName } : {}),
-    ...(mode === 'form' ? { spec } : { toml }),
+    ...(mode === 'form' ? { spec: formSpec() } : { toml }),
   })
   async function changeMode(next: 'form' | 'toml') {
     if (busy || mode === next) return
     setError('')
     setPlan(null)
     if (next === 'toml') {
-      setToml(specToTOML(spec))
-      setMode(next)
+      try {
+        const nextSpec = formSpec()
+        setSpec(nextSpec)
+        setToml(specToTOML(nextSpec))
+        setMode(next)
+      } catch (cause) {
+        setError(message(cause))
+      }
       return
     }
     if (!toml.trim()) {
@@ -95,9 +136,21 @@ export function DeploymentForm({
     setBusy(true)
     try {
       const result = await unwrap(client.POST('/plan', { body: payload() }))
+      if (application && result.expected_revision !== application.revision)
+        throw new Error(
+          'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
+        )
       if (application && result.application_id !== application.id)
         throw new Error('Keep the original application name when editing this application.')
       setSpec(result.spec)
+      setRuntime(
+        Object.fromEntries(
+          Object.entries(result.spec.services).map(([name, service]) => [
+            name,
+            runtimeDraft(service),
+          ]),
+        ),
+      )
       setMode(next)
     } catch (cause) {
       setError(message(cause))
@@ -110,6 +163,10 @@ export function DeploymentForm({
     setError('')
     try {
       const result = await unwrap(client.POST('/plan', { body: payload() }))
+      if (application && result.expected_revision !== application.revision)
+        throw new Error(
+          'This application changed while you were editing. Your draft is kept; reload the application before applying it.',
+        )
       if (application && result.application_id !== application.id)
         throw new Error(
           'The imported application name does not match this application. Keep its original name to update it.',
@@ -267,7 +324,7 @@ export function DeploymentForm({
           </>
         ) : (
           <>
-            <div className="segmented-control">
+            <div className="segmented-control deployment-methods">
               <button
                 disabled={busy}
                 className={mode === 'form' ? 'selected' : ''}
@@ -287,11 +344,16 @@ export function DeploymentForm({
               {!application &&
                 (scope.identity.admin || scope.identity.can_manage_git) &&
                 features.git && (
-                  <button onClick={() => void navigate({ to: '/applications/import' })}>
-                    <ServiceIcon name="github" size={15} />
-                    <ServiceIcon name="gitlab" size={15} />
-                    Git repository
-                  </button>
+                  <>
+                    <button onClick={() => void navigate({ to: '/builds/new' })}>
+                      <ServiceIcon name="github" size={15} />
+                      Build from Git
+                    </button>
+                    <button onClick={() => void navigate({ to: '/applications/import' })}>
+                      <Icon name="code" size={15} />
+                      Import Git configuration
+                    </button>
+                  </>
                 )}
             </div>
             {mode === 'toml' ? (
@@ -337,7 +399,7 @@ export function DeploymentForm({
                     onChange={(event) =>
                       setSpec((previous) => ({ ...previous, name: event.target.value }))
                     }
-                    pattern="[a-z0-9][a-z0-9-]*"
+                    pattern="[a-z][a-z0-9\-]*"
                     maxLength={63}
                   />
                 </label>
@@ -506,6 +568,29 @@ export function DeploymentForm({
                           />
                         </label>
                       </div>
+                      <RunCommandFields
+                        label={name}
+                        disabled={busy}
+                        command={(runtime[name] || runtimeDraft(service)).command}
+                        args={(runtime[name] || runtimeDraft(service)).args}
+                        onChange={(value) =>
+                          setRuntime((previous) => ({
+                            ...previous,
+                            [name]: { ...(previous[name] || runtimeDraft(service)), ...value },
+                          }))
+                        }
+                      />
+                      <EnvironmentFields
+                        label={name}
+                        disabled={busy}
+                        rows={(runtime[name] || runtimeDraft(service)).variables}
+                        onChange={(variables) =>
+                          setRuntime((previous) => ({
+                            ...previous,
+                            [name]: { ...(previous[name] || runtimeDraft(service)), variables },
+                          }))
+                        }
+                      />
                       <div className="service-exposure">
                         <label className="checkbox-label">
                           <Input
@@ -541,6 +626,11 @@ export function DeploymentForm({
                       let name = 'api'
                       let n = 2
                       while (spec.services[name]) name = `service-${n++}`
+                      setRuntime((previous) => {
+                        const next = { ...previous }
+                        delete next[name]
+                        return next
+                      })
                       setSpec((previous) => ({
                         ...previous,
                         services: {

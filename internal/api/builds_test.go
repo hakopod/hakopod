@@ -283,6 +283,7 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 		t.Fatal("built image architecture was not preserved in runtime placement")
 	}
 	web := application.Services["web"]
+	web.Env = map[string]string{"EXISTING": "kept"}
 	web.Command = []string{"uvicorn"}
 	web.Args = []string{"main:app", "--host", "0.0.0.0"}
 	application.Services["web"] = web
@@ -314,6 +315,25 @@ func TestSourceBuildNewApplicationManualAndAutomatic(t *testing.T) {
 		next, _, err := server.prepareBuildSpec(ctx, currentConfig, currentRun)
 		if err != nil || strings.Join(next.Services["web"].Command, " ") != "uvicorn" || strings.Join(next.Services["web"].Args, " ") != "main:app --host 0.0.0.0" {
 			t.Fatal("linked runtime override lost", err)
+		}
+		if next.Services["web"].Env["EXISTING"] != "kept" {
+			t.Fatal("omitted runtime env replaced existing variables")
+		}
+		replacement := map[string]string{"NEW": "value", "EMPTY": ""}
+		currentConfig.Env = &replacement
+		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || next.Services["web"].Env["NEW"] != "value" || len(next.Services["web"].Env) != 2 {
+			t.Fatal("runtime env replacement failed", err)
+		}
+		next.Services["web"].Env["NEW"] = "changed"
+		if replacement["NEW"] != "value" {
+			t.Fatal("deployment mutated stored build configuration")
+		}
+		emptyEnv := map[string]string{}
+		currentConfig.Env = &emptyEnv
+		next, _, err = server.prepareBuildSpec(ctx, currentConfig, currentRun)
+		if err != nil || len(next.Services["web"].Env) != 0 {
+			t.Fatal("explicit empty runtime env did not clear variables", err)
 		}
 		override := []string{"python", "-m", "uvicorn"}
 		args := []string{"other:app", "--port", "8000"}

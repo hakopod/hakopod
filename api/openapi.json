@@ -13578,6 +13578,14 @@
               "type": "string"
             },
             "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 128,
+            "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
           }
         },
         "required": [
@@ -13724,6 +13732,14 @@
               "type": "string"
             },
             "description": "Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 128,
+            "description": "Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."
           }
         },
         "required": [

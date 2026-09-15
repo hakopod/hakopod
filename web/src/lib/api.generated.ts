@@ -3468,6 +3468,10 @@ export interface components {
             command?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
             args?: string[];
+            /** @description Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials. */
+            env?: {
+                [key: string]: string;
+            };
         };
         BuildInput: {
             connection_id?: string;
@@ -3507,6 +3511,10 @@ export interface components {
             command?: string[];
             /** @description Exec-form runtime override. Omit to preserve the existing service setting; empty array uses the image default. */
             args?: string[];
+            /** @description Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials. */
+            env?: {
+                [key: string]: string;
+            };
         };
         BuildRun: {
             id: string;

@@ -103,6 +103,7 @@ func TestScopedGitManagementPrivateDockerfileAndIsolation(t *testing.T) {
 	if result["mode"] != "dockerfile" || calls != 2 {
 		t.Fatal("private Dockerfile detection failed", result, calls)
 	}
+	input["env"] = map[string]string{"APP_ENV": "production", "EMPTY": ""}
 	created := gitConnectionCall(t, h, keys["demo"], "POST", "/builds", input, 201)
 	config, e := s.readBuild(ctx, created["id"].(string))
 	if e != nil {
@@ -116,6 +117,18 @@ func TestScopedGitManagementPrivateDockerfileAndIsolation(t *testing.T) {
 	if len(next.Services["api"].Command) != 1 || next.Services["api"].Command[0] != "uvicorn" || strings.Join(next.Services["api"].Args, " ") != "main:app --host 0.0.0.0 --port 8000" {
 		t.Fatal("runtime command did not reach deployment")
 	}
+	if config.Env == nil || (*config.Env)["APP_ENV"] != "production" || next.Services["api"].Env["APP_ENV"] != "production" {
+		t.Fatal("runtime environment did not persist into the deployment")
+	}
+	if strings.Contains(buildWorkflow(config), "APP_ENV") {
+		t.Fatal("runtime variables leaked into the build workflow")
+	}
+	input["env"] = map[string]string{"DATABASE_URL": "postgres://user:do-not-echo@example.test/db"}
+	rejected := gitConnectionCall(t, h, keys["demo"], "POST", "/builds", input, 400)
+	if strings.Contains(string(store.JSON(rejected)), "do-not-echo") {
+		t.Fatal("credential value leaked into validation error")
+	}
+	delete(input, "env")
 	empty := []string{}
 	config.Command = &empty
 	config.Args = &empty

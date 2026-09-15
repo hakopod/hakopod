@@ -1,4 +1,5 @@
 import { RenameResource } from './rename-resource'
+import { Pencil } from 'lucide-react'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -39,6 +40,7 @@ export function ApplicationList({
   useEffect(() => {
     workspace.syncScope(project.name, environment)
   }, [workspace.syncScope, project.name, environment])
+  const [renameApplication, setRenameApplication] = useState<Application | null>(null)
   const [deleteApplication, setDeleteApplication] = useState<Application | null>(null)
   const [search, setSearch] = useState('')
   const [health, setHealth] = useState('all')
@@ -90,6 +92,18 @@ export function ApplicationList({
   return (
     <ScopeContext.Provider value={scope}>
       <div className="ops-page application-list-page">
+        {renameApplication && (
+          <RenameResource
+            application={renameApplication}
+            trigger="none"
+            initiallyOpen
+            onClose={() => setRenameApplication(null)}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              document.getElementById(`application-actions-${renameApplication.id}`)?.focus()
+            }}
+          />
+        )}
         {deleteApplication && (
           <DeleteResource
             key={deleteApplication.id}
@@ -230,7 +244,6 @@ export function ApplicationList({
                     </div>
                     <Status value={healthByID.get(app.id)?.status} small />
                     <div className="ops-card-actions">
-                      <RenameResource application={app} />
                       <Menu
                         trigger={
                           <Button
@@ -285,10 +298,16 @@ export function ApplicationList({
                           scope.identity.project_roles?.some(
                             (role) => role.project === app.project && role.role === 'admin',
                           )) && (
-                          <MenuItem destructive onSelect={() => setDeleteApplication(app)}>
-                            <Icon name="trash" size={14} />
-                            Delete application
-                          </MenuItem>
+                          <>
+                            <MenuItem onSelect={() => setRenameApplication(app)}>
+                              <Pencil size={14} />
+                              Rename application
+                            </MenuItem>
+                            <MenuItem destructive onSelect={() => setDeleteApplication(app)}>
+                              <Icon name="trash" size={14} />
+                              Delete application
+                            </MenuItem>
+                          </>
                         )}
                       </Menu>
                     </div>

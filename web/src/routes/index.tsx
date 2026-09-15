@@ -120,14 +120,12 @@ function Projects() {
                     {project.personal !== undefined && (
                       <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
                     )}
-                    <div className="relative z-10 ml-auto">
+                    <div className="ops-card-actions relative z-10 ml-auto flex items-center gap-2">
                       <RenameResource project={project} />
-                    </div>
-                    {scope.identity.admin && !project.personal && (
-                      <div className="ops-card-actions">
+                      {scope.identity.admin && !project.personal && (
                         <DeleteResource project={project.name} trigger="icon" />
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                   <h2>
                     <Link
