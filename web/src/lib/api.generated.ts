@@ -1383,6 +1383,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/compose/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Convert one bounded, image-based Docker Compose document into an editable TOML draft. Read-only: does not build, provision or deploy. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments. */
+        post: operations["convertCompose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/delivery": {
         parameters: {
             query?: never;
@@ -3580,6 +3597,24 @@ export interface components {
             public_tcp: boolean;
             gpu: boolean;
             aws_identity: boolean;
+        };
+        ComposeImportInput: {
+            project: string;
+            environment: string;
+            name?: string;
+            yaml: string;
+            variables?: {
+                [key: string]: string;
+            };
+            application_id?: string;
+            expected_revision?: number;
+        };
+        ComposeImport: {
+            spec: components["schemas"]["Spec"];
+            toml: string;
+            warnings: string[];
+            application_id: string;
+            expected_revision: number;
         };
         PublicTCPListener: {
             port: number;
@@ -8118,6 +8153,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CloudCapabilities"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    convertCompose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposeImportInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposeImport"];
                 };
             };
             /** @description Error */

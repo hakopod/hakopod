@@ -5176,6 +5176,45 @@
         }
       }
     },
+    "/compose/convert": {
+      "post": {
+        "operationId": "convertCompose",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComposeImportInput"
+              }
+            }
+          }
+        },
+        "description": "Convert one bounded, image-based Docker Compose document into an editable TOML draft. Read-only: does not build, provision or deploy. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments."
+      }
+    },
     "/applications/{id}/services/{service}/delivery": {
       "get": {
         "operationId": "getServiceDelivery",
@@ -13996,6 +14035,71 @@
           "public_tcp",
           "gpu",
           "aws_identity"
+        ]
+      },
+      "ComposeImportInput": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yaml": {
+            "type": "string",
+            "maxLength": 262144
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "yaml"
+        ]
+      },
+      "ComposeImport": {
+        "type": "object",
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "spec",
+          "toml",
+          "warnings",
+          "application_id",
+          "expected_revision"
         ]
       },
       "PublicTCPListener": {

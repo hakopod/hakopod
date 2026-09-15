@@ -4,9 +4,11 @@ import { Empty } from '../components/shared'
 import { useScope } from '../lib/scope'
 
 export const Route = createFileRoute('/applications/new')({
-  validateSearch: (search: Record<string, unknown>): { mode?: 'form' | 'toml' | 'repository' } => ({
-    mode: ['form', 'toml', 'repository'].includes(String(search.mode))
-      ? (search.mode as 'form' | 'toml' | 'repository')
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { mode?: 'form' | 'toml' | 'compose' | 'repository' } => ({
+    mode: ['form', 'toml', 'compose', 'repository'].includes(String(search.mode))
+      ? (search.mode as 'form' | 'toml' | 'compose' | 'repository')
       : undefined,
   }),
   component: NewApplication,
@@ -26,7 +28,7 @@ function NewApplication() {
   if (mode === 'repository') return <Navigate to="/applications/import" />
   return (
     <DeploymentForm
-      initialMode={mode === 'toml' ? 'toml' : 'form'}
+      initialMode={mode === 'toml' || mode === 'compose' ? mode : 'form'}
       onClose={() =>
         scope.project
           ? void navigate({
