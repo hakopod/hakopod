@@ -225,7 +225,11 @@ function BuildDetail() {
                 </div>
                 <div>
                   <dt>Runtime registry credential</dt>
-                  <dd>{build.registry_credential || 'None'}</dd>
+                  <dd>
+                    {build.managed_registry
+                      ? 'Automatic · Hakopod private registry'
+                      : build.registry_credential || 'None'}
+                  </dd>
                 </div>
                 {build.application_id && (
                   <div>

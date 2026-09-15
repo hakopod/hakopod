@@ -478,7 +478,13 @@ func (s *Server) previewBuild(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitLab.com CI/CD and Container Registry enabled for this project", "GitLab integration token with API access and repository commit/pipeline permissions", "One Hakopod-managed .gitlab-ci.yml per repository; existing unowned CI or another build's entrypoint will not be overwritten", "A platform administrator explicitly installs the reviewed CI file on the default branch", "Automatic builds also require this exact CI file on the selected source branch and authenticated Pipeline Hook events", "GitLab-hosted Linux runner capacity for the selected architecture and Docker-in-Docker", "Private registry.gitlab.com images require a persistent read_registry pull credential before deployment"}})
 		return
 	}
-	write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitHub Actions enabled for this repository", "GitHub integration token with repository contents/workflows write and Actions write permissions", "Administrator explicitly installs this reviewed workflow on the repository default branch", "Automatic builds also require this exact workflow on the selected source branch when it differs from the repository default branch", "GitHub-hosted Linux runner capacity and GHCR package publishing permission", "For private GHCR images, configure a persistent read:packages registry credential before deployment"}})
+	requirements := []string{"GitHub Actions enabled for this repository", "GitHub App access with repository contents/workflows write and Actions write permissions", "A repository manager explicitly installs this reviewed workflow on the repository default branch", "Automatic builds also require this exact workflow on the selected source branch when it differs from the repository default branch", "GitHub-hosted Linux runner capacity for the selected architecture"}
+	if c.ManagedRegistry != "" {
+		requirements = append(requirements, "Hakopod supplies private registry storage and scoped worker pull credentials automatically", "This workflow requests a short-lived GitHub Actions identity token to authorize image publishing")
+	} else {
+		requirements = append(requirements, "GHCR package publishing permission", "For private GHCR images, configure a persistent read:packages registry credential before deployment")
+	}
+	write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": requirements})
 }
 func (s *Server) githubBuildRequest(ctx context.Context, method, endpoint string, body any, connections ...string) (*http.Response, error) {
 	level := "read"
