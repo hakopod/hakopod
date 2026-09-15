@@ -288,7 +288,11 @@ function DeploymentDetail() {
               </time>
             </Link>
           ))}
-          {application.error && <p className="field-help">Application history is unavailable.</p>}
+          {application.error && (
+            <p className="inline-error" role="alert">
+              Application history is unavailable.
+            </p>
+          )}
         </aside>
         <div className="ops-run-detail">
           <Pipeline stages={stages} active={stage} onStageChange={setStage} />
@@ -492,7 +496,11 @@ function DeploymentDetail() {
             Resources already applied may remain. Cancellation does not tear down workloads or imply
             a rollback. The recorded deployment result reports what happened.
           </Note>
-          {error && <div className="inline-error">{error}</div>}
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setCancelOpen(false)}>

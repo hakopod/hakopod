@@ -200,7 +200,7 @@ export function InstallationUpdates() {
             <dt>Release check</dt>
             <dd>{status.data.checked_at ? timestamp(status.data.checked_at) : 'Unavailable'}</dd>
           </dl>
-          {status.data.check_error && <Note>{status.data.check_error}</Note>}
+          {status.data.check_error && <ErrorState error={status.data.check_error} />}
           {operation && operation.status !== 'idle' && (
             <div className="flex flex-wrap items-center gap-3">
               <Status value={operation.status} />

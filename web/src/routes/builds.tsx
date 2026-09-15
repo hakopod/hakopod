@@ -84,7 +84,9 @@ function BuildList() {
             ]}
           />
           <span className="form-spacer" />
-          <span className="muted-text">{items.length} build configurations</span>
+          {!builds.isPending && !builds.error && (
+            <span className="muted-text">{items.length} build configurations</span>
+          )}
         </div>
         {builds.isPending ? (
           <Loading />

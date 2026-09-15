@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import { useScope } from '../lib/scope'
 import {
   gitConnectionOptions,
@@ -45,9 +44,9 @@ export function GitConnectionField({
       ) : (
         <p className="field-help">
           This connection controls repository access.{' '}
-          <Link to="/settings" search={{ tab: 'github' }}>
-            Manage connections
-          </Link>
+          <a href="/settings?tab=github" target="_blank" rel="noopener noreferrer">
+            Manage connections in a new tab
+          </a>
         </p>
       )}
     </div>

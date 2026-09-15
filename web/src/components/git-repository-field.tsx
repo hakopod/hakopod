@@ -84,7 +84,7 @@ function RepositoryField({
             ]}
           />
           {query.error && (
-            <div role="alert" className="field-help">
+            <div role="alert" className="inline-error">
               {message(query.error)} <Button onClick={() => void query.refetch()}>Retry</Button>
             </div>
           )}

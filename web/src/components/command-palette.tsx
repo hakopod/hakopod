@@ -86,9 +86,7 @@ export default function CommandPalette({
       { to: '/settings', icon: 'settings', label: 'Settings' },
       { to: '/alarms', icon: 'alert', label: 'Alarms' },
     ]
-      .filter(
-        ({ to }) => dashboardEdition.navigation(to, features) && (features.git || to !== '/builds'),
-      )
+      .filter(({ to }) => dashboardEdition.navigation(to, features))
       .map(({ to, icon, label }) => ({
         id: to,
         label,
@@ -227,7 +225,7 @@ export default function CommandPalette({
         )}
         {apps.isFetching && <Loading rows={2} />}
         {apps.error && (
-          <p className="hako-command-notice" role="status">
+          <p className="hako-command-notice inline-error" role="alert">
             Application search is unavailable. You can still open a page from navigation.
           </p>
         )}

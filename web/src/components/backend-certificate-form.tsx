@@ -9,7 +9,7 @@ import { DiffTable } from './deploy-dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { Note } from './shared'
+import { ErrorState, Note } from './shared'
 
 export function BackendCertificateForm({
   application,
@@ -257,11 +257,7 @@ export function BackendCertificateForm({
           )}
         </FormSection>
       )}
-      {error && (
-        <div role="alert">
-          <Note>{error}</Note>
-        </div>
-      )}
+      {error && <ErrorState error={error} />}
       <div className="form-footer">
         <span className="dialog-footer-note">
           {plan

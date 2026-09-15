@@ -196,8 +196,12 @@ export function ServiceDetail({
         <div>
           <div className="title-row hako-page-heading-title">
             <Status value={health.status} />
-            <h1>{application.service_display_names?.[serviceName] || serviceName}</h1>
-            <RenameResource application={application} service={serviceName} />
+            <div className="flex min-w-0 max-w-full items-center gap-2">
+              <h1 className="min-w-0! flex-initial! break-words">
+                {application.service_display_names?.[serviceName] || serviceName}
+              </h1>
+              <RenameResource application={application} service={serviceName} />
+            </div>
           </div>
           <div className="application-metadata">
             <span className="min-w-0 max-w-full break-all">

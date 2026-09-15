@@ -194,16 +194,18 @@ export function PreviewForm({ application }: { application: Application }) {
               />
             </label>
           </FormSection>
-          <label className="flex items-start gap-2">
-            <input
+          <label className="grid grid-cols-[auto_1fr] items-start gap-x-2 [&>.field-error]:col-span-2 [&>.field-error]:row-start-2">
+            <Input
               type="checkbox"
               checked={discard}
               required
               disabled={busy || review}
               onChange={(e) => setDiscard(e.target.checked)}
             />
-            Start deleting this preview's workloads, volumes and native secrets when its lifetime
-            ends.
+            <span className="col-start-2 row-start-1">
+              Start deleting this preview's workloads, volumes and native secrets when its lifetime
+              ends.
+            </span>
           </label>
           {review && (
             <p role="status">

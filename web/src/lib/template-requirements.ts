@@ -1,0 +1,17 @@
+export const workloadRequirementLabel: Record<string, string> = {
+  persistent_storage: 'Persistent storage',
+  multiple_services: 'Multiple services',
+  larger_service: 'A larger service size',
+  multiple_replicas: 'Multiple replicas',
+  jobs: 'Jobs or scheduled tasks',
+  autoscaling: 'Autoscaling',
+  public_tcp: 'Public TCP ports',
+  certificate_mounts: 'Mounted certificates',
+  cloud_identity: 'Cloud provider identity',
+  gpu: 'GPU compute',
+  service_bindings: 'Service bindings',
+  custom_networking: 'Custom networking',
+  custom_readiness: 'Custom readiness probes',
+  external_secrets: 'External secret providers',
+  virtual_networks: 'Virtual networks',
+}

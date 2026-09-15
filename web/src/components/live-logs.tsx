@@ -169,7 +169,7 @@ export default function LiveLogs({
       </div>
       <div className={`log-window ${wrap ? 'ops-log-wrap' : ''}`} role="log" aria-live="off">
         {error ? (
-          <div className="log-error">
+          <div className="log-error" role="alert">
             <Icon name="alert" size={17} />
             {error}
           </div>

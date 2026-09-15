@@ -78,14 +78,27 @@ export function Empty({
     </div>
   )
 }
-export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
+export function ErrorState({
+  error,
+  retry,
+  title = 'Something needs attention',
+}: {
+  error: unknown
+  retry?: () => void
+  title?: string
+}) {
   return (
-    <div className="hako-error-state" role="alert">
+    <div className="hako-error-state" role="alert" aria-atomic="true">
       <Icon name="alert" />
       <div>
-        <h2>Something needs attention</h2>
+        <h2>{title}</h2>
         <p>{message(error)}</p>
-        {error instanceof APIError && error.code && <code>{error.code}</code>}
+        {error instanceof APIError && error.code && (
+          <details className="mt-2 text-xs">
+            <summary>Error details</summary>
+            <code>{error.code}</code>
+          </details>
+        )}
         {/readiness probe image|persistent storage is unavailable|maintenance service is unavailable/.test(
           message(error),
         ) && (

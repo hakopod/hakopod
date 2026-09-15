@@ -15,6 +15,7 @@ import {
 } from '../lib/git-connections'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
 import { SelectField } from './ui/select'
 import { Dialog } from './ui/dialog'
 import { Copy, Empty, ErrorState, HeadingHelp, Loading, Note, Status } from './shared'
@@ -636,7 +637,7 @@ function GitConnectionForm({
                     ) : (
                       <label>
                         Private key (PEM)
-                        <textarea
+                        <Textarea
                           required
                           className="min-h-40 resize-y font-mono text-xs"
                           value={privateKey}

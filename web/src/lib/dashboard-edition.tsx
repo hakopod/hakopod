@@ -26,7 +26,13 @@ export function EditionGate({ children }: { children: ReactNode }) {
 export function useEditionAuth() {}
 
 export function useEditionFeatures() {
-  return { git: true, terminal: true, operator: false }
+  return {
+    git: true,
+    terminal: true,
+    operator: false,
+    hostedFree: false,
+    computeURL: undefined as string | undefined,
+  }
 }
 
 export function EditionAuthAside(_props: { view: AuthView }) {

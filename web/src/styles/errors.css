@@ -1,0 +1,73 @@
+/* Error feedback is shared by all route families, including private Cloud pages.
+   Keep the red visible independently of an operator's chosen action-button color. */
+:root,
+.dark,
+.light {
+  --error-accent: var(--navigation-active);
+  --error-text: color-mix(in srgb, var(--error-accent) 80%, white);
+  --error-surface: color-mix(in srgb, var(--error-accent) 12%, var(--background));
+  --error-border: color-mix(in srgb, var(--error-accent) 45%, var(--background));
+}
+.light {
+  --error-text: var(--error-accent);
+  --error-surface: color-mix(in srgb, #fff1f2 50%, var(--background));
+  --error-border: #fda4af;
+}
+:where([role='alert']):not(.field-error, .field-help.error),
+.hako-error-state,
+.inline-error,
+.error-state,
+.alarm-save-error,
+.node-runtime-error,
+.hako-session-error,
+.deployment-failure {
+  @apply min-w-0 rounded-sm border px-4 py-3 text-sm leading-relaxed;
+  border-color: var(--error-border);
+  border-left: 3px solid var(--error-accent);
+  background: var(--error-surface);
+  color: var(--error-text);
+  overflow-wrap: anywhere;
+}
+.hako-error-state {
+  @apply mb-4 grid items-start gap-3;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.hako-error-state :is(h2, p, code),
+.hako-error-state > svg,
+[role='alert'] > .muted-text {
+  color: var(--error-text);
+}
+.hako-error-state h2 {
+  @apply mb-1 text-sm font-medium;
+}
+.hako-error-state p {
+  @apply text-sm;
+}
+.hako-error-state > svg {
+  @apply mt-0.5 size-4;
+}
+.hako-error-state summary {
+  @apply cursor-pointer;
+}
+.field-error,
+.field-help.error {
+  @apply mt-1 block min-w-0 text-xs leading-relaxed;
+  color: var(--error-text);
+  overflow-wrap: anywhere;
+}
+.field-stack > .field-error {
+  @apply -mt-3;
+}
+:is(input, textarea, .select-trigger)[aria-invalid='true'],
+.input-wrap > :is(input, textarea)[aria-invalid='true'],
+.input-wrap:has(> :is(input, textarea)[aria-invalid='true']) {
+  border-color: var(--error-accent);
+}
+@variant max-sm {
+  .hako-error-state {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .hako-error-state > .button {
+    @apply col-start-2 justify-self-start;
+  }
+}
