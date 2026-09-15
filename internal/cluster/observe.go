@@ -77,7 +77,11 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 				if err != nil {
 					return result, err
 				}
-				if ready && svc.Suspended && status.Desired == 0 {
+				if ready && !svc.Suspended && idleDeployment(current) {
+					status.Status = "sleeping"
+					status.Message = "Sleeping after HTTP inactivity; the next request wakes this service"
+					healthy++
+				} else if ready && svc.Suspended && status.Desired == 0 {
 					status.Status = "stopped"
 					status.Message = "Stopped by user; configuration and volumes are retained"
 					healthy++
