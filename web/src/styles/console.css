@@ -801,6 +801,16 @@ a.resource-note:focus-visible {
   background: var(--background);
   margin-bottom: 22px;
 }
+/* Deployment methods remain readable instead of squeezing long labels. */
+.segmented-control.deployment-methods {
+  @apply grid grid-cols-1;
+  @variant sm {
+    @apply grid-cols-2;
+  }
+  @variant xl {
+    @apply grid-cols-4;
+  }
+}
 .segmented-control button {
   display: flex;
   align-items: center;
@@ -2742,4 +2752,15 @@ a.resource-note:focus-visible {
 }
 .service-brand-icon.catalog-brand-icon img {
   filter: none;
+}
+
+.git-deployment-method[aria-current='page'] {
+  color: var(--navigation-active);
+  background: transparent;
+  border-color: transparent;
+}
+
+.input-wrap textarea.runtime-variable-value {
+  @apply min-h-11 resize-y;
+  height: 44px;
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ComponentProps } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
 import { Button } from './ui/button'
@@ -9,13 +9,24 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import type { Application, Project } from '../lib/types'
 
+type RenamePresentation = {
+  trigger?: 'icon' | 'none'
+  initiallyOpen?: boolean
+  onClose?: () => void
+  onCloseAutoFocus?: ComponentProps<typeof Dialog>['onCloseAutoFocus']
+}
+
 export function RenameName({
   kind,
   name,
   id,
   revision,
   save,
-}: {
+  trigger: triggerKind = 'icon',
+  initiallyOpen = false,
+  onClose,
+  onCloseAutoFocus,
+}: RenamePresentation & {
   kind: string
   name: string
   id: string
@@ -23,35 +34,44 @@ export function RenameName({
   save: (name: string, revision: number) => Promise<unknown>
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
   const [value, setValue] = useState(name)
   const [expected, setExpected] = useState(revision)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const close = () => {
+    setOpen(false)
+    onClose?.()
+  }
   return (
     <>
-      <Button
-        ref={trigger}
-        variant="ghost"
-        size="icon"
-        aria-label={`Rename ${kind} ${name}`}
-        onClick={() => {
-          setValue(name)
-          setExpected(revision)
-          setError('')
-          setOpen(true)
-        }}
-      >
-        <Pencil size={14} />
-      </Button>
+      {triggerKind !== 'none' && (
+        <Button
+          ref={trigger}
+          variant="ghost"
+          size="icon"
+          aria-label={`Rename ${kind} ${name}`}
+          onClick={() => {
+            setValue(name)
+            setExpected(revision)
+            setError('')
+            setOpen(true)
+          }}
+        >
+          <Pencil size={14} />
+        </Button>
+      )}
       <Dialog
-        onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          trigger.current?.focus()
-        }}
+        onCloseAutoFocus={
+          onCloseAutoFocus ||
+          ((event) => {
+            event.preventDefault()
+            trigger.current?.focus()
+          })
+        }
         open={open}
         onOpenChange={(next) => {
-          if (!busy) setOpen(next)
+          if (!busy && !next) close()
         }}
         title={`Rename ${kind}`}
         description={`ID: ${id}`}
@@ -63,7 +83,7 @@ export function RenameName({
             setBusy(true)
             setError('')
             void save(value.trim(), expected)
-              .then(() => setOpen(false))
+              .then(close)
               .catch((cause) =>
                 setError(
                   message(cause) +
@@ -96,7 +116,7 @@ export function RenameName({
             )}
           </div>
           <div className="dialog-footer">
-            <Button disabled={busy} onClick={() => setOpen(false)}>
+            <Button disabled={busy} onClick={close}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={busy || !value.trim()}>
@@ -112,7 +132,8 @@ export function RenameResource({
   application,
   project,
   service,
-}: {
+  ...presentation
+}: RenamePresentation & {
   application?: Application
   project?: Project
   service?: string
@@ -135,6 +156,7 @@ export function RenameResource({
     : project!.display_name || project!.name
   return (
     <RenameName
+      {...presentation}
       kind={kind}
       name={name}
       id={service || application?.name || project!.name}

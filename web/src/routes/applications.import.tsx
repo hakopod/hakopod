@@ -1,4 +1,5 @@
 import { GitConnectionField } from '../components/git-connection-field'
+import { GitDeploymentPaths } from '../components/git-deployment-paths'
 import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
@@ -37,7 +38,7 @@ function ImportRepository() {
     )
   return (
     <FormPage
-      title={plan ? `Review ${plan.spec.name}` : 'Import an application from Git'}
+      title={plan ? `Review ${plan.spec.name}` : 'Import Git configuration'}
       description={`${scope.project} / ${scope.environment} · Create the application from one committed TOML configuration.`}
       breadcrumbs={[
         { label: 'Applications', to: `/projects/${encodeURIComponent(scope.project)}` },
@@ -62,6 +63,7 @@ function ImportRepository() {
         </>
       }
     >
+      {!plan && <GitDeploymentPaths active="config" />}
       <form
         onSubmit={async (event) => {
           event.preventDefault()

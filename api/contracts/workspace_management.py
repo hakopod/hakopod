@@ -81,3 +81,6 @@ paths['/projects/{id}/name'] = {'put': {'operationId': 'renameProject',
          'responses': {'200': {'description': 'Name saved',
                                'content': {'application/json': {'schema': {'type': 'object',
                                                                            'properties': {'status': {'type': 'string'}}}}}}}}}
+
+for name in ["BuildConfig", "BuildInput"]:
+    schemas[name]["properties"]["env"] = {"type":"object", "additionalProperties":S, "maxProperties":128, "description":"Runtime plain variables. Omit to preserve existing service variables; an explicit object replaces them. Values are not exposed to build steps. Use application secret references for credentials."}

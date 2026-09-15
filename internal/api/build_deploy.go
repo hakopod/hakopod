@@ -68,6 +68,12 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 		next.Services[c.Service] = service
 	}
 	service := next.Services[c.Service]
+	if c.Env != nil {
+		service.Env = make(map[string]string, len(*c.Env))
+		for key, value := range *c.Env {
+			service.Env[key] = value
+		}
+	}
 	if c.Command != nil {
 		service.Command = append([]string{}, (*c.Command)...)
 	}

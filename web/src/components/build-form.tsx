@@ -1,4 +1,7 @@
+import { EnvironmentFields } from './runtime-settings-fields'
+import { environmentRows, parseEnvironment } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
+import { GitDeploymentPaths } from './git-deployment-paths'
 import {
   FrameworkBuildFields,
   defaultFrameworkPlan,
@@ -68,6 +71,10 @@ export default function BuildForm({
     return boundApplicationId ? 'preserve' : 'default'
   })
   const [runtimeCommand, setRuntimeCommand] = useState(() => formatProcessCommand(build?.command))
+  const [runtimeEnvEnabled, setRuntimeEnvEnabled] = useState(
+    build?.env !== undefined || !boundApplicationId,
+  )
+  const [runtimeEnv, setRuntimeEnv] = useState(() => environmentRows(build?.env))
   const [runtimeArgs, setRuntimeArgs] = useState(() => formatProcessCommand(build?.args))
   const [dockerfile, setDockerfile] = useState(build?.dockerfile || 'Dockerfile')
   const [port, setPort] = useState(build?.port || 8080)
@@ -122,6 +129,9 @@ export default function BuildForm({
       title={build ? 'Edit source build' : 'Build an application from source'}
       description={`${project} / ${environment} · Build with a framework recipe, Dockerfile or Cloud Native Buildpacks.`}
     >
+      {!build && (scope.identity.admin || scope.identity.can_manage_git) && (
+        <GitDeploymentPaths active="build" />
+      )}
       <form
         onSubmit={async (e) => {
           e.preventDefault()
@@ -155,6 +165,12 @@ export default function BuildForm({
                   : runtimeMode === 'default'
                     ? []
                     : undefined,
+              env: runtimeEnvEnabled
+                ? parseEnvironment(
+                    runtimeEnv,
+                    Object.keys(application?.spec.services[service]?.secrets || {}),
+                  )
+                : undefined,
               build_args: parseBuildArgs(buildArgs),
               framework:
                 mode === 'framework'
@@ -199,7 +215,7 @@ export default function BuildForm({
                   value={name}
                   readOnly={Boolean(build || application)}
                   onChange={(e) => setName(e.target.value)}
-                  pattern="[a-z][a-z0-9-]*"
+                  pattern="[a-z][a-z0-9\-]*"
                   maxLength={63}
                   required
                 />
@@ -223,7 +239,7 @@ export default function BuildForm({
                     value={service}
                     readOnly={Boolean(build)}
                     onChange={(e) => setService(e.target.value)}
-                    pattern="[a-z][a-z0-9-]*"
+                    pattern="[a-z][a-z0-9\-]*"
                     maxLength={63}
                     required
                   />
@@ -603,6 +619,26 @@ export default function BuildForm({
                 />
                 Expose the service publicly
               </label>
+            )}
+            {boundApplicationId && (
+              <label className="checkbox-label">
+                <Input
+                  type="checkbox"
+                  checked={runtimeEnvEnabled}
+                  onChange={(event) => setRuntimeEnvEnabled(event.target.checked)}
+                />
+                Replace service environment variables on deployment
+              </label>
+            )}
+            {runtimeEnvEnabled ? (
+              <EnvironmentFields
+                rows={runtimeEnv}
+                onChange={setRuntimeEnv}
+                label="Runtime"
+                disabled={busy}
+              />
+            ) : (
+              <p className="field-help">Existing service environment variables are retained.</p>
             )}
             <label>
               Runtime registry credential
