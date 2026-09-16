@@ -142,6 +142,21 @@ func (c *Client) podMessage(ctx context.Context, t Target, service string) strin
 	})
 	for _, pod := range pods.Items {
 		for _, status := range pod.Status.ContainerStatuses {
+			// Kubernetes moves the previous exit into LastTerminationState once
+			// the container restarts. Keep recent OOM evidence visible while the
+			// replacement remains unready instead of blaming its healthcheck.
+			if !status.Ready {
+				stopped := status.State.Terminated
+				if stopped == nil {
+					last := status.LastTerminationState.Terminated
+					if last != nil && !last.FinishedAt.IsZero() && time.Since(last.FinishedAt.Time) < 10*time.Minute {
+						stopped = last
+					}
+				}
+				if stopped != nil && stopped.Reason == "OOMKilled" {
+					return "OOMKilled: container exceeded its memory limit; choose a larger service size or reduce application worker count and memory use"
+				}
+			}
 			if waiting := status.State.Waiting; waiting != nil {
 				if waiting.Reason == "ImagePullBackOff" || waiting.Reason == "ErrImagePull" {
 					return waiting.Reason + ": unable to pull the resolved image; verify registry access and node architecture"
