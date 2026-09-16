@@ -77,6 +77,20 @@ sudo journalctl -u hakopod-maintenance -u hakopod-api -u hakopod-dashboard --sin
 Retain backups and verify a restore on a separate machine. Do not rerun setup or
 remove application volumes to recover a management-service failure.
 
+A readiness failure can occur after the new release has already started. The
+failure details report API and dashboard readiness separately; an active systemd
+service alone does not establish HTTP or PostgreSQL readiness. Check the current
+release with `readlink /opt/hakopod/current` before attempting another upgrade.
+
+Older helpers, including alpha.10, checked HTTPS against
+`/etc/hakopod/dashboard.crt` even when Let's Encrypt certificates were served from
+`/etc/hakopod/dashboard-tls/current/dashboard.crt`. That can report an upgrade
+failure while the dashboard and API remain operational. The updated check uses
+the same configured certificate generation as the dashboard, retaining hostname
+and certificate verification. Do not disable TLS verification or rerun setup to
+work around this error. Binary upgrades retain existing privileged helpers, so
+use the updated helper from a verified installer kit when diagnosing that case.
+
 Release builders list candidate source versions in `release/upgrade-paths.json`.
 Tagged releases refuse to build without an explicit policy entry, preventing an
 accidentally omitted upgrade list from silently shipping again.

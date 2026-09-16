@@ -212,22 +212,63 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, timeout=kwargs.pop('timeout', 120), stderr=subprocess.DEVNULL, **kwargs)
 
 
+class ReadinessError(ValueError):
+    """Safe, bounded health-check diagnostics with no response bodies."""
+
+
+def api_health():
+    # This is always the local API, regardless of shell proxy settings.
+    connection = http.client.HTTPConnection('127.0.0.1', 8080, timeout=3)
+    try:
+        connection.request('GET', '/readyz')
+        response = connection.getresponse()
+        response.read(65536)
+        if response.status != 200:
+            raise ReadinessError(f'HTTP {response.status}' + (' (PostgreSQL is unavailable)' if response.status == 503 else ''))
+        return True
+    finally: connection.close()
+
+
 def dashboard_health(config):
     origin = urllib.parse.urlsplit(config['dashboard_origin'])
     connection = http.client.HTTPConnection(origin.hostname, config['dashboard_port'], timeout=3)
     address = config['node_ip'] if origin.scheme == 'https' else '127.0.0.1'
-    sock = socket.create_connection((address, config['dashboard_port']),timeout=3)
+    context = None
     if origin.scheme == 'https':
         context = ssl.create_default_context()
-        context.load_verify_locations('/etc/hakopod/dashboard.crt')
+        context.load_verify_locations(str(host.dashboard_tls_paths(config)[0]))
         context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    sock = socket.create_connection((address, config['dashboard_port']),timeout=3)
+    if context is not None:
         try: sock = context.wrap_socket(sock, server_hostname=origin.hostname)
         except BaseException: sock.close(); raise
     connection.sock = sock
     try:
         connection.request('GET', '/')
-        return connection.getresponse().status == 200
+        response = connection.getresponse()
+        # Finish the SSR response before closing; an early disconnect can abort
+        # dashboard requests and add misleading AbortError entries to the journal.
+        if len(response.read((1 << 20) + 1)) > 1 << 20:
+            raise ReadinessError('dashboard response exceeds 1 MiB')
+        if response.status != 200: raise ReadinessError(f'HTTP {response.status}')
+        return True
     finally: connection.close()
+
+
+def readiness(config):
+    results = {}
+    for name, check in (('API', api_health), ('Dashboard', lambda: dashboard_health(config))):
+        try:
+            results[name] = 'ready' if check() else 'readiness check failed'
+        except ReadinessError as error: results[name] = str(error)
+        except ssl.SSLCertVerificationError: results[name] = 'TLS certificate verification failed; check the hostname, expiry and configured certificate'
+        except FileNotFoundError: results[name] = 'configured certificate file is missing'
+        except TimeoutError: results[name] = 'connection or response timed out'
+        except ConnectionRefusedError: results[name] = 'connection refused; check the service journal'
+        except ssl.SSLError: results[name] = 'TLS handshake failed'
+        except (OSError, http.client.HTTPException): results[name] = 'connection failed; check the service listener and journal'
+        except Exception: results[name] = 'readiness check failed; inspect the service journal'
+    return results
 
 
 def backup(config, directory):
@@ -343,16 +384,10 @@ def perform_upgrade(target, install_lock):
                 CACHE = None
                 command(['systemctl', 'start', 'hakopod-api', 'hakopod-dashboard'])
                 for attempt in range(45):
-                    try:
-                        with urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=2) as response:
-                            ready = response.status == 200
-                        dashboard_ready = dashboard_health(config)
-                        if ready and dashboard_ready:
-                            break
-                    except Exception:
-                        pass
+                    checks = readiness(config)
+                    if all(value == 'ready' for value in checks.values()): break
                     if attempt == 44:
-                        raise ValueError('New services did not become ready; inspect the installation journal')
+                        raise ReadinessError('Upgrade readiness failed. ' + '; '.join(f'{name}: {value}' for name, value in checks.items()))
                     time.sleep(2)
                 progress('succeeded', 'Upgrade complete. Configuration and database backups are retained on the server.')
                 CACHE = None
@@ -368,7 +403,8 @@ def perform_upgrade(target, install_lock):
             if switched:
                 # New migrations may already have committed. Never automatically
                 # run an older server against an unknown database schema.
-                save_state({'status': 'failed', 'message': 'Upgrade needs administrator recovery. Inspect journalctl -u hakopod-api and retained backups; automatic database rollback was not attempted.', 'version': target, 'previous_version': installed})
+                detail = str(error) + '. ' if isinstance(error, ReadinessError) else ''
+                save_state({'status': 'failed', 'message': 'Upgrade needs administrator recovery. ' + detail + 'Inspect journalctl -u hakopod-api -u hakopod-dashboard and retained backups; automatic database rollback was not attempted.', 'version': target, 'previous_version': installed})
             else:
                 message = 'Management services need manual restart; inspect the maintenance journal.' if recovery_failed else (str(error) if isinstance(error, ValueError) else 'Upgrade stopped before switching releases. Inspect the maintenance journal.')
                 if cleanup_failed: message += ' Staged release files need administrator cleanup before retrying.'
