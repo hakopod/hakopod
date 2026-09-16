@@ -5,7 +5,11 @@ import { forwardGitHubWebhook } from './github-webhook.ts'
 import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
-const allowed = [
+export const allowed = [
+  /^idempotency\/[A-Za-z0-9_.:-]+$/,
+  /^deployments\/[A-Za-z0-9_-]+\/events$/,
+  /^cloud\/capabilities$/,
+  /^openapi\.json$/,
   /^compose\/convert$/,
   /^(?:projects\/[A-Za-z0-9_-]+|applications\/[A-Za-z0-9_-]+(?:\/services\/[A-Za-z0-9_-]+)?)\/name$/,
   /^applications\/[A-Za-z0-9_-]+\/previews$/,
@@ -104,7 +108,12 @@ export async function proxy({
       headers.set('Content-Type', 'application/json')
     }
     const terminalStream = /\/terminal\/[A-Za-z0-9_-]+\/output$/.test(path)
-    const streaming = path.endsWith('/logs') || terminalStream
+    const deploymentEvents = /^deployments\/[A-Za-z0-9_-]+\/events$/.test(path)
+    if (deploymentEvents) {
+      const cursor = request.headers.get('Last-Event-ID')
+      if (cursor && /^\d{1,19}$/.test(cursor)) headers.set('Last-Event-ID', cursor)
+    }
+    const streaming = path.endsWith('/logs') || terminalStream || deploymentEvents
     const response = await fetch(apiURL(path) + new URL(request.url).search, {
       method: request.method,
       headers,
@@ -112,7 +121,9 @@ export async function proxy({
       redirect: 'error',
       signal: AbortSignal.any([
         request.signal,
-        AbortSignal.timeout(terminalStream ? 11 * 60 * 1000 : streaming ? 5 * 60 * 1000 : 30000),
+        AbortSignal.timeout(
+          terminalStream || deploymentEvents ? 11 * 60 * 1000 : streaming ? 5 * 60 * 1000 : 30000,
+        ),
       ]),
     })
     if (
