@@ -150,7 +150,7 @@ func validBuildPath(value string) bool {
 func normalizeBuild(in buildInput) (buildConfig, error) {
 	c := buildConfig{ReuseServices: append([]string(nil), in.ReuseServices...), Secrets: in.Secrets, Env: in.Env, Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
 	if len(c.ReuseServices) > 19 || len(c.ReuseServices) > 0 && c.ApplicationID == "" {
-		return c, fmt.Errorf("%w: image reuse needs an existing application and at most 19 additional services", store.ErrInput)
+		return c, fmt.Errorf("%w: reuse_services: image reuse needs an existing application and at most 19 additional services", store.ErrInput)
 	}
 	if c.Service == "" {
 		c.Service = "web"
@@ -158,7 +158,7 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 	seen := map[string]bool{c.Service: true}
 	for _, name := range c.ReuseServices {
 		if !slug.MatchString(name) || seen[name] {
-			return c, fmt.Errorf("%w: choose unique additional services in this application", store.ErrInput)
+			return c, fmt.Errorf("%w: reuse_services: choose unique additional services in this application", store.ErrInput)
 		}
 		seen[name] = true
 	}
@@ -193,13 +193,14 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 		message string
 	}{
 		{validScope(c.Project, c.Environment), "Select a valid project and environment"},
-		{slug.MatchString(c.Name), "Application name must start with a lowercase letter, use only lowercase letters, numbers and hyphens, end with a letter or number, and contain at most 40 characters"},
-		{slug.MatchString(c.Service), "Service name must use lowercase letters, numbers and hyphens, start with a letter, end with a letter or number, and contain at most 40 characters"},
-		{validSourceRepository(c.Provider, c.Repository), "Enter a valid owner/repository (GitLab also accepts nested groups)"},
-		{len(c.Branch) <= 200 && !strings.ContainsAny(c.Branch, "\r\n\x00 ?#"), "Enter a valid source branch without spaces or URL query characters"},
-		{validBuildPath(c.ContextPath) && validBuildPath(c.Dockerfile), "Build context and Dockerfile must use relative paths inside the repository"},
-		{c.Port >= 1 && c.Port <= 65535, "Service port must be between 1 and 65535"},
-		{len(c.RegistryCredential) <= 100, "Select a valid registry credential"},
+		{slug.MatchString(c.Name), "name: Application name must start with a lowercase letter, use only lowercase letters, numbers and hyphens, end with a letter or number, and contain at most 40 characters"},
+		{slug.MatchString(c.Service), "service: Service name must use lowercase letters, numbers and hyphens, start with a letter, end with a letter or number, and contain at most 40 characters"},
+		{validSourceRepository(c.Provider, c.Repository), "repository: Enter a valid owner/repository (GitLab also accepts nested groups)"},
+		{len(c.Branch) <= 200 && !strings.ContainsAny(c.Branch, "\r\n\x00 ?#"), "branch: Enter a valid source branch without spaces or URL query characters"},
+		{validBuildPath(c.ContextPath), "context_path: Build context must use a relative path inside the repository"},
+		{validBuildPath(c.Dockerfile), "dockerfile: Dockerfile must use a relative path inside the repository"},
+		{c.Port >= 1 && c.Port <= 65535, "port: Service port must be between 1 and 65535"},
+		{len(c.RegistryCredential) <= 100, "registry_credential: Select a valid registry credential"},
 	}
 	for _, check := range checks {
 		if !check.valid {
@@ -225,7 +226,7 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 		if c.Secrets != nil {
 			runtimeService.Secrets = *c.Secrets
 		}
-		_, err := spec.Normalize(spec.Application{Name: "runtime", Services: map[string]spec.Service{"runtime": runtimeService}})
+		_, err := spec.Normalize(spec.Application{Name: "runtime", Services: map[string]spec.Service{c.Service: runtimeService}})
 		if err != nil {
 			return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 		}
@@ -234,38 +235,38 @@ func normalizeBuild(in buildInput) (buildConfig, error) {
 		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 	}
 	if c.Architecture != "" && c.Architecture != "amd64" && c.Architecture != "arm64" {
-		return c, fmt.Errorf("%w: architecture must be amd64 or arm64", store.ErrInput)
+		return c, fmt.Errorf("%w: architecture: architecture must be amd64 or arm64", store.ErrInput)
 	}
 	if c.AutoDeploy && !c.AutoBuild {
 		return c, fmt.Errorf("%w: automatic deployment requires automatic builds", store.ErrInput)
 	}
 	if c.Mode != "dockerfile" && c.Mode != "buildpacks" && c.Mode != "framework" {
-		return c, fmt.Errorf("%w: mode must be dockerfile, buildpacks or framework", store.ErrInput)
+		return c, fmt.Errorf("%w: mode: mode must be dockerfile, buildpacks or framework", store.ErrInput)
 	}
 	if err := framework.ValidateSecrets(c.BuildSecrets); err != nil {
-		return c, fmt.Errorf("%w: %s", store.ErrInput, err)
+		return c, fmt.Errorf("%w: build_secrets: %s", store.ErrInput, err)
 	}
 	if c.Mode == "buildpacks" && len(c.BuildSecrets) > 0 {
-		return c, fmt.Errorf("%w: BuildKit secrets require a Dockerfile or framework build", store.ErrInput)
+		return c, fmt.Errorf("%w: build_secrets: BuildKit secrets require a Dockerfile or framework build", store.ErrInput)
 	}
 	if c.Mode == "framework" {
 		if c.Framework == nil {
-			return c, fmt.Errorf("%w: review a framework build plan", store.ErrInput)
+			return c, fmt.Errorf("%w: framework: review a framework build plan", store.ErrInput)
 		}
 		if err := framework.Validate(*c.Framework); err != nil {
 			return c, fmt.Errorf("%w: %s", store.ErrInput, err)
 		}
 		c.Port = c.Framework.Port
 	} else if c.Framework != nil {
-		return c, fmt.Errorf("%w: framework settings require framework mode", store.ErrInput)
+		return c, fmt.Errorf("%w: framework: framework settings require framework mode", store.ErrInput)
 	}
 	switch c.Preset {
 	case "auto", "nodejs", "python", "go", "java", "dotnet", "ruby", "static":
 	default:
-		return c, fmt.Errorf("%w: unsupported buildpack preset", store.ErrInput)
+		return c, fmt.Errorf("%w: preset: unsupported buildpack preset", store.ErrInput)
 	}
 	if _, ok := spec.Profiles[c.Size]; !ok {
-		return c, fmt.Errorf("%w: unsupported service size", store.ErrInput)
+		return c, fmt.Errorf("%w: size: unsupported service size", store.ErrInput)
 	}
 	return c, nil
 }

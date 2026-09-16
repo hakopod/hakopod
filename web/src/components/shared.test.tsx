@@ -1,3 +1,4 @@
+import '../lib/build-onboarding.test'
 import '../lib/effective-service.test'
 import '../lib/dotenv.test'
 import assert from 'node:assert/strict'

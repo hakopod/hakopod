@@ -30,6 +30,7 @@ export type SelectFieldProps = Omit<
   options: readonly SelectOption[]
   compact?: boolean
   required?: boolean
+  error?: string
   name?: string
   onInvalid?: FormEventHandler<HTMLSpanElement>
   onInvalidCapture?: FormEventHandler<HTMLSpanElement>
@@ -46,6 +47,7 @@ export const SelectField = forwardRef<HTMLButtonElement, SelectFieldProps>(funct
     required,
     name,
     disabled,
+    error,
     className,
     onInvalid,
     onInvalidCapture,
@@ -73,6 +75,16 @@ export const SelectField = forwardRef<HTMLButtonElement, SelectFieldProps>(funct
   useEffect(() => {
     if (selectedValue !== '' || !required || disabled) setInvalid(false)
   }, [selectedValue, required, disabled])
+  useEffect(() => {
+    const input = trigger.current
+    if (!error || !input || input.matches(':disabled')) return
+    const group = input.closest('form, .form-body')
+    if (group?.querySelector('[aria-invalid="true"]:not(:disabled)') === input) {
+      const details = input.closest('details')
+      if (details) details.open = true
+      input.focus()
+    }
+  }, [error])
   return (
     <span
       className="select-field-wrap"
@@ -106,9 +118,9 @@ export const SelectField = forwardRef<HTMLButtonElement, SelectFieldProps>(funct
           {...props}
           ref={triggerRef}
           aria-label={label}
-          aria-invalid={ariaInvalid ?? (showInvalid || undefined)}
+          aria-invalid={ariaInvalid ?? (Boolean(error) || showInvalid || undefined)}
           aria-describedby={
-            [describedBy, showInvalid && errorID].filter(Boolean).join(' ') || undefined
+            [describedBy, (error || showInvalid) && errorID].filter(Boolean).join(' ') || undefined
           }
           className={`select-trigger interactive${compact ? ' compact' : ''}${className ? ` ${className}` : ''}`}
         >
@@ -159,9 +171,9 @@ export const SelectField = forwardRef<HTMLButtonElement, SelectFieldProps>(funct
           </SelectPrimitive.Content>
         </SelectPrimitive.Portal>
       </SelectPrimitive.Root>
-      {showInvalid && (
+      {(error || showInvalid) && (
         <span id={errorID} className="field-help error" role="alert">
-          Choose an option.
+          {error || 'Choose an option.'}
         </span>
       )}
     </span>

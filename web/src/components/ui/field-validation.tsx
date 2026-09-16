@@ -36,7 +36,15 @@ export function useFieldValidation<T extends Control>(
     if (!serverError || !control.current) return
     const input = control.current
     const group = input.form || input.closest('.form-body')
-    if (group?.querySelector('[aria-invalid="true"]') === input) input.focus()
+    if (input.matches(':disabled')) return
+    if (group?.querySelector('[aria-invalid="true"]:not(:disabled)') === input) {
+      let details = input.closest('details')
+      while (details) {
+        details.open = true
+        details = details.parentElement?.closest('details') || null
+      }
+      input.focus()
+    }
   }, [serverError])
   const invalid = (event: FormEvent<T>) => {
     event.preventDefault()

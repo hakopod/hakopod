@@ -14,6 +14,7 @@ export function GitRepositoryField(props: {
   value: string
   onChange: (value: string) => void
   onBranchChange?: (value: string) => void
+  error?: string
 }) {
   // A connection switch discards pagination and all private metadata from the old selection.
   return <RepositoryField key={`${props.provider}:${props.connectionId}`} {...props} />
@@ -24,6 +25,7 @@ function RepositoryField({
   value,
   onChange,
   onBranchChange,
+  error,
 }: Parameters<typeof GitRepositoryField>[0]) {
   const [page, setPage] = useState(1)
   const scope = useScope()
@@ -116,6 +118,7 @@ function RepositoryField({
           required
           data-build-source
           value={value}
+          error={error}
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => onChange(value.trim().replace(/\.git$/i, ''))}
           placeholder={provider === 'gitlab' ? 'group/subgroup/project' : 'owner/repository'}

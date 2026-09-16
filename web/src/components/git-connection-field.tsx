@@ -12,11 +12,13 @@ export function GitConnectionField({
   value,
   onValueChange,
   builds = false,
+  error,
 }: {
   provider: GitProvider
   value: string
   onValueChange: (value: string) => void
   builds?: boolean
+  error?: string
 }) {
   const scope = useScope()
   const query = useGitConnections()
@@ -33,6 +35,7 @@ export function GitConnectionField({
         Repository connection
         <SelectField
           label="Repository connection"
+          error={error}
           value={value === `${provider}-default` ? '' : value}
           onValueChange={onValueChange}
           disabled={query.isPending || Boolean(query.error)}

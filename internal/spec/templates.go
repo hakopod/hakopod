@@ -158,10 +158,10 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 		o.StorageGiB = 5
 	}
 	if o.StorageGiB < 1 || o.StorageGiB > 200 {
-		return Application{}, fmt.Errorf("storage_gib must be between 1 and 200")
+		return Application{}, fmt.Errorf("storage_gib: must be between 1 and 200")
 	}
 	if o.Architecture != "" && o.Architecture != "amd64" && o.Architecture != "arm64" {
-		return Application{}, fmt.Errorf("architecture must be amd64, arm64, or empty for automatic scheduling")
+		return Application{}, fmt.Errorf("architecture: must be amd64, arm64, or empty for automatic scheduling")
 	}
 	var template *Template
 	for _, t := range Templates() {

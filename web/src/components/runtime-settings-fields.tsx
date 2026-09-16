@@ -1,3 +1,4 @@
+import { fieldError } from '../lib/form-errors'
 import { useRef, useState } from 'react'
 import { importDotenv, MAX_ENV_FILE_BYTES } from '../lib/dotenv'
 import { Button } from './ui/button'
@@ -12,12 +13,14 @@ export function EnvironmentFields({
   label,
   disabled = false,
   allowSecrets = true,
+  error,
 }: {
   rows: EnvironmentRow[]
   onChange: (rows: EnvironmentRow[]) => void
   label: string
   disabled?: boolean
   allowSecrets?: boolean
+  error?: string
 }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const latest = useRef({ rows, disabled })
@@ -29,6 +32,11 @@ export function EnvironmentFields({
   return (
     <div className="grid min-w-0 gap-3">
       <strong className="text-sm">Environment variables</strong>
+      {error && (
+        <p role="alert" className="inline-error">
+          {error}
+        </p>
+      )}
       {rows.map((row, index) => (
         <div
           className="grid min-w-0 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
@@ -216,12 +224,16 @@ export function RunCommandFields({
   onChange,
   label,
   disabled = false,
+  error = '',
+  fieldPath = '',
 }: {
   command: string
   args: string
   onChange: (value: { command: string; args: string }) => void
   label: string
   disabled?: boolean
+  error?: string
+  fieldPath?: string
 }) {
   return (
     <div className="grid min-w-0 gap-3">
@@ -231,6 +243,7 @@ export function RunCommandFields({
           <Input
             aria-label={`${label} run command`}
             value={command}
+            error={fieldError(error, `${fieldPath ? fieldPath + '.' : ''}command`)}
             disabled={disabled}
             maxLength={8192}
             placeholder="Use image default, or enter uvicorn"
@@ -242,6 +255,7 @@ export function RunCommandFields({
           <Input
             aria-label={`${label} run arguments`}
             value={args}
+            error={fieldError(error, `${fieldPath ? fieldPath + '.' : ''}args`)}
             disabled={disabled}
             maxLength={16384}
             placeholder="main:app --host 0.0.0.0 --port 8000"

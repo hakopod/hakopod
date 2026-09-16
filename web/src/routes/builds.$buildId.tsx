@@ -444,7 +444,7 @@ function BuildDetail() {
                 }
               }}
             >
-              {busy ? 'Committing workflow…' : `Commit reviewed workflow to ${providerLabel}`}
+              {busy ? 'Committing workflow…' : 'Commit workflow'}
             </Button>
           )}
         </div>
