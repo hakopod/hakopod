@@ -87,8 +87,7 @@ class UpgradeLifecycleTests(unittest.TestCase):
                 self.assertEqual(installation, 'a'*32)
                 events.append(['repair-credentials'])
             stack.enter_context(patch.object(m.credentials,'repair_namespace',side_effect=repair))
-            response=contextlib.nullcontext(SimpleNamespace(status=200))
-            stack.enter_context(patch.object(m.urllib.request,'urlopen',return_value=response))
+            stack.enter_context(patch.object(m,'api_health',return_value=True))
             stack.enter_context(patch.object(m,'dashboard_health',return_value=failure!='health'))
             stack.enter_context(patch.object(m.time,'sleep'))
             if failure:
@@ -115,6 +114,7 @@ class UpgradeLifecycleTests(unittest.TestCase):
         state,current,events=self.run_upgrade('health')
         self.assertEqual(state['status'],'failed');self.assertEqual(current,'0.1.0-alpha.5')
         self.assertIn('administrator recovery',state['message'])
+        self.assertIn('API: ready; Dashboard: readiness check failed',state['message'])
 
     def test_sensitive_log_entries_are_omitted(self):
         for value in ['{"token":"sample-token-value"}','{"client_secret": "sample-secret-value"}','Authorization: Bearer private','password=private']:

@@ -43,6 +43,13 @@ UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard', 'hakopod-dashboard-c
 def fail(message):
     raise ValueError(message)
 
+def dashboard_tls_paths(config, root=Path('/etc/hakopod')):
+    """Use the same certificate generation for serving and checking HTTPS."""
+    directory = Path(root)
+    if config.get('dashboard_certificate', 'provided') == 'letsencrypt':
+        directory /= 'dashboard-tls/current'
+    return directory / 'dashboard.crt', directory / 'dashboard.key'
+
 def no_duplicates(pairs):
     result = {}
     for key, value in pairs:
@@ -543,8 +550,8 @@ def render(c, arch, installation, out):
         PORT=c['dashboard_port'], HAKOPOD_API_URL='http://127.0.0.1:8080',
         HAKOPOD_WEB_ORIGIN=c['dashboard_origin'], HAKOPOD_SESSION_SECRET=session_secret)
     if c['dashboard_mode'] == 'https':
-        prefix = '/etc/hakopod/dashboard-tls/current/' if c['dashboard_certificate'] == 'letsencrypt' else '/etc/hakopod/'
-        dashboard_env.update(HAKOPOD_DASHBOARD_TLS_CERT=prefix + 'dashboard.crt', HAKOPOD_DASHBOARD_TLS_KEY=prefix + 'dashboard.key')
+        cert, key = dashboard_tls_paths(c)
+        dashboard_env.update(HAKOPOD_DASHBOARD_TLS_CERT=str(cert), HAKOPOD_DASHBOARD_TLS_KEY=str(key))
     emit('dashboard.env', environment(dashboard_env))
     common = f'# Hakopod installation {installation}\n'
     if c['dashboard_certificate'] == 'letsencrypt':
