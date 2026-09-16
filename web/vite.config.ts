@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import { fileURLToPath } from 'node:url'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -9,7 +10,7 @@ export default defineConfig(({ mode }) => {
   for (const [name, value] of Object.entries(settings))
     if (!process.env[name]) process.env[name] = value
   return {
-    resolve: { alias: { '@': new URL('./src', import.meta.url).pathname } },
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
     plugins: [tailwindcss(), tanstackStart(), react()],
     // The local design system exports TSX source; production Node runs only JS.
     ssr: { noExternal: ['@hakopod/hatch-ui'] },
