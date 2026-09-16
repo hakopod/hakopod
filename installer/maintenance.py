@@ -241,8 +241,13 @@ def backup(config, directory):
             command(bound + ['/opt/hakopod/tools/kubectl', '--kubeconfig=/etc/hakopod/admin-kubeconfig', '-n', 'hakopod-system',
                      'exec', 'deployment/postgres', '--', 'pg_dump', '-U', 'hakopod', '-d', 'hakopod', '-Fc'], stdout=output, timeout=300)
         else:
-            env = dict(os.environ, PGDATABASE=Path('/etc/hakopod/database-url').read_text().strip())
-            command(bound + ['pg_dump', '-Fc'], env=env, stdout=output, timeout=300)
+            connection = host.database.parse_url(host.database.read_url_file('/etc/hakopod/database-url'), config['database_mode'])
+            env = host.database.command_environment(connection)
+            env['PGAPPNAME'] = 'hakopod-upgrade-backup'
+            try:
+                command(bound + ['pg_dump', '--no-password', '-Fc'], env=env, stdout=output, timeout=300)
+            except subprocess.CalledProcessError:
+                raise ValueError('PostgreSQL backup failed. Check the saved database connection, TLS trust and pg_dump version before retrying.') from None
     with (directory / 'database.dump').open('rb') as check:
         valid = check.read(5) == b'PGDMP'
     if not valid:
@@ -281,6 +286,7 @@ def perform_upgrade(target, install_lock):
             raise ValueError('Maintenance requires a completed self-hosted installation')
         version_key(target)
         stopped = switched = False
+        staged_destination = None
         def progress(state, message):
             save_state({'status': state, 'message': message, 'version': target, 'previous_version': installed})
         progress('downloading', 'Downloading and verifying release artifacts.')
@@ -318,6 +324,7 @@ def perform_upgrade(target, install_lock):
                 shutil.move(str(dashboard), binary / 'dashboard')
                 # Copy onto the destination filesystem before the atomic switch.
                 shutil.copytree(binary, destination, symlinks=True)
+                staged_destination = destination
                 progress('backing_up', 'Stopping management services and backing up PostgreSQL and configuration. Applications keep running.')
                 stopped = True
                 command(['systemctl', 'stop', 'hakopod-dashboard', 'hakopod-api'])
@@ -351,6 +358,10 @@ def perform_upgrade(target, install_lock):
                 CACHE = None
         except (Exception, SystemExit) as error:
             recovery_failed = False
+            cleanup_failed = False
+            if staged_destination is not None and not switched:
+                try: shutil.rmtree(staged_destination)
+                except OSError: cleanup_failed = True
             if stopped and not switched:
                 try: command(['systemctl', 'start', 'hakopod-api', 'hakopod-dashboard'])
                 except Exception: recovery_failed = True
@@ -359,7 +370,9 @@ def perform_upgrade(target, install_lock):
                 # run an older server against an unknown database schema.
                 save_state({'status': 'failed', 'message': 'Upgrade needs administrator recovery. Inspect journalctl -u hakopod-api and retained backups; automatic database rollback was not attempted.', 'version': target, 'previous_version': installed})
             else:
-                save_state({'status': 'failed', 'message': 'Management services need manual restart; inspect the maintenance journal.' if recovery_failed else (str(error) if isinstance(error, ValueError) else 'Upgrade stopped before switching releases. Inspect the maintenance journal.'), 'version': target, 'previous_version': installed})
+                message = 'Management services need manual restart; inspect the maintenance journal.' if recovery_failed else (str(error) if isinstance(error, ValueError) else 'Upgrade stopped before switching releases. Inspect the maintenance journal.')
+                if cleanup_failed: message += ' Staged release files need administrator cleanup before retrying.'
+                save_state({'status': 'failed', 'message': message, 'version': target, 'previous_version': installed})
             raise
 
 

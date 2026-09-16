@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import platform
 import re
-import runpy
 import secrets
 import shutil
 import subprocess
@@ -263,7 +262,12 @@ def upgrade_candidate(kit, artifacts, version):
             return Response((artifacts / name).open('rb'), url)
         return original(request, *args, **kwargs)
     with patch.object(urllib.request, 'urlopen', side_effect=urlopen):
-        maintenance.upgrade(version)
+        previous_mask = os.umask(0o077)
+        try:
+            maintenance.STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+            maintenance.upgrade(version)
+        finally:
+            os.umask(previous_mask)
     if maintenance.current() != version or json.loads((maintenance.STATE / 'status.json').read_text())['status'] != 'succeeded':
         raise RuntimeError('Upgrade did not switch to the target release')
     backups = list(maintenance.STATE.glob('backup-*'))

@@ -78,6 +78,8 @@ Retain backups and verify a restore on a separate machine. Do not rerun setup or
 remove application volumes to recover a management-service failure.
 
 Release builders list candidate source versions in `release/upgrade-paths.json`.
+Tagged releases refuse to build without an explicit policy entry, preventing an
+accidentally omitted upgrade list from silently shipping again.
 Packaging puts that list into `upgrade.json`; publication then requires a native
 host report for every source and database mode, including amd64 and arm64 managed
 database installations. Each case installs the published source, upgrades using

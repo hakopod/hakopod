@@ -329,6 +329,21 @@ def _system_ca_file():
     _fail('System CA bundle was not found; provide database_ca_file for certificate verification')
 
 
+def command_environment(connection, timeout=20):
+    """Explicit libpq fields for child processes; never put a secret URI in argv."""
+    env = _base_env()
+    env.update(PGHOST=connection.host, PGPORT=str(connection.port), PGDATABASE=connection.database,
+               PGUSER=connection.username, PGSSLMODE=connection.sslmode,
+               PGCONNECT_TIMEOUT=str(min(connection.connect_timeout, max(1, int(timeout)))))
+    if connection.password is not None:
+        env['PGPASSWORD'] = connection.password
+    if connection.ca_file:
+        env['PGSSLROOTCERT'] = connection.ca_file
+    elif connection.sslmode in ('verify-full', 'verify-ca') and not connection.host.startswith('/'):
+        env['PGSSLROOTCERT'] = _system_ca_file()
+    return env
+
+
 def preflight(config, *, resume=False, installed_url_path=None, timeout=20, psql='psql'):
     """Check an existing database without writes.
 
@@ -347,18 +362,9 @@ def preflight(config, *, resume=False, installed_url_path=None, timeout=20, psql
     # The saved URI already names the installed CA; the original source may be gone.
     ca = '' if resume else config.get('database_ca_file', '')
     connection = parse_url(read_url_file(source), config['database_mode'], ca)
-    env = _base_env()
-    env.update(PGHOST=connection.host, PGPORT=str(connection.port), PGDATABASE=connection.database,
-               PGUSER=connection.username, PGSSLMODE=connection.sslmode,
-               PGCONNECT_TIMEOUT=str(min(connection.connect_timeout, max(1, int(timeout)))),
-               PGOPTIONS='-c statement_timeout=10000 -c lock_timeout=3000',
+    env = command_environment(connection, timeout)
+    env.update(PGOPTIONS='-c statement_timeout=10000 -c lock_timeout=3000',
                PGAPPNAME='hakopod-installer-preflight')
-    if connection.password is not None:
-        env['PGPASSWORD'] = connection.password
-    if connection.ca_file:
-        env['PGSSLROOTCERT'] = connection.ca_file
-    elif connection.sslmode in ('verify-full', 'verify-ca') and not connection.host.startswith('/'):
-        env['PGSSLROOTCERT'] = _system_ca_file()
     argv = [psql, '--no-psqlrc', '--no-password', '--quiet', '--tuples-only', '--no-align',
             '--set=ON_ERROR_STOP=1', '--command', PREFLIGHT_SQL]
     code, stdout, _ = _capture(argv, env, timeout)

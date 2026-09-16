@@ -95,6 +95,7 @@ class UpgradeLifecycleTests(unittest.TestCase):
                 with self.assertRaises((ValueError,RuntimeError)):m.upgrade(target)
             else:m.upgrade(target)
             state=json.loads((m.STATE/'status.json').read_text())
+            self.assertEqual((releases/target).exists(), not failure or failure=='health')
             return state,current.resolve().name,events
 
     def test_success_switches_only_after_backup(self):
@@ -121,6 +122,31 @@ class UpgradeLifecycleTests(unittest.TestCase):
         self.assertEqual(m.redact_log('API ready'),'API ready')
 
 class MaintenanceRegressionTests(unittest.TestCase):
+    def test_existing_database_backup_uses_explicit_libpq_fields(self):
+        from types import SimpleNamespace
+        for mode, host in [('local', '127.0.0.1'), ('external', 'database.example.test')]:
+            sslmode = 'disable' if mode=='local' else 'verify-full'
+            url = f'postgresql://backup:private%3Apassword@{host}:55432/hakopod?sslmode={sslmode}'
+            with tempfile.TemporaryDirectory() as tmp, patch.object(m.tarfile, 'open'), \
+                    patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=20<<30)), \
+                    patch.object(m.host.database, 'read_url_file', return_value=url), \
+                    patch.dict(m.os.environ, {'PGHOST':'wrong-host', 'PGSERVICE':'wrong-service', 'PGOPTIONS':'-c role=other'}):
+                def command(argv, **kwargs):
+                    env = kwargs['env']
+                    self.assertEqual(env['PGDATABASE'], 'hakopod')
+                    self.assertEqual(env['PGHOST'], host)
+                    self.assertEqual(env['PGPORT'], '55432')
+                    self.assertEqual(env['PGUSER'], 'backup')
+                    self.assertEqual(env['PGPASSWORD'], 'private:password')
+                    self.assertEqual(env['PGSSLMODE'], sslmode)
+                    self.assertNotIn('PGSERVICE', env)
+                    self.assertNotIn('PGOPTIONS', env)
+                    self.assertNotIn('private', str(argv))
+                    if mode == 'external': self.assertTrue(env['PGSSLROOTCERT'])
+                    kwargs['stdout'].write(b'PGDMPfixture')
+                with patch.object(m, 'command', side_effect=command):
+                    m.backup({'database_mode': mode}, Path(tmp))
+
     def test_installed_runtime_mismatch_blocks_new_bootstrap(self):
         from types import SimpleNamespace
         with patch.object(m.os,'uname',return_value=SimpleNamespace(machine='aarch64')), patch.object(m.Path,'exists',return_value=True), patch.object(m.host,'digest',side_effect=['old-runtime-pins','new-runtime-pins']):
