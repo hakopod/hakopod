@@ -1,3 +1,15 @@
+.backup-resource-note {
+  @apply mt-6 mb-4 text-sm text-muted-foreground;
+}
+.backup-resource-note a {
+  @apply underline underline-offset-4;
+}
+.backup-resource-note a:hover {
+  color: var(--action-text);
+}
+.backup-resource-note a:focus-visible {
+  @apply outline outline-2 outline-offset-4;
+}
 .secret-provider-icon {
   @apply inline-flex h-5 w-12 shrink-0 items-center justify-center gap-1;
   color: var(--foreground);

@@ -59,7 +59,7 @@ function Backups() {
     <>
       <PageHeader
         eyebrow="OPERATOR / DATA PROTECTION"
-        title="Backups"
+        title="Backups & restores"
         description="Encrypted database backups, object storage destinations, and reviewed restores."
         action={
           tab === 'destinations' ? (
@@ -77,12 +77,21 @@ function Backups() {
               </Link>
             </Button>
           ) : (
-            <Button asChild variant="primary">
-              <Link to="/backups/new">
-                <Icon name="plus" size={15} />
-                Run backup
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {tab !== 'artifacts' && (
+                <Button asChild>
+                  <Link to="/backups" search={{ tab: 'artifacts' }}>
+                    Restore backup
+                  </Link>
+                </Button>
+              )}
+              <Button asChild variant="primary">
+                <Link to="/backups/new">
+                  <Icon name="plus" size={15} />
+                  Run backup
+                </Link>
+              </Button>
+            </div>
           )
         }
       />
@@ -113,6 +122,13 @@ function Backups() {
           <BackupHistory key={tab} artifacts={tab === 'artifacts'} />
         )}
       </div>
+      <p className="backup-resource-note">
+        Need more control over scheduled backups, restores and migrations?{' '}
+        <a href="https://data.synehq.com" target="_blank" rel="noopener noreferrer">
+          Explore Syne Data <span className="sr-only">(opens in a new tab)</span>
+        </a>
+        .
+      </p>
     </>
   )
 }
@@ -167,7 +183,11 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
         <Empty
           icon="archive"
           title={artifacts ? 'No stored backups' : 'No backup jobs yet'}
-          description="Run a backup after saving an object storage destination."
+          description={
+            artifacts
+              ? 'Completed backups appear here. Choose Restore to review a target and recover into a new database.'
+              : 'Run a backup after saving an object storage destination.'
+          }
         />
       ) : (
         <div className="table-container">
