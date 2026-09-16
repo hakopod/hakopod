@@ -275,8 +275,8 @@ export function ServiceEnvironmentForm({
         ) : (
           <>
             <FormSection
-              title="Variables"
-              description={`${rows.length} / 128 variables. Empty values are allowed.`}
+              title="Variables and secrets"
+              description="Plain values may be empty. Secret values must be nonempty."
               icon="code"
             >
               {!serviceName && (
@@ -294,6 +294,7 @@ export function ServiceEnvironmentForm({
               )}
               <EnvironmentFields
                 rows={rows}
+                onBusyChange={setBusy}
                 onChange={(next) => {
                   setRows(next)
                   setConflict(null)

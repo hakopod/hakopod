@@ -80,3 +80,57 @@ func TestComposeEnvironmentFilesPreserveGraphAndOverride(t *testing.T) {
 		t.Fatal("compose environment import incorrect")
 	}
 }
+
+func TestEnvironmentImportDetectsSecretsByNameAndValue(t *testing.T) {
+	for _, tc := range []struct{ name, value string }{
+		{"DATABASE_PWD", "private-fixture"},
+		{"SECRET_KEY_BASE", "private-fixture"},
+		{"APP_CLIENT_SECRET_ACTIVE", "private-fixture"},
+		{"SESSION_SIGNING_KEY", "private-fixture"},
+		{"DATA_ENCRYPTION_KEY", "private-fixture"},
+		{"CREDENTIAL", "github_pat_privatefixture123456"},
+		{"CREDENTIAL", "glpat-privatefixture123456"},
+		{"CREDENTIAL", "sk-proj-privatefixture123456"},
+		{"CREDENTIAL", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c2lnbmF0dXJl"},
+		{"CERTIFICATE", "-----BEGIN PRIVATE KEY-----\nprivate-fixture\n-----END PRIVATE KEY-----"},
+		{"DATABASE_URL", "postgres://fixture:private-fixture@db/app"},
+	} {
+		t.Run(tc.name+"/"+fmt.Sprint(len(tc.value)), func(t *testing.T) {
+			data := []byte("name='app'\nenv_file='.env'\n[services.api]\nimage='nginx'\n[services.worker]\nimage='busybox'")
+			result, err := ImportEnvironmentFiles(data, map[string]string{".env": "MODE=production\n" + tc.name + "='" + tc.value + "'"}, func(string, string) string { return "protected-value" })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Secrets["protected-value"] != tc.value || result.Spec.Env["MODE"] != "production" || len(result.Spec.Env) != 1 {
+				t.Fatal("secret was not separated from environment")
+			}
+			for _, svc := range result.Spec.Services {
+				if EffectiveService(result.Spec, svc).Secrets[tc.name].Ref != "protected-value" {
+					t.Fatal("application secret was not inherited")
+				}
+			}
+			encoded, err := toml.Marshal(result.Spec)
+			if err != nil || strings.Contains(string(encoded), tc.value) {
+				t.Fatal("private value escaped into configuration")
+			}
+		})
+	}
+	for _, key := range []string{"SECRET_FEATURE_ENABLED", "TOKEN_COUNT", "KEYBOARD_LAYOUT", "PUBLIC_API_ENDPOINT"} {
+		if sensitiveEnv(key, "enabled") {
+			t.Fatalf("ordinary setting %s classified as a secret", key)
+		}
+	}
+}
+
+func TestEnvironmentFileSecretSizeLimit(t *testing.T) {
+	for _, size := range []int{4097, 64 << 10} {
+		if _, err := ParseDotenv("PRIVATE_KEY=" + strings.Repeat("x", size)); err != nil {
+			t.Fatal("bounded secret rejected", err)
+		}
+	}
+	for _, input := range []string{"PRIVATE_KEY=" + strings.Repeat("x", (64<<10)+1), "MODE=" + strings.Repeat("x", 4097)} {
+		if _, err := ParseDotenv(input); err == nil {
+			t.Fatal("oversized value accepted")
+		}
+	}
+}

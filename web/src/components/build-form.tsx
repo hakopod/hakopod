@@ -7,7 +7,7 @@ import { useGitConnections, useGitProviderSetup } from '../lib/git-connections'
 import { GitRepositoryField } from './git-repository-field'
 import { saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields } from './runtime-settings-fields'
-import { environmentRows, splitEnvironment } from '../lib/service-environment'
+import { environmentRows, isSecretEnvironment, splitEnvironment } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import { GitDeploymentPaths } from './git-deployment-paths'
 import {
@@ -197,6 +197,12 @@ export default function BuildForm({
     }
     if (runtimeEnvEnabled) parseField('env', () => splitEnvironment(runtimeEnv))
   }
+  const runtimeVariables = runtimeEnv.filter(
+    (row) => (row.name || row.value) && !isSecretEnvironment(row),
+  ).length
+  const runtimeSecrets = runtimeEnv.filter(
+    (row) => (row.name || row.value) && isSecretEnvironment(row),
+  ).length
   return (
     <FormPage
       breadcrumbs={[
@@ -852,6 +858,7 @@ export default function BuildForm({
               {runtimeEnvEnabled ? (
                 <EnvironmentFields
                   rows={runtimeEnv}
+                  onBusyChange={setBusy}
                   onChange={setRuntimeEnv}
                   label="Runtime"
                   error={
@@ -1107,11 +1114,11 @@ export default function BuildForm({
                   </dd>
                 </div>
                 <div>
-                  <dt>Environment variables</dt>
+                  <dt>Variables and secrets</dt>
                   <dd>
                     {runtimeEnvEnabled
-                      ? `${runtimeEnv.filter((row) => row.name || row.value).length} variables · values hidden`
-                      : 'Keep existing variables'}
+                      ? `${runtimeVariables} ${runtimeVariables === 1 ? 'variable' : 'variables'} · ${runtimeSecrets} ${runtimeSecrets === 1 ? 'secret' : 'secrets'} · values hidden`
+                      : 'Keep existing variables and secrets'}
                   </dd>
                 </div>
                 <div>

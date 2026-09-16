@@ -1,5 +1,9 @@
-export type EnvironmentRow = { id: string; name: string; value: string }
+export type EnvironmentRow = { id: string; name: string; value: string; secret?: boolean }
 export type Environment = Record<string, string>
+export const MAX_SECRET_VALUE_BYTES = 64 * 1024
+
+export const isSecretEnvironment = (row: EnvironmentRow) =>
+  row.secret === true || sensitiveEnvironment(row.name, row.value)
 
 const valueOf = (environment: Environment, name: string) =>
   Object.hasOwn(environment, name) ? environment[name] : undefined
@@ -27,7 +31,7 @@ export function parseEnvironment(rows: EnvironmentRow[], secretNames: string[]):
       throw new Error(
         `${row.name} must be at most 4,096 bytes and cannot contain a null character.`,
       )
-    if (sensitiveEnvironment(row.name, row.value))
+    if (isSecretEnvironment(row))
       throw new Error(`${row.name} belongs in application secrets, not plain variables.`)
     result[row.name] = row.value
   }
@@ -67,9 +71,13 @@ export function environmentChanges(before: Environment = {}, after: Environment 
 
 export function sensitiveEnvironment(name: string, value: string): boolean {
   if (
-    /(^|_)(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY|ACCESS_KEY_ID|SECRET_KEY)$/i.test(
+    /(^|_)(PASSWORD|PASSWD|PWD|TOKEN|SECRET|API_KEY|PRIVATE_KEY|ACCESS_KEY|ACCESS_KEY_ID|SECRET_KEY|CLIENT_SECRET|SIGNING_KEY|ENCRYPTION_KEY)$/i.test(
       name,
-    )
+    ) ||
+    /(^|_)(SECRET_KEY|PRIVATE_KEY|API_KEY|CLIENT_SECRET)(_|$)/i.test(name) ||
+    /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/.test(value) ||
+    /^(?:gh[pousr]_|github_pat_|glpat-|sk-proj-)[A-Za-z0-9_-]{12,}/.test(value) ||
+    /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)
   )
     return true
   try {
@@ -87,17 +95,15 @@ export function splitEnvironment(rows: EnvironmentRow[], secretNames: string[] =
   for (const row of rows.filter((row) => row.name !== '' || row.value !== '')) {
     if (seen.has(row.name)) throw new Error(`${row.name} appears more than once.`)
     seen.add(row.name)
-    if (sensitiveEnvironment(row.name, row.value)) {
+    if (isSecretEnvironment(row)) {
       if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(row.name))
         throw new Error('Use a valid environment variable name.')
       if (
         !row.value ||
         row.value.includes('\0') ||
-        new TextEncoder().encode(row.value).length > 4096
+        new TextEncoder().encode(row.value).length > MAX_SECRET_VALUE_BYTES
       )
-        throw new Error(
-          `${row.name} must have a nonempty secret value up to 4,096 bytes without NUL.`,
-        )
+        throw new Error(`${row.name} must have a nonempty secret value up to 64 KiB without NUL.`)
       if (secretNames.includes(row.name))
         throw new Error(`${row.name} already has a secret reference. Replace its value in Secrets.`)
       secrets.push(row)

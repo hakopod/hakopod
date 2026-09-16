@@ -157,6 +157,7 @@ export function ComposeImport({
         <div className="mt-2">
           <EnvironmentFields
             rows={variables}
+            onBusyChange={setBusy}
             onChange={(rows) => {
               setVariables(rows)
               reset()

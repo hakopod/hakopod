@@ -177,8 +177,8 @@ func ParseDotenv(data string) (map[string]string, error) {
 			}
 			value = strings.TrimRight(value, " \t")
 		}
-		if len(value) > 4096 {
-			return nil, errors.New("env_file: values must be at most 4096 bytes")
+		if len(value) > 64<<10 || (len(value) > 4096 && !sensitiveEnv(key, value)) {
+			return nil, errors.New("env_file: plain values must be at most 4096 bytes and secrets at most 64 KiB")
 		}
 		values[key] = value
 		if len(values) > 128 {

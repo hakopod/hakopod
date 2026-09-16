@@ -56,6 +56,9 @@ test('mixed dotenv import keeps values for scoped secret storage and ignores a b
   )
   assert.equal(rows.length, 4)
   assert.equal(rows.find((row) => row.name === 'API_TOKEN')?.value, 'fixture-value')
+  assert.equal(rows.find((row) => row.name === 'API_TOKEN')?.secret, true)
+  assert.equal(rows.find((row) => row.name === 'DB_URL')?.secret, true)
+  assert.equal(rows.find((row) => row.name === 'MODE')?.secret, undefined)
   assert.deepEqual(existing, [{ id: 'blank', name: '', value: '' }])
   for (const input of [
     'API_TOKEN=one\nAPI_TOKEN=two',
