@@ -1,30 +1,28 @@
-Hakopod 0.1.0-alpha.8 improves Git build onboarding, private image access, shared application configuration and dashboard feedback.
+Hakopod 0.1.0-alpha.9 adds service management within existing applications and improves workload visibility, backups and rollout diagnostics.
 
-## Build and deploy
+## Add and move services
 
-- Source builds follow Repository → Build recipe → Runtime → Review. Back navigation preserves drafts, and saving opens the generated workflow review. Installation and deployment still require their explicit actions.
-- Pick repositories available to a saved GitHub App connection, or enter a public repository. Existing connections can use the same scoped repository authorization.
-- Managed build-registry integration supplies scoped credentials for trusted GitHub build workflows and runtime image pulls. Registry authorization is bound to the selected repository and exact workflow branch; a GitHub login or App credential alone is not arbitrary registry access.
-- Reuse a source build's image for additional services, each with its own command, arguments and environment. Runtime command overrides remain editable before deployment.
-- Import or paste dotenv content into environment editors. Top-level `inject_env = true` opts services into shared application variables; service values take precedence. Shared application secret references remain separate from plain variables.
-- TOML and supported Compose `env_file` directives accept explicitly supplied environment files. The importer never reads arbitrary server files; it expands supported values into the reviewed canonical configuration.
+- Choose **Add service** from an application to use a catalog template, Docker Compose, a container image or an existing service's image. Configure the service and review the deployment before applying it.
+- Add catalog templates without replacing the application's existing services. Single-service templates accept a unique service name. Existing settings, deployed image digests and shared secrets are preserved; conflicting names and resources are rejected.
+- Move a stateless service to another application in the same project and environment through a reviewed handover. The original keeps running until the destination deployment succeeds and you confirm removal. Moves preserve the running image and effective environment, and copy local secret references without disclosing values or overwriting destination secrets.
+- Persistent data, jobs, dependencies, custom domains and other application-bound resources require an explicit migration. Source builds and deployment history stay with the original application. See [service management documentation](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.9/docs/application-service-management.md).
 
-## Dashboard
+## Operations and reliability
 
-- Request errors use dismissible Hatch toasts. Input validation stays beside its field, drafts survive failed requests, and failed sections retain retry and error-detail controls.
-- Remove the global alert styling that exposed an empty accessibility live region as a strip above the header. Announcements and status information keep their in-page layout.
-- Card backgrounds are `#fafafa` in light mode and `#141414` in dark mode.
-- Clearer setup guidance, exact API field errors and staged build validation help users correct the relevant setting. Shared edition hooks expose applicable compute limits without duplicating dashboard forms.
-- Pod logs and shared environment resolution were verified for web services, workers, one-shot jobs and scheduled jobs in the named development cluster.
+- Workload CPU and memory metrics can use bounded kubelet statistics when the Kubernetes metrics API is unavailable. Live pod logs and deployment event streams work through the dashboard proxy.
+- Deployment containers use `imagePullPolicy: Always` while retaining immutable image digests. Restarting a service keeps its deployed digest; a new deployment resolves a mutable image tag again.
+- Recent out-of-memory kills remain visible in rollout diagnostics after a container restarts, with guidance to increase the service size or reduce application worker memory.
+- The embedded management runtime initializes backup support. Backup and restore entry points are easier to find, and optional external data workflows are linked from the relevant pages.
+- Certificate-renewal acceptance now tolerates unrelated metadata updates while checking the certificate behavior.
 
 ## Prebuilt artifacts
 
-Includes Linux amd64/arm64 server, CLI and dashboard bundles, macOS amd64/arm64 CLI archives, and the installer kit. Target machines do not compile sources.
+Includes Linux amd64/arm64 server and CLI archives, the dashboard bundle, macOS amd64/arm64 CLI archives, and the installer kit. Target machines do not compile sources.
 
-The multi-platform readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.8`. Use the immutable reference in the attached `probe-image.txt` for Infrastructure > Setup.
+The multi-platform readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.9`. Use the immutable reference in the attached `probe-image.txt` for Infrastructure > Setup.
 
-Download this release's `installer.sh`, inspect `sh installer.sh --help`, and select `--version 0.1.0-alpha.8`. Website bootstrap publication is separate. Check the attached `upgrade.json` for verified upgrade paths.
+Download this release's `installer.sh`, inspect `sh installer.sh --help`, and select `--version 0.1.0-alpha.9`. Check the attached `upgrade.json` for verified upgrade paths. Website bootstrap publication is separate.
 
 Release publication requires Go/dashboard checks, native packaged smoke tests, Ubuntu 24.04 systemd/K3s host acceptance and both probe-image architectures. Assets include checksums, SBOMs, dependency notices, provenance and acceptance reports. Verify provenance with `gh attestation verify FILE --repo hakopod/hakopod`.
 
-This remains an alpha release. Self-hosted access uses first-administrator setup and invitations. Private Cloud pages are not included in public archives. Arbitrary private repositories, every template, public DNS/ACME, physical RDS and all Linux distributions are not runtime-certified by these checks. CI provider permissions and OAuth/SSO still require provider configuration.
+This remains an alpha release. The service-management UI was reviewed in both themes on desktop and mobile; development-cluster acceptance verified staged service moves and additive catalog deployment using fixed fixture images. These checks do not certify every catalog image, arbitrary private repositories, every Linux distribution or live customer data migrations. Private Cloud pages are not included in public archives.
