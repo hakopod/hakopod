@@ -13,8 +13,10 @@ import (
 
 type WorkloadPolicy = cluster.WorkloadPolicy
 type WorkloadSpec = spec.Application
+type BackupConfig = api.BackupConfig
 
 type RuntimeConfig struct {
+	Backups          BackupConfig
 	BuildRegistry    string
 	WorkloadPolicy   cluster.WorkloadPolicyResolver
 	ApplicationLimit func(context.Context, string, string) (int, error)
@@ -66,6 +68,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	s.runtime = kube
 	s.store.ApplicationLimit = config.ApplicationLimit
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true}
+	server.ConfigureBackups(config.Backups)
 	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {
 		return nil, nil, err
 	}
