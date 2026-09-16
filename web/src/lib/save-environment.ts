@@ -4,11 +4,10 @@ import type { Service } from './types'
 
 // Imported secret values are written only to new, application-scoped references.
 // They never enter a spec, build configuration, workflow or deployment history.
-export async function saveEnvironment(
+export function prepareEnvironment(
   rows: EnvironmentRow[],
   query: { project: string; environment: string; application: string },
   existing: Service['secrets'] = {},
-  signal?: AbortSignal,
 ) {
   const reference = (id: string) => `env-${id.replaceAll('-', '').slice(0, 32)}`
   const existingNames = Object.keys(existing).filter(
@@ -20,6 +19,16 @@ export async function saveEnvironment(
     throw new Error('At most 32 secret references are supported.')
   if (!/^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(query.application))
     throw new Error('Enter a valid application name before saving variables.')
+  return { parsed, secrets, reference }
+}
+
+export async function saveEnvironment(
+  rows: EnvironmentRow[],
+  query: { project: string; environment: string; application: string },
+  existing: Service['secrets'] = {},
+  signal?: AbortSignal,
+) {
+  const { parsed, secrets, reference } = prepareEnvironment(rows, query, existing)
   for (const row of parsed.secrets) {
     const ref = reference(row.id)
     await unwrap(

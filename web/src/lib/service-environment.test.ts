@@ -6,6 +6,7 @@ import {
   parseEnvironment,
   sameEnvironment,
   splitEnvironment,
+  sensitiveEnvironment,
 } from './service-environment'
 
 test('environment edits merge unrelated concurrent variables and identify same-key conflicts', () => {
@@ -20,6 +21,36 @@ test('environment edits merge unrelated concurrent variables and identify same-k
     { MODE: 'production', UNTOUCHED: 'new', CONCURRENT: 'kept', ADDED: 'yes' },
   )
   assert.deepEqual(mergeEnvironment({ A: 'old' }, { A: 'new' }, { A: 'new' }).conflicts, [])
+})
+
+test('users can explicitly protect ordinary names and multiline private values', () => {
+  const row = { id: 'private', name: 'LICENSE', value: 'first\nsecond', secret: true }
+  const result = splitEnvironment([row, { id: 'normal', name: 'MODE', value: 'production' }])
+  assert.deepEqual({ ...result.env }, { MODE: 'production' })
+  assert.deepEqual(result.secrets, [row])
+  assert.throws(() => parseEnvironment([row], []), /application secrets/)
+  assert.equal(splitEnvironment([{ ...row, value: 'x'.repeat(65536) }]).secrets.length, 1)
+  assert.throws(() => splitEnvironment([{ ...row, value: 'x'.repeat(65537) }]), /64 KiB/)
+  assert.throws(() => splitEnvironment([{ ...row, value: '' }]), /nonempty/)
+})
+
+test('secret detection catches common key families and credential-shaped values', () => {
+  for (const [name, value] of [
+    ['SECRET_KEY_BASE', 'fixture'],
+    ['SESSION_SIGNING_KEY', 'fixture'],
+    ['CONFIG', '-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----'],
+    ['CONFIG', 'github_pat_' + 'a'.repeat(32)],
+    ['CONFIG', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature'],
+    ['DATABASE_URL', 'postgres://name:fixture@db/app'],
+  ])
+    assert.equal(sensitiveEnvironment(name, value), true, name)
+  for (const [name, value] of [
+    ['APP_ENV', 'production'],
+    ['PORT', '8000'],
+    ['URL', 'https://example.test'],
+    ['PUBLIC_KEY', 'public material'],
+  ])
+    assert.equal(sensitiveEnvironment(name, value), false, name)
 })
 
 test('empty values and prototype-like names remain plain environment entries', () => {

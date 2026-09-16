@@ -1,5 +1,5 @@
 import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
-import { saveEnvironment } from '../lib/save-environment'
+import { prepareEnvironment, saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
 import { environmentRows, type EnvironmentRow } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
@@ -119,6 +119,19 @@ export function DeploymentForm({
   const limitIssues = features.hostedFree ? hostedFreeIssues(spec) : []
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)
+    // Validate every environment and command draft before writing private
+    // values, including fields belonging to later services in the form.
+    for (const [name, service] of Object.entries(next.services)) {
+      const draft = runtime[name]
+      if (!draft) continue
+      parseProcessCommand(draft.command)
+      parseProcessCommand(draft.args)
+      prepareEnvironment(
+        draft.variables,
+        { project, environment, application: next.name },
+        service.secrets,
+      )
+    }
     for (const [name, service] of Object.entries(next.services)) {
       const draft = runtime[name]
       if (!draft) continue
@@ -723,6 +736,7 @@ export function DeploymentForm({
                       />
                       <EnvironmentFields
                         label={name}
+                        onBusyChange={setBusy}
                         error={fieldError(error, `services.${name}.env`)}
                         disabled={busy}
                         rows={(runtime[name] || runtimeDraft(service)).variables}
@@ -813,7 +827,7 @@ export function DeploymentForm({
           <Icon name="lock" size={13} />
           {plan
             ? 'Only reviewed changes will be submitted'
-            : 'Imported secrets are saved at review; containers change on deployment'}
+            : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
         </span>
         <div className="deploy-footer-actions">
           <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>

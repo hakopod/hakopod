@@ -43,11 +43,19 @@ Service > Environment edits overrides and displays inherited names. The service
 Environment and Secrets tabs show the effective values/references. Changes use
 a reviewed deployment and optimistic revision checks.
 
+Service creation, multi-service application creation, Git build runtime settings
+and existing environment editors have separate **Environment variables** and
+**Secrets** sections. Use **Add secret** for private values with any variable
+name, or **Store as secret** to protect an existing draft variable. New secret
+values are masked; **Show value** allows editing, including multiline keys.
+
 All runtime variable editors accept `.env` files and pasted `.env` text. They
 support quoted values, empty values, `export`, multiline strings and comments.
 They never execute shell commands or expand host variables. Duplicate keys and
-invalid input are rejected without discarding the draft. Password/token names
-and credential URLs are saved as new application secret references at review;
+invalid input are rejected without discarding the draft. Successful paste/file
+imports separate detected secrets and clear the raw paste box. Password/token
+names, common credential token formats, private keys and credential URLs are
+saved as new application secret references at review or when generating TOML;
 only references enter the TOML or build configuration. Partially failed uploads
 retain the draft and reuse its newly created references on retry. Uploaded but
 unbound references remain visible in Application secrets for cleanup.
@@ -90,7 +98,7 @@ subdirectories inside the configuration directory. Absolute paths and parent
 traversal are rejected. Imports allow up to 8 files and 128 KiB combined.
 
 Imported files are literal UTF-8 assignments, with up to 128 variables per file
-and 4 KiB per value. Interpolation and shell commands are never evaluated. The
+and 4 KiB per ordinary value or 64 KiB per secret. Interpolation and shell commands are never evaluated. The
 importer removes `env_file` from the canonical deployment and stores ordinary
 values and scoped secret references. Sensitive-name and credential-URL detection
 is a safeguard; use explicit secret references for other confidential values.

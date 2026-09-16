@@ -1,4 +1,9 @@
-import { parseEnvironment, splitEnvironment, type EnvironmentRow } from './service-environment'
+import {
+  parseEnvironment,
+  sensitiveEnvironment,
+  splitEnvironment,
+  type EnvironmentRow,
+} from './service-environment'
 
 export const MAX_ENV_FILE_BYTES = 512 * 1024
 
@@ -56,7 +61,12 @@ export function importDotenv(
     } else {
       value = value.replace(/(^|[ \t])#.*$/, '').trimEnd()
     }
-    imported.push({ id: crypto.randomUUID(), name, value })
+    imported.push({
+      id: crypto.randomUUID(),
+      name,
+      value,
+      ...(allowSecrets && sensitiveEnvironment(name, value) ? { secret: true } : {}),
+    })
   }
   if (!imported.length) throw new Error('This file contains no environment variables.')
   // Validate the complete change before returning it; no partial imports or overwrites.

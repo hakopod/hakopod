@@ -1,6 +1,7 @@
 import '../lib/build-onboarding.test'
 import '../lib/effective-service.test'
 import '../lib/dotenv.test'
+import '../lib/save-environment.test'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import './toml-code.test'
