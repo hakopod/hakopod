@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { editionFetch } from '../lib/client-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -169,10 +170,7 @@ export default function LiveLogs({
       </div>
       <div className={`log-window ${wrap ? 'ops-log-wrap' : ''}`} role="log" aria-live="off">
         {error ? (
-          <div className="log-error" role="alert">
-            <Icon name="alert" size={17} />
-            {error}
-          </div>
+          <RequestError error={error} />
         ) : text ? (
           <pre>{text}</pre>
         ) : (

@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -96,11 +97,7 @@ export function DeleteServiceDialog({
             {warning}
           </p>
         ))}
-        {error && (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>

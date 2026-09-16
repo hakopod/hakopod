@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useRef, useState } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -165,11 +166,7 @@ export function EnvironmentFiles({
           </div>
         </div>
       </details>
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <RequestError error={error} />}
     </section>
   )
 }

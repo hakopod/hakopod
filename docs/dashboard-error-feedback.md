@@ -1,14 +1,21 @@
 # Dashboard error feedback
 
-Page, request and form failures use the shared accent-red banner with a pale red
-surface. The message stays visible where the action failed, retains entered values
-and offers an existing retry or recovery action when available. Error codes are
-secondary details. The router error boundary provides a recoverable page instead
-of exposing a raw runtime exception.
+Request failures use dismissible Hatch toasts. The shared `RequestError` renders an
+accent-red notification without moving page content. Errors remain until dismissed,
+resolved or their originating screen closes. Repeated polling with the same error
+text does not reopen a dismissed notification. Each page or dialog displays at most
+three concurrent errors; older notifications yield to newer failures.
 
-`ErrorState` is the common component. Existing `inline-error` and alert surfaces
-share the same theme rules in `web/src/styles/errors.css`, including logs, Git
-repository access, infrastructure, settings, authentication and Cloud overlays.
+`ErrorState` adds a compact recovery row with Retry (when available) and Show error,
+so a failed page or section remains recoverable after dismissing its toast. Setup
+prerequisites retain their infrastructure link. API codes remain secondary details.
+Toasts originating in dialogs stay inside the modal's focus and accessibility scope.
+Entered values are preserved when requests fail. Banners are reserved for
+announcements and status information, not request errors.
+
+Never style arbitrary `[role="alert"]` elements. Router and accessibility libraries
+use hidden live regions with that role; adding borders or padding can reveal empty
+strips above the dashboard. Notification chrome belongs only to the toast component.
 
 The shared `Input`, `PasswordField`, `Textarea` and `SelectField` keep native constraint validation
 but display its message below the control. Invalid controls expose `aria-invalid`
@@ -18,11 +25,11 @@ remains associated with the control.
 
 An input can also receive an explicit `error` string. Build/deployment fields map
 API messages only when the API names the exact `field.path:`. General permission,
-capacity and network errors remain banners rather than being assigned to an
+capacity and network errors use toasts rather than being assigned to an
 unrelated input. New forms should follow this pattern and preserve their draft
 after a rejected request.
 
-Rendered review covered both themes, desktop/mobile layouts, failure retention,
+Rendered review covers both themes, desktop/mobile layouts, failure retention,
 keyboard focus, long messages and error contrast. Cloud route coverage and
 provider/cluster verification limits are recorded in the private Cloud audit.
 

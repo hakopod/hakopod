@@ -4,6 +4,7 @@ import { Skeleton } from '@hakopod/hatch-ui/components/skeleton'
 import { Status as HatchStatus, type StatusTone } from '@hakopod/hatch-ui/components/status'
 import { Icon } from './icons'
 import { Button } from './ui/button'
+import { ErrorToast, reopenError } from './ui/error-toast'
 import { Tooltip } from './ui/surfaces'
 import { APIError, message } from '../lib/api'
 
@@ -78,6 +79,28 @@ export function Empty({
     </div>
   )
 }
+export function RequestError({
+  error,
+  children,
+  remember,
+}: {
+  error: unknown
+  children?: ReactNode
+  remember?: string
+}) {
+  return (
+    <ErrorToast message={message(error)} remember={remember}>
+      {error instanceof APIError && error.code && (
+        <details className="text-xs">
+          <summary>Error details</summary>
+          <code>{error.code}</code>
+        </details>
+      )}
+      {children}
+    </ErrorToast>
+  )
+}
+
 export function ErrorState({
   error,
   retry,
@@ -87,33 +110,47 @@ export function ErrorState({
   retry?: () => void
   title?: string
 }) {
-  return (
-    <div className="hako-error-state" role="alert" aria-atomic="true">
-      <Icon name="alert" />
-      <div>
-        <h2>{title}</h2>
-        <p>{message(error)}</p>
-        {error instanceof APIError && error.code && (
-          <details className="mt-2 text-xs">
-            <summary>Error details</summary>
-            <code>{error.code}</code>
-          </details>
-        )}
-        {/readiness probe image|persistent storage is unavailable|maintenance service is unavailable/.test(
-          message(error),
-        ) && (
-          <Button asChild size="sm">
-            <a href="/infrastructure?tab=setup">Open infrastructure setup</a>
-          </Button>
-        )}
-      </div>
+  const [notification, setNotification] = useState(0)
+  const show = () => {
+    reopenError(title, message(error))
+    setNotification((value) => value + 1)
+  }
+  const retryRequest = () => {
+    show()
+    retry?.()
+  }
+  const setup =
+    /readiness probe image|persistent storage is unavailable|maintenance service is unavailable/.test(
+      message(error),
+    )
+  const actions = (
+    <>
+      {setup && (
+        <Button asChild size="sm">
+          <a href="/infrastructure?tab=setup">Open infrastructure setup</a>
+        </Button>
+      )}
       {retry && (
-        <Button variant="primary" size="sm" onClick={retry}>
+        <Button size="sm" onClick={retryRequest}>
           <Icon name="refresh" size={14} />
           Retry
         </Button>
       )}
-    </div>
+    </>
+  )
+  return (
+    <>
+      <RequestError key={notification} error={error} remember={retry ? title : undefined}>
+        {(setup || retry) && actions}
+      </RequestError>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 py-3 text-sm" data-error-recovery>
+        <p className="mr-auto text-muted-foreground">{title}</p>
+        {actions}
+        <Button size="sm" variant="ghost" onClick={show}>
+          Show error
+        </Button>
+      </div>
+    </>
   )
 }
 export function Loading({ rows = 3 }: { rows?: number }) {

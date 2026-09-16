@@ -21,7 +21,7 @@ import {
   SecretProviderNetworkFields,
 } from './secret-provider-credential-fields'
 import { Button } from './ui/button'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 
 export function SecretProviderForm({
   provider,
@@ -198,11 +198,7 @@ export function SecretProviderForm({
             />
           </div>
         )}
-        {error && (
-          <div className="inline-error mt-4" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
         {conflict && (
           <div className="mt-4 grid gap-3">
             <Note>

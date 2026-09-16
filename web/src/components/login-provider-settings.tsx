@@ -25,7 +25,7 @@ import {
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Card, Badge } from './ui/surfaces'
-import { Copy, ErrorState, HeadingHelp, Loading, Note } from './shared'
+import { Copy, ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
 import { ServiceIcon } from './service-icon'
 import { Icon } from './icons'
 
@@ -327,11 +327,7 @@ function ProviderForm({
             )}
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
         {conflict && (
           <Note>
             Another administrator changed these settings. Your draft is kept. Return to settings and

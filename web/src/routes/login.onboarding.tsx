@@ -5,7 +5,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { submitSession } from '../components/auth-screen'
 import { Button } from '../components/ui/button'
-import { PageHeader, Empty, ErrorState, Loading } from '../components/shared'
+import { PageHeader, Empty, ErrorState, Loading, RequestError } from '../components/shared'
 
 export const Route = createFileRoute('/login/onboarding')({ component: Onboarding })
 
@@ -52,11 +52,7 @@ function Onboarding() {
         title="Choose your workspace"
         description="Join a team that invited you, or start in a private workspace of your own."
       />
-      {error && (
-        <p role="alert" className="inline-error">
-          {error}
-        </p>
-      )}
+      {error && <RequestError error={error} />}
       <div className="onboarding-options">
         {state.data.invitations.map((invite) => (
           <article className="panel onboarding-option" key={invite.id}>

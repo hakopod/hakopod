@@ -11,7 +11,7 @@ import {
 import { Button } from './ui/button'
 import { Icon } from './icons'
 import { Badge } from './ui/surfaces'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 
 const sampleTime = new Intl.DateTimeFormat(undefined, {
@@ -98,11 +98,7 @@ export function NodeMetrics({
           </Button>
         </div>
       </div>
-      {error ? (
-        <p className="node-runtime-error" role="alert">
-          {message(error)}
-        </p>
-      ) : null}
+      {error ? <RequestError error={message(error)} /> : null}
       <div className="node-runtime-values">
         <ResourceMetric
           label="CPU"

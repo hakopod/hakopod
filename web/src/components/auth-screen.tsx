@@ -13,7 +13,7 @@ import { Field } from './ui/field'
 import { PasswordField } from './ui/password-field'
 import { Icon } from './icons'
 import { Button } from './ui/button'
-import { ErrorState, Loading } from './shared'
+import { ErrorState, Loading, RequestError } from './shared'
 
 function authLocation() {
   if (typeof window === 'undefined') return { mode: 'login', token: '' }
@@ -312,9 +312,9 @@ export function AuthScreen({
               ) : (
                 <>
                   {register && !setup && !status.data?.signup_enabled ? (
-                    <p className="inline-error" role="alert">
-                      Registration is closed. Use an invitation from your administrator.
-                    </p>
+                    <RequestError
+                      error={'Registration is closed. Use an invitation from your administrator.'}
+                    />
                   ) : null}
                   {(forgot || (register && !setup)) && !status.data?.email_delivery && (
                     <p className="field-help">
@@ -506,11 +506,7 @@ export function AuthScreen({
                         autoFocus
                       />
                     )}
-                    {error && (
-                      <div className="inline-error" role="alert">
-                        {error}
-                      </div>
-                    )}
+                    {error && <RequestError error={error} />}
                     <Button
                       variant="primary"
                       className="full-width"
@@ -548,9 +544,9 @@ export function AuthScreen({
                     </Button>
                   </form>
                   {(verify || reset) && !linkToken && (
-                    <p role="alert" className="inline-error">
-                      This link is missing its token. Open the full link from your email.
-                    </p>
+                    <RequestError
+                      error={'This link is missing its token. Open the full link from your email.'}
+                    />
                   )}
                   {!setup && !inviteToken && !providerMFA && (
                     <div className="hako-auth-links">

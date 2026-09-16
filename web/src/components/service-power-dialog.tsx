@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -77,11 +78,7 @@ export function ServicePowerDialog({
             : 'Scale this service to zero and suspend autoscaling. Configuration, domains, volumes and the saved replica count are retained. Dependent services may become unavailable.'
       }
     >
-      {error && (
-        <p role="alert" className="inline-error p-4">
-          {error}
-        </p>
-      )}
+      {error && <RequestError error={error} />}
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>
           Cancel

@@ -8,7 +8,7 @@ import { connectVirtualNetwork, type VirtualNetworkDetail } from '../lib/virtual
 import { DiffTable } from './deploy-dialog'
 import { FormHint, FormPage, FormSection } from './form-page'
 import { Icon } from './icons'
-import { ErrorState, Loading, Note } from './shared'
+import { ErrorState, Loading, Note, RequestError } from './shared'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -318,11 +318,7 @@ export function VirtualNetworkConnect({
             )}
           </FormSection>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">

@@ -24,7 +24,7 @@ import { fieldError } from '../lib/form-errors'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 import { ServiceIcon } from './service-icon'
 
 type RuntimeDraft = { command: string; args: string; variables: EnvironmentRow[] }
@@ -534,7 +534,7 @@ export function DeploymentForm({
                   </Note>
                 )}
                 {limitIssues.length > 0 && (
-                  <div role="alert" className="inline-error">
+                  <div role="alert" className="field-error">
                     <p>
                       This configuration exceeds hosted Free compute. Edit the settings or connect
                       your own server. No values have been changed.
@@ -799,11 +799,7 @@ export function DeploymentForm({
             )}
           </fieldset>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">

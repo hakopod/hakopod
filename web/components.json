@@ -14,8 +14,8 @@
     "@hatch": "https://hatch.hakopod.com/r/v1.0.0/{name}.json"
   },
   "aliases": {
-    "components": "./src/components",
-    "utils": "./src/lib/utils",
-    "ui": "./src/components/ui"
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui"
   }
 }

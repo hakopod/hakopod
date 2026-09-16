@@ -26,7 +26,16 @@ import { Button } from '../components/ui/button'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { ServiceImageIcon } from '../components/service-image-icon'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import {
+  HeadingHelp,
+  Copy,
+  Empty,
+  ErrorState,
+  Loading,
+  Note,
+  Status,
+  RequestError,
+} from '../components/shared'
 import { Logs } from '../components/logs'
 import { TOMLCode } from '../components/toml-code'
 const ServiceDetail = lazy(() =>
@@ -713,11 +722,7 @@ function DeploymentHistory({ application }: { application: Application }) {
           </div>
         </div>
       </div>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       {!deployments.length ? (
         <Empty
           icon="branch"

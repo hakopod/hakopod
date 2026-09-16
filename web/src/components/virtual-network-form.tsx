@@ -12,7 +12,7 @@ import {
 } from '../lib/virtual-networks'
 import { FormHint, FormPage, FormSection } from './form-page'
 import { Icon } from './icons'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 import { TOMLCode } from './toml-code'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -452,11 +452,7 @@ export function VirtualNetworkForm({
           </div>
         )}
         {baseNotice && !baseStale && <Note>{baseNotice}</Note>}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">

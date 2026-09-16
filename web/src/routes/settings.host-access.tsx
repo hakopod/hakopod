@@ -8,7 +8,7 @@ import { message, timestamp } from '../lib/api'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { Empty, ErrorState, Loading, Note } from '../components/shared'
+import { Empty, ErrorState, Loading, Note, RequestError } from '../components/shared'
 import type { components } from '../lib/api.generated'
 export const Route = createFileRoute('/settings/host-access')({ component: HostAccess })
 function HostAccess() {
@@ -198,11 +198,7 @@ function HostAccess() {
             <Note>No delegated host permissions. The super admin retains owner authority.</Note>
           )}
         </FormSection>
-        {error && !revoke && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && !revoke && <RequestError error={error} />}
       </div>
       <Dialog
         open={Boolean(revoke)}
@@ -223,11 +219,7 @@ function HostAccess() {
               aria-label="Confirm account ID"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>

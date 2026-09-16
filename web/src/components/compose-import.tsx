@@ -10,7 +10,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { fieldError } from '../lib/form-errors'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 
 export type ComposeDraft = components['schemas']['ComposeImport']
 
@@ -176,11 +176,7 @@ export function ComposeImport({
         other unsupported options require explicit changes. Published ports become private until you
         configure HTTP or a provisioned TCP listener.
       </p>
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <RequestError error={error} />}
       <div>
         <Button disabled={busy || !yaml.trim()} onClick={() => void convert()} variant="primary">
           {busy ? 'Converting…' : 'Generate config.toml'}

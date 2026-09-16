@@ -13,41 +13,47 @@
   --error-surface: color-mix(in srgb, #fff1f2 50%, var(--background));
   --error-border: #fda4af;
 }
-:where([role='alert']):not(.field-error, .field-help.error),
-.hako-error-state,
-.inline-error,
-.error-state,
-.alarm-save-error,
-.node-runtime-error,
-.hako-session-error,
-.deployment-failure {
-  @apply min-w-0 rounded-sm border px-4 py-3 text-sm leading-relaxed;
+/* Only notification components receive chrome. ARIA live regions must remain
+   layout-free; role=alert is not a visual styling hook. */
+.hako-toast-viewport {
+  @apply pointer-events-none fixed right-4 z-[200] flex w-[min(440px,calc(100%-32px))] flex-col gap-2;
+  bottom: calc(16px + var(--toast-footer-space, 0px));
+  max-height: calc(100dvh - 32px - var(--toast-footer-space, 0px));
+}
+:where([role='dialog'], [role='alertdialog']) > .hako-toast-viewport {
+  @apply absolute;
+  max-height: calc(100% - 32px - var(--toast-footer-space, 0px));
+}
+.hako-error-toast {
+  @apply pointer-events-auto min-h-0 min-w-0 overflow-auto rounded-sm border text-sm shadow-lg;
   border-color: var(--error-border);
   border-left: 3px solid var(--error-accent);
-  background: var(--error-surface);
+  background: var(--card);
   color: var(--error-text);
   overflow-wrap: anywhere;
 }
-.hako-error-state {
-  @apply mb-4 grid items-start gap-3;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.hako-error-toast .toast {
+  @apply static m-0 max-w-none items-start gap-3 rounded-none border-0 bg-transparent px-3 py-3 shadow-none;
+  color: inherit;
 }
-.hako-error-state :is(h2, p, code),
-.deployment-failure :is(strong, p),
-.hako-error-state > svg,
-[role='alert'] > .muted-text {
-  color: var(--error-text);
+.hako-error-toast .toast > svg {
+  @apply mt-0.5 size-4 shrink-0;
+  color: var(--error-accent);
 }
-.hako-error-state h2 {
-  @apply mb-1 text-sm font-medium;
+.hako-error-toast .toast > span {
+  @apply min-w-0 flex-1 overflow-y-auto;
+  max-height: min(160px, 20dvh);
 }
-.hako-error-state p {
-  @apply text-sm;
+.hako-error-toast .toast > button {
+  @apply shrink-0;
 }
-.hako-error-state > svg {
-  @apply mt-0.5 size-4;
+.hako-toast-actions {
+  @apply flex flex-wrap items-center gap-2 px-3 pb-3;
 }
-.hako-error-state summary {
+.hako-toast-actions:empty {
+  display: none;
+}
+.hako-toast-actions summary {
   @apply cursor-pointer;
 }
 .field-error,
@@ -63,12 +69,4 @@
 .input-wrap > :is(input, textarea)[aria-invalid='true'],
 .input-wrap:has(> :is(input, textarea)[aria-invalid='true']) {
   border-color: var(--error-accent);
-}
-@variant max-sm {
-  .hako-error-state {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-  .hako-error-state > .button {
-    @apply col-start-2 justify-self-start;
-  }
 }

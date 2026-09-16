@@ -14,7 +14,16 @@ import { useActiveSection } from '../lib/use-active-section'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import {
+  HeadingHelp,
+  Copy,
+  Empty,
+  ErrorState,
+  Loading,
+  Note,
+  Status,
+  RequestError,
+} from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
 
 type Build = components['schemas']['BuildConfig']
@@ -131,11 +140,7 @@ function BuildDetail() {
           </div>
         )}
       </header>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Source build sections">
           <Tabs.Trigger className="tab-trigger" value="runs">
@@ -410,11 +415,7 @@ function BuildDetail() {
           {!(scope.identity.admin || scope.identity.can_manage_git) && (
             <Note>A repository manager must install this reviewed workflow.</Note>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setPreview(null)}>
@@ -517,11 +518,7 @@ function RunDialog({
             verifies the produced image digest. This action uses{' '}
             {build.provider === 'gitlab' ? 'GitLab' : 'GitHub'} runner capacity.
           </Note>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
@@ -756,11 +753,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
             </Button>
           )}
       </div>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       <Dialog
         open={deploy}
         onOpenChange={(open) => {
@@ -805,11 +798,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
               <DiffTable changes={deploymentPlan.changes} />
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button
@@ -866,13 +855,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
         title="Cancel this build?"
         description={`Request cancellation from ${build.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'}. A completed image or accepted deployment is not removed.`}
       >
-        <div className="dialog-body">
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
-        </div>
+        <div className="dialog-body">{error && <RequestError error={error} />}</div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setCancel(false)}>
             Keep building

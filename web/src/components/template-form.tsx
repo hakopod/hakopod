@@ -9,7 +9,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
-import { ErrorState, Note } from './shared'
+import { ErrorState, Note, RequestError } from './shared'
 import { DiffTable } from './deploy-dialog'
 import { TemplateSecretField } from './template-secret-field'
 import { TOMLCode } from './toml-code'
@@ -530,11 +530,7 @@ export default function TemplateForm({
             )}
           </FormSection>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="form-footer">
         <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>

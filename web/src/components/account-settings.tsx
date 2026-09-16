@@ -9,7 +9,7 @@ import { passkeyCredential } from '../lib/webauthn'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, Status, RequestError } from './shared'
 
 export default function AccountSettings() {
   const { identity } = useScope()
@@ -218,11 +218,7 @@ export default function AccountSettings() {
               aria-label="Confirm session ID"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>
@@ -456,11 +452,7 @@ function SecurityAction({
               )}
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>

@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useId, useRef, useState } from 'react'
 import { Field } from './ui/field'
 import {
@@ -279,11 +280,7 @@ export default function ProjectWizard({
                 </div>
               </dl>
             )}
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer hako-project-footer">
             <Button

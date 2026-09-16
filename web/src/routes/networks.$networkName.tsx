@@ -6,7 +6,15 @@ import { APIError, message, relative } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { downloadNetworkTOML } from '../lib/virtual-networks'
 import { Icon } from '../components/icons'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+import {
+  HeadingHelp,
+  Copy,
+  ErrorState,
+  Loading,
+  Note,
+  PageHeader,
+  RequestError,
+} from '../components/shared'
 import { TOMLCode } from '../components/toml-code'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
 import { Button } from '../components/ui/button'
@@ -298,11 +306,7 @@ function NetworkDetail() {
               </Button>
             </div>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setDeleteOpen(false)}>

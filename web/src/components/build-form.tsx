@@ -31,7 +31,7 @@ import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { FormPage, FormHint, FormSection } from './form-page'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 
 type Build = components['schemas']['BuildConfig']
 export default function BuildForm({
@@ -49,7 +49,6 @@ export default function BuildForm({
   const [furthest, setFurthest] = useState(0)
   const stepHeading = useRef<HTMLHeadingElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
-  const errorBanner = useRef<HTMLDivElement>(null)
   const showStep = (next: number) => {
     setStep(next)
     setFurthest((previous) => Math.max(previous, next))
@@ -159,7 +158,7 @@ export default function BuildForm({
           details = details.parentElement?.closest('details') || null
         }
         invalid.focus()
-      } else errorBanner.current?.focus()
+      }
     } else if (!build) stepHeading.current?.focus()
   }, [step, build, error])
   const fail = (cause: unknown) => {
@@ -346,11 +345,7 @@ export default function BuildForm({
               {buildSteps[step]}
             </h2>
           )}
-          {error && (
-            <div ref={errorBanner} tabIndex={-1} className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
           <fieldset
             disabled={busy || (!build && step !== 0)}
             className={build || step === 0 ? 'grid min-w-0 gap-4' : 'hidden'}
@@ -543,11 +538,7 @@ export default function BuildForm({
                   recipe below.
                 </p>
               )}
-              {detectionError && (
-                <p role="alert" className="inline-error">
-                  {detectionError}
-                </p>
-              )}
+              {detectionError && <RequestError error={detectionError} />}
               {suggestion && suggestion.source === sourceFingerprint && (
                 <div className="grid gap-2">
                   <p className="text-sm">

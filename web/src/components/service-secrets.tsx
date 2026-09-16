@@ -10,7 +10,7 @@ import { SecretForm } from './application-secrets'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
-import { Copy, Empty, ErrorState, Note } from './shared'
+import { Copy, Empty, ErrorState, Note, RequestError } from './shared'
 import { Icon } from './icons'
 import { secretReference } from '../lib/secret-reference'
 
@@ -218,11 +218,7 @@ export function ServiceSecrets({
                 Lowercase letters, numbers and hyphens; up to 40 characters.
               </span>
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
             <Button type="submit" variant="primary" disabled={checking || !name}>
               {checking ? 'Checking…' : 'Continue to value'}
             </Button>

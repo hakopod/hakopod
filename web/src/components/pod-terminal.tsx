@@ -12,7 +12,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope, canOpenHostTerminal } from '../lib/scope'
 import { Button } from './ui/button'
 import { Icon } from './icons'
-import { Empty, Note } from './shared'
+import { Empty, Note, RequestError } from './shared'
 const presets = {
   sh: ['/bin/sh'],
   bash: ['/bin/bash'],
@@ -465,11 +465,7 @@ export default function PodTerminal({
           </Button>
         )}
       </div>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       {runtime.error && (
         <Note>Pod discovery is unavailable. Refresh the service before connecting.</Note>
       )}

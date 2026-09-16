@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useRef, useState, type ComponentProps } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
@@ -109,11 +110,7 @@ export function RenameName({
               This changes the displayed name. Resource IDs, configuration, domains and stored data
               stay the same.
             </p>
-            {error && (
-              <p role="alert" className="inline-error">
-                {error}
-              </p>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button disabled={busy} onClick={close}>

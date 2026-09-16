@@ -11,7 +11,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Empty, ErrorState, Loading, Note, Status } from './shared'
+import { Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
 
 type Registry = components['schemas']['RegistryInfo']
 export default function RegistrySettings() {
@@ -134,11 +134,7 @@ export default function RegistrySettings() {
           ))}
         </div>
       )}
-      {error && !remove && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && !remove && <RequestError error={error} />}
       <Note>
         Credentials are write-only. Select the saved name when staging a service, or set{' '}
         <code>registry_credential</code> in TOML. Running containers continue after credential
@@ -163,11 +159,7 @@ export default function RegistrySettings() {
               aria-label="Confirm registry credential name"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRemove(null)}>
@@ -336,11 +328,7 @@ export function RegistryForm({
               />
             </label>
           </FormSection>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="form-footer">
           <Button type="button" disabled={busy} onClick={onClose}>

@@ -18,7 +18,7 @@ import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { SelectField } from './ui/select'
 import { Dialog } from './ui/dialog'
-import { Copy, Empty, ErrorState, HeadingHelp, Loading, Note, Status } from './shared'
+import { Copy, Empty, ErrorState, HeadingHelp, Loading, Note, Status, RequestError } from './shared'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { InstallationReviewRows, useInstallationFormFocus } from './installation-form-fields'
 import { ServiceIcon } from './service-icon'
@@ -710,11 +710,7 @@ function GitConnectionForm({
               )}
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
           {conflict && (
             <Note>
               The connection changed. Your draft is kept. Return to settings and reopen it to load
@@ -784,11 +780,7 @@ function GitConnectionForm({
                 autoComplete="off"
               />
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setDeleting(false)}>

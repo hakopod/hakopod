@@ -14,7 +14,15 @@ import { RuntimeNotice } from '../components/runtime-notice'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from '../components/shared'
+import {
+  HeadingHelp,
+  Copy,
+  ErrorState,
+  Loading,
+  Note,
+  Status,
+  RequestError,
+} from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
 
 export const Route = createFileRoute('/deployments/$deploymentId')({ component: DeploymentDetail })
@@ -253,15 +261,7 @@ function DeploymentDetail() {
           Current application runtime is unavailable. The deployment outcome is a recorded result.
         </Note>
       )}
-      {release.error && (
-        <div className="deployment-failure" role="alert">
-          <Icon name="alert" size={21} />
-          <div>
-            <strong>Deployment needs attention</strong>
-            <p>{release.error}</p>
-          </div>
-        </div>
-      )}
+      {release.error && <ErrorState title="Deployment needs attention" error={release.error} />}
       {release.cancel_requested && (
         <Note>Cancellation requested. Waiting for the reconciler to reach a safe boundary.</Note>
       )}
@@ -288,11 +288,7 @@ function DeploymentDetail() {
               </time>
             </Link>
           ))}
-          {application.error && (
-            <p className="inline-error" role="alert">
-              Application history is unavailable.
-            </p>
-          )}
+          {application.error && <RequestError error={'Application history is unavailable.'} />}
         </aside>
         <div className="ops-run-detail">
           <Pipeline stages={stages} active={stage} onStageChange={setStage} />
@@ -496,11 +492,7 @@ function DeploymentDetail() {
             Resources already applied may remain. Cancellation does not tear down workloads or imply
             a rollback. The recorded deployment result reports what happened.
           </Note>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setCancelOpen(false)}>
