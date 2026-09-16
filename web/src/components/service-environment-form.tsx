@@ -18,7 +18,7 @@ import {
 import { FormHint, FormPage, FormSection } from './form-page'
 import { DiffTable } from './deploy-dialog'
 import { Icon } from './icons'
-import { Note } from './shared'
+import { Note, RequestError } from './shared'
 import { Button } from './ui/button'
 import { EnvironmentFields } from './runtime-settings-fields'
 
@@ -384,11 +384,7 @@ export function ServiceEnvironmentForm({
             )}
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">

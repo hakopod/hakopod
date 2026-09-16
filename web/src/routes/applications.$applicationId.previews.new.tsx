@@ -12,7 +12,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Textarea } from '../components/ui/textarea'
 import { SelectField } from '../components/ui/select'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { Empty, ErrorState, Loading, RequestError } from '../components/shared'
 
 export const Route = createFileRoute('/applications/$applicationId/previews/new')({
   component: NewPreview,
@@ -251,11 +251,7 @@ export function PreviewForm({ application }: { application: Application }) {
               Refresh parent revision and review draft
             </Button>
           )}
-          {error && (
-            <p role="alert" className="inline-error">
-              {error}
-            </p>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="form-footer">
           <Button

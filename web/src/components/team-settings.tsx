@@ -14,7 +14,7 @@ import { useScope } from '../lib/scope'
 import type { components } from '../lib/api.generated'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 
 export default function TeamSettings() {
   const scope = useScope()
@@ -392,11 +392,7 @@ export default function TeamSettings() {
       ) : (
         <Note>Choose a project to manage access.</Note>
       )}
-      {error && !removeTeam && !adding && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && !removeTeam && !adding && <RequestError error={error} />}
       <Dialog
         open={Boolean(usernameMember)}
         onOpenChange={(open) => {
@@ -444,11 +440,7 @@ export default function TeamSettings() {
               2–30 lowercase letters, digits, underscores, or hyphens. Start with a letter.
               Usernames are unique within this team.
             </p>
-            {usernameError && (
-              <div className="inline-error" role="alert">
-                {usernameError}
-              </div>
-            )}
+            {usernameError && <RequestError error={usernameError} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setUsernameMember(null)}>
@@ -482,11 +474,7 @@ export default function TeamSettings() {
               aria-label="Confirm team name"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRemoveTeam(null)}>
@@ -562,11 +550,7 @@ export default function TeamSettings() {
                 required
               />
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setAdding(false)}>
@@ -662,11 +646,7 @@ function RoleEditor({
             </Button>
           </>
         )}
-        {error && !confirmOpen && (
-          <span className="inline-error" role="alert">
-            {error}
-          </span>
-        )}
+        {error && !confirmOpen && <RequestError error={error} />}
       </form>
       <Dialog
         open={confirmOpen}
@@ -687,11 +667,7 @@ function RoleEditor({
               aria-label="Confirm member name"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button variant="ghost" disabled={busy} onClick={() => setConfirmOpen(false)}>
@@ -832,11 +808,7 @@ function InviteDialog({
               )}
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
@@ -964,11 +936,7 @@ export function InstallationUsers() {
               />
             </label>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setChange(null)}>

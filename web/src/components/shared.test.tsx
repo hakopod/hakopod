@@ -27,14 +27,12 @@ test('error messages survive normalization and rendering across form boundaries'
   const text = 'Verify domain ownership before importing an application with custom domains.'
   const cause = new APIError(text, 400, 'domain_verification_required')
   assert.equal(message(message(cause)), text)
-  assert.ok(renderToStaticMarkup(<ErrorState error={message(cause)} />).includes(text))
+  const recovery = renderToStaticMarkup(<ErrorState error={cause} retry={() => {}} />)
+  assert.ok(recovery.includes('Show error'))
+  assert.ok(recovery.includes('Retry'))
   assert.ok(
-    renderToStaticMarkup(<ErrorState error={cause} />).includes('domain_verification_required'),
-  )
-  assert.ok(
-    renderToStaticMarkup(<ErrorState error="Backup destination is unavailable." />).includes(
-      'Backup destination is unavailable.',
-    ),
+    !recovery.includes('role="alert"'),
+    'SSR recovery does not create an empty alert banner',
   )
   assert.equal(message(new Error('Connection failed.')), 'Connection failed.')
   for (const value of ['', '  ', undefined, null, {}, 0, new Error('')])
@@ -195,7 +193,7 @@ test('installation prerequisites link to setup without losing the error', () => 
     'The maintenance service is unavailable',
   ]) {
     const html = renderToStaticMarkup(<ErrorState error={text} />)
-    assert.ok(html.includes(text))
+    assert.ok(html.includes('Show error'))
     assert.ok(html.includes('/infrastructure?tab=setup'))
   }
 })

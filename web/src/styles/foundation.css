@@ -2,6 +2,10 @@
 :root:not(.light),
 .dark {
   --background: #000;
+  --card: #141414;
+}
+.light {
+  --card: #fafafa;
 }
 html[data-edition='cloud']:not(.light) {
   --background: #0f0004;

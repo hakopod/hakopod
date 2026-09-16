@@ -10,7 +10,7 @@ import { useScope } from '../lib/scope'
 import { applicationRuntimeHealth } from '../lib/runtime-health'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { Loading, Status } from './shared'
+import { Loading, Status, RequestError } from './shared'
 
 type Destination = {
   id: string
@@ -225,9 +225,9 @@ export default function CommandPalette({
         )}
         {apps.isFetching && <Loading rows={2} />}
         {apps.error && (
-          <p className="hako-command-notice inline-error" role="alert">
-            Application search is unavailable. You can still open a page from navigation.
-          </p>
+          <RequestError
+            error={'Application search is unavailable. You can still open a page from navigation.'}
+          />
         )}
         <p className="hako-command-help">
           <span>↑ ↓ to navigate</span>

@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { fieldError } from '../lib/form-errors'
 import { useRef, useState } from 'react'
 import { importDotenv, MAX_ENV_FILE_BYTES } from '../lib/dotenv'
@@ -32,11 +33,7 @@ export function EnvironmentFields({
   return (
     <div className="grid min-w-0 gap-3">
       <strong className="text-sm">Environment variables</strong>
-      {error && (
-        <p role="alert" className="inline-error">
-          {error}
-        </p>
-      )}
+      {error && <RequestError error={error} />}
       {rows.map((row, index) => (
         <div
           className="grid min-w-0 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"

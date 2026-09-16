@@ -23,6 +23,7 @@ import {
   ErrorState,
   Loading,
   Note,
+  RequestError,
 } from '../components/shared'
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
@@ -312,11 +313,7 @@ function Keys() {
               onChange={(event) => setConfirmName(event.target.value)}
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>
@@ -550,11 +547,7 @@ function CreateKey({
               </Note>
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           {created ? (

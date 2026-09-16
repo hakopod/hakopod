@@ -8,7 +8,7 @@ import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { SelectField } from '../components/ui/select'
-import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
+import { Empty, ErrorState, Loading, PageHeader, RequestError } from '../components/shared'
 
 export const Route = createFileRoute('/alarms')({
   validateSearch: alarmSearch,
@@ -238,11 +238,7 @@ function AlarmRow({ alarm }: { alarm: Alarm }) {
               : 'This rule was resolved without a healthy observation. See the resolution above.'}
           </p>
         )}
-        {error && (
-          <p role="alert" className="error-message">
-            {error}
-          </p>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="alarm-row-actions">
         <Button asChild size="sm" variant="ghost">

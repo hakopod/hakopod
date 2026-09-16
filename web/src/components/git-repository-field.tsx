@@ -1,7 +1,7 @@
+import { RequestError } from './shared'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
-import { message } from '../lib/api'
 import { useGitConnections, type GitProvider } from '../lib/git-connections'
 import { useScope } from '../lib/scope'
 import { SelectField } from './ui/select'
@@ -86,9 +86,9 @@ function RepositoryField({
             ]}
           />
           {query.error && (
-            <div role="alert" className="inline-error">
-              {message(query.error)} <Button onClick={() => void query.refetch()}>Retry</Button>
-            </div>
+            <RequestError error={query.error}>
+              <Button onClick={() => void query.refetch()}>Retry</Button>
+            </RequestError>
           )}
           {query.data?.items.length === 0 && (
             <p className="field-help">

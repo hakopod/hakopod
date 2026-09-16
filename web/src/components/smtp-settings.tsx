@@ -20,7 +20,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Card } from './ui/surfaces'
-import { ErrorState, HeadingHelp, Loading, Note } from './shared'
+import { ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
 
 function useSMTP() {
   return useQuery({
@@ -111,11 +111,7 @@ function SMTPOverview() {
             {sent}
           </p>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </Card>
     </div>
   )
@@ -313,11 +309,7 @@ function SMTPForm({ current }: { current: SMTPConfiguration }) {
             </FormSection>
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
         {conflict && (
           <Note>
             Another administrator changed email settings. Your draft is kept. Return to settings and

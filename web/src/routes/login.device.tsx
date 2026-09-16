@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import { Button } from '../components/ui/button'
-import { Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+import { Empty, ErrorState, Loading, Note, PageHeader, RequestError } from '../components/shared'
 
 export const Route = createFileRoute('/login/device')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -87,11 +87,7 @@ function DeviceConsent() {
               </div>
             </dl>
             <Note>Approve only when this code matches the terminal where you started sign-in.</Note>
-            {error && (
-              <div role="alert" className="inline-error">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
             <div className="toolbar-actions">
               <Button disabled={busy} onClick={() => void decide(false)}>
                 Deny

@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useState } from 'react'
 import { Field } from './ui/field'
 import type { Project } from '../lib/types'
@@ -100,11 +101,7 @@ export default function ProjectEnvironment({
           {exists && (
             <p className="field-help">This environment already exists. Continue to switch to it.</p>
           )}
-          {error && (
-            <p role="alert" className="inline-error">
-              {error}
-            </p>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>

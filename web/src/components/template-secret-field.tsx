@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useState } from 'react'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
@@ -150,11 +151,7 @@ export function TemplateSecretField({
           <span className="field-help">Generated values are saved only when you choose Save.</span>
         </div>
       )}
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       <div className="inline-actions">
         <Button type="submit" variant="primary" disabled={busy || !value}>
           {busy ? 'Saving…' : replacing ? 'Replace secret' : 'Save secret'}

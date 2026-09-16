@@ -1,3 +1,4 @@
+import { RequestError } from './shared'
 import { useState, type ComponentProps } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -132,7 +133,7 @@ export function DeleteResource({
           <div className="dialog-body field-stack">
             {!empty && reviewed && (
               <div className="field-stack">
-                <p className="inline-error" role="status">
+                <p className="field-help" role="status">
                   Remove all services through a reviewed deployment before deleting this
                   application.
                 </p>
@@ -166,11 +167,7 @@ export function DeleteResource({
                 disabled={busy}
               />
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={close}>

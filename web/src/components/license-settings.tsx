@@ -10,7 +10,7 @@ import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { HeadingHelp, Copy, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, RequestError } from './shared'
 export function FeatureLock({
   title = 'This capability requires Hakopod Pro',
 }: {
@@ -160,11 +160,7 @@ export default function LicenseSettings() {
           )}
         </Card>
       </div>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       <div className="section-toolbar">
         <div>
           <div className="hako-section-heading-title">

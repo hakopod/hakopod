@@ -9,7 +9,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Empty, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
 
 export function ServiceTLS({
   application,
@@ -281,11 +281,7 @@ function TLSForm({
             )}
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={() => (review ? setReview(false) : onClose())}>
@@ -512,11 +508,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
               ? 'This creates a production ACME issuer. Use valid public DNS and working HTTP challenge routing.'
               : 'Staging certificates validate the flow but are not trusted by browsers.'}
           </Note>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button

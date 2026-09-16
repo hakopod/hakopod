@@ -9,7 +9,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Empty, ErrorState, Loading, Note } from './shared'
+import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
 
 export default function ApplicationSecrets({
   project,
@@ -147,11 +147,7 @@ export default function ApplicationSecrets({
               aria-label="Confirm secret name"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRemove('')}>
@@ -248,11 +244,7 @@ export function SecretForm({
           required
         />
       </label>
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       <Button type="submit" variant="primary" disabled={busy || !name || !value}>
         {busy ? 'Saving…' : 'Save secret'}
       </Button>

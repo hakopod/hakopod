@@ -6,7 +6,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, ErrorState, Loading, Note, Status, RequestError } from './shared'
 
 type ProxyStatus = components['schemas']['ProxyStatus']
 export default function ProxySettings() {
@@ -55,11 +55,7 @@ export default function ProxySettings() {
                 Database revision {proxy.data.revision} · Kubernetes resource version{' '}
                 {proxy.data.observed.resource_version}
               </p>
-              {proxy.data.change.error && (
-                <div className="inline-error" role="alert">
-                  {proxy.data.change.error}
-                </div>
-              )}
+              {proxy.data.change.error && <RequestError error={proxy.data.change.error} />}
               {proxy.data.drift && (
                 <Note>
                   Observed configuration differs from the last applied dashboard change. Review the
@@ -201,11 +197,7 @@ function ProxyEditor({
             </details>
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={() => (review ? setReview(null) : onClose())}>

@@ -1,3 +1,4 @@
+import { RequestError } from '../components/shared'
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -239,8 +240,7 @@ function SettingsEditor({
         </p>
       </FormSection>
       {error && (
-        <div role="alert" className="alarm-save-error">
-          <p>{error}</p>
+        <RequestError error={error}>
           <p>
             Your changes are still here. If the settings changed elsewhere, reload them before
             saving again.
@@ -260,7 +260,7 @@ function SettingsEditor({
           >
             Discard draft and reload
           </Button>
-        </div>
+        </RequestError>
       )}
       {review && (
         <FormSection title="Review changes">

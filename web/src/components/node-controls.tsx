@@ -7,7 +7,7 @@ import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, ErrorState, Loading, Note, Status, RequestError } from './shared'
 
 export function NodeAction({
   node,
@@ -122,11 +122,7 @@ export function NodeAction({
             )}
           </>
         )}
-        {error && (
-          <div className="inline-error" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>
@@ -307,11 +303,7 @@ export default function NodeEnrollments() {
               aria-label="Confirm enrollment ID"
             />
           </label>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke('')}>
@@ -425,11 +417,7 @@ function EnrollmentForm({ onClose, onCreated }: { onClose: () => void; onCreated
               </Note>
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>

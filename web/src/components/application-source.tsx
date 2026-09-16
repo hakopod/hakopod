@@ -12,7 +12,7 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { DiffTable } from './deploy-dialog'
 
 import { FormPage, FormHint, FormSection } from './form-page'
@@ -153,11 +153,7 @@ export default function ApplicationSource({ application }: { application: Applic
           description="Connect a repository containing hakopod.toml. Its services must already reference container images."
         />
       )}
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
+      {error && <RequestError error={error} />}
       {scope.can('deployments:write') && (
         <section className="panel service-summary-panel">
           <div className="section-toolbar">
@@ -205,11 +201,7 @@ export default function ApplicationSource({ application }: { application: Applic
               <DiffTable changes={plan.changes} />
             </>
           )}
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setPlan(null)}>
@@ -397,11 +389,7 @@ export function SourceForm({
               </Note>
             )}
           </FormSection>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="form-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
@@ -588,11 +576,7 @@ export function GitConnectionSettings({ provider }: { provider: 'github' | 'gitl
                 autoComplete="off"
               />
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
             {saved && <Note>{label} connection saved.</Note>}
             {created && (
               <>

@@ -26,7 +26,7 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status } from './shared'
+import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
 import { Logs } from './logs'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 
@@ -422,11 +422,7 @@ export function ServiceDetail({
                   </Button>
                 </div>
               </div>
-              {runtime.error && (
-                <p className="node-runtime-error" role="alert">
-                  {message(runtime.error)}
-                </p>
-              )}
+              {runtime.error && <RequestError error={message(runtime.error)} />}
               <div className="node-runtime-values">
                 <ResourceMetric
                   label="CPU"
@@ -932,11 +928,7 @@ export function ServiceDetail({
             Current revision: r{application.revision}. Replacement pods must pass readiness before
             they receive traffic.
           </Note>
-          {error && (
-            <div className="inline-error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRestartOpen(false)}>

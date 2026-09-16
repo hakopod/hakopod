@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
   for (const [name, value] of Object.entries(settings))
     if (!process.env[name]) process.env[name] = value
   return {
+    resolve: { alias: { '@': new URL('./src', import.meta.url).pathname } },
     plugins: [tailwindcss(), tanstackStart(), react()],
     // The local design system exports TSX source; production Node runs only JS.
     ssr: { noExternal: ['@hakopod/hatch-ui'] },

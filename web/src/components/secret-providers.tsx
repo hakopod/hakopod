@@ -10,7 +10,7 @@ import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { SecretProviderIcon } from './secret-provider-icon'
-import { Empty, ErrorState, HeadingHelp, Loading, Note, PageHeader } from './shared'
+import { Empty, ErrorState, HeadingHelp, Loading, Note, PageHeader, RequestError } from './shared'
 
 export function SecretProviders({
   saved,
@@ -178,11 +178,7 @@ export function SecretProviders({
                 autoComplete="off"
               />
             </label>
-            {error && (
-              <div className="inline-error" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setRemoving(null)}>

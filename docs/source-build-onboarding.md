@@ -9,7 +9,7 @@ New source builds use four steps in the shared self-hosted and Cloud dashboard:
 
 Back and step navigation retain the draft in memory, including unimported `.env` text. A browser reload or closing the page discards the unsaved draft; credentials are not persisted to browser storage. Existing build edits retain the full configuration form.
 
-Native constraints are checked before moving forward. Explicit API field paths return new builds to the appropriate step and focus the invalid control. Permission, network and capacity failures remain banners with the draft retained. Build APIs identify repository, branch, paths, port, size, architecture and framework fields; the UI recognizes the `invalid input:` wrapper without guessing from prose.
+Native constraints are checked before moving forward. Explicit API field paths return new builds to the appropriate step and focus the invalid control. Permission, network and capacity failures use toasts with the draft retained. Build APIs identify repository, branch, paths, port, size, architecture and framework fields; the UI recognizes the `invalid input:` wrapper without guessing from prose.
 
 Cloud's edition hook identifies hosted Free compute. Build, image and template forms explain the one-application limit and link to the existing application when its slot is occupied. Unsupported resource/architecture choices are labeled and disabled, adding services is capped at one, and replicas are limited to one. Preview and shared-network creation explain their BYO requirement. Stateless templates do not show a persistent-disk input. Imported or existing advanced configuration is kept verbatim and explained before review; the backend remains authoritative for all deployment paths.
 

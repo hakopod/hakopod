@@ -37,7 +37,7 @@ import { SelectField } from './ui/select'
 import { Tooltip } from './ui/surfaces'
 import { ParentBackLink } from './parent-navigation'
 import { Bot } from 'lucide-react'
-import { Copy, Empty, ErrorState, Loading, Note } from './shared'
+import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { AuthScreen } from './auth-screen'
 import { NotificationButton } from './notification-button'
 
@@ -98,11 +98,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <h1>Reconnect to Hakopod</h1>
         <p>The console couldn’t reach the management API.</p>
         <ErrorState error={identity.error} retry={() => void identity.refetch()} />
-        {resetError && (
-          <p className="hako-session-error" role="alert">
-            {resetError}
-          </p>
-        )}
+        {resetError && <RequestError error={resetError} />}
         <Button
           variant="outline"
           onClick={async () => {
@@ -584,11 +580,7 @@ function Workspace({
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="page-content hako-page-content">
-          {sessionError && (
-            <div className="hako-session-error" role="alert">
-              {sessionError}
-            </div>
-          )}
+          {sessionError && <RequestError error={sessionError} />}
           {scopedNavigation && projects.error && !overview && !projectPath && (
             <ErrorState error={projects.error} retry={() => void projects.refetch()} />
           )}

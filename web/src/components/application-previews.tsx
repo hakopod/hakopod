@@ -10,7 +10,7 @@ import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
-import { Empty, ErrorState, Loading, Status } from './shared'
+import { Empty, ErrorState, Loading, Status, RequestError } from './shared'
 
 type Preview = components['schemas']['Preview']
 export function ApplicationPreviews({ application }: { application: Application }) {
@@ -91,9 +91,7 @@ export function ApplicationPreviews({ application }: { application: Application 
                 </div>
               </dl>
               {preview.cleanup_error && (
-                <p role="status" className="inline-error">
-                  Cleanup will retry: {preview.cleanup_error}
-                </p>
+                <ErrorState title="Preview cleanup will retry" error={preview.cleanup_error} />
               )}
               <div className="ops-card-footer">
                 {preview.application_id && (
@@ -144,11 +142,7 @@ export function ApplicationPreviews({ application }: { application: Application 
               Type {deleting.name}
               <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} />
             </label>
-            {error && (
-              <p role="alert" className="inline-error">
-                {error}
-              </p>
-            )}
+            {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button disabled={busy} onClick={() => setDeleting(null)}>
