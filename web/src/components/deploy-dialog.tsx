@@ -19,6 +19,7 @@ import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { FormPage, FormHint } from './form-page'
 import { ComputeNotice } from './compute-notice'
+import { hostedFreeIssues } from '../lib/compute-limits'
 import { fieldError } from '../lib/form-errors'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -108,16 +109,19 @@ export function DeploymentForm({
       setMode(initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService])
+  const limitIssues = features.hostedFree ? hostedFreeIssues(spec) : []
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)
     for (const [name, service] of Object.entries(next.services)) {
       const draft = runtime[name]
       if (!draft) continue
-      const saved = await saveEnvironment(
-        draft.variables,
-        { project, environment, application: next.name },
-        service.secrets,
-      )
+      const saved = draft.variables.some((row) => row.name || row.value)
+        ? await saveEnvironment(
+            draft.variables,
+            { project, environment, application: next.name },
+            service.secrets,
+          )
+        : { env: {}, secrets: service.secrets }
       next.services[name] = {
         ...service,
         command: parseProcessCommand(draft.command),
@@ -190,6 +194,7 @@ export function DeploymentForm({
     setBusy(true)
     setError('')
     try {
+      if (mode === 'form' && limitIssues.length) throw new Error(limitIssues.join('\n'))
       const result = await unwrap(client.POST('/plan', { body: await payload() }))
       if (application && result.expected_revision !== application.revision)
         throw new Error(
@@ -292,7 +297,7 @@ export function DeploymentForm({
         </span>
       </div>
       <div className="form-body deploy-body">
-        <ComputeNotice />
+        <ComputeNotice creatingApplication={!application} />
         {serviceName && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
@@ -488,12 +493,13 @@ export function DeploymentForm({
                   <Input
                     placeholder="my-application"
                     value={spec.name}
+                    error={fieldError(error, 'name')}
                     disabled={Boolean(application)}
                     onChange={(event) =>
                       setSpec((previous) => ({ ...previous, name: event.target.value }))
                     }
                     pattern="[a-z][a-z0-9\-]*"
-                    maxLength={63}
+                    maxLength={40}
                   />
                 </label>
                 <label>
@@ -526,6 +532,19 @@ export function DeploymentForm({
                     Persistent volumes and backups are retained. Once deployment succeeds, you can
                     delete the empty application.
                   </Note>
+                )}
+                {limitIssues.length > 0 && (
+                  <div role="alert" className="inline-error">
+                    <p>
+                      This configuration exceeds hosted Free compute. Edit the settings or connect
+                      your own server. No values have been changed.
+                    </p>
+                    <ul>
+                      {limitIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
                 <div className="form-section-heading">
                   <span>Services</span>
@@ -562,6 +581,7 @@ export function DeploymentForm({
                         <Input
                           placeholder="nginx:1.29-alpine"
                           value={service.image}
+                          error={fieldError(error, `services.${name}.image`)}
                           onChange={(event) => updateService(name, { image: event.target.value })}
                         />
                       </label>
@@ -571,6 +591,7 @@ export function DeploymentForm({
                           disabled={busy}
                           label="Registry credential"
                           value={service.registry_credential || ''}
+                          error={fieldError(error, `services.${name}.registry_credential`)}
                           onValueChange={(value) =>
                             updateService(name, {
                               registry_credential: value || undefined,
@@ -634,6 +655,10 @@ export function DeploymentForm({
                             disabled={busy}
                             label="Size"
                             value={service.size || 'small'}
+                            error={fieldError(
+                              error || limitIssues.join('\n'),
+                              `services.${name}.size`,
+                            )}
                             onValueChange={(value) => updateService(name, { size: value })}
                             options={[
                               {
@@ -642,11 +667,17 @@ export function DeploymentForm({
                               },
                               {
                                 value: 'medium',
-                                label: 'Medium',
+                                label: features.hostedFree
+                                  ? 'Medium · Requires your own server'
+                                  : 'Medium',
+                                disabled: features.hostedFree,
                               },
                               {
                                 value: 'large',
-                                label: 'Large',
+                                label: features.hostedFree
+                                  ? 'Large · Requires your own server'
+                                  : 'Large',
+                                disabled: features.hostedFree,
                               },
                             ]}
                           />
@@ -656,8 +687,12 @@ export function DeploymentForm({
                           <Input
                             type="number"
                             min={1}
-                            max={20}
+                            max={features.hostedFree ? 1 : 20}
                             value={service.replicas ?? 1}
+                            error={fieldError(
+                              error || limitIssues.join('\n'),
+                              `services.${name}.replicas`,
+                            )}
                             disabled={Boolean(service.job)}
                             onChange={(event) =>
                               updateService(name, { replicas: Number(event.target.value) })
@@ -670,6 +705,8 @@ export function DeploymentForm({
                         disabled={busy}
                         command={(runtime[name] || runtimeDraft(service)).command}
                         args={(runtime[name] || runtimeDraft(service)).args}
+                        error={error}
+                        fieldPath={`services.${name}`}
                         onChange={(value) =>
                           setRuntime((previous) => ({
                             ...previous,
@@ -679,6 +716,7 @@ export function DeploymentForm({
                       />
                       <EnvironmentFields
                         label={name}
+                        error={fieldError(error, `services.${name}.env`)}
                         disabled={busy}
                         rows={(runtime[name] || runtimeDraft(service)).variables}
                         onChange={(variables) =>
@@ -718,7 +756,7 @@ export function DeploymentForm({
                   <Button
                     className="add-service-button"
                     variant="ghost"
-                    disabled={Object.keys(spec.services).length >= 20}
+                    disabled={Object.keys(spec.services).length >= (features.hostedFree ? 1 : 20)}
                     onClick={() => {
                       let name = 'api'
                       let n = 2
@@ -746,6 +784,12 @@ export function DeploymentForm({
                     <Icon name="plus" size={16} />
                     Add service
                   </Button>
+                )}
+                {features.hostedFree && (
+                  <p className="field-help">
+                    Hosted Free allows one small service with one replica, using an AMD64 image.
+                    More services and larger sizes require your own server.
+                  </p>
                 )}
                 <Note>
                   Private services discover each other by name, such as <code>http://api:8080</code>

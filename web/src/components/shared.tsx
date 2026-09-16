@@ -209,7 +209,7 @@ export function Note({ children }: { children: ReactNode }) {
   return (
     <div className="note hako-note">
       <Icon name="info" size={16} />
-      <div>{children}</div>
+      <div className="min-w-0 [overflow-wrap:anywhere]">{children}</div>
     </div>
   )
 }

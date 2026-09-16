@@ -1,3 +1,4 @@
+import { fieldError } from '../lib/form-errors'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { useState } from 'react'
@@ -37,7 +38,7 @@ export default function TemplateForm({
   const [storage, setStorage] = useState(template.id === 'vllm' ? 30 : 5)
   const [model, setModel] = useState('')
   const [revision, setRevision] = useState('')
-  const [architecture, setArchitecture] = useState('')
+  const [architecture, setArchitecture] = useState(features.hostedFree ? 'amd64' : '')
   const [siteURL, setSiteURL] = useState('')
   const [provider, setProvider] = useState('openai')
   const [providerURL, setProviderURL] = useState('')
@@ -236,7 +237,7 @@ export default function TemplateForm({
       description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
     >
       <div className="form-body auth-form">
-        <ComputeNotice />
+        <ComputeNotice creatingApplication />
         {plan ? (
           <>
             {!!plan.warnings.length && (
@@ -315,6 +316,7 @@ export default function TemplateForm({
               Application name
               <Input
                 value={name}
+                error={fieldError(error, 'name')}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Choose a name"
                 pattern="[a-z][a-z0-9-]*"
@@ -322,25 +324,30 @@ export default function TemplateForm({
                 required
               />
             </label>
-            <label>
-              Persistent storage per service (GiB)
-              <Input
-                type="number"
-                min={1}
-                max={200}
-                value={storage}
-                onChange={(e) => setStorage(Number(e.target.value))}
-              />
-            </label>
+            {template.workload_requirements?.includes('persistent_storage') && (
+              <label>
+                Persistent storage per service (GiB)
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={storage}
+                  onChange={(e) => setStorage(Number(e.target.value))}
+                  error={fieldError(error, 'storage_gib')}
+                />
+              </label>
+            )}
             <SelectField
               label="Target architecture"
               value={architecture}
+              error={fieldError(error, 'architecture')}
               onValueChange={setArchitecture}
               options={[
                 { value: '', label: 'Infer from a uniform cluster' },
                 ...template.architectures.map((value) => ({
                   value,
-                  label: `Linux ${value.toUpperCase()}`,
+                  label: `Linux ${value.toUpperCase()}${features.hostedFree && value !== 'amd64' ? ' · Requires your own server' : ''}`,
+                  disabled: features.hostedFree && value !== 'amd64',
                 })),
               ]}
             />
@@ -351,6 +358,7 @@ export default function TemplateForm({
                   id={`template-config-${field.name}`}
                   aria-describedby={`template-help-${field.name}`}
                   value={values[field.name] || ''}
+                  error={fieldError(error, `values.${field.name}`)}
                   required={field.required}
                   maxLength={2048}
                   onChange={(event) =>
@@ -368,6 +376,7 @@ export default function TemplateForm({
                   Database name
                   <Input
                     value={databaseName}
+                    error={fieldError(error, 'database_name')}
                     onChange={(event) => setDatabaseName(event.target.value)}
                     pattern="[a-z][a-z0-9_]*"
                     maxLength={32}
@@ -378,6 +387,7 @@ export default function TemplateForm({
                   Database user
                   <Input
                     value={databaseUser}
+                    error={fieldError(error, 'database_user')}
                     onChange={(event) => setDatabaseUser(event.target.value)}
                     pattern="[a-z][a-z0-9_]*"
                     maxLength={32}
@@ -397,6 +407,7 @@ export default function TemplateForm({
                 <Input
                   type="url"
                   value={siteURL}
+                  error={fieldError(error, 'site_url')}
                   onChange={(event) => setSiteURL(event.target.value)}
                   required={template.site_url_required}
                   maxLength={512}
@@ -428,6 +439,7 @@ export default function TemplateForm({
                   Hugging Face model
                   <Input
                     value={model}
+                    error={fieldError(error, 'model')}
                     onChange={(e) => setModel(e.target.value)}
                     placeholder="organization/model"
                     maxLength={200}
@@ -438,6 +450,7 @@ export default function TemplateForm({
                   Model revision{useModelToken ? '' : ' (optional)'}
                   <Input
                     value={revision}
+                    error={fieldError(error, 'model_revision')}
                     onChange={(e) => setRevision(e.target.value)}
                     placeholder="Resolve current immutable revision"
                     maxLength={64}
@@ -485,6 +498,7 @@ export default function TemplateForm({
                     <Input
                       type="url"
                       value={providerURL}
+                      error={fieldError(error, 'provider_url')}
                       onChange={(event) => setProviderURL(event.target.value)}
                       maxLength={512}
                       placeholder="https://provider.example.com/v1"

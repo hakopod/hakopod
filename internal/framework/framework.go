@@ -60,7 +60,7 @@ func Detect(files map[string][]byte) (Detection, error) {
 	if manifest.PackageManager != "" {
 		declared := strings.Split(manifest.PackageManager, "@")[0]
 		if declared != "npm" && declared != "pnpm" && declared != "yarn" && declared != "bun" {
-			return Detection{}, fmt.Errorf("Unsupported package manager")
+			return Detection{}, fmt.Errorf("framework.package_manager: Unsupported package manager")
 		}
 		manager = declared
 	}
@@ -137,37 +137,51 @@ func Validate(p Plan) error {
 	switch p.Framework {
 	case "astro", "nextjs", "sveltekit", "tanstack-start", "vite", "node", "static":
 	default:
-		return fmt.Errorf("Unsupported framework")
+		return fmt.Errorf("framework.framework: Unsupported framework")
 	}
 	if p.Runtime != "node" && p.Runtime != "static" {
-		return fmt.Errorf("Runtime must be node or static")
+		return fmt.Errorf("framework.runtime: Runtime must be node or static")
 	}
 	switch p.PackageManager {
 	case "npm", "pnpm", "yarn", "bun":
 	case "none":
 		if p.Framework != "static" {
-			return fmt.Errorf("Package manager required")
+			return fmt.Errorf("framework.package_manager: Package manager required")
 		}
 	default:
-		return fmt.Errorf("Unsupported package manager")
+		return fmt.Errorf("framework.package_manager: Unsupported package manager")
 	}
-	for _, command := range []string{p.InstallCommand, p.BuildCommand, p.StartCommand} {
+	for _, field := range []struct{ name, command string }{
+		{"install_command", p.InstallCommand}, {"build_command", p.BuildCommand}, {"start_command", p.StartCommand},
+	} {
+		command := field.command
 		if len(command) > 1024 || strings.ContainsAny(command, "\r\n\x00") {
-			return fmt.Errorf("Build commands must be single lines of at most 1024 characters")
+			return fmt.Errorf("framework.%s: Build commands must be single lines of at most 1024 characters", field.name)
 		}
 	}
-	if p.InstallCommand == "" || p.BuildCommand == "" {
-		return fmt.Errorf("Install and build commands are required")
+	if p.InstallCommand == "" {
+		return fmt.Errorf("framework.install_command: Install command is required")
+	}
+	if p.BuildCommand == "" {
+		return fmt.Errorf("framework.build_command: Build command is required")
 	}
 	if p.Runtime == "static" {
-		if p.OutputDirectory == "" || len(p.OutputDirectory) > 200 || !safePath.MatchString(p.OutputDirectory) || path.Clean(p.OutputDirectory) != p.OutputDirectory || strings.HasPrefix(p.OutputDirectory, "/") || p.OutputDirectory == ".." || strings.HasPrefix(p.OutputDirectory, "../") || p.Port != 8080 {
-			return fmt.Errorf("Static output must be a relative directory and use port 8080")
+		if p.OutputDirectory == "" || len(p.OutputDirectory) > 200 || !safePath.MatchString(p.OutputDirectory) || path.Clean(p.OutputDirectory) != p.OutputDirectory || strings.HasPrefix(p.OutputDirectory, "/") || p.OutputDirectory == ".." || strings.HasPrefix(p.OutputDirectory, "../") {
+			return fmt.Errorf("framework.output_directory: Static output must be a relative directory")
+		}
+		if p.Port != 8080 {
+			return fmt.Errorf("port: Static hosting uses port 8080")
 		}
 		if p.StartCommand != "" {
-			return fmt.Errorf("Static hosting does not use a start command")
+			return fmt.Errorf("framework.start_command: Static hosting does not use a start command")
 		}
-	} else if p.StartCommand == "" || p.Port < 1 || p.Port > 65535 {
-		return fmt.Errorf("Node runtime needs a start command and valid port")
+	} else {
+		if p.StartCommand == "" {
+			return fmt.Errorf("framework.start_command: Node runtime needs a start command")
+		}
+		if p.Port < 1 || p.Port > 65535 {
+			return fmt.Errorf("port: Use a port between 1 and 65535")
+		}
 	}
 	return nil
 }

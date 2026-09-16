@@ -9,6 +9,7 @@ import { message } from '../lib/api'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
+import { fieldError } from '../lib/form-errors'
 import { Note } from './shared'
 
 export type ComposeDraft = components['schemas']['ComposeImport']
@@ -89,6 +90,7 @@ export function ComposeImport({
         Application name
         <Input
           value={name}
+          error={fieldError(error, 'name')}
           disabled={Boolean(application) || busy}
           maxLength={40}
           placeholder="my-app (or use name in Compose)"
@@ -126,6 +128,7 @@ export function ComposeImport({
         <Textarea
           className="code-editor"
           value={yaml}
+          error={fieldError(error, 'compose')}
           disabled={busy}
           maxLength={262144}
           spellCheck={false}

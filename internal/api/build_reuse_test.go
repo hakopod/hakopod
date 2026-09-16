@@ -50,7 +50,7 @@ func TestVerifiedBuildImageReuseCompatibility(t *testing.T) {
 
 func TestBuildReuseRejectsDefaultPrimaryService(t *testing.T) {
 	_, err := normalizeBuild(buildInput{ApplicationID: "existing", ReuseServices: []string{"web"}})
-	if err == nil || err.Error() != "invalid input: choose unique additional services in this application" {
+	if err == nil || err.Error() != "invalid input: reuse_services: choose unique additional services in this application" {
 		t.Fatalf("default primary service accepted as an additional target: %v", err)
 	}
 }

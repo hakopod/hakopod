@@ -4,11 +4,13 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
-import { dashboardEdition } from '../lib/dashboard-edition'
+import { dashboardEdition, useEditionFeatures } from '../lib/dashboard-edition'
+import { Button } from '../components/ui/button'
 
 export const Route = createFileRoute('/networks/new')({ component: NewNetwork })
 function NewNetwork() {
   const scope = useScope()
+  const features = useEditionFeatures()
   const permission = useQuery({
     queryKey: ['virtual-networks', scope.project, scope.environment],
     queryFn: ({ signal }) =>
@@ -18,9 +20,21 @@ function NewNetwork() {
           params: { query: { project: scope.project, environment: scope.environment } },
         }),
       ),
-    enabled: Boolean(scope.project && scope.environment),
+    enabled: Boolean(scope.project && scope.environment && !features.hostedFree),
     gcTime: 0,
   })
+  if (features.hostedFree)
+    return (
+      <Empty
+        title="Shared networks need your own server"
+        description="Hosted Free includes private service networking. Connecting multiple applications through a shared network requires your own server."
+        action={
+          <Button asChild>
+            <a href={features.computeURL}>Choose compute</a>
+          </Button>
+        }
+      />
+    )
   if (permission.isPending) return <Loading />
   if (permission.error)
     return <ErrorState error={permission.error} retry={() => void permission.refetch()} />

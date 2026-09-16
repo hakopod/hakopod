@@ -1,6 +1,7 @@
 import type { components } from '../lib/api.generated'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
+import { fieldError } from '../lib/form-errors'
 
 export type FrameworkPlan = components['schemas']['FrameworkPlan']
 const frameworkNames: Record<string, string> = {
@@ -25,9 +26,11 @@ export const defaultFrameworkPlan: FrameworkPlan = {
 export function FrameworkBuildFields({
   value,
   onChange,
+  error = '',
 }: {
   value: FrameworkPlan
   onChange: (value: FrameworkPlan) => void
+  error?: string
 }) {
   const set = (key: keyof FrameworkPlan, next: string | number) =>
     onChange({ ...value, [key]: next })
@@ -39,6 +42,7 @@ export function FrameworkBuildFields({
           <SelectField
             label="Framework"
             value={value.framework}
+            error={fieldError(error, 'framework.framework')}
             onValueChange={(v) => set('framework', v)}
             options={[
               'astro',
@@ -56,6 +60,7 @@ export function FrameworkBuildFields({
           <SelectField
             label="Runtime"
             value={value.runtime}
+            error={fieldError(error, 'framework.runtime')}
             onValueChange={(runtime) =>
               onChange({
                 ...value,
@@ -77,6 +82,7 @@ export function FrameworkBuildFields({
         <SelectField
           label="Package manager"
           value={value.package_manager}
+          error={fieldError(error, 'framework.package_manager')}
           onValueChange={(v) => set('package_manager', v)}
           options={['npm', 'pnpm', 'yarn', 'bun', 'none'].map((v) => ({ value: v, label: v }))}
         />
@@ -85,6 +91,7 @@ export function FrameworkBuildFields({
         Install command
         <Input
           value={value.install_command}
+          error={fieldError(error, 'framework.install_command')}
           maxLength={1024}
           required
           onChange={(e) => set('install_command', e.target.value)}
@@ -94,6 +101,7 @@ export function FrameworkBuildFields({
         Build command
         <Input
           value={value.build_command}
+          error={fieldError(error, 'framework.build_command')}
           maxLength={1024}
           required
           onChange={(e) => set('build_command', e.target.value)}
@@ -104,6 +112,7 @@ export function FrameworkBuildFields({
           Output directory
           <Input
             value={value.output_directory || ''}
+            error={fieldError(error, 'framework.output_directory')}
             maxLength={200}
             required
             onChange={(e) => set('output_directory', e.target.value)}
@@ -114,6 +123,7 @@ export function FrameworkBuildFields({
           Start command
           <Input
             value={value.start_command || ''}
+            error={fieldError(error, 'framework.start_command')}
             maxLength={1024}
             required
             onChange={(e) => set('start_command', e.target.value)}

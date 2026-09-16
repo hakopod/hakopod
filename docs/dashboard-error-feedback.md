@@ -25,3 +25,9 @@ after a rejected request.
 Rendered review covered both themes, desktop/mobile layouts, failure retention,
 keyboard focus, long messages and error contrast. Cloud route coverage and
 provider/cluster verification limits are recorded in the private Cloud audit.
+
+## Source builds and compute limits
+
+New source builds return to the matching step when the server identifies a field. Input and Select controls share the same inline error and focus behavior, including fields inside optional sections. Only the exact `invalid input:` wrapper is removed for matching; general permission and transport messages stay at form level. Group paths such as `build_args.PUBLIC_URL:` can be shown under their collection editor.
+
+See [Source-build setup](source-build-onboarding.md) for the progression, draft handling and hosted Free guidance.

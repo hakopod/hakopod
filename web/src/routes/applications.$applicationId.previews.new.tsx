@@ -1,3 +1,4 @@
+import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -19,6 +20,7 @@ export const Route = createFileRoute('/applications/$applicationId/previews/new'
 function NewPreview() {
   const { applicationId } = Route.useParams()
   const scope = useScope()
+  const features = useEditionFeatures()
   const query = useQuery({
     queryKey: ['application', applicationId],
     queryFn: ({ signal }) =>
@@ -39,6 +41,18 @@ function NewPreview() {
       <Empty
         title="Project administrator access required"
         description="A project administrator can create temporary preview environments."
+      />
+    )
+  if (features.hostedFree)
+    return (
+      <Empty
+        title="Previews need your own server"
+        description="A preview creates another application. Hosted Free includes one application; your current deployment is kept."
+        action={
+          <Button asChild>
+            <a href={features.computeURL}>Choose compute</a>
+          </Button>
+        }
       />
     )
   return <PreviewForm application={query.data} />
