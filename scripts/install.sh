@@ -325,26 +325,14 @@ fi
 ensure_namespace() {
   local namespace=$1
   owned namespace "$namespace"
-  kubectl create namespace "$namespace" --dry-run=client -o json > "$stage/namespace.json"
-  python3 - "$stage/namespace.json" "$installation" <<'PY'
-import json,sys
-from pathlib import Path
-p=Path(sys.argv[1]);j=json.loads(p.read_text());j['metadata']['labels']={'hakopod.com/installation':sys.argv[2]};p.write_text(json.dumps(j))
-PY
+  python3 "$helper" namespace --name "$namespace" --id "$installation" > "$stage/namespace.json"
   kubectl apply --server-side --field-manager=hakopod-installer -f "$stage/namespace.json" >/dev/null
 }
 ensure_namespace haproxy-controller
 helm upgrade --install hakopod-ingress "$bundle_root/deploy/charts/hakopod-platform" \
   --namespace haproxy-controller --values "$rendered/haproxy.json" --wait --timeout 3m
 if [ "$cfg_acme" != off ] || [ "$cfg_dashboard_certificate" = letsencrypt ]; then
-  owned namespace cert-manager
-  kubectl create namespace cert-manager --dry-run=client -o json > "$stage/namespace.json"
-  python3 - "$stage/namespace.json" "$installation" <<'PY'
-import json,sys
-from pathlib import Path
-p=Path(sys.argv[1]);j=json.loads(p.read_text());j['metadata']['labels']={'hakopod.com/installation':sys.argv[2]};p.write_text(json.dumps(j))
-PY
-  kubectl apply --server-side --field-manager=hakopod-installer -f "$stage/namespace.json" >/dev/null
+  ensure_namespace cert-manager
   crd_owner=$(kubectl get crd certificates.cert-manager.io --ignore-not-found -o 'jsonpath={.metadata.annotations.meta\.helm\.sh/release-name}')
   if [ -n "$crd_owner" ] && [ "$crd_owner" != hakopod-cert-manager ]; then die 'Existing cert-manager belongs to another release'; fi
   (cd "$bundle_root/deploy/cert-manager" && sha256sum --check checksums.sha256)

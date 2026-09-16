@@ -11,24 +11,22 @@ on:
 permissions:
   contents: read
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: plan
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: echo "matrix=$(python3 release/upgrade-paths.py --version "$RELEASE_VERSION" --matrix)" >> "$GITHUB_OUTPUT"
   host:
+    needs: plan
     strategy:
       fail-fast: false
-      max-parallel: 2
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: amd64
-            mode: managed
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-            mode: managed
-          - runner: ubuntu-24.04
-            arch: amd64
-            mode: local
-          - runner: ubuntu-24.04
-            arch: amd64
-            mode: external
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
@@ -44,18 +42,19 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           DATABASE_MODE: ${{ matrix.mode }}
+          UPGRADE_FROM: ${{ matrix.source }}
         run: |
           python3 release/bootstrap-version.py .local/host-artifacts "$RELEASE_VERSION"
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
             GITHUB_SHA="$GITHUB_SHA" HAKOPOD_DISPOSABLE_HOST=yes \
             DEBIAN_FRONTEND=noninteractive python3 release/host-acceptance.py \
-            --version "$RELEASE_VERSION" --mode "$DATABASE_MODE" \
+            --version "$RELEASE_VERSION" --mode "$DATABASE_MODE" --upgrade-from "$UPGRADE_FROM" \
             --artifact-dir .local/host-artifacts --report .local/host-report.json
       - name: Upload redacted host evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: installer-host-${{ matrix.arch }}-${{ matrix.mode }}
+          name: installer-host-${{ matrix.arch }}-${{ matrix.mode }}-${{ matrix.suffix }}
           path: .local/host-report.json
           if-no-files-found: error
           retention-days: 14

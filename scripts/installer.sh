@@ -309,12 +309,21 @@ def main(argv=None):
                 if args.dry_run:
                     print('Verified release artifacts. Upgrade stops only API/dashboard, backs up PostgreSQL and configuration, then switches binaries. Compatibility is checked before stopping services.')
                     return
+                # Reject unsupported versions before asking to stop management services.
+                if 'upgrade.json' not in hashes:
+                    raise ValueError('This release has no upgrade compatibility manifest')
+                download(base + 'upgrade.json', directory / 'upgrade.json', 65536, hashes['upgrade.json'])
+                # Older verified kits perform the same validation during --upgrade.
+                if "'--check-upgrade'" in helper.read_text():
+                    checked = subprocess.run(['python3', str(helper), '--check-upgrade', selected,
+                                              '--manifest', str(directory / 'upgrade.json')], check=False)
+                    if checked.returncode:
+                        return checked.returncode
                 if not args.yes:
                     print('Upgrade to ' + selected + ': stop API/dashboard, back up PostgreSQL/configuration, then restart. Applications keep running. Type upgrade ' + selected + ' to continue:', flush=True)
                     if terminal.readline().strip() != 'upgrade ' + selected:
                         raise ValueError('Upgrade cancelled')
-                subprocess.run(['python3', str(helper), '--upgrade', selected], check=True)
-                return
+                return subprocess.run(['python3', str(helper), '--upgrade', selected], check=False).returncode
             command = ['bash', str(directory / 'kit' / kit / 'scripts/install.sh'), '--artifact-dir', str(directory),
                        '--arch', arch, '--version', selected]
             if args.config:

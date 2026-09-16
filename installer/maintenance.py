@@ -25,6 +25,7 @@ import time
 import urllib.request
 
 import host
+import credentials
 
 STATE = Path('/var/lib/hakopod/maintenance')
 SOCKET = '/run/hakopod-maintenance/control.sock'
@@ -184,7 +185,7 @@ def download(release, name, checksums, directory, limit):
 
 def validate_manifest(manifest, installed, target):
     if manifest.get('schema_version') != 1 or manifest.get('version') != target or installed not in manifest.get('from_versions', []):
-        raise ValueError('This release has not declared a supported upgrade from the installed version')
+        raise ValueError(f'Upgrade from {installed} to {target} is not supported by this release. No services were stopped. Use a release that explicitly supports your installed version; do not use --resume to upgrade.')
     if version_key(target) <= version_key(installed) or version_key(target)[:2] != version_key(installed)[:2]:
         raise ValueError('Only newer releases in the same major/minor series are supported')
     if manifest.get('runtime_pins_sha256') != host.digest(Path(__file__).with_name('pins.json')):
@@ -323,6 +324,7 @@ def perform_upgrade(target, install_lock):
                 backup_dir = STATE / ('backup-' + str(time.time_ns()))
                 backup_dir.mkdir(mode=0o700)
                 backup(config, backup_dir)
+                credentials.repair_namespace(marker['id'])
                 enable()
                 progress('restarting', 'Starting the new API and dashboard. Keep this page open.')
                 link = CURRENT.with_name('current.next')
@@ -513,14 +515,25 @@ if __name__ == '__main__':
     parser.add_argument('--serve', action='store_true')
     parser.add_argument('--enable', action='store_true')
     parser.add_argument('--upgrade', metavar='VERSION')
+    parser.add_argument('--check-upgrade', metavar='VERSION')
+    parser.add_argument('--manifest', type=Path)
     args = parser.parse_args()
-    if args.enable:
+    if args.check_upgrade:
+        try:
+            if args.manifest is None: raise ValueError('An upgrade manifest is required')
+            validate_manifest(host.read_json(args.manifest), current(), args.check_upgrade)
+        except ValueError as error:
+            raise SystemExit('Hakopod upgrade: ' + str(error)) from None
+    elif args.enable:
         enable()
     elif args.serve:
         serve()
     elif args.upgrade:
         if os.geteuid() != 0: raise SystemExit('Run the upgrade as root')
         os.umask(0o077); STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
-        upgrade(args.upgrade)
+        try:
+            upgrade(args.upgrade)
+        except ValueError as error:
+            raise SystemExit('Hakopod upgrade: ' + str(error)) from None
     else:
         print(json.dumps(status()))

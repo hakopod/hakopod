@@ -417,6 +417,14 @@ def owned(path, installation):
         if item.get('metadata', {}).get('labels', {}).get(LABEL) != installation:
             fail('Refusing unrelated Kubernetes object: ' + item.get('kind', '?') + '/' + item.get('metadata', {}).get('name', '?'))
 
+def namespace_manifest(name, installation):
+    if not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', name or ''):
+        fail('Invalid namespace name')
+    if not re.fullmatch(r'[0-9a-f]{32}', installation or ''):
+        fail('Invalid installation id')
+    return {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {
+        'name': name, 'labels': {LABEL: installation, 'app.kubernetes.io/managed-by': 'hakopod'}}}
+
 def render(c, arch, installation, out):
     """Render root-private files; secret bodies never appear on command lines."""
     if not re.fullmatch(r'[0-9a-f]{32}', installation): fail('Invalid installation id')
@@ -647,7 +655,7 @@ WantedBy=multi-user.target
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action', choices=('plan', 'config', 'platform-preflight', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'complete'))
+    p.add_argument('action', choices=('plan', 'config', 'platform-preflight', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'namespace', 'complete'))
     p.add_argument('--config'); p.add_argument('--arch'); p.add_argument('--artifact-dir'); p.add_argument('--resume', action='store_true')
     p.add_argument('--source'); p.add_argument('--destination'); p.add_argument('--root'); p.add_argument('--name'); p.add_argument('--id')
     a = p.parse_args()
@@ -655,6 +663,7 @@ def main():
     if a.action == 'pin':
         pin = PINS[a.name][architecture(a.arch)]; print(pin['url'] + '\t' + pin['sha256']); return
     if a.action == 'owned': return owned(a.source, a.id)
+    if a.action == 'namespace': print(json.dumps(namespace_manifest(a.name, a.id))); return
     if a.action == 'complete':
         marker = read_json('/etc/hakopod/installation.json'); marker['completed'] = True
         write('/etc/hakopod/installation.json', json.dumps(marker) + '\n'); return

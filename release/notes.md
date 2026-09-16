@@ -1,28 +1,27 @@
-Hakopod 0.1.0-alpha.9 adds service management within existing applications and improves workload visibility, backups and rollout diagnostics.
+Hakopod 0.1.0-alpha.10 fixes self-hosted Git and registry credential storage and adds verified bootstrap upgrades from alpha.8 and alpha.9.
 
-## Add and move services
+## Credential storage
 
-- Choose **Add service** from an application to use a catalog template, Docker Compose, a container image or an existing service's image. Configure the service and review the deployment before applying it.
-- Add catalog templates without replacing the application's existing services. Single-service templates accept a unique service name. Existing settings, deployed image digests and shared secrets are preserved; conflicting names and resources are rejected.
-- Move a stateless service to another application in the same project and environment through a reviewed handover. The original keeps running until the destination deployment succeeds and you confirm removal. Moves preserve the running image and effective environment, and copy local secret references without disclosing values or overwriting destination secrets.
-- Persistent data, jobs, dependencies, custom domains and other application-bound resources require an explicit migration. Source builds and deployment history stay with the original application. See [service management documentation](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.9/docs/application-service-management.md).
+The dashboard's Let's Encrypt setup could remove a namespace ownership label, causing both “Git connection credential storage is unavailable” and “registry credential storage is unavailable.” The installer now preserves the label. The new bootstrap upgrades repair affected namespaces after checking installation ownership and taking backups, without replacing credentials or encryption keys.
 
-## Operations and reliability
+The verified installer kit also contains `installer/credentials.py` for repairing the label without upgrading or restarting services. It refuses foreign namespaces. See [installation maintenance](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.10/docs/installation-maintenance.md).
 
-- Workload CPU and memory metrics can use bounded kubelet statistics when the Kubernetes metrics API is unavailable. Live pod logs and deployment event streams work through the dashboard proxy.
-- Deployment containers use `imagePullPolicy: Always` while retaining immutable image digests. Restarting a service keeps its deployed digest; a new deployment resolves a mutable image tag again.
-- Recent out-of-memory kills remain visible in rollout diagnostics after a container restarts, with guidance to increase the service size or reduce application worker memory.
-- The embedded management runtime initializes backup support. Backup and restore entry points are easier to find, and optional external data workflows are linked from the relevant pages.
-- Certificate-renewal acceptance now tolerates unrelated metadata updates while checking the certificate behavior.
+## Upgrade from alpha.8 or alpha.9
 
-## Prebuilt artifacts
+Download this release's `installer.sh`, then run:
 
-Includes Linux amd64/arm64 server and CLI archives, the dashboard bundle, macOS amd64/arm64 CLI archives, and the installer kit. Target machines do not compile sources.
+```sh
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.10
+```
 
-The multi-platform readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.9`. Use the immutable reference in the attached `probe-image.txt` for Infrastructure > Setup.
+Confirm the displayed version. The bootstrap checks supported source versions before asking for confirmation. It backs up PostgreSQL and configuration, replaces the API/dashboard binaries and verifies health. Application workloads remain running. The installed privileged maintenance helper and runtime dependencies remain unchanged; use this new bootstrap to get the namespace repair.
 
-Download this release's `installer.sh`, inspect `sh installer.sh --help`, and select `--version 0.1.0-alpha.9`. Check the attached `upgrade.json` for verified upgrade paths. Website bootstrap publication is separate.
+Alpha.9's empty upgrade manifest remains unchanged. Do not bypass its guard or use `--resume` to change versions. Versions other than the two listed sources need a separately verified upgrade path.
 
-Release publication requires Go/dashboard checks, native packaged smoke tests, Ubuntu 24.04 systemd/K3s host acceptance and both probe-image architectures. Assets include checksums, SBOMs, dependency notices, provenance and acceptance reports. Verify provenance with `gh attestation verify FILE --repo hakopod/hakopod`.
+Publication requires native Ubuntu 24.04 installation and upgrade tests for both CPU architectures, with managed, local and TLS-verified external PostgreSQL cases. Upgrade tests start from published source artifacts and check account/session continuity, registry metadata, preserved secret data, database/configuration backups and an uninterrupted workload. Candidate release downloads are routed to checksummed local assets during testing; migrations and host operations run against real services.
 
-This remains an alpha release. The service-management UI was reviewed in both themes on desktop and mobile; development-cluster acceptance verified staged service moves and additive catalog deployment using fixed fixture images. These checks do not certify every catalog image, arbitrary private repositories, every Linux distribution or live customer data migrations. Private Cloud pages are not included in public archives.
+## Artifacts
+
+Includes Linux amd64/arm64 server and CLI archives, macOS CLI archives, dashboard, installer, checksums, SBOMs, provenance and native acceptance reports. The readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.10`; use the immutable reference in `probe-image.txt`.
+
+This is an alpha release. Tests do not certify every operating system, public ACME issuance, arbitrary customer workloads or database restore procedures. Private Cloud pages are not included.

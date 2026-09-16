@@ -1,6 +1,7 @@
 """Release publication requires native host evidence for the exact shipped bytes."""
 import copy
 import hashlib
+import json
 from pathlib import Path
 import runpy
 import subprocess
@@ -29,6 +30,22 @@ class HostEvidenceTests(unittest.TestCase):
 
     def test_all_modes_and_native_architectures_pass(self):
         self.verify()
+
+    def test_declared_upgrade_requires_all_native_source_cases(self):
+        (self.directory / 'upgrade.json').write_text(json.dumps({'from_versions': ['0.0.9']}))
+        with self.assertRaisesRegex(ValueError, 'incomplete'): self.verify()
+        upgrades = copy.deepcopy(self.reports)
+        for report in upgrades:
+            report.update(upgrade_from='0.0.9', upgrade_method='bootstrap', source_artifact_sha256={'source.tar.gz': 'a'*64})
+        self.verify(self.reports + upgrades)
+        for index in range(4):
+            with self.assertRaisesRegex(ValueError, 'incomplete'):
+                self.verify(self.reports + upgrades[:index] + upgrades[index+1:])
+
+    def test_upgrade_requires_published_source_evidence(self):
+        (self.directory / 'upgrade.json').write_text(json.dumps({'from_versions': ['0.0.9']}))
+        upgrades = [dict(report, upgrade_from='0.0.9') for report in self.reports]
+        with self.assertRaisesRegex(ValueError, 'published source'): self.verify(self.reports + upgrades)
 
     def test_modified_shipped_bytes_fail(self):
         (self.directory / 'release.tar.gz').write_bytes(b'changed after testing')
