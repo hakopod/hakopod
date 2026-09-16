@@ -14,6 +14,7 @@ import (
 
 func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
 	s.registerShowcaseRoutes(routes)
+	s.registerServiceTransferRoutes(routes)
 	routes.HandleFunc("GET /api/v1/templates", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]any{"items": spec.Templates()}) })
 	routes.HandleFunc("POST /api/v1/templates/{id}/plan", s.planTemplate)
 	routes.HandleFunc("POST /api/v1/templates/{id}/deploy", s.deployTemplate)
@@ -21,8 +22,11 @@ func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
 }
 
 type templateConfiguration struct {
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
+	ServiceName      string `json:"service_name,omitempty"`
+	ApplicationID    string `json:"application_id,omitempty"`
+	ExpectedRevision *int64 `json:"expected_revision,omitempty"`
+	Project          string `json:"project"`
+	Environment      string `json:"environment"`
 	spec.TemplateOptions
 }
 
@@ -83,6 +87,37 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_template", err.Error())
 		return
 	}
+	if in.ServiceName != "" {
+		next, err = spec.NameTemplateService(next, in.ServiceName)
+		if err != nil {
+			problem(w, 400, "invalid_service_name", err.Error())
+			return
+		}
+	}
+	if in.ApplicationID != "" {
+		base, ok := s.authorizedApp(w, r, in.ApplicationID, "deployments:write")
+		if !ok {
+			return
+		}
+		if base.Project != in.Project || base.Environment != in.Environment || base.Name != in.Name {
+			problem(w, 403, "forbidden", "Application scope does not match")
+			return
+		}
+		if in.ExpectedRevision == nil || *in.ExpectedRevision != base.Revision {
+			problem(w, 409, "stale_revision", "The application changed. Reload and review the template again.")
+			return
+		}
+		baseSpec, pinErr := s.pinnedApplication(r.Context(), base)
+		if pinErr != nil {
+			problem(w, 409, "application_busy", pinErr.Error())
+			return
+		}
+		next, err = spec.AddServices(baseSpec, next)
+		if err != nil {
+			problem(w, 400, "template_conflict", err.Error())
+			return
+		}
+	}
 	next, previous, ok := s.prepare(w, r, input{Project: in.Project, Environment: in.Environment, Spec: &next}, "deployments:write")
 	if !ok {
 		return
@@ -96,7 +131,8 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		id = previous.ID
 	}
 	warnings := deliveryWarnings(r, next)
-	required := spec.TemplateSecretNames(next)
+	templateSpec, _ := spec.PlanTemplate(r.PathValue("id"), in.TemplateOptions)
+	required := spec.TemplateSecretNames(templateSpec)
 	for _, t := range spec.Templates() {
 		if t.ID == r.PathValue("id") {
 			warnings = append(warnings, t.Verification, t.ResourceSummary)

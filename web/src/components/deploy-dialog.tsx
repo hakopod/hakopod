@@ -42,17 +42,23 @@ const newSpec = (): Spec => ({
 
 export function DeploymentForm({
   onClose,
-  application,
+  application: incomingApplication,
   initialMode = 'form',
   serviceName,
   removeService,
+  addedService,
 }: {
   onClose: () => void
   application?: Application
   initialMode?: 'form' | 'toml' | 'compose'
   serviceName?: string
   removeService?: string
+  addedService?: { name: string; service: Service }
 }) {
+  const applicationSnapshot = useRef(incomingApplication)
+  if (applicationSnapshot.current?.id !== incomingApplication?.id)
+    applicationSnapshot.current = incomingApplication
+  const application = applicationSnapshot.current
   const features = useEditionFeatures()
   const scope = useScope()
   const canBuildFromGit =
@@ -95,6 +101,7 @@ export function DeploymentForm({
           ? withoutService(application.spec, removeService)
           : structuredClone(application.spec)
         : newSpec()
+      if (addedService) initial.services[addedService.name] = structuredClone(addedService.service)
       setSpec(initial)
       setRuntime(
         Object.fromEntries(
@@ -108,7 +115,7 @@ export function DeploymentForm({
       setToml(application ? specToTOML(initial) : '')
       setMode(initialMode)
     }
-  }, [application?.id, initialMode, serviceName, removeService])
+  }, [application?.id, initialMode, serviceName, removeService, addedService])
   const limitIssues = features.hostedFree ? hostedFreeIssues(spec) : []
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)

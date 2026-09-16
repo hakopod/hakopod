@@ -60,6 +60,7 @@ import { Route as SettingsIntegrationsProviderRouteImport } from './routes/setti
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
 import { Route as ApplicationsApplicationIdPreviewsNewRouteImport } from './routes/applications.$applicationId.previews.new'
+import { Route as ApplicationsApplicationIdServicesNewRouteImport } from './routes/applications.$applicationId.services.new'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
 import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/backups.schedules.$scheduleId.edit'
@@ -338,6 +339,12 @@ const ApplicationsApplicationIdPreviewsNewRoute =
     path: '/previews/new',
     getParentRoute: () => ApplicationsApplicationIdRoute,
   } as any)
+const ApplicationsApplicationIdServicesNewRoute =
+  ApplicationsApplicationIdServicesNewRouteImport.update({
+    id: '/services/new',
+    path: '/services/new',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
 const BackupsArtifactsArtifactIdRestoreRoute =
   BackupsArtifactsArtifactIdRestoreRouteImport.update({
     id: '/artifacts/$artifactId/restore',
@@ -445,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
+  '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
@@ -507,6 +515,7 @@ export interface FileRoutesByTo {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
+  '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
@@ -570,6 +579,7 @@ export interface FileRoutesById {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
+  '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
@@ -634,6 +644,7 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
+    | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
@@ -696,6 +707,7 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
+    | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
@@ -758,6 +770,7 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
+    | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
@@ -1153,6 +1166,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplicationsApplicationIdPreviewsNewRouteImport
       parentRoute: typeof ApplicationsApplicationIdRoute
     }
+    '/applications/$applicationId/services/new': {
+      id: '/applications/$applicationId/services/new'
+      path: '/services/new'
+      fullPath: '/applications/$applicationId/services/new'
+      preLoaderRoute: typeof ApplicationsApplicationIdServicesNewRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
     '/backups/artifacts/$artifactId/restore': {
       id: '/backups/artifacts/$artifactId/restore'
       path: '/artifacts/$artifactId/restore'
@@ -1401,6 +1421,7 @@ interface ApplicationsApplicationIdRouteChildren {
   ApplicationsApplicationIdEnvironmentRoute: typeof ApplicationsApplicationIdEnvironmentRoute
   ApplicationsApplicationIdSourceRoute: typeof ApplicationsApplicationIdSourceRoute
   ApplicationsApplicationIdPreviewsNewRoute: typeof ApplicationsApplicationIdPreviewsNewRoute
+  ApplicationsApplicationIdServicesNewRoute: typeof ApplicationsApplicationIdServicesNewRoute
 }
 
 const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChildren =
@@ -1416,6 +1437,8 @@ const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChil
     ApplicationsApplicationIdSourceRoute: ApplicationsApplicationIdSourceRoute,
     ApplicationsApplicationIdPreviewsNewRoute:
       ApplicationsApplicationIdPreviewsNewRoute,
+    ApplicationsApplicationIdServicesNewRoute:
+      ApplicationsApplicationIdServicesNewRoute,
   }
 
 const ApplicationsApplicationIdRouteWithChildren =

@@ -24,6 +24,28 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases = [
+    {
+      path: 'applications/app-a/services/api/move-plan',
+      method: 'POST',
+      body: {
+        destination_id: 'app-b',
+        destination_service: 'worker',
+        source_revision: 1,
+        destination_revision: 2,
+      },
+    },
+    {
+      path: 'applications/app-a/services/api/move',
+      method: 'POST',
+      body: {
+        destination_id: 'app-b',
+        destination_service: 'worker',
+        source_revision: 1,
+        destination_revision: 2,
+      },
+    },
+    { path: 'applications/app-a/service-moves', method: 'GET' },
+    { path: 'applications/app-a/service-moves/move-a/finish', method: 'POST', body: {} },
     { path: 'git/connections/connection-a/repositories', method: 'GET', query: '?page=2' },
     {
       path: 'compose/convert',

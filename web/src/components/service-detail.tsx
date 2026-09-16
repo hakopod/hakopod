@@ -1,7 +1,8 @@
+import { MoveServiceDialog } from './move-service-dialog'
 import { effectiveService } from '../lib/effective-service'
 import { RenameResource } from './rename-resource'
 import { useEditionFeatures } from '../lib/dashboard-edition'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -95,6 +96,8 @@ export function ServiceDetail({
   const service = application.spec.services[serviceName]
   const observed = application.observed?.services?.find((item) => item.name === serviceName)
   const health = serviceRuntimeHealth(observed, application.observed?.observed_at)
+  const [moving, setMoving] = useState(false)
+  const serviceActionsTrigger = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState(
     initialTab && serviceTabs.includes(initialTab) ? initialTab : 'overview',
   )
@@ -192,6 +195,14 @@ export function ServiceDetail({
   }
   return (
     <div className="ops-page ops-service-page">
+      {moving && (
+        <MoveServiceDialog
+          application={application}
+          service={serviceName}
+          restoreFocus={() => serviceActionsTrigger.current?.focus()}
+          onClose={() => setMoving(false)}
+        />
+      )}
       <div className="application-heading">
         <div>
           <div className="title-row hako-page-heading-title">
@@ -213,6 +224,23 @@ export function ServiceDetail({
         <div className="form-spacer" />
         {scope.can('deployments:write') && (
           <div className="toolbar-actions">
+            <Menu
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Service actions"
+                  ref={serviceActionsTrigger}
+                >
+                  <span aria-hidden="true">···</span>
+                </Button>
+              }
+            >
+              <MenuItem onSelect={() => setMoving(true)}>
+                <Icon name="arrow" size={14} />
+                Move to application
+              </MenuItem>
+            </Menu>
             {!service.job && (
               <Button
                 onClick={() => {

@@ -15,7 +15,10 @@ import { Dialog } from '../components/ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
 
 export const Route = createFileRoute('/templates')({
-  validateSearch: (search: Record<string, unknown>): { q?: string; category?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { q?: string; category?: string; application?: string } => ({
+    application: typeof search.application === 'string' ? search.application : undefined,
     q: typeof search.q === 'string' ? search.q.slice(0, 100) : undefined,
     category: typeof search.category === 'string' ? search.category.slice(0, 40) : undefined,
   }),
@@ -33,7 +36,7 @@ const labels: Record<string, string> = {
 function Templates() {
   const scope = useScope()
   const features = useEditionFeatures()
-  const { q = '', category = '' } = Route.useSearch()
+  const { q = '', category = '', application } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [selected, setSelected] = useState('')
   const templates = useQuery({
@@ -56,6 +59,16 @@ function Templates() {
         title={category === 'agent' ? 'Agents' : 'Catalog'}
         description="Choose a database, application, or AI service. Review its requirements before deploying."
       />
+      {application && (
+        <div className="flex flex-wrap items-center gap-2 py-3">
+          <span className="text-sm">Adding to an existing application</span>
+          <Button asChild size="sm">
+            <Link to="/applications/$applicationId" params={{ applicationId: application }}>
+              Back to application
+            </Link>
+          </Button>
+        </div>
+      )}
       <div className="catalog-toolbar">
         <nav className="catalog-categories" aria-label="Template categories">
           {[['', 'All'], ...categories.map((value) => [value, labels[value] || value])].map(
@@ -65,7 +78,9 @@ function Templates() {
                 variant="chip"
                 aria-pressed={category === value}
                 onClick={() =>
-                  void navigate({ search: { q: q || undefined, category: value || undefined } })
+                  void navigate({
+                    search: { application, q: q || undefined, category: value || undefined },
+                  })
                 }
               >
                 {label}{' '}
@@ -85,7 +100,11 @@ function Templates() {
             placeholder="Search templates…"
             onChange={(event) =>
               void navigate({
-                search: { q: event.target.value || undefined, category: category || undefined },
+                search: {
+                  application,
+                  q: event.target.value || undefined,
+                  category: category || undefined,
+                },
                 replace: true,
               })
             }
@@ -105,7 +124,11 @@ function Templates() {
           icon="search"
           title="No matching templates"
           description="Try a shorter search or choose another category."
-          action={<Button onClick={() => void navigate({ search: {} })}>Clear filters</Button>}
+          action={
+            <Button onClick={() => void navigate({ search: { application } })}>
+              Clear filters
+            </Button>
+          }
         />
       ) : (
         <div className="catalog-grid template-catalog">
@@ -229,7 +252,11 @@ function Templates() {
               </Button>
               {scope.can('deployments:write') || !detail.deployable ? (
                 <Button asChild variant="primary">
-                  <Link to="/templates/$templateId" params={{ templateId: detail.id }}>
+                  <Link
+                    to="/templates/$templateId"
+                    params={{ templateId: detail.id }}
+                    search={{ application }}
+                  >
                     {features.hostedFree && detail.workload_requirements?.length
                       ? 'View requirements'
                       : detail.deployable

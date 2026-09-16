@@ -1,3 +1,4 @@
+import { MoveServiceDialog, ServiceMoves } from '../components/move-service-dialog'
 import { RenameResource } from '../components/rename-resource'
 import { ApplicationPreviews } from '../components/application-previews'
 import { ServicePowerDialog } from '../components/service-power-dialog'
@@ -98,6 +99,8 @@ function ApplicationDetail() {
   }, [selectedTab])
   const [powerService, setPowerService] = useState('')
   const [deletingService, setDeletingService] = useState('')
+  const [movingService, setMovingService] = useState('')
+  const serviceMenuTriggers = useRef<Record<string, HTMLButtonElement | null>>({})
   const [logService, setLogService] = useState('')
   const application = useQuery({
     queryKey: ['application', applicationId],
@@ -149,6 +152,14 @@ function ApplicationDetail() {
     )
   return (
     <div className="ops-page">
+      {movingService && (
+        <MoveServiceDialog
+          application={app}
+          service={movingService}
+          restoreFocus={() => serviceMenuTriggers.current[movingService]?.focus()}
+          onClose={() => setMovingService('')}
+        />
+      )}
       {powerService && (
         <ServicePowerDialog
           application={app}
@@ -209,6 +220,14 @@ function ApplicationDetail() {
           </div>
         </div>
         <div className="form-spacer" />
+        {scope.can('deployments:write') && (
+          <Button asChild>
+            <Link to="/applications/$applicationId/services/new" params={{ applicationId }}>
+              <Icon name="plus" size={16} />
+              Add service
+            </Link>
+          </Button>
+        )}
         {scope.can('deployments:write') && (
           <Button asChild>
             <Link to="/applications/$applicationId/environment" params={{ applicationId }}>
@@ -288,6 +307,7 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
+          {scope.can('deployments:write') && <ServiceMoves application={app} />}
           <div className="ops-section-description">
             <p>Open a service for pods, logs, resource usage, and configuration.</p>
             <span className="label-chip">
@@ -312,6 +332,9 @@ function ApplicationDetail() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            ref={(element) => {
+                              serviceMenuTriggers.current[name] = element
+                            }}
                             aria-label={`Actions for ${app.service_display_names?.[name] || name}`}
                           >
                             <span aria-hidden="true">···</span>
@@ -353,6 +376,12 @@ function ApplicationDetail() {
                           >
                             <Icon name="code" size={14} />
                             Environment variables
+                          </MenuItem>
+                        )}
+                        {scope.can('deployments:write') && (
+                          <MenuItem onSelect={() => setMovingService(name)}>
+                            <Icon name="arrow" size={14} />
+                            Move to application
                           </MenuItem>
                         )}
                         {runtime?.url && /^https?:\/\//.test(runtime.url) && (

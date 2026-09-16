@@ -11135,6 +11135,229 @@
           }
         }
       }
+    },
+    "/applications/{id}/services/{service}/move-plan": {
+      "post": {
+        "operationId": "planServiceMove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMovePlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceMoveInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/move": {
+      "post": {
+        "operationId": "startServiceMove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceMoveInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/service-moves": {
+      "get": {
+        "operationId": "listServiceMoves",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceMove"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/service-moves/{move}/finish": {
+      "post": {
+        "operationId": "finishServiceMove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "move",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -17198,6 +17421,15 @@
           },
           "use_model_token": {
             "type": "boolean"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "service_name": {
+            "type": "string"
           }
         },
         "required": [
@@ -18058,6 +18290,112 @@
         "required": [
           "name",
           "updated_at"
+        ]
+      },
+      "ServiceMoveInput": {
+        "type": "object",
+        "properties": {
+          "destination_id": {
+            "type": "string"
+          },
+          "destination_service": {
+            "type": "string"
+          },
+          "source_revision": {
+            "type": "integer"
+          },
+          "destination_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "destination_id",
+          "destination_service",
+          "source_revision",
+          "destination_revision"
+        ]
+      },
+      "ServiceMovePlan": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "source_changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "destination_changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "secret_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "destination",
+          "source_changes",
+          "destination_changes",
+          "warnings",
+          "secret_count"
+        ]
+      },
+      "ServiceMove": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "destination_service": {
+            "type": "string"
+          },
+          "removal_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "source_revision": {
+            "type": "integer"
+          },
+          "destination_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "destination_id",
+          "service",
+          "destination_service",
+          "removal_id",
+          "status",
+          "source_revision",
+          "destination_revision"
         ]
       }
     }

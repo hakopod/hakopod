@@ -54,6 +54,7 @@ export const allowed = [
   /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,
   /^integrations\/(?:github|gitlab)$/,
   /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
+  /^applications\/[A-Za-z0-9_-]+\/(?:services\/[A-Za-z0-9_-]+\/(?:move-plan|move)|service-moves(?:\/[A-Za-z0-9_-]+\/finish)?)$/,
   /^templates(?:\/[A-Za-z0-9_-]+\/(?:plan|deploy|secrets\/[A-Za-z0-9_-]+))?$/,
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
   /^secret-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
