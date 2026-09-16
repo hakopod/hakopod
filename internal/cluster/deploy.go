@@ -295,7 +295,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		}
 	}
 	profile := spec.Profiles[svc.Size]
-	container := corev1.Container{Name: "app", Image: svc.Image, ImagePullPolicy: corev1.PullIfNotPresent,
+	container := corev1.Container{Name: "app", Image: svc.Image, ImagePullPolicy: corev1.PullAlways,
 		Command: svc.Command, Args: svc.Args, WorkingDir: svc.WorkingDir,
 		Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPURequest), corev1.ResourceMemory: resource.MustParse(profile.MemoryRequest), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPULimit), corev1.ResourceMemory: resource.MustParse(profile.MemoryLimit), corev1.ResourceEphemeralStorage: resource.MustParse("128Mi")}},
 		SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},

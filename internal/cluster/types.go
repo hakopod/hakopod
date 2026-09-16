@@ -177,8 +177,8 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, fmt.Errorf("Kubernetes configuration unavailable: %w", err)
 	}
 	config.QPS, config.Burst = 10, 20
-	// All requests, including log streams, are bounded; clients reconnect follow
-	// streams after the transport's 30-second deadline.
+	// Ordinary requests have a transport deadline. Logs and interactive exec
+	// use a separate configuration and their own bounded session contexts.
 	config.Timeout = 30 * time.Second
 	config.UserAgent = "hakopod/0.1"
 	kube, err := kubernetes.NewForConfig(config)

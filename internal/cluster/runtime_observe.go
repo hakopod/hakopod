@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// RuntimeMetrics is a current metrics-server observation, not a retained time
+// RuntimeMetrics is a current Kubernetes observation, not a retained time
 // series. Missing, stale, or partial samples never become a fabricated zero.
 type RuntimeMetrics struct {
 	Available     bool       `json:"available"`
@@ -89,7 +90,7 @@ type podMetrics struct {
 }
 
 func (c *Client) ServiceRuntime(ctx context.Context, t Target, service string) (ServiceRuntime, error) {
-	result := ServiceRuntime{ApplicationID: t.ApplicationID, Service: service, ObservedAt: time.Now().UTC(), Pods: []RuntimePod{}, Metrics: RuntimeMetrics{Reason: "metrics-server has no current complete sample"}}
+	result := ServiceRuntime{ApplicationID: t.ApplicationID, Service: service, ObservedAt: time.Now().UTC(), Pods: []RuntimePod{}, Metrics: RuntimeMetrics{Reason: "Kubernetes has no current complete resource sample"}}
 	if _, ok := t.Spec.Services[service]; !ok {
 		return result, fmt.Errorf("service does not exist")
 	}
@@ -174,17 +175,31 @@ func (c *Client) ServiceRuntime(ctx context.Context, t Target, service string) (
 	if c.restClient() == nil {
 		return result, nil
 	}
-	data, metricErr := c.restClient().Get().AbsPath("/apis/metrics.k8s.io/v1beta1/namespaces/"+namespace+"/pods").Param("labelSelector", selector).Param("limit", "64").DoRaw(ctx)
-	if metricErr != nil || len(data) > 512<<10 {
-		return result, nil
+	metricsCtx, metricsCancel := context.WithTimeout(ctx, 2*time.Second)
+	stream, metricErr := c.restClient().Get().AbsPath("/apis/metrics.k8s.io/v1beta1/namespaces/"+namespace+"/pods").Param("labelSelector", selector).Param("limit", "64").Stream(metricsCtx)
+	var data []byte
+	if metricErr == nil {
+		data, metricErr = io.ReadAll(io.LimitReader(stream, (512<<10)+1))
+		stream.Close()
 	}
+	metricsCancel()
 	var metrics struct {
 		Items []podMetrics `json:"items"`
 	}
-	if json.Unmarshal(data, &metrics) != nil || len(metrics.Items) > 128 {
-		return result, nil
+	if metricErr == nil && len(data) <= 512<<10 && json.Unmarshal(data, &metrics) == nil && len(metrics.Items) <= 128 {
+		applyRuntimeMetrics(&result, pods.Items, metrics.Items)
 	}
-	applyRuntimeMetrics(&result, pods.Items, metrics.Items)
+	if !result.Metrics.Available && result.Metrics.PodsExpected > 0 {
+		result.Metrics = RuntimeMetrics{PodsExpected: result.Metrics.PodsExpected, Reason: "Kubernetes has no current complete resource sample"}
+		for i := range result.Pods {
+			for j := range result.Pods[i].Containers {
+				result.Pods[i].Containers[j].CPU = nil
+				result.Pods[i].Containers[j].Memory = nil
+			}
+		}
+		applyRuntimeMetrics(&result, pods.Items, c.kubeletRuntimeMetrics(ctx, pods.Items))
+	}
+
 	return result, nil
 }
 
