@@ -18,6 +18,8 @@ Confirm the displayed version. The bootstrap checks supported source versions be
 
 Alpha.9's empty upgrade manifest remains unchanged. Do not bypass its guard or use `--resume` to change versions. Versions other than the two listed sources need a separately verified upgrade path.
 
+The bootstrap also fixes backups for existing local/external PostgreSQL databases by passing explicit, isolated connection settings to `pg_dump`. Failed attempts before switching binaries remove their own staging directory so they can be retried. Backups and files from unrelated or already switched releases are retained.
+
 Publication requires native Ubuntu 24.04 installation and upgrade tests for both CPU architectures, with managed, local and TLS-verified external PostgreSQL cases. Upgrade tests start from published source artifacts and check account/session continuity, registry metadata, preserved secret data, database/configuration backups and an uninterrupted workload. Candidate release downloads are routed to checksummed local assets during testing; migrations and host operations run against real services.
 
 ## Artifacts

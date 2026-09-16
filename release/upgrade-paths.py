@@ -5,8 +5,11 @@ import json
 from pathlib import Path
 
 
-def sources(version):
-    return json.loads(Path(__file__).with_suffix('.json').read_text()).get(version, [])
+def sources(version, required=False):
+    policy = json.loads(Path(__file__).with_suffix('.json').read_text())
+    if required and version not in policy:
+        raise ValueError('Declare upgrade source versions in release/upgrade-paths.json before cutting a release')
+    return policy.get(version, [])
 
 
 def matrix(version):
@@ -21,5 +24,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--version', required=True)
     parser.add_argument('--matrix', action='store_true')
+    parser.add_argument('--require-policy', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(matrix(args.version) if args.matrix else sources(args.version)))
+    declared = sources(args.version, required=args.require_policy)
+    print(json.dumps(matrix(args.version) if args.matrix else declared))
