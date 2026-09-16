@@ -22,6 +22,10 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 }
 
 func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, seedResolved ...spec.Application) (Deployment, error) {
+	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, initialSource, initialShowcase, initialPreview, nil, seedResolved...)
+}
+
+func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, transfer *ServiceTransfer, seedResolved ...spec.Application) (Deployment, error) {
 	if len(idem) < 8 || len(idem) > 128 {
 		return Deployment{}, errors.New("Idempotency-Key must contain 8–128 characters")
 	}
@@ -63,7 +67,8 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 		InitialSource  *InitialSource    `json:",omitempty"`
 		InitialPreview *InitialPreview   `json:",omitempty"`
 		ShowcaseID     string            `json:",omitempty"`
-	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID}))
+		Transfer       *ServiceTransfer  `json:",omitempty"`
+	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
@@ -105,6 +110,11 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	// Serialize network membership acceptance with grants being edited or removed.
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,31))", "virtual-network:"+project+":"+env); err != nil {
 		return Deployment{}, err
+	}
+	if transfer != nil {
+		if err = transfer.check(ctx, tx, p, project, env); err != nil {
+			return Deployment{}, err
+		}
 	}
 	if _, err = resolveVirtualNetworks(ctx, tx, project, env, next); err != nil {
 		return Deployment{}, err
@@ -221,6 +231,11 @@ func (s *Store) accept(ctx context.Context, p Principal, project, env string, ne
 	}
 	if initialShowcase != nil {
 		if err = s.recordShowcaseAcceptance(ctx, tx, showcaseID, a.ID, id); err != nil {
+			return Deployment{}, err
+		}
+	}
+	if transfer != nil {
+		if err = transfer.record(ctx, tx, p, id); err != nil {
 			return Deployment{}, err
 		}
 	}

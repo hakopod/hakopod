@@ -1,7 +1,8 @@
+import type { Application } from '../lib/types'
 import { fieldError } from '../lib/form-errors'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
@@ -21,8 +22,10 @@ import { workloadRequirementLabel } from '../lib/template-requirements'
 
 export default function TemplateForm({
   template,
+  application,
   onClose,
 }: {
+  application?: Application
   template: components['schemas']['Template']
   onClose: () => void
 }) {
@@ -30,7 +33,13 @@ export default function TemplateForm({
   const features = useEditionFeatures()
   const navigate = useNavigate()
   const cache = useQueryClient()
-  const [name, setName] = useState('')
+  const serviceNameInput = useRef<HTMLInputElement>(null)
+  const [name, setName] = useState(application?.name || '')
+  const [serviceName, setServiceName] = useState(
+    application && !template.workload_requirements?.includes('multiple_services')
+      ? template.id.replaceAll(/[^a-z0-9-]/g, '-').slice(0, 40)
+      : '',
+  )
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries((template.config_fields || []).map((field) => [field.name, field.default])),
   )
@@ -67,6 +76,15 @@ export default function TemplateForm({
       (required) => !secrets.data?.items.some((secret) => secret.name === required),
     ) || []
   async function review() {
+    if (
+      application &&
+      !template.workload_requirements?.includes('multiple_services') &&
+      !/^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$/.test(serviceName)
+    ) {
+      serviceNameInput.current?.focus()
+      setError('service_name: Use a unique name with 1–40 lowercase letters, digits or hyphens.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -77,6 +95,10 @@ export default function TemplateForm({
             project: scope.project,
             environment: scope.environment,
             name,
+            ...(serviceName ? { service_name: serviceName } : {}),
+            ...(application
+              ? { application_id: application.id, expected_revision: application.revision }
+              : {}),
             public: isPublic,
             values,
             storage_gib: storage,
@@ -98,9 +120,12 @@ export default function TemplateForm({
           },
         }),
       )
-      if (result.expected_revision !== 0)
+      if (
+        result.expected_revision !== (application?.revision || 0) ||
+        (application && result.application_id !== application.id)
+      )
         throw new Error(
-          'An application with this name already exists. Choose a new name for this template.',
+          'The application changed or this name is already taken. Reload and review the template again.',
         )
       setPlan(result)
       setKey(crypto.randomUUID())
@@ -211,8 +236,9 @@ export default function TemplateForm({
               <small>{template.license}</small>
             </div>
             <FormHint title="What this creates">
-              This creates a regular Hakopod application with an immutable image and an explicit
-              configuration.
+              {application
+                ? 'Adds the template’s services to this application after review.'
+                : 'Creates an application with an immutable image and an explicit configuration.'}
             </FormHint>
             <FormHint title="Resources">{template.resource_summary}</FormHint>
             <FormHint title="Image verification">{template.verification}</FormHint>
@@ -237,7 +263,13 @@ export default function TemplateForm({
       description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
     >
       <div className="form-body auth-form">
-        <ComputeNotice creatingApplication />
+        <ComputeNotice creatingApplication={!application} />
+        {application && (
+          <Note>
+            Adding services to <strong>{application.display_name || application.name}</strong>.
+            Existing services are retained. Service names and volume names must be unique.
+          </Note>
+        )}
         {plan ? (
           <>
             {!!plan.warnings.length && (
@@ -272,8 +304,16 @@ export default function TemplateForm({
                         </small>
                         <p className="field-help">{field.description}</p>
                       </div>
-                      <Button size="sm" disabled={busy} onClick={() => setSaveSecret(field.name)}>
-                        {missing.includes(field.name) ? 'Set value' : 'Replace'}
+                      <Button
+                        size="sm"
+                        disabled={busy || (!!application && !missing.includes(field.name))}
+                        onClick={() => setSaveSecret(field.name)}
+                      >
+                        {missing.includes(field.name)
+                          ? 'Set value'
+                          : application
+                            ? 'Using saved secret'
+                            : 'Replace'}
                       </Button>
                     </div>
                   ))}
@@ -316,14 +356,32 @@ export default function TemplateForm({
               Application name
               <Input
                 value={name}
+                disabled={!!application}
                 error={fieldError(error, 'name')}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Choose a name"
-                pattern="[a-z][a-z0-9-]*"
+                pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
                 maxLength={40}
                 required
               />
             </label>
+            {application && !template.workload_requirements?.includes('multiple_services') && (
+              <label>
+                Service name
+                <Input
+                  required
+                  ref={serviceNameInput}
+                  value={serviceName}
+                  error={fieldError(error, 'service_name')}
+                  onChange={(event) => setServiceName(event.target.value)}
+                  pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
+                  maxLength={40}
+                />
+                <span className="field-help">
+                  Choose a unique name for this service inside the application.
+                </span>
+              </label>
+            )}
             {template.workload_requirements?.includes('persistent_storage') && (
               <label>
                 Persistent storage per service (GiB)
@@ -337,20 +395,23 @@ export default function TemplateForm({
                 />
               </label>
             )}
-            <SelectField
-              label="Target architecture"
-              value={architecture}
-              error={fieldError(error, 'architecture')}
-              onValueChange={setArchitecture}
-              options={[
-                { value: '', label: 'Infer from a uniform cluster' },
-                ...template.architectures.map((value) => ({
-                  value,
-                  label: `Linux ${value.toUpperCase()}${features.hostedFree && value !== 'amd64' ? ' · Requires your own server' : ''}`,
-                  disabled: features.hostedFree && value !== 'amd64',
-                })),
-              ]}
-            />
+            <div className="grid gap-1">
+              <span>Target architecture</span>
+              <SelectField
+                label="Target architecture"
+                value={architecture}
+                error={fieldError(error, 'architecture')}
+                onValueChange={setArchitecture}
+                options={[
+                  { value: '', label: 'Infer from a uniform cluster' },
+                  ...template.architectures.map((value) => ({
+                    value,
+                    label: `Linux ${value.toUpperCase()}${features.hostedFree && value !== 'amd64' ? ' · Requires your own server' : ''}`,
+                    disabled: features.hostedFree && value !== 'amd64',
+                  })),
+                ]}
+              />
+            </div>
             {(template.config_fields || []).map((field) => (
               <div className="grid gap-1" key={field.name}>
                 <label htmlFor={`template-config-${field.name}`}>{field.label}</label>
