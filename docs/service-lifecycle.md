@@ -1,5 +1,13 @@
 # Stop, resume and delete services
 
+Application containers, deployment jobs and scheduled jobs use Kubernetes
+`imagePullPolicy: Always`. Each new deployment resolves an image tag such as
+`latest` against its registry and pins the resulting digest for that release.
+Container starts check the registry; unchanged layers may be reused locally.
+Restart, resume, scaling and rollback preserve the saved release digest. To run
+a newer image behind a tag, submit a new deployment. A running container does
+not update merely because a registry tag changes.
+
 The service-card menu exposes Stop/Resume for long-running services and Delete for all services. The shared dashboard uses the same controls in Cloud and self-hosted installations.
 
 Stop and Resume create a revision-checked, idempotent deployment. Stopping records `suspended = true` while retaining the configured replicas, autoscaling settings, image, variables, domains and volumes. Kubernetes replicas become zero and the HPA is removed. Resume restores the configured replicas and HPA. A stopped service is reported as stopped, not failed or healthy traffic. Stopping may make dependent services unavailable. It does not stop charges from the user's server provider.

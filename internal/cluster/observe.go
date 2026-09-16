@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
@@ -237,7 +238,7 @@ func (c *Client) Nodes(ctx context.Context) ([]Node, error) {
 }
 
 // Logs streams one current pod, chosen deterministically by newest ready pod.
-// Follow streams end after the transport's 30-second limit or 8 MiB, enabling bounded reconnects;
+// Follow streams end after five minutes or 8 MiB, enabling bounded reconnects;
 // no stream body or log history is accumulated in the management process.
 func (c *Client) Logs(ctx context.Context, namespace, service string, tail int64, follow bool) (io.ReadCloser, error) {
 	if !strings.HasPrefix(namespace, "hp-") || len(namespace) != 35 || service == "" {
@@ -271,7 +272,17 @@ func (c *Client) Logs(ctx context.Context, namespace, service string, tail int64
 		return pods.Items[i].CreationTimestamp.After(pods.Items[j].CreationTimestamp.Time)
 	})
 	streamCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	stream, err := c.kube.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "app", TailLines: &tail, Follow: follow, Timestamps: true, LimitBytes: ptr(int64(8 << 20))}).Stream(streamCtx)
+	core := c.kube.CoreV1()
+	if c.execConfig != nil {
+		// Streaming shares the existing authenticated transport but is bounded by
+		// streamCtx instead of the ordinary request's 30-second client deadline.
+		core, err = coreclient.NewForConfig(c.execConfig)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+	}
+	stream, err := core.Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "app", TailLines: &tail, Follow: follow, Timestamps: true, LimitBytes: ptr(int64(8 << 20))}).Stream(streamCtx)
 	if err != nil {
 		cancel()
 		return nil, err

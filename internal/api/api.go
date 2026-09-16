@@ -883,10 +883,14 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(200)
 	controller := http.NewResponseController(w)
+	defer controller.SetWriteDeadline(time.Time{})
+	_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
 	_ = controller.Flush()
+	_ = controller.SetWriteDeadline(time.Time{})
 	buf := make([]byte, 16<<10)
 	for {
 		n, err := stream.Read(buf)
@@ -896,6 +900,7 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_ = controller.Flush()
+			_ = controller.SetWriteDeadline(time.Time{})
 		}
 		if err != nil {
 			return

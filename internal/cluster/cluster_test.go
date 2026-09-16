@@ -41,6 +41,9 @@ func TestPodSecurityBudgetsAndWorker(t *testing.T) {
 		d := deployment(target, name, target.Spec.Services[name], time.Minute)
 		pod := d.Spec.Template.Spec
 		container := pod.Containers[0]
+		if container.ImagePullPolicy != corev1.PullAlways || container.Image != target.Spec.Services[name].Image {
+			t.Fatal("workloads must always pull their resolved immutable image")
+		}
 		if pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
 			t.Fatal("pod receives cluster credentials")
 		}
@@ -326,5 +329,28 @@ func TestNodesReportActualReadiness(t *testing.T) {
 	nodes, err := c.Nodes(context.Background())
 	if err != nil || len(nodes) != 1 || nodes[0].Ready || nodes[0].Pods != 1 {
 		t.Fatalf("invented or missing node state: %+v %v", nodes, err)
+	}
+}
+
+func TestNewDeploymentResolvesUpdatedTag(t *testing.T) {
+	target := testTarget(t)
+	target.Spec.Services = map[string]spec.Service{"api": {Image: "python:latest"}, "worker": {Image: "python:latest"}}
+	manifest := `{"schemaVersion":2,"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}],"release":1}`
+	calls := 0
+	c := &Client{kube: fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64"}}}), http: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(manifest))}, nil
+	})}}
+	first, err := c.ResolveScoped(context.Background(), target.Spec, target.Project, target.Environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest = strings.Replace(manifest, `"release":1`, `"release":2`, 1)
+	second, err := c.ResolveScoped(context.Background(), target.Spec, target.Project, target.Environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || first.Services["api"].Image == second.Services["api"].Image || second.Services["api"].Image != second.Services["worker"].Image || target.Spec.Services["api"].Image != "python:latest" {
+		t.Fatal("new deployment reused an old tag digest or changed the configured tag")
 	}
 }
