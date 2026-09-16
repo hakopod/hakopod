@@ -1,5 +1,6 @@
 """Bootstrap verification and real pipe/terminal handoff without host changes."""
 import hashlib
+import contextlib
 import io
 import json
 import os
@@ -23,6 +24,25 @@ exec(compile(SOURCE, str(SCRIPT), 'exec'), bootstrap.__dict__)
 
 
 class BootstrapTest(unittest.TestCase):
+    def test_upgrade_preflight_failure_is_returned_without_running_upgrade(self):
+        with tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
+            target = '0.1.0-alpha.10'
+            names = [f'hakopod_{target}_{kind}.tar.gz' for kind in ('installer', 'linux_amd64', 'dashboard')] + ['upgrade.json']
+            def extract(source, destination, root):
+                helper = destination / root / 'installer/maintenance.py'
+                helper.parent.mkdir(parents=True)
+                helper.write_text("# supports '--check-upgrade'\n")
+            stack.enter_context(patch.object(bootstrap, 'architecture', return_value='amd64'))
+            stack.enter_context(patch.object(bootstrap.os, 'geteuid', return_value=0))
+            stack.enter_context(patch.object(bootstrap.shutil, 'which', return_value='/bin/bash'))
+            stack.enter_context(patch.object(bootstrap, 'download'))
+            stack.enter_context(patch.object(bootstrap, 'checksums', return_value=dict.fromkeys(names, 'a'*64)))
+            stack.enter_context(patch.object(bootstrap, 'extract_kit', side_effect=extract))
+            run = stack.enter_context(patch.object(bootstrap.subprocess, 'run', return_value=types.SimpleNamespace(returncode=17)))
+            self.assertEqual(bootstrap.main(['--upgrade', '--version', target, '--yes']), 17)
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('--check-upgrade', run.call_args.args[0])
+
     def release(self, value, prerelease=True, draft=False):
         names = ['SHA256SUMS', 'installer.sh'] + ['hakopod_' + value + '_' + part + '.tar.gz'
                  for part in ('installer', 'dashboard', 'linux_amd64', 'linux_arm64')]

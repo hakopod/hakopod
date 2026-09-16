@@ -77,11 +77,46 @@ sudo journalctl -u hakopod-maintenance -u hakopod-api -u hakopod-dashboard --sin
 Retain backups and verify a restore on a separate machine. Do not rerun setup or
 remove application volumes to recover a management-service failure.
 
-Release builders opt in only after testing an upgrade from each supported source:
-`python3 release/build-installer.py --version TARGET --upgrade-from SOURCE`.
-Repeat `--upgrade-from` for each tested source. The default compatibility list is
-empty. No production source-to-target upgrade is advertised solely because the
-unit tests pass.
+Release builders list candidate source versions in `release/upgrade-paths.json`.
+Packaging puts that list into `upgrade.json`; publication then requires a native
+host report for every source and database mode, including amd64 and arm64 managed
+database installations. Each case installs the published source, upgrades using
+the candidate bootstrap helper, and verifies the retained account/session,
+registry metadata, secret values, backups and a running workload. Only candidate
+release-download URLs are replaced with local, checksummed artifacts because the
+target is not public yet. Systemd, Kubernetes, PostgreSQL and binary switching are
+real. Fresh-install evidence alone cannot authorize an advertised upgrade.
+
+Alpha.9 shipped an empty compatibility list. Attempting an upgrade to it stops
+before management services or application data change. Use a newer release whose
+manifest names your installed version, rather than bypassing the check. The
+installed version is the target of `readlink /opt/hakopod/current`.
+
+### Git and registry credential storage
+
+Older installers could remove `app.kubernetes.io/managed-by=hakopod` from
+`hakopod-system` when applying the dashboard ACME namespace. The API then refused
+both Git credential reads and registry credential writes. Credentials were still
+present; the namespace ownership guard rejected access.
+
+New installers preserve both ownership labels. The updated bootstrap upgrade
+repairs the missing label after backing up configuration and the database, using
+the installation ID in `/etc/hakopod/installation.json`. It refuses another
+installation or manager and uses resource-version checks to avoid racing an
+ownership change. It never replaces secrets or encryption keys.
+
+For an existing installation, the verified new installer kit also provides:
+
+```sh
+sudo python3 /path/to/verified-installer/installer/credentials.py
+```
+
+This repair needs no service restart and changes only the missing namespace label.
+Run it from the verified kit: a binary upgrade deliberately preserves the existing
+privileged maintenance helper. Dashboard upgrades through an older helper do not
+run this new repair, so use the new bootstrap or the explicit repair command for
+an affected host. If the label is already correct, inspect Kubernetes connectivity
+and API service permissions; this repair does not bypass access controls.
 
 ## Optional modules
 

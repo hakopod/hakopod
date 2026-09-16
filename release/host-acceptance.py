@@ -3,17 +3,22 @@
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import runpy
 import secrets
 import shutil
 import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = Path('/var/tmp/hakopod-host-acceptance')
@@ -40,14 +45,18 @@ def require_rejection(result, diagnostic, marker_exists):
 
 
 def verify_reports(directory, reports, version, revision):
-    expected = {('x86_64', 'managed'), ('aarch64', 'managed'),
-                ('x86_64', 'local'), ('x86_64', 'external')}
-    if len(reports) != 4 or {(r['machine'], r['mode']) for r in reports} != expected:
+    modes = {('x86_64', 'managed'), ('aarch64', 'managed'), ('x86_64', 'local'), ('x86_64', 'external')}
+    manifest = directory / 'upgrade.json'
+    sources = json.loads(manifest.read_text())['from_versions'] if manifest.exists() else []
+    expected = {(machine, mode, source) for source in ['', *sources] for machine, mode in modes}
+    if len(reports) != len(expected) or {(r['machine'], r['mode'], r.get('upgrade_from', '')) for r in reports} != expected:
         raise ValueError('Native host evidence incomplete')
     archives = {p.name for p in directory.glob('*.tar.gz')}
     for report in reports:
         if report['status'] != 'passed' or report['version'] != version or report['source_revision'] != revision:
             raise ValueError('Native host evidence has failed or mismatched source/version')
+        if report.get('upgrade_from') and (not report.get('source_artifact_sha256') or report.get('upgrade_method') != 'bootstrap'):
+            raise ValueError('Upgrade evidence must identify the published source artifacts and tested method')
         hashes = report['artifact_sha256']
         if not archives <= hashes.keys() or 'installer.sh' not in hashes:
             raise ValueError('Host evidence does not cover installer and archives')
@@ -149,12 +158,12 @@ def http_json(path):
         return json.load(response)
 
 
-def health():
+def health(setup_required=True):
     for _ in range(60):
         try:
             status = http_json('/api/v1/auth/status')
-            if status.get('setup_required') is not True:
-                raise RuntimeError('Installer unexpectedly created an account')
+            if status.get('setup_required') is not setup_required:
+                raise RuntimeError('Unexpected first-user setup state')
             if status.get('signup_enabled') is not False:
                 raise RuntimeError('Public self-hosted binary exposed public signup')
             with urllib.request.urlopen('http://127.0.0.1:3000', timeout=10) as response:
@@ -166,18 +175,115 @@ def health():
     raise RuntimeError('Installed API/dashboard did not recover')
 
 
+def api(method, path, token='', body=None, expected=200):
+    request = urllib.request.Request('http://127.0.0.1:8080/api/v1' + path, method=method,
+                                    data=json.dumps(body).encode() if body is not None else None)
+    request.add_header('Content-Type', 'application/json')
+    if token: request.add_header('Authorization', 'Bearer ' + token)
+    try:
+        response = urllib.request.urlopen(request, timeout=20)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        value = json.load(response)
+        if response.status != expected:
+            raise RuntimeError(f'Credential acceptance {method} {path} returned {response.status}, expected {expected}')
+        return value
+
+
+def published_source(version, arch):
+    # Download only fixed public release assets; verify before executing the old installer.
+    body = (ROOT / 'scripts/installer.sh').read_text().split("<<'HAKOPOD_BOOTSTRAP_PY'\n", 1)[1].split('\nHAKOPOD_BOOTSTRAP_PY', 1)[0]
+    namespace = {'__name__': 'acceptance_bootstrap'}
+    exec(compile(body, str(ROOT / 'scripts/installer.sh'), 'exec'), namespace)
+    bootstrap = SimpleNamespace(**namespace)
+    bootstrap.version(version)
+    destination = WORK / 'source-artifacts'
+    destination.mkdir()
+    base = 'https://github.com/hakopod/hakopod/releases/download/v' + version + '/'
+    bootstrap.download(base + 'SHA256SUMS', destination / 'SHA256SUMS', 65536)
+    hashes = bootstrap.checksums(destination / 'SHA256SUMS')
+    names = [f'hakopod_{version}_{kind}.tar.gz' for kind in ('installer', 'linux_' + arch, 'dashboard')]
+    for name in names:
+        bootstrap.download(base + name, destination / name, 512 << 20, hashes[name])
+    # The host installer validates the archives for this architecture, not unavailable siblings.
+    return destination, {name: hashes[name] for name in names}
+
+
+def credential_fixture(kube, marker, report):
+    ident = marker['id']
+    namespace = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': 'hakopod-system',
+                 'labels': {'hakopod.com/installation': ident, 'app.kubernetes.io/managed-by': 'hakopod'}}}
+    run(kube + ['apply', '--server-side', '--field-manager=hakopod-installer', '-f', '-'], input=json.dumps(namespace))
+    token = api('POST', '/auth/setup', body={'name': 'Installer acceptance', 'email': 'owner@example.test',
+                'password': secrets.token_hex(24), 'setup_token': Path('/etc/hakopod/secrets/setup-token').read_text().strip()})['token']
+    REDACTIONS.append(token)
+    api('POST', '/projects', token, {'name': 'acceptance', 'environment': 'test'}, 201)
+    api('GET', '/git/connections', token)
+    registry = {'project': 'acceptance', 'environment': 'test', 'name': 'fixture', 'registry': 'ghcr.io',
+                'username': 'acceptance', 'password': secrets.token_hex(24)}
+    REDACTIONS.append(registry['password'])
+    api('POST', '/registries', token, registry, 201)
+    # Reproduce the old dashboard ACME apply with the same field manager. It
+    # dropped managed-by from the existing PostgreSQL namespace.
+    del namespace['metadata']['labels']['app.kubernetes.io/managed-by']
+    run(kube + ['apply', '--server-side', '--field-manager=hakopod-installer', '-f', '-'], input=json.dumps(namespace))
+    labels = json.loads(run(kube + ['get', 'namespace', 'hakopod-system', '-o', 'json']).stdout)['metadata']['labels']
+    if 'app.kubernetes.io/managed-by' in labels:
+        raise RuntimeError('Credential fixture did not reproduce the server-side apply bug')
+    api('GET', '/git/connections', token, expected=503)
+    api('POST', '/registries', token, dict(registry, name='after-repair'), 503)
+    report['checks'].append('Reproduced Git list and registry-save failures from the old ACME namespace apply')
+    return token, registry
+
+
+def upgrade_candidate(kit, artifacts, version):
+    # Target artifacts are not public yet. Redirect only their fixed official
+    # URLs to the already checksummed candidate bytes; real systemd, Kubernetes,
+    # database dumps, migrations, extraction, switching and health checks run.
+    sys.path.insert(0, str(kit / 'installer'))
+    import maintenance
+    original = urllib.request.urlopen
+    base = 'https://github.com/hakopod/hakopod/releases/download/v' + version + '/'
+    names = maintenance.checksum_map((artifacts / 'SHA256SUMS').read_bytes())
+    release = {'tag_name': 'v' + version, 'prerelease': True,
+               'assets': [{'name': name, 'browser_download_url': base + name} for name in [*names, 'SHA256SUMS']]}
+    class Response:
+        def __init__(self, stream, url): self.stream, self.url = stream, url
+        def read(self, *args): return self.stream.read(*args)
+        def __enter__(self): return self
+        def __exit__(self, *args): self.stream.close()
+    def urlopen(request, *args, **kwargs):
+        url = request.full_url if hasattr(request, 'full_url') else request
+        if url == maintenance.REPO + '/releases/tags/v' + version:
+            return Response(io.BytesIO(json.dumps(release).encode()), url)
+        if url.startswith(base):
+            name = url[len(base):]
+            if name not in [*names, 'SHA256SUMS']: raise RuntimeError('Unexpected candidate asset request')
+            return Response((artifacts / name).open('rb'), url)
+        return original(request, *args, **kwargs)
+    with patch.object(urllib.request, 'urlopen', side_effect=urlopen):
+        maintenance.upgrade(version)
+    if maintenance.current() != version or json.loads((maintenance.STATE / 'status.json').read_text())['status'] != 'succeeded':
+        raise RuntimeError('Upgrade did not switch to the target release')
+    backups = list(maintenance.STATE.glob('backup-*'))
+    if len(backups) != 1 or (backups[0] / 'database.dump').read_bytes()[:5] != b'PGDMP' or not (backups[0] / 'configuration.tar.gz').is_file():
+        raise RuntimeError('Upgrade backups are missing')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', required=True)
     parser.add_argument('--artifact-dir', required=True, type=Path)
     parser.add_argument('--mode', required=True, choices=('managed', 'local', 'external'))
     parser.add_argument('--report', required=True, type=Path)
+    parser.add_argument('--upgrade-from', default='')
     args = parser.parse_args()
     guard()
     WORK.mkdir(mode=0o700)
     report = {'status': 'running', 'mode': args.mode, 'machine': platform.machine(),
               'source_revision': os.environ.get('GITHUB_SHA'), 'version': args.version,
-              'started_at': datetime.now(timezone.utc).isoformat(), 'checks': [],
+              'started_at': datetime.now(timezone.utc).isoformat(), 'checks': [], 'upgrade_from': args.upgrade_from,
               'limitations': ['No reboot, public DNS, ACME issuance or physical AWS RDS instance was exercised.',
                               'Existing database modes use a separate PostgreSQL fixture on the same disposable VM.']}
     args.report.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +305,17 @@ def main():
         run(['python3', str(ROOT / 'installer/host.py'), 'unpack', '--source',
              str(artifacts / f'{root}.tar.gz'), '--destination', str(WORK / 'kit'), '--root', root])
         kit = WORK / 'kit' / root
+        candidate_kit = kit
+        install_artifacts = artifacts
+        install_version = args.version
+        if args.upgrade_from:
+            arch = {'x86_64': 'amd64', 'aarch64': 'arm64'}[platform.machine()]
+            install_version = args.upgrade_from
+            install_artifacts, report['source_artifact_sha256'] = published_source(install_version, arch)
+            source_root = f'hakopod_{install_version}_installer'
+            run(['python3', str(ROOT / 'installer/host.py'), 'unpack', '--source',
+                 str(install_artifacts / (source_root + '.tar.gz')), '--destination', str(WORK / 'source-kit'), '--root', source_root])
+            kit = WORK / 'source-kit' / source_root
         # Swap changes apply only to this disposable hosted runner, never developer machines.
         run(['swapoff', '-a'])
         route = json.loads(run(['ip', '-j', 'route', 'get', '1.1.1.1']).stdout)[0]
@@ -206,7 +323,7 @@ def main():
         if not address:
             raise RuntimeError('Runner has no routable IPv4 address')
         config = json.loads((kit / 'installer/example.json').read_text())
-        config.update(version=args.version, node_ip=address, supervisor_host=address,
+        config.update(version=install_version, node_ip=address, supervisor_host=address,
                       node_name='hakopod-acceptance', app_domain='apps.hakopod.test',
                       database_mode=args.mode, acme='off', storage=False, install_docker=False)
         psql, sentinel, password = None, None, None
@@ -215,7 +332,7 @@ def main():
             config.update(database)
         config_path = WORK / 'config.json'
         write(config_path, json.dumps(config))
-        install = ['bash', str(kit / 'scripts/install.sh'), '--artifact-dir', str(artifacts),
+        install = ['bash', str(kit / 'scripts/install.sh'), '--artifact-dir', str(install_artifacts),
                    '--config', str(config_path), '--yes']
         report['checks'].append('Checksums verified for exact downloaded artifacts')
         db_check = ['python3', '-c',
@@ -277,6 +394,41 @@ def main():
                                    for c in node['status']['conditions']) for node in items):
             raise RuntimeError('Installed node is not Ready')
         report['checks'].append('Dedicated installed Kubernetes node Ready')
+        token, registry = credential_fixture(kube, marker, report)
+        # This real workload must survive management-service replacement untouched.
+        image = json.loads((candidate_kit / 'installer/pins.json').read_text())['postgres']
+        pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': 'upgrade-sentinel', 'namespace': 'hakopod-system'},
+               'spec': {'containers': [{'name': 'sentinel', 'image': image, 'command': ['sleep', '1800'],
+                        'resources': {'requests': {'cpu': '1m', 'memory': '8Mi'}, 'limits': {'cpu': '50m', 'memory': '32Mi'}}}]}}
+        run(kube + ['create', '-f', '-'], input=json.dumps(pod))
+        run(kube + ['-n', 'hakopod-system', 'wait', '--for=condition=Ready', 'pod/upgrade-sentinel', '--timeout=180s'])
+        def pod_identity():
+            value = json.loads(run(kube + ['-n', 'hakopod-system', 'get', 'pod', 'upgrade-sentinel', '-o', 'json']).stdout)
+            return value['metadata']['uid'], value['status']['containerStatuses'][0]['containerID'], value['status']['containerStatuses'][0]['restartCount']
+        before_pod = pod_identity()
+        before_secrets = json.loads(run(kube + ['-n', 'hakopod-system', 'get', 'secrets', '-o', 'json']).stdout)
+        before_data = {item['metadata']['name']: item.get('data') for item in before_secrets['items']}
+        if args.upgrade_from:
+            upgrade_candidate(candidate_kit, artifacts, args.version)
+            report['upgrade_method'] = 'bootstrap'
+            report['checks'].append('Published source upgraded using candidate bootstrap helper; real database/configuration backups retained')
+        else:
+            run(['python3', str(candidate_kit / 'installer/credentials.py')])
+        health(setup_required=False)
+        if pod_identity() != before_pod:
+            raise RuntimeError('Credential repair or upgrade restarted the workload')
+        after_secrets = json.loads(run(kube + ['-n', 'hakopod-system', 'get', 'secrets', '-o', 'json']).stdout)
+        if {item['metadata']['name']: item.get('data') for item in after_secrets['items']} != before_data:
+            raise RuntimeError('Credential repair or upgrade changed Kubernetes secret data')
+        for name, digest in protected.items():
+            if hashlib.sha256((Path('/etc/hakopod/secrets') / name).read_bytes()).hexdigest() != digest:
+                raise RuntimeError('Credential repair or upgrade changed an installation secret')
+        api('GET', '/git/connections', token)
+        registries = api('GET', '/registries?project=acceptance&environment=test', token)
+        if not any(item['name'] == 'fixture' for item in registries['items']):
+            raise RuntimeError('Upgrade lost registry database metadata')
+        api('POST', '/registries', token, dict(registry, name='after-repair'), 201)
+        report['checks'].append('Git listing and registry save recovered; existing account/session, secrets and running workload preserved')
         if psql:
             result = run(psql + ['-d', 'unrelated_sentinel', '-Atc', 'SELECT value FROM sentinel']).stdout.strip()
             if result != sentinel:

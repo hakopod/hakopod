@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tarfile
@@ -146,11 +147,13 @@ def package_runtime(dist, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', default='0.1.0-dev')
-    parser.add_argument('--upgrade-from', action='append', default=[], help='Explicitly tested source release; repeat for each supported upgrade')
+    parser.add_argument('--upgrade-from', action='append', default=None, help='Override explicit upgrade candidates; publication requires native evidence for every source')
     parser.add_argument('--release-dir', type=Path)
     parser.add_argument('--use-existing-dist', action='store_true', help='Development smoke only: package existing dist with explicitly unknown source freshness')
     args = parser.parse_args()
     bootstrap.valid_version(args.version)
+    if args.upgrade_from is None:
+        args.upgrade_from = runpy.run_path(str(ROOT / 'release/upgrade-paths.py'))['sources'](args.version)
     for source_version in args.upgrade_from: bootstrap.valid_version(source_version)
     if len(set(args.upgrade_from)) != len(args.upgrade_from) or args.version in args.upgrade_from:
         raise ValueError("Upgrade sources must be distinct older releases")

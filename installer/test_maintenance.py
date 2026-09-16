@@ -54,7 +54,7 @@ class UpgradeLifecycleTests(unittest.TestCase):
             old=releases/'0.1.0-alpha.4';old.mkdir()
             current=root/'current';current.symlink_to('releases/'+old.name)
             config=root/'config.json';config.write_text(json.dumps({'dashboard_origin':'http://localhost:3000','dashboard_port':3000,'dashboard_mode':'ssh'}))
-            marker=root/'installation.json';marker.write_text('{"completed":true}')
+            marker=root/'installation.json';marker.write_text(json.dumps({'completed': True, 'id': 'a'*32}))
             for key,value in {'STATE':root/'state','CONFIG':config,'MARKER':marker,'CURRENT':current,'RELEASE_DIR':releases,'INSTALL_LOCK':root/'lock'}.items():stack.enter_context(patch.object(m,key,value))
             m.STATE.mkdir(); events=[]
             target='0.1.0-alpha.5'
@@ -83,6 +83,10 @@ class UpgradeLifecycleTests(unittest.TestCase):
                 if failure=='backup':raise RuntimeError('backup failed')
             stack.enter_context(patch.object(m,'backup',side_effect=backup))
             stack.enter_context(patch.object(m,'enable'))
+            def repair(installation):
+                self.assertEqual(installation, 'a'*32)
+                events.append(['repair-credentials'])
+            stack.enter_context(patch.object(m.credentials,'repair_namespace',side_effect=repair))
             response=contextlib.nullcontext(SimpleNamespace(status=200))
             stack.enter_context(patch.object(m.urllib.request,'urlopen',return_value=response))
             stack.enter_context(patch.object(m,'dashboard_health',return_value=failure!='health'))
@@ -97,6 +101,8 @@ class UpgradeLifecycleTests(unittest.TestCase):
         state,current,events=self.run_upgrade()
         self.assertEqual(state['status'],'succeeded');self.assertEqual(current,'0.1.0-alpha.5')
         self.assertLess(events.index(['backup']),events.index(['systemctl','start','hakopod-api','hakopod-dashboard']))
+        self.assertLess(events.index(['backup']),events.index(['repair-credentials']))
+        self.assertLess(events.index(['repair-credentials']),events.index(['systemctl','start','hakopod-api','hakopod-dashboard']))
 
     def test_partial_stop_and_backup_failure_restart_old_version(self):
         for failure in ['stop','backup']:
