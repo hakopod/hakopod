@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 )
 
 func TestLiveAutomaticBackendCertificateRenewal(t *testing.T) {
@@ -56,9 +57,26 @@ func TestLiveAutomaticBackendCertificateRenewal(t *testing.T) {
 	})
 	host := c.hostname(target, "smtp")
 	cert, key := testTLSCertificate(t, host, time.Now().Add(time.Hour))
-	source, err := c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hakopod-tls-smtp", Namespace: ns, Labels: labelsFor(target, "smtp")}, Type: corev1.SecretTypeTLS, Data: map[string][]byte{corev1.TLSCertKey: cert, corev1.TLSPrivateKeyKey: key}}, metav1.CreateOptions{})
+	_, err = c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hakopod-tls-smtp", Namespace: ns, Labels: labelsFor(target, "smtp")}, Type: corev1.SecretTypeTLS, Data: map[string][]byte{corev1.TLSCertKey: cert, corev1.TLSPrivateKeyKey: key}}, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A real cert-manager may update source metadata while the fixture rotates
+	// its data. Preserve those changes and retry only resource-version conflicts.
+	updateSource := func(data map[string][]byte) {
+		t.Helper()
+		name := "hakopod-tls-smtp"
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest, err := c.kube.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			latest.Data = data
+			_, err = c.kube.CoreV1().Secrets(ns).Update(ctx, latest, metav1.UpdateOptions{})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	uploaded, err := c.PutBackendCertificate(ctx, target, "smtp", host, cert, key)
 	if err != nil {
@@ -101,11 +119,7 @@ client.quit()
 	}
 	probe(cert)
 	cert2, key2 := testTLSCertificate(t, host, time.Now().Add(2*time.Hour))
-	source.Data = map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: key2}
-	source, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	updateSource(map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: key2})
 	if err = c.RenewBackendCertificates(ctx, target, func(e Event) { t.Log(e.Type, e.Message) }); err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +138,7 @@ client.quit()
 		t.Fatal("renewal did not retain singleton Recreate strategy")
 	}
 	previous := d.Generation
-	source.Data[corev1.TLSPrivateKeyKey] = []byte("invalid fixture replacement")
-	source, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	updateSource(map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: []byte("invalid fixture replacement")})
 	if err = c.RenewBackendCertificates(ctx, target, nil); err == nil {
 		t.Fatal("invalid source accepted")
 	}
@@ -139,10 +149,7 @@ client.quit()
 	probe(cert2)
 	// Replacing an uploaded ingress reference must finish its backend restart
 	// within the same reviewed deployment, rather than report premature success.
-	source.Data = map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: key2}
-	if source, err = c.kube.CoreV1().Secrets(ns).Update(ctx, source, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
+	updateSource(map[string][]byte{corev1.TLSCertKey: cert2, corev1.TLSPrivateKeyKey: key2})
 	cert3, key3 := testTLSCertificate(t, host, time.Now().Add(3*time.Hour))
 	ingressReference, err := c.PutTLSCertificate(ctx, target, "smtp", cert3, key3)
 	if err != nil {
