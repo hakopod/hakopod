@@ -23,7 +23,7 @@ func TestPreflightAccountsForOtherWorkloadsAndJobPeak(t *testing.T) {
 	if err != nil || report.Validate() != nil {
 		t.Fatal(report, err)
 	}
-	if report.CPURequestMillis != 300 || report.MemoryRequestBytes != 384<<20 {
+	if report.CPURequestMillis != 360 || report.MemoryRequestBytes != 462<<20 {
 		t.Fatal(report)
 	}
 	busy := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "busy", Namespace: "other"}, Spec: corev1.PodSpec{NodeName: "node", Containers: []corev1.Container{{Name: "busy", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("900m"), corev1.ResourceMemory: resource.MustParse("900Mi")}}}}}}

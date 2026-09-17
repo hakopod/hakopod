@@ -99,10 +99,10 @@ type Profile struct {
 }
 
 var Profiles = map[string]Profile{
-	"small":   {"100m", "500m", "128Mi", "256Mi"},
-	"medium":  {"250m", "1", "256Mi", "512Mi"},
-	"large":   {"500m", "2", "512Mi", "1Gi"},
-	"compute": {"1", "4", "2Gi", "4Gi"},
+	"small":   {"120m", "600m", "154Mi", "308Mi"},
+	"medium":  {"300m", "1200m", "308Mi", "615Mi"},
+	"large":   {"600m", "2400m", "615Mi", "1229Mi"},
+	"compute": {"1200m", "4800m", "2458Mi", "4916Mi"},
 	"gpu":     {"2", "8", "8Gi", "16Gi"},
 }
 

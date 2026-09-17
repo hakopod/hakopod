@@ -6,11 +6,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// Explicit budgets must fit the namespace even when they exceed a stock profile.
+// Effective service budgets must fit the namespace, including profile defaults.
 // Keep enough room for the old revision during a rollout or service removal.
 // Trusted hosted-pool quotas are applied afterwards and remain authoritative.
-func explicitResourceQuota(q *corev1.ResourceQuota, t Target) {
-	explicit := false
+func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 	budgets := map[string]corev1.ResourceList{}
 	apps := []spec.Application{t.Spec}
 	if t.Previous != nil {
@@ -18,7 +17,6 @@ func explicitResourceQuota(q *corev1.ResourceQuota, t Target) {
 	}
 	for _, app := range apps {
 		for name, s := range app.Services {
-			explicit = explicit || s.Resources != nil
 			p := spec.EffectiveResources(s)
 			count := max(s.Replicas, 1)
 			if s.Autoscaling != nil {
@@ -44,9 +42,6 @@ func explicitResourceQuota(q *corev1.ResourceQuota, t Target) {
 				}
 			}
 		}
-	}
-	if !explicit {
-		return
 	}
 	total := corev1.ResourceList{}
 	for _, budget := range budgets {

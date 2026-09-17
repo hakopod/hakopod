@@ -49,18 +49,18 @@ func TestExplicitQuotaCoversRolloutAndRetainedRevision(t *testing.T) {
 	s.Replicas = 3
 	target.Spec.Services = map[string]spec.Service{"web": s}
 	quota := &corev1.ResourceQuota{Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{}}}
-	explicitResourceQuota(quota, target)
+	serviceResourceQuota(quota, target)
 	if q := quota.Spec.Hard[corev1.ResourceLimitsCPU]; q.Cmp(resource.MustParse("128")) != 0 {
 		t.Fatal(q)
 	}
 	old := target.Spec
 	target.Previous = &old
 	target.Spec = spec.Application{Services: map[string]spec.Service{"replacement": {Size: "medium", Replicas: 1}}}
-	explicitResourceQuota(quota, target)
-	if q := quota.Spec.Hard[corev1.ResourceLimitsCPU]; q.Cmp(resource.MustParse("130")) != 0 {
+	serviceResourceQuota(quota, target)
+	if q := quota.Spec.Hard[corev1.ResourceLimitsCPU]; q.Cmp(resource.MustParse("130400m")) != 0 {
 		t.Fatal("old service budget lost", q)
 	}
-	if q := quota.Spec.Hard[corev1.ResourceLimitsMemory]; q.Cmp(resource.MustParse("257Gi")) != 0 {
+	if q := quota.Spec.Hard[corev1.ResourceLimitsMemory]; q.Cmp(resource.MustParse("263374Mi")) != 0 {
 		t.Fatal(q)
 	}
 }
@@ -72,15 +72,15 @@ func TestCloudExplicitResourceCeilings(t *testing.T) {
 		r := &spec.Resources{}
 		switch field {
 		case "cpu_request":
-			r.CPURequest = "501m"
+			r.CPURequest = "601m"
 			r.CPULimit = "1"
 		case "cpu_limit":
-			r.CPULimit = "2001m"
+			r.CPULimit = "2401m"
 		case "memory_request":
-			r.MemoryRequest = "513Mi"
+			r.MemoryRequest = "616Mi"
 			r.MemoryLimit = "1Gi"
 		case "memory_limit":
-			r.MemoryLimit = "1025Mi"
+			r.MemoryLimit = "1230Mi"
 		}
 		s := target.Spec.Services["web"]
 		s.Resources = r
@@ -91,5 +91,21 @@ func TestCloudExplicitResourceCeilings(t *testing.T) {
 		if err := (&Client{}).ValidateCloudSpec(target.Spec); err != nil {
 			t.Fatal("selfhosted restricted", err)
 		}
+	}
+}
+
+func TestProfileQuotaCoversIncreasedBudgetsWithoutOverrides(t *testing.T) {
+	target := testTarget(t)
+	target.Spec.Services = map[string]spec.Service{"api": {Size: "compute", Replicas: 4}}
+	quota := &corev1.ResourceQuota{Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{
+		corev1.ResourceLimitsCPU: resource.MustParse("16"), corev1.ResourceLimitsMemory: resource.MustParse("16Gi"),
+	}}}
+	serviceResourceQuota(quota, target)
+	// Four desired pods and the rolling replacement must fit the effective profile.
+	if q := quota.Spec.Hard[corev1.ResourceLimitsCPU]; q.Cmp(resource.MustParse("24")) != 0 {
+		t.Fatal(q)
+	}
+	if q := quota.Spec.Hard[corev1.ResourceLimitsMemory]; q.Cmp(resource.MustParse("24580Mi")) != 0 {
+		t.Fatal(q)
 	}
 }

@@ -59,7 +59,7 @@ The acceptance script modifies `demo/development/shop`, revokes its temporary sc
 | PostgreSQL | 256 MiB / 0.5 CPU, 30 connections, 32 MiB shared buffers, 2 MiB work memory |
 | HAProxy, within the K3s budget | 96 MiB request / 256 MiB limit, two threads, 1024 connections |
 | Go API/reconciler | `GOMEMLIMIT=192MiB`, `GOMAXPROCS=2` in local environment; Go's memory target is not a hard process limit |
-| Default small application service | 128 MiB request / 256 MiB limit; 100m CPU request / 500m limit |
+| Default small application service | 154 MiB request / 308 MiB limit; 120m CPU request / 600m limit |
 
 No Redis, Prometheus, logging database, cert-manager or secrets operator runs in the M1 profile. On an idle cluster before application deployment, one measurement was 687 MiB for the K3s node, 12 MiB for its forwarding helper and 18 MiB for PostgreSQL. HAProxy's 104 MiB is included in the node measurement, not additional. This is an observed sample, not a load-test guarantee. Budget spare resources for rolling updates.
 

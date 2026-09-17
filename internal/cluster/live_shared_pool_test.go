@@ -24,7 +24,7 @@ func TestLiveSandboxedSharedPool(t *testing.T) {
 		t.Fatal("requires named development cluster")
 	}
 	policy := func(context.Context, string, string, spec.Application) (WorkloadPolicy, error) {
-		return WorkloadPolicy{NodeName: "k3d-shared-free-test-0", Pool: "free", RuntimeClass: "runsc", MemoryRequest: "256Mi", EgressPorts: []int32{80, 443}, Quota: map[string]string{"pods": "2", "requests.memory": "768Mi", "limits.memory": "768Mi"}}, nil
+		return WorkloadPolicy{NodeName: "k3d-shared-free-test-0", Pool: "free", RuntimeClass: "runsc", MemoryRequest: spec.Profiles["small"].MemoryLimit, EgressPorts: []int32{80, 443}, Quota: map[string]string{"pods": "2", "requests.memory": "924Mi", "limits.memory": "924Mi"}}, nil
 	}
 	c, err := New(path, Options{DeploymentMode: DeploymentManagedCloud, OperatorNodeLimit: 2, WorkloadPolicy: policy, AppDomain: "127.0.0.1.sslip.io", IngressClass: "haproxy", PublicPort: 18080, RolloutTimeout: 90 * time.Second})
 	if err != nil {
@@ -95,7 +95,7 @@ func TestLiveSandboxedSharedPool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().String()) != "256Mi" {
+	if strings.TrimSpace(deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().String()) != spec.Profiles["small"].MemoryLimit {
 		t.Fatal("memory reservation missing")
 	}
 }

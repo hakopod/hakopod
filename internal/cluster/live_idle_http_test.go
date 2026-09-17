@@ -21,7 +21,7 @@ func TestLiveIdleHTTP(t *testing.T) {
 		t.Fatal("requires named development context")
 	}
 	c, err := New(path, Options{DeploymentMode: DeploymentManagedCloud, OperatorNodeLimit: 2, AppDomain: "127.0.0.1.sslip.io", IngressClass: "haproxy", PublicPort: 18080, RolloutTimeout: 90 * time.Second, WorkloadPolicy: func(context.Context, string, string, spec.Application) (WorkloadPolicy, error) {
-		return WorkloadPolicy{NodeName: "k3d-shared-free-test-0", Pool: "free", RuntimeClass: "runsc", IdleHTTP: true, MemoryRequest: "256Mi"}, nil
+		return WorkloadPolicy{NodeName: "k3d-shared-free-test-0", Pool: "free", RuntimeClass: "runsc", IdleHTTP: true, MemoryRequest: spec.Profiles["small"].MemoryLimit}, nil
 	}})
 	if err != nil {
 		t.Fatal(err)
