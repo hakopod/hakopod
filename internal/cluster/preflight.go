@@ -49,10 +49,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	}
 	var jobCPU, jobMemory int64
 	for _, s := range t.Spec.Services {
-		p := spec.Profiles[s.Size]
-		if p.CPURequest == "" {
-			p = spec.Profiles["small"]
-		}
+		p := spec.EffectiveResources(s)
 		if policy != nil && policy.MemoryRequest != "" {
 			p.MemoryRequest = policy.MemoryRequest
 		}
@@ -132,10 +129,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		return r, nil
 	}
 	for name, s := range t.Spec.Services {
-		p := spec.Profiles[s.Size]
-		if p.CPURequest == "" {
-			p = spec.Profiles["small"]
-		}
+		p := spec.EffectiveResources(s)
 		if policy != nil && policy.MemoryRequest != "" {
 			p.MemoryRequest = policy.MemoryRequest
 		}

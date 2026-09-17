@@ -1,3 +1,5 @@
+import { ResourceFields } from './resource-fields'
+import { serviceResources } from '../lib/service-resources'
 import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
 import { prepareEnvironment, saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields, RunCommandFields } from './runtime-settings-fields'
@@ -357,7 +359,7 @@ export function DeploymentForm({
             )}
             <div className="review-resources">
               {Object.entries(plan.spec.services).map(([name, service]) => {
-                const profile = plan.resource_profiles?.[service.size || 'small']
+                const profile = serviceResources(service, plan.resource_profiles)
                 return profile ? (
                   <div key={name}>
                     <strong>{name}</strong>
@@ -366,7 +368,7 @@ export function DeploymentForm({
                         ? 'Scheduled job'
                         : service.job
                           ? 'Deployment job'
-                          : `${service.replicas ?? 1} replica`}{' '}
+                          : `${service.replicas ?? 1} ${(service.replicas ?? 1) === 1 ? 'replica' : 'replicas'}`}{' '}
                       · {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
                     </span>
                     <small>
@@ -720,6 +722,14 @@ export function DeploymentForm({
                           />
                         </label>
                       </div>
+                      <ResourceFields
+                        name={name}
+                        resources={service.resources}
+                        disabled={busy}
+                        hostedFree={features.hostedFree}
+                        error={error}
+                        onChange={(resources) => updateService(name, { resources })}
+                      />
                       <RunCommandFields
                         label={name}
                         disabled={busy}

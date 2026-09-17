@@ -23,6 +23,7 @@ export function hostedFreeIssues(spec: Spec): string[] {
     if (service.architecture && service.architecture !== 'amd64')
       add('architecture', 'Hosted Free runs AMD64 images.')
     for (const [field, unsupported] of Object.entries({
+      resources: Object.values(service.resources || {}).some(Boolean),
       job: Boolean(service.job),
       autoscaling: Boolean(service.autoscaling),
       volume: Boolean(service.volume),

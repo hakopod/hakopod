@@ -107,7 +107,7 @@ func TestComposeRejectsUnsupportedOrAmbiguousInputs(t *testing.T) {
 		"credential URL":         "environment: {DATABASE_URL: 'postgres://user:do-not-echo@db/test'}",
 		"clear command":          "command: []",
 		"host root":              "user: '0'",
-		"resources":              "deploy: {resources: {limits: {memory: 10m}}}",
+		"resources":              "deploy: {resources: {reservations: {devices: []}}}",
 		"replicas zero":          "deploy: {replicas: 0}",
 		"port range":             "ports: ['8000-8002']",
 		"aliases":                "networks: {default: {aliases: [other]}}",

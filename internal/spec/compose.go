@@ -216,7 +216,7 @@ func ImportComposeWithEnvironmentFiles(data []byte, name string, variables map[s
 	if _, err = Parse(encoded); err != nil {
 		return ComposeImport{}, err
 	}
-	r.warn("Review resource sizes and container permissions before deploying. Services use Hakopod resource profiles and its non-root security defaults.")
+	r.warn("Review resource sizes and container permissions before deploying. Omitted resource fields inherit the selected Hakopod size profile. Containers use non-root security defaults.")
 	return ComposeImport{Spec: app, TOML: string(encoded), Warnings: r.warnings, Secrets: r.secrets}, nil
 }
 
@@ -385,7 +385,7 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 	if !namePattern.MatchString(name) {
 		return Service{}, fmt.Errorf("%s: use lowercase letters, digits or hyphens; update references too", f)
 	}
-	m, err := composeMap(node, f, "image", "command", "entrypoint", "environment", "env_file", "depends_on", "ports", "expose", "networks", "volumes", "deploy", "restart", "container_name", "working_dir", "user", "read_only", "stop_grace_period", "platform", "x-hakopod")
+	m, err := composeMap(node, f, "image", "command", "entrypoint", "environment", "env_file", "depends_on", "ports", "expose", "networks", "volumes", "deploy", "restart", "container_name", "working_dir", "user", "read_only", "stop_grace_period", "platform", "cpus", "mem_limit", "mem_reservation", "x-hakopod")
 	if err != nil {
 		return Service{}, err
 	}
@@ -457,9 +457,12 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 		r.warn(f + ": container_name is replaced by the service name for private DNS; update clients that use the container name.")
 	}
 	if n := m["deploy"]; n != nil {
-		dm, e := composeMap(n, f+".deploy", "replicas")
+		dm, e := composeMap(n, f+".deploy", "replicas", "resources")
 		if e != nil {
 			return s, e
+		}
+		if err := r.resources(&s, dm["resources"], f+".deploy.resources"); err != nil {
+			return s, err
 		}
 		if dm["replicas"] != nil {
 			v, e := r.text(dm["replicas"], f+".deploy.replicas")
@@ -471,6 +474,18 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 				return s, fmt.Errorf("%s.deploy.replicas: use 1–20", f)
 			}
 			s.Replicas = int32(i)
+		}
+	}
+	for _, field := range []struct {
+		key, resource string
+		memory        bool
+	}{
+		{"cpus", "cpu_limit", false}, {"mem_limit", "memory_limit", true}, {"mem_reservation", "memory_request", true},
+	} {
+		if m[field.key] != nil {
+			if err := r.resourceValue(&s, m[field.key], field.resource, field.memory, f+"."+field.key); err != nil {
+				return s, err
+			}
 		}
 	}
 	if n := m["networks"]; n != nil {

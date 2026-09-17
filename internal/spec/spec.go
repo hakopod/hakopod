@@ -31,6 +31,7 @@ type Application struct {
 }
 
 type Service struct {
+	Resources               *Resources              `json:"resources,omitempty" toml:"resources,omitempty"`
 	Suspended               bool                    `json:"suspended,omitempty" toml:"suspended,omitempty"`
 	Job                     *Job                    `json:"job,omitempty" toml:"job"`
 	Files                   map[string]File         `json:"files,omitempty" toml:"files"`
@@ -92,7 +93,7 @@ type Change struct {
 	Sensitive bool   `json:"sensitive"`
 }
 
-// Profile is intentionally a small, centrally defined resource budget.
+// Profile supplies centrally defined defaults for a service resource budget.
 type Profile struct {
 	CPURequest, CPULimit, MemoryRequest, MemoryLimit string
 }
@@ -248,6 +249,9 @@ func Normalize(input Application) (Application, error) {
 		}
 		if _, ok := Profiles[svc.Size]; !ok {
 			return Application{}, fmt.Errorf("%s.size: choose small, medium, large, compute or gpu", field)
+		}
+		if err := normalizeResources(&svc); err != nil {
+			return Application{}, fmt.Errorf("%s.%w", field, err)
 		}
 		if svc.Suspended && svc.Job != nil && svc.Job.Schedule == nil {
 			return Application{}, fmt.Errorf("%s: deployment jobs cannot be stopped or resumed", field)
@@ -492,6 +496,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "network_access", a.NetworkAccess, b.NetworkAccess, false)
 		add(name, "public", a.Public, b.Public, false)
 		add(name, "size", a.Size, b.Size, false)
+		add(name, "resources", a.Resources, b.Resources, false)
 		add(name, "replicas", a.Replicas, b.Replicas, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
 		add(name, "readiness", a.Readiness, b.Readiness, false)

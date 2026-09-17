@@ -2943,6 +2943,7 @@ export interface components {
             readiness?: components["schemas"]["Readiness"];
             /** @enum {string} */
             update_strategy?: "rolling" | "recreate";
+            resources?: components["schemas"]["Resources"];
             restart_nonce?: string;
             registry_credential?: string;
             tls?: components["schemas"]["TLSConfig"];
@@ -4161,6 +4162,16 @@ export interface components {
             period_seconds?: number;
             timeout_seconds?: number;
             failure_threshold?: number;
+        };
+        Resources: {
+            /** @description Per-replica CPU reservation, 1m–64 cores; omit to inherit size. */
+            cpu_request?: string;
+            /** @description Per-replica CPU limit, 1m–64 cores; must cover request. */
+            cpu_limit?: string;
+            /** @description Per-replica memory reservation, 1Mi–256Gi; omit to inherit size. */
+            memory_request?: string;
+            /** @description Per-replica memory limit, 1Mi–256Gi; must cover request. */
+            memory_limit?: string;
         };
         TLSConfig: {
             certificate?: string;
