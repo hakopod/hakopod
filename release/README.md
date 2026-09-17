@@ -22,6 +22,26 @@ the published release, exact source and website bootstrap verification.
 Hosting `hakopod.com/scripts/installer.sh` remains a separate website deployment;
 future releases do not change that endpoint automatically.
 
+Before creating a tag, add its version and supported source versions to
+`release/upgrade-paths.json` and set the installer acceptance workflow's default
+candidate to that version. Run the same preflight used by publication:
+
+```sh
+python3 release/publication.py version v0.1.0-alpha.12
+python3 release/upgrade-paths.py --version 0.1.0-alpha.12 --require-policy
+```
+
+Merge only after the candidate's native smoke and host matrix pass. Each declared
+source is tested across both managed-database architectures and the amd64 local
+and external PostgreSQL modes. Create the tag from that merged source; let the
+workflow create and publish the release after its artifact checks. Do not create
+an empty published release while the build is pending.
+
+`v0.1.0-alpha.11` was tagged without an upgrade policy and produced no release
+assets. Its tag remains unchanged. The corrected candidate is `v0.1.0-alpha.12`,
+which declares upgrades from alpha.8, alpha.9 and alpha.10. An empty alpha.11
+release is not an installable source version.
+
 Release assets include `installer.sh`, the installer kit, the actual dashboard
 runtime, all four platform archives, `SHA256SUMS`, SPDX/CycloneDX/Syft inventories,
 license notices, build records, native smoke reports and an attestation bundle.
