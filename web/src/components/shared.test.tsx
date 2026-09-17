@@ -21,6 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy, ErrorState } from './shared'
 import { APIError, message } from '../lib/api'
 import { specToTOML } from '../lib/toml'
+import { serviceResources } from '../lib/service-resources'
 import { canAccess, canOpenHostTerminal } from '../lib/scope'
 import type { Identity } from '../lib/types'
 
@@ -67,6 +68,7 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
         restart_nonce: 'once',
         run_as_user: 1000,
         volume: { mount_path: '/data', size_gib: 10, storage_class: 'local-path' },
+        resources: { cpu_request: '250m', cpu_limit: '2', memory_limit: '1Gi' },
         gpu: { count: 1 },
         tls: { issuer: 'letsencrypt-staging' },
         secrets: { API_TOKEN: { ref: 'api-token' } },
@@ -79,6 +81,10 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
     'registry_credential = "private"',
     'restart_nonce = "once"',
     'run_as_user = 1000',
+    '[services.web.resources]',
+    'cpu_request = "250m"',
+    'cpu_limit = "2"',
+    'memory_limit = "1Gi"',
     '[services.web.volume]',
     'mount_path = "/data"',
     'size_gib = 10',
@@ -197,4 +203,16 @@ test('installation prerequisites link to setup without losing the error', () => 
     assert.ok(html.includes('Show error'))
     assert.ok(html.includes('/infrastructure?tab=setup'))
   }
+})
+
+test('resource review combines explicit values with the selected size defaults', () => {
+  assert.deepEqual(
+    serviceResources(
+      { image: 'nginx:alpine', size: 'medium', resources: { cpu_limit: '2', memory_request: '' } },
+      {
+        medium: { CPURequest: '250m', CPULimit: '1', MemoryRequest: '256Mi', MemoryLimit: '512Mi' },
+      },
+    ),
+    { CPURequest: '250m', CPULimit: '2', MemoryRequest: '256Mi', MemoryLimit: '512Mi' },
+  )
 })

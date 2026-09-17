@@ -13,6 +13,13 @@ import (
 
 type WorkloadPolicy = cluster.WorkloadPolicy
 type WorkloadSpec = spec.Application
+type WorkloadService = spec.Service
+
+// ValidateCloudResources shares the engine's bounded resource policy with gateways.
+func ValidateCloudResources(s spec.Service) error {
+	return spec.ValidateResourceCeiling(s, spec.Profiles["large"])
+}
+
 type BackupConfig = api.BackupConfig
 
 type RuntimeConfig struct {

@@ -65,7 +65,8 @@ DNS routing and certificate coverage are separate checks.
 | `public_tcp` | Up to 16 explicit TCP listeners per service, 64 per application: port, target_port and up to 16 source_cidrs; self-hosted only, using administrator-provisioned ingress ports |
 | `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS |
 | `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
-| `size` | small; centrally defined resources below |
+| `size` | small; default resource profile below |
+| `resources` | Optional per-service CPU/memory requests and limits; overrides individual size defaults |
 | `replicas` | Per-service saved count; defaults to 1, allowed 1–20 (Cloud: at most 3) |
 | `suspended` | false; true stops the service and pauses autoscaling while retaining its saved replicas |
 | `healthcheck` | Optional HTTP readiness path; a port otherwise gets TCP readiness |
@@ -111,8 +112,48 @@ application clients must retry normal runtime failures.
 | compute | 1 / 4 CPU | 2Gi / 4Gi |
 | gpu | 2 / 8 CPU | 8Gi / 16Gi |
 
-Profiles appear in `plan`. Advanced arbitrary resource overrides are currently
-rejected. Rolling updates allow one additional replica with zero requested
+Profiles appear in `plan`. Use a `resources` table to override individual values:
+
+```toml
+[services.api]
+image = "nginxinc/nginx-unprivileged:alpine"
+size = "medium"
+replicas = 2
+
+[services.api.resources]
+cpu_request = "250m"
+cpu_limit = "1"
+memory_request = "512Mi"
+memory_limit = "1Gi"
+```
+
+All values are quoted strings, per replica (or job attempt). CPU accepts cores
+with up to three decimal places or integer millicores, from `1m` to `64` cores.
+Memory accepts whole bytes or `Ki`, `Mi`, `Gi`, `Ti`, `k`, `M`, `G`, `T` units,
+from `1Mi` to `256Gi`. `512Mi` means 512 mebibytes; `512M` means 512 million
+bytes. Zero, negative, unlimited and ambiguous fractional-byte values are rejected.
+
+Omitted or empty fields inherit `size` (which defaults to small). Requests must
+not exceed their effective limits, including inherited defaults. A request above
+a profile limit needs an explicit higher limit too. Changing `size` changes only
+the values you have not overridden. Removing `resources` restores the profile.
+The dashboard review, capacity checks, Deployments, deployment jobs and scheduled
+jobs all use the resulting values. CPU autoscaling uses the effective CPU request.
+
+Namespace budgets account for explicit resources and rollout overlap;
+this does not reserve physical capacity. Cloud keeps its existing maximum large
+profile budgets (500m CPU request, 2 CPU limit, 512Mi memory request, 1Gi memory
+limit per replica). Hosted Free keeps its fixed small budget and does not allow
+custom resource fields. Node availability and operator quotas still apply.
+
+Compose import converts `deploy.resources.reservations.{cpus,memory}` to requests
+and `deploy.resources.limits.{cpus,memory}` to limits. Service-level `cpus`,
+`mem_limit` and `mem_reservation` are also supported; duplicate declarations must
+agree. Compose `512m` means 512Mi and is converted to a Kubernetes byte quantity.
+Omitted values inherit Hakopod's profile; imports do not create unbounded limits.
+Unsupported device/PID reservations are rejected rather than discarded.
+
+Rolling updates allow one additional replica with zero requested
 unavailable replicas; actual availability still depends on capacity, readiness
 correctness and application shutdown behavior. Pods have a 30-second termination
 grace period by default, run as UID/GID10001, drop capabilities and receive no service-account

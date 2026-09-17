@@ -258,6 +258,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	quota.Spec.Hard["count/configmaps"] = resource.MustParse("256")
 	quota.Spec.Hard["count/secrets"] = resource.MustParse("256")
 	workloadQuota(quota, t.Spec)
+	explicitResourceQuota(quota, t)
 	if t.policy != nil {
 		for name, value := range t.policy.Quota {
 			quota.Spec.Hard[corev1.ResourceName(name)] = resource.MustParse(value)
@@ -294,7 +295,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 			podLabels[sharedNetworkKey(t, identity)] = "true"
 		}
 	}
-	profile := spec.Profiles[svc.Size]
+	profile := spec.EffectiveResources(svc)
 	container := corev1.Container{Name: "app", Image: svc.Image, ImagePullPolicy: corev1.PullAlways,
 		Command: svc.Command, Args: svc.Args, WorkingDir: svc.WorkingDir,
 		Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPURequest), corev1.ResourceMemory: resource.MustParse(profile.MemoryRequest), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPULimit), corev1.ResourceMemory: resource.MustParse(profile.MemoryLimit), corev1.ResourceEphemeralStorage: resource.MustParse("128Mi")}},
