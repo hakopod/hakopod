@@ -63,10 +63,10 @@ func TestExplicitResourceValidationAndRoundTrip(t *testing.T) {
 		})
 	}
 	s := Service{Size: "medium", Resources: &Resources{CPULimit: "2"}}
-	if p := EffectiveResources(s); p != (Profile{"250m", "2", "256Mi", "512Mi"}) {
+	if p := EffectiveResources(s); p != (Profile{"300m", "2", "308Mi", "615Mi"}) {
 		t.Fatal(p)
 	}
-	if err := ValidateResourceCeiling(Service{Resources: &Resources{CPULimit: "2001m"}}, Profiles["large"]); err == nil {
+	if err := ValidateResourceCeiling(Service{Resources: &Resources{CPULimit: "2401m"}}, Profiles["large"]); err == nil {
 		t.Fatal("cloud ceiling bypass")
 	}
 }

@@ -14,6 +14,13 @@ import (
 type WorkloadPolicy = cluster.WorkloadPolicy
 type WorkloadSpec = spec.Application
 type WorkloadService = spec.Service
+type ResourceProfile = spec.Profile
+
+// ServiceResourceProfile returns a copy of the engine's per-service defaults.
+func ServiceResourceProfile(name string) (ResourceProfile, bool) {
+	profile, ok := spec.Profiles[name]
+	return profile, ok
+}
 
 // ValidateCloudResources shares the engine's bounded resource policy with gateways.
 func ValidateCloudResources(s spec.Service) error {

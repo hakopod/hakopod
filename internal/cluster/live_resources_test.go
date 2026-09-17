@@ -46,6 +46,12 @@ services:
 		t.Fatal(err)
 	}
 	app := draft.Spec
+	defaultService := app.Services["api"]
+	defaultService.Resources = nil
+	defaultService.Replicas = 1
+	defaultService.Port = 0
+	defaultService.Args = []string{"import time; time.sleep(300)"}
+	app.Services["profile"] = defaultService
 	job := app.Services["api"]
 	job.Port = 0
 	job.Replicas = 1
@@ -117,11 +123,18 @@ services:
 		}
 	}
 	pods, err := c.kube.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{})
-	if err != nil || len(pods.Items) < 4 {
+	if err != nil || len(pods.Items) < 5 {
 		t.Fatal("expected actual deployment and job pods", err)
 	}
 	for _, pod := range pods.Items {
-		check(pod.Spec)
+		if pod.Labels[serviceKey] == "profile" {
+			r := pod.Spec.Containers[0].Resources
+			if r.Requests.Cpu().MilliValue() != 120 || r.Limits.Cpu().MilliValue() != 600 || r.Requests.Memory().Value() != 154<<20 || r.Limits.Memory().Value() != 308<<20 {
+				t.Fatal("inherited small profile was not increased", r)
+			}
+		} else {
+			check(pod.Spec)
+		}
 	}
-	t.Log("Compose -> TOML -> two ready replicas, completed Job and completed CronJob run: exact requests and limits verified on actual pods")
+	t.Log("Compose -> TOML -> two ready replicas, completed Job and completed CronJob run: explicit budgets unchanged and increased small defaults verified on actual pods")
 }

@@ -258,7 +258,7 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	quota.Spec.Hard["count/configmaps"] = resource.MustParse("256")
 	quota.Spec.Hard["count/secrets"] = resource.MustParse("256")
 	workloadQuota(quota, t.Spec)
-	explicitResourceQuota(quota, t)
+	serviceResourceQuota(quota, t)
 	if t.policy != nil {
 		for name, value := range t.policy.Quota {
 			quota.Spec.Hard[corev1.ResourceName(name)] = resource.MustParse(value)

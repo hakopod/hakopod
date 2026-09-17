@@ -16,18 +16,18 @@ Memory values below are Kubernetes request / limit. These are small starting con
 
 | Template | Services and memory | Credentials and limitations |
 | --- | --- | --- |
-| PostgreSQL 17.11 | Database: 256 / 512 MiB | Private 5432; `database-password`; 64 MiB shared buffers, 50 connections. |
-| Valkey 9.1.2 | Database: 128 / 256 MiB | Private 6379; `database-password`; AOF, 64 MiB maxmemory, no eviction. |
-| Redis 8.6.6 | Database: 128 / 256 MiB | Private 6379; `database-password`; AOF, 64 MiB maxmemory, no eviction. Review upstream AGPL/RSAL/SSPL options. |
-| MySQL 8.4.11 | Database: 256 / 512 MiB | Private 3306; separate `database-password` and `database-root-password`; 32 MiB InnoDB buffer, 12 connections, Performance Schema disabled. |
-| CockroachDB 25.4.16 | Database: 512 / 1024 MiB | Private TLS SQL 26257; operator CA and node certificates; 128 MiB cache and SQL budgets. Secure single node, no HA. Review CockroachDB Software License eligibility. |
-| ClickHouse 26.3.33.24 | Database: 512 / 1024 MiB | Private HTTP 8123; `database-password`; 256 MiB query and 640 MiB server memory budgets; bounded background pools. Native TCP is not exposed. |
-| Metabase 0.63.17 | Workspace: 2 / 4 GiB; PostgreSQL: 256 / 512 MiB | `database-password`, `credential-encryption-key`; 1 GiB Java heap. PostgreSQL stores application metadata, dashboards and users. AGPL open-source image. |
-| Infisical 0.165.10 | Workspace: 2 / 4 GiB; PostgreSQL: 256 / 512 MiB; Redis: 128 / 256 MiB | See connection and encryption requirements below. MIT core; enterprise features have separate terms. |
-| Open WebUI 0.11.3 slim | Workspace: 2 / 4 GiB | `provider-key`, `session-secret`; select provider and model. No local Ollama service or embedding weight download. Preserve upstream branding under its license. |
-| Flowise 3.1.4 | Agent workspace: 2 / 4 GiB | Five explicit application secrets; 1 GiB Node heap. Choose provider, model and credentials in the installed workspace. |
-| Uptime Kuma 2.5.4 | Workspace: 256 / 512 MiB | Complete administrator setup before sharing. Persistent data and 256 MiB Node heap. |
-| Gitea 1.27.3 rootless | Workspace: 256 / 512 MiB | Complete administrator setup before sharing. Persistent SQLite and app.ini; HTTP Git only. |
+| PostgreSQL 17.11 | Database: 308 / 615 MiB | Private 5432; `database-password`; 64 MiB shared buffers, 50 connections. |
+| Valkey 9.1.2 | Database: 154 / 308 MiB | Private 6379; `database-password`; AOF, 64 MiB maxmemory, no eviction. |
+| Redis 8.6.6 | Database: 154 / 308 MiB | Private 6379; `database-password`; AOF, 64 MiB maxmemory, no eviction. Review upstream AGPL/RSAL/SSPL options. |
+| MySQL 8.4.11 | Database: 308 / 615 MiB | Private 3306; separate `database-password` and `database-root-password`; 32 MiB InnoDB buffer, 12 connections, Performance Schema disabled. |
+| CockroachDB 25.4.16 | Database: 615 / 1229 MiB | Private TLS SQL 26257; operator CA and node certificates; 128 MiB cache and SQL budgets. Secure single node, no HA. Review CockroachDB Software License eligibility. |
+| ClickHouse 26.3.33.24 | Database: 615 / 1229 MiB | Private HTTP 8123; `database-password`; 256 MiB query and 640 MiB server memory budgets; bounded background pools. Native TCP is not exposed. |
+| Metabase 0.63.17 | Workspace: 2458 / 4916 MiB; PostgreSQL: 308 / 615 MiB | `database-password`, `credential-encryption-key`; 1 GiB Java heap. PostgreSQL stores application metadata, dashboards and users. AGPL open-source image. |
+| Infisical 0.165.10 | Workspace: 2458 / 4916 MiB; PostgreSQL: 308 / 615 MiB; Redis: 154 / 308 MiB | See connection and encryption requirements below. MIT core; enterprise features have separate terms. |
+| Open WebUI 0.11.3 slim | Workspace: 2458 / 4916 MiB | `provider-key`, `session-secret`; select provider and model. No local Ollama service or embedding weight download. Preserve upstream branding under its license. |
+| Flowise 3.1.4 | Agent workspace: 2458 / 4916 MiB | Five explicit application secrets; 1 GiB Node heap. Choose provider, model and credentials in the installed workspace. |
+| Uptime Kuma 2.5.4 | Workspace: 308 / 615 MiB | Complete administrator setup before sharing. Persistent data and 256 MiB Node heap. |
+| Gitea 1.27.3 rootless | Workspace: 308 / 615 MiB | Complete administrator setup before sharing. Persistent SQLite and app.ini; HTTP Git only. |
 | vLLM 0.29.0 | Runtime: 8 / 16 GiB RAM, one NVIDIA GPU | `inference-api-key`; explicit Hugging Face owner/model and immutable revision. GPU VRAM is additional and depends on model. |
 | xem.email | Guided prerequisite entry | Official frontend embeds its API origin during image build. See [the Xem deployment review](templates-xem.md); a blind runtime-only template is intentionally unavailable. |
 
@@ -80,7 +80,7 @@ Run an individual database fixture with `HAKOPOD_CATALOG_TEST=1`, `HAKOPOD_CATAL
 
 The server enables a first-owner bootstrap hook that atomically queues the small `demo/development/shop` application only for a fresh owner with no existing applications. Existing owners and legacy-owner conversions are not retrofitted. Test stores default to bootstrap disabled. No migration seeds sample rows.
 
-The shop contains one public Python web service and one private Python catalog API. Each requests 128 MiB with a 256 MiB limit, runs a pinned small Alpine image as a non-root user, and has no database, PVC, builder, payment provider or stored orders. Products, basket and checkout are labelled sample data; the catalog reports the actual serving API pod. The shop's network requests and request bodies are bounded.
+The shop contains one public Python web service and one private Python catalog API. Each requests 154 MiB with a 308 MiB limit, runs a pinned small Alpine image as a non-root user, and has no database, PVC, builder, payment provider or stored orders. Products, basket and checkout are labelled sample data; the catalog reports the actual serving API pod. The shop's network requests and request bodies are bounded.
 
 `GET /api/v1/showcase` returns the durable bootstrap state and actual application/deployment identifiers and status. It does not fabricate readiness. The server checks one row every ten seconds and submits through the normal durable deployment queue with an idempotency key. Sample acceptance and its tracked application/deployment IDs commit in one PostgreSQL transaction under the same lock used by cancellation. Losing the acceptance connection rolls the entire operation back. The record survives restarts and removal.
 

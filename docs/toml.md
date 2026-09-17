@@ -106,11 +106,24 @@ application clients must retry normal runtime failures.
 
 | Profile | CPU request / limit | Memory request / limit |
 |---|---|---|
-| small | 100m / 500m | 128Mi / 256Mi |
-| medium | 250m / 1 CPU | 256Mi / 512Mi |
-| large | 500m / 2 CPU | 512Mi / 1Gi |
-| compute | 1 / 4 CPU | 2Gi / 4Gi |
+| small | 120m / 600m | 154Mi / 308Mi |
+| medium | 300m / 1200m | 308Mi / 615Mi |
+| large | 600m / 2400m | 615Mi / 1229Mi |
+| compute | 1200m / 4800m | 2458Mi / 4916Mi |
 | gpu | 2 / 8 CPU | 8Gi / 16Gi |
+
+Profiles are fixed per-replica budgets, not percentages of node capacity.
+The small, medium, large and compute budgets were increased by 20%: previous
+values multiplied by 1.2, rounding memory up to a whole MiB. `1000m` is one CPU
+core. Requests reserve scheduler capacity; CPU limits throttle usage and memory
+limits cap RAM. The total steady-state request is the effective per-replica
+request multiplied by the replica count (maximum replicas for autoscaling).
+Rollouts need extra capacity while old and new pods overlap.
+
+New defaults apply when a service is next reconciled or deployed by an upgraded
+engine; existing pods are not resized just by installing a new binary. Explicit
+resource values keep their configured values and are validated against the new
+defaults for omitted fields. Review the plan and node capacity before deploying.
 
 Profiles appear in `plan`. Use a `resources` table to override individual values:
 
@@ -142,7 +155,7 @@ jobs all use the resulting values. CPU autoscaling uses the effective CPU reques
 
 Namespace budgets account for explicit resources and rollout overlap;
 this does not reserve physical capacity. Cloud keeps its existing maximum large
-profile budgets (500m CPU request, 2 CPU limit, 512Mi memory request, 1Gi memory
+profile budgets (600m CPU request, 2400m CPU limit, 615Mi memory request, 1229Mi memory
 limit per replica). Hosted Free keeps its fixed small budget and does not allow
 custom resource fields. Node availability and operator quotas still apply.
 
