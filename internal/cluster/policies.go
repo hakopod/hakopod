@@ -106,6 +106,11 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 				}
 			}
 		}
+		// These grants are resolved from trusted self-hosted configuration only.
+		// They never participate in (or broaden) a Cloud workload policy.
+		if t.policy == nil {
+			policy.Spec.Egress = append(policy.Spec.Egress, privateEgressRules(t.privateEgress[name])...)
+		}
 		if svc.Public {
 			ports := []networkingv1.NetworkPolicyPort{}
 			for _, p := range spec.ServicePorts(svc) {

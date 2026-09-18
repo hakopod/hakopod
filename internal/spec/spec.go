@@ -65,6 +65,7 @@ type Service struct {
 	Args                    []string                `json:"args,omitempty" toml:"args"`
 	DependsOn               []string                `json:"depends_on,omitempty" toml:"depends_on"`
 	Networks                []string                `json:"networks" toml:"networks"`
+	PrivateEgress           []string                `json:"private_egress,omitempty" toml:"private_egress,omitempty"`
 	Secrets                 map[string]SecretRef    `json:"secrets,omitempty" toml:"secrets"`
 	Autoscaling             *Autoscaling            `json:"autoscaling,omitempty" toml:"autoscaling"`
 	RestartNonce            string                  `json:"restart_nonce,omitempty" toml:"restart_nonce"`
@@ -303,6 +304,13 @@ func Normalize(input Application) (Application, error) {
 			return Application{}, err
 		}
 		sort.Strings(svc.Networks)
+		if len(svc.PrivateEgress) > 16 {
+			return Application{}, fmt.Errorf("%s.private_egress: at most 16 approved destinations", field)
+		}
+		if err := validateMembers(svc.PrivateEgress, field+".private_egress", func(n string) bool { return namePattern.MatchString(n) }); err != nil {
+			return Application{}, err
+		}
+		sort.Strings(svc.PrivateEgress)
 		sort.Strings(svc.DependsOn)
 		if a := svc.Autoscaling; a != nil {
 			if a.MinReplicas == 0 {
@@ -506,6 +514,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "args", a.Args, b.Args, false)
 		add(name, "depends_on", a.DependsOn, b.DependsOn, false)
 		add(name, "networks", a.Networks, b.Networks, false)
+		add(name, "private_egress", a.PrivateEgress, b.PrivateEgress, false)
 		add(name, "secrets", a.Secrets, b.Secrets, true)
 		add(name, "autoscaling", a.Autoscaling, b.Autoscaling, false)
 		add(name, "restart_nonce", a.RestartNonce, b.RestartNonce, false)

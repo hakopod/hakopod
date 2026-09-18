@@ -67,6 +67,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
 		return Observation{}, err
 	}
+	target.privateEgress, err = c.resolvePrivateEgress(target)
+	if err != nil {
+		return Observation{}, err
+	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
 	}

@@ -70,6 +70,9 @@ func (c *Client) ValidateCloudSpec(app spec.Application) error {
 		return fmt.Errorf("%w: use at most 10 services per application", ErrCloudLimit)
 	}
 	for name, service := range app.Services {
+		if len(service.PrivateEgress) > 0 {
+			return fmt.Errorf("%w: %s.private_egress requires a self-hosted installation", ErrCloudLimit, name)
+		}
 		if service.GPU != nil || service.AWSIdentity != "" {
 			return fmt.Errorf("%w: %s cannot use GPU or AWS workload identity on Cloud", ErrCloudLimit, name)
 		}

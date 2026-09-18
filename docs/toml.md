@@ -245,6 +245,22 @@ services, then use `network_access.from_applications` to restrict remote peers.
 Network grants and connections are isolated by project and environment. See
 [virtual network configuration and examples](virtual-networks.md).
 
+## Approved private destinations (unreleased)
+
+Self-hosted services can reference administrator-approved private destinations:
+
+```toml
+[services.api]
+private_egress = ["orders-db"]
+```
+
+This is an excerpt to add to an existing service table. Grants are scoped by
+project, environment, application and service. They allow only the approved
+private CIDRs and TCP ports; a secret or environment variable grants no access.
+They also work for jobs and internal-only networks. Managed Cloud rejects this
+field. See [private database access](private-database-access.md) for administrator
+configuration, limits, revocation and availability.
+
 ## Named volumes and filesystem permissions
 
 ```toml
