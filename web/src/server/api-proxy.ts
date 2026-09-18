@@ -1,3 +1,4 @@
+import { forwardAutomationAPI } from './automation-api.ts'
 import { forwardMCP } from './mcp.ts'
 import { editionHeaders, editionRequestError, editionResponseHeaders } from './dashboard-edition.ts'
 import { authenticatedResponse, oauth } from './auth.ts'
@@ -75,6 +76,8 @@ export async function proxy({
       return forwardNamedGitWebhook(request)
     if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)
     if (params._splat === 'v1/webhooks/gitlab') return forwardGitLabWebhook(request)
+    if ((params._splat || '').startsWith('v1/') && !(params._splat || '').startsWith('v1/auth/'))
+      return forwardAutomationAPI(request)
     if (request.method !== 'GET') {
       const rejected = requireSameOrigin(request)
       if (rejected) return rejected

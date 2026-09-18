@@ -79,6 +79,11 @@ BuildKit does not protect against the code to which you grant the secret. Inspec
 public output and use trusted branches. The temporary mount and environment are
 not part of the runtime image. Runtime secrets are configured separately.
 
+## CI through the public dashboard
+
+See [CI API access](ci-api.md) for machine bearer authentication, public REST
+routes and fail-fast specification retrieval before selected-service deployments.
+
 ## Coding agents through MCP
 
 `hakopod mcp` runs a bounded MCP server over stdio. It requires an explicit project
