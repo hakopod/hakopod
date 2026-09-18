@@ -27,8 +27,8 @@ Before creating a tag, add its version and supported source versions to
 candidate to that version. Run the same preflight used by publication:
 
 ```sh
-python3 release/publication.py version v0.1.0-alpha.13
-python3 release/upgrade-paths.py --version 0.1.0-alpha.13 --require-policy
+python3 release/publication.py version v0.1.0-alpha.14
+python3 release/upgrade-paths.py --version 0.1.0-alpha.14 --require-policy
 ```
 
 Merge only after the candidate's native smoke and host matrix pass. Each declared
