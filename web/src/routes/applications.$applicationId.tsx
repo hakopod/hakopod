@@ -1,3 +1,5 @@
+import { publicEndpoints } from '../lib/public-endpoints'
+import { PublicEndpoints } from '../components/public-endpoints'
 import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog, ServiceMoves } from '../components/move-service-dialog'
 import { RenameResource } from '../components/rename-resource'
@@ -138,13 +140,18 @@ function ApplicationDetail() {
   const health = applicationRuntimeHealth(app)
   const serviceNames = Object.keys(app.spec.services)
   const observed = app.observed?.services || []
-  const endpoint = observed.find((service) => service.url)?.url
+  const endpoints = publicEndpoints(
+    app,
+    domains.data?.items,
+    domains.isError ? 'error' : domains.isPending ? 'loading' : 'ready',
+  )
   if (selectedService)
     return (
       <Suspense fallback={<Loading />}>
         <ServiceDetail
           key={`${app.id}:${selectedService}`}
           application={app}
+          endpoints={endpoints}
           serviceName={selectedService}
           initialTab={selectedTab}
           initialPod={selectedPod}
@@ -203,21 +210,9 @@ function ApplicationDetail() {
               {serviceNames.length} {serviceNames.length === 1 ? 'service' : 'services'}
             </span>
             <span>Updated {relative(app.updated_at)}</span>
-            {endpoint && /^https?:\/\//.test(endpoint) && (
-              <a
-                className="application-endpoint-link"
-                href={endpoint}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`${endpoint} (opens in a new tab)`}
-                title={endpoint}
-              >
-                <span className="application-endpoint-text">
-                  {endpoint.replace(/^https?:\/\//, '')}
-                </span>
-                <Icon name="external" size={12} />
-              </a>
-            )}
+          </div>
+          <div className="mt-3 min-w-0">
+            <PublicEndpoints endpoints={endpoints} compact />
           </div>
         </div>
         <div className="form-spacer" />
@@ -500,6 +495,17 @@ function ApplicationDetail() {
           <ApplicationAlarmLinks application={app} />
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">
+          <p className="text-sm text-muted-foreground">
+            Deploying from CI?{' '}
+            <a
+              href="https://hakopod.com/docs/ci-deployments/"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1"
+            >
+              Read the deployment API guide <Icon name="external" size={13} />
+            </a>
+          </p>
           <DeploymentHistory application={app} />
         </Tabs.Content>
         <Tabs.Content value="logs" className="tab-content">

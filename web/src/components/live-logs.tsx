@@ -18,7 +18,7 @@ export default function LiveLogs({
   initialService?: string
 }) {
   const [service, setService] = useState(initialService || services[0] || '')
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(true)
   const [follow, setFollow] = useState(false)
   const [visible, setVisible] = useState(true)
   const [restart, setRestart] = useState(0)
