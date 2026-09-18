@@ -12,7 +12,7 @@ Canonical spec is `internal/spec.Application`, JSON snake_case. `schema_version`
 - `GET /applications?project=demo&environment=development&cursor=...`: `{items:[Application],next_cursor}`; max25 rows and512KiB of encoded spec/observation data.
 - `GET /applications/{id}`: Application (with scope, desired spec, observed snapshot, metadata-only deployment summaries).
 - `POST /plan`: `{project,environment,spec?,toml?,service?}` → `{application_id,expected_revision,spec,changes:[{service,field,before,after,sensitive}],warnings:[]}`. No infrastructure effect.
-- `POST /deployments`: `{project,environment,spec?,toml?,service?,expected_revision}` + required `Idempotency-Key` → HTTP 202 `{id,application_id,revision,status}`; stale expected_revision is 409. New applications start expected_revision=0.
+- `POST /deployments`: `{project,environment,spec?,toml?,service?,services?,expected_revision}` + required `Idempotency-Key` → HTTP 202 `{id,application_id,revision,status}`; stale expected_revision is 409. New applications start expected_revision=0.
 - `GET /deployments/{id}`: Deployment including spec, resolved_spec, events, error, result.
 - `GET /idempotency/{key}`: accepted deployment for the current identity, used by CLI retries; request input must still match.
 - `POST /applications/{id}/rollback`: `{revision,expected_revision}` + Idempotency-Key → accepted deployment; rollback uses immutable resolved image digests.

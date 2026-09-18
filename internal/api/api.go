@@ -471,10 +471,26 @@ type input struct {
 	Spec             *spec.Application `json:"spec,omitempty"`
 	TOML             string            `json:"toml,omitempty"`
 	Service          string            `json:"service,omitempty"`
+	Services         []string          `json:"services,omitempty"`
 	ExpectedRevision *int64            `json:"expected_revision,omitempty"`
 }
 
 func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permission string) (spec.Application, *store.Application, bool) {
+	if in.Services != nil && (in.Service != "" || len(in.Services) == 0 || len(in.Services) > 20) {
+		problem(w, 400, "invalid_service", "provide either service or services; services must contain 1 to 20 unique service names")
+		return spec.Application{}, nil, false
+	}
+	targets := make(map[string]bool)
+	for _, name := range in.Services {
+		if strings.TrimSpace(name) == "" || targets[name] {
+			problem(w, 400, "invalid_service", "services must contain nonempty, unique service names")
+			return spec.Application{}, nil, false
+		}
+		targets[name] = true
+	}
+	if in.Service != "" {
+		targets[in.Service] = true
+	}
 	if !validScope(in.Project, in.Environment) {
 		problem(w, 400, "missing_context", "project and environment are required")
 		return spec.Application{}, nil, false
@@ -529,11 +545,16 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			return next, nil, false
 		}
 	}
-	if in.Service != "" {
-		svc, ok := next.Services[in.Service]
-		if !ok || existing == nil {
+	if len(targets) != 0 {
+		if existing == nil {
 			problem(w, 400, "invalid_service", "targeted deployment requires an existing application and a service present in the input")
 			return next, nil, false
+		}
+		for name := range targets {
+			if _, ok := next.Services[name]; !ok {
+				problem(w, 400, "invalid_service", "every targeted service must be present in the input")
+				return next, nil, false
+			}
 		}
 		merged, cloneErr := spec.Normalize(existing.Spec)
 		if cloneErr != nil {
@@ -555,7 +576,7 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			return next, nil, false
 		}
 		for n, unchanged := range merged.Services {
-			if n != in.Service {
+			if !targets[n] {
 				if prior, exists := previousResolved.Services[n]; exists {
 					unchanged.Image = prior.Image
 					unchanged.RegistryCredential = prior.RegistryCredential
@@ -563,17 +584,20 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 				}
 			}
 		}
-		merged.Services[in.Service] = svc
-		for _, network := range svc.Networks {
-			if old, exists := merged.Networks[network]; !exists || old != next.Networks[network] {
-				problem(w, 400, "shared_configuration", "Shared networks must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
-				return next, nil, false
+		for name := range targets {
+			svc := next.Services[name]
+			merged.Services[name] = svc
+			for _, network := range svc.Networks {
+				if old, exists := merged.Networks[network]; !exists || old != next.Networks[network] {
+					problem(w, 400, "shared_configuration", "Shared networks must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
+					return next, nil, false
+				}
 			}
-		}
-		for _, mount := range svc.Mounts {
-			if old, exists := merged.Volumes[mount.Volume]; !exists || old != next.Volumes[mount.Volume] {
-				problem(w, 400, "shared_configuration", "Shared volumes must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
-				return next, nil, false
+			for _, mount := range svc.Mounts {
+				if old, exists := merged.Volumes[mount.Volume]; !exists || old != next.Volumes[mount.Volume] {
+					problem(w, 400, "shared_configuration", "Shared volumes must be changed in an application-wide plan. Clear the service target and review the full TOML configuration.")
+					return next, nil, false
+				}
 			}
 		}
 		next, err = spec.Normalize(merged)

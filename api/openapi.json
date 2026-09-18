@@ -12338,6 +12338,16 @@
           "service": {
             "type": "string"
           },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "description": "Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment."
+          },
           "expected_revision": {
             "type": "integer"
           },
@@ -12372,6 +12382,16 @@
           },
           "service": {
             "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "description": "Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment."
           },
           "expected_revision": {
             "type": "integer"
