@@ -1,6 +1,11 @@
 name: Template runtime acceptance
 on:
   workflow_dispatch:
+    inputs:
+      save_artifacts:
+        description: Save downloadable runtime evidence (requires available artifact quota)
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'templates'
@@ -65,11 +70,13 @@ jobs:
         run: |
           set -o pipefail
           scripts/private-egress-acceptance.sh | tee .local/runtime-results/private-egress.txt
+      # All verification output remains in the job logs. Downloads are opt-in
+      # so exhausted artifact storage cannot block otherwise valid runtime tests.
       - name: Save verification evidence
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.save_artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: template-runtime-${{ matrix.runner }}
           path: .local/runtime-results
-          retention-days: 14
+          retention-days: 1
           if-no-files-found: warn
