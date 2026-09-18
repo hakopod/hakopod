@@ -100,12 +100,18 @@ func TestHTTPMCPAuthenticationScopeAndReviewedDeployment(t *testing.T) {
 	if !strings.Contains(denied.Body.String(), `"isError":true`) {
 		t.Fatal(denied.Body.String())
 	}
-	// Two sessions per key; the third is refused, and DELETE releases capacity.
+	// Ten sessions per key; the eleventh is refused, and DELETE releases capacity.
+	// The original initialized session already occupies one slot.
+	for i := 0; i < 8; i++ {
+		expect(call("POST", endpoint, raw, "", initialize, nil), 200)
+	}
 	second := call("POST", endpoint, raw, "", initialize, nil)
 	expect(second, 200)
 	expect(call("POST", endpoint, raw, "", initialize, nil), 429)
 	expect(call("DELETE", endpoint, raw, second.Header().Get("Mcp-Session-Id"), "", nil), 204)
 	expect(call("POST", endpoint, raw, second.Header().Get("Mcp-Session-Id"), `{"jsonrpc":"2.0","id":2,"method":"ping"}`, nil), 404)
+	expect(call("POST", endpoint, raw, "", initialize, nil), 200)
+	expect(call("POST", endpoint, raw, "", initialize, nil), 429)
 	if _, err := db.Pool.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE id=$1", key.ID); err != nil {
 		t.Fatal(err)
 	}

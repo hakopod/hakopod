@@ -110,7 +110,7 @@ POST requests require `Content-Type: application/json` and
 202. DELETE with the session headers closes a session.
 
 Sessions expire ten minutes after initialization. Reinitialize after a missing
-or expired session response (404). There are at most two sessions per key and
+or expired session response (404). There are at most ten sessions per key and
 32 total, with one active request per session. Concurrent calls receive 409.
 Request bodies are limited to 512 KiB, canonical API responses to 2 MiB, and tools
 to 30 seconds. Existing API rate/concurrency limits also apply.
