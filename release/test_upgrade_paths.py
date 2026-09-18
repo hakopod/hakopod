@@ -26,3 +26,7 @@ class UpgradePolicyTests(unittest.TestCase):
     def test_alpha12_covers_published_upgrade_sources(self):
         self.assertEqual(policy['sources']('0.1.0-alpha.12', required=True),
                          ['0.1.0-alpha.8', '0.1.0-alpha.9', '0.1.0-alpha.10'])
+
+    def test_alpha13_covers_published_upgrade_sources(self):
+        self.assertEqual(policy['sources']('0.1.0-alpha.13', required=True),
+                         ['0.1.0-alpha.8', '0.1.0-alpha.9', '0.1.0-alpha.10', '0.1.0-alpha.12'])
