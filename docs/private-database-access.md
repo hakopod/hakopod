@@ -1,9 +1,10 @@
 # Private database access
 
-Availability: `private_egress` is implemented on this branch and is **not included
-in v0.1.0-alpha.12 or earlier**. Use the operator policy procedure in the
-[website troubleshooting guide](https://hakopod.com/docs/private-database-connectivity/)
-until a release includes it. Managed Cloud does not accept these grants.
+Availability: `private_egress` is included in the **v0.1.0-alpha.13 candidate**.
+Install a published alpha.13 or later release before using it; alpha.12 and
+earlier reject this field. Until then, use the operator policy procedure in the
+[website troubleshooting guide](https://hakopod.com/docs/private-database-connectivity/).
+Managed Cloud does not accept these grants.
 
 A database can be reachable from the VM but blocked from an application pod.
 Hakopod allows DNS and declared peers, and allows public internet egress for

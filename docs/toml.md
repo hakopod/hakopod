@@ -245,7 +245,7 @@ services, then use `network_access.from_applications` to restrict remote peers.
 Network grants and connections are isolated by project and environment. See
 [virtual network configuration and examples](virtual-networks.md).
 
-## Approved private destinations (unreleased)
+## Approved private destinations (alpha.13 and later)
 
 Self-hosted services can reference administrator-approved private destinations:
 

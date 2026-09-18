@@ -1,31 +1,33 @@
-Hakopod 0.1.0-alpha.12 adds explicit service resource budgets, increases standard profiles by 20%, and improves secret entry and HTTPS upgrade diagnostics. It replaces the incomplete alpha.11 tag, which has no installable assets.
+Hakopod 0.1.0-alpha.13 adds administrator-approved access to private databases and corrects resource profile labels for services with custom CPU or memory settings.
 
-## Service resources and secrets
+## Private database access
 
-Services can set CPU and memory requests and limits explicitly in TOML. The small, medium, large and compute defaults increase by 20%; memory rounds up to whole MiB. These are per-replica budgets. Explicit resource values are preserved, and the new defaults take effect when services are deployed or reconciled with this engine. Namespace quotas account for effective service resources and rolling-update overlap.
+Self-hosted services can reference `private_egress = ["orders-db"]` in TOML. The installation administrator approves exact project, environment, application and service scopes, private destination CIDRs and TCP ports in a protected file configured through `HAKOPOD_PRIVATE_EGRESS_FILE`.
 
-Service creation forms support entering secrets and importing or pasting dotenv content. Detected sensitive values are separated into secret entries instead of being retained as plain environment variables. Review the generated configuration and secret bindings before deployment.
+Hakopod validates grants during planning and reconciliation and applies them to its managed network policies. Removing a reference and successfully deploying removes that service's grant. Internal-only services and jobs can use approved destinations; other private networks remain blocked. Database secrets never grant network access. Managed Cloud does not support these grants.
 
-## Upgrade from alpha.8, alpha.9 or alpha.10
+See [private database configuration](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.13/docs/private-database-access.md) for setup, failover and revocation. Changing the operator file requires restarting the API and deploying to update existing policies. A restart alone does not revoke running pods' access. Existing operator workaround policies remain additive and must be removed separately after verifying their replacement.
+
+## Custom resource labels
+
+Services with explicit CPU or memory settings now show **Custom** on application cards, the service detail header and the topology inspector, including partial overrides and jobs. The selected base size still supplies defaults for fields without overrides. This label fix does not change resource requests or limits.
+
+## Upgrade
+
+Supported source versions are alpha.8, alpha.9, alpha.10 and alpha.12, subject to this release's native installer acceptance. Alpha.11 has no installable assets and is not an upgrade source.
 
 Download this release's `installer.sh`, then run:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.12
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.13
 ```
 
-Confirm the displayed version. The bootstrap checks supported source versions, backs up PostgreSQL and configuration, replaces the API/dashboard binaries and verifies health. Application workloads remain running during the platform upgrade. Use this new bootstrap to receive the updated readiness checks and diagnostics; the previously installed maintenance helper remains unchanged.
+The installer checks the supported source version, backs up PostgreSQL and configuration, replaces the API/dashboard and verifies readiness. Application workloads remain running during the platform upgrade. Do not bypass upgrade guards or use `--resume` to change versions.
 
-HTTPS dashboard readiness now checks the configured public hostname against the local listener. Failed upgrades retain the underlying readiness error so operators can distinguish certificate, listener and service failures.
+## Verification and artifacts
 
-The Git/registry credential-store repair introduced in alpha.10 is retained. It verifies installation ownership and repairs affected namespace labels without replacing credentials or encryption keys. See [installation maintenance](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.12/docs/installation-maintenance.md).
+The private-egress runtime tests passed on native AMD64 and ARM64: default denial, approved destination/port access, denial for other ports and services, and removal of access. The Custom label passed independent light/dark desktop/mobile UI review, and Go/dashboard CI passed.
 
-Alpha.11's tag remains unchanged and is not an upgrade source because it produced no packages. Do not bypass upgrade guards or use `--resume` to change versions. Other installed versions require a separately verified upgrade path.
+Publication additionally requires fresh-install and upgrade acceptance with managed PostgreSQL on AMD64/ARM64 and local/TLS-verified external PostgreSQL on AMD64. Packaged artifacts include Linux server/CLI, macOS CLI, dashboard, installer, checksums, SBOMs, provenance and acceptance reports. The readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.13`; use the immutable reference in `probe-image.txt`.
 
-Publication requires fresh-install and upgrade acceptance on native Ubuntu 24.04: managed PostgreSQL on AMD64 and ARM64, plus local and TLS-verified external PostgreSQL on AMD64. Each source version is tested for account/session continuity, registry metadata, preserved secret data, backups and uninterrupted application workloads. Tests use published source installers and checksummed candidate target artifacts.
-
-## Artifacts
-
-Includes Linux AMD64/ARM64 server and CLI archives, macOS CLI archives, dashboard, installer, checksums, SBOMs, provenance and native acceptance reports. The readiness helper is `ghcr.io/hakopod/hakopod-probe:v0.1.0-alpha.12`; use the immutable reference in `probe-image.txt`.
-
-This is an alpha release. Acceptance does not certify every operating system, public ACME issuance, arbitrary customer workloads or database restore procedures. Private Cloud pages are not included.
+This is an alpha prerelease. It does not certify arbitrary customer workloads, physical RDS configurations, public ACME issuance or database restores. Private Cloud pages are not included.
