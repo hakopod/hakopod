@@ -1,3 +1,4 @@
+import { serviceProfileLabel } from '../lib/service-resources'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -134,7 +135,7 @@ export default function ApplicationTopology({ application: app }: { application:
               </div>
               <div>
                 <span>Profile</span>
-                <strong>{service.size || 'small'}</strong>
+                <strong>{serviceProfileLabel(service)}</strong>
               </div>
               <div>
                 <span>Port</span>

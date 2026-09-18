@@ -1,3 +1,4 @@
+import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog } from './move-service-dialog'
 import { effectiveService } from '../lib/effective-service'
 import { RenameResource } from './rename-resource'
@@ -372,7 +373,7 @@ export function ServiceDetail({
             <section className="panel service-summary-panel">
               <div className="panel-heading">
                 <h2>Runtime</h2>
-                <span className="label-chip">{service.size || 'small'} profile</span>
+                <span className="label-chip">{serviceProfileLabel(service)} profile</span>
               </div>
               {service.job?.schedule && (
                 <p className="px-4 text-sm muted-text">
