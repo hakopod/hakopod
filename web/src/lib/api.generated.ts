@@ -3149,6 +3149,8 @@ export interface components {
             spec?: components["schemas"]["Spec"];
             toml?: string;
             service?: string;
+            /** @description Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment. */
+            services?: string[];
             expected_revision: number;
             env_files?: {
                 [key: string]: string;
@@ -3160,6 +3162,8 @@ export interface components {
             spec?: components["schemas"]["Spec"];
             toml?: string;
             service?: string;
+            /** @description Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment. */
+            services?: string[];
             expected_revision?: number;
             env_files?: {
                 [key: string]: string;

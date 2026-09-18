@@ -318,6 +318,35 @@ targeted update. This prevents a moved tag on an untouched service from silently
 changing its artifact. The plan exposes any added digest pins. Other targeted
 configuration is merged into the coherent accepted application revision.
 
+The API supports selecting several services in one request. Both
+`POST /api/v1/plan` and `POST /api/v1/deployments` accept
+`"services": ["api", "worker"]`. Supply the application's `spec` or `toml`
+alongside `project` and `environment`; deployment also requires
+`expected_revision` and an `Idempotency-Key` header.
+
+Use either the existing `service` string or the new `services` array, never
+both. Arrays must contain 1–20 unique, nonempty service names, all present in
+the submitted configuration. Omit both selectors for an application-wide
+deployment; an empty array is rejected to avoid accidentally deploying everything.
+Selected services are merged into one application revision and their image tags
+are resolved again. Unselected services keep their accepted configuration,
+image digests and registry credential references. Shared application variables,
+secret defaults, networks and volumes must be changed through an
+application-wide plan. A selected group uses the normal rollout and recovery
+rules; it is not an atomic transaction across running containers.
+
+Example deployment body (replace the revision with the current application revision):
+
+```json
+{
+  "project": "demo",
+  "environment": "production",
+  "expected_revision": 12,
+  "services": ["api", "worker"],
+  "toml": "name='backend'\n[services.api]\nimage='ghcr.io/example/backend:latest'\n[services.worker]\nimage='ghcr.io/example/backend:latest'"
+}
+```
+
 Rollback uses a previous successful immutable spec and creates a new revision.
 It does not undo external data changes. Application groups are not atomic;
 deployment detail shows service results and failed-group recovery events.
