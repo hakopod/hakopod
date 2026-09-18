@@ -99,8 +99,13 @@ A client using the `mcpServers` configuration format can use:
 }
 ```
 
-Available tools inspect applications, deployments and logs, suggest a framework
-recipe from supplied metadata, and plan TOML changes. There is no host terminal,
+Available tools inspect applications, services, runtime pods and metrics, custom
+domains, deployments and logs. Build provenance maps accepted image digests to
+recorded Git commit SHAs. Tools also suggest a framework recipe from supplied
+metadata and plan TOML changes.
+
+Self-hosted installations also expose a [Streamable HTTP MCP endpoint](http-mcp.md)
+at `/api/v1/mcp?project=demo&environment=development`, using a scoped bearer key. There is no host terminal,
 shell execution or implicit local-file access. Returned application content and
 logs are explicitly untrusted data.
 

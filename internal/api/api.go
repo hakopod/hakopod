@@ -52,6 +52,8 @@ type Server struct {
 	streams               chan struct{}
 	terminalMu            sync.Mutex
 	terminals             map[string]*terminalSession
+	mcpMu                 sync.Mutex
+	mcpSessions           map[string]*mcpSession
 }
 type bucket struct {
 	at     time.Time
@@ -97,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
+	s.registerMCPRoutes(routes)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/delivery", s.serviceDelivery)
@@ -119,6 +122,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/projects/{project}/environments", s.createEnvironment)
 	routes.HandleFunc("GET /api/v1/applications", s.applications)
 	routes.HandleFunc("GET /api/v1/applications/{id}", s.application)
+	routes.HandleFunc("GET /api/v1/applications/{id}/provenance", s.applicationProvenance)
 	s.registerPreviewRoutes(routes)
 	routes.HandleFunc("POST /api/v1/plan", s.plan)
 	routes.HandleFunc("POST /api/v1/compose/convert", s.convertCompose)
