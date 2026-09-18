@@ -21,7 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy, ErrorState } from './shared'
 import { APIError, message } from '../lib/api'
 import { specToTOML } from '../lib/toml'
-import { serviceResources } from '../lib/service-resources'
+import { serviceProfileLabel, serviceResources } from '../lib/service-resources'
 import { canAccess, canOpenHostTerminal } from '../lib/scope'
 import type { Identity } from '../lib/types'
 
@@ -208,6 +208,11 @@ test('installation prerequisites link to setup without losing the error', () => 
 })
 
 test('resource review combines explicit values with the selected size defaults', () => {
+  const service = { image: 'nginx:alpine', size: 'medium' }
+  assert.equal(serviceProfileLabel({ ...service, resources: { cpu_limit: '2' } }), 'Custom')
+  assert.equal(serviceProfileLabel({ ...service, resources: { memory_request: '' } }), 'medium')
+  assert.equal(serviceProfileLabel({ image: service.image }), 'small')
+
   assert.deepEqual(
     serviceResources(
       { image: 'nginx:alpine', size: 'medium', resources: { cpu_limit: '2', memory_request: '' } },

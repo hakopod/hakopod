@@ -1,3 +1,4 @@
+import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog, ServiceMoves } from '../components/move-service-dialog'
 import { RenameResource } from '../components/rename-resource'
 import { ApplicationPreviews } from '../components/application-previews'
@@ -457,7 +458,7 @@ function ApplicationDetail() {
                     </div>
                     <div>
                       <dt>Profile</dt>
-                      <dd>{service.size || 'small'}</dd>
+                      <dd>{serviceProfileLabel(service)}</dd>
                     </div>
                     <div>
                       <dt>Readiness</dt>
