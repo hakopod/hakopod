@@ -55,7 +55,7 @@ export function Logs({
   const [since, setSince] = useState(3600)
   const [limit, setLimit] = useState(installation ? 200 : 500)
   const [previous, setPrevious] = useState(false)
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(true)
   const [query, setQuery] = useState<Query>({
     service,
     since_seconds: 3600,

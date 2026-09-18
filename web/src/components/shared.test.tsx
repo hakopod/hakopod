@@ -1,3 +1,4 @@
+import '../lib/public-endpoints.test'
 import '../lib/build-onboarding.test'
 import '../lib/effective-service.test'
 import '../lib/dotenv.test'

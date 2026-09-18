@@ -1,3 +1,5 @@
+import { PublicEndpoints } from './public-endpoints'
+import type { PublicEndpoint } from '../lib/public-endpoints'
 import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog } from './move-service-dialog'
 import { effectiveService } from '../lib/effective-service'
@@ -81,11 +83,13 @@ function memory(bytes?: number) {
 
 export function ServiceDetail({
   application,
+  endpoints,
   serviceName,
   initialTab,
   initialPod,
 }: {
   application: Application
+  endpoints: PublicEndpoint[]
   serviceName: string
   initialTab?: string
   initialPod?: string
@@ -628,37 +632,14 @@ export function ServiceDetail({
                 </dd>
               </div>
               <div>
-                <dt>Public endpoint</dt>
+                <dt>Public endpoints</dt>
                 <dd>
-                  {observed?.url && /^https?:\/\//.test(observed.url) ? (
-                    <a href={observed.url} target="_blank" rel="noreferrer">
-                      {observed.url}
-                      <Icon name="external" size={13} />
-                    </a>
-                  ) : (
-                    'No public endpoint observed'
-                  )}
+                  <PublicEndpoints
+                    endpoints={endpoints.filter((endpoint) => endpoint.service === serviceName)}
+                  />
                 </dd>
               </div>
-              {Object.entries(observed?.endpoints || {})
-                .filter(([, url]) => /^https?:\/\//.test(url))
-                .map(([name, url]) => (
-                  <div key={name}>
-                    <dt>HTTP endpoint · {name}</dt>
-                    <dd>
-                      <a
-                        className="inline-flex min-w-0 max-w-full items-center gap-1"
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`${name}: ${url}`}
-                      >
-                        <span className="truncate">{url}</span>
-                        <Icon name="external" size={13} className="shrink-0" />
-                      </a>
-                    </dd>
-                  </div>
-                ))}
+
               <div>
                 <dt>Networks</dt>
                 <dd>
