@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 func TestAgentReadOnlyProtocol(t *testing.T) {
 	input := strings.Join([]string{`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`, `{"jsonrpc":"2.0","method":"notifications/initialized"}`, `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"deploy","arguments":{"plan_id":"bad"}}}`}, "\n")
 	var out bytes.Buffer
-	if err := serveAgent(context.Background(), nil, config{Project: "demo", Environment: "development"}, false, strings.NewReader(input), &out); err != nil {
+	if err := Serve(context.Background(), nil, Scope{Project: "demo", Environment: "development"}, false, strings.NewReader(input), &out, "test"); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -27,16 +27,16 @@ func TestAgentReadOnlyProtocol(t *testing.T) {
 	if !strings.Contains(lines[0], "Initialize first") || strings.Contains(lines[2], `"name":"deploy"`) || !strings.Contains(lines[3], "deployment tools are disabled") {
 		t.Fatal(out.String())
 	}
-	if err := serveAgent(context.Background(), nil, config{}, false, strings.NewReader(input), &out); err == nil {
+	if err := Serve(context.Background(), nil, Scope{}, false, strings.NewReader(input), &out, "test"); err == nil {
 		t.Fatal("unscoped agent accepted")
 	}
 }
 
 func TestAgentDetectsFrameworkWithoutRepositoryAccess(t *testing.T) {
-	agent := agentServer{}
+	agent := Server{}
 	input := map[string]any{"files": map[string]string{"package.json": `{"scripts":{"build":"astro build"},"dependencies":{"astro":"7.3.2"}}`, "package-lock.json": ""}}
 	raw, _ := json.Marshal(input)
-	result, err := agent.call(context.Background(), "detect_framework", raw)
+	result, err := agent.Call(context.Background(), "detect_framework", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestAgentDetectsFrameworkWithoutRepositoryAccess(t *testing.T) {
 	}
 	for _, file := range []string{"../../package.json", "package.json\nsecret", "sub/package.json"} {
 		raw, _ = json.Marshal(map[string]any{"files": map[string]string{file: "{}"}})
-		if _, err := agent.call(context.Background(), "detect_framework", raw); err == nil {
+		if _, err := agent.Call(context.Background(), "detect_framework", raw); err == nil {
 			t.Fatal("unsafe metadata path accepted", file)
 		}
 	}
@@ -77,20 +77,31 @@ func TestAgentReviewedDeploymentAndScope(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	c, err := newClient(config{URL: server.URL, Key: "scoped-test-key"})
-	if err != nil {
-		t.Fatal(err)
+	request := func(ctx context.Context, method, path string, body any, key string, out any) error {
+		encoded, _ := json.Marshal(body)
+		r, err := http.NewRequestWithContext(ctx, method, server.URL+"/api/v1"+path, bytes.NewReader(encoded))
+		if err != nil {
+			return err
+		}
+		r.Header.Set("Authorization", "Bearer scoped-test-key")
+		r.Header.Set("Idempotency-Key", key)
+		res, err := server.Client().Do(r)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		return json.NewDecoder(res.Body).Decode(out)
 	}
-	agent := agentServer{client: c, cfg: config{Project: "demo", Environment: "development"}, allowDeploy: true, plans: map[string]agentPlan{}}
+	agent := New(request, Scope{Project: "demo", Environment: "development"}, true, 32)
 	body, _ := json.Marshal(map[string]string{"toml": "schema_version=1\nname=\"demo\"\n[services.web]\nimage=\"nginx:alpine\"\n"})
-	result, err := agent.call(ctx, "plan", body)
+	result, err := agent.Call(ctx, "plan", body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := result.(map[string]any)["plan_id"].(string)
 	args, _ := json.Marshal(map[string]string{"plan_id": id})
 	for i := 0; i < 2; i++ {
-		if _, err = agent.call(ctx, "deploy", args); err != nil {
+		if _, err := agent.Call(ctx, "deploy", args); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -100,17 +111,17 @@ func TestAgentReviewedDeploymentAndScope(t *testing.T) {
 	p := agent.plans[id]
 	p.Expires = time.Now().Add(-time.Second)
 	agent.plans[id] = p
-	if _, err = agent.call(ctx, "deploy", args); err == nil {
+	if _, err := agent.Call(ctx, "deploy", args); err == nil {
 		t.Fatal("expired plan accepted")
 	}
-	if _, err = agent.call(ctx, "application", []byte(`{"id":"app-one","shell":"sh"}`)); err == nil {
+	if _, err := agent.Call(ctx, "application", []byte(`{"id":"app-one","shell":"sh"}`)); err == nil {
 		t.Fatal("unknown arguments accepted")
 	}
 	app.Project = "other"
-	if _, err = agent.call(ctx, "application", []byte(`{"id":"app-one"}`)); err == nil {
+	if _, err := agent.Call(ctx, "application", []byte(`{"id":"app-one"}`)); err == nil {
 		t.Fatal("cross-scope application disclosed")
 	}
-	if _, err = agent.call(ctx, "application", []byte(`{"id":"../keys"}`)); err == nil {
+	if _, err := agent.Call(ctx, "application", []byte(`{"id":"../keys"}`)); err == nil {
 		t.Fatal("path traversal accepted")
 	}
 }

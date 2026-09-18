@@ -1,3 +1,4 @@
+import { forwardMCP } from './mcp.ts'
 import { editionHeaders, editionRequestError, editionResponseHeaders } from './dashboard-edition.ts'
 import { authenticatedResponse, oauth } from './auth.ts'
 import { forwardNamedGitWebhook } from './git-webhook.ts'
@@ -6,6 +7,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
+  /^applications\/[A-Za-z0-9_-]+\/provenance$/,
   /^idempotency\/[A-Za-z0-9_.:-]+$/,
   /^deployments\/[A-Za-z0-9_-]+\/events$/,
   /^cloud\/capabilities$/,
@@ -68,6 +70,7 @@ export async function proxy({
   params: { _splat?: string }
 }) {
   try {
+    if (params._splat === 'v1/mcp') return forwardMCP(request)
     if (/^v1\/webhooks\/(?:git|github-app|nodes)\//.test(params._splat || ''))
       return forwardNamedGitWebhook(request)
     if (params._splat === 'v1/webhooks/github') return forwardGitHubWebhook(request)

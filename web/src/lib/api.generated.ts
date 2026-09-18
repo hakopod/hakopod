@@ -1832,6 +1832,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["applicationProvenance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md. */
+        post: operations["mcpMessage"];
+        /** @description Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md. */
+        delete: operations["closeMCPSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/logs/query": {
         parameters: {
             query?: never;
@@ -4036,6 +4070,35 @@ export interface components {
         HTTPEndpoint: {
             port: number;
             domain?: string;
+        };
+        BuildProvenance: {
+            build_id: string;
+            run_id: string;
+            commit_sha: string;
+            image: string;
+            provider: string;
+            repository: string;
+            branch: string;
+            run_url: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ServiceProvenance: {
+            configured_image: string;
+            accepted_image?: string;
+            commit_sha?: string;
+            /** @enum {string} */
+            source_status: "unknown" | "matched_build" | "ambiguous" | "incomplete";
+            builds: components["schemas"]["BuildProvenance"][];
+        };
+        ApplicationProvenance: {
+            application_id: string;
+            revision: number;
+            services: {
+                [key: string]: components["schemas"]["ServiceProvenance"];
+            };
+            truncated: boolean;
+            note: string;
         };
         LogEntry: {
             /** Format: date-time */
@@ -9624,6 +9687,118 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LicenseStatus"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    applicationProvenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationProvenance"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    mcpMessage: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+                allow_deploy?: boolean;
+            };
+            header?: {
+                "Mcp-Session-Id"?: string;
+                "MCP-Protocol-Version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    jsonrpc: string;
+                    id?: unknown;
+                    method: string;
+                    params?: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    /** @description Returned by initialize; required on subsequent requests */
+                    "Mcp-Session-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    closeMCPSession: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+                allow_deploy?: boolean;
+            };
+            header: {
+                "Mcp-Session-Id": string;
+                "MCP-Protocol-Version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session closed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

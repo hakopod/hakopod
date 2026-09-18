@@ -6874,6 +6874,200 @@
         }
       }
     },
+    "/applications/{id}/provenance": {
+      "get": {
+        "operationId": "applicationProvenance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationProvenance"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "operationId": "mcpMessage",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "allow_deploy",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Mcp-Session-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "MCP-Protocol-Version",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "headers": {
+              "Mcp-Session-Id": {
+                "description": "Returned by initialize; required on subsequent requests",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jsonrpc": {
+                    "type": "string"
+                  },
+                  "id": {},
+                  "method": {
+                    "type": "string"
+                  },
+                  "params": {}
+                },
+                "required": [
+                  "jsonrpc",
+                  "method"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md."
+      },
+      "delete": {
+        "operationId": "closeMCPSession",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "allow_deploy",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Mcp-Session-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "MCP-Protocol-Version",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session closed"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md."
+      }
+    },
     "/applications/{id}/logs/query": {
       "post": {
         "operationId": "queryLogs",
@@ -15660,6 +15854,114 @@
         },
         "required": [
           "port"
+        ]
+      },
+      "BuildProvenance": {
+        "type": "object",
+        "properties": {
+          "build_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "run_url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "build_id",
+          "run_id",
+          "commit_sha",
+          "image",
+          "provider",
+          "repository",
+          "branch",
+          "run_url",
+          "created_at"
+        ]
+      },
+      "ServiceProvenance": {
+        "type": "object",
+        "properties": {
+          "configured_image": {
+            "type": "string"
+          },
+          "accepted_image": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "source_status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "matched_build",
+              "ambiguous",
+              "incomplete"
+            ]
+          },
+          "builds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BuildProvenance"
+            }
+          }
+        },
+        "required": [
+          "configured_image",
+          "source_status",
+          "builds"
+        ]
+      },
+      "ApplicationProvenance": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "services": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ServiceProvenance"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "revision",
+          "services",
+          "truncated",
+          "note"
         ]
       },
       "LogEntry": {

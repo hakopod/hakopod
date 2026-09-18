@@ -6,6 +6,7 @@ import { sealSession, sessionCookie } from './session.ts'
 
 // These endpoints have their own session-sealing/signature-aware transports.
 const alternate = new Set([
+  '/mcp',
   '/auth/setup',
   '/auth/login',
   '/auth/logout',
