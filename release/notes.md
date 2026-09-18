@@ -1,27 +1,23 @@
-Hakopod 0.1.0-alpha.16 fixes public CI API forwarding through the self-hosted dashboard.
+Hakopod 0.1.0-alpha.17 allows ten concurrent HTTP MCP sessions per bearer key and includes the public CI API forwarding fix.
 
-## CI deployment access
+## MCP connections
 
-Machine bearer clients can now fetch application specifications through the public HTTPS dashboard at `/api/v1/applications/{id}`, submit plans and deployments, poll deployment status and look up idempotency results. Previously this route returned 404, which could lead CI scripts to report that services were missing from an empty specification.
+The per-key limit increases from two to ten sessions, allowing overlapping client reconnects. The global cap remains 32 and sessions expire after ten minutes. Integration tests verify ten accepted sessions, rejection of an eleventh and capacity restoration after DELETE.
 
-The proxy preserves selected-service payloads, revision values, query scope and idempotency keys. Canonical API authorization remains authoritative. Browser cookies are not substituted for machine credentials. See [CI API access](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.16/docs/ci-api.md).
+## CI API
 
-## Upgrade
+Machine bearer clients can fetch application specifications, submit plans and deployments, poll deployment status and recover idempotency results through the public self-hosted dashboard's /api/v1 routes. Request bodies, scope and idempotency keys are preserved. Browser cookies are not substituted for machine credentials.
 
-Declared upgrade candidates are alpha.8, alpha.9, alpha.10, alpha.12, alpha.13, alpha.14 and alpha.15. Publication remains gated on the native installer acceptance matrix.
+## Upgrade and verification
 
-Download this release's `installer.sh`, then run:
+Declared upgrade candidates are alpha.8, alpha.9, alpha.10, alpha.12, alpha.13, alpha.14 and alpha.15. Alpha.16 publication failed and it is not declared as an installable upgrade source.
+
+Download this release's installer.sh, then run:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.16
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.17
 ```
 
-The installer validates the upgrade path, backs up PostgreSQL and configuration, replaces the API/dashboard and checks readiness. Publishing does not upgrade customer VMs.
+The session change passed the full Go suite with disposable PostgreSQL and the dashboard build. The tag was requested without waiting for candidate CI. Artifact publication remains gated on release builds, native smoke tests and installer host acceptance.
 
-## Verification and known limits
-
-The CI forwarding change passed 43 server tests, 83 UI tests, TypeScript checking, dashboard build and local Go tests. PostgreSQL integration was not enabled in that local run. The tag was requested before candidate CI completed; release publication still requires its full build, smoke and native host checks.
-
-The separate HTTP MCP logs error (`unexpected end of JSON input`) is not fixed in this release. No new Git commit mapping for externally built images is added.
-
-This is an alpha prerelease. Assets include checksums, SBOMs, provenance and acceptance reports after successful publication.
+The separate HTTP MCP logs error (`unexpected end of JSON input`) remains unresolved. Publishing does not upgrade customer VMs. This is an alpha prerelease.
