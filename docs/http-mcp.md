@@ -11,8 +11,7 @@ with this URL and an `Authorization: Bearer …` header from its secret store.
 There is no separate MCP process or port to publish. The dashboard forwards
 this exact route to the local API. HTTPS is required for remote credentials.
 
-This feature requires a build containing the HTTP MCP change; it is not included
-in alpha.14. Hosted Cloud does not expose this route.
+This feature is available in alpha.15 and later. Hosted Cloud does not expose this route.
 
 ## Credentials and scope
 
