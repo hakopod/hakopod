@@ -18,8 +18,8 @@ The dashboard forwards these machine API routes:
 | GET | /idempotency/{key} | Recover a deployment after an ambiguous connection failure |
 | GET | /openapi.json | Inspect the API contract |
 
-This fix is not included in alpha.15. Install a later release containing the fix
-before using these routes through the dashboard. HTTP MCP has a separate route.
+These routes are supported through the dashboard in alpha.16 and later.
+Alpha.15 does not contain this forwarding fix. HTTP MCP has a separate route.
 
 Use a short-lived scoped key with `deployments:read` and
 `deployments:write` for deployment automation. Store it in CI's secret store.
