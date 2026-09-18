@@ -36,6 +36,7 @@ type Options struct {
 	// DedicatedPublicTCPNode is operator-only: an isolated BYO cluster with exactly this node.
 	DedicatedPublicTCPNode  string
 	AWSIdentityBindings     []AWSIdentityBinding
+	PrivateEgressBindings   []PrivateEgressBinding
 	SupervisorURL           string
 	ProxyNamespace          string
 	ProxyConfigMap          string
@@ -69,6 +70,7 @@ type Client struct {
 }
 
 type Target struct {
+	privateEgress                                    map[string][]PrivateEgressBinding
 	policy                                           *WorkloadPolicy
 	Project, Environment, ApplicationID, OperationID string
 	Revision                                         int64
@@ -167,6 +169,19 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, err
 	}
 	options.AWSIdentityBindings = append([]AWSIdentityBinding(nil), options.AWSIdentityBindings...)
+	if err := ValidatePrivateEgressBindings(options.PrivateEgressBindings); err != nil {
+		return nil, err
+	}
+	if len(options.PrivateEgressBindings) > 0 && (mode == DeploymentManagedCloud || options.WorkloadPolicy != nil) {
+		return nil, fmt.Errorf("private egress bindings require a self-hosted installation")
+	}
+	options.PrivateEgressBindings = append([]PrivateEgressBinding(nil), options.PrivateEgressBindings...)
+	for i := range options.PrivateEgressBindings {
+		b := &options.PrivateEgressBindings[i]
+		b.Services = append([]string(nil), b.Services...)
+		b.CIDRs = append([]string(nil), b.CIDRs...)
+		b.Ports = append([]int32(nil), b.Ports...)
+	}
 	var config *rest.Config
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)

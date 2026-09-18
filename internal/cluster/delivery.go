@@ -27,6 +27,9 @@ func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (Pref
 	return report, report.Validate()
 }
 func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
+	if _, err := c.resolvePrivateEgress(t); err != nil {
+		return err
+	}
 	if err := c.validateWorkloadPolicy(ctx, t); err != nil {
 		return err
 	}

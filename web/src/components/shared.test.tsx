@@ -130,6 +130,7 @@ test('TOML export retains network denials, mount permissions and advanced runtim
         image: 'registry.example/api@sha256:' + 'b'.repeat(64),
         networks: ['private'],
         network_access: { from: [] },
+        private_egress: ['orders-db'],
         ports: [{ name: 'metrics', port: 9090, target_port: 9091, protocol: 'TCP' }],
         mounts: [{ volume: 'data', mount_path: '/data', read_only: true, sub_path: 'archive' }],
         temporary_mounts: [{ mount_path: '/tmp', size_mib: 16, memory: true }],
@@ -158,6 +159,7 @@ test('TOML export retains network denials, mount permissions and advanced runtim
     'fs_group = 23456',
     'working_dir = "/data"',
     'termination_grace_seconds = 45',
+    'private_egress = ["orders-db"]',
   ])
     assert.ok(output.includes(setting), `Export lost ${setting}`)
 })

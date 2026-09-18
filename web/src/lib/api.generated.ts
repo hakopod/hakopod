@@ -2962,6 +2962,8 @@ export interface components {
             read_only_root_filesystem?: boolean;
             working_dir?: string;
             termination_grace_seconds?: number;
+            /** @description Self-hosted: named private destinations approved by the installation administrator for this service. */
+            private_egress?: string[];
         };
         Spec: {
             schema_version: number;

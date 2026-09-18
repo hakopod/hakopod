@@ -11654,6 +11654,16 @@
           },
           "termination_grace_seconds": {
             "type": "integer"
+          },
+          "private_egress": {
+            "type": "array",
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"
+            },
+            "description": "Self-hosted: named private destinations approved by the installation administrator for this service."
           }
         },
         "required": [

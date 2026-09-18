@@ -23,3 +23,5 @@ schemas["Spec"]["properties"].update({
     "secrets": mapping(ref("SecretRef")),
     "inject_env": {**B, "description": "Inject all application env defaults into services. Service values override these defaults."},
 })
+
+schemas["Service"]["properties"]["private_egress"] = {"type": "array", "maxItems": 16, "uniqueItems": True, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"}, "description": "Self-hosted: named private destinations approved by the installation administrator for this service."}
