@@ -23,6 +23,7 @@ import (
 
 const mcpSessionTTL = 10 * time.Minute
 const mcpMaxSessions = 32
+const mcpMaxSessionsPerKey = 10
 
 type mcpSession struct {
 	mu      sync.Mutex
@@ -176,7 +177,7 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request, routes http.Handler
 				count++
 			}
 		}
-		if len(s.mcpSessions) >= mcpMaxSessions || count >= 2 {
+		if len(s.mcpSessions) >= mcpMaxSessions || count >= mcpMaxSessionsPerKey {
 			s.mcpMu.Unlock()
 			w.Header().Set("Retry-After", "60")
 			problem(w, 429, "mcp_session_limit", "Close an existing MCP session or wait for it to expire")
