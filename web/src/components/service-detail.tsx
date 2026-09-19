@@ -32,6 +32,7 @@ import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
 import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
 import { Logs } from './logs'
+import { Requests } from './requests'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
@@ -42,6 +43,7 @@ const serviceTabs = [
   'overview',
   'pods',
   'logs',
+  'requests',
   'environment',
   'secrets',
   'terminal',
@@ -307,6 +309,7 @@ export function ServiceDetail({
             ['overview', 'activity', 'Overview'],
             ['pods', 'box', 'Pods'],
             ['logs', 'activity', 'Logs'],
+            ['requests', 'activity', 'Requests'],
             ['environment', 'code', 'Environment'],
             ['secrets', 'lock', 'Secrets'],
             ['terminal', 'terminal', 'Terminal'],
@@ -324,6 +327,16 @@ export function ServiceDetail({
               </Tabs.Trigger>
             ))}
         </Tabs.List>
+        <Tabs.Content value="requests" className="tab-content">
+          {scope.can('logs:read') ? (
+            <Requests key={serviceName} applicationId={application.id} service={serviceName} />
+          ) : (
+            <Empty
+              title="Request logs need additional permission"
+              description="Ask an administrator for logs:read access to this application."
+            />
+          )}
+        </Tabs.Content>
         <Tabs.Content value="overview" className="tab-content">
           {service.job?.schedule && (
             <section className="panel service-summary-panel mb-4">

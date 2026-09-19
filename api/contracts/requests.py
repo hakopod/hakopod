@@ -1,0 +1,10 @@
+schemas['RequestEntry'] = obj({**{k:S for k in ['id','application_id','application','project','environment','service','method','host','path','protocol','termination','frontend','backend','server','tls','client_network','ingress_pod']},'timestamp':T,**{k:I for k in ['status','bytes','request_ms','queue_ms','connect_ms','response_ms','duration_ms','retries','connections']}},['id','timestamp','application_id','application','project','environment','service','method','host','path','protocol','termination','frontend','backend','server','tls','client_network','ingress_pod','status','bytes','request_ms','queue_ms','connect_ms','response_ms','duration_ms','retries','connections'])
+schemas['RequestCollection'] = obj({'state':S,'message':S,'checked_at':T,'last_success_at':{'anyOf':[T,{'type':'null'}]},'gap_count':I},['state','message','checked_at','last_success_at','gap_count'])
+schemas['RequestList'] = obj({'items':array(ref('RequestEntry')),'next_cursor':S,'collection':ref('RequestCollection'),'retention_hours':I,'max_entries':I},['items','next_cursor','collection','retention_hours','max_entries'])
+route('/requests','get','listRequests',ref('RequestList'))
+paths['/requests']['get']['parameters'] += [{'name':k,'in':'query','schema':S} for k in ['project','environment','application_id','service','method','search','cursor']]+[{'name':k,'in':'query','schema':I} for k in ['status','since_seconds','limit']]
+schemas['RequestRoute'] = obj({'host':S,'path':S,'port':I,'tls':B,'ingress':S},['host','path','port','tls','ingress'])
+schemas['RequestEndpoint'] = obj({'pod':S,'address':S,'ready':B},['pod','address','ready'])
+schemas['RequestRouting'] = obj({'observed_at':T,'routes':array(ref('RequestRoute')),'endpoints':array(ref('RequestEndpoint')),'service':S,'namespace':S,'warnings':array(S)},['observed_at','routes','endpoints','service','namespace','warnings'])
+route('/applications/{id}/services/{service}/requests/routing','get','requestRouting',ref('RequestRouting'))
+paths['/applications/{id}/services/{service}/requests/routing']['get']['parameters'].append({'name':'service','in':'path','required':True,'schema':S})

@@ -64,6 +64,7 @@ export const Route = createFileRoute('/applications/$applicationId')({
         'deployments',
         'previews',
         'logs',
+        'requests',
         'terminal',
         'networking',
         'configuration',
