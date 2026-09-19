@@ -8,19 +8,23 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 )
 
 type buildProvenance struct {
-	BuildID    string    `json:"build_id"`
-	RunID      string    `json:"run_id"`
-	CommitSHA  string    `json:"commit_sha"`
-	Image      string    `json:"image"`
-	Provider   string    `json:"provider"`
-	Repository string    `json:"repository"`
-	Branch     string    `json:"branch"`
-	RunURL     string    `json:"run_url"`
-	CreatedAt  time.Time `json:"created_at"`
+	Source       string    `json:"source"`
+	DeploymentID string    `json:"deployment_id,omitempty"`
+	ReportedBy   string    `json:"reported_by,omitempty"`
+	BuildID      string    `json:"build_id"`
+	RunID        string    `json:"run_id"`
+	CommitSHA    string    `json:"commit_sha"`
+	Image        string    `json:"image"`
+	Provider     string    `json:"provider"`
+	Repository   string    `json:"repository"`
+	Branch       string    `json:"branch"`
+	RunURL       string    `json:"run_url"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 type serviceProvenance struct {
 	CommitSHA       string            `json:"commit_sha,omitempty"`
@@ -90,6 +94,7 @@ func (s *Server) applicationProvenance(w http.ResponseWriter, r *http.Request) {
 			}
 			for name, item := range services {
 				if item.AcceptedImage == build.Image && (name == service || slices.Contains(reuse, name)) {
+					build.Source = "hakopod_build"
 					item.Builds = append(item.Builds, build)
 					item.SourceStatus = "matched_build"
 				}
@@ -100,25 +105,71 @@ func (s *Server) applicationProvenance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if len(images) > 0 {
+		rows, err := s.Store.Pool.Query(r.Context(), `
+ SELECT d.id,d.identity_id,d.created_at,p.key,p.value
+ FROM deployments d CROSS JOIN LATERAL jsonb_each(d.provenance) p
+ WHERE d.application_id=$1 AND p.value->>'image'=ANY($2)
+ ORDER BY d.created_at DESC,d.id DESC,p.key LIMIT 101`, app.ID, images)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		count := 0
+		for rows.Next() {
+			var build buildProvenance
+			var name string
+			var source store.SourceBuild
+			if err := rows.Scan(&build.DeploymentID, &build.ReportedBy, &build.CreatedAt, &name, &source); err != nil {
+				rows.Close()
+				failure(w, err)
+				return
+			}
+			count++
+			if count > 100 {
+				truncated = true
+				break
+			}
+			item, ok := services[name]
+			if !ok || item.AcceptedImage != source.Image {
+				continue
+			}
+			build.Source = "ci_reported"
+			build.Image = source.Image
+			build.CommitSHA = source.CommitSHA
+			build.Provider = source.Provider
+			build.Repository = source.Repository
+			build.Branch = source.Branch
+			build.RunURL = source.RunURL
+			item.Builds = append(item.Builds, build)
+			if item.SourceStatus == "unknown" {
+				item.SourceStatus = "reported_build"
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			failure(w, err)
+			return
+		}
+	}
 	for _, item := range services {
 		commits := map[string]bool{}
 		for _, build := range item.Builds {
-			commits[build.CommitSHA] = true
+			commits[build.Provider+"\x00"+build.Repository+"\x00"+build.CommitSHA] = true
 		}
 		if truncated && len(commits) > 0 {
 			item.SourceStatus = "incomplete"
 			continue
 		}
 		if len(commits) == 1 {
-			for commit := range commits {
-				item.CommitSHA = commit
-			}
+			item.CommitSHA = item.Builds[0].CommitSHA
 		}
 		if len(commits) > 1 {
 			item.SourceStatus = "ambiguous"
 		}
 	}
 	write(w, 200, map[string]any{"application_id": app.ID, "revision": app.Revision, "services": services, "truncated": truncated,
-		"note": "Build records match the accepted release image exactly. They do not prove that every running pod has reached that release; inspect service_runtime image IDs and readiness. Multiple commits may produce the same digest.",
+		"note": "Build records match the accepted release image exactly. ci_reported records are assertions from an authorized deployment client, not independently verified build attestations. They do not prove that every running pod has reached that release; inspect service_runtime image IDs and readiness. Multiple commits may produce the same digest.",
 	})
 }

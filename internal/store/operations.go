@@ -22,10 +22,13 @@ func (s *Store) Accept(ctx context.Context, p Principal, project, env string, ne
 }
 
 func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, seedResolved ...spec.Application) (Deployment, error) {
-	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, initialSource, initialShowcase, initialPreview, nil, seedResolved...)
+	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, initialSource, initialShowcase, initialPreview, nil, nil, seedResolved...)
 }
 
-func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, transfer *ServiceTransfer, seedResolved ...spec.Application) (Deployment, error) {
+func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, transfer *ServiceTransfer, provenance map[string]SourceBuild, seedResolved ...spec.Application) (Deployment, error) {
+	if err := ValidateProvenance(next, provenance); err != nil {
+		return Deployment{}, err
+	}
 	if len(idem) < 8 || len(idem) > 128 {
 		return Deployment{}, errors.New("Idempotency-Key must contain 8–128 characters")
 	}
@@ -63,12 +66,13 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		Expected             int64
 		// Omission preserves hashes for ordinary pre-seeding deployment calls;
 		// presence distinguishes rollback intent even when the desired spec is identical.
-		SeedResolved   *spec.Application `json:",omitempty"`
-		InitialSource  *InitialSource    `json:",omitempty"`
-		InitialPreview *InitialPreview   `json:",omitempty"`
-		ShowcaseID     string            `json:",omitempty"`
-		Transfer       *ServiceTransfer  `json:",omitempty"`
-	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer}))
+		SeedResolved   *spec.Application      `json:",omitempty"`
+		InitialSource  *InitialSource         `json:",omitempty"`
+		InitialPreview *InitialPreview        `json:",omitempty"`
+		ShowcaseID     string                 `json:",omitempty"`
+		Transfer       *ServiceTransfer       `json:",omitempty"`
+		Provenance     map[string]SourceBuild `json:",omitempty"`
+	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer, provenance}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
@@ -205,8 +209,11 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		return Deployment{}, errors.New("application queue is full (20 pending releases); wait or cancel a queued deployment")
 	}
 	id := NewID()
+	if provenance == nil {
+		provenance = map[string]SourceBuild{}
+	}
 	revision := a.Revision + 1
-	if _, err = tx.Exec(ctx, "INSERT INTO deployments(id,application_id,identity_id,key_id,idempotency_key,request_hash,revision,spec,resolved_spec) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", id, a.ID, p.ID, p.KeyID, idem, hash[:], revision, JSON(next), resolvedJSON); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO deployments(id,application_id,identity_id,key_id,idempotency_key,request_hash,revision,spec,resolved_spec,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", id, a.ID, p.ID, p.KeyID, idem, hash[:], revision, JSON(next), resolvedJSON, JSON(provenance)); err != nil {
 		return Deployment{}, err
 	}
 	if _, err = tx.Exec(ctx, "UPDATE applications SET revision=$2,spec=$3,observed='{}'::jsonb,updated_at=now(),status='queued' WHERE id=$1", a.ID, revision, JSON(next)); err != nil {

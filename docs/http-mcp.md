@@ -65,16 +65,20 @@ release images. It does not resolve a moving tag or read a branch's current HEAD
 map. Each service includes `configured_image`, `accepted_image`,
 `source_status`, matching `builds`, and `commit_sha` when uniquely known.
 Build entries include build/run IDs, provider, repository, branch, image, SHA,
-run URL and creation time. Builds reused by multiple services are supported.
+run URL and creation time. Builds reused by multiple services are supported. Records identify their source as
+`hakopod_build` or `ci_reported`. CI records also identify the submitting identity
+and deployment. See [CI source provenance](ci-provenance.md) to attach build
+metadata when deploying an image built outside Hakopod.
 
 | Source status | Meaning |
 | --- | --- |
 | `matched_build` | Exact accepted digest matches successful builds with one unique commit |
-| `unknown` | No matching recorded source commit, including externally supplied images |
+| `reported_build` | Exact digest matches a commit asserted by an authorized CI deployment client |
+| `unknown` | No matching recorded source commit |
 | `ambiguous` | Multiple commits produced the same digest; no authoritative top-level SHA |
 | `incomplete` | Matching results exceeded the bounded query; no authoritative top-level SHA |
 
-At most 100 build records are returned; the response includes `truncated`.
+At most 100 managed build records and 100 CI-reported records are considered; the response includes `truncated`.
 Matching is restricted to the application and its project/environment, using
 the build's primary service and recorded reused services.
 

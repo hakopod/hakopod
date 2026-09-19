@@ -3071,6 +3071,10 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
             events: components["schemas"]["Event"][];
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
+            };
             recovery_error?: string;
             recovery_revision?: number;
             recovery_spec?: components["schemas"]["Spec"];
@@ -3189,6 +3193,10 @@ export interface components {
             env_files?: {
                 [key: string]: string;
             };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
+            };
         };
         PlanInput: {
             project: string;
@@ -3201,6 +3209,10 @@ export interface components {
             expected_revision?: number;
             env_files?: {
                 [key: string]: string;
+            };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
             };
         };
         Change: {
@@ -3223,6 +3235,10 @@ export interface components {
                     MemoryRequest?: string;
                     MemoryLimit?: string;
                 };
+            };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
             };
         };
         Audit: {
@@ -4072,6 +4088,10 @@ export interface components {
             domain?: string;
         };
         BuildProvenance: {
+            /** @enum {string} */
+            source?: "hakopod_build" | "ci_reported";
+            deployment_id?: string;
+            reported_by?: string;
             build_id: string;
             run_id: string;
             commit_sha: string;
@@ -4088,7 +4108,7 @@ export interface components {
             accepted_image?: string;
             commit_sha?: string;
             /** @enum {string} */
-            source_status: "unknown" | "matched_build" | "ambiguous" | "incomplete";
+            source_status: "unknown" | "matched_build" | "reported_build" | "ambiguous" | "incomplete";
             builds: components["schemas"]["BuildProvenance"][];
         };
         ApplicationProvenance: {
@@ -4099,6 +4119,15 @@ export interface components {
             };
             truncated: boolean;
             note: string;
+        };
+        SourceBuild: {
+            image: string;
+            commit_sha: string;
+            /** @enum {string} */
+            provider: "github" | "gitlab" | "other";
+            repository: string;
+            branch?: string;
+            run_url?: string;
         };
         LogEntry: {
             /** Format: date-time */
@@ -4515,6 +4544,10 @@ export interface components {
                     MemoryLimit?: string;
                 };
             };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
+            };
             commit_sha: string;
             expected_source_revision: number;
         };
@@ -4549,6 +4582,10 @@ export interface components {
                     MemoryRequest?: string;
                     MemoryLimit?: string;
                 };
+            };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
             };
             source: components["schemas"]["SourceImportInput"];
             commit_sha: string;
@@ -4630,6 +4667,10 @@ export interface components {
                     MemoryRequest?: string;
                     MemoryLimit?: string;
                 };
+            };
+            /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
+            provenance?: {
+                [key: string]: components["schemas"]["SourceBuild"];
             };
             required_secrets: string[];
             model_source?: string;
