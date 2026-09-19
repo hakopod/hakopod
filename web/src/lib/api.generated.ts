@@ -2881,6 +2881,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/placement/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPlacementNodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/name": {
         parameters: {
             query?: never;
@@ -3078,6 +3094,9 @@ export interface components {
             termination_grace_seconds?: number;
             /** @description Self-hosted: named private destinations approved by the installation administrator for this service. */
             private_egress?: string[];
+            /** @description Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks. */
+            node_name?: string;
+            serverless?: components["schemas"]["Serverless"];
         };
         Spec: {
             schema_version: number;
@@ -5077,6 +5096,24 @@ export interface components {
             name: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        PlacementNode: {
+            name: string;
+            architecture: string;
+            available: boolean;
+            reason: string;
+        };
+        Serverless: {
+            /** @default 0 */
+            min_replicas: number;
+            /** @default 300 */
+            idle_seconds: number;
+            /** @default 60 */
+            startup_timeout_seconds: number;
+            /** @default 60 */
+            request_timeout_seconds: number;
+            /** @default 16 */
+            max_concurrency: number;
         };
         ServiceMoveInput: {
             destination_id: string;
@@ -13020,6 +13057,42 @@ export interface operations {
                 content: {
                     "application/json": {
                         deleted?: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listPlacementNodes: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+                application?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PlacementNode"][];
+                        serverless_available: boolean;
                     };
                 };
             };

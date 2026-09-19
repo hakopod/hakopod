@@ -192,7 +192,10 @@ func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string,
 			return err
 		}
 	}
-	wanted.Annotations = map[string]string{"haproxy.org/ssl-redirect": "true"}
+	if wanted.Annotations == nil {
+		wanted.Annotations = map[string]string{}
+	}
+	wanted.Annotations["haproxy.org/ssl-redirect"] = "true"
 	if issuer != "" {
 		wanted.Annotations["cert-manager.io/cluster-issuer"] = issuer
 	}

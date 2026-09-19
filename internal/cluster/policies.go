@@ -111,6 +111,13 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 		if t.policy == nil {
 			policy.Spec.Egress = append(policy.Spec.Egress, privateEgressRules(t.privateEgress[name])...)
 		}
+		if svc.Serverless != nil && len(t.serverlessGatewayIPs) > 0 {
+			peers := []networkingv1.NetworkPolicyPeer{}
+			for _, ip := range t.serverlessGatewayIPs {
+				peers = append(peers, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: ip + "/32"}})
+			}
+			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: peers, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: ptr(intstr.FromInt32(svc.Port))}}})
+		}
 		if svc.Public {
 			ports := []networkingv1.NetworkPolicyPort{}
 			for _, p := range spec.ServicePorts(svc) {

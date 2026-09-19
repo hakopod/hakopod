@@ -71,6 +71,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
+	target.serverlessGatewayIPs, err = c.serverlessGatewaySources(ctx, target)
+	if err != nil {
+		return Observation{}, err
+	}
 	if err := c.bootstrap(ctx, target); err != nil {
 		return Observation{}, err
 	}
@@ -440,6 +444,9 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 	if err := beforeStep(ctx, t); err != nil {
 		return err
 	}
+	if err := c.applyActivationService(ctx, t, name, svc); err != nil {
+		return err
+	}
 	api := c.kube.CoreV1().Services(Namespace(t.ApplicationID))
 	current, err := api.Get(ctx, name, metav1.GetOptions{})
 	if len(spec.ServicePorts(svc)) == 0 {
@@ -455,6 +462,9 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 		return api.Delete(ctx, name, deleteOptions(current))
 	}
 	wanted := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: labelsFor(t, name)}}
+	if svc.Serverless != nil {
+		wanted.Labels[serverlessBackendLabel] = "true"
+	}
 	for _, p := range spec.ServicePorts(svc) {
 		wanted.Spec.Ports = append(wanted.Spec.Ports, corev1.ServicePort{Name: p.Name, Port: p.Port, TargetPort: intstr.FromInt32(p.TargetPort), Protocol: corev1.Protocol(p.Protocol)})
 	}
@@ -469,6 +479,10 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 		return err
 	}
 	current.Spec.Selector, current.Spec.Ports, current.Spec.Type = wanted.Spec.Selector, wanted.Spec.Ports, wanted.Spec.Type
+	delete(current.Labels, serverlessBackendLabel)
+	if svc.Serverless != nil {
+		current.Labels[serverlessBackendLabel] = "true"
+	}
 	_, err = api.Update(ctx, current, metav1.UpdateOptions{})
 	return err
 }
@@ -514,6 +528,12 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		rule.HTTP.Paths[0].Backend.Service.Port.Number = c.httpHostPort(t, name, host)
 		wanted.Spec.Rules = append(wanted.Spec.Rules, *rule)
 	}
+	if svc.Serverless != nil {
+		for i := range wanted.Spec.Rules {
+			wanted.Spec.Rules[i].HTTP.Paths[0].Backend.Service.Name = ActivationServiceName(name)
+		}
+		wanted.Annotations = map[string]string{"haproxy.org/timeout-server": strconv.Itoa(svc.Serverless.StartupTimeoutSeconds+svc.Serverless.RequestTimeoutSeconds+10) + "s"}
+	}
 	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {
 		return err
 	}
@@ -532,6 +552,7 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	if current.Annotations == nil {
 		current.Annotations = map[string]string{}
 	}
+	delete(current.Annotations, "haproxy.org/timeout-server")
 	delete(current.Annotations, "cert-manager.io/cluster-issuer")
 	delete(current.Annotations, "haproxy.org/ssl-redirect")
 	for key, value := range wanted.Annotations {
@@ -788,6 +809,9 @@ func (c *Client) cleanup(ctx context.Context, t Target) error {
 	for _, item := range services.Items {
 		if item.Labels[serviceKey] == item.Name {
 			names[item.Name] = true
+		}
+		if service := item.Labels[serviceKey]; service != "" && item.Name == ActivationServiceName(service) {
+			names[service] = true
 		}
 	}
 	ingresses, err := c.kube.NetworkingV1().Ingresses(ns).List(ctx, options)

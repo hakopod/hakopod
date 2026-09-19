@@ -41,7 +41,12 @@ test('every documented API path has dashboard coverage or an explicit alternate 
 })
 
 test('capabilities, schema and idempotency lookups use the authenticated proxy', async (t) => {
-  for (const path of ['cloud/capabilities', 'openapi.json', 'idempotency/deploy-12345678']) {
+  for (const path of [
+    'cloud/capabilities',
+    'openapi.json',
+    'idempotency/deploy-12345678',
+    'placement/nodes',
+  ]) {
     const input = new Request(`http://127.0.0.1/api/${path}`)
     input.headers.set('Cookie', sessionCookie(input, sealSession('fixture-token')).split(';')[0])
     const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {

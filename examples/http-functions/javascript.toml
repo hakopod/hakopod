@@ -1,0 +1,23 @@
+schema_version = 1
+name = "javascript-function"
+
+[services.hello]
+image = "node:24-alpine"
+public = true
+port = 8080
+command = ["node", "/app/function.mjs"]
+
+[services.hello.serverless]
+idle_seconds = 300
+max_concurrency = 16
+
+[services.hello.files.function]
+mount_path = "/app/function.mjs"
+content = '''
+import { createServer } from 'node:http';
+
+createServer(async (request, response) => {
+  response.writeHead(200, { 'Content-Type': 'application/json' });
+  response.end(JSON.stringify({ message: 'Hello from Hakopod' }));
+}).listen(8080, '0.0.0.0');
+'''

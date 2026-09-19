@@ -27,6 +27,8 @@ type operatorConfig struct {
 	Server        struct {
 		DeploymentMode      *string `toml:"deployment_mode"`
 		Listen              *string `toml:"listen"`
+		ServerlessAddress   *string `toml:"serverless_address"`
+		ServerlessListen    *string `toml:"serverless_listen"`
 		WebOrigin           *string `toml:"web_origin"`
 		DatabaseURLFile     *string `toml:"database_url_file"`
 		KubeconfigFile      *string `toml:"kubeconfig_file"`
@@ -172,6 +174,8 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	settings := []operatorSetting{
 		{"server.deployment_mode", "HAKOPOD_DEPLOYMENT_MODE", c.Server.DeploymentMode, false, false, false},
 		{"server.listen", "HAKOPOD_LISTEN", c.Server.Listen, false, false, false},
+		{"server.serverless_address", "HAKOPOD_SERVERLESS_ADDRESS", c.Server.ServerlessAddress, false, false, false},
+		{"server.serverless_listen", "HAKOPOD_SERVERLESS_LISTEN", c.Server.ServerlessListen, false, false, false},
 		{"server.web_origin", "HAKOPOD_WEB_ORIGIN", c.Server.WebOrigin, false, false, false},
 		{"server.database_url_file", "HAKOPOD_DATABASE_URL_FILE", c.Server.DatabaseURLFile, true, true, true},
 		{"server.kubeconfig_file", "HAKOPOD_KUBECONFIG", c.Server.KubeconfigFile, true, true, false},
@@ -309,6 +313,14 @@ func validateOperatorValue(field, value string) error {
 		return nil
 	}
 	switch field {
+	case "server.serverless_address":
+		return cluster.ValidateServerlessAddress(value)
+	case "server.serverless_listen":
+		host, port, err := net.SplitHostPort(value)
+		p, e := strconv.Atoi(port)
+		if err != nil || e != nil || net.ParseIP(host) == nil || p < 1024 || p > 65535 {
+			return fmt.Errorf("server.serverless_listen must use an IP address and port 1024–65535")
+		}
 	case "server.readiness_probe_image":
 		return cluster.ValidateReadinessProbeImage(value)
 	case "server.deployment_mode":
