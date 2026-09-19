@@ -400,6 +400,21 @@ export function ServiceDetail({
               )}
               <dl className="service-definition-list">
                 <div>
+                  <dt>Node placement</dt>
+                  <dd className="break-all">{service.node_name || 'Automatic'}</dd>
+                </div>
+                {service.serverless && (
+                  <div>
+                    <dt>Serverless HTTP</dt>
+                    <dd>
+                      {service.serverless.min_replicas === 1
+                        ? 'Always warm'
+                        : `Sleep after ${service.serverless.idle_seconds || 300}s idle`}{' '}
+                      · {service.serverless.max_concurrency || 16} concurrent requests
+                    </dd>
+                  </div>
+                )}
+                <div>
                   <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
                   <dd>{runtimeReplicaSummary(health, Boolean(service.job))}</dd>
                 </div>

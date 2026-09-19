@@ -7,8 +7,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -25,6 +27,8 @@ const (
 )
 
 type Options struct {
+	ServerlessAddress string
+
 	WorkloadPolicy WorkloadPolicyResolver
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
 	// Zero preserves the single-node customer policy; supported values are 1 or 2.
@@ -70,6 +74,8 @@ type Client struct {
 }
 
 type Target struct {
+	serverlessGatewayIPs []string
+
 	privateEgress                                    map[string][]PrivateEgressBinding
 	policy                                           *WorkloadPolicy
 	Project, Environment, ApplicationID, OperationID string
@@ -151,6 +157,17 @@ func (c *Client) restClient() rest.Interface {
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
+	if err := ValidateServerlessAddress(options.ServerlessAddress); err != nil {
+		return nil, err
+	}
+	if options.ServerlessAddress != "" {
+		_, port, _ := net.SplitHostPort(options.ServerlessAddress)
+		for _, p := range options.PublicTCPPorts {
+			if strconv.Itoa(int(p)) == port {
+				return nil, fmt.Errorf("serverless activation gateway port conflicts with a public TCP listener")
+			}
+		}
+	}
 	if err := ValidateReadinessProbeImage(options.ReadinessProbeImage); err != nil {
 		return nil, err
 	}

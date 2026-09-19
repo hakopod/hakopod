@@ -17,6 +17,9 @@ type GPU struct {
 }
 
 func validateWorkload(s Service) error {
+	if s.NodeName != "" && len(validation.IsDNS1123Subdomain(s.NodeName)) > 0 {
+		return fmt.Errorf("node_name must be an exact Kubernetes node name")
+	}
 	if err := validateMountControls(s); err != nil {
 		return err
 	}

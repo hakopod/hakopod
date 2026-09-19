@@ -294,3 +294,11 @@ API service account, and referenced by root-private `/etc/hakopod/oauth.env`.
 The dashboard service receives no OAuth client secrets. Resume preserves this
 installed OAuth environment and secret files, including operator rotations.
 Use `/etc/hakopod/config.json` to resume after temporary prompt files are removed.
+
+### Serverless HTTP activation
+
+New installations bind the API process's separate activation listener to
+`node_ip:8082`. Keep TCP 8082 reachable only from your cluster nodes/pods; public
+requests continue through HAProxy on 80/443. It is not a second management API.
+Existing upgrades retain their environment and need explicit activation before
+serverless plans are available. See [serverless setup](../docs/serverless.md).

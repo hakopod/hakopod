@@ -17,15 +17,16 @@ const idleHTTPAnnotation = "hakopod.io/http-idle"
 
 var ErrIdleIneligible = errors.New("service is not eligible for automatic HTTP sleep")
 
-// IdleHTTPHosts exposes only routes whose trusted runtime policy permits sleep.
-// Application TOML cannot enable this behavior or nominate a different target.
+// IdleHTTPHosts exposes public routes enabled by trusted Cloud policy or by
+// an explicit serverless service on an installation with an activation gateway.
 func (c *Client) IdleHTTPHosts(ctx context.Context, t Target, service string) ([]string, error) {
 	p, err := c.workloadPolicy(ctx, t)
 	if err != nil {
 		return nil, err
 	}
 	svc, ok := t.Spec.Services[service]
-	if p == nil || !p.IdleHTTP || !ok || !svc.Public || svc.Port < 1 || svc.Job != nil || svc.Autoscaling != nil || svc.Replicas != 1 || svc.Suspended || len(t.Spec.Services) != 1 || len(t.Spec.Volumes) > 0 || svc.Volume != nil || len(svc.Mounts) > 0 || len(svc.PublicTCP) > 0 {
+	explicit := ok && svc.Serverless != nil && c.options.ServerlessAddress != ""
+	if !explicit && (p == nil || !p.IdleHTTP) || !ok || !svc.Public || svc.Port < 1 || svc.Job != nil || svc.Autoscaling != nil || svc.Replicas != 1 || svc.Suspended || !explicit && (len(t.Spec.Services) != 1 || len(t.Spec.Volumes) > 0) || svc.Volume != nil || len(svc.Mounts) > 0 || len(svc.PublicTCP) > 0 {
 		return nil, ErrIdleIneligible
 	}
 	return c.serviceHostnames(ctx, t, service)
@@ -60,6 +61,9 @@ func (c *Client) SetHTTPIdle(ctx context.Context, t Target, service string, slee
 		}
 		wasSleeping := idleDeployment(d)
 		if sleep {
+			if v := t.Spec.Services[service].Serverless; v != nil && v.MinReplicas != 0 {
+				return ErrIdleIneligible
+			}
 			if idleDeployment(d) {
 				return nil
 			}

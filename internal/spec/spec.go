@@ -31,6 +31,8 @@ type Application struct {
 }
 
 type Service struct {
+	Serverless              *Serverless             `json:"serverless,omitempty" toml:"serverless,omitempty"`
+	NodeName                string                  `json:"node_name,omitempty" toml:"node_name,omitempty"`
 	Resources               *Resources              `json:"resources,omitempty" toml:"resources,omitempty"`
 	Suspended               bool                    `json:"suspended,omitempty" toml:"suspended,omitempty"`
 	Job                     *Job                    `json:"job,omitempty" toml:"job"`
@@ -324,6 +326,9 @@ func Normalize(input Application) (Application, error) {
 			}
 			svc.Replicas = a.MinReplicas
 		}
+		if err := normalizeServerless(&svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if err := validateWorkload(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
@@ -533,6 +538,8 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "working_dir", a.WorkingDir, b.WorkingDir, false)
 		add(name, "termination_grace_seconds", a.TerminationGraceSeconds, b.TerminationGraceSeconds, false)
 		add(name, "architecture", a.Architecture, b.Architecture, false)
+		add(name, "node_name", a.NodeName, b.NodeName, false)
+		add(name, "serverless", a.Serverless, b.Serverless, false)
 	}
 	return changes
 }

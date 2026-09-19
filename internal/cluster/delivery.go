@@ -27,10 +27,19 @@ func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (Pref
 	return report, report.Validate()
 }
 func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
+	if err := c.validateServerless(t); err != nil {
+		return err
+	}
+	if _, err := c.serverlessGatewaySources(ctx, t); err != nil {
+		return err
+	}
 	if _, err := c.resolvePrivateEgress(t); err != nil {
 		return err
 	}
 	if err := c.validateWorkloadPolicy(ctx, t); err != nil {
+		return err
+	}
+	if err := c.validatePlacement(ctx, t); err != nil {
 		return err
 	}
 	if err := c.validateStorage(ctx, t); err != nil {

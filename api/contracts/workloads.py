@@ -25,3 +25,11 @@ schemas["Spec"]["properties"].update({
 })
 
 schemas["Service"]["properties"]["private_egress"] = {"type": "array", "maxItems": 16, "uniqueItems": True, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"}, "description": "Self-hosted: named private destinations approved by the installation administrator for this service."}
+
+schemas["Service"]["properties"]["node_name"] = {**S,"maxLength":253,"description":"Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks."}
+
+schemas["PlacementNode"] = obj({"name":S,"architecture":S,"available":B,"reason":S}, ["name","architecture","available","reason"])
+route("/placement/nodes", "get", "listPlacementNodes", obj({"items":array(ref("PlacementNode")),"serverless_available":B},["items","serverless_available"]), scope=True)
+paths["/placement/nodes"]["get"]["parameters"].append({"name":"application","in":"query","schema":S})
+schemas["Serverless"] = obj({"min_replicas":{"type":"integer","minimum":0,"maximum":1,"default":0},"idle_seconds":{"type":"integer","minimum":30,"maximum":86400,"default":300},"startup_timeout_seconds":{"type":"integer","minimum":5,"maximum":300,"default":60},"request_timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":60},"max_concurrency":{"type":"integer","minimum":1,"maximum":64,"default":16}})
+schemas["Service"]["properties"]["serverless"] = ref("Serverless")

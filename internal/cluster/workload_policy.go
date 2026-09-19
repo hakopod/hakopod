@@ -66,6 +66,11 @@ func (c *Client) validateWorkloadPolicy(ctx context.Context, t Target) error {
 	if err != nil || p == nil {
 		return err
 	}
+	for name, svc := range t.Spec.Services {
+		if svc.NodeName != "" && svc.NodeName != p.NodeName {
+			return fmt.Errorf("services.%s.node_name conflicts with the node allocated by the runtime", name)
+		}
+	}
 	if p.RuntimeClass != "" {
 		runtime, err := c.kube.NodeV1().RuntimeClasses().Get(ctx, p.RuntimeClass, metav1.GetOptions{})
 		if err != nil || runtime.Handler != p.RuntimeClass {
@@ -79,7 +84,10 @@ func applyWorkloadPolicy(p *WorkloadPolicy, pod *corev1.PodSpec) {
 	if p == nil {
 		return
 	}
-	pod.NodeSelector = map[string]string{"kubernetes.io/hostname": p.NodeName}
+	if pod.NodeSelector == nil {
+		pod.NodeSelector = map[string]string{}
+	}
+	pod.NodeSelector["kubernetes.io/hostname"] = p.NodeName
 	if p.Pool != "" {
 		pod.NodeSelector["hakopod.com/pool"] = p.Pool
 		pod.Tolerations = append(pod.Tolerations, corev1.Toleration{Key: "hakopod.com/pool", Value: p.Pool, Operator: corev1.TolerationOpEqual, Effect: corev1.TaintEffectNoSchedule})

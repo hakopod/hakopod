@@ -41,6 +41,9 @@ func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	if s.UpdateStrategy == "recreate" {
 		d.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	}
+	if s.NodeName != "" {
+		p.Affinity = &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchFields: []corev1.NodeSelectorRequirement{{Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{s.NodeName}}}}}}}}
+	}
 	if s.Architecture != "" {
 		p.NodeSelector = map[string]string{"kubernetes.io/arch": s.Architecture}
 	}

@@ -1,3 +1,4 @@
+import { ServiceExecutionFields, FunctionEditor } from './service-execution-fields'
 import { ResourceFields } from './resource-fields'
 import { serviceResources } from '../lib/service-resources'
 import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
@@ -368,9 +369,19 @@ export function DeploymentForm({
                         ? 'Scheduled job'
                         : service.job
                           ? 'Deployment job'
-                          : `${service.replicas ?? 1} ${(service.replicas ?? 1) === 1 ? 'replica' : 'replicas'}`}{' '}
+                          : service.serverless
+                            ? service.serverless.min_replicas === 1
+                              ? '1 always-warm replica'
+                              : '0–1 replicas'
+                            : `${service.replicas ?? 1} ${(service.replicas ?? 1) === 1 ? 'replica' : 'replicas'}`}{' '}
                       · {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
                     </span>
+                    <small>
+                      Node: {service.node_name || 'Automatic placement'}
+                      {service.serverless
+                        ? ` · Serverless HTTP · ${service.serverless.min_replicas === 1 ? 'Always warm · 1 replica' : `0–1 replicas · sleep after ${service.serverless.idle_seconds ?? 300}s idle`} · ${service.serverless.max_concurrency ?? 16} concurrent requests · startup wait ${service.serverless.startup_timeout_seconds ?? 60}s · request limit ${service.serverless.request_timeout_seconds ?? 60}s`
+                        : ''}
+                    </small>
                     <small>
                       Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per{' '}
                       {service.job ? 'attempt' : 'replica'}
@@ -598,6 +609,28 @@ export function DeploymentForm({
                             </Button>
                           )}
                       </div>
+                      <ServiceExecutionFields
+                        name={name}
+                        service={service}
+                        project={project}
+                        environment={environment}
+                        application={spec.name}
+                        disabled={busy}
+                        error={error}
+                        onChange={(value) => updateService(name, value)}
+                        onStarter={(value) => {
+                          updateService(name, value)
+                          setRuntime((previous) => ({
+                            ...previous,
+                            [name]: runtimeDraft({ ...service, ...value }),
+                          }))
+                        }}
+                      />
+                      <FunctionEditor
+                        service={service}
+                        disabled={busy}
+                        onChange={(value) => updateService(name, value)}
+                      />
                       <label>
                         Container image
                         <Input
@@ -715,7 +748,7 @@ export function DeploymentForm({
                               error || limitIssues.join('\n'),
                               `services.${name}.replicas`,
                             )}
-                            disabled={Boolean(service.job)}
+                            disabled={Boolean(service.job || service.serverless)}
                             onChange={(event) =>
                               updateService(name, { replicas: Number(event.target.value) })
                             }

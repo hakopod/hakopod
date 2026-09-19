@@ -273,3 +273,11 @@ func TestServerRejectsMalformedModeBeforeDatabaseAccess(t *testing.T) {
 		t.Fatal("server did not reject malformed mode before database startup", err)
 	}
 }
+
+func TestOperatorServerlessGatewayMapping(t *testing.T) {
+	input := []byte("schema_version=1\n[server]\nserverless_address='10.0.0.10:8082'\nserverless_listen='0.0.0.0:8082'")
+	settings, err := operatorSettings(input, t.TempDir(), noOperatorEnvironment)
+	if err != nil || settings["HAKOPOD_SERVERLESS_ADDRESS"] != "10.0.0.10:8082" || settings["HAKOPOD_SERVERLESS_LISTEN"] != "0.0.0.0:8082" {
+		t.Fatal(settings, err)
+	}
+}
