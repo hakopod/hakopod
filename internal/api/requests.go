@@ -144,7 +144,7 @@ func (s *Server) collectRequests(parent context.Context) {
 // Binding is by the exact generated backend, never a client-controlled Host.
 // Unknown/default backends remain operator-only. Read only routing metadata.
 func (s *Server) requestBindings(ctx context.Context) (map[string]requestlog.Entry, bool, error) {
-	rows, err := s.Store.Pool.Query(ctx, "SELECT id,name,project,environment,jsonb_object_agg(s.key,jsonb_build_object('port',s.value->'port','ports',s.value->'ports')) FROM applications a CROSS JOIN LATERAL jsonb_each(a.spec->'services') s GROUP BY id ORDER BY id LIMIT 1001")
+	rows, err := s.Store.Pool.Query(ctx, "SELECT id,name,project,environment,jsonb_object_agg(s.key,jsonb_build_object('port',s.value->'port','ports',s.value->'ports','serverless',s.value->'serverless')) FROM applications a CROSS JOIN LATERAL jsonb_each(a.spec->'services') s GROUP BY id ORDER BY id LIMIT 1001")
 	if err != nil {
 		return nil, false, err
 	}
@@ -167,6 +167,9 @@ func (s *Server) requestBindings(ctx context.Context) (map[string]requestlog.Ent
 			break
 		}
 		for service, svc := range services {
+			if svc.Serverless != nil {
+				bindings[cluster.Namespace(id)+"_svc_"+cluster.ActivationServiceName(service)+"_http"] = requestlog.Entry{ApplicationID: id, Application: name, Project: project, Environment: env, Service: service}
+			}
 			for _, port := range spec.ServicePorts(svc) {
 				key := cluster.Namespace(id) + "_svc_" + service + "_" + port.Name
 				bindings[key] = requestlog.Entry{ApplicationID: id, Application: name, Project: project, Environment: env, Service: service}

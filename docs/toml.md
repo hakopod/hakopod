@@ -386,3 +386,15 @@ Services may add a `readiness` table to check a declared TCP listener, SMTP
 greeting and commands, or verified STARTTLS. If `healthcheck` is also set, both
 checks must pass. See [listener readiness](readiness.md) for configuration, helper
 installation, resource limits and the distinction from email deliverability.
+
+## Node placement and serverless HTTP
+
+Set `services.<name>.node_name` to an exact Kubernetes node name to pin that
+service's replicas or jobs. Scheduler rules and volume affinity still apply.
+See [node placement](node-placement.md).
+
+An optional `[services.<name>.serverless]` table runs a public HTTP service at
+zero or one replica with request-triggered wake-up. It accepts `min_replicas`,
+`idle_seconds`, `startup_timeout_seconds`, `request_timeout_seconds`, and
+`max_concurrency`. The installation must have an activation gateway enabled.
+See [serverless configuration, limits and examples](serverless.md).

@@ -93,12 +93,12 @@ def config(path):
     ports = c['public_tcp_ports']
     if c['deployment_mode'] == 'managed-cloud' and ports:
         fail('managed-cloud does not support public_tcp_ports; private TCP service ports remain available')
-    reserved = {22, 53, 80, 443, 1024, 1042, 2379, 2380, 6060, 6443, 8080, 8443, 10250, c['dashboard_port']}
+    reserved = {22, 53, 80, 443, 1024, 1042, 2379, 2380, 6060, 6443, 8080, 8082, 8443, 10250, c['dashboard_port']}
     if len(ports) > 256 or any(type(port) is not int or not 1 <= port <= 65535 or port in reserved for port in ports):
         fail('public_tcp_ports requires at most 256 non-platform TCP ports between 1 and 65535')
     if len(set(ports)) != len(ports): fail('public_tcp_ports must not contain duplicates')
     c['public_tcp_ports'] = sorted(ports)
-    if c['dashboard_port'] in (6443, 10250, 8080): fail('dashboard_port conflicts with a platform port')
+    if c['dashboard_port'] in (6443, 10250, 8080, 8082): fail('dashboard_port conflicts with a platform port')
     origin = urlsplit(c['dashboard_origin'])
     try: port = origin.port
     except ValueError: fail('Invalid dashboard origin port')
@@ -228,6 +228,7 @@ def plan(c, arch, directory):
     print('K3s encryption at rest; Traefik, ServiceLB and default storage disabled. No adoption of another cluster.')
     print('HAProxy: one controller pinned to this node; host ports80/443; private administration/metrics.')
     if c['public_tcp_ports']: print('Additional TCP host ports: ' + ', '.join(map(str, c['public_tcp_ports'])) + '; firewall remains operator-managed; applications must claim listeners explicitly.')
+    print('Serverless HTTP: activation gateway on ' + c['node_ip'] + ':8082; keep TCP8082 private to cluster nodes/pods, not public ingress.')
     print('Application DNS: *.' + c['app_domain'] + ' → operator-managed public IP/NAT; DNS/firewall unchanged.')
     print('Dashboard: ' + c['dashboard_origin'] + (' via SSH tunnel; API127.0.0.1:8080' if c['dashboard_mode'] == 'ssh' else '; ' + ('Let\'s Encrypt with automatic renewal' if c['dashboard_certificate'] == 'letsencrypt' else 'supplied certificate') + '; API127.0.0.1:8080'))
     if c['database_mode'] == 'managed':
@@ -294,7 +295,7 @@ def preflight(c, arch, resume, directory):
             if state and state != 'not-found': fail('Refusing existing service: ' + unit)
         for user in ('hakopod-api', 'hakopod-dashboard'):
             if subprocess.run(['getent', 'passwd', user], stdout=subprocess.DEVNULL).returncode == 0: fail('Refusing existing service account: ' + user)
-        for port in (80, 443, 6443, 8080, 10250, c['dashboard_port'], *c['public_tcp_ports']):
+        for port in (80, 443, 6443, 8080, 8082, 10250, c['dashboard_port'], *c['public_tcp_ports']):
             for family, address in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
                 try:
                     with socket.socket(family, socket.SOCK_STREAM) as s:
@@ -538,6 +539,7 @@ def render(c, arch, installation, out):
         'HAKOPOD_PUBLIC_TCP_PORTS': ','.join(map(str, c['public_tcp_ports'])),
         'HAKOPOD_PUBLIC_PORT': '80', 'HAKOPOD_PUBLIC_HTTPS_PORT': '443',
         'HAKOPOD_K3S_SUPERVISOR_URL': 'https://' + c['supervisor_host'] + ':6443',
+        'HAKOPOD_SERVERLESS_ADDRESS': c['node_ip'] + ':8082',
         'HAKOPOD_LISTEN': '127.0.0.1:8080', 'HAKOPOD_WEB_ORIGIN': c['dashboard_origin'],
         'HAKOPOD_SETUP_SECRET_FILE': '/etc/hakopod/secrets/setup-token',
         'HAKOPOD_AUTH_ENCRYPTION_KEY_FILE': '/etc/hakopod/secrets/auth-encryption-key',

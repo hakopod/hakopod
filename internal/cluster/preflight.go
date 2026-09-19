@@ -95,6 +95,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	}
 	eligible := map[string]corev1.Node{}
 	var cpuFree, memoryFree int64
+	nodeFree := map[string][2]int64{}
 	for _, node := range nodes.Items {
 		if policy != nil && (node.Name != policy.NodeName || policy.Pool != "" && node.Labels["hakopod.com/pool"] != policy.Pool) {
 			continue
@@ -121,6 +122,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 			continue
 		}
 		eligible[node.Name] = node
+		nodeFree[node.Name] = [2]int64{node.Status.Allocatable.Cpu().MilliValue(), node.Status.Allocatable.Memory().Value()}
 		cpuFree += node.Status.Allocatable.Cpu().MilliValue()
 		memoryFree += node.Status.Allocatable.Memory().Value()
 	}
@@ -137,6 +139,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		memory := resource.MustParse(p.MemoryRequest)
 		fits := false
 		for _, n := range eligible {
+			if s.NodeName != "" && n.Name != s.NodeName {
+				continue
+			}
 			if s.Architecture != "" && n.Labels["kubernetes.io/arch"] != s.Architecture {
 				continue
 			}
@@ -154,7 +159,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 			}
 		}
 		if !fits {
-			add("service_capacity", "blocked", name+": no eligible node fits its architecture and resource requests. Choose a smaller profile or add capacity.")
+			add("service_capacity", "blocked", name+": no eligible node fits its node placement, architecture and resource requests. Choose a smaller profile or add capacity.")
 		}
 	}
 	pods, err := c.kube.CoreV1().Pods("").List(ctx, metav1.ListOptions{Limit: 10001, FieldSelector: "status.phase!=Succeeded,status.phase!=Failed"})
@@ -185,6 +190,42 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		}
 		cpuFree -= cpu + pod.Spec.Overhead.Cpu().MilliValue()
 		memoryFree -= memory + pod.Spec.Overhead.Memory().Value()
+		free := nodeFree[pod.Spec.NodeName]
+		free[0] -= cpu + pod.Spec.Overhead.Cpu().MilliValue()
+		free[1] -= memory + pod.Spec.Overhead.Memory().Value()
+		nodeFree[pod.Spec.NodeName] = free
+	}
+	pinned := map[string][2]int64{}
+	pinnedJobs := map[string][2]int64{}
+	for _, svc := range t.Spec.Services {
+		node := svc.NodeName
+		if node == "" {
+			continue
+		}
+		cpu, memory := pinnedRequests(svc, policy)
+		if svc.Job != nil && svc.Job.Schedule == nil {
+			v := pinnedJobs[node]
+			v[0] = max(v[0], cpu)
+			v[1] = max(v[1], memory)
+			pinnedJobs[node] = v
+		} else {
+			v := pinned[node]
+			v[0] += cpu
+			v[1] += memory
+			pinned[node] = v
+		}
+	}
+	for node, job := range pinnedJobs {
+		v := pinned[node]
+		v[0] += job[0]
+		v[1] += job[1]
+		pinned[node] = v
+	}
+	for node, requested := range pinned {
+		free := nodeFree[node]
+		if requested[0] > free[0] || requested[1] > free[1] {
+			add("node_capacity", "blocked", node+": pinned services and their deployment jobs exceed available CPU or memory. Choose another node or reduce resource requests.")
+		}
 	}
 	if cpuFree < r.CPURequestMillis || memoryFree < r.MemoryRequestBytes {
 		add("resources", "blocked", "The application and its largest deployment job exceed available CPU or memory requests after other workloads. Reduce replicas/profile sizes or add capacity.")
@@ -236,4 +277,10 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		add("disk", "passed", "At least one eligible node has 2 GiB free disk. Large images and persistent data need additional capacity; this is a minimum headroom check.")
 	}
 	return r, nil
+}
+
+func quantityValues(cpu, memory string) (int64, int64) {
+	c := resource.MustParse(cpu)
+	m := resource.MustParse(memory)
+	return c.MilliValue(), m.Value()
 }

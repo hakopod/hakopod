@@ -123,11 +123,12 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('127.0.0.1:8080', (rendered / 'api.env').read_text())
         self.assertIn('HAKOPOD_MANAGED_POSTGRES="true"', (rendered / 'api.env').read_text())
         self.assertIn('HAKOPOD_DEPLOYMENT_MODE="self-hosted"', (rendered / 'api.env').read_text())
+        self.assertIn('HAKOPOD_SERVERLESS_ADDRESS="' + self.config['node_ip'] + ':8082"', (rendered / 'api.env').read_text())
         self.assertIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-api.service').read_text())
         self.assertNotIn('ReadWritePaths=/var/lib/hakopod/backups', (rendered / 'hakopod-dashboard.service').read_text())
         self.assertFalse((rendered / 'api.env').stat().st_mode & 0o077)
     def test_public_tcp_ports_are_explicit_bounded_and_rendered(self):
-        for value in ([587, 587], [80], [8080], [3000], [True], ['587'], [0], [65536], list(range(20000, 20257))):
+        for value in ([587, 587], [80], [8080], [8082], [3000], [True], ['587'], [0], [65536], list(range(20000, 20257))):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 host.config(self.config_file({'public_tcp_ports': value}))
         c = host.config(self.config_file({'public_tcp_ports': [65535, 587, 12345, 1, 465]}))

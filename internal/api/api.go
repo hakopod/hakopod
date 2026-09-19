@@ -137,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("GET /api/v1/applications/{id}/logs", s.logs)
 	routes.HandleFunc("POST /api/v1/applications/{id}/logs/query", s.queryLogs)
 	routes.HandleFunc("GET /api/v1/nodes", s.nodes)
+	routes.HandleFunc("GET /api/v1/placement/nodes", s.placementNodes)
 	routes.HandleFunc("GET /api/v1/keys", s.keys)
 	routes.HandleFunc("POST /api/v1/keys", s.createKey)
 	routes.HandleFunc("DELETE /api/v1/keys/{id}", s.revokeKey)

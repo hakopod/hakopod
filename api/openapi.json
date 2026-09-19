@@ -11576,6 +11576,73 @@
         }
       }
     },
+    "/placement/nodes": {
+      "get": {
+        "operationId": "listPlacementNodes",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlacementNode"
+                      }
+                    },
+                    "serverless_available": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "serverless_available"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/name": {
       "put": {
         "operationId": "renameApplication",
@@ -12267,6 +12334,14 @@
               "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"
             },
             "description": "Self-hosted: named private destinations approved by the installation administrator for this service."
+          },
+          "node_name": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks."
+          },
+          "serverless": {
+            "$ref": "#/components/schemas/Serverless"
           }
         },
         "required": [
@@ -19691,6 +19766,65 @@
           "name",
           "updated_at"
         ]
+      },
+      "PlacementNode": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "architecture",
+          "available",
+          "reason"
+        ]
+      },
+      "Serverless": {
+        "type": "object",
+        "properties": {
+          "min_replicas": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0
+          },
+          "idle_seconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 86400,
+            "default": 300
+          },
+          "startup_timeout_seconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 300,
+            "default": 60
+          },
+          "request_timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 60
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 16
+          }
+        },
+        "required": []
       },
       "ServiceMoveInput": {
         "type": "object",

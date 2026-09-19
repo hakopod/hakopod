@@ -222,3 +222,5 @@ The project uses Apache-2.0 for original code; dependencies retain their own
 [licenses and notices](docs/licenses.md).
 
 Build and release workflows: [framework setup, MCP, schedules, previews, recovery and build secrets](docs/engine-workflows.md).
+
+Service execution: [node placement](docs/node-placement.md) and [serverless HTTP functions and containers](docs/serverless.md).

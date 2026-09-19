@@ -15,8 +15,8 @@ import (
 )
 
 // ConfigureRequestLogs only manages the pinned platform ingress, and never
-// replaces an operator's custom access logger. No workload traffic is proxied
-// through the management process.
+// replaces an operator's custom access logger. Serverless activation remains
+// behind this ingress, so its wait time is included in request duration.
 func (c *Client) ConfigureRequestLogs(ctx context.Context) error {
 	cm, err := c.proxyConfigMap(ctx)
 	if err != nil {
@@ -187,7 +187,7 @@ func (c *Client) RequestRouting(ctx context.Context, t Target, service string) (
 				}
 			}
 			for _, path := range rule.HTTP.Paths {
-				if path.Backend.Service != nil && path.Backend.Service.Name == service {
+				if path.Backend.Service != nil && (path.Backend.Service.Name == service || t.Spec.Services[service].Serverless != nil && path.Backend.Service.Name == ActivationServiceName(service)) {
 					out.Routes = append(out.Routes, RequestRoute{Host: rule.Host, Path: path.Path, Port: path.Backend.Service.Port.Number, TLS: tls, Ingress: ingress.Name})
 				}
 			}
@@ -231,6 +231,9 @@ func (c *Client) RequestRouting(ctx context.Context, t Target, service string) (
 	}
 	if slices.Continue != "" || len(out.Endpoints) >= 64 {
 		out.Warnings = append(out.Warnings, "Endpoint view is limited to 64 addresses and eight slices.")
+	}
+	if t.Spec.Services[service].Serverless != nil {
+		out.Warnings = append(out.Warnings, "Public requests pass through the activation gateway, which wakes sleeping containers before forwarding. Cold-start time is included in request duration.")
 	}
 	if len(out.Routes) == 0 {
 		out.Warnings = append(out.Warnings, "This service has no HTTP ingress route. Internal and raw TCP traffic is not captured by Requests.")

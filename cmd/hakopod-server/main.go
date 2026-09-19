@@ -139,7 +139,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
+	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{ServerlessAddress: os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"), ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
 	}
@@ -168,9 +168,58 @@ func run() error {
 		return err
 	}
 	management.ConfigureBackups(api.BackupConfig{DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true"})
+	var gatewayServer *http.Server
+	var gatewayListener net.Listener
+	var gatewayDone chan struct{}
+	var leaseDone chan struct{}
+	if address := os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"); address != "" {
+		gatewayListener, err = net.Listen("tcp", env("HAKOPOD_SERVERLESS_LISTEN", address))
+		if err != nil {
+			return fmt.Errorf("bind serverless activation gateway: %w", err)
+		}
+		defer gatewayListener.Close()
+		lease, e := db.Pool.Acquire(ctx)
+		if e != nil {
+			return fmt.Errorf("acquire serverless gateway lease: %w", e)
+		}
+		defer lease.Release()
+		var exclusive bool
+		if e = lease.QueryRow(ctx, "SELECT pg_try_advisory_lock(hashtextextended('hakopod.serverless.gateway',0))").Scan(&exclusive); e != nil || !exclusive {
+			return fmt.Errorf("another serverless activation gateway already owns this installation")
+		}
+		defer lease.Conn().Close(context.Background())
+		gateway := management.ServerlessGateway()
+		gatewayServer = &http.Server{Handler: gateway, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+		gatewayDone = make(chan struct{})
+		go func() { defer close(gatewayDone); gateway.Run(ctx) }()
+		leaseDone = make(chan struct{})
+		go func() {
+			defer close(leaseDone)
+			tick := time.NewTicker(5 * time.Second)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+					e := lease.Conn().Ping(bounded)
+					cancel()
+					if e != nil {
+						slog.Error("Serverless gateway lease lost; stopping management process")
+						stop()
+						return
+					}
+				}
+			}
+		}()
+	}
 	handler, wait := runtime.Start(ctx, management, domain, rollout)
 	srv := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
-	serverErr := make(chan error, 1)
+	serverErr := make(chan error, 2)
+	if gatewayServer != nil {
+		go func() { serverErr <- gatewayServer.Serve(gatewayListener) }()
+	}
 	go func() {
 		if cert != "" {
 			serverErr <- srv.ListenAndServeTLS(cert, key)
@@ -188,7 +237,14 @@ func run() error {
 	defer cancel()
 	management.CloseTerminals()
 	_ = srv.Shutdown(shutdownCtx)
+	if gatewayServer != nil {
+		_ = gatewayServer.Shutdown(shutdownCtx)
+	}
 	wait()
+	if gatewayDone != nil {
+		<-gatewayDone
+		<-leaseDone
+	}
 	if err != nil && !strings.Contains(err.Error(), "Server closed") {
 		return err
 	}

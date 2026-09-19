@@ -4,13 +4,14 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { useResourceScope, useScope } from '../lib/scope'
+import { httpFunction } from '../lib/http-functions'
 import type { Service } from '../lib/types'
 import { DeploymentForm } from '../components/deploy-dialog'
 import { FormPage } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { Empty, ErrorState, HeadingHelp, Loading } from '../components/shared'
 
 export const Route = createFileRoute('/applications/$applicationId/services/new')({
   component: AddService,
@@ -27,6 +28,25 @@ function AddService() {
     gcTime: 0,
   })
   useResourceScope(app.data)
+  const placement = useQuery({
+    queryKey: ['placement-nodes', app.data?.project, app.data?.environment, app.data?.name],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/placement/nodes', {
+          signal,
+          params: {
+            query: {
+              project: app.data!.project,
+              environment: app.data!.environment,
+              application: app.data!.name,
+            },
+          },
+        }),
+      ),
+    enabled: Boolean(app.data && scope.can('deployments:write')),
+    staleTime: 30_000,
+  })
+  const [functionName, setFunctionName] = useState('')
   const [name, setName] = useState('')
   const [image, setImage] = useState('')
   const [reuse, setReuse] = useState('')
@@ -51,6 +71,8 @@ function AddService() {
       />
     )
   const collision = !!application.spec.services[name]
+  const functionCollision = !!application.spec.services[functionName]
+  const functionAvailable = !placement.error && placement.data?.serverless_available === true
   return (
     <FormPage
       description={`Add a service to ${application.display_name || application.name}.`}
@@ -91,6 +113,83 @@ function AddService() {
             before deploying.
           </p>
         </section>
+        <form
+          aria-label="Start an HTTP function"
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!functionAvailable || functionCollision) return
+            const submitter = (event.nativeEvent as SubmitEvent).submitter
+            const language = submitter?.getAttribute('value') === 'python' ? 'python' : 'javascript'
+            setDraft({ name: functionName, service: httpFunction(language) })
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <h2>Start an HTTP function</h2>
+            <HeadingHelp title="HTTP functions">
+              Start a public JavaScript or Python HTTP service that sleeps when idle. Edit its
+              source and review the configuration before deploying.
+            </HeadingHelp>
+          </div>
+          <label className="grid gap-1">
+            Function service name
+            <Input
+              value={functionName}
+              onChange={(event) => setFunctionName(event.target.value)}
+              pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
+              maxLength={40}
+              required
+              placeholder="hello"
+              aria-describedby="function-service-name-help"
+              error={
+                functionCollision
+                  ? 'This application already has a service with this name.'
+                  : undefined
+              }
+            />
+          </label>
+          <p id="function-service-name-help" className="text-sm text-muted-foreground">
+            Use a unique name with lowercase letters, digits and hyphens.
+          </p>
+          {placement.isPending ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Checking serverless availability…
+            </p>
+          ) : placement.error ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span>Serverless availability could not be checked.</span>
+              <Button
+                size="sm"
+                disabled={placement.isFetching}
+                onClick={() => void placement.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : !functionAvailable ? (
+            <p className="text-sm text-muted-foreground">
+              The installation owner must enable the activation gateway before using HTTP functions.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              name="language"
+              value="javascript"
+              disabled={!functionAvailable || functionCollision}
+            >
+              Start JavaScript function
+            </Button>
+            <Button
+              type="submit"
+              name="language"
+              value="python"
+              disabled={!functionAvailable || functionCollision}
+            >
+              Start Python function
+            </Button>
+          </div>
+        </form>
         <form
           className="grid gap-4"
           onSubmit={(event) => {

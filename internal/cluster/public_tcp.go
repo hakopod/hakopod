@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"reflect"
 	"slices"
 	"strconv"
@@ -71,6 +72,16 @@ func publicTCPObject(t Target, ingressClass string) *unstructured.Unstructured {
 func (c *Client) ValidatePublicTCP(ctx context.Context, t Target) error {
 	if !spec.HasPublicTCP(t.Spec) {
 		return nil
+	}
+	if c.ServerlessEnabled() {
+		_, port, _ := net.SplitHostPort(c.options.ServerlessAddress)
+		for _, svc := range t.Spec.Services {
+			for _, listener := range svc.PublicTCP {
+				if strconv.Itoa(int(listener.Port)) == port {
+					return fmt.Errorf("public TCP port %s is reserved for the serverless activation gateway", port)
+				}
+			}
+		}
 	}
 	if policy := c.PublicTCPPolicy(); !policy.Allowed {
 		return fmt.Errorf("%w: %s", ErrPublicTCPDisabled, policy.Message)
