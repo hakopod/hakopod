@@ -48,6 +48,7 @@ import { Route as ApplicationsApplicationIdCertificatesRouteImport } from './rou
 import { Route as ApplicationsApplicationIdConfigureRouteImport } from './routes/applications.$applicationId.configure'
 import { Route as ApplicationsApplicationIdDomainsRouteImport } from './routes/applications.$applicationId.domains'
 import { Route as ApplicationsApplicationIdEnvironmentRouteImport } from './routes/applications.$applicationId.environment'
+import { Route as ApplicationsApplicationIdNotificationsRouteImport } from './routes/applications.$applicationId.notifications'
 import { Route as ApplicationsApplicationIdSourceRouteImport } from './routes/applications.$applicationId.source'
 import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.destinations.new'
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
@@ -271,6 +272,12 @@ const ApplicationsApplicationIdEnvironmentRoute =
     path: '/environment',
     getParentRoute: () => ApplicationsApplicationIdRoute,
   } as any)
+const ApplicationsApplicationIdNotificationsRoute =
+  ApplicationsApplicationIdNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => ApplicationsApplicationIdRoute,
+  } as any)
 const ApplicationsApplicationIdSourceRoute =
   ApplicationsApplicationIdSourceRouteImport.update({
     id: '/source',
@@ -440,6 +447,7 @@ export interface FileRoutesByFullPath {
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
+  '/applications/$applicationId/notifications': typeof ApplicationsApplicationIdNotificationsRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
@@ -503,6 +511,7 @@ export interface FileRoutesByTo {
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
+  '/applications/$applicationId/notifications': typeof ApplicationsApplicationIdNotificationsRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
@@ -567,6 +576,7 @@ export interface FileRoutesById {
   '/applications/$applicationId/configure': typeof ApplicationsApplicationIdConfigureRoute
   '/applications/$applicationId/domains': typeof ApplicationsApplicationIdDomainsRoute
   '/applications/$applicationId/environment': typeof ApplicationsApplicationIdEnvironmentRoute
+  '/applications/$applicationId/notifications': typeof ApplicationsApplicationIdNotificationsRoute
   '/applications/$applicationId/source': typeof ApplicationsApplicationIdSourceRoute
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
@@ -632,6 +642,7 @@ export interface FileRouteTypes {
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
+    | '/applications/$applicationId/notifications'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
@@ -695,6 +706,7 @@ export interface FileRouteTypes {
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
+    | '/applications/$applicationId/notifications'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
@@ -758,6 +770,7 @@ export interface FileRouteTypes {
     | '/applications/$applicationId/configure'
     | '/applications/$applicationId/domains'
     | '/applications/$applicationId/environment'
+    | '/applications/$applicationId/notifications'
     | '/applications/$applicationId/source'
     | '/backups/destinations/new'
     | '/backups/schedules/new'
@@ -1080,6 +1093,13 @@ declare module '@tanstack/react-router' {
       path: '/environment'
       fullPath: '/applications/$applicationId/environment'
       preLoaderRoute: typeof ApplicationsApplicationIdEnvironmentRouteImport
+      parentRoute: typeof ApplicationsApplicationIdRoute
+    }
+    '/applications/$applicationId/notifications': {
+      id: '/applications/$applicationId/notifications'
+      path: '/notifications'
+      fullPath: '/applications/$applicationId/notifications'
+      preLoaderRoute: typeof ApplicationsApplicationIdNotificationsRouteImport
       parentRoute: typeof ApplicationsApplicationIdRoute
     }
     '/applications/$applicationId/source': {
@@ -1419,6 +1439,7 @@ interface ApplicationsApplicationIdRouteChildren {
   ApplicationsApplicationIdConfigureRoute: typeof ApplicationsApplicationIdConfigureRoute
   ApplicationsApplicationIdDomainsRoute: typeof ApplicationsApplicationIdDomainsRoute
   ApplicationsApplicationIdEnvironmentRoute: typeof ApplicationsApplicationIdEnvironmentRoute
+  ApplicationsApplicationIdNotificationsRoute: typeof ApplicationsApplicationIdNotificationsRoute
   ApplicationsApplicationIdSourceRoute: typeof ApplicationsApplicationIdSourceRoute
   ApplicationsApplicationIdPreviewsNewRoute: typeof ApplicationsApplicationIdPreviewsNewRoute
   ApplicationsApplicationIdServicesNewRoute: typeof ApplicationsApplicationIdServicesNewRoute
@@ -1434,6 +1455,8 @@ const ApplicationsApplicationIdRouteChildren: ApplicationsApplicationIdRouteChil
       ApplicationsApplicationIdDomainsRoute,
     ApplicationsApplicationIdEnvironmentRoute:
       ApplicationsApplicationIdEnvironmentRoute,
+    ApplicationsApplicationIdNotificationsRoute:
+      ApplicationsApplicationIdNotificationsRoute,
     ApplicationsApplicationIdSourceRoute: ApplicationsApplicationIdSourceRoute,
     ApplicationsApplicationIdPreviewsNewRoute:
       ApplicationsApplicationIdPreviewsNewRoute,

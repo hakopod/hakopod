@@ -1432,6 +1432,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["deploymentNotifications"];
+        put?: never;
+        post: operations["createDeploymentNotification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/notifications/{target}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateDeploymentNotification"];
+        post?: never;
+        delete: operations["deleteDeploymentNotification"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/notifications/{target}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testDeploymentNotification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/domains": {
         parameters: {
             query?: never;
@@ -3841,6 +3889,60 @@ export interface components {
             certificate_pem?: string;
             private_key_pem?: string;
             from_ingress?: boolean;
+        };
+        NotificationTarget: {
+            id: string;
+            application_id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "email" | "slack" | "discord" | "webhook";
+            enabled: boolean;
+            events: ("succeeded" | "failed" | "cancelled")[];
+            revision: number;
+        };
+        NotificationInput: {
+            name: string;
+            /** @enum {string} */
+            kind: "email" | "slack" | "discord" | "webhook";
+            enabled: boolean;
+            events: ("succeeded" | "failed" | "cancelled")[];
+            destination?: string;
+            signing_secret?: string;
+            expected_revision: number;
+        };
+        NotificationPayload: {
+            schema_version: number;
+            event_id: string;
+            deployment_id?: string;
+            application_id: string;
+            application_name: string;
+            project: string;
+            environment: string;
+            revision: number;
+            /** @enum {string} */
+            status: "succeeded" | "failed" | "cancelled" | "test";
+            recovery_state?: string;
+            /** Format: date-time */
+            occurred_at: string;
+            dashboard_url?: string;
+        };
+        NotificationDelivery: {
+            id: string;
+            target_id: string;
+            payload: components["schemas"]["NotificationPayload"];
+            /** @enum {string} */
+            status: "pending" | "sending" | "sent" | "failed" | "skipped";
+            attempts: number;
+            last_error: string;
+            /** Format: date-time */
+            created_at: string;
+            finished_at: string | null;
+        };
+        NotificationSettings: {
+            items: components["schemas"]["NotificationTarget"][];
+            deliveries: components["schemas"]["NotificationDelivery"][];
+            email_available: boolean;
+            encryption_ready: boolean;
         };
         Domain: {
             hostname: string;
@@ -8557,6 +8659,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackendCertificate"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deploymentNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createDeploymentNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTarget"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateDeploymentNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTarget"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteDeploymentNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testDeploymentNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        status: string;
+                    };
                 };
             };
             /** @description Error */
