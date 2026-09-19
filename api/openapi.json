@@ -8284,6 +8284,158 @@
         }
       }
     },
+    "/requests": {
+      "get": {
+        "operationId": "listRequests",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "since_seconds",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/requests/routing": {
+      "get": {
+        "operationId": "requestRouting",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestRouting"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/projects/{id}": {
       "delete": {
         "operationId": "deleteEmptyProject",
@@ -17032,6 +17184,275 @@
         "required": [
           "protocol",
           "port"
+        ]
+      },
+      "RequestEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "application": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "termination": {
+            "type": "string"
+          },
+          "frontend": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "tls": {
+            "type": "string"
+          },
+          "client_network": {
+            "type": "string"
+          },
+          "ingress_pod": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "request_ms": {
+            "type": "integer"
+          },
+          "queue_ms": {
+            "type": "integer"
+          },
+          "connect_ms": {
+            "type": "integer"
+          },
+          "response_ms": {
+            "type": "integer"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "retries": {
+            "type": "integer"
+          },
+          "connections": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "application_id",
+          "application",
+          "project",
+          "environment",
+          "service",
+          "method",
+          "host",
+          "path",
+          "protocol",
+          "termination",
+          "frontend",
+          "backend",
+          "server",
+          "tls",
+          "client_network",
+          "ingress_pod",
+          "status",
+          "bytes",
+          "request_ms",
+          "queue_ms",
+          "connect_ms",
+          "response_ms",
+          "duration_ms",
+          "retries",
+          "connections"
+        ]
+      },
+      "RequestCollection": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gap_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "message",
+          "checked_at",
+          "last_success_at",
+          "gap_count"
+        ]
+      },
+      "RequestList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestEntry"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/RequestCollection"
+          },
+          "retention_hours": {
+            "type": "integer"
+          },
+          "max_entries": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "collection",
+          "retention_hours",
+          "max_entries"
+        ]
+      },
+      "RequestRoute": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "ingress": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "path",
+          "port",
+          "tls",
+          "ingress"
+        ]
+      },
+      "RequestEndpoint": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pod",
+          "address",
+          "ready"
+        ]
+      },
+      "RequestRouting": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestRoute"
+            }
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestEndpoint"
+            }
+          },
+          "service": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "observed_at",
+          "routes",
+          "endpoints",
+          "service",
+          "namespace",
+          "warnings"
         ]
       },
       "Resources": {

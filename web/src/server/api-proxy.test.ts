@@ -24,6 +24,8 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases = [
+    { path: 'requests', method: 'GET', query: '?project=demo&service=api&status=5' },
+    { path: 'applications/app-a/services/api/requests/routing', method: 'GET' },
     {
       path: 'applications/app-a/services/api/move-plan',
       method: 'POST',

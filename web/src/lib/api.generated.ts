@@ -2171,6 +2171,38 @@ export interface paths {
         patch: operations["setProxy"];
         trace?: never;
     };
+    "/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/requests/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["requestRouting"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}": {
         parameters: {
             query?: never;
@@ -4362,6 +4394,72 @@ export interface components {
             period_seconds?: number;
             timeout_seconds?: number;
             failure_threshold?: number;
+        };
+        RequestEntry: {
+            id: string;
+            application_id: string;
+            application: string;
+            project: string;
+            environment: string;
+            service: string;
+            method: string;
+            host: string;
+            path: string;
+            protocol: string;
+            termination: string;
+            frontend: string;
+            backend: string;
+            server: string;
+            tls: string;
+            client_network: string;
+            ingress_pod: string;
+            /** Format: date-time */
+            timestamp: string;
+            status: number;
+            bytes: number;
+            request_ms: number;
+            queue_ms: number;
+            connect_ms: number;
+            response_ms: number;
+            duration_ms: number;
+            retries: number;
+            connections: number;
+        };
+        RequestCollection: {
+            state: string;
+            message: string;
+            /** Format: date-time */
+            checked_at: string;
+            last_success_at: string | null;
+            gap_count: number;
+        };
+        RequestList: {
+            items: components["schemas"]["RequestEntry"][];
+            next_cursor: string;
+            collection: components["schemas"]["RequestCollection"];
+            retention_hours: number;
+            max_entries: number;
+        };
+        RequestRoute: {
+            host: string;
+            path: string;
+            port: number;
+            tls: boolean;
+            ingress: string;
+        };
+        RequestEndpoint: {
+            pod: string;
+            address: string;
+            ready: boolean;
+        };
+        RequestRouting: {
+            /** Format: date-time */
+            observed_at: string;
+            routes: components["schemas"]["RequestRoute"][];
+            endpoints: components["schemas"]["RequestEndpoint"][];
+            service: string;
+            namespace: string;
+            warnings: string[];
         };
         Resources: {
             /** @description Per-replica CPU reservation, 1m–64 cores; omit to inherit size. */
@@ -10754,6 +10852,78 @@ export interface operations {
                         revision: number;
                         status: string;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRequests: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application_id?: string;
+                service?: string;
+                method?: string;
+                search?: string;
+                cursor?: string;
+                status?: number;
+                since_seconds?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    requestRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestRouting"];
                 };
             };
             /** @description Error */
