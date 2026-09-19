@@ -495,6 +495,13 @@ function ApplicationDetail() {
           <ApplicationAlarmLinks application={app} />
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">
+          <div className="flex justify-end">
+            <Button asChild variant="outline">
+              <Link to="/applications/$applicationId/notifications" params={{ applicationId }}>
+                Notification settings
+              </Link>
+            </Button>
+          </div>
           <p className="text-sm text-muted-foreground">
             Deploying from CI?{' '}
             <a
