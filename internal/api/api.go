@@ -470,14 +470,15 @@ func (s *Server) application(w http.ResponseWriter, r *http.Request) {
 }
 
 type input struct {
-	EnvFiles         map[string]string `json:"env_files,omitempty"`
-	Project          string            `json:"project"`
-	Environment      string            `json:"environment"`
-	Spec             *spec.Application `json:"spec,omitempty"`
-	TOML             string            `json:"toml,omitempty"`
-	Service          string            `json:"service,omitempty"`
-	Services         []string          `json:"services,omitempty"`
-	ExpectedRevision *int64            `json:"expected_revision,omitempty"`
+	Provenance       map[string]store.SourceBuild `json:"provenance,omitempty"`
+	EnvFiles         map[string]string            `json:"env_files,omitempty"`
+	Project          string                       `json:"project"`
+	Environment      string                       `json:"environment"`
+	Spec             *spec.Application            `json:"spec,omitempty"`
+	TOML             string                       `json:"toml,omitempty"`
+	Service          string                       `json:"service,omitempty"`
+	Services         []string                     `json:"services,omitempty"`
+	ExpectedRevision *int64                       `json:"expected_revision,omitempty"`
 }
 
 func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permission string) (spec.Application, *store.Application, bool) {
@@ -495,6 +496,12 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 	}
 	if in.Service != "" {
 		targets[in.Service] = true
+	}
+	for name := range in.Provenance {
+		if len(targets) > 0 && !targets[name] {
+			problem(w, 400, "invalid_provenance", "provenance may only describe selected services")
+			return spec.Application{}, nil, false
+		}
 	}
 	if !validScope(in.Project, in.Environment) {
 		problem(w, 400, "missing_context", "project and environment are required")
@@ -611,6 +618,10 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permi
 			return next, nil, false
 		}
 	}
+	if err := store.ValidateProvenance(next, in.Provenance); err != nil {
+		problem(w, 400, "invalid_provenance", err.Error())
+		return next, existing, false
+	}
 	if _, err := s.Store.ResolveVirtualNetworks(r.Context(), in.Project, in.Environment, next); err != nil {
 		problem(w, 400, "invalid_network", err.Error())
 		return next, existing, false
@@ -641,7 +652,10 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 	if warnings == nil {
 		warnings = []string{}
 	}
-	write(w, 200, map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles})
+	if in.Provenance == nil {
+		in.Provenance = map[string]store.SourceBuild{}
+	}
+	write(w, 200, map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance})
 }
 func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	var in input
@@ -656,7 +670,7 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := s.Store.Accept(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"))
+	d, err := s.Store.AcceptWithProvenance(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), in.Provenance)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrForbidden) {
 			failure(w, err)

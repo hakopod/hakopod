@@ -419,25 +419,26 @@ type DeploymentSummary struct {
 	FinishedAt      *time.Time      `json:"finished_at"`
 }
 type Deployment struct {
-	RecoveryState    string            `json:"recovery_state,omitempty"`
-	RecoveryRevision int64             `json:"recovery_revision,omitempty"`
-	RecoverySpec     *spec.Application `json:"recovery_spec,omitempty"`
-	RecoveryError    string            `json:"recovery_error,omitempty"`
-	ID               string            `json:"id"`
-	ApplicationID    string            `json:"application_id"`
-	IdentityID       string            `json:"identity_id"`
-	KeyID            string            `json:"-"`
-	Revision         int64             `json:"revision"`
-	Status           string            `json:"status"`
-	Spec             spec.Application  `json:"spec"`
-	ResolvedSpec     *spec.Application `json:"resolved_spec"`
-	Result           json.RawMessage   `json:"result"`
-	Error            string            `json:"error"`
-	CancelRequested  bool              `json:"cancel_requested"`
-	CreatedAt        time.Time         `json:"created_at"`
-	StartedAt        *time.Time        `json:"started_at"`
-	FinishedAt       *time.Time        `json:"finished_at"`
-	Events           []Event           `json:"events"`
+	Provenance       map[string]SourceBuild `json:"provenance,omitempty"`
+	RecoveryState    string                 `json:"recovery_state,omitempty"`
+	RecoveryRevision int64                  `json:"recovery_revision,omitempty"`
+	RecoverySpec     *spec.Application      `json:"recovery_spec,omitempty"`
+	RecoveryError    string                 `json:"recovery_error,omitempty"`
+	ID               string                 `json:"id"`
+	ApplicationID    string                 `json:"application_id"`
+	IdentityID       string                 `json:"identity_id"`
+	KeyID            string                 `json:"-"`
+	Revision         int64                  `json:"revision"`
+	Status           string                 `json:"status"`
+	Spec             spec.Application       `json:"spec"`
+	ResolvedSpec     *spec.Application      `json:"resolved_spec"`
+	Result           json.RawMessage        `json:"result"`
+	Error            string                 `json:"error"`
+	CancelRequested  bool                   `json:"cancel_requested"`
+	CreatedAt        time.Time              `json:"created_at"`
+	StartedAt        *time.Time             `json:"started_at"`
+	FinishedAt       *time.Time             `json:"finished_at"`
+	Events           []Event                `json:"events"`
 }
 type Event struct {
 	ID      int64     `json:"id"`
@@ -448,7 +449,7 @@ type Event struct {
 }
 
 const appCols = "id,name,project,environment,revision,status,spec,observed,created_at,updated_at,display_name,service_display_names,metadata_revision"
-const depCols = "recovery_state,recovery_revision,recovery_spec,recovery_error,id,application_id,identity_id,key_id,revision,status,spec,resolved_spec,result,error,cancel_requested,created_at,started_at,finished_at"
+const depCols = "recovery_state,recovery_revision,recovery_spec,recovery_error,id,application_id,identity_id,key_id,revision,status,spec,resolved_spec,result,error,cancel_requested,created_at,started_at,finished_at,provenance"
 
 type scanner interface{ Scan(...any) error }
 
@@ -459,7 +460,7 @@ func scanApp(r scanner) (Application, error) {
 }
 func scanDep(r scanner) (Deployment, error) {
 	var d Deployment
-	err := r.Scan(&d.RecoveryState, &d.RecoveryRevision, &d.RecoverySpec, &d.RecoveryError, &d.ID, &d.ApplicationID, &d.IdentityID, &d.KeyID, &d.Revision, &d.Status, &d.Spec, &d.ResolvedSpec, &d.Result, &d.Error, &d.CancelRequested, &d.CreatedAt, &d.StartedAt, &d.FinishedAt)
+	err := r.Scan(&d.RecoveryState, &d.RecoveryRevision, &d.RecoverySpec, &d.RecoveryError, &d.ID, &d.ApplicationID, &d.IdentityID, &d.KeyID, &d.Revision, &d.Status, &d.Spec, &d.ResolvedSpec, &d.Result, &d.Error, &d.CancelRequested, &d.CreatedAt, &d.StartedAt, &d.FinishedAt, &d.Provenance)
 	d.Events = []Event{}
 	return d, err
 }

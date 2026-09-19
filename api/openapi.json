@@ -12101,6 +12101,14 @@
               "$ref": "#/components/schemas/Event"
             }
           },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
+          },
           "recovery_error": {
             "type": "string"
           },
@@ -12551,6 +12559,14 @@
               "type": "string",
               "writeOnly": true
             }
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           }
         },
         "required": [
@@ -12596,6 +12612,14 @@
               "type": "string",
               "writeOnly": true
             }
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           }
         },
         "required": [
@@ -12670,6 +12694,14 @@
               },
               "required": []
             }
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           }
         },
         "required": [
@@ -15859,6 +15891,19 @@
       "BuildProvenance": {
         "type": "object",
         "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "hakopod_build",
+              "ci_reported"
+            ]
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "reported_by": {
+            "type": "string"
+          },
           "build_id": {
             "type": "string"
           },
@@ -15917,6 +15962,7 @@
             "enum": [
               "unknown",
               "matched_build",
+              "reported_build",
               "ambiguous",
               "incomplete"
             ]
@@ -15962,6 +16008,45 @@
           "services",
           "truncated",
           "note"
+        ]
+      },
+      "SourceBuild": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "type": "string",
+            "pattern": "^[^\\s@]+@sha256:[a-f0-9]{64}$"
+          },
+          "commit_sha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}([a-f0-9]{24})?$"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab",
+              "other"
+            ]
+          },
+          "repository": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "run_url": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "image",
+          "commit_sha",
+          "provider",
+          "repository"
         ]
       },
       "LogEntry": {
@@ -17405,6 +17490,14 @@
               "required": []
             }
           },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
+          },
           "commit_sha": {
             "type": "string"
           },
@@ -17533,6 +17626,14 @@
               },
               "required": []
             }
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           },
           "source": {
             "$ref": "#/components/schemas/SourceImportInput"
@@ -17844,6 +17945,14 @@
               },
               "required": []
             }
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceBuild"
+            },
+            "maxProperties": 20,
+            "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           },
           "required_secrets": {
             "type": "array",

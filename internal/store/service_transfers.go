@@ -64,7 +64,7 @@ func (s *Store) AcceptServiceTransfer(ctx context.Context, p Principal, source, 
 	if t.ID != "" {
 		app, expected = source, t.SourceRevision
 	}
-	return s.acceptGuarded(ctx, p, app.Project, app.Environment, next, expected, idem, nil, nil, nil, &t)
+	return s.acceptGuarded(ctx, p, app.Project, app.Environment, next, expected, idem, nil, nil, nil, &t, nil)
 }
 
 func (t *ServiceTransfer) check(ctx context.Context, tx pgx.Tx, p Principal, project, environment string) error {
