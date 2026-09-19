@@ -5,8 +5,8 @@ the commit actually checked out for that build in the same deployment request.
 Hakopod stores these claims atomically with the immutable release. Nothing is
 inferred from a tag or the current branch HEAD.
 
-This feature requires a release containing the CI provenance change; alpha.17
-and earlier do not accept this field.
+This feature is available in alpha.18 and later. Alpha.17 and earlier do not
+accept this field.
 
 ## Request shape
 
