@@ -22,9 +22,11 @@ arm64 and at least 4 GiB RAM and 30 GiB free disk:
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
 
-Already root? Use `| sh`. This installs the `0.1.0-alpha.4` prerelease for
-evaluation. The script asks for your settings and shows a plan before installing
-Hakopod. It installs missing prerequisites, K3s and prebuilt binaries. Choose
+Already root? Use `| sh`. The script selects the newest complete stable release,
+or the newest complete prerelease when no stable release is available. Hakopod
+currently remains an alpha for evaluation; read the [release notes](https://github.com/hakopod/hakopod/releases)
+before installing. The script asks for your settings and shows a plan before
+installing Hakopod. It installs missing prerequisites, K3s and prebuilt binaries. Choose
 managed PostgreSQL or supply a dedicated existing database; external connections
 require verified TLS. No Go or frontend compilation runs on the server.
 
@@ -34,6 +36,11 @@ See the [installer guide](installer/README.md) for reviewing the script,
 requirements and noninteractive configuration, and the
 [verification record](docs/prebuilt-installation-verification.md) for tested
 behavior and remaining limits.
+
+Trying Hakopod for the first time? We welcome feedback on installation and your
+first deployment. [Open an issue](https://github.com/hakopod/hakopod/issues/new)
+with your Hakopod version, server OS and architecture, what you tried and what
+happened. Remove credentials and private application data from any logs you share.
 
 ## Run locally
 
