@@ -79,7 +79,11 @@ func (c *Client) ValidateCloudSpec(app spec.Application) error {
 		if service.Size != "" && service.Size != "small" && service.Size != "medium" && service.Size != "large" {
 			return fmt.Errorf("%w: %s must use small, medium or large", ErrCloudLimit, name)
 		}
-		if err := spec.ValidateResourceCeiling(service, spec.Profiles["large"]); err != nil {
+		ceiling := spec.Profiles["large"]
+		if c.options.CloudResourceCeiling != nil && c.options.WorkloadPolicy != nil {
+			ceiling = *c.options.CloudResourceCeiling
+		}
+		if err := spec.ValidateResourceCeiling(service, ceiling); err != nil {
 			return fmt.Errorf("%w: services.%s.%w", ErrCloudLimit, name, err)
 		}
 		if service.Replicas < 0 || service.Replicas > 3 {

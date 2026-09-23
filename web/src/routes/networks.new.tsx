@@ -20,10 +20,10 @@ function NewNetwork() {
           params: { query: { project: scope.project, environment: scope.environment } },
         }),
       ),
-    enabled: Boolean(scope.project && scope.environment && !features.hostedFree),
+    enabled: Boolean(scope.project && scope.environment && !features.hostedCompute),
     gcTime: 0,
   })
-  if (features.hostedFree)
+  if (features.hostedCompute)
     return (
       <Empty
         title="Shared networks need your own server"

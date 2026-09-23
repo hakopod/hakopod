@@ -123,7 +123,11 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 			emit(Event{Type: "completed", Service: name, Message: "Deployment job completed successfully"})
 			continue
 		}
-		emit(Event{Type: "applying", Service: name, Message: "Applying digest-pinned Deployment with readiness-gated rolling update"})
+		message := "Applying digest-pinned Deployment with readiness-gated rolling update"
+		if target.policy != nil && target.policy.Recreate {
+			message = "Replacing Deployment within its reserved capacity; traffic may briefly pause"
+		}
+		emit(Event{Type: "applying", Service: name, Message: message})
 		// Remove an old HPA before taking manual ownership of replicas.
 		if svc.Autoscaling == nil || svc.Suspended {
 			if err := c.applyHPA(ctx, target, name, svc); err != nil {
@@ -345,6 +349,9 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	}
 	if svc.RestartNonce != "" {
 		result.Spec.Template.Annotations = map[string]string{"hakopod.io/restart-nonce": svc.RestartNonce}
+	}
+	if t.policy != nil && t.policy.Recreate {
+		result.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	}
 	configureWorkload(result, svc)
 	configureFiles(t, name, svc, &result.Spec.Template.Spec)

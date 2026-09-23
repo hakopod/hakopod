@@ -27,13 +27,19 @@ func ValidateCloudResources(s spec.Service) error {
 	return spec.ValidateResourceCeiling(s, spec.Profiles["large"])
 }
 
+// ValidateRuntimeResources checks resources against a trusted embedding ceiling.
+func ValidateRuntimeResources(s WorkloadService, ceiling ResourceProfile) error {
+	return spec.ValidateResourceCeiling(s, ceiling)
+}
+
 type BackupConfig = api.BackupConfig
 
 type RuntimeConfig struct {
-	Backups          BackupConfig
-	BuildRegistry    string
-	WorkloadPolicy   cluster.WorkloadPolicyResolver
-	ApplicationLimit func(context.Context, string, string) (int, error)
+	CloudResourceCeiling *ResourceProfile
+	Backups              BackupConfig
+	BuildRegistry        string
+	WorkloadPolicy       cluster.WorkloadPolicyResolver
+	ApplicationLimit     func(context.Context, string, string) (int, error)
 	// NodeLimit bounds the private operator cluster. Zero defaults to one.
 	NodeLimit       int
 	Kubeconfig      string
@@ -69,7 +75,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}

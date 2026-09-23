@@ -43,7 +43,7 @@ function NewPreview() {
         description="A project administrator can create temporary preview environments."
       />
     )
-  if (features.hostedFree)
+  if (features.hostedCompute)
     return (
       <Empty
         title="Previews need your own server"

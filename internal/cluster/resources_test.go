@@ -109,3 +109,35 @@ func TestProfileQuotaCoversIncreasedBudgetsWithoutOverrides(t *testing.T) {
 		t.Fatal(q)
 	}
 }
+
+func TestEmbeddedResourceCeilingRequiresWorkloadPolicy(t *testing.T) {
+	target := testTarget(t)
+	service := target.Spec.Services["web"]
+	service.Resources = &spec.Resources{MemoryLimit: "8Gi"}
+	target.Spec.Services["web"] = service
+	ceiling := spec.Profile{CPURequest: "2500m", CPULimit: "2500m", MemoryRequest: "16Gi", MemoryLimit: "16Gi"}
+	client := &Client{options: Options{DeploymentMode: DeploymentManagedCloud, CloudResourceCeiling: &ceiling}}
+	if client.ValidateCloudSpec(target.Spec) == nil {
+		t.Fatal("ceiling bypassed tenant policy requirement")
+	}
+	client.options.WorkloadPolicy = func(context.Context, string, string, spec.Application) (WorkloadPolicy, error) {
+		return WorkloadPolicy{}, nil
+	}
+	if err := client.ValidateCloudSpec(target.Spec); err != nil {
+		t.Fatal(err)
+	}
+	service.Resources.MemoryLimit = "17Gi"
+	target.Spec.Services["web"] = service
+	if client.ValidateCloudSpec(target.Spec) == nil {
+		t.Fatal("trusted ceiling exceeded")
+	}
+}
+
+func TestBoundedWorkloadCanReplaceWithoutSurge(t *testing.T) {
+	target := testTarget(t)
+	target.policy = &WorkloadPolicy{NodeName: "worker", Recreate: true}
+	result := deployment(target, "web", target.Spec.Services["web"], time.Minute)
+	if result.Spec.Strategy.Type != "Recreate" || result.Spec.Strategy.RollingUpdate != nil {
+		t.Fatal("bounded workload can surge", result.Spec.Strategy)
+	}
+}

@@ -30,6 +30,8 @@ type Options struct {
 	ServerlessAddress string
 
 	WorkloadPolicy WorkloadPolicyResolver
+	// CloudResourceCeiling is trusted embedding configuration; workload policy still enforces each tenant budget.
+	CloudResourceCeiling *spec.Profile
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
 	// Zero preserves the single-node customer policy; supported values are 1 or 2.
 	OperatorNodeLimit   int

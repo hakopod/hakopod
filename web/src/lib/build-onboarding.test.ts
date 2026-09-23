@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildErrorStep } from './build-onboarding'
 import { fieldError, fieldGroupError } from './form-errors'
-import { hostedFreeIssues } from './compute-limits'
+import { hostedFreeIssues, hostedComputeIssues } from './compute-limits'
 import type { Spec } from './types'
 
 test('explicit backend paths survive the input wrapper and route back to the right step', () => {
@@ -69,4 +69,16 @@ test('hosted Free advice permits private workers and native secrets without modi
       field,
     )
   assert.deepEqual(invalid, before)
+})
+
+
+test('licensed hosted forms relax capacity without exposing private networking or placement', () => {
+  const spec = {schema_version: 1, name: 'hosted', services: {web: {image:'nginx:stable',size:'large',replicas:3,resources:{memory_limit:'1Gi'}}}} as Spec
+  assert.deepEqual(hostedComputeIssues(spec), [])
+  assert.ok(hostedFreeIssues(spec).some(issue => issue.includes('.size:')))
+  const invalid = structuredClone(spec)
+  Object.assign(invalid.services.web, {node_name:'operator',private_egress:['database'],replicas:4})
+  const issues=hostedComputeIssues(invalid)
+  for (const field of ['node_name','private_egress','replicas']) assert.ok(issues.some(issue=>issue.startsWith(`services.web.${field}:`)))
+  assert.equal(invalid.services.web.node_name,'operator')
 })
