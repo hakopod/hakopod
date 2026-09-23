@@ -73,6 +73,19 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
   }, [identity.data?.credential_type])
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  const emailVerificationRequired =
+    identity.error instanceof APIError && identity.error.code === 'email_verification_required'
+  async function resetSession() {
+    setResetError('')
+    try {
+      const response = await fetch('/session', { method: 'DELETE' })
+      if (!response.ok) throw new Error('The session could not be cleared. Try again.')
+      queryClient.clear()
+      void identity.refetch()
+    } catch (error) {
+      setResetError(message(error))
+    }
+  }
   if (!mounted || identity.isPending)
     return (
       <div className="hako-connection-page">
@@ -91,7 +104,39 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         </Button>
       </div>
     )
-  if (identity.error && !(identity.error instanceof APIError && identity.error.status === 401))
+  if (
+    emailVerificationRequired &&
+    !['/login/forgot', '/login/reset', '/login/verify'].includes(window.location.pathname)
+  )
+    return (
+      <div className="hako-connection-page">
+        <Logo size={32} />
+        <h1>Verify your email</h1>
+        <p>
+          You are signed in. Verify your email before opening your workspace. Password recovery
+          sends a link to your inbox and lets you choose a new password.
+        </p>
+        <Button variant="primary" asChild>
+          <a href="/login/forgot">Recover access</a>
+        </Button>
+        <Button
+          variant="outline"
+          disabled={identity.isFetching}
+          onClick={() => void identity.refetch()}
+        >
+          {identity.isFetching ? 'Checking…' : 'Check verification'}
+        </Button>
+        {resetError && <RequestError error={resetError} />}
+        <Button variant="ghost" onClick={() => void resetSession()}>
+          Sign out
+        </Button>
+      </div>
+    )
+  if (
+    identity.error &&
+    !emailVerificationRequired &&
+    !(identity.error instanceof APIError && identity.error.status === 401)
+  )
     return (
       <div className="hako-connection-page">
         <Logo size={32} />
@@ -99,20 +144,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <p>The console couldn’t reach the management API.</p>
         <ErrorState error={identity.error} retry={() => void identity.refetch()} />
         {resetError && <RequestError error={resetError} />}
-        <Button
-          variant="outline"
-          onClick={async () => {
-            setResetError('')
-            try {
-              const response = await fetch('/session', { method: 'DELETE' })
-              if (!response.ok) throw new Error('The session could not be cleared. Try again.')
-              queryClient.clear()
-              void identity.refetch()
-            } catch (error) {
-              setResetError(message(error))
-            }
-          }}
-        >
+        <Button variant="outline" onClick={() => void resetSession()}>
           Sign in again
         </Button>
       </div>
