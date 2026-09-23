@@ -47,7 +47,7 @@ export default function TemplateForm({
   const [storage, setStorage] = useState(template.id === 'vllm' ? 30 : 5)
   const [model, setModel] = useState('')
   const [revision, setRevision] = useState('')
-  const [architecture, setArchitecture] = useState(features.hostedFree ? 'amd64' : '')
+  const [architecture, setArchitecture] = useState(features.hostedCompute ? 'amd64' : '')
   const [siteURL, setSiteURL] = useState('')
   const [provider, setProvider] = useState('openai')
   const [providerURL, setProviderURL] = useState('')
@@ -159,7 +159,7 @@ export default function TemplateForm({
       setBusy(false)
     }
   }
-  if (template.deployable && features.hostedFree && Boolean(template.workload_requirements?.length))
+  if (template.deployable && features.hostedCompute && Boolean(template.workload_requirements?.length))
     return (
       <FormPage title={template.name} description={template.description} breadcrumbs={[]}>
         <section className="grid gap-4 py-6">
@@ -406,8 +406,8 @@ export default function TemplateForm({
                   { value: '', label: 'Infer from a uniform cluster' },
                   ...template.architectures.map((value) => ({
                     value,
-                    label: `Linux ${value.toUpperCase()}${features.hostedFree && value !== 'amd64' ? ' · Requires your own server' : ''}`,
-                    disabled: features.hostedFree && value !== 'amd64',
+                    label: `Linux ${value.toUpperCase()}${features.hostedCompute && value !== 'amd64' ? ' · Requires your own server' : ''}`,
+                    disabled: features.hostedCompute && value !== 'amd64',
                   })),
                 ]}
               />

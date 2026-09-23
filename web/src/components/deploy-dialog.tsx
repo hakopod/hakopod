@@ -22,7 +22,7 @@ import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { FormPage, FormHint } from './form-page'
 import { ComputeNotice } from './compute-notice'
-import { hostedFreeIssues } from '../lib/compute-limits'
+import { hostedComputeIssues } from '../lib/compute-limits'
 import { fieldError } from '../lib/form-errors'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -119,7 +119,7 @@ export function DeploymentForm({
       setMode(initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService, addedService])
-  const limitIssues = features.hostedFree ? hostedFreeIssues(spec) : []
+  const limitIssues = features.hostedCompute ? hostedComputeIssues(spec, features.hostedFree) : []
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)
     // Validate every environment and command draft before writing private
@@ -742,7 +742,7 @@ export function DeploymentForm({
                           <Input
                             type="number"
                             min={1}
-                            max={features.hostedFree ? 1 : 20}
+                            max={features.hostedFree ? 1 : features.hostedCompute ? 3 : 20}
                             value={service.replicas ?? 1}
                             error={fieldError(
                               error || limitIssues.join('\n'),
@@ -820,7 +820,10 @@ export function DeploymentForm({
                   <Button
                     className="add-service-button"
                     variant="ghost"
-                    disabled={Object.keys(spec.services).length >= (features.hostedFree ? 1 : 20)}
+                    disabled={
+                      Object.keys(spec.services).length >=
+                      (features.hostedFree ? 1 : features.hostedCompute ? 10 : 20)
+                    }
                     onClick={() => {
                       let name = 'api'
                       let n = 2

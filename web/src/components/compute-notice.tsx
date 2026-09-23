@@ -24,21 +24,23 @@ export function ComputeNotice({ creatingApplication = false }: { creatingApplica
         }),
       ),
     enabled: Boolean(
-      features.hostedFree && creatingApplication && scope.project && scope.environment,
+      features.hostedCompute && creatingApplication && scope.project && scope.environment,
     ),
     gcTime: 0,
   })
-  if (!features.hostedFree) return null
+  if (!features.hostedCompute) return null
   return (
     <Note>
-      <strong>Hosted Free limits</strong>
+      <strong>{features.hostedFree ? 'Hosted Free limits' : 'Hosted compute limits'}</strong>
       <p>
-        One application with one small service and one replica. Files on its container disk are
-        temporary. Persistent storage, multiple services, scheduled jobs and public TCP ports
-        require your own server. Images must support AMD64. Outbound connections are limited to HTTP
-        and HTTPS; databases and queues on other ports need your own server. Native application
-        secrets are supported. External secret providers, custom networking and autoscaling require
-        your own server.
+        {features.hostedFree
+          ? 'One application with one small service and one replica.'
+          : 'One application with up to ten services and three replicas per service within your reserved memory budget.'}{' '}
+        Files on its container disk are temporary. Persistent storage, scheduled jobs and public TCP
+        ports require your own server. Images must support AMD64. Outbound connections are limited
+        to HTTP and HTTPS; databases and queues on other ports need your own server. Native
+        application secrets are supported. External secret providers, custom networking and
+        autoscaling require your own server.
       </p>
       {creatingApplication && applications.data?.items.length ? (
         <p>

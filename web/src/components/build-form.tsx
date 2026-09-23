@@ -91,7 +91,7 @@ export default function BuildForm({
   } | null>(null)
   const [preset, setPreset] = useState<Build['preset']>(build?.preset || 'auto')
   const [architecture, setArchitecture] = useState<Build['architecture'] | ''>(
-    build?.architecture || (features.hostedFree ? 'amd64' : ''),
+    build?.architecture || (features.hostedCompute ? 'amd64' : ''),
   )
   const [context, setContext] = useState(build?.context_path || '.')
   const [buildArgs, setBuildArgs] = useState(() => formatBuildArgs(build?.build_args))
@@ -183,7 +183,7 @@ export default function BuildForm({
       throw new Error(
         'build_secrets: Buildpacks do not support secret mounts. Remove the references or choose another build method.',
       )
-    if (features.hostedFree && architecture && architecture !== 'amd64')
+    if (features.hostedCompute && architecture && architecture !== 'amd64')
       throw new Error(
         'architecture: Hosted Free runs AMD64 images. Choose AMD64 or connect your own server.',
       )
@@ -629,10 +629,10 @@ export default function BuildForm({
                     },
                     {
                       value: 'arm64',
-                      label: features.hostedFree
+                      label: features.hostedCompute
                         ? 'Linux ARM64 · Requires your own server'
                         : 'Linux ARM64',
-                      disabled: features.hostedFree,
+                      disabled: features.hostedCompute,
                     },
                   ]}
                 />
@@ -936,7 +936,7 @@ export default function BuildForm({
                 </Button>
               </details>
             </FormSection>
-            {boundApplicationId && !features.hostedFree && (
+            {boundApplicationId && !features.hostedCompute && (
               <FormSection
                 title="Reuse this image"
                 description="Build once for your web process, workers and migrations."

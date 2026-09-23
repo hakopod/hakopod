@@ -31,6 +31,7 @@ export function useEditionFeatures() {
     terminal: true,
     operator: false,
     hostedFree: false,
+    hostedCompute: false,
     computeURL: undefined as string | undefined,
   }
 }

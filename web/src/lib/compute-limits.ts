@@ -3,10 +3,16 @@ import type { Spec } from './types'
 // Advisory feedback for the form. The server still applies the workspace's
 // authoritative policy to imported TOML, saved builds and every deployment.
 export function hostedFreeIssues(spec: Spec): string[] {
+  return hostedComputeIssues(spec, true)
+}
+
+export function hostedComputeIssues(spec: Spec, free = false): string[] {
   const issues: string[] = []
-  if (Object.keys(spec.services).length > 1)
+  if (Object.keys(spec.services).length > (free ? 1 : 10))
     issues.push(
-      'services: Hosted Free supports one service. Connect your own server for multiple services.',
+      free
+        ? 'services: Hosted Free supports one service. Connect your own server for multiple services.'
+        : 'services: Hosted compute supports up to ten services.',
     )
   if (Object.keys(spec.volumes || {}).length)
     issues.push('volumes: Persistent storage requires your own server.')
@@ -14,16 +20,25 @@ export function hostedFreeIssues(spec: Spec): string[] {
     issues.push('networks: Shared virtual networks require your own server.')
   for (const [name, service] of Object.entries(spec.services)) {
     const add = (field: string, text: string) => issues.push(`services.${name}.${field}: ${text}`)
-    if (service.size && service.size !== 'small')
+    if (free && service.size && service.size !== 'small')
       add(
         'size',
         'Hosted Free supports the small profile. Connect your own server for larger sizes.',
       )
-    if ((service.replicas ?? 1) > 1) add('replicas', 'Hosted Free supports one replica.')
+    if ((service.replicas ?? 1) > (free ? 1 : 3))
+      add(
+        'replicas',
+        free
+          ? 'Hosted Free supports one replica.'
+          : 'Hosted compute supports up to three replicas.',
+      )
     if (service.architecture && service.architecture !== 'amd64')
-      add('architecture', 'Hosted Free runs AMD64 images.')
+      add('architecture', 'Hosted compute runs AMD64 images.')
     for (const [field, unsupported] of Object.entries({
-      resources: Object.values(service.resources || {}).some(Boolean),
+      resources: free && Object.values(service.resources || {}).some(Boolean),
+      node_name: Boolean(service.node_name),
+      serverless: Boolean(service.serverless),
+      private_egress: Boolean(service.private_egress?.length),
       job: Boolean(service.job),
       autoscaling: Boolean(service.autoscaling),
       volume: Boolean(service.volume),
@@ -45,7 +60,7 @@ export function hostedFreeIssues(spec: Spec): string[] {
       if (!ref.ref || ref.provider) {
         add(
           'secrets',
-          'Use native application secrets on hosted Free. External providers require your own server.',
+          'Use native application secrets on hosted compute. External providers require your own server.',
         )
         break
       }

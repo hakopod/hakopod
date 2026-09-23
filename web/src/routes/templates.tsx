@@ -153,7 +153,7 @@ function Templates() {
               <span className="catalog-slug">{template.id}</span>
               <p className="catalog-description">{template.description}</p>
               <span className="catalog-card-meta">
-                {features.hostedFree && template.workload_requirements?.length
+                {features.hostedCompute && template.workload_requirements?.length
                   ? 'Requires your server'
                   : template.deployable
                     ? template.architectures.join(' / ')
@@ -257,7 +257,7 @@ function Templates() {
                     params={{ templateId: detail.id }}
                     search={{ application }}
                   >
-                    {features.hostedFree && detail.workload_requirements?.length
+                    {features.hostedCompute && detail.workload_requirements?.length
                       ? 'View requirements'
                       : detail.deployable
                         ? 'Use template'
