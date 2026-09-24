@@ -39,10 +39,16 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,42))", a.Project+":"+a.Environment); err != nil {
 		return err
 	}
+	added := false
 	for claim, size := range volumes {
 		if size < 1 || size > limit {
 			return fmt.Errorf("volume %s exceeds the %d GiB workspace storage quota", claim, limit)
 		}
+		var existed bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM storage_reservations WHERE application_id=$1 AND claim=$2)", a.ID, claim).Scan(&existed); err != nil {
+			return err
+		}
+		added = added || !existed
 		var old int64
 		err = tx.QueryRow(ctx, "INSERT INTO storage_reservations(project,environment,application_id,claim,size_gib) VALUES($1,$2,$3,$4,$5) ON CONFLICT(application_id,claim) DO UPDATE SET size_gib=storage_reservations.size_gib RETURNING size_gib", a.Project, a.Environment, a.ID, claim, size).Scan(&old)
 		if err != nil {
@@ -60,7 +66,7 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 	if len(migrationCredit) == 1 {
 		credit = migrationCredit[0]
 	}
-	if total-credit > limit {
+	if total-credit > limit && added {
 		return fmt.Errorf("workspace storage quota is %d GiB; %d GiB requested including retained volumes", limit, total)
 	}
 	return nil
