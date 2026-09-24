@@ -2,6 +2,7 @@ package spec
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 			options.SiteURL = "https://workspace.example.test"
 		}
 		options.Values = catalogTestValues(template)
-		if template.Deployable && len(template.Architectures) > 0 {
+		if template.Deployable && !slices.Contains(template.Architectures, options.Architecture) && len(template.Architectures) > 0 {
 			options.Architecture = template.Architectures[0]
 		}
 		a, err := PlanTemplate(template.ID, options)
