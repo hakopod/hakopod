@@ -2283,6 +2283,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/storage/retained": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRetainedApplicationData"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/storage/retained/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteRetainedApplicationData"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/runtime": {
         parameters: {
             query?: never;
@@ -3291,6 +3323,7 @@ export interface components {
             /** @enum {string} */
             credential_type: "machine" | "browser" | "cli" | "integration";
             project_roles?: components["schemas"]["ProjectRole"][];
+            can_manage_backups?: boolean;
             mfa_verified?: boolean;
             mfa_required?: boolean;
             avatar_style?: string;
@@ -3301,7 +3334,6 @@ export interface components {
             can_manage_previews?: boolean;
             can_manage_git?: boolean;
             can_manage_applications?: boolean;
-            can_manage_backups?: boolean;
         };
         Node: {
             name: string;
@@ -3605,6 +3637,12 @@ export interface components {
             expires_in: number;
             interval: number;
         };
+        DeviceScope: {
+            id: string;
+            label: string;
+            project: string;
+            environment: string;
+        };
         DeviceDetails: {
             user_code: string;
             project: string;
@@ -3612,10 +3650,13 @@ export interface components {
             permissions: string[];
             /** Format: date-time */
             expires_at: string;
+            scope_id: string;
+            scopes: components["schemas"]["DeviceScope"][];
         };
         DeviceToken: {
             token: string;
             access_token: string;
+            scope_id?: string;
             token_type: string;
             /** Format: date-time */
             expires_at: string;
@@ -3897,6 +3938,7 @@ export interface components {
             requirements: string[];
         };
         BuildInstalled: {
+            workflow_branch?: string;
             config: components["schemas"]["BuildConfig"];
             commit_sha: string;
             workflow_path: string;
@@ -4574,6 +4616,15 @@ export interface components {
             /** @description Per-replica memory limit, 1Mi–256Gi; must cover request. */
             memory_limit?: string;
         };
+        RetainedApplicationData: {
+            application_id: string;
+            project: string;
+            environment: string;
+            name: string;
+            status: string;
+            error: string;
+            reserved_gib: number;
+        };
         TLSConfig: {
             certificate?: string;
             issuer?: string;
@@ -4956,11 +5007,6 @@ export interface components {
             application_id?: string;
             expected_revision?: number;
             service_name?: string;
-            /**
-             * @description Optional reviewed service size override.
-             * @enum {string}
-             */
-            size?: "small" | "medium" | "large";
         };
         TemplatePlan: {
             application_id: string;
@@ -5422,6 +5468,7 @@ export interface operations {
                 "application/json": {
                     confirm_name: string;
                     expected_revision: number;
+                    delete_data?: boolean;
                 };
             };
         };
@@ -6599,8 +6646,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    project: string;
-                    environment: string;
+                    project?: string;
+                    environment?: string;
                     permissions?: string[];
                 };
             };
@@ -6704,6 +6751,9 @@ export interface operations {
                 "application/json": {
                     user_code: string;
                     approve: boolean;
+                    project?: string;
+                    environment?: string;
+                    scope_id?: string;
                 };
             };
         };
@@ -11330,6 +11380,79 @@ export interface operations {
         responses: {
             /** @description Success */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRetainedApplicationData: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RetainedApplicationData"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteRetainedApplicationData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

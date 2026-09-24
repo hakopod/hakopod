@@ -54,6 +54,7 @@ func (w *Worker) Run(ctx context.Context) {
 				return
 			}
 			w.cleanupPreview(ctx)
+			w.cleanupRetained(ctx)
 			select {
 			case <-ctx.Done():
 				return

@@ -8,8 +8,8 @@ import (
 
 // DeleteEmptyApplication only removes metadata after a successful empty release.
 // The worker's lock fences runtime maintenance. PVCs and their namespace remain
-// available to the operator; they are never included in metadata deletion.
-func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id string, expected int64, confirmation string) error {
+// available for separately confirmed durable reclamation.
+func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id string, expected int64, confirmation string, deleteData ...bool) error {
 	a, err := s.Application(ctx, id)
 	if err != nil {
 		return err
@@ -82,6 +82,11 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	if err = deleteApplicationMetadata(ctx, tx, a); err != nil {
 		return err
 	}
+	if len(deleteData) > 0 && deleteData[0] {
+		if _, err = tx.Exec(ctx, "UPDATE retained_application_data SET status='deleting',requested_key_id=$2,requested_at=now() WHERE application_id=$1", id, p.KeyID); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'application.delete',$3,$4)`, p.ID, p.KeyID, id, JSON(map[string]any{"project": a.Project, "environment": a.Environment, "name": a.Name, "revision": expected})); err != nil {
 		return err
 	}
@@ -132,12 +137,13 @@ func (s *Store) DeleteEmptyProject(ctx context.Context, p Principal, name, confi
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM applications WHERE project=$1)
  OR EXISTS(SELECT 1 FROM build_configs WHERE project=$1)
  OR EXISTS(SELECT 1 FROM runtime_resources WHERE project=$1)
+ OR EXISTS(SELECT 1 FROM retained_application_data WHERE project=$1 AND status<>'deleted')
  OR EXISTS(SELECT 1 FROM secret_provider_scopes WHERE project=$1)
  OR EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)`, name).Scan(&used); err != nil {
 		return err
 	}
 	if used {
-		return fmt.Errorf("%w: delete applications, builds and networks and remove secret-provider scope grants first; personal workspaces cannot be deleted", ErrConflict)
+		return fmt.Errorf("%w: delete applications, reclaim their retained data, delete builds and networks and remove secret-provider scope grants first; personal workspaces cannot be deleted", ErrConflict)
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,name,resource_id) VALUES('project',$1,$1,$1)`, name); err != nil {
 		return err
@@ -168,6 +174,9 @@ func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) er
 	id := a.ID
 	var err error
 	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,environment,name,resource_id) VALUES('application',$1,$2,$3,$4)`, a.Project, a.Environment, a.Name, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO retained_application_data(application_id,project,environment,name) VALUES($1,$2,$3,$4) ON CONFLICT(application_id) DO NOTHING", id, a.Project, a.Environment, a.Name); err != nil {
 		return err
 	}
 	// Revoke all resource grants before detaching callbacks and their history.

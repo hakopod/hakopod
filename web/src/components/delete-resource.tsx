@@ -34,6 +34,7 @@ export function DeleteResource({
     initiallyOpen && application ? structuredClone(application) : undefined,
   )
   const [confirmation, setConfirmation] = useState('')
+  const [deleteData, setDeleteData] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const kind = application ? 'application' : 'project'
@@ -61,7 +62,11 @@ export function DeleteResource({
         await unwrap(
           client.DELETE('/applications/{id}', {
             params: { path: { id: reviewed.id } },
-            body: { expected_revision: reviewed.revision, confirm_name: confirmation },
+            body: {
+              expected_revision: reviewed.revision,
+              confirm_name: confirmation,
+              delete_data: deleteData,
+            },
           }),
         )
       } else {
@@ -73,6 +78,7 @@ export function DeleteResource({
         )
       }
       await queryClient.invalidateQueries({ queryKey: [reviewed ? 'applications' : 'projects'] })
+      await queryClient.invalidateQueries({ queryKey: ['retained-storage'] })
       if (reviewed) queryClient.removeQueries({ queryKey: ['application', reviewed.id] })
       close()
       if (reviewed)
@@ -100,6 +106,7 @@ export function DeleteResource({
           onClick={() => {
             setReviewed(application ? structuredClone(application) : undefined)
             setConfirmation('')
+            setDeleteData(false)
             setError('')
             setOpen(true)
           }}
@@ -151,9 +158,23 @@ export function DeleteResource({
             )}
             <p>
               {application
-                ? 'This removes the empty application, its deployment and build history, and Git bindings. Persistent volumes and backups are retained for the operator. Active work or enabled backup schedules must be stopped first.'
+                ? 'This removes the empty application, its deployment and build history, and Git bindings. Persistent data is retained unless you choose to delete it below. Saved backups are kept. Active work or enabled backup schedules must be stopped first.'
                 : 'Only an empty project can be deleted. Remove applications, builds, networks and secret-provider scope grants across every environment first. Personal workspaces cannot be deleted.'}
             </p>
+            {application && (
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={deleteData}
+                  onChange={(event) => setDeleteData(event.target.checked)}
+                  disabled={busy}
+                />
+                <span>
+                  Permanently delete persistent volumes and native secrets too. Database files
+                  cannot be recovered without a backup.
+                </span>
+              </label>
+            )}
             <p className="field-help">
               This cannot be undone. Its ID stays reserved to prevent old credentials or callbacks
               reaching another resource.

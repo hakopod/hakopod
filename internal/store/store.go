@@ -32,10 +32,12 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
 
 type Store struct {
-	StorageBudget        func(context.Context, string, string) (int64, error)
-	AuthorizeBackup      func(context.Context, string, string, string) error
-	AdmitDeployment      DeploymentAdmission
-	ExternalFactorPolicy func(context.Context, pgx.Tx, string) (bool, error)
+	AuthorizeRetainedCleanup func(context.Context, Principal, string, string) error
+	DeviceScopes             func(context.Context, Principal) ([]DeviceScope, error)
+	StorageBudget            func(context.Context, string, string) (int64, error)
+	AuthorizeBackup          func(context.Context, string, string, string) error
+	AdmitDeployment          DeploymentAdmission
+	ExternalFactorPolicy     func(context.Context, pgx.Tx, string) (bool, error)
 
 	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.
 	ApplicationLimit func(context.Context, string, string) (int, error)

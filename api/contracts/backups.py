@@ -35,3 +35,5 @@ for path, methods in paths.items():
     if path.startswith(('/backup-', '/backups')):
         for operation in methods.values():
             operation['description'] = 'Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.'
+
+schemas["Principal"]["properties"]["can_manage_backups"] = B

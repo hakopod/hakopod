@@ -39,3 +39,16 @@ func TestPreviewVolumeReclaimRequiresExactClaimOwnership(t *testing.T) {
 		})
 	}
 }
+
+func TestDeletedNamespaceWithUnmarkedDiskCannotReportReclaimed(t *testing.T) {
+	target := Target{ApplicationID: "retained-app"}
+	volume := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "orphan-disk"}, Spec: corev1.PersistentVolumeSpec{PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, ClaimRef: &corev1.ObjectReference{Namespace: Namespace(target.ApplicationID), Name: "db-data", UID: "original-claim"}}}
+	client := &Client{kube: fake.NewSimpleClientset(volume)}
+	if err := client.DeletePreview(context.Background(), target); err == nil {
+		t.Fatal("unmarked orphan disk falsely reported reclaimed")
+	}
+	current, err := client.kube.CoreV1().PersistentVolumes().Get(context.Background(), volume.Name, metav1.GetOptions{})
+	if err != nil || current.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain {
+		t.Fatal("unknown disk was mutated", err)
+	}
+}

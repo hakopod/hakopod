@@ -19,8 +19,9 @@ schemas["Passkey"] = obj({"id":S,"name":S,"created_at":T,"last_used_at":{"anyOf"
 schemas["AccountSecurity"] = obj({"totp_enabled":B,"password_enabled":B,"recovery_codes_remaining":I,"passkeys":array(ref("Passkey"))},["totp_enabled","password_enabled","recovery_codes_remaining","passkeys"])
 schemas["PasskeyChallenge"] = obj({"challenge":S,"options":obj({"publicKey":mapping({})},["publicKey"])},["challenge","options"])
 schemas["DeviceAuthorization"] = obj({"device_code":S,"user_code":S,"verification_uri":S,"verification_uri_complete":S,"expires_in":I,"interval":I},["device_code","user_code","verification_uri","verification_uri_complete","expires_in","interval"])
-schemas["DeviceDetails"] = obj({"user_code":S,"project":S,"environment":S,"permissions":array(S),"expires_at":T},["user_code","project","environment","permissions","expires_at"])
-schemas["DeviceToken"] = obj({"token":S,"access_token":S,"token_type":S,"expires_at":T,"expires_in":I,"user":ref("Principal")},["token","access_token","token_type","expires_at","expires_in","user"])
+schemas["DeviceScope"] = obj({"id":S,"label":S,"project":S,"environment":S},["id","label","project","environment"])
+schemas["DeviceDetails"] = obj({"user_code":S,"project":S,"environment":S,"permissions":array(S),"expires_at":T,"scope_id":S,"scopes":array(ref("DeviceScope"))},["user_code","project","environment","permissions","expires_at","scope_id","scopes"])
+schemas["DeviceToken"] = obj({"token":S,"access_token":S,"scope_id":S,"token_type":S,"expires_at":T,"expires_in":I,"user":ref("Principal")},["token","access_token","token_type","expires_at","expires_in","user"])
 
 new_paths = set()
 def authroute(path, method, operation, response, request=None, status="200", public=False):
@@ -43,11 +44,11 @@ authroute("/auth/mfa/totp/confirm","post","confirmTOTP",obj({"enabled":B,"recove
 authroute("/auth/mfa/totp/disable","post","disableTOTP",obj({"disabled":B},["disabled"]),obj({"password":S,"code":S},["password","code"]))
 authroute("/auth/mfa/complete","post","completeProviderMFA",ref("HumanSessionCreated"),obj({"challenge":S,"code":S},["challenge","code"]),public=True)
 authroute("/auth/invites/accept","post","acceptHumanInvite",ref("HumanSessionCreated"),obj({"token":S,"name":S,"password":S,"workspace":{"type":"string","enum":["invite","personal"]}},["token"]),public=True)
-authroute("/auth/device/start","post","startDeviceAuthorization",ref("DeviceAuthorization"),obj({"project":S,"environment":S,"permissions":array(S)},["project","environment"]),public=True)
+authroute("/auth/device/start","post","startDeviceAuthorization",ref("DeviceAuthorization"),obj({"project":S,"environment":S,"permissions":array(S)}),public=True)
 authroute("/auth/device/token","post","pollDeviceAuthorization",ref("DeviceToken"),obj({"device_code":S},["device_code"]),public=True)
 authroute("/auth/device","get","getDeviceConsent",ref("DeviceDetails"))
 paths["/auth/device"]["get"]["parameters"].append({"name":"user_code","in":"query","required":True,"schema":S})
-authroute("/auth/device/approve","post","approveDeviceAuthorization",obj({"approved":B},["approved"]),obj({"user_code":S,"approve":B},["user_code","approve"]))
+authroute("/auth/device/approve","post","approveDeviceAuthorization",obj({"approved":B},["approved"]),obj({"user_code":S,"approve":B,"project":S,"environment":S,"scope_id":S},["user_code","approve"]))
 authroute("/auth/oauth/{provider}/start","get","startProviderLogin",obj({}),status="302",public=True)
 authroute("/auth/oauth/{provider}/callback","get","finishProviderLogin",{"oneOf":[ref("HumanSessionCreated"),obj({"mfa_required":B,"challenge":S},["mfa_required","challenge"])]},public=True)
 paths["/auth/oauth/{provider}/callback"]["get"]["parameters"] += [{"name":v,"in":"query","schema":S} for v in ["state","code","error"]]

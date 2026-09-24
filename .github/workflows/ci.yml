@@ -79,3 +79,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Test and inspect npm CLI package
+        working-directory: packages/cli
+        run: |
+          npm test
+          npm pack --dry-run

@@ -20,7 +20,7 @@ func WithRuntimeScope(r *http.Request, scope RuntimeScope) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), runtimeScopeKey{}, scope))
 }
 func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Principal, error) {
-	if scope.Identity == "" || scope.Project == "" || scope.Environment == "" || p.ID != scope.Identity || p.CredentialType != "browser" || !p.Allows("deployments:read", scope.Project, scope.Environment, "") {
+	if scope.Identity == "" || scope.Project == "" || scope.Environment == "" || p.ID != scope.Identity || (p.CredentialType != "browser" && p.CredentialType != "cli") || !p.Allows("deployments:read", scope.Project, scope.Environment, "") {
 		return store.Principal{}, store.ErrForbidden
 	}
 	permissions := []string{}

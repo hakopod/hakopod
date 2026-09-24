@@ -8,6 +8,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
+  /^storage\/retained(?:\/[a-f0-9]{32})?$/,
   /^roles(?:\/[A-Za-z0-9_:-]+)?$/,
   /^organization\/security$/,
   /^auth\/mfa\/verify$/,
@@ -78,6 +79,8 @@ export async function proxy({
   params: { _splat?: string }
 }) {
   try {
+    if (/^v1\/auth\/(?:device\/(start|token)|logout)$/.test(params._splat || ''))
+      return forwardAutomationAPI(request)
     if (params._splat === 'v1/mcp') return forwardMCP(request)
     if (/^v1\/webhooks\/(?:git|github-app|nodes)\//.test(params._splat || ''))
       return forwardNamedGitWebhook(request)
