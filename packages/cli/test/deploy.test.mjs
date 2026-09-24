@@ -9,7 +9,7 @@ import { execute, key, writePrivate } from "../src/core.mjs";
 
 // Explicitly synthetic Git/provider/API adapters exercise the real npm executable.
 // They are contract/retry tests, not proof of a live Kubernetes deployment.
-async function fixture(t, { dropRunResponse = false, approval = false } = {}) {
+async function fixture(t, { dropRunResponse = false, approval = false, missingSecrets = [] } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "hakopod-cli-flow-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const home = join(dir, "credentials");
@@ -142,6 +142,7 @@ else if(!['status','fetch'].includes(args[0]))process.exit(1);
       data = {
         expected_revision: 0,
         expected_config_revision: 1,
+        missing_secrets: missingSecrets,
         changes: ["Create web service"],
         warnings: [],
       };
@@ -241,4 +242,13 @@ test("Cloud approval reports pending and never claims a successful deployment", 
     f.calls.filter((c) => c.path.startsWith("/api/v1/deployments/")).length,
     0,
   );
+});
+
+test("noninteractive missing secrets stop before deployment, even with --yes", async (t) => {
+  const f = await fixture(t, { missingSecrets: ["database-password"] });
+  await assert.rejects(f.command(), (error) => {
+    assert.match(error.stdout, /Missing application secrets: database-password/);
+    return true;
+  });
+  assert.equal(f.calls.filter(c => c.path.endsWith("/deploy")).length, 0);
 });

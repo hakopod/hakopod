@@ -120,7 +120,7 @@ func (s *Server) planSourceImport(w http.ResponseWriter, r *http.Request) {
 	if warnings == nil {
 		warnings = []string{}
 	}
-	write(w, 200, map[string]any{"application_id": "", "expected_revision": 0, "spec": next, "changes": spec.Diff(nil, next), "warnings": warnings, "resource_profiles": spec.Profiles, "commit_sha": commit, "review_token": s.signSourceReview(store.JSON(review)), "expires_at": expires, "source": in})
+	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, map[string]any{"application_id": "", "expected_revision": 0, "spec": next, "changes": spec.Diff(nil, next), "warnings": warnings, "resource_profiles": spec.Profiles, "commit_sha": commit, "review_token": s.signSourceReview(store.JSON(review)), "expires_at": expires, "source": in})
 }
 func (s *Server) deploySourceImport(w http.ResponseWriter, r *http.Request) {
 	if !gitManager(w, r) {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -53,6 +54,36 @@ async function ask(label, fallback = "") {
       await rl.question(`${label}${fallback ? ` [${clean(fallback)}]` : ""}: `)
     ).trim() || fallback
   );
+}
+async function askSecret(label) {
+  if (!stdin.isTTY) throw new Error("Secret input requires an interactive terminal.");
+  rl?.close(); rl = undefined;
+  let muted = false;
+  const output = new Writable({ write(chunk, encoding, done) { if (!muted) stdout.write(chunk, encoding); done(); } });
+  const secretInput = createInterface({ input: stdin, output, terminal: true });
+  try {
+    const result = secretInput.question(`${label} (hidden): `);
+    muted = true;
+    return await result;
+  } finally { secretInput.close(); stdout.write("\n"); }
+}
+async function setupSecrets(api, config, plan) {
+  const missing = plan.missing_secrets || [];
+  if (!missing.length) return;
+  if (!stdin.isTTY) throw new Error(`Missing application secrets: ${missing.map(clean).join(", ")}. Save them in the dashboard or through POST /api/v1/secrets/{name}, then retry. No deployment was submitted.`);
+  for (const name of missing) {
+    say(`Missing secret: ${name}`);
+    const mode = await choose("Secret value", [
+      { label: "Enter an existing value (hidden)", value: "value" },
+      { label: "Generate a new random password (not a provider credential)", value: "generate" },
+      { label: "Cancel deployment", value: "cancel" },
+    ]);
+    if (mode === "cancel") throw new Error("Secret setup cancelled. No deployment was submitted.");
+    const body = mode === "generate" ? { generate: true } : { value: await askSecret(clean(name)) };
+    const query = new URLSearchParams({ project: config.project, environment: config.environment, application: plan.spec.name });
+    try { await api.call(`/secrets/${encodeURIComponent(name)}?${query}`, body); }
+    finally { delete body.value; }
+  }
 }
 async function choose(label, items) {
   if (!items.length) throw new Error(`No ${label.toLowerCase()} available.`);
@@ -425,6 +456,7 @@ async function main() {
     show(
       `Review deployment\n${JSON.stringify({ image: run.image, changes: plan.changes, warnings: plan.warnings }, null, 2)}`,
     );
+    await setupSecrets(api, config, plan);
     await confirm("Deploy this built image", flags.yes);
     const deployment = await api.call(`${base}/deploy`, {
       expected_revision: plan.expected_revision,

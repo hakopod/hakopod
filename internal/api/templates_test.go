@@ -27,7 +27,7 @@ func TestTemplatePlanScopeBeforeMetadataAndProviderContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := (&Server{Store: db}).Handler()
+	handler := (&Server{Store: db, Cluster: templateSecretKube(t, "arm64")}).Handler()
 	call := func(body string) (int, []byte) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/api/v1/templates/open-webui/plan", strings.NewReader(body))

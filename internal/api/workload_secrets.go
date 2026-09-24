@@ -7,6 +7,8 @@ import (
 
 func (s *Server) registerWorkloadSecretRoutes(routes *http.ServeMux) {
 	routes.HandleFunc("GET /api/v1/secrets", s.listWorkloadSecrets)
+	routes.HandleFunc("POST /api/v1/secrets/requirements", s.secretRequirements)
+	routes.HandleFunc("POST /api/v1/secrets/{name}", s.createWorkloadSecret)
 	routes.HandleFunc("PUT /api/v1/secrets/{name}", s.putWorkloadSecret)
 	routes.HandleFunc("DELETE /api/v1/secrets/{name}", s.deleteWorkloadSecret)
 }

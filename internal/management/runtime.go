@@ -20,6 +20,9 @@ import (
 func Start(ctx context.Context, server *api.Server, domain string, rollout time.Duration) (http.Handler, func()) {
 	db, kube := server.Store, server.Cluster
 	db.ValidateDeployment = func(ctx context.Context, app store.Application, next spec.Application) error {
+		if err := kube.ValidateWorkloadSecrets(ctx, app.Project, app.Environment, next); err != nil {
+			return err
+		}
 		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
 	server.ConfigureSecretProviders()

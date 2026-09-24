@@ -1,3 +1,4 @@
+import { DeploymentSecrets } from './deployment-secrets'
 import { ServiceExecutionFields, FunctionEditor } from './service-execution-fields'
 import { ResourceFields } from './resource-fields'
 import { serviceResources } from '../lib/service-resources'
@@ -246,7 +247,7 @@ export function DeploymentForm({
     }
   }
   async function deploy() {
-    if (!plan) return
+    if (!plan || plan.missing_secrets?.length) return
     setBusy(true)
     setError('')
     try {
@@ -395,6 +396,16 @@ export function DeploymentForm({
             <div className="section-caption">
               CONFIGURATION CHANGES <span>{plan.changes.length}</span>
             </div>
+            <DeploymentSecrets
+              plan={plan}
+              project={project}
+              environment={environment}
+              busy={busy}
+              onBusy={setBusy}
+              onChange={(missing) =>
+                setPlan((current) => (current ? { ...current, missing_secrets: missing } : current))
+              }
+            />
             <DiffTable changes={plan.changes} />
             {plan.warnings?.map((warning, i) => (
               <Note key={i}>{warning}</Note>
@@ -885,6 +896,7 @@ export function DeploymentForm({
             variant="primary"
             disabled={
               busy ||
+              Boolean(plan?.missing_secrets?.length) ||
               mode === 'compose' ||
               (!plan &&
                 mode === 'form' &&
