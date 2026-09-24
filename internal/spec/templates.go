@@ -230,6 +230,24 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			return Application{}, fmt.Errorf("unknown configuration field %q", key)
 		}
 	}
+	if id == "baserow" {
+		endpoint, err := templateURL(values["storage-endpoint"])
+		if err != nil {
+			return Application{}, fmt.Errorf("storage-endpoint: %w", err)
+		}
+		parsed, _ := url.Parse(endpoint)
+		if parsed.Path != "" || !ValidHostname(parsed.Hostname()) {
+			return Application{}, fmt.Errorf("storage-endpoint must be an HTTPS origin without a bucket path")
+		}
+		values["storage-endpoint"] = endpoint
+		bucket := values["storage-bucket"]
+		if len(bucket) < 3 || len(bucket) > 63 || !regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*[a-z0-9]$`).MatchString(bucket) || strings.Contains(bucket, "..") || strings.Contains(bucket, ".-") || strings.Contains(bucket, "-.") {
+			return Application{}, fmt.Errorf("storage-bucket must be a valid 3–63 character S3 bucket name")
+		}
+		if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`).MatchString(values["storage-region"]) {
+			return Application{}, fmt.Errorf("storage-region must be a provider region such as us-east-1 or auto")
+		}
+	}
 	data, err := catalog.Files.ReadFile("blueprints/" + id + "/hakopod.toml")
 	if err != nil {
 		return Application{}, fmt.Errorf("template source unavailable: %w", err)

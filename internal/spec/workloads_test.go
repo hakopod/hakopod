@@ -14,6 +14,9 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 			options.SiteURL = "https://workspace.example.test"
 		}
 		options.Values = catalogTestValues(template)
+		if template.Deployable && len(template.Architectures) > 0 {
+			options.Architecture = template.Architectures[0]
+		}
 		a, err := PlanTemplate(template.ID, options)
 		if !template.Deployable {
 			if err == nil {
@@ -31,7 +34,7 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 			t.Fatalf("%s secret prerequisites do not match the final specification: %v / %v", template.ID, expected, actual)
 		}
 		for name, s := range a.Services {
-			if !strings.Contains(s.Image, "@sha256:") || s.Architecture != "arm64" {
+			if !strings.Contains(s.Image, "@sha256:") || s.Architecture != options.Architecture {
 				t.Fatalf("%s/%s lacks immutable artifact or requested architecture", template.ID, name)
 			}
 			if (template.Category == "database" || name != "main") && s.Public {
