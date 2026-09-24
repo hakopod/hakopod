@@ -109,6 +109,13 @@ func (t *ServiceTransfer) check(ctx context.Context, tx pgx.Tx, p Principal, pro
 		if a.Revision != expected || (a.Status != "healthy" && a.Status != "empty") {
 			return fmt.Errorf("%w: both applications must still be at the reviewed, successful revisions", ErrConflict)
 		}
+		var resizing bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM volume_resizes WHERE application_id=$1 AND "+resizeBlocking+")", id).Scan(&resizing); err != nil {
+			return err
+		}
+		if resizing {
+			return fmt.Errorf("%w: wait for volume maintenance on both applications", ErrConflict)
+		}
 		var automatic bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM application_sources WHERE application_id=$1 AND auto_deploy) OR EXISTS(SELECT 1 FROM build_configs WHERE (application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)) AND config->>'auto_deploy'='true')`, id, project, environment, a.Name).Scan(&automatic); err != nil {
 			return err

@@ -15,6 +15,7 @@ import (
 func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
 	s.registerShowcaseRoutes(routes)
 	s.registerServiceTransferRoutes(routes)
+	s.registerVolumeResizeRoutes(routes)
 	routes.HandleFunc("GET /api/v1/templates", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]any{"items": spec.Templates()}) })
 	routes.HandleFunc("POST /api/v1/templates/{id}/plan", s.planTemplate)
 	routes.HandleFunc("POST /api/v1/templates/{id}/deploy", s.deployTemplate)

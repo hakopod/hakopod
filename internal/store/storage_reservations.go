@@ -10,7 +10,7 @@ import (
 // reserveStorage runs in revision acceptance. Removed volumes and deleted
 // applications retain their reservation until an operator verifies reclamation.
 // Kubernetes PVC requests alone do not enforce physical filesystem limits.
-func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, next spec.Application) error {
+func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, next spec.Application, migrationCredit ...int64) error {
 	if s.StorageBudget == nil {
 		return nil
 	}
@@ -56,7 +56,11 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 	if err = tx.QueryRow(ctx, "SELECT COALESCE(sum(size_gib),0) FROM storage_reservations WHERE project=$1 AND environment=$2", a.Project, a.Environment).Scan(&total); err != nil {
 		return err
 	}
-	if total > limit {
+	credit := int64(0)
+	if len(migrationCredit) == 1 {
+		credit = migrationCredit[0]
+	}
+	if total-credit > limit {
 		return fmt.Errorf("workspace storage quota is %d GiB; %d GiB requested including retained volumes", limit, total)
 	}
 	return nil

@@ -1,3 +1,4 @@
+import { VolumeResizeButton } from './volume-resize'
 import { PublicEndpoints } from './public-endpoints'
 import type { PublicEndpoint } from '../lib/public-endpoints'
 import { serviceProfileLabel } from '../lib/service-resources'
@@ -928,7 +929,12 @@ export function ServiceDetail({
                 Configured values. Open a pod to inspect its observed state.
               </p>
             </section>
-            <ServiceStorage service={service} volumes={application.spec.volumes} />
+            <ServiceStorage
+              application={application}
+              serviceName={serviceName}
+              service={service}
+              volumes={application.spec.volumes}
+            />
           </div>
           <div className="code-panel">
             <div>
@@ -1009,13 +1015,25 @@ export function ServiceDetail({
   )
 }
 
-function ServiceStorage({ service, volumes }: { service: Service; volumes: Spec['volumes'] }) {
+function ServiceStorage({
+  application,
+  serviceName,
+  service,
+  volumes,
+}: {
+  application: Application
+  serviceName: string
+  service: Service
+  volumes: Spec['volumes']
+}) {
   const mounts = [
     ...(service.volume
       ? [
           {
             path: service.volume.mount_path,
             name: 'Service volume',
+            claim: serviceName + '-data',
+            size: service.volume.size_gib,
             details: `${service.volume.size_gib} GiB · ${service.volume.storage_class || 'Default storage class'}`,
             access: 'Read and write',
           },
@@ -1026,6 +1044,8 @@ function ServiceStorage({ service, volumes }: { service: Service; volumes: Spec[
       return {
         path: mount.mount_path,
         name: mount.volume,
+        claim: 'hakopod-volume-' + mount.volume,
+        size: volume?.size_gib || 0,
         details: [
           volume
             ? `${volume.size_gib} GiB · ${volume.access_mode}`
@@ -1041,10 +1061,13 @@ function ServiceStorage({ service, volumes }: { service: Service; volumes: Spec[
     ...(service.temporary_mounts || []).map((mount) => ({
       path: mount.mount_path,
       name: mount.memory ? 'Temporary memory' : 'Temporary disk',
+      claim: '',
+      size: 0,
       details: `${mount.size_mib} MiB limit · Removed with the pod`,
       access: 'Read and write',
     })),
   ]
+  const seenClaims = new Set<string>()
   return (
     <section className="panel service-summary-panel">
       <div className="panel-heading">
@@ -1053,19 +1076,30 @@ function ServiceStorage({ service, volumes }: { service: Service; volumes: Spec[
       </div>
       {mounts.length ? (
         <dl className="service-storage-list">
-          {mounts.map((mount) => (
-            <div key={mount.path}>
-              <dt>
-                <code>{mount.path}</code>
-                <Copy value={mount.path} />
-              </dt>
-              <dd>
-                <strong>{mount.name}</strong>
-                <span>{mount.access}</span>
-                <small>{mount.details}</small>
-              </dd>
-            </div>
-          ))}
+          {mounts.map((mount) => {
+            const first = mount.claim && !seenClaims.has(mount.claim)
+            seenClaims.add(mount.claim)
+            return (
+              <div key={mount.path}>
+                <dt>
+                  <code>{mount.path}</code>
+                  <Copy value={mount.path} />
+                </dt>
+                <dd>
+                  <strong>{mount.name}</strong>
+                  <span>{mount.access}</span>
+                  <small>{mount.details}</small>
+                  {first && mount.size > 0 && (
+                    <VolumeResizeButton
+                      application={application}
+                      claim={mount.claim}
+                      size={mount.size}
+                    />
+                  )}
+                </dd>
+              </div>
+            )
+          })}
         </dl>
       ) : (
         <p className="field-help">

@@ -42,6 +42,22 @@ func (w *Worker) Run(ctx context.Context) {
 		n = 4
 	}
 	var wg sync.WaitGroup
+	// One migration at a time. File copying runs in a bounded owned pod; this
+	// lane only advances its durable state and the explicitly reviewed cutover.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		timer := time.NewTicker(5 * time.Second)
+		defer timer.Stop()
+		for ctx.Err() == nil {
+			w.resizeVolume(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+			}
+		}
+	}()
 	// Namespace deletion can wait for Kubernetes finalizers. Give expiry its own
 	// single bounded lane so a stuck preview does not delay normal deployments.
 	wg.Add(1)

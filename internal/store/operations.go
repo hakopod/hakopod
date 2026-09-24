@@ -211,6 +211,34 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if cleanupPending {
 		return Deployment{}, fmt.Errorf("%w: wait for the accepted volume cleanup before changing this application", ErrConflict)
 	}
+	var resizePending bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM volume_resizes WHERE application_id=$1 AND "+resizeBlocking+")", a.ID).Scan(&resizePending); err != nil {
+		return Deployment{}, err
+	}
+	if resizePending {
+		return Deployment{}, fmt.Errorf("%w: finish volume maintenance before changing this application", ErrConflict)
+	}
+	// Retained originals cannot be silently reused while a resize owns them.
+	rows, resizeErr := tx.Query(ctx, "SELECT claim FROM volume_resizes WHERE application_id=$1 AND phase='original_retained'", a.ID)
+	if resizeErr != nil {
+		return Deployment{}, resizeErr
+	}
+	for rows.Next() {
+		var claim string
+		if resizeErr = rows.Scan(&claim); resizeErr != nil {
+			rows.Close()
+			return Deployment{}, resizeErr
+		}
+		if spec.HasVolumeClaim(next, claim) {
+			rows.Close()
+			return Deployment{}, fmt.Errorf("original resize volume is retained; finalize its resize before reuse")
+		}
+	}
+	resizeErr = rows.Err()
+	rows.Close()
+	if resizeErr != nil {
+		return Deployment{}, resizeErr
+	}
 	claims, err := ServiceVolumeClaims(a.Spec, next, deleteServices)
 	if err != nil {
 		return Deployment{}, err
@@ -296,7 +324,7 @@ type Claim struct {
 var ErrClaimLost = errors.New("durable application claim is no longer held")
 
 func (s *Store) Claim(ctx context.Context) (*Claim, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.application_id FROM deployments d WHERE d.status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM previews p WHERE p.application_id=d.application_id AND (p.state<>'active' OR p.expires_at<=now())) AND NOT EXISTS (SELECT 1 FROM deployments older WHERE older.application_id=d.application_id AND older.revision<d.revision AND older.status IN ('queued','running')) ORDER BY d.created_at LIMIT 16`)
+	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.application_id FROM deployments d WHERE d.status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM volume_resizes vr WHERE vr.id=d.id) AND NOT EXISTS(SELECT 1 FROM previews p WHERE p.application_id=d.application_id AND (p.state<>'active' OR p.expires_at<=now())) AND NOT EXISTS (SELECT 1 FROM deployments older WHERE older.application_id=d.application_id AND older.revision<d.revision AND older.status IN ('queued','running')) ORDER BY d.created_at LIMIT 16`)
 	if err != nil {
 		return nil, err
 	}

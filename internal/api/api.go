@@ -788,6 +788,15 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "terminal_operation", "deployment has already completed")
 		return
 	}
+	var resizing bool
+	if err := s.Store.Pool.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM volume_resizes WHERE id=$1)", d.ID).Scan(&resizing); err != nil {
+		failure(w, err)
+		return
+	}
+	if resizing {
+		problem(w, 409, "resize_maintenance", "Use the volume resize controls to stop or recover this maintenance operation.")
+		return
+	}
 	_, err := s.Store.Pool.Exec(r.Context(), "UPDATE deployments SET cancel_requested=true WHERE id=$1 AND status IN ('queued','running')", d.ID)
 	if err != nil {
 		failure(w, err)

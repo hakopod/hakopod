@@ -74,6 +74,7 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
  OR EXISTS(SELECT 1 FROM build_runs r JOIN build_configs c ON c.id=r.build_id WHERE (c.application_id=$1 OR (c.project=$2 AND c.environment=$3 AND c.name=$4)) AND (r.status NOT IN ('completed','failed','cancelled') OR r.auto_status IN ('queued','processing')))
  OR EXISTS(SELECT 1 FROM backup_jobs WHERE status IN ('queued','running') AND (source->>'application_id'=$1 OR target->>'application_id'=$1))
  OR EXISTS(SELECT 1 FROM deployment_volume_cleanup c JOIN deployments d ON d.id=c.deployment_id WHERE d.application_id=$1 AND NOT c.completed AND d.status IN ('queued','running','succeeded'))
+ OR EXISTS(SELECT 1 FROM volume_resizes WHERE application_id=$1 AND phase NOT IN ('completed','cancelled'))
  OR EXISTS(SELECT 1 FROM backup_schedules WHERE enabled AND source->>'application_id'=$1)`, id, a.Project, a.Environment, a.Name).Scan(&busy); err != nil {
 		return err
 	}
