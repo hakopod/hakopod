@@ -53,3 +53,47 @@ References:
 - https://gvisor.dev/docs/tutorials/docker-in-gvisor/
 - https://gvisor.dev/docs/tutorials/docker-in-gke-sandbox/
 - https://github.com/youssefbrr/self-hosted-runner
+
+## Verified Docker runtime
+
+The named k3d development-cluster acceptance passed on both Linux AMD64 and ARM64
+in GitHub run 36018667516 at commit 122e4a5. This proves nested container execution,
+a shared workspace bind mount, user-defined network aliases, published service
+ports and a BuildKit Dockerfile RUN step. It does not yet prove GitHub registration,
+a real workflow, tenant isolation or the product lifecycle.
+
+The tested profile uses gVisor release-20260907.0 with systrap, net-raw,
+allow-packet-socket-write, and a memory-backed root overlay. Docker 29.8.1 uses its
+legacy iptables binaries, VFS storage with the containerd image store disabled,
+and explicit in-sandbox TCP/UDP SNAT. The Docker data mount is memory-backed and
+bounded; no host Docker socket, host path or Kubernetes credential is exposed.
+Using the daemon image's default nftables tools broke service DNS; selecting its
+provided legacy tools fixed that failure on both architectures.
+
+## Implementation boundary
+
+Represent a pool as a service in the existing versioned application spec so its
+replicas, resource budget, placement, revision review and deletion remain part of
+the normal deployment model. An Actions service must not fall through to an
+ordinary Deployment. Its provider credential is a local scoped secret reference
+read only by the control plane; it must participate in missing-secret setup but
+must never become a runner environment variable or mounted file.
+
+Durable pool and slot records need to preserve registration intent and its
+unique runner name before GitHub calls. A lost JIT response cannot be recreated:
+find and remove that registration before issuing another one. Store the returned
+one-job config only in an owned, short-lived Kubernetes Secret. Keep cleanup
+records until both pod and registration are gone. Application deletion must not
+cascade away the only registration-cleanup record.
+
+Use the shared management lifecycle for the controller. Check Pro entitlement
+for self-hosted installations, and trusted application/workspace entitlement for
+Cloud and BYOD, including background replenishment. No request-supplied license
+flag is authority. Resource accounting must continue to include draining slots;
+never release capacity merely because the desired replica count was reduced.
+
+Before enabling the preset, implement the controller, deployment admission,
+observation, deletion, secret handling and UI together. Run a real GitHub workflow
+covering JavaScript actions, Docker actions, a container job, service containers,
+and docker build. Then verify concurrent slots, restarts, ambiguous registration,
+API outages, scaling, deletion, credential rotation, license expiry and isolation.
