@@ -3,6 +3,19 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/deploy/local/versions.env"
+# Larger catalog acceptance remains bounded and never changes an existing cluster.
+DEV_SERVER_MEMORY=$(python3 - "${HAKOPOD_DEV_SERVER_MEMORY:-2304m}" <<'PYMEM'
+import re, sys
+value = sys.argv[1]
+match = re.fullmatch(r"([1-9][0-9]*)([mg])", value)
+if not match:
+    raise SystemExit("HAKOPOD_DEV_SERVER_MEMORY must be integer MiB (m) or GiB (g)")
+size_mib = int(match[1]) * (1024 if match[2] == "g" else 1)
+if not 2048 <= size_mib <= 16384:
+    raise SystemExit("HAKOPOD_DEV_SERVER_MEMORY must be between 2048m and 16g")
+print(value)
+PYMEM
+)
 for tool in docker kubectl helm python3 curl; do
   command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 1; }
 done
@@ -29,7 +42,7 @@ for port in (16443, 18080, 18443):
         except OSError: raise SystemExit(f'Port {port} is busy; refusing to disturb another service.')
 PY
   "$K3D" cluster create hakopod-dev --servers 1 --agents 0 \
-    --image "$K3S_IMAGE" --servers-memory 2304m \
+    --image "$K3S_IMAGE" --servers-memory "$DEV_SERVER_MEMORY" \
     --api-port 127.0.0.1:16443 \
     --port 127.0.0.1:18080:30080@server:0 \
     --port 127.0.0.1:18443:30443@server:0 \

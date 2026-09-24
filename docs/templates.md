@@ -4,7 +4,7 @@ Templates produce the same versioned application specification, review, optimist
 
 The shared catalog is maintained in [hakopod/templates](https://github.com/hakopod/templates), pinned at `templates/` in both the engine and website. Native TOML, metadata, requirements and logos have one source. The binary embeds the catalog at build time and never fetches or executes remote template definitions at runtime.
 
-The catalog has 71 entries: 35 deployment presets and 36 migration guides. All 58 requested Dokploy blueprints are recorded, with the existing Valkey preset retained. A migration guide is not deployment support. The engine now has [deployment jobs, file mounts, connection bindings and named HTTP endpoints](application-lifecycle.md), but candidates still need conversion and live verification before promotion. Privileged/root initialization, public UDP, image compatibility and application-specific bootstrap behavior remain separate prerequisites. The deploy API rejects these guides. Consult each entry’s `README.md` and `migration.json` for exact coverage.
+The catalog has 77 entries: 40 deployment presets and 37 migration guides. All 58 requested Dokploy blueprints are recorded, with the existing Valkey preset retained. A migration guide is not deployment support. The engine now has [deployment jobs, file mounts, connection bindings and named HTTP endpoints](application-lifecycle.md), but candidates still need conversion and live verification before promotion. Privileged/root initialization, public UDP, image compatibility and application-specific bootstrap behavior remain separate prerequisites. The deploy API rejects these guides. Consult each entry’s `README.md` and `migration.json` for exact coverage.
 
 All enabled presets use immutable image digests. `templates/images.lock.json` records registry checks, while each entry’s `verification` distinguishes these from actual runtime acceptance. The original 13 deployment specifications are preserved exactly. New preset live acceptance is pending. BentoPDF was blocked by Docker Hub rate limiting before workload creation. Browserless reached image creation but filled the small development disk and timed out. Its namespace, credential and exclusive cached blobs were removed; all existing deployments returned ready. Reserve at least 8 GiB free disk before testing that browser image.
 
@@ -56,6 +56,33 @@ Flowise installs the real upstream visual agent/workflow runtime. It requires `c
 CockroachDB requires `database-ca`, `database-node-cert` and `database-node-key` PEM secrets. The node certificate must identify the `node` principal and cover `main` and `localhost` (plus any client-facing internal DNS names you use). The process writes them under a private `/tmp` directory and starts with TLS enabled; the admin HTTP listener is loopback-only. Keep the CA private key outside the application. Use a client certificate to initialize SQL users and database grants. No plaintext/insecure startup option is offered.
 
 vLLM has an authenticated API and does not enable remote repository code. Public Hugging Face metadata may be resolved to an immutable model revision during planning. For a private or gated model, enable the model-token option, provide its immutable revision and save an approved Hugging Face read token as `model-token`; the workload receives it as `HF_TOKEN`. Its AMD64 and ARM64 images require a compatible NVIDIA GPU, CUDA 13 driver and device plugin. ARM64 refers to NVIDIA SBSA hardware, not an ordinary ARM CPU node. GPU workloads receive a private 1 GiB memory-backed `/dev/shm`. The image is about 10 GB compressed and is never downloaded by the control plane for catalog browsing.
+
+## Additional complete presets
+
+Dagu runs its scheduler and authenticated UI without the upstream sudo entrypoint.
+CouchDB stays private and initializes a single-node database. Blinko persists
+attachments and vectors as well as its PostgreSQL database. Bytebase uses one
+password reference shared with its metadata database through a native connection
+binding. Baserow includes the web proxy, frontend, backend, Celery/export worker,
+beat scheduler, PostgreSQL and Redis; media uses a private S3-compatible bucket in
+the customer's account. Provider credentials are never offered random generation.
+
+Cal.com has a tested non-root compatibility image, but remains a prerequisite
+entry while its registry's organization policy prevents anonymous pulls. Autobase
+requires the host Docker socket and root initialization, so its native candidate
+is not offered as a tenant workload. See the shared catalog's
+[completion review](https://github.com/hakopod/templates/blob/main/REVIEW-2026-09-24.md)
+for exact source references and verification boundaries.
+
+The dedicated complete-catalog CI runs one application per disposable development
+cluster, on AMD64 and ARM64 where upstream images support them. To provision a
+larger fresh named development fixture, set `HAKOPOD_DEV_SERVER_MEMORY=6g` before
+`scripts/local-up.sh`. The default remains 2304 MiB, the accepted override is
+2–16 GiB, and an existing cluster is never resized by this option. Run one selected
+fixture using `HAKOPOD_COMPLETE_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=dagu` and
+`HAKOPOD_TEST_KUBECONFIG` pointing to that named development kubeconfig. Baserow's
+acceptance uses a real disposable MinIO service; it does not touch a customer's
+bucket or prove a particular provider's TLS, credentials or CORS configuration.
 
 ## Verification
 

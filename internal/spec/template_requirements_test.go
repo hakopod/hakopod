@@ -172,6 +172,12 @@ func catalogTestValues(template Template) map[string]string {
 	for _, f := range template.ConfigFields {
 		if f.Default == "" && f.Required {
 			values[f.Name] = "operator@example.test"
+			if f.Name == "storage-endpoint" {
+				values[f.Name] = "https://s3.example.test"
+			}
+			if f.Name == "storage-bucket" {
+				values[f.Name] = "catalog-media"
+			}
 		}
 	}
 	return values
