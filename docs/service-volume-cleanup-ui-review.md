@@ -15,7 +15,7 @@ Passed after resolving cleanup-note layout and retry-feedback findings. The revi
 - [x] Synthetic planned requests remove the service and its unused private named-volume definition while preserving the shared named-volume definition and its remaining service mount. The default request does not include `delete_service_volumes`. A service with shared volumes only has no permanent-volume checkbox.
 - [x] Failed planning preserves the selected option and allows retry. Failed final deletion preserves the accepted review and its disabled option. Busy controls prevent further interaction. Escape closes the dialog and restores the invoking button's focus.
 - [x] Cleanup status distinguishes reclaiming, retained and deleted observations. A successful retry response retains the reclaiming status until a subsequent backend observation says deletion finished; it does not claim immediate quota release.
-- [x] Failed cleanup retry reports a visible error without opening the deployment-cancellation dialog. Retry uses a busy label and remains usable after failure. The retry action is absent for a principal without deployment-write permission.
+- [x] Failed cleanup retry reports a visible error without opening the deployment-cancellation dialog. Retry uses a busy label and remains usable after failure. Volume-deletion consent and cleanup retry require application-management capability and deployment-write permission. The actual application project is used for project-admin matching.
 - [x] Shared page insets remain 16px on mobile and 24px on desktop. The cleanup note and its action fit the viewport. Both themes preserve readable warnings and visible focus. The existing deployment pipeline remains an intentionally scrollable mobile region; its offscreen children do not cause document overflow.
 - [x] Screenshots were captured after expected content, fonts and transitions settled, then inspected at full resolution and in contact sheets. Final document width equals viewport width in every base case.
 
@@ -23,7 +23,15 @@ Passed after resolving cleanup-note layout and retry-feedback findings. The revi
 
 The cleanup section originally reused a flex-row note with each paragraph and action as a sibling. At 320px this squeezed claim names into a vertical letter column and moved the retry button outside the document. A bounded stacked inner container now keeps all status content and the action inside the note.
 
-Cleanup retry originally put its error into cancellation-dialog state, leaving failed retries invisible while that dialog was closed. A separate cleanup error now renders with the cleanup section. The retry button also respects deployment-write capability and identifies the requesting state.
+Cleanup retry originally put its error into cancellation-dialog state, leaving failed retries invisible while that dialog was closed. A separate cleanup error now renders with the cleanup section. The retry button also respects application-management and deployment-write capability and identifies the requesting state.
+
+## Application-management permission refinement
+
+A follow-up aligns the volume-only controls with application management, rather than deployment-write alone. Both surfaces require deployment-write plus installation admin, explicit `can_manage_applications`, or an admin role matching the actual application project. Cleanup retry uses the loaded application's project and does not fall back to a selected project. The ordinary service-deletion path is unchanged; when volume consent is unavailable, its description states that volumes and backups are kept.
+
+Ninety-six synthetic permission cases passed across both editions, both themes and 320/1280px viewports. Developer and viewer identities do not see permanent-volume consent or cleanup retry. A matching project admin or explicit management capability with write access does; another project's admin and management capability without write access do not. The fixture deliberately supplies a stale selected project. Relevant developer/viewer dialog captures were refreshed after the contextual-copy adjustment.
+
+Two additional rendered checks revoked management capability while volume deletion was selected, before and after planning. Both the destructive action and selected checkbox became disabled, the review stayed intact, and visible guidance directed the user to close and review again. Evidence is in `permissions.json`, `permission-copy.json`, `revocation.mjs` and the `permissions/` screenshot folder. These checks establish UI capability handling, not the server's fresh membership/owner authorization.
 
 ## Evidence and limits
 

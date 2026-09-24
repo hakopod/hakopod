@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan } from '../lib/types'
 import { client, unwrap } from '../lib/client'
+import { canAccess, useScope } from '../lib/scope'
 import { APIError, message } from '../lib/api'
 import { withoutService, serviceVolumeRemoval } from '../lib/remove-service'
 import { Dialog } from './ui/dialog'
@@ -20,10 +21,20 @@ export function DeleteServiceDialog({
   service: string
   onClose: () => void
 }) {
+  const scope = useScope()
   // Freeze the accepted revision while the user reviews this destructive change.
   const [snapshot] = useState(application)
   const [deleteVolumes, setDeleteVolumes] = useState(false)
   const removal = serviceVolumeRemoval(snapshot.spec, service)
+  const canDeleteVolumes =
+    canAccess(scope.identity, snapshot.project, 'deployments:write') &&
+    Boolean(
+      scope.identity.admin ||
+      scope.identity.can_manage_applications ||
+      scope.identity.project_roles?.some(
+        (role) => role.project === snapshot.project && role.role === 'admin',
+      ),
+    )
   const [plan, setPlan] = useState<Plan | null>(null)
   const submitting = useRef(false)
   const [conflict, setConflict] = useState(false)
@@ -33,7 +44,7 @@ export function DeleteServiceDialog({
   const cache = useQueryClient()
   const navigate = useNavigate()
   async function submit() {
-    if (submitting.current || conflict) return
+    if (submitting.current || conflict || (deleteVolumes && !canDeleteVolumes)) return
     submitting.current = true
     setBusy(true)
     setError('')
@@ -57,7 +68,12 @@ export function DeleteServiceDialog({
       } else {
         const result = await unwrap(
           client.POST('/deployments', {
-            body: { ...scope, spec: plan.spec, expected_revision: plan.expected_revision, ...(deleteVolumes ? { delete_service_volumes: [service] } : {}) },
+            body: {
+              ...scope,
+              spec: plan.spec,
+              expected_revision: plan.expected_revision,
+              ...(deleteVolumes ? { delete_service_volumes: [service] } : {}),
+            },
             params: { header: { 'Idempotency-Key': key.current } },
           }),
         )
@@ -85,7 +101,7 @@ export function DeleteServiceDialog({
         if (!open && !busy) onClose()
       }}
       title={`Delete ${service}?`}
-      description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. Volumes are kept unless you choose to delete them below. Backups are kept. This creates a new application deployment.`}
+      description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. ${removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes) ? 'Volumes are kept unless you choose to delete them below. Backups are kept.' : 'Volumes and backups are kept.'} This creates a new application deployment.`}
     >
       <div className="grid gap-4 p-4">
         {!plan && (
@@ -94,31 +110,60 @@ export function DeleteServiceDialog({
             before deletion can proceed.
           </p>
         )}
-        {removal.claims.length > 0 && (
+        {removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes) && (
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={deleteVolumes} disabled={busy || Boolean(plan)}
-              onChange={(event) => setDeleteVolumes(event.target.checked)} />
-            <span>Permanently delete unused volumes too
-              <span className="block break-all text-xs text-muted-foreground">{removal.claims.join(', ')}. This erases their data after service removal succeeds. Shared volumes and backups are kept.</span>
+            <input
+              type="checkbox"
+              checked={deleteVolumes}
+              disabled={busy || Boolean(plan) || !canDeleteVolumes}
+              onChange={(event) => setDeleteVolumes(event.target.checked)}
+            />
+            <span>
+              Permanently delete unused volumes too
+              <span className="block break-all text-xs text-muted-foreground">
+                {removal.claims.join(', ')}. This erases their data after service removal succeeds.
+                Shared volumes and backups are kept.
+              </span>
             </span>
           </label>
         )}
         {plan && <DiffTable changes={plan.changes} />}
-        {plan && deleteVolumes && <p className="text-sm">Confirming deletes this service and permanently erases the listed volumes. Storage quota stays reserved until reclamation completes.</p>}
+        {plan && deleteVolumes && (
+          <p className="text-sm">
+            Confirming deletes this service and permanently erases the listed volumes. Storage quota
+            stays reserved until reclamation completes.
+          </p>
+        )}
         {plan?.warnings?.map((warning) => (
           <p key={warning} className="text-sm">
             {warning}
           </p>
         ))}
+        {deleteVolumes && !canDeleteVolumes && (
+          <p className="text-sm" role="status">
+            Permission to delete volumes is no longer available. Close this dialog and review the
+            service again.
+          </p>
+        )}
         {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="danger" disabled={busy || conflict} onClick={() => void submit()}>
+        <Button
+          variant="danger"
+          disabled={busy || conflict || (deleteVolumes && !canDeleteVolumes)}
+          onClick={() => void submit()}
+        >
           <Icon name="trash" size={14} />
-          {busy ? 'Working…' : plan ? (deleteVolumes ? 'Delete service and volumes' : 'Delete service') : 'Review deletion'}
+          {busy
+            ? 'Working…'
+            : plan
+              ? deleteVolumes
+                ? 'Delete service and volumes'
+                : 'Delete service'
+              : 'Review deletion'}
         </Button>
       </div>
     </Dialog>
