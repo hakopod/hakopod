@@ -1,27 +1,27 @@
-Hakopod 0.1.0-alpha.25 adds reviewed offline volume growth and shrinking, plus optional volume deletion when removing a service.
+Hakopod 0.1.0-alpha.26 adds shared missing-secret setup and expands the deployable catalog.
 
-## Resize persistent volumes
+## Set up missing application secrets
 
-Use Resize in a service's storage section. The engine stops affected services, copies into a new volume and verifies contents and metadata before switching mounts. Shrinking never truncates the original filesystem. Both volumes remain reserved until you explicitly confirm deletion of the original after checking the application. Interrupted maintenance can be retried; pre-switch cancellation resumes the original, while post-switch recovery preserves both copies without rolling back new writes.
+TOML, Compose, Git import, Git synchronization and built-image review show missing local secret references before deployment. Enter each value directly into scoped storage or explicitly generate a new random password. Existing values are never overwritten by setup. Catalog-specific credential helpers retain their required formats.
 
-The shared API and dashboard support self-hosted, Cloud hosted and upgraded BYOD engines. Targets range from 1 to 200 GiB and must fit the data plus free-space headroom. Physical provider capacity and workspace allowances still apply. Single-replica services with compatible file ownership are supported; scheduled jobs, deployment jobs, serverless scaling and block-device volumes are excluded. See `docs/volume-resizing.md` for recovery and provider limitations.
+The native CLI and npm CLI offer hidden terminal entry, generation and cancellation. Noninteractive runs stop with actionable missing names; `--yes` never invents credentials. Automated deployment and rollback recheck references before acceptance, and reconciliation reads the full secret snapshot before changing workloads. External secret providers keep their existing resolver.
 
-Resizing creates a new named volume and mount subdirectory. Update the resulting volume and mount settings in Git before redeploying.
+## Expanded catalog
 
-## Delete unused service volumes explicitly
+Dagu, CouchDB, Blinko and Baserow have complete service configurations; Bytebase now includes its required persistent setup. Images are pinned by digest. Baserow uses separate backend, frontend, workers, scheduler, proxy, PostgreSQL and Redis services, with customer-owned private S3 storage for uploaded media.
 
-Service deletion offers an unchecked option to permanently remove its unused volumes. Shared mounts are retained. Cleanup is retryable, requires current management authority, and releases storage reservations only after owned storage is reclaimed. Backups remain intact.
+Cal.com remains unavailable until its non-root compatibility image can be pulled publicly. Autobase remains unavailable because its upstream console requires unsupported host Docker access. Managed Actions is not included in this release.
 
 ## Upgrade
 
-Back up the installation, download this release's installer.sh, then run:
+Back up the installation and run the release installer:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.25
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.26
 ```
 
-Supported upgrade sources are declared in `release/upgrade-paths.json`, including alpha.24 and its supported predecessors. Schema 42 adds the durable resize journal. No existing customer volume is resized or erased by upgrading. BYOD nodes need the new engine version before they can execute resizing.
+Supported upgrade sources include alpha.25 and its supported predecessors. This release does not resize or delete existing volumes. Cloud and BYOD runtimes must be upgraded to expose the new secret-setup API.
 
 ## Validation
 
-PostgreSQL-backed tests cover maintenance exclusion, storage accounting, durable transitions and permission revocation. Dashboard builds and tests plus independent rendered reviews cover both editions/themes and mobile/desktop recovery controls. Publication also requires the native installation/upgrade matrix. The development-cluster resize test checks growth, shrink, data/link preservation and rejection of an undersized target; this does not certify every CSI provider or resize customer volumes.
+The Go and dashboard suites cover deployment planning, authorization, creation conflicts, unavailable storage and noninteractive cancellation. Independent rendered review covers both dashboard editions and themes at mobile and desktop sizes. Pseudo-terminal tests exercise hidden entry, explicit generation and cancellation in both CLIs using synthetic API credentials. Catalog acceptance checks supported presets on AMD64 and ARM64; real development-cluster secret tests verify scoped values reach a job without leaking into deployment configuration.
