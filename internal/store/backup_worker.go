@@ -35,7 +35,7 @@ func (s *Store) ClaimBackupJob(ctx context.Context, lease string) (backup.Job, e
 		}
 		return backup.Job{}, backup.ErrNotFound
 	}
-	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET status='running',lease=$1,lease_until=now()+interval '30 seconds',started_at=now() WHERE id=(SELECT id FROM backup_jobs WHERE status='queued' AND NOT cancel_requested ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING "+backupJobCols, lease))
+	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET status='running',lease=$1,lease_until=now()+interval '30 seconds',started_at=now() WHERE id=(SELECT id FROM backup_jobs WHERE status='queued' AND NOT cancel_requested AND NOT EXISTS(SELECT 1 FROM volume_resizes vr WHERE (vr.application_id=backup_jobs.source->>'application_id' OR vr.application_id=backup_jobs.target->>'application_id') AND "+resizeBlocking+") ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING "+backupJobCols, lease))
 	if err != nil {
 		if errors.Is(err, backup.ErrNotFound) {
 			if commitErr := tx.Commit(ctx); commitErr != nil {

@@ -1,3 +1,4 @@
+import { VolumeResizeOperations } from '../components/volume-resize'
 import { publicEndpoints } from '../lib/public-endpoints'
 import { PublicEndpoints } from '../components/public-endpoints'
 import { serviceProfileLabel } from '../lib/service-resources'
@@ -304,6 +305,7 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
+          <VolumeResizeOperations application={app} />
           {scope.can('deployments:write') && <ServiceMoves application={app} />}
           <div className="ops-section-description">
             <p>Open a service for pods, logs, resource usage, and configuration.</p>

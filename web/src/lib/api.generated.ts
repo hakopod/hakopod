@@ -2913,6 +2913,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/volume-resizes/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["planVolumeResize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/volume-resizes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listVolumeResizes"];
+        put?: never;
+        post: operations["startVolumeResize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/volume-resizes/{resize}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["volumeResizeAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/builds/detect": {
         parameters: {
             query?: never;
@@ -5141,6 +5189,42 @@ export interface components {
             toml: string;
             expected_id: string;
             expected_revision: number;
+        };
+        VolumeResizeInput: {
+            claim: string;
+            size_gib: number;
+            expected_revision: number;
+            source_uid?: string;
+            confirm_downtime?: boolean;
+        };
+        VolumeResizePlan: {
+            claim: string;
+            old_gib: number;
+            size_gib: number;
+            temporary_gib: number;
+            peak_gib: number;
+            services: string[];
+            source_uid: string;
+            expected_revision: number;
+            warnings: string[];
+        };
+        VolumeResize: {
+            id: string;
+            application_id: string;
+            claim: string;
+            target_claim: string;
+            size_gib: number;
+            old_gib: number;
+            expected_revision: number;
+            phase: string;
+            error: string;
+            services: string[];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            verified: boolean;
+            copied_bytes: number;
         };
         FrameworkPlan: {
             build_command: string;
@@ -13295,6 +13379,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VirtualNetworkPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    planVolumeResize: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolumeResizeInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VolumeResizePlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listVolumeResizes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["VolumeResize"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    startVolumeResize: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolumeResizeInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VolumeResize"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    volumeResizeAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                resize: string;
+                action: "retry" | "cancel" | "retain" | "delete-original";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirm_claim?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
                 };
             };
             /** @description Error */

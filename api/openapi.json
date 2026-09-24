@@ -11653,6 +11653,249 @@
         }
       }
     },
+    "/applications/{id}/volume-resizes/plan": {
+      "post": {
+        "operationId": "planVolumeResize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeResizePlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeResizeInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/volume-resizes": {
+      "post": {
+        "operationId": "startVolumeResize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeResize"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeResizeInput"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listVolumeResizes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VolumeResize"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/volume-resizes/{resize}/{action}": {
+      "post": {
+        "operationId": "volumeResizeAction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resize",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "retry",
+                "cancel",
+                "retain",
+                "delete-original"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_claim": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
     "/builds/detect": {
       "post": {
         "operationId": "detectBuildFramework",
@@ -20051,6 +20294,148 @@
           "toml",
           "expected_id",
           "expected_revision"
+        ]
+      },
+      "VolumeResizeInput": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "size_gib": {
+            "type": "integer"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "source_uid": {
+            "type": "string"
+          },
+          "confirm_downtime": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claim",
+          "size_gib",
+          "expected_revision"
+        ]
+      },
+      "VolumeResizePlan": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "old_gib": {
+            "type": "integer"
+          },
+          "size_gib": {
+            "type": "integer"
+          },
+          "temporary_gib": {
+            "type": "integer"
+          },
+          "peak_gib": {
+            "type": "integer"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_uid": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claim",
+          "old_gib",
+          "size_gib",
+          "temporary_gib",
+          "peak_gib",
+          "services",
+          "source_uid",
+          "expected_revision",
+          "warnings"
+        ]
+      },
+      "VolumeResize": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "target_claim": {
+            "type": "string"
+          },
+          "size_gib": {
+            "type": "integer"
+          },
+          "old_gib": {
+            "type": "integer"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "copied_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "claim",
+          "target_claim",
+          "size_gib",
+          "old_gib",
+          "expected_revision",
+          "phase",
+          "error",
+          "services",
+          "created_at",
+          "updated_at",
+          "verified",
+          "copied_bytes"
         ]
       },
       "FrameworkPlan": {

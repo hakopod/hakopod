@@ -24,6 +24,28 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases = [
+    { path: 'applications/app-a/volume-resizes', method: 'GET' },
+    {
+      path: 'applications/app-a/volume-resizes/plan',
+      method: 'POST',
+      body: { claim: 'db-data', size_gib: 1, expected_revision: 2 },
+    },
+    {
+      path: 'applications/app-a/volume-resizes',
+      method: 'POST',
+      body: {
+        claim: 'db-data',
+        size_gib: 1,
+        expected_revision: 2,
+        source_uid: 'reviewed-pvc',
+        confirm_downtime: true,
+      },
+    },
+    ...['retry', 'cancel', 'retain', 'delete-original'].map((action) => ({
+      path: `applications/app-a/volume-resizes/resize-a/${action}`,
+      method: 'POST',
+      body: { confirm_claim: 'db-data' },
+    })),
     { path: 'requests', method: 'GET', query: '?project=demo&service=api&status=5' },
     { path: 'applications/app-a/services/api/requests/routing', method: 'GET' },
     {

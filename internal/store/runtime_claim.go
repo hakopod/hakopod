@@ -53,6 +53,7 @@ func (c *RuntimeClaim) Check(ctx context.Context) error {
 	err := c.conn.QueryRow(ctx, `SELECT EXISTS (
  SELECT 1 FROM applications a JOIN deployments d ON d.application_id=a.id AND d.revision=a.revision
  WHERE a.id=$1 AND a.revision=$2 AND d.status='succeeded'
+ AND NOT EXISTS (SELECT 1 FROM volume_resizes vr WHERE vr.application_id=a.id AND `+resizeBlocking+`)
  AND NOT EXISTS (SELECT 1 FROM deployments pending WHERE pending.application_id=a.id AND pending.status IN ('queued','running'))
  ), COALESCE((SELECT id FROM deployments WHERE application_id=$1 AND revision=$2 AND status='succeeded'),'')`, c.application, c.revision).Scan(&eligible, &operation)
 	if err != nil {

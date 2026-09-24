@@ -34,6 +34,7 @@ test('every documented API path has dashboard coverage or an explicit alternate 
     const concrete = path
       .slice(1)
       .replace('{provider}', 'github')
+      .replace('{action}', 'retry')
       .replace(/\{[^}]+\}/g, 'a'.repeat(32))
     assert.ok(alternate.has(path) || allowed.some((pattern) => pattern.test(concrete)), path)
   }
