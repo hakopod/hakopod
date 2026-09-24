@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan } from '../lib/types'
 import { client, unwrap } from '../lib/client'
 import { APIError, message } from '../lib/api'
-import { withoutService } from '../lib/remove-service'
+import { withoutService, serviceVolumeRemoval } from '../lib/remove-service'
 import { Dialog } from './ui/dialog'
 import { Button } from './ui/button'
 import { Icon } from './icons'
@@ -22,6 +22,8 @@ export function DeleteServiceDialog({
 }) {
   // Freeze the accepted revision while the user reviews this destructive change.
   const [snapshot] = useState(application)
+  const [deleteVolumes, setDeleteVolumes] = useState(false)
+  const removal = serviceVolumeRemoval(snapshot.spec, service)
   const [plan, setPlan] = useState<Plan | null>(null)
   const submitting = useRef(false)
   const [conflict, setConflict] = useState(false)
@@ -42,7 +44,8 @@ export function DeleteServiceDialog({
           client.POST('/plan', {
             body: {
               ...scope,
-              spec: withoutService(snapshot.spec, service),
+              spec: deleteVolumes ? removal.spec : withoutService(snapshot.spec, service),
+              ...(deleteVolumes ? { delete_service_volumes: [service] } : {}),
             },
           }),
         )
@@ -54,7 +57,7 @@ export function DeleteServiceDialog({
       } else {
         const result = await unwrap(
           client.POST('/deployments', {
-            body: { ...scope, spec: plan.spec, expected_revision: plan.expected_revision },
+            body: { ...scope, spec: plan.spec, expected_revision: plan.expected_revision, ...(deleteVolumes ? { delete_service_volumes: [service] } : {}) },
             params: { header: { 'Idempotency-Key': key.current } },
           }),
         )
@@ -82,7 +85,7 @@ export function DeleteServiceDialog({
         if (!open && !busy) onClose()
       }}
       title={`Delete ${service}?`}
-      description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. Persistent volumes and backups are retained. This creates a new application deployment.`}
+      description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. Volumes are kept unless you choose to delete them below. Backups are kept. This creates a new application deployment.`}
     >
       <div className="grid gap-4 p-4">
         {!plan && (
@@ -91,7 +94,17 @@ export function DeleteServiceDialog({
             before deletion can proceed.
           </p>
         )}
+        {removal.claims.length > 0 && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={deleteVolumes} disabled={busy || Boolean(plan)}
+              onChange={(event) => setDeleteVolumes(event.target.checked)} />
+            <span>Permanently delete unused volumes too
+              <span className="block break-all text-xs text-muted-foreground">{removal.claims.join(', ')}. This erases their data after service removal succeeds. Shared volumes and backups are kept.</span>
+            </span>
+          </label>
+        )}
         {plan && <DiffTable changes={plan.changes} />}
+        {plan && deleteVolumes && <p className="text-sm">Confirming deletes this service and permanently erases the listed volumes. Storage quota stays reserved until reclamation completes.</p>}
         {plan?.warnings?.map((warning) => (
           <p key={warning} className="text-sm">
             {warning}
@@ -105,7 +118,7 @@ export function DeleteServiceDialog({
         </Button>
         <Button variant="danger" disabled={busy || conflict} onClick={() => void submit()}>
           <Icon name="trash" size={14} />
-          {busy ? 'Working…' : plan ? 'Delete service' : 'Review deletion'}
+          {busy ? 'Working…' : plan ? (deleteVolumes ? 'Delete service and volumes' : 'Delete service') : 'Review deletion'}
         </Button>
       </div>
     </Dialog>

@@ -55,6 +55,7 @@ func (w *Worker) Run(ctx context.Context) {
 			}
 			w.cleanupPreview(ctx)
 			w.cleanupRetained(ctx)
+			w.cleanupServiceVolumes(ctx)
 			select {
 			case <-ctx.Done():
 				return

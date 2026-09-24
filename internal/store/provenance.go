@@ -60,5 +60,9 @@ func ValidateProvenance(next spec.Application, provenance map[string]SourceBuild
 }
 
 func (s *Store) AcceptWithProvenance(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, provenance map[string]SourceBuild) (Deployment, error) {
-	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, nil, nil, nil, nil, provenance)
+	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, nil, nil, nil, nil, provenance, nil)
+}
+
+func (s *Store) AcceptWithVolumeCleanup(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, provenance map[string]SourceBuild, services []string) (Deployment, error) {
+	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, nil, nil, nil, nil, provenance, services)
 }

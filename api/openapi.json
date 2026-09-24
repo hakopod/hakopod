@@ -8978,6 +8978,63 @@
         }
       }
     },
+    "/deployments/{id}/volume-cleanup": {
+      "post": {
+        "operationId": "retryServiceVolumeCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/services/{service}/runtime": {
       "get": {
         "operationId": "getServiceRuntime",
@@ -13072,6 +13129,9 @@
             "maxProperties": 20,
             "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
           },
+          "volume_cleanup": {
+            "$ref": "#/components/schemas/VolumeCleanup"
+          },
           "recovery_error": {
             "type": "string"
           },
@@ -13539,6 +13599,14 @@
             },
             "maxProperties": 20,
             "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
+          },
+          "delete_service_volumes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "uniqueItems": true
           }
         },
         "required": [
@@ -13592,6 +13660,14 @@
             },
             "maxProperties": 20,
             "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
+          },
+          "delete_service_volumes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "uniqueItems": true
           }
         },
         "required": [
@@ -18185,6 +18261,28 @@
           "status",
           "error",
           "reserved_gib"
+        ]
+      },
+      "VolumeCleanup": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "claims",
+          "status",
+          "error"
         ]
       },
       "TLSConfig": {
