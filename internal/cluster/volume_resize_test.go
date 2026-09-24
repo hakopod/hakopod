@@ -115,7 +115,7 @@ func TestResizeQuotaIsBoundedDurableAndRestored(t *testing.T) {
 	kube := fake.NewClientset(q)
 	c := &Client{kube: kube}
 	for i := 0; i < 3; i++ {
-		if err := c.resizeQuota(ctx, target, 8); err != nil {
+		if ready, err := c.resizeQuota(ctx, target, 8); err != nil || ready {
 			t.Fatal(err)
 		}
 	}
@@ -129,9 +129,16 @@ func TestResizeQuotaIsBoundedDurableAndRestored(t *testing.T) {
 	if storage.Value() != 24<<30 || claims.Value() != 17 || memory.Value() != 1<<30 {
 		t.Fatal("budget accumulated or compute changed", got.Spec)
 	}
+	got.Status.Hard = got.Spec.Hard.DeepCopy()
+	if _, err = kube.CoreV1().ResourceQuotas(q.Namespace).UpdateStatus(ctx, got, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := c.resizeQuota(ctx, target, 8); err != nil || !ready {
+		t.Fatal("observed quota not ready", err)
+	}
 	foreign := target
 	foreign.OperationID = "foreign"
-	if c.resizeQuota(ctx, foreign, 8) == nil || c.restoreResizeQuota(ctx, foreign) == nil {
+	if _, err := c.resizeQuota(ctx, foreign, 8); err == nil || c.restoreResizeQuota(ctx, foreign) == nil {
 		t.Fatal("foreign operation took quota")
 	}
 	if err = c.restoreResizeQuota(ctx, target); err != nil {

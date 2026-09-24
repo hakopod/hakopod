@@ -12,9 +12,11 @@ import (
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 )
 
 func TestLiveVolumeResizeShrinkGrowAndRejectOverflow(t *testing.T) {
@@ -86,17 +88,20 @@ func TestLiveVolumeResizeShrinkGrowAndRejectOverflow(t *testing.T) {
 		}
 		// Exercise a namespace at its storage/PVC limit, as hosted workspaces
 		// are. Migration must reserve one bounded temporary allowance.
-		quota, e := c.kube.CoreV1().ResourceQuotas(Namespace(name)).Get(ctx, "hakopod-budget", metav1.GetOptions{})
-		if e != nil {
-			t.Fatal(e)
-		}
-		quota.Spec.Hard[corev1.ResourcePersistentVolumeClaims] = resource.MustParse("2")
-		existingGiB := int64(4)
-		if index == 1 {
-			existingGiB = 3
-		}
-		quota.Spec.Hard[corev1.ResourceRequestsStorage] = resource.MustParse(fmt.Sprintf("%dGi", existingGiB))
-		if _, e = c.kube.CoreV1().ResourceQuotas(Namespace(name)).Update(ctx, quota, metav1.UpdateOptions{}); e != nil {
+		if e = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			quota, e := c.kube.CoreV1().ResourceQuotas(Namespace(name)).Get(ctx, "hakopod-budget", metav1.GetOptions{})
+			if e != nil {
+				return e
+			}
+			quota.Spec.Hard[corev1.ResourcePersistentVolumeClaims] = resource.MustParse("2")
+			existingGiB := int64(4)
+			if index == 1 {
+				existingGiB = 3
+			}
+			quota.Spec.Hard[corev1.ResourceRequestsStorage] = resource.MustParse(fmt.Sprintf("%dGi", existingGiB))
+			_, e = c.kube.CoreV1().ResourceQuotas(Namespace(name)).Update(ctx, quota, metav1.UpdateOptions{})
+			return e
+		}); e != nil {
 			t.Fatal(e)
 		}
 		target.OperationID = op
@@ -128,7 +133,14 @@ func TestLiveVolumeResizeShrinkGrowAndRejectOverflow(t *testing.T) {
 		target.Previous = &app
 		target.Spec = next
 		target.Revision++
-		if _, e = c.Deploy(ctx, target, nil); e != nil {
+		for {
+			_, e = c.Deploy(ctx, target, nil)
+			if !apierrors.IsConflict(e) || ctx.Err() != nil {
+				break
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+		if e != nil {
 			t.Fatal(e)
 		}
 		after := run(`import hashlib,os;print(hashlib.sha256(open('/data/records/data','rb').read()).hexdigest());assert os.stat('/data/records/data').st_ino==os.stat('/data/records/hardlink').st_ino;assert os.readlink('/data/records/symlink')=='data'`)

@@ -125,7 +125,7 @@ func (c *Client) PrepareVolumeResize(ctx context.Context, t Target, next spec.Ap
 	if policyErr != nil {
 		return false, policyErr
 	}
-	if err := c.resizeQuota(ctx, t, p.SizeGiB); err != nil {
+	if ready, err := c.resizeQuota(ctx, t, p.SizeGiB); err != nil || !ready {
 		return false, err
 	}
 	ns := Namespace(t.ApplicationID)
@@ -333,6 +333,9 @@ func (c *Client) RemoveResizeHelper(ctx context.Context, t Target, j *VolumeResi
 		return false, err
 	}
 	if err := c.restoreResizeQuota(ctx, t); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
 		return false, err
 	}
 	return true, nil

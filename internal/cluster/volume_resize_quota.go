@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -24,32 +25,49 @@ type resizeQuotaJournal struct {
 // permit exactly one staging PVC in Kubernetes, without increasing compute or
 // weakening any other workspace resource budget. The annotation survives an
 // engine restart and prevents retries from accumulating extra allowance.
-func (c *Client) resizeQuota(ctx context.Context, t Target, extraGiB int64) error {
+func (c *Client) resizeQuota(ctx context.Context, t Target, extraGiB int64) (bool, error) {
 	if extraGiB < 1 || extraGiB > 200 {
-		return fmt.Errorf("invalid migration capacity")
+		return false, fmt.Errorf("invalid migration capacity")
 	}
 	api := c.kube.CoreV1().ResourceQuotas(Namespace(t.ApplicationID))
 	q, err := api.Get(ctx, "hakopod-budget", metav1.GetOptions{})
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err = owned(q, t); err != nil {
-		return err
+		return false, err
 	}
 	var j resizeQuotaJournal
 	if raw := q.Annotations[resizeQuotaKey]; raw != "" {
 		if json.Unmarshal([]byte(raw), &j) != nil || j.Operation != t.OperationID || j.ExtraGiB != extraGiB {
-			return fmt.Errorf("another migration owns the storage budget")
+			return false, fmt.Errorf("another migration owns the storage budget")
 		}
-		return nil
+		storage, err := resource.ParseQuantity(j.Storage)
+		if err != nil {
+			return false, err
+		}
+		claims, err := resource.ParseQuantity(j.Claims)
+		if err != nil {
+			return false, err
+		}
+		storage.Add(resource.MustParse(strconv.FormatInt(extraGiB, 10) + "Gi"))
+		claims.Add(resource.MustParse("1"))
+		configuredStorage := q.Spec.Hard[corev1.ResourceRequestsStorage]
+		configuredClaims := q.Spec.Hard[corev1.ResourcePersistentVolumeClaims]
+		if configuredStorage.Cmp(storage) != 0 || configuredClaims.Cmp(claims) != 0 {
+			return false, fmt.Errorf("migration storage budget changed")
+		}
+		observedStorage := q.Status.Hard[corev1.ResourceRequestsStorage]
+		observedClaims := q.Status.Hard[corev1.ResourcePersistentVolumeClaims]
+		return observedStorage.Cmp(storage) >= 0 && observedClaims.Cmp(claims) >= 0, nil
 	}
 	storage, ok := q.Spec.Hard[corev1.ResourceRequestsStorage]
 	if !ok {
-		return fmt.Errorf("storage budget is missing")
+		return false, fmt.Errorf("storage budget is missing")
 	}
 	claims, ok := q.Spec.Hard[corev1.ResourcePersistentVolumeClaims]
 	if !ok {
-		return fmt.Errorf("volume budget is missing")
+		return false, fmt.Errorf("volume budget is missing")
 	}
 	j = resizeQuotaJournal{Operation: t.OperationID, Storage: storage.String(), Claims: claims.String(), ExtraGiB: extraGiB}
 	storage.Add(resource.MustParse(strconv.FormatInt(extraGiB, 10) + "Gi"))
@@ -62,10 +80,13 @@ func (c *Client) resizeQuota(ctx context.Context, t Target, extraGiB int64) erro
 	raw, _ := json.Marshal(j)
 	q.Annotations[resizeQuotaKey] = string(raw)
 	if err = beforeStep(ctx, t); err != nil {
-		return err
+		return false, err
 	}
 	_, err = api.Update(ctx, q, metav1.UpdateOptions{})
-	return err
+	if apierrors.IsConflict(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (c *Client) restoreResizeQuota(ctx context.Context, t Target) error {

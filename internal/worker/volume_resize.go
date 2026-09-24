@@ -8,6 +8,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/spec"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -66,6 +67,10 @@ func (w *Worker) resizeVolume(parent context.Context) {
 		}
 		ready, e := runtime.PrepareVolumeResize(ctx, t, r.TargetSpec, plan, &state)
 		if e != nil {
+			if apierrors.IsConflict(e) {
+				_ = c.Save(ctx, c.Resize.Phase, state, "")
+				return
+			}
 			if !state.Verified && ctx.Err() == nil {
 				gone, cleanupErr := runtime.RemoveResizeHelper(ctx, t, &state)
 				if cleanupErr != nil || !gone {
@@ -112,6 +117,9 @@ func (w *Worker) resizeVolume(parent context.Context) {
 		t.Spec = r.TargetSpec
 		t.Previous = &r.SourceSpec
 		observation, e := w.Cluster.Deploy(ctx, t, nil)
+		if apierrors.IsConflict(e) {
+			return
+		}
 		if parent.Err() != nil {
 			return
 		}

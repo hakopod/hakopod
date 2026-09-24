@@ -44,6 +44,11 @@ jobs:
           scripts/local-up.sh
           kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev apply -f deploy/storage/local-path.yaml
           kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev -n hakopod-storage rollout status deployment/local-path-provisioner --timeout=120s
+      - name: Verify offline volume growth and shrink
+        run: |
+          set -o pipefail
+          mkdir -p .local/runtime-results
+          HAKOPOD_VOLUME_RESIZE_TEST=1 go test ./internal/cluster -run '^TestLiveVolumeResizeShrinkGrowAndRejectOverflow$' -count=1 -json | tee .local/runtime-results/volume-resize.jsonl
       - name: Validate catalog and lifecycle behavior
         run: |
           set -o pipefail
@@ -66,10 +71,6 @@ jobs:
         run: |
           set -o pipefail
           HAKOPOD_PREVIEW_TEST=1 go test ./internal/cluster -run '^TestLiveServiceVolumeCleanupPreservesOtherServices$' -count=1 -json | tee .local/runtime-results/service-volumes.jsonl
-      - name: Verify offline volume growth and shrink
-        run: |
-          set -o pipefail
-          HAKOPOD_VOLUME_RESIZE_TEST=1 go test ./internal/cluster -run '^TestLiveVolumeResizeShrinkGrowAndRejectOverflow$' -count=1 -json | tee .local/runtime-results/volume-resize.jsonl
       - name: Verify explicit resources on deployments and jobs
         run: |
           set -o pipefail
