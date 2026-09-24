@@ -1,3 +1,4 @@
+import { CustomRoles, OrganizationSecurity, useCustomRoles, rolePermissions } from './pro-access'
 import { Input } from './ui/input'
 import { Icon } from './icons'
 import { useAuthStatus } from '../lib/installation-settings'
@@ -22,6 +23,13 @@ export default function TeamSettings() {
   const authStatus = useAuthStatus()
   const hasFeature = (feature: string) =>
     Boolean(license.data?.catalog.find((item) => item.id === feature)?.enabled)
+  const customRoles = useCustomRoles()
+  const projectRoles = [
+    'admin',
+    'developer',
+    'viewer',
+    ...(hasFeature('custom_roles') ? customRoles.data?.items.map((r) => r.id) || [] : []),
+  ]
   const cache = useQueryClient()
   const [selected, setSelected] = useState('')
   const [teamName, setTeamName] = useState('')
@@ -36,6 +44,7 @@ export default function TeamSettings() {
   const [invite, setInvite] = useState<'team' | 'project' | null>(null)
   const [grant, setGrant] = useState('')
   const [grantRole, setGrantRole] = useState('viewer')
+  const [grantReview, setGrantReview] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const teams = useQuery({
@@ -294,11 +303,7 @@ export default function TeamSettings() {
                       role={member.role}
                       subject={member.name || member.identity_id || member.team_id || 'member'}
                       scopeName={`project ${scope.project}`}
-                      roles={
-                        hasFeature('project_rbac')
-                          ? ['admin', 'developer', 'viewer']
-                          : [member.role]
-                      }
+                      roles={hasFeature('project_rbac') ? projectRoles : [member.role]}
                       onSave={async (role) => {
                         await unwrap(
                           client.PUT('/projects/{project}/members', {
@@ -331,6 +336,10 @@ export default function TeamSettings() {
                   className="inline-form"
                   onSubmit={async (e) => {
                     e.preventDefault()
+                    if (grantRole.startsWith('custom:') && !grantReview) {
+                      setGrantReview(true)
+                      return
+                    }
                     setBusy(true)
                     setError('')
                     try {
@@ -341,6 +350,7 @@ export default function TeamSettings() {
                         }),
                       )
                       setGrant('')
+                      setGrantReview(false)
                       refresh()
                     } catch (err) {
                       setError(message(err))
@@ -354,7 +364,10 @@ export default function TeamSettings() {
                     <SelectField
                       label="Grant a team access"
                       value={grant}
-                      onValueChange={(value) => setGrant(value)}
+                      onValueChange={(value) => {
+                        setGrant(value)
+                        setGrantReview(false)
+                      }}
                       required
                       options={[
                         {
@@ -373,17 +386,33 @@ export default function TeamSettings() {
                     <SelectField
                       label="Role"
                       value={grantRole}
-                      onValueChange={(value) => setGrantRole(value)}
+                      onValueChange={(value) => {
+                        setGrantRole(value)
+                        setGrantReview(false)
+                      }}
                       options={
-                        ['viewer', 'developer', 'admin'].map((role) => ({
+                        projectRoles.map((role) => ({
                           value: role,
-                          label: role,
+                          label: customRoles.data?.items.find((r) => r.id === role)?.name || role,
                         })) ?? []
                       }
                     />
                   </label>
+                  {grantReview && (
+                    <Note>
+                      Grant {customRoles.data?.items.find((r) => r.id === grantRole)?.name} to every
+                      member of this team in {scope.project}:{' '}
+                      {customRoles.data?.items
+                        .find((r) => r.id === grantRole)
+                        ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                        .join(' · ')}
+                      . Other memberships can grant additional access.
+                    </Note>
+                  )}
                   <Button type="submit" variant="primary" size="sm" disabled={busy || !grant}>
-                    Grant access
+                    {grantRole.startsWith('custom:') && !grantReview
+                      ? 'Review access'
+                      : 'Grant access'}
                   </Button>
                 </form>
               )}
@@ -562,6 +591,8 @@ export default function TeamSettings() {
           </div>
         </form>
       </Dialog>
+      <CustomRoles />
+      <OrganizationSecurity />
     </div>
   )
 }
@@ -579,6 +610,8 @@ function RoleEditor({
   scopeName: string
   onSave: (role: string) => Promise<void>
 }) {
+  const customRoles = useCustomRoles()
+  const [customReview, setCustomReview] = useState(false)
   const [next, setNext] = useState(role)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -591,6 +624,7 @@ function RoleEditor({
     try {
       await onSave(value)
       setConfirmOpen(false)
+      setCustomReview(false)
     } catch (err) {
       setError(message(err))
     } finally {
@@ -608,7 +642,8 @@ function RoleEditor({
             setError('')
             setConfirmation('')
             setConfirmOpen(true)
-          } else void save(next)
+          } else if (next.startsWith('custom:')) setCustomReview(true)
+          else void save(next)
         }}
       >
         <SelectField
@@ -616,9 +651,9 @@ function RoleEditor({
           value={next}
           onValueChange={(value) => setNext(value)}
           options={[
-            ...(roles.map((value) => ({
+            ...([...new Set([...roles, role])].map((value) => ({
               value: value,
-              label: value,
+              label: customRoles.data?.items.find((r) => r.id === value)?.name || value,
             })) ?? []),
             {
               value: '',
@@ -646,8 +681,43 @@ function RoleEditor({
             </Button>
           </>
         )}
-        {error && !confirmOpen && <RequestError error={error} />}
+        {error && !confirmOpen && !customReview && <RequestError error={error} />}
       </form>
+      <Dialog
+        className="wrap-anywhere"
+        open={customReview}
+        onOpenChange={(open) => {
+          if (!busy) setCustomReview(open)
+        }}
+        title="Review custom access"
+        description={`Apply this role to ${subject} in ${scopeName}. Other memberships may grant additional access.`}
+      >
+        <div className="dialog-body">
+          <p>{customRoles.data?.items.find((r) => r.id === next)?.name}</p>
+          <ul>
+            {customRoles.data?.items
+              .find((r) => r.id === next)
+              ?.permissions.map((p) => (
+                <li key={p}>{rolePermissions.find((x) => x.id === p)?.name || p}</li>
+              ))}
+          </ul>
+          {error && <RequestError error={error} />}
+        </div>
+        <div className="dialog-footer">
+          <Button variant="ghost" disabled={busy} onClick={() => setCustomReview(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={async () => {
+              await save(next)
+            }}
+          >
+            Apply permissions
+          </Button>
+        </div>
+      </Dialog>
       <Dialog
         open={confirmOpen}
         onOpenChange={(open) => {
@@ -697,6 +767,12 @@ function InviteDialog({
   project: string
   onClose: () => void
 }) {
+  const customRoles = useCustomRoles()
+  const license = useLicense()
+  const custom = license.data?.catalog.some((f) => f.id === 'custom_roles' && f.enabled)
+    ? customRoles.data?.items || []
+    : []
+  const [review, setReview] = useState(false)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState(target === 'team' ? 'member' : 'viewer')
   const [deliver, setDeliver] = useState(false)
@@ -725,6 +801,10 @@ function InviteDialog({
         onSubmit={async (e) => {
           e.preventDefault()
           if (busy || result) return
+          if (role.startsWith('custom:') && !review) {
+            setReview(true)
+            return
+          }
           setBusy(true)
           setError('')
           try {
@@ -770,7 +850,10 @@ function InviteDialog({
                 <Input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    setReview(false)
+                  }}
                   maxLength={254}
                   required
                 />
@@ -780,14 +863,17 @@ function InviteDialog({
                 <SelectField
                   label="Role"
                   value={role}
-                  onValueChange={(value) => setRole(value)}
+                  onValueChange={(value) => {
+                    setRole(value)
+                    setReview(false)
+                  }}
                   options={
                     (target === 'team'
                       ? ['member', 'admin']
-                      : ['viewer', 'developer', 'admin']
+                      : ['viewer', 'developer', 'admin', ...custom.map((r) => r.id)]
                     ).map((value) => ({
                       value: value,
-                      label: value,
+                      label: custom.find((r) => r.id === value)?.name || value,
                     })) ?? []
                   }
                 />
@@ -808,6 +894,16 @@ function InviteDialog({
               )}
             </>
           )}
+          {review && !result && (
+            <Note>
+              Invite {email} with {custom.find((r) => r.id === role)?.name} in {project}:{' '}
+              {custom
+                .find((r) => r.id === role)
+                ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                .join(' · ')}
+              .
+            </Note>
+          )}
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
@@ -816,7 +912,11 @@ function InviteDialog({
           </Button>
           {!result && (
             <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? 'Creating…' : 'Create invitation'}
+              {busy
+                ? 'Creating…'
+                : role.startsWith('custom:') && !review
+                  ? 'Review invitation'
+                  : 'Create invitation'}
             </Button>
           )}
         </div>

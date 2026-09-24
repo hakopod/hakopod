@@ -24,6 +24,7 @@ export function resolveWorkspaceScope(
 // Browser credentials carry a broad session envelope; project roles determine
 // which controls are available. Go independently authorizes every request.
 export function canAccess(identity: Identity, project: string, permission: string) {
+  if (identity.mfa_required) return false
   if (identity.admin) return true
   if (identity.credential_type === 'browser') {
     const allowed: Record<string, string[]> = {
@@ -33,7 +34,9 @@ export function canAccess(identity: Identity, project: string, permission: strin
     }
     return Boolean(
       identity.project_roles?.some(
-        (entry) => entry.project === project && allowed[entry.role]?.includes(permission),
+        (entry) =>
+          entry.project === project &&
+          (entry.permissions ?? allowed[entry.role])?.includes(permission),
       ),
     )
   }

@@ -60,6 +60,7 @@ import { Route as NetworksNetworkNameConnectRouteImport } from './routes/network
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
+import { Route as SettingsRolesNewRouteImport } from './routes/settings.roles.new'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
 import { Route as ApplicationsApplicationIdPreviewsNewRouteImport } from './routes/applications.$applicationId.previews.new'
 import { Route as ApplicationsApplicationIdServicesNewRouteImport } from './routes/applications.$applicationId.services.new'
@@ -71,6 +72,7 @@ import { Route as SettingsGitConnectionsConnectionIdRouteImport } from './routes
 import { Route as SettingsGitConnectionsNewRouteImport } from './routes/settings.git.connections.new'
 import { Route as SettingsGitGithubCallbackRouteImport } from './routes/settings.git.github.callback'
 import { Route as SettingsGitGithubInstalledRouteImport } from './routes/settings.git.github.installed'
+import { Route as SettingsRolesRoleEditRouteImport } from './routes/settings.roles.$role.edit'
 import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -340,6 +342,11 @@ const SettingsLoginProvidersProviderRoute =
     path: '/login-providers/$provider',
     getParentRoute: () => SettingsRoute,
   } as any)
+const SettingsRolesNewRoute = SettingsRolesNewRouteImport.update({
+  id: '/roles/new',
+  path: '/roles/new',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSecretProvidersNewRoute =
   SettingsSecretProvidersNewRouteImport.update({
     id: '/new',
@@ -406,6 +413,11 @@ const SettingsGitGithubInstalledRoute =
     path: '/git/github/installed',
     getParentRoute: () => SettingsRoute,
   } as any)
+const SettingsRolesRoleEditRoute = SettingsRolesRoleEditRouteImport.update({
+  id: '/roles/$role/edit',
+  path: '/roles/$role/edit',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSecretProvidersProviderNameEditRoute =
   SettingsSecretProvidersProviderNameEditRouteImport.update({
     id: '/$providerName/edit',
@@ -465,6 +477,7 @@ export interface FileRoutesByFullPath {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
+  '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
@@ -476,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
+  '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesByTo {
@@ -530,6 +544,7 @@ export interface FileRoutesByTo {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
+  '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
@@ -541,6 +556,7 @@ export interface FileRoutesByTo {
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
+  '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRoutesById {
@@ -596,6 +612,7 @@ export interface FileRoutesById {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
+  '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
@@ -607,6 +624,7 @@ export interface FileRoutesById {
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
   '/settings/git/github/callback': typeof SettingsGitGithubCallbackRoute
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
+  '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
 }
 export interface FileRouteTypes {
@@ -663,6 +681,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
+    | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
@@ -674,6 +693,7 @@ export interface FileRouteTypes {
     | '/settings/git/connections/new'
     | '/settings/git/github/callback'
     | '/settings/git/github/installed'
+    | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -728,6 +748,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
+    | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
@@ -739,6 +760,7 @@ export interface FileRouteTypes {
     | '/settings/git/connections/new'
     | '/settings/git/github/callback'
     | '/settings/git/github/installed'
+    | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
   id:
     | '__root__'
@@ -793,6 +815,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/login-providers/$provider'
+    | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
@@ -804,6 +827,7 @@ export interface FileRouteTypes {
     | '/settings/git/connections/new'
     | '/settings/git/github/callback'
     | '/settings/git/github/installed'
+    | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
   fileRoutesById: FileRoutesById
 }
@@ -1192,6 +1216,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsLoginProvidersProviderRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/roles/new': {
+      id: '/settings/roles/new'
+      path: '/roles/new'
+      fullPath: '/settings/roles/new'
+      preLoaderRoute: typeof SettingsRolesNewRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/secret-providers/new': {
       id: '/settings/secret-providers/new'
       path: '/new'
@@ -1267,6 +1298,13 @@ declare module '@tanstack/react-router' {
       path: '/git/github/installed'
       fullPath: '/settings/git/github/installed'
       preLoaderRoute: typeof SettingsGitGithubInstalledRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/roles/$role/edit': {
+      id: '/settings/roles/$role/edit'
+      path: '/roles/$role/edit'
+      fullPath: '/settings/roles/$role/edit'
+      preLoaderRoute: typeof SettingsRolesRoleEditRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/secret-providers/$providerName/edit': {
@@ -1417,10 +1455,12 @@ interface SettingsRouteChildren {
   SettingsSmtpRoute: typeof SettingsSmtpRoute
   SettingsGitCallbackRoute: typeof SettingsGitCallbackRoute
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
+  SettingsRolesNewRoute: typeof SettingsRolesNewRoute
   SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
   SettingsGitConnectionsNewRoute: typeof SettingsGitConnectionsNewRoute
   SettingsGitGithubCallbackRoute: typeof SettingsGitGithubCallbackRoute
   SettingsGitGithubInstalledRoute: typeof SettingsGitGithubInstalledRoute
+  SettingsRolesRoleEditRoute: typeof SettingsRolesRoleEditRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -1431,11 +1471,13 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSmtpRoute: SettingsSmtpRoute,
   SettingsGitCallbackRoute: SettingsGitCallbackRoute,
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
+  SettingsRolesNewRoute: SettingsRolesNewRoute,
   SettingsGitConnectionsConnectionIdRoute:
     SettingsGitConnectionsConnectionIdRoute,
   SettingsGitConnectionsNewRoute: SettingsGitConnectionsNewRoute,
   SettingsGitGithubCallbackRoute: SettingsGitGithubCallbackRoute,
   SettingsGitGithubInstalledRoute: SettingsGitGithubInstalledRoute,
+  SettingsRolesRoleEditRoute: SettingsRolesRoleEditRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

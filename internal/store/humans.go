@@ -68,8 +68,10 @@ func (p Principal) IsHuman() bool {
 }
 
 type ProjectRole struct {
-	Project string `json:"project"`
-	Role    string `json:"role"`
+	Permissions []string `json:"permissions,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Project     string   `json:"project"`
+	Role        string   `json:"role"`
 }
 
 func rolePermissions(role string) []string {
@@ -82,6 +84,9 @@ func rolePermissions(role string) []string {
 	return nil
 }
 func (p Principal) CanManageProject(project string) bool {
+	if p.MFARequired {
+		return false
+	}
 	if p.IsAdmin() {
 		return true
 	}
@@ -113,7 +118,34 @@ func (s *Store) projectRoles(ctx context.Context, id string) ([]ProjectRole, err
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if licenseAllows(status, "custom_roles") {
+		roles, err := s.Pool.Query(ctx, "SELECT id,name,permissions FROM custom_roles LIMIT 100")
+		if err != nil {
+			return nil, err
+		}
+		defer roles.Close()
+		for roles.Next() {
+			var id, name string
+			var permissions []string
+			if err = roles.Scan(&id, &name, &permissions); err != nil {
+				return nil, err
+			}
+			for i := range out {
+				if out[i].Role == id {
+					out[i].Name = name
+					out[i].Permissions = permissions
+				}
+			}
+		}
+		if err = roles.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 type User struct {
@@ -259,6 +291,9 @@ type Session struct {
 }
 
 func (s *Store) NewSession(ctx context.Context, identity, kind, project, environment string, permissions []string) (Session, error) {
+	return s.NewVerifiedSession(ctx, identity, kind, project, environment, permissions, false)
+}
+func (s *Store) NewVerifiedSession(ctx context.Context, identity, kind, project, environment string, permissions []string, verified bool) (Session, error) {
 	if kind != "browser" && kind != "cli" {
 		return Session{}, ErrInput
 	}
@@ -294,7 +329,7 @@ func (s *Store) NewSession(ctx context.Context, identity, kind, project, environ
 	if _, err = tx.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE identity_id=$1 AND kind IN ('browser','cli') AND revoked_at IS NULL AND id IN (SELECT id FROM api_keys WHERE identity_id=$1 AND kind IN ('browser','cli') AND revoked_at IS NULL ORDER BY created_at DESC OFFSET 19)", identity); err != nil {
 		return Session{}, err
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,kind,permissions,project,environment,expires_at) VALUES($1,$2,$3,$4,$5,$3,$6,$7,$8,$9)", id, identity, kind, digest[:], "hs_"+id[:8], permissions, project, environment, expires); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,kind,permissions,project,environment,expires_at,mfa_verified) VALUES($1,$2,$3,$4,$5,$3,$6,$7,$8,$9,$10)", id, identity, kind, digest[:], "hs_"+id[:8], permissions, project, environment, expires, verified); err != nil {
 		return Session{}, err
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'session.create',$3)", identity, id, kind); err != nil {

@@ -20,6 +20,8 @@ export default function AccountSettings() {
   const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [verifyCode, setVerifyCode] = useState('')
+  const [verifyError, setVerifyError] = useState('')
   const security = useQuery({
     queryKey: ['account-security'],
     queryFn: ({ signal }) => unwrap(client.GET('/auth/security', { signal })),
@@ -33,6 +35,8 @@ export default function AccountSettings() {
     gcTime: 0,
   })
   const refresh = () => {
+    void cache.invalidateQueries({ queryKey: ['me'] })
+    void cache.invalidateQueries({ queryKey: ['cloud-session'] })
     void cache.invalidateQueries({ queryKey: ['account-security'] })
     void cache.invalidateQueries({ queryKey: ['account-sessions'] })
   }
@@ -62,6 +66,52 @@ export default function AccountSettings() {
       ) : (
         security.data && (
           <>
+            {security.data.organization_mfa_required && (
+              <Note>
+                MFA is required by your organization. Keep at least one authenticator or passkey.
+              </Note>
+            )}
+            {!security.data.mfa_verified && security.data.totp_enabled && (
+              <form
+                className="flex flex-wrap items-end gap-3 py-3"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  setBusy(true)
+                  if (busy) return
+                  setVerifyError('')
+                  try {
+                    await unwrap(client.POST('/auth/mfa/verify', { body: { code: verifyCode } }))
+                    setVerifyCode('')
+                    refresh()
+                  } catch (e) {
+                    setVerifyError(message(e))
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                <label className="grid gap-2">
+                  Verify this session
+                  <Input
+                    autoComplete="one-time-code"
+                    required
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value)}
+                    placeholder="Authenticator or recovery code"
+                  />
+                </label>
+                <Button type="submit" variant="primary" disabled={busy}>
+                  Verify MFA
+                </Button>
+                {verifyError && <RequestError error={verifyError} />}
+              </form>
+            )}
+            {!security.data.mfa_verified && !security.data.totp_enabled && (
+              <Note>
+                Set up an authenticator below, or sign out and sign in with an existing passkey, to
+                verify this session.
+              </Note>
+            )}
             {!security.data.password_enabled && (
               <Note>
                 Set a password before adding an authenticator or passkey.{' '}
@@ -83,7 +133,14 @@ export default function AccountSettings() {
                     : 'Not enabled'}
                 </p>
                 <Button
-                  disabled={!security.data.password_enabled}
+                  disabled={
+                    !security.data.password_enabled ||
+                    Boolean(
+                      security.data.organization_mfa_required &&
+                      security.data.totp_enabled &&
+                      !security.data.passkeys.length,
+                    )
+                  }
                   onClick={() => setAction(security.data.totp_enabled ? 'disable' : 'totp')}
                 >
                   {security.data.totp_enabled ? 'Disable authenticator' : 'Set up authenticator'}

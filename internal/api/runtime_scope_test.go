@@ -24,3 +24,11 @@ func TestRuntimeScopeCannotGrantOrCrossWorkspaceAuthority(t *testing.T) {
 		t.Fatal("machine key accepted as customer browser")
 	}
 }
+
+func TestRuntimeCustomPermissionsOnlyNarrowAuthority(t *testing.T) {
+	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "browser", Permissions: []string{"admin"}, ProjectRoles: []store.ProjectRole{{Project: "project", Role: "developer"}}}
+	narrowed, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "project", Environment: "production", Permissions: []string{"deployments:read", "deployments:approve", "admin"}})
+	if err != nil || !narrowed.Allows("deployments:read", "project", "production", "") || narrowed.Allows("logs:read", "project", "production", "") || narrowed.Allows("deployments:write", "project", "production", "") || narrowed.IsAdmin() {
+		t.Fatal("embedding widened or lost authority", err)
+	}
+}

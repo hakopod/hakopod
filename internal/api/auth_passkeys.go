@@ -302,7 +302,7 @@ func (s *Server) authPasskeyLoginFinish(w http.ResponseWriter, r *http.Request) 
 		authFailure(w, store.ErrUnauthorized)
 		return
 	}
-	session, err := s.Store.NewSession(r.Context(), loaded.ID, "browser", "", "", nil)
+	session, err := s.Store.NewVerifiedSession(r.Context(), loaded.ID, "browser", "", "", nil, true)
 	if err != nil {
 		authFailure(w, err)
 		return
@@ -324,13 +324,27 @@ func (s *Server) authPasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	result, err := s.Store.Pool.Exec(r.Context(), "DELETE FROM passkeys WHERE id=$1 AND identity_id=$2", r.PathValue("id"), who(r).ID)
+	tx, err := s.Store.Pool.Begin(r.Context())
+	if err != nil {
+		authFailure(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if err = s.Store.CheckFactorRemovalTx(r.Context(), tx, who(r), r.PathValue("id"), false); err != nil {
+		authFailure(w, err)
+		return
+	}
+	result, err := tx.Exec(r.Context(), "DELETE FROM passkeys WHERE id=$1 AND identity_id=$2", r.PathValue("id"), who(r).ID)
 	if err != nil {
 		authFailure(w, err)
 		return
 	}
 	if result.RowsAffected() != 1 {
 		authFailure(w, store.ErrUnauthorized)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		authFailure(w, err)
 		return
 	}
 	write(w, 200, map[string]bool{"deleted": true})

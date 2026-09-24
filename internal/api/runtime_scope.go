@@ -4,9 +4,14 @@ import (
 	"context"
 	"github.com/hakopod/hakopod/internal/store"
 	"net/http"
+	"slices"
 )
 
-type RuntimeScope struct{ Identity, Project, Environment string }
+type RuntimeScope struct {
+	Identity, Project, Environment string
+	Permissions                    []string
+	Authorize                      func(context.Context) error
+}
 type runtimeScopeKey struct{}
 
 // WithRuntimeScope narrows an already authenticated human at the trusted product
@@ -20,7 +25,7 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 	}
 	permissions := []string{}
 	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write"} {
-		if p.Allows(value, scope.Project, scope.Environment, "") {
+		if p.Allows(value, scope.Project, scope.Environment, "") && (scope.Permissions == nil || slices.Contains(scope.Permissions, value)) {
 			permissions = append(permissions, value)
 		}
 	}
@@ -48,6 +53,11 @@ func (s *Server) freshRuntimePrincipal(r *http.Request) (store.Principal, error)
 	p, err := s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
 	if err == nil {
 		if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+			if scope.Authorize != nil {
+				if err := scope.Authorize(r.Context()); err != nil {
+					return store.Principal{}, err
+				}
+			}
 			return scopedRuntimePrincipal(p, scope)
 		}
 	}

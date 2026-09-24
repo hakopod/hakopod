@@ -1,3 +1,4 @@
+import AccountSettings from './account-settings'
 import { Brand, brandLabel } from './brand'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import {
@@ -614,11 +615,22 @@ function Workspace({
         </header>
         <main id="main-content" tabIndex={-1} className="page-content hako-page-content">
           {sessionError && <RequestError error={sessionError} />}
-          {scopedNavigation && projects.error && !overview && !projectPath && (
-            <ErrorState error={projects.error} retry={() => void projects.refetch()} />
-          )}
+          {!identity.mfa_required &&
+            scopedNavigation &&
+            projects.error &&
+            !overview &&
+            !projectPath && (
+              <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+            )}
           <EditionGate>
-            {dashboardEdition.cloud || overview || projectPath || resourcePage ? (
+            {identity.mfa_required ? (
+              <>
+                <Note>
+                  Your organization requires a verified MFA session before you can access workloads.
+                </Note>
+                <AccountSettings />
+              </>
+            ) : dashboardEdition.cloud || overview || projectPath || resourcePage ? (
               children
             ) : !project && projects.isPending ? (
               <Loading />

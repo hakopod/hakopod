@@ -219,7 +219,7 @@ func alarmVisibility(p Principal, scope AlarmScope, status string) alarmFilter {
 			if p.Email != "" {
 				projects := []string{}
 				for _, role := range p.ProjectRoles {
-					if contains(rolePermissions(role.Role), "deployments:read") {
+					if contains(role.permissions(), "deployments:read") {
 						projects = append(projects, role.Project)
 					}
 				}

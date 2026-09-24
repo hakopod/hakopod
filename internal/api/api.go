@@ -254,7 +254,17 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			failure(w, err)
 			return
 		}
+		if p.MFARequired && !mfaRecoveryRoute(r.Method, r.URL.Path) {
+			problem(w, 403, "mfa_enrollment_required", "Your organization requires a verified multi-factor session. Open Account security to continue.")
+			return
+		}
 		if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+			if scope.Authorize != nil {
+				if err = scope.Authorize(r.Context()); err != nil {
+					failure(w, store.ErrForbidden)
+					return
+				}
+			}
 			p, err = scopedRuntimePrincipal(p, scope)
 			if err != nil {
 				failure(w, err)

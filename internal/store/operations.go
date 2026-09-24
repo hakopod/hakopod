@@ -111,6 +111,11 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, err
 	}
+	if s.AdmitDeployment != nil {
+		if err = s.AdmitDeployment(ctx, tx, p, project, env, idem); err != nil {
+			return Deployment{}, err
+		}
+	}
 	// Serialize network membership acceptance with grants being edited or removed.
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,31))", "virtual-network:"+project+":"+env); err != nil {
 		return Deployment{}, err

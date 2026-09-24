@@ -132,6 +132,13 @@ func (s *Server) registerAuthRoutes(public, protected *http.ServeMux) {
 	protected.HandleFunc("GET /api/v1/auth/sessions", s.authSessions)
 	protected.HandleFunc("DELETE /api/v1/auth/sessions/{id}", s.authRevokeSession)
 	protected.HandleFunc("GET /api/v1/auth/security", s.authSecurity)
+	protected.HandleFunc("POST /api/v1/auth/mfa/verify", s.authMFAVerify)
+	protected.HandleFunc("GET /api/v1/roles", s.customRoles)
+	protected.HandleFunc("POST /api/v1/roles", s.customRoles)
+	protected.HandleFunc("PUT /api/v1/roles/{role}", s.customRoles)
+	protected.HandleFunc("DELETE /api/v1/roles/{role}", s.customRoles)
+	protected.HandleFunc("GET /api/v1/organization/security", s.organizationSecurity)
+	protected.HandleFunc("PUT /api/v1/organization/security", s.organizationSecurity)
 	protected.HandleFunc("POST /api/v1/auth/mfa/totp/start", s.authTOTPStart)
 	protected.HandleFunc("POST /api/v1/auth/mfa/totp/confirm", s.authTOTPConfirm)
 	protected.HandleFunc("POST /api/v1/auth/mfa/totp/disable", s.authTOTPDisable)
@@ -244,7 +251,7 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	session, err := s.Store.NewSession(r.Context(), p.ID, "browser", "", "", nil)
+	session, err := s.Store.NewVerifiedSession(r.Context(), p.ID, "browser", "", "", nil, len(p.TOTPSecret) > 0)
 	if err != nil {
 		authFailure(w, err)
 		return
