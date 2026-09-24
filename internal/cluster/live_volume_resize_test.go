@@ -12,6 +12,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -81,6 +82,21 @@ func TestLiveVolumeResizeShrinkGrowAndRejectOverflow(t *testing.T) {
 		op := fmt.Sprintf("resize-test-%d-%d", time.Now().Unix(), index)
 		next, plan, e := spec.ResizeVolume(app, currentClaim, size, op)
 		if e != nil {
+			t.Fatal(e)
+		}
+		// Exercise a namespace at its storage/PVC limit, as hosted workspaces
+		// are. Migration must reserve one bounded temporary allowance.
+		quota, e := c.kube.CoreV1().ResourceQuotas(Namespace(name)).Get(ctx, "hakopod-budget", metav1.GetOptions{})
+		if e != nil {
+			t.Fatal(e)
+		}
+		quota.Spec.Hard[corev1.ResourcePersistentVolumeClaims] = resource.MustParse("2")
+		existingGiB := int64(4)
+		if index == 1 {
+			existingGiB = 3
+		}
+		quota.Spec.Hard[corev1.ResourceRequestsStorage] = resource.MustParse(fmt.Sprintf("%dGi", existingGiB))
+		if _, e = c.kube.CoreV1().ResourceQuotas(Namespace(name)).Update(ctx, quota, metav1.UpdateOptions{}); e != nil {
 			t.Fatal(e)
 		}
 		target.OperationID = op

@@ -181,3 +181,48 @@ func TestVolumeResizeDoesNotRaceRuntimeMaintenance(t *testing.T) {
 		t.Fatal("maintenance race", err)
 	}
 }
+
+func TestVolumeResizeRetainedOriginalAllowsRepairWithoutMoreStorage(t *testing.T) {
+	s, p, a := resizeFixture(t)
+	ctx := context.Background()
+	r, err := s.StartVolumeResize(ctx, p, a.ID, "api-data", 5, a.Revision, "resize-repair", JSON(map[string]string{"source_uid": "source"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.ClaimVolumeResize(ctx)
+	if err != nil || c == nil {
+		t.Fatal(err)
+	}
+	if err = c.Save(ctx, "copying", map[string]any{"verified": true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.BeginCutover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.CutoverResult(ctx, map[string]any{}, "startup failed"); err != nil {
+		t.Fatal(err)
+	}
+	c.Release()
+	if err = s.ResizeAction(ctx, p, a.ID, r.ID, "retain", ""); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.Application(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Accept(ctx, p, a.Project, a.Environment, current.Spec, current.Revision, "repair-same-storage"); err != nil {
+		t.Fatal("retained original prevented repair", err)
+	}
+	var total int64
+	if err = s.Pool.QueryRow(ctx, "SELECT sum(size_gib) FROM storage_reservations WHERE application_id=$1", a.ID).Scan(&total); err != nil || total != 15 {
+		t.Fatal("repair discounted original", total, err)
+	}
+	current, err = s.Application(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Spec.Volumes["extra"] = spec.NamedVolume{SizeGiB: 1, AccessMode: "ReadWriteOnce"}
+	if _, err = s.Accept(ctx, p, a.Project, a.Environment, current.Spec, current.Revision, "repair-extra-storage"); err == nil {
+		t.Fatal("repair allowed additional storage above quota")
+	}
+}

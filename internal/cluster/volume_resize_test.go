@@ -6,6 +6,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -83,5 +84,69 @@ func TestResizeClaimGuardsNeverRecreateMissingTarget(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResizeHelperKeepsHostedPlacementAndBoundedMemory(t *testing.T) {
+	target := Target{ApplicationID: "test", OperationID: "operation", policy: &WorkloadPolicy{NodeName: "allocated-worker", Pool: "free", RuntimeClass: "runsc", MemoryRequest: "2Gi"}}
+	pod := resizeHelperPod(target, spec.VolumeResize{SizeGiB: 1}, &VolumeResizeJournal{})
+	if pod.Spec.NodeSelector["kubernetes.io/hostname"] != "allocated-worker" || pod.Spec.NodeSelector["hakopod.com/pool"] != "free" || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != "runsc" || len(pod.Spec.Tolerations) != 1 {
+		t.Fatal("helper escaped hosted scheduling policy")
+	}
+	if pod.Spec.Containers[0].Resources.Requests.Memory().String() != "64Mi" {
+		t.Fatal("helper inherited application memory")
+	}
+	changed := pod.DeepCopy()
+	changed.Spec.RuntimeClassName = nil
+	if validateResizeHelper(changed, pod) == nil {
+		t.Fatal("accepted missing sandbox")
+	}
+	changed = pod.DeepCopy()
+	changed.Spec.NodeSelector["kubernetes.io/hostname"] = "other-node"
+	if validateResizeHelper(changed, pod) == nil {
+		t.Fatal("accepted changed allocation")
+	}
+}
+
+func TestResizeQuotaIsBoundedDurableAndRestored(t *testing.T) {
+	ctx := context.Background()
+	target := Target{ApplicationID: "test", OperationID: "resize", Project: "demo", Environment: "development"}
+	q := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "hakopod-budget", Namespace: Namespace(target.ApplicationID), Labels: labelsFor(target, "")}, Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{corev1.ResourceRequestsStorage: resource.MustParse("16Gi"), corev1.ResourcePersistentVolumeClaims: resource.MustParse("16"), corev1.ResourceLimitsMemory: resource.MustParse("1Gi")}}}
+	kube := fake.NewClientset(q)
+	c := &Client{kube: kube}
+	for i := 0; i < 3; i++ {
+		if err := c.resizeQuota(ctx, target, 8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := kube.CoreV1().ResourceQuotas(q.Namespace).Get(ctx, q.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := got.Spec.Hard[corev1.ResourceRequestsStorage]
+	claims := got.Spec.Hard[corev1.ResourcePersistentVolumeClaims]
+	memory := got.Spec.Hard[corev1.ResourceLimitsMemory]
+	if storage.Value() != 24<<30 || claims.Value() != 17 || memory.Value() != 1<<30 {
+		t.Fatal("budget accumulated or compute changed", got.Spec)
+	}
+	foreign := target
+	foreign.OperationID = "foreign"
+	if c.resizeQuota(ctx, foreign, 8) == nil || c.restoreResizeQuota(ctx, foreign) == nil {
+		t.Fatal("foreign operation took quota")
+	}
+	if err = c.restoreResizeQuota(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.restoreResizeQuota(ctx, target); err != nil {
+		t.Fatal("restore not idempotent", err)
+	}
+	got, err = kube.CoreV1().ResourceQuotas(q.Namespace).Get(ctx, q.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage = got.Spec.Hard[corev1.ResourceRequestsStorage]
+	claims = got.Spec.Hard[corev1.ResourcePersistentVolumeClaims]
+	if storage.Value() != 16<<30 || claims.Value() != 16 || got.Annotations[resizeQuotaKey] != "" {
+		t.Fatal("budget not restored")
 	}
 }

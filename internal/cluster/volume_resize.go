@@ -118,6 +118,16 @@ func (c *Client) PrepareVolumeResize(ctx context.Context, t Target, next spec.Ap
 	}
 	base := t
 	t.BeforeStep = func(step context.Context) error { return c.checkResizeSource(step, base, p, j) }
+	policyTarget := t
+	policyTarget.Spec = next
+	var policyErr error
+	t.policy, policyErr = c.workloadPolicy(ctx, policyTarget)
+	if policyErr != nil {
+		return false, policyErr
+	}
+	if err := c.resizeQuota(ctx, t, p.SizeGiB); err != nil {
+		return false, err
+	}
 	ns := Namespace(t.ApplicationID)
 	claims := c.kube.CoreV1().PersistentVolumeClaims(ns)
 	source, err := claims.Get(ctx, p.Claim, metav1.GetOptions{})
@@ -322,6 +332,9 @@ func (c *Client) RemoveResizeHelper(ctx context.Context, t Target, j *VolumeResi
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
+	if err := c.restoreResizeQuota(ctx, t); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -382,7 +395,13 @@ func resizeHelperPod(t Target, p spec.VolumeResize, j *VolumeResizeJournal) *cor
 	ns := Namespace(t.ApplicationID)
 	labels := labelsFor(t, "")
 	labels[resizeKey] = t.OperationID
-	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, Annotations: map[string]string{"hakopod.io/source-uid": string(j.SourceUID), "hakopod.io/target-uid": string(j.TargetUID)}}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, ActiveDeadlineSeconds: ptr(int64(1800)), AutomountServiceAccountToken: ptr(false), EnableServiceLinks: ptr(false), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: ptr(true), RunAsUser: ptr(p.User), RunAsGroup: ptr(p.Group), FSGroup: ptr(p.FSGroup), FSGroupChangePolicy: ptr(corev1.FSGroupChangeOnRootMismatch), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{{Name: "copy", Image: volumeCopyImage, Command: []string{"python", "-I", "-B", "/script/copy.py", strconv.FormatInt(p.SizeGiB<<30, 10), t.OperationID}, SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr(true), AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}, Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("1Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("256Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}}, VolumeMounts: []corev1.VolumeMount{{Name: "source", MountPath: "/source", ReadOnly: true}, {Name: "target", MountPath: "/target"}, {Name: "script", MountPath: "/script", ReadOnly: true}}}}, Volumes: []corev1.Volume{{Name: "source", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: p.Claim, ReadOnly: true}}}, {Name: "target", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: p.TargetClaim}}}, {Name: "script", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: name}, DefaultMode: ptr(int32(0444))}}}}}}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, Annotations: map[string]string{"hakopod.io/source-uid": string(j.SourceUID), "hakopod.io/target-uid": string(j.TargetUID)}}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, ActiveDeadlineSeconds: ptr(int64(1800)), AutomountServiceAccountToken: ptr(false), EnableServiceLinks: ptr(false), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: ptr(true), RunAsUser: ptr(p.User), RunAsGroup: ptr(p.Group), FSGroup: ptr(p.FSGroup), FSGroupChangePolicy: ptr(corev1.FSGroupChangeOnRootMismatch), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{{Name: "copy", Image: volumeCopyImage, Command: []string{"python", "-I", "-B", "/script/copy.py", strconv.FormatInt(p.SizeGiB<<30, 10), t.OperationID}, SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr(true), AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}, Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("1Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("256Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}}, VolumeMounts: []corev1.VolumeMount{{Name: "source", MountPath: "/source", ReadOnly: true}, {Name: "target", MountPath: "/target"}, {Name: "script", MountPath: "/script", ReadOnly: true}}}}, Volumes: []corev1.Volume{{Name: "source", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: p.Claim, ReadOnly: true}}}, {Name: "target", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: p.TargetClaim}}}, {Name: "script", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: name}, DefaultMode: ptr(int32(0444))}}}}}}
+	if t.policy != nil {
+		placement := *t.policy
+		placement.MemoryRequest = "" // The bounded helper is not an application replica.
+		applyWorkloadPolicy(&placement, &pod.Spec)
+	}
+	return pod
 }
 
 // Compare the executable helper contract, allowing only API-server defaults.
@@ -393,7 +412,7 @@ func validateResizeHelper(actual, expected *corev1.Pod) error {
 	if a.HostNetwork || a.HostPID || a.HostIPC || len(a.InitContainers) != 0 || len(a.EphemeralContainers) != 0 || len(a.ImagePullSecrets) != 0 ||
 		!reflect.DeepEqual(a.SecurityContext, e.SecurityContext) || !reflect.DeepEqual(a.AutomountServiceAccountToken, e.AutomountServiceAccountToken) ||
 		!reflect.DeepEqual(a.EnableServiceLinks, e.EnableServiceLinks) || !reflect.DeepEqual(a.ActiveDeadlineSeconds, e.ActiveDeadlineSeconds) ||
-		a.RestartPolicy != e.RestartPolicy || !reflect.DeepEqual(a.Volumes, e.Volumes) || len(a.Containers) != 1 {
+		!reflect.DeepEqual(a.RuntimeClassName, e.RuntimeClassName) || !reflect.DeepEqual(a.NodeSelector, e.NodeSelector) || a.RestartPolicy != e.RestartPolicy || !reflect.DeepEqual(a.Volumes, e.Volumes) || len(a.Containers) != 1 {
 		return fmt.Errorf("migration helper execution contract changed")
 	}
 	container := *a.Containers[0].DeepCopy()

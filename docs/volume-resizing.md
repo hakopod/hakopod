@@ -16,7 +16,7 @@ Targets are whole GiB from 1 through 200. Cloud applies the workspace storage al
 
 Affected services must run one replica, with autoscaling and serverless scaling disabled. Shared volume users must have compatible UID, GID and filesystem group settings. Applications containing scheduled or deployment jobs, expiring previews and showcase applications are currently excluded. Block-device volumes are unsupported.
 
-The helper runs without root, capabilities, service-account credentials or cloud credentials. It rejects inaccessible ownership, special files, unsafe set-id files, and inventories above 50,000 entries, 128 levels or 8 MiB of path names. Unsupported files stop migration while preserving the original. Some existing databases may need a maintenance window and ownership repair by their administrator before they qualify.
+The helper follows the workspace's assigned node and sandbox and runs without root, capabilities, service-account credentials or cloud credentials. Its temporary Kubernetes allowance adds exactly one PVC and the target size; retries cannot accumulate allowance, and compute limits remain unchanged. The original quota is restored when the helper is removed. Provider-owned mount-root metadata is normalized to the service identity; application-file ownership remains verified. It rejects inaccessible ownership, special files, unsafe set-id files, and inventories above 50,000 entries, 128 levels or 8 MiB of path names. Unsupported files stop migration while preserving the original. Some existing databases may need a maintenance window and ownership repair by their administrator before they qualify.
 
 ## Recovery
 
@@ -24,7 +24,7 @@ The database stores operation status, original and target identities, copy verif
 
 Before switching, **Cancel resize** stops the helper, resumes services on the original, waits for health and then reclaims staging storage. **Retry** retries a failed step. If a helper has not stopped, original services remain stopped until a subsequent retry or cancellation can safely resume them.
 
-After switching, new writes may exist on the new volume, so cancellation and automatic rollback are unavailable. Retry startup, or choose **Keep both and end maintenance** to permit an ordinary corrective deployment while preserving both copies. Original deletion remains blocked until a current deployment succeeds and the engine observes healthy services. Replaced, missing or untrusted volume/helper identities stop maintenance rather than silently creating empty storage.
+After switching, new writes may exist on the new volume, so cancellation and automatic rollback are unavailable. Retry startup, or choose **Keep both and end maintenance** to permit an ordinary corrective deployment while preserving both copies. Repairs using the same reserved volumes remain possible while both copies exceed the final storage allowance; adding storage is still blocked. Original deletion remains blocked until a current deployment succeeds and the engine observes healthy services. Replaced, missing or untrusted volume/helper identities stop maintenance rather than silently creating empty storage.
 
 ## Verification
 
