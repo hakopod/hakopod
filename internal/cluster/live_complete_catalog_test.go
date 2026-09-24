@@ -199,13 +199,24 @@ func TestLiveCompleteCatalog(t *testing.T) {
 		}
 		return response.StatusCode, string(data)
 	}
+	protectedPath := "/"
+	if id == "dagu" {
+		// Dagu serves its static SPA publicly; workflow data is API-authenticated.
+		protectedPath = "/api/v1/dags"
+	}
 	if id == "dagu" || id == "couchdb" {
-		code, _ := request("GET", "/", "", false)
+		code, _ := request("GET", protectedPath, "", false)
 		if code != 401 && code != 403 {
 			t.Fatalf("unauthenticated request was not rejected: %d", code)
 		}
 	}
-	code, body := request("GET", "/", "", id == "dagu" || id == "couchdb")
+	code, body := request("GET", protectedPath, "", id == "dagu" || id == "couchdb")
+	if id == "dagu" {
+		var payload map[string]json.RawMessage
+		if code != 200 || json.Unmarshal([]byte(body), &payload) != nil {
+			t.Fatal("authenticated Dagu workflow API did not return JSON", code)
+		}
+	}
 	if code < 200 || code >= 400 || (code < 300 && len(body) == 0) {
 		t.Fatalf("application page unavailable: %d", code)
 	}
