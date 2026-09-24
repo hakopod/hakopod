@@ -59,12 +59,18 @@ func TestDeploymentSecretSetupCreatesWithoutRotation(t *testing.T) {
 	if err != nil || after["password"] != values["password"] {
 		t.Fatal("secret rotated", err)
 	}
-	result := call("POST", "/secrets/requirements", map[string]any{"project": "demo", "environment": "development", "spec": app}, 200)
+	result := call("POST", "/deployment-secret-requirements", map[string]any{"project": "demo", "environment": "development", "spec": app}, 200)
 	if json.Unmarshal(result, &plan) != nil || len(plan.Missing) != 0 {
 		t.Fatal("saved secret still missing")
 	}
 	response = call("POST", "/deployments", input, 202)
 	if bytes.Contains(response, []byte(values["password"])) {
 		t.Fatal("value entered deployment")
+	}
+	// Every valid name remains available; requirements is not a reserved secret.
+	call("POST", "/secrets/requirements?project=demo&environment=development&application=custom", map[string]any{"value": "fixture-requirements"}, 201)
+	named, err := kube.ReadWorkloadSecrets(ctx, "demo", "development", "custom", []string{"requirements"})
+	if err != nil || named["requirements"] != "fixture-requirements" {
+		t.Fatal("secret name collided with the preflight route", err)
 	}
 }

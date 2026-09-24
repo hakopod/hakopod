@@ -12519,7 +12519,7 @@
         }
       }
     },
-    "/secrets/requirements": {
+    "/deployment-secret-requirements": {
       "post": {
         "operationId": "checkSecretRequirements",
         "parameters": [],
