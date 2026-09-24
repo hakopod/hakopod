@@ -46,6 +46,8 @@ type Feature struct {
 }
 
 var catalog = []Feature{
+	{ID: "custom_roles", Name: "Custom project roles", Plan: "pro", Description: "Choose deployment and log permissions for people and teams."},
+	{ID: "team_mfa", Name: "Organization MFA enforcement", Plan: "pro", Description: "Require verified multi-factor sessions for installation access."},
 	{ID: "deployments", Name: "Application deployments", Plan: "free", Description: "Deploy, review, roll back and observe applications."},
 	{ID: "source_builds", Name: "Source builds", Plan: "free", Description: "Reviewed remote builds and immutable image deployment."},
 	{ID: "source_sync", Name: "Repository synchronization", Plan: "free", Description: "Approved repository configuration and signed source automation."},

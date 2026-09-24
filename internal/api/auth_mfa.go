@@ -143,7 +143,12 @@ func (s *Server) authSecurity(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"totp_enabled": totp, "password_enabled": password, "recovery_codes_remaining": codes, "passkeys": keys})
+	required, err := s.Store.FactorRequired(r.Context(), p.ID)
+	if err != nil {
+		authFailure(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"mfa_verified": p.MFAVerified, "mfa_required": p.MFARequired, "organization_mfa_required": required, "totp_enabled": totp, "password_enabled": password, "recovery_codes_remaining": codes, "passkeys": keys})
 }
 func (s *Server) authTOTPStart(w http.ResponseWriter, r *http.Request) {
 	if !human(w, r) {
@@ -247,6 +252,10 @@ func (s *Server) authTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if _, err = tx.Exec(r.Context(), "UPDATE api_keys SET mfa_verified=true WHERE id=$1", who(r).KeyID); err != nil {
+		authFailure(w, err)
+		return
+	}
 	if _, err = tx.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'mfa.enable',$1)", who(r).ID, who(r).KeyID); err != nil {
 		authFailure(w, err)
 		return
@@ -287,6 +296,10 @@ func (s *Server) authTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err = s.Store.CheckFactorRemovalTx(r.Context(), tx, who(r), "", true); err != nil {
+		authFailure(w, err)
+		return
+	}
 	if _, err = tx.Exec(r.Context(), "UPDATE identities SET totp_secret=NULL,totp_step=-1 WHERE id=$1", p.ID); err != nil {
 		authFailure(w, err)
 		return

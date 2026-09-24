@@ -69,7 +69,7 @@ func (s *Store) Requests(ctx context.Context, p Principal, q RequestQuery) (Requ
 			if p.Email != "" {
 				projects := []string{}
 				for _, r := range p.ProjectRoles {
-					if contains(rolePermissions(r.Role), "logs:read") {
+					if contains(r.permissions(), "logs:read") {
 						projects = append(projects, r.Project)
 					}
 				}

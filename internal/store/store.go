@@ -27,7 +27,14 @@ var ErrConflict = errors.New("revision or idempotency conflict")
 var ErrUnauthorized = errors.New("credential is invalid, expired, revoked, or disabled")
 var ErrForbidden = errors.New("credential does not allow this operation in the requested scope")
 
+// DeploymentAdmission runs inside revision acceptance, before resource locks.
+// Embeddings may lock their authorization rows in the supplied transaction.
+type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
+
 type Store struct {
+	AdmitDeployment      DeploymentAdmission
+	ExternalFactorPolicy func(context.Context, pgx.Tx, string) (bool, error)
+
 	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.
 	ApplicationLimit func(context.Context, string, string) (int, error)
 	Pool             *pgxpool.Pool
@@ -129,6 +136,8 @@ func JSON(v any) []byte {
 }
 
 type Principal struct {
+	MFAVerified             bool             `json:"mfa_verified"`
+	MFARequired             bool             `json:"mfa_required"`
 	RuntimeScoped           bool             `json:"-"`
 	CanManageGitConnections bool             `json:"can_manage_git"`
 	CanManageApplications   bool             `json:"can_manage_applications"`
@@ -163,6 +172,9 @@ func contains(xs []string, s string) bool {
 	return false
 }
 func (p Principal) Allows(permission, project, environment, application string) bool {
+	if p.MFARequired {
+		return false
+	}
 	if p.Project != "" && p.Project != project {
 		return false
 	}
@@ -183,7 +195,7 @@ func (p Principal) Allows(permission, project, environment, application string) 
 	if p.Email != "" && !p.Admin {
 		identityOK = false
 		for _, role := range p.ProjectRoles {
-			if role.Project == project && contains(rolePermissions(role.Role), permission) {
+			if role.Project == project && contains(role.permissions(), permission) {
 				identityOK = true
 				break
 			}
@@ -192,7 +204,7 @@ func (p Principal) Allows(permission, project, environment, application string) 
 	return keyOK && identityOK
 }
 func (p Principal) IsAdmin() bool {
-	return p.Admin && contains(p.Permissions, "admin") && p.Project == "" && p.Environment == "" && p.Application == "" && p.IdentityProject == "" && p.IdentityEnvironment == ""
+	return !p.MFARequired && p.Admin && contains(p.Permissions, "admin") && p.Project == "" && p.Environment == "" && p.Application == "" && p.IdentityProject == "" && p.IdentityEnvironment == ""
 }
 
 type Key struct {
@@ -286,7 +298,7 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
 	}
@@ -296,6 +308,11 @@ func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte,
 	if err == nil && p.IsHuman() {
 		p.AvatarURL = AvatarURL(p.AvatarStyle, p.AvatarSeed, p.ID)
 		p.HostPermissions, err = s.hostPermissions(ctx, p.ID)
+	}
+	if err == nil && p.IsHuman() {
+		var required bool
+		required, err = s.MFARequired(ctx)
+		p.MFARequired = required && !p.MFAVerified
 	}
 	return p, digest, err
 }

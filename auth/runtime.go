@@ -7,6 +7,7 @@ import (
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/management"
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/hakopod/hakopod/internal/store"
 	"net/http"
 	"time"
 )
@@ -34,7 +35,12 @@ func ValidateRuntimeResources(s WorkloadService, ceiling ResourceProfile) error 
 
 type BackupConfig = api.BackupConfig
 
+// AdmissionPrincipal is canonical engine authorization, never client claims.
+type AdmissionPrincipal = store.Principal
+type DeploymentAdmission = store.DeploymentAdmission
+
 type RuntimeConfig struct {
+	AdmitDeployment      DeploymentAdmission
 	CloudResourceCeiling *ResourceProfile
 	Backups              BackupConfig
 	BuildRegistry        string
@@ -87,6 +93,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	}
 	s.runtime = kube
 	s.store.ApplicationLimit = config.ApplicationLimit
+	s.store.AdmitDeployment = config.AdmitDeployment
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true}
 	server.ConfigureBackups(config.Backups)
 	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {

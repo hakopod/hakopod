@@ -11,6 +11,7 @@ import (
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,11 +20,14 @@ type Config = api.AuthConfig
 var ErrUnauthorized = store.ErrUnauthorized
 
 type User struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Verified bool   `json:"verified"`
-	Operator bool   `json:"operator"`
+	KeyID       string `json:"-"`
+	MFAVerified bool   `json:"mfa_verified"`
+	MFARequired bool   `json:"mfa_required"`
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Verified    bool   `json:"verified"`
+	Operator    bool   `json:"operator"`
 }
 
 type Service struct {
@@ -96,7 +100,7 @@ func (s *Service) Verify(ctx context.Context, token string) (User, error) {
 	if err != nil || p.CredentialType != "browser" || p.Email == "" {
 		return User{}, ErrUnauthorized
 	}
-	u := User{ID: p.ID, Email: p.Email, Name: p.Name}
+	u := User{KeyID: p.KeyID, ID: p.ID, Email: p.Email, Name: p.Name, MFAVerified: p.MFAVerified, MFARequired: p.MFARequired}
 	if err = s.store.Pool.QueryRow(ctx, "SELECT email_verified FROM identities WHERE id=$1 AND NOT disabled", p.ID).Scan(&u.Verified); err != nil {
 		return User{}, ErrUnauthorized
 	}
@@ -112,7 +116,7 @@ func identityRoute(r *http.Request) bool {
 	case "GET /api/v1/auth/status", "POST /api/v1/auth/setup", "POST /api/v1/auth/login",
 		"POST /api/v1/auth/register", "POST /api/v1/auth/register/verify",
 		"POST /api/v1/auth/password/forgot", "POST /api/v1/auth/password/reset",
-		"POST /api/v1/auth/mfa/complete", "POST /api/v1/auth/logout",
+		"POST /api/v1/auth/mfa/complete", "POST /api/v1/auth/logout", "POST /api/v1/auth/mfa/verify",
 		"GET /api/v1/auth/security", "GET /api/v1/auth/sessions",
 		"POST /api/v1/auth/mfa/totp/start", "POST /api/v1/auth/mfa/totp/confirm", "POST /api/v1/auth/mfa/totp/disable",
 		"POST /api/v1/auth/passkeys/login/start", "POST /api/v1/auth/passkeys/login/finish",
@@ -135,4 +139,9 @@ func identityRoute(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// ConfigureFactorPolicy installs an embedding-owned policy before serving requests.
+func (s *Service) ConfigureFactorPolicy(policy func(context.Context, pgx.Tx, string) (bool, error)) {
+	s.store.ExternalFactorPolicy = policy
 }

@@ -206,7 +206,7 @@ func (s *Store) SetProjectMember(ctx context.Context, p Principal, project, id, 
 	if (id == "") == (team == "") {
 		return ErrInput
 	}
-	if role != "" && !contains([]string{"admin", "developer", "viewer"}, role) {
+	if role != "" && !contains([]string{"admin", "developer", "viewer"}, role) && !strings.HasPrefix(role, "custom:") {
 		return ErrInput
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -214,6 +214,9 @@ func (s *Store) SetProjectMember(ctx context.Context, p Principal, project, id, 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = s.checkProjectRoleTx(ctx, tx, role); err != nil {
+		return err
+	}
 	var personal bool
 	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)", project).Scan(&personal); err != nil {
 		return err
@@ -311,7 +314,7 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 	if project != "" {
 		validRoles = []string{"admin", "developer", "viewer"}
 	}
-	if !contains(validRoles, role) {
+	if !contains(validRoles, role) && !(project != "" && strings.HasPrefix(role, "custom:")) {
 		return Invite{}, "", ErrInput
 	}
 	token := NewID() + NewID()
@@ -322,6 +325,11 @@ func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, proj
 		return v, "", err
 	}
 	defer tx.Rollback(ctx)
+	if project != "" {
+		if err = s.checkProjectRoleTx(ctx, tx, role); err != nil {
+			return v, "", err
+		}
+	}
 	var personal bool
 	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)", project).Scan(&personal); err != nil {
 		return v, "", err
@@ -414,6 +422,11 @@ func (s *Store) AcceptInviteChoice(ctx context.Context, token, name, password st
 	}
 	if err = s.requireFeaturesTx(ctx, tx, features...); err != nil {
 		return "", err
+	}
+	if project != "" {
+		if err = s.checkProjectRoleTx(ctx, tx, role); err != nil {
+			return "", err
+		}
 	}
 	var id string
 	if p != nil {

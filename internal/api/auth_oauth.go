@@ -304,7 +304,7 @@ func (s *Server) authMFAComplete(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	session, err := s.Store.NewSession(r.Context(), pending["identity_id"], "browser", "", "", nil)
+	session, err := s.Store.NewVerifiedSession(r.Context(), pending["identity_id"], "browser", "", "", nil, true)
 	if err != nil {
 		authFailure(w, err)
 		return

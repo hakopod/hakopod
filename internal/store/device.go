@@ -109,7 +109,7 @@ func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, app
 			}
 		}
 	}
-	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now()", v.UserCode, p.ID, approve)
+	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3,mfa_verified=$4 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now()", v.UserCode, p.ID, approve, p.MFAVerified)
 	if err == nil && result.RowsAffected() != 1 {
 		return ErrConflict
 	}
@@ -127,9 +127,10 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 	defer tx.Rollback(ctx)
 	var id, identity, project, environment string
 	var approved *bool
+	var verified bool
 	var permissions []string
 	var polled *time.Time
-	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled)
+	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at,mfa_verified FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled, &verified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrUnauthorized
 	}
@@ -157,7 +158,7 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 	if !*approved {
 		return Session{}, ErrDenied
 	}
-	session, err := s.NewSession(ctx, identity, "cli", project, environment, permissions)
+	session, err := s.NewVerifiedSession(ctx, identity, "cli", project, environment, permissions, verified)
 	if err != nil {
 		return Session{}, err
 	}

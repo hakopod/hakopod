@@ -8,6 +8,9 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
+  /^roles(?:\/[A-Za-z0-9_:-]+)?$/,
+  /^organization\/security$/,
+  /^auth\/mfa\/verify$/,
   /^placement\/nodes$/,
   /^requests$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/requests\/routing$/,
