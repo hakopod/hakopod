@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 module = importlib.util.spec_from_file_location('volume_copy', Path(__file__).with_name('volume_copy.py'))
 copy = importlib.util.module_from_spec(module)
@@ -31,6 +33,23 @@ class VolumeCopyTests(unittest.TestCase):
             (copied / 'extra').write_text('partial attempt')
             self.assertTrue(copy.migrate(source, target, 1 << 30)['verified'])
             self.assertFalse((target / 'data/extra').exists())
+
+    def test_provider_owned_mount_root_uses_service_group(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source, target = Path(folder) / 'source', Path(folder) / 'target'
+            source.mkdir(); target.mkdir()
+            (source / 'data').write_text('database bytes')
+            original_stat = Path.stat
+            unavailable_group = max(os.getgid(), *os.getgroups(), 0) + 10000
+            def provider_stat(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                if path == source and kwargs.get('follow_symlinks', True):
+                    return SimpleNamespace(st_uid=0, st_gid=unavailable_group, st_mode=info.st_mode)
+                return info
+            with patch.object(Path, 'stat', provider_stat):
+                self.assertTrue(copy.migrate(source, target, 1 << 30)['verified'])
+            self.assertEqual((target / 'data').stat().st_gid, os.getgid())
+            self.assertEqual((target / 'data/data').read_text(), 'database bytes')
 
     def test_too_small_preserves_both_filesystems(self):
         with tempfile.TemporaryDirectory() as folder:

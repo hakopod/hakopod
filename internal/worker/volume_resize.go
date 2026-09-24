@@ -152,7 +152,11 @@ func (w *Worker) resizeVolume(parent context.Context) {
 			fail(err)
 			return
 		}
-		if err = runtime.DeleteVolumes(ctx, t, []string{r.TargetClaim}); err != nil {
+		cleanupTarget := t
+		cleanupTarget.BeforeStep = func(step context.Context) error {
+			return runtime.CheckResizeClaim(step, t, r.TargetClaim, state.TargetUID, true)
+		}
+		if err = runtime.DeleteVolumes(ctx, cleanupTarget, []string{r.TargetClaim}); err != nil {
 			fail(err)
 			return
 		}
@@ -191,7 +195,11 @@ func (w *Worker) resizeVolume(parent context.Context) {
 			fail(err)
 			return
 		}
-		if err = runtime.DeleteVolumes(ctx, t, []string{r.Claim}); err != nil {
+		cleanupTarget := t
+		cleanupTarget.BeforeStep = func(step context.Context) error {
+			return runtime.CheckResizeClaim(step, t, r.Claim, state.SourceUID, true)
+		}
+		if err = runtime.DeleteVolumes(ctx, cleanupTarget, []string{r.Claim}); err != nil {
 			fail(err)
 			return
 		}

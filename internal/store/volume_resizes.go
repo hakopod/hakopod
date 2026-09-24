@@ -69,7 +69,7 @@ func (s *Store) VolumeResize(ctx context.Context, id string) (VolumeResize, erro
 	return scanResize(s.Pool.QueryRow(ctx, "SELECT "+resizeCols+" FROM volume_resizes WHERE id=$1", id))
 }
 func (s *Store) VolumeResizes(ctx context.Context, app string) ([]VolumeResize, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+resizeCols+" FROM volume_resizes WHERE application_id=$1 ORDER BY created_at DESC LIMIT 100", app)
+	rows, err := s.Pool.Query(ctx, "SELECT "+resizeCols+" FROM volume_resizes WHERE application_id=$1 ORDER BY CASE WHEN phase IN ('completed','cancelled') THEN 1 ELSE 0 END, created_at DESC LIMIT 100", app)
 	if err != nil {
 		return nil, err
 	}
