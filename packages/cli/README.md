@@ -51,8 +51,12 @@ Credentials and resumable deployment state live outside the source repository in
 `HAKOPOD_CLI_HOME` to use another protected directory. Files are written atomically
 with owner-only permissions; Windows uses the account profile's directory ACLs.
 Sessions expire after twelve hours and can be revoked in account security. Logout
-attempts server revocation and always removes local credentials. No passwords or
-provider tokens are requested by the terminal. Never commit CLI state to Git.
+attempts server revocation and always removes local credentials. Account login happens in the browser. Before deployment, missing application
+secrets can be entered with hidden terminal input or explicitly generated.
+Generation creates a random password, not a provider-issued API credential.
+Noninteractive runs stop with the missing names, including when using `--yes`.
+Secret values are sent directly to scoped storage and never saved in CLI state.
+Never commit CLI state to Git.
 
 Use an engine/Cloud server release containing npm CLI device-scope support. Older
 servers may expose only the image-based Go CLI API. That CLI remains available for

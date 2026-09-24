@@ -37,3 +37,8 @@ removed after a plan. A Kubernetes failure is an unavailable backend, never a
 false assertion that the secret is absent. External-provider references continue
 to resolve through their configured provider and cannot be replaced by generating
 an unrelated local value.
+
+Validation also exercises the native and npm executables through real pseudo-terminals
+against a loopback fixture API. Hidden entry, explicit generation and cancellation
+passed; the entered value did not appear in terminal output or deployment payloads.
+The fixture uses synthetic credentials and does not claim a production deployment.
