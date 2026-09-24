@@ -284,6 +284,7 @@ func (s *Store) SuccessfulLogin(ctx context.Context, id string) error {
 }
 
 type Session struct {
+	ScopeID            string    `json:"scope_id,omitempty"`
 	Token              string    `json:"token"`
 	User               Principal `json:"user"`
 	ExpiresAt          time.Time `json:"expires_at"`

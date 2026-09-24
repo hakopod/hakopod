@@ -21,16 +21,25 @@ type DeviceAuthorization struct {
 	ExpiresIn  int    `json:"expires_in"`
 	Interval   int    `json:"interval"`
 }
+type DeviceScope struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+}
+
 type DeviceDetails struct {
-	UserCode    string    `json:"user_code"`
-	Project     string    `json:"project"`
-	Environment string    `json:"environment"`
-	Permissions []string  `json:"permissions"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	Scopes      []DeviceScope `json:"scopes"`
+	ScopeID     string        `json:"scope_id"`
+	UserCode    string        `json:"user_code"`
+	Project     string        `json:"project"`
+	Environment string        `json:"environment"`
+	Permissions []string      `json:"permissions"`
+	ExpiresAt   time.Time     `json:"expires_at"`
 }
 
 func (s *Store) StartDevice(ctx context.Context, project, environment string, permissions []string) (DeviceAuthorization, error) {
-	if project == "" || environment == "" {
+	if (project == "") != (environment == "") {
 		return DeviceAuthorization{}, ErrInput
 	}
 	if len(permissions) == 0 {
@@ -44,12 +53,14 @@ func (s *Store) StartDevice(ctx context.Context, project, environment string, pe
 			return DeviceAuthorization{}, ErrForbidden
 		}
 	}
-	var exists bool
-	if err := s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM environments WHERE project=$1 AND name=$2)", project, environment).Scan(&exists); err != nil {
-		return DeviceAuthorization{}, err
-	}
-	if !exists {
-		return DeviceAuthorization{}, ErrInput
+	if project != "" && s.DeviceScopes == nil {
+		var exists bool
+		if err := s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM environments WHERE project=$1 AND name=$2)", project, environment).Scan(&exists); err != nil {
+			return DeviceAuthorization{}, err
+		}
+		if !exists {
+			return DeviceAuthorization{}, ErrInput
+		}
 	}
 	token := NewID() + NewID()
 	sum := sha256.Sum256([]byte(token))
@@ -94,22 +105,45 @@ func (s *Store) DeviceDetails(ctx context.Context, p Principal, code string) (De
 		return DeviceDetails{}, ErrForbidden
 	}
 	var v DeviceDetails
-	err := s.Pool.QueryRow(ctx, "SELECT user_code,project,environment,permissions,expires_at FROM device_codes WHERE user_code=$1 AND consumed_at IS NULL AND expires_at>now()", normalizeUserCode(code)).Scan(&v.UserCode, &v.Project, &v.Environment, &v.Permissions, &v.ExpiresAt)
+	err := s.Pool.QueryRow(ctx, "SELECT user_code,project,environment,permissions,expires_at,scope_id FROM device_codes WHERE user_code=$1 AND consumed_at IS NULL AND expires_at>now()", normalizeUserCode(code)).Scan(&v.UserCode, &v.Project, &v.Environment, &v.Permissions, &v.ExpiresAt, &v.ScopeID)
+	if err == nil {
+		v.Scopes, err = s.deviceScopes(ctx, p)
+	}
 	return v, err
 }
-func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, approve bool) error {
+func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, approve bool, selected ...DeviceScope) error {
 	v, err := s.DeviceDetails(ctx, p, code)
 	if err != nil {
 		return err
 	}
 	if approve {
-		for _, permission := range v.Permissions {
-			if !p.Allows(permission, v.Project, v.Environment, "") {
-				return ErrForbidden
+		choice := DeviceScope{Project: v.Project, Environment: v.Environment}
+		if len(selected) > 0 {
+			choice = selected[0]
+		}
+		if v.Project != "" && (choice.Project != v.Project || choice.Environment != v.Environment) {
+			return ErrForbidden
+		}
+		found := false
+		for _, scope := range v.Scopes {
+			if scope.ID == choice.ID && scope.Project == choice.Project && scope.Environment == choice.Environment {
+				found = true
+				v.ScopeID, v.Project, v.Environment = scope.ID, scope.Project, scope.Environment
+				break
+			}
+		}
+		if !found {
+			return ErrForbidden
+		}
+		if s.DeviceScopes == nil {
+			for _, permission := range v.Permissions {
+				if !p.Allows(permission, v.Project, v.Environment, "") {
+					return ErrForbidden
+				}
 			}
 		}
 	}
-	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3,mfa_verified=$4 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now()", v.UserCode, p.ID, approve, p.MFAVerified)
+	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3,mfa_verified=$4,project=$5,environment=$6,scope_id=$7 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now()", v.UserCode, p.ID, approve, p.MFAVerified, v.Project, v.Environment, v.ScopeID)
 	if err == nil && result.RowsAffected() != 1 {
 		return ErrConflict
 	}
@@ -125,12 +159,12 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 		return Session{}, err
 	}
 	defer tx.Rollback(ctx)
-	var id, identity, project, environment string
+	var id, identity, project, environment, scopeID string
 	var approved *bool
 	var verified bool
 	var permissions []string
 	var polled *time.Time
-	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at,mfa_verified FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled, &verified)
+	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at,mfa_verified,scope_id FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled, &verified, &scopeID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrUnauthorized
 	}
@@ -162,6 +196,26 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	if s.DeviceScopes != nil {
+		scopes, scopeErr := s.deviceScopes(ctx, session.User)
+		found := false
+		for _, scope := range scopes {
+			if scope.ID == scopeID && scope.Project == project && scope.Environment == environment {
+				found = true
+			}
+		}
+		if scopeErr != nil || !found || scopeID == "" {
+			_ = s.RevokeSession(ctx, session.User, session.User.KeyID)
+			return Session{}, ErrForbidden
+		}
+		_, err = s.Pool.Exec(ctx, "INSERT INTO device_session_scopes(key_id,scope_id) VALUES($1,$2)", session.User.KeyID, scopeID)
+		if err != nil {
+			_ = s.RevokeSession(ctx, session.User, session.User.KeyID)
+			return Session{}, err
+		}
+		session.ScopeID = scopeID
+		return session, nil
+	}
 	for _, permission := range permissions {
 		if !session.User.Allows(permission, project, environment, "") {
 			_ = s.RevokeSession(ctx, session.User, session.User.KeyID)
@@ -169,4 +223,31 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 		}
 	}
 	return session, nil
+}
+
+// Scope discovery is authenticated, bounded, and rechecked at consent and issuance.
+func (s *Store) deviceScopes(ctx context.Context, p Principal) ([]DeviceScope, error) {
+	if !p.IsHuman() || p.MFARequired {
+		return nil, ErrForbidden
+	}
+	if s.DeviceScopes != nil {
+		return s.DeviceScopes(ctx, p)
+	}
+	rows, err := s.Pool.Query(ctx, "SELECT project,name FROM environments ORDER BY project,name LIMIT 1000")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []DeviceScope{}
+	for rows.Next() {
+		var scope DeviceScope
+		if err := rows.Scan(&scope.Project, &scope.Environment); err != nil {
+			return nil, err
+		}
+		if p.Allows("deployments:write", scope.Project, scope.Environment, "") {
+			scope.Label = scope.Project + " / " + scope.Environment
+			result = append(result, scope)
+		}
+	}
+	return result, rows.Err()
 }

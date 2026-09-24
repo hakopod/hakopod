@@ -32,3 +32,16 @@ func TestRuntimeCustomPermissionsOnlyNarrowAuthority(t *testing.T) {
 		t.Fatal("embedding widened or lost authority", err)
 	}
 }
+
+func TestRuntimeCLIGrantCannotSwitchItsConsentScope(t *testing.T) {
+	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "cli", Project: "one", Environment: "production", Permissions: []string{"deployments:read", "deployments:write"}, ProjectRoles: []store.ProjectRole{{Project: "one", Role: "admin"}, {Project: "two", Role: "admin"}}}
+	for _, scope := range []RuntimeScope{{Identity: "alice", Project: "two", Environment: "production"}, {Identity: "alice", Project: "one", Environment: "development"}} {
+		if _, err := scopedRuntimePrincipal(p, scope); err == nil {
+			t.Fatal("CLI scope widened")
+		}
+	}
+	narrowed, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "one", Environment: "production"})
+	if err != nil || !narrowed.CanManageGit() || narrowed.CanManageProject("one") {
+		t.Fatal("incorrect scoped CLI authority", err)
+	}
+}

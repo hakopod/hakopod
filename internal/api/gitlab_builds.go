@@ -198,7 +198,7 @@ func (s *Server) installGitLabBuild(w http.ResponseWriter, r *http.Request, c bu
 	_, _ = s.Store.Pool.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'build.workflow.install',$3)", who(r).ID, who(r).KeyID, c.ID)
 	c.InstalledRevision = c.Revision
 	c.InstalledCommit = file.LastCommit
-	write(w, 200, map[string]any{"config": c, "commit_sha": file.LastCommit, "workflow_path": c.workflowPath()})
+	write(w, 200, map[string]any{"config": c, "commit_sha": file.LastCommit, "workflow_branch": branch, "workflow_path": c.workflowPath()})
 }
 
 type gitlabPipeline struct {

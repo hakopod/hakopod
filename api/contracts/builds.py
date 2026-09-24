@@ -7,7 +7,7 @@ schemas["BuildRun"] = obj({"id":S,"build_id":S,"config_revision":I,"commit_sha":
 schemas["BuildRun"]["properties"].update({"provider":{"type":"string","enum":["github","gitlab"]},"remote_run_id":I})
 schemas["BuildRun"]["required"] += ["provider","remote_run_id"]
 schemas["BuildPreview"] = obj({"config":ref("BuildConfig"),"workflow_path":S,"workflow":S,"image_repository":S,"requirements":array(S)},["config","workflow_path","workflow","image_repository","requirements"])
-schemas["BuildInstalled"] = obj({"config":ref("BuildConfig"),"commit_sha":S,"workflow_path":S},["config","commit_sha","workflow_path"])
+schemas["BuildInstalled"] = obj({"workflow_branch":S,"config":ref("BuildConfig"),"commit_sha":S,"workflow_path":S},["config","commit_sha","workflow_path"])
 route("/builds","get","listSourceBuilds",items("BuildConfig"),scope=True)
 route("/builds","post","createSourceBuild",ref("BuildConfig"),ref("BuildInput"),"201")
 route("/builds/{id}","get","getSourceBuild",ref("BuildConfig"))

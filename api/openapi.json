@@ -314,6 +314,9 @@
                   },
                   "expected_revision": {
                     "type": "integer"
+                  },
+                  "delete_data": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -2008,10 +2011,7 @@
                     }
                   }
                 },
-                "required": [
-                  "project",
-                  "environment"
-                ]
+                "required": []
               }
             }
           }
@@ -2149,6 +2149,15 @@
                   },
                   "approve": {
                     "type": "boolean"
+                  },
+                  "project": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "scope_id": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -8850,6 +8859,125 @@
         }
       }
     },
+    "/storage/retained": {
+      "get": {
+        "operationId": "listRetainedApplicationData",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RetainedApplicationData"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/retained/{id}": {
+      "delete": {
+        "operationId": "deleteRetainedApplicationData",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/services/{service}/runtime": {
       "get": {
         "operationId": "getServiceRuntime",
@@ -13140,6 +13268,9 @@
               "$ref": "#/components/schemas/ProjectRole"
             }
           },
+          "can_manage_backups": {
+            "type": "boolean"
+          },
           "mfa_verified": {
             "type": "boolean"
           },
@@ -13171,9 +13302,6 @@
             "type": "boolean"
           },
           "can_manage_applications": {
-            "type": "boolean"
-          },
-          "can_manage_backups": {
             "type": "boolean"
           }
         },
@@ -14321,6 +14449,29 @@
           "interval"
         ]
       },
+      "DeviceScope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "project",
+          "environment"
+        ]
+      },
       "DeviceDetails": {
         "type": "object",
         "properties": {
@@ -14342,6 +14493,15 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceScope"
+            }
           }
         },
         "required": [
@@ -14349,7 +14509,9 @@
           "project",
           "environment",
           "permissions",
-          "expires_at"
+          "expires_at",
+          "scope_id",
+          "scopes"
         ]
       },
       "DeviceToken": {
@@ -14359,6 +14521,9 @@
             "type": "string"
           },
           "access_token": {
+            "type": "string"
+          },
+          "scope_id": {
             "type": "string"
           },
           "token_type": {
@@ -15356,6 +15521,9 @@
       "BuildInstalled": {
         "type": "object",
         "properties": {
+          "workflow_branch": {
+            "type": "string"
+          },
           "config": {
             "$ref": "#/components/schemas/BuildConfig"
           },
@@ -17984,6 +18152,41 @@
         "required": [],
         "additionalProperties": false
       },
+      "RetainedApplicationData": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "reserved_gib": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "application_id",
+          "project",
+          "environment",
+          "name",
+          "status",
+          "error",
+          "reserved_gib"
+        ]
+      },
       "TLSConfig": {
         "type": "object",
         "properties": {
@@ -19324,15 +19527,6 @@
           },
           "service_name": {
             "type": "string"
-          },
-          "size": {
-            "type": "string",
-            "enum": [
-              "small",
-              "medium",
-              "large"
-            ],
-            "description": "Optional reviewed service size override."
           }
         },
         "required": [

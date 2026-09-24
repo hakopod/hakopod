@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DeletePreview is used only by the durable expiry worker. Preview creation
-// explicitly authorizes deletion of this application's namespace and volumes.
+// DeletePreview reclaims owned application runtime after explicit consent.
+// Preview expiry and retained-data cleanup both use this idempotent operation.
 func (c *Client) DeletePreview(ctx context.Context, t Target) error {
 	if err := beforeStep(ctx, t); err != nil {
 		return err
@@ -54,6 +54,22 @@ func (c *Client) DeletePreview(ctx context.Context, t Target) error {
 			}
 			if err = sleepContext(ctx, time.Second); err != nil {
 				return fmt.Errorf("preview namespace deletion is still in progress: %w", err)
+			}
+		}
+	}
+	// A namespace removed outside this operation can leave unmarked Retain
+	// disks behind. Never release accounting without proving their reclamation.
+	inventory, inventoryErr := c.kube.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{Limit: 1001})
+	if inventoryErr != nil {
+		return inventoryErr
+	}
+	if len(inventory.Items) > 1000 || inventory.Continue != "" {
+		return fmt.Errorf("disk inventory exceeds bounded cleanup; operator review required")
+	}
+	for _, volume := range inventory.Items {
+		if ref := volume.Spec.ClaimRef; ref != nil && ref.Namespace == Namespace(t.ApplicationID) {
+			if volume.Labels[previewVolumeKey] != ownerID(t.ApplicationID) || string(ref.UID) != volume.Annotations[previewClaimKey] {
+				return fmt.Errorf("retained disk %s has no verified cleanup ownership; operator review required", volume.Name)
 			}
 		}
 	}

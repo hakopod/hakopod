@@ -1,9 +1,19 @@
 import { apiURL, boundedBytes, privateHeaders } from './session.ts'
-import { editionRequestError } from './dashboard-edition.ts'
 
 // Public machine API: keep browser cookie authentication on /api/* separate.
 // Canonical Go handlers enforce key expiry, scope, permissions and rate limits.
 const routes: [RegExp, string[]][] = [
+  [/^me$/, ['GET']],
+  [/^auth\/logout$/, ['POST']],
+  [/^projects(?:\/[A-Za-z0-9_-]+\/environments)?$/, ['GET']],
+  [/^git\/connections$/, ['GET']],
+  [/^builds$/, ['GET', 'POST']],
+  [/^builds\/detect$/, ['POST']],
+  [/^builds\/[A-Za-z0-9_-]+$/, ['GET', 'PUT']],
+  [/^builds\/[A-Za-z0-9_-]+\/(?:preview|install|run)$/, ['POST']],
+  [/^builds\/[A-Za-z0-9_-]+\/runs(?:\/[A-Za-z0-9_-]+)?$/, ['GET']],
+  [/^builds\/[A-Za-z0-9_-]+\/runs\/[A-Za-z0-9_-]+\/(?:plan|deploy)$/, ['POST']],
+  [/^auth\/device\/(?:start|token)$/, ['POST']],
   [/^applications$/, ['GET']],
   [/^applications\/[A-Za-z0-9_-]+$/, ['GET']],
   [/^applications\/[A-Za-z0-9_-]+\/provenance$/, ['GET']],
@@ -31,20 +41,25 @@ export async function forwardAutomationAPI(request: Request) {
       headers: { ...privateHeaders, Allow: route[1].join(', ') },
     })
   const authorization = request.headers.get('Authorization')
-  if (!authorization?.startsWith('Bearer hp_'))
+  const deviceExchange = /^auth\/device\/(start|token)$/.test(path)
+  if (!deviceExchange && !/^Bearer (hp_|hs_)/.test(authorization || ''))
     return Response.json(
-      { error: { code: 'unauthorized', message: 'A machine bearer API key is required.' } },
+      { error: { code: 'unauthorized', message: 'A CLI session or machine API key is required.' } },
       { status: 401, headers: privateHeaders },
     )
-  const editionError = editionRequestError(request, path)
-  if (editionError) return editionError
   try {
-    const headers = new Headers({ Authorization: authorization, Accept: 'application/json' })
+    const headers = new Headers({ Accept: 'application/json' })
+    if (!deviceExchange && authorization) headers.set('Authorization', authorization)
+    const workspace = request.headers.get('X-Hakopod-Workspace')
+    if (!deviceExchange && workspace && /^[a-f0-9]{32}$/.test(workspace))
+      headers.set('X-Hakopod-Workspace', workspace)
     for (const name of ['Content-Type', 'Idempotency-Key']) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
     }
-    const body = request.method === 'POST' ? await boundedBytes(request, 1024 * 1024) : undefined
+    const body = ['POST', 'PUT'].includes(request.method)
+      ? await boundedBytes(request, 1024 * 1024)
+      : undefined
     if (body === null)
       return Response.json(
         { error: { code: 'body_limit', message: 'Request exceeds 1 MiB.' } },

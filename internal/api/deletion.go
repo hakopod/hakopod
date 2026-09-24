@@ -7,6 +7,8 @@ import (
 )
 
 func (s *Server) registerDeletionRoutes(routes *http.ServeMux) {
+	routes.HandleFunc("GET /api/v1/storage/retained", s.listRetainedStorage)
+	routes.HandleFunc("DELETE /api/v1/storage/retained/{id}", s.deleteRetainedStorage)
 	routes.HandleFunc("DELETE /api/v1/projects/{id}", s.deleteProject)
 	routes.HandleFunc("DELETE /api/v1/applications/{id}", s.deleteApplication)
 }
@@ -30,6 +32,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) {
 	var in struct {
+		DeleteData       bool   `json:"delete_data"`
 		ConfirmName      string `json:"confirm_name"`
 		ExpectedRevision *int64 `json:"expected_revision"`
 	}
@@ -42,7 +45,7 @@ func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if err := s.Store.DeleteEmptyApplication(ctx, who(r), r.PathValue("id"), *in.ExpectedRevision, in.ConfirmName); err != nil {
+	if err := s.Store.DeleteEmptyApplication(ctx, who(r), r.PathValue("id"), *in.ExpectedRevision, in.ConfirmName, in.DeleteData); err != nil {
 		failure(w, err)
 		return
 	}

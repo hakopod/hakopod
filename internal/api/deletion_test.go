@@ -45,6 +45,17 @@ func TestResourceDeletionAPIReviewAndPermissions(t *testing.T) {
 	}
 	h.call("DELETE", "/applications/"+d.ApplicationID, owner, map[string]any{"confirm_name": app.Name, "expected_revision": 1}, 200)
 	h.call("GET", "/applications/"+d.ApplicationID, owner, nil, 404)
+	h.call("DELETE", "/projects/delete-api", owner, map[string]string{"confirm_name": "delete-api"}, 409)
+	h.call("GET", "/storage/retained?project=delete-api&environment=test", limited, nil, 403)
+	h.call("DELETE", "/storage/retained/"+d.ApplicationID, owner, map[string]string{"confirm_name": app.Name}, 202)
+	cleanup, err := h.db.ClaimRetainedCleanup(ctx)
+	if err != nil || cleanup == nil {
+		t.Fatal(err)
+	}
+	if err = cleanup.Finish(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	cleanup.Release()
 	h.call("DELETE", "/projects/delete-api", owner, map[string]string{"confirm_name": "delete-api"}, 200)
 	h.call("POST", "/projects", owner, map[string]string{"name": "delete-api", "environment": "test"}, 409)
 }

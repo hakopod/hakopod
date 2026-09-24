@@ -133,6 +133,9 @@ export function AuthScreen({
       .catch(() => {})
     return () => controller.abort()
   }, [])
+  useEffect(() => {
+    rememberReturn()
+  }, [])
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy) return

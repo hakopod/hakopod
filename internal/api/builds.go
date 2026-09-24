@@ -596,7 +596,7 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !gitInteractive(r) {
+	if !gitInteractive(r) && !(who(r).CredentialType == "cli" && who(r).CanManageGit()) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}
@@ -672,7 +672,7 @@ func (s *Server) installBuild(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.Store.Pool.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'build.workflow.install',$3)", who(r).ID, who(r).KeyID, c.ID)
 	c.InstalledRevision = c.Revision
 	c.InstalledCommit = out.Commit.SHA
-	write(w, 200, map[string]any{"config": c, "commit_sha": out.Commit.SHA, "workflow_path": c.workflowPath()})
+	write(w, 200, map[string]any{"config": c, "commit_sha": out.Commit.SHA, "workflow_branch": repo.DefaultBranch, "workflow_path": c.workflowPath()})
 }
 func (s *Server) runBuild(w http.ResponseWriter, r *http.Request) {
 	c, ok := s.authorizedBuild(w, r, "deployments:write")

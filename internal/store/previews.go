@@ -252,6 +252,12 @@ func (c *PreviewClaim) Finish(ctx context.Context, cleanupError string) error {
 	if err = deleteApplicationMetadata(ctx, tx, c.App); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, "UPDATE retained_application_data SET status='deleted' WHERE application_id=$1", c.App.ID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM storage_reservations WHERE application_id=$1", c.App.ID); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, "UPDATE previews SET state='deleted',deleted_at=now(),cleanup_error='' WHERE id=$1", c.Preview.ID); err != nil {
 		return err
 	}

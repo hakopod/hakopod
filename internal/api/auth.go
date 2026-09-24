@@ -475,7 +475,7 @@ func (s *Server) authDeviceToken(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"token": v.Token, "access_token": v.Token, "token_type": "Bearer", "expires_at": v.ExpiresAt, "expires_in": int(time.Until(v.ExpiresAt).Seconds()), "user": v.User})
+	write(w, 200, map[string]any{"token": v.Token, "access_token": v.Token, "token_type": "Bearer", "expires_at": v.ExpiresAt, "expires_in": int(time.Until(v.ExpiresAt).Seconds()), "user": v.User, "scope_id": v.ScopeID})
 }
 func (s *Server) authDeviceDetails(w http.ResponseWriter, r *http.Request) {
 	v, err := s.Store.DeviceDetails(r.Context(), who(r), r.URL.Query().Get("user_code"))
@@ -487,13 +487,20 @@ func (s *Server) authDeviceDetails(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) authDeviceApprove(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		UserCode string `json:"user_code"`
-		Approve  bool   `json:"approve"`
+		Project     string `json:"project"`
+		Environment string `json:"environment"`
+		ScopeID     string `json:"scope_id"`
+		UserCode    string `json:"user_code"`
+		Approve     bool   `json:"approve"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if err := s.Store.ApproveDevice(r.Context(), who(r), in.UserCode, in.Approve); err != nil {
+	selection := []store.DeviceScope{}
+	if in.Project != "" || in.Environment != "" || in.ScopeID != "" {
+		selection = append(selection, store.DeviceScope{ID: in.ScopeID, Project: in.Project, Environment: in.Environment})
+	}
+	if err := s.Store.ApproveDevice(r.Context(), who(r), in.UserCode, in.Approve, selection...); err != nil {
 		authFailure(w, err)
 		return
 	}

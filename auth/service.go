@@ -113,7 +113,7 @@ func (s *Service) Verify(ctx context.Context, token string) (User, error) {
 func identityRoute(r *http.Request) bool {
 	path := r.URL.Path
 	switch r.Method + " " + path {
-	case "GET /api/v1/auth/status", "POST /api/v1/auth/setup", "POST /api/v1/auth/login",
+	case "POST /api/v1/auth/device/start", "POST /api/v1/auth/device/token", "GET /api/v1/auth/device", "POST /api/v1/auth/device/approve", "GET /api/v1/auth/status", "POST /api/v1/auth/setup", "POST /api/v1/auth/login",
 		"POST /api/v1/auth/register", "POST /api/v1/auth/register/verify",
 		"POST /api/v1/auth/password/forgot", "POST /api/v1/auth/password/reset",
 		"POST /api/v1/auth/mfa/complete", "POST /api/v1/auth/logout", "POST /api/v1/auth/mfa/verify",

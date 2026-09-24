@@ -1,3 +1,4 @@
+import { RetainedStorage } from './retained-storage'
 import { RenameResource } from './rename-resource'
 import { Pencil } from 'lucide-react'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -410,6 +411,7 @@ export function ApplicationList({
             </div>
           )}
         </section>
+        <RetainedStorage project={project.name} environment={environment} />
       </div>
     </ScopeContext.Provider>
   )

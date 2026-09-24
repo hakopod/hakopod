@@ -1,3 +1,4 @@
+import { forwardAutomationAPI } from './automation-api.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { proxy } from './api-proxy.ts'
@@ -131,4 +132,56 @@ test('CI lookup routes retain response data and transport failure stays explicit
   const response = await request('applications')
   assert.equal(response.status, 503)
   assert.equal((await response.json()).error.code, 'api_unavailable')
+})
+
+test('CLI source deploys forward explicit workspace and bearer, never browser cookies', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    assert.equal(new URL(String(url)).pathname, '/api/v1/builds/detect')
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer hs_cli_fixture')
+    assert.equal(headers.get('X-Hakopod-Workspace'), 'a'.repeat(32))
+    assert.equal(headers.get('Cookie'), null)
+    assert.equal(init?.redirect, 'error')
+    return Response.json({ mode: 'framework' })
+  })
+  const response = await forwardAutomationAPI(
+    new Request('https://dashboard.example/api/v1/builds/detect', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer hs_cli_fixture',
+        'X-Hakopod-Workspace': 'a'.repeat(32),
+        Cookie: 'hakopod_session=unrelated',
+      },
+      body: '{}',
+    }),
+  )
+  assert.equal(response.status, 200)
+})
+
+test('public device exchange strips ambient credentials and only accepts POST', async (t) => {
+  const mocked = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), null)
+    assert.equal(headers.get('Cookie'), null)
+    assert.equal(headers.get('X-Hakopod-Workspace'), null)
+    return Response.json({ user_code: 'TEST-CODE' })
+  })
+  assert.equal(
+    (
+      await forwardAutomationAPI(
+        new Request('https://dashboard.example/api/v1/auth/device/start', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer hs_unrelated', Cookie: 'hakopod_session=unrelated' },
+          body: '{}',
+        }),
+      )
+    ).status,
+    200,
+  )
+  assert.equal(
+    (await forwardAutomationAPI(new Request('https://dashboard.example/api/v1/auth/device/start')))
+      .status,
+    405,
+  )
+  assert.equal(mocked.mock.callCount(), 1)
 })
