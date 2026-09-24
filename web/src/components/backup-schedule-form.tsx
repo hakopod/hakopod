@@ -132,7 +132,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
                 />
               </label>
             </div>
-            <label className="checkbox-row">
+            <label className="checkbox-row min-h-11">
               <Input
                 type="checkbox"
                 checked={enabled}

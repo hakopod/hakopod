@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -24,6 +25,7 @@ type BackupConfig struct {
 	ManagedPostgres                   bool
 	DatabaseURL, PGDumpPath, StateDir string
 	MaxBytes                          int64
+	BlockedEndpointCIDRs              []netip.Prefix
 }
 
 func (s *Server) ConfigureBackups(config BackupConfig) {
@@ -33,7 +35,7 @@ func (s *Server) ConfigureBackups(config BackupConfig) {
 	if config.StateDir == "" {
 		config.StateDir = filepath.Join(os.TempDir(), "hakopod-backups")
 	}
-	s.Backups = &backup.Service{Repo: s.Store, Runtime: &backupRuntime{server: s, config: config}, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes}
+	s.Backups = &backup.Service{Repo: s.Store, Runtime: &backupRuntime{server: s, config: config}, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 }
 func (s *Server) RunBackups(ctx context.Context) {
 	if s.Backups != nil {
@@ -71,23 +73,27 @@ func declaredBackupSource(a store.Application, name string, service spec.Service
 	return source, source.Validate() == nil
 }
 func (r *backupRuntime) Targets(ctx context.Context) ([]backup.Target, error) {
-	management := backup.Target{Source: backup.Source{Kind: "management", Engine: "postgresql"}, Available: r.config.DatabaseURL != ""}
-	if r.config.ManagedPostgres {
-		resolved, err := r.Resolve(ctx, management.Source)
-		if err != nil {
+	result := []backup.Target{}
+	if store.BackupManagementAllowed(ctx) {
+		management := backup.Target{Source: backup.Source{Kind: "management", Engine: "postgresql"}, Available: r.config.DatabaseURL != ""}
+		if r.config.ManagedPostgres {
+			resolved, err := r.Resolve(ctx, management.Source)
+			if err != nil {
+				management.Available = false
+				management.Message = "Installer-managed PostgreSQL ownership/readiness verification failed."
+			} else {
+				management = resolved
+				management.Message = "Logical dump using the pinned installer database client; preserve encryption key and configuration separately."
+			}
+		} else if _, err := exec.LookPath(r.config.PGDumpPath); err != nil {
 			management.Available = false
-			management.Message = "Installer-managed PostgreSQL ownership/readiness verification failed."
+			management.Message = "Configure a compatible official pg_dump executable with HAKOPOD_PG_DUMP_PATH."
 		} else {
-			management = resolved
-			management.Message = "Logical dump using the pinned installer database client; preserve encryption key and configuration separately."
+			management.Message = "Logical management database only. Preserve the authentication encryption key and configuration separately."
 		}
-	} else if _, err := exec.LookPath(r.config.PGDumpPath); err != nil {
-		management.Available = false
-		management.Message = "Configure a compatible official pg_dump executable with HAKOPOD_PG_DUMP_PATH."
-	} else {
-		management.Message = "Logical management database only. Preserve the authentication encryption key and configuration separately."
+		result = append(result, management)
+
 	}
-	result := []backup.Target{management}
 	applications, err := r.server.Store.BackupApplications(ctx)
 	if err != nil {
 		return nil, err

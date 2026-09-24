@@ -20,7 +20,7 @@ func backupError(err error) error {
 	return err
 }
 func backupAdmin(p Principal) error {
-	if !p.IsAdmin() {
+	if !p.CanManageBackups() {
 		return ErrForbidden
 	}
 	return nil
@@ -52,10 +52,10 @@ func scanBackupDestination(row scanner) (backup.Destination, error) {
 const backupDestinationCols = "id,name,revision,config,credentials,created_at,updated_at"
 
 func (s *Store) BackupDestination(ctx context.Context, id string) (backup.Destination, error) {
-	return scanBackupDestination(s.Pool.QueryRow(ctx, "SELECT "+backupDestinationCols+" FROM backup_destinations WHERE id=$1", id))
+	return scanBackupDestination(s.Pool.QueryRow(ctx, "SELECT "+backupDestinationCols+" FROM backup_destinations WHERE id=$1 AND ($2 OR (config->>'project'=$3 AND config->>'environment'=$4))", id, backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx)))
 }
 func (s *Store) BackupDestinations(ctx context.Context) ([]backup.Destination, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+backupDestinationCols+" FROM backup_destinations ORDER BY created_at,id LIMIT 32")
+	rows, err := s.Pool.Query(ctx, "SELECT "+backupDestinationCols+" FROM backup_destinations WHERE ($1 OR (config->>'project'=$2 AND config->>'environment'=$3)) ORDER BY created_at,id LIMIT 32", backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *Store) BackupDestinations(ctx context.Context) ([]backup.Destination, e
 	return out, rows.Err()
 }
 func (s *Store) BackupApplications(ctx context.Context) ([]Application, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+appCols+" FROM applications ORDER BY id LIMIT 128")
+	rows, err := s.Pool.Query(ctx, "SELECT "+appCols+" FROM applications WHERE ($1 OR (project=$2 AND environment=$3)) ORDER BY id LIMIT 128", backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +87,18 @@ func (s *Store) BackupApplications(ctx context.Context) ([]Application, error) {
 	return out, rows.Err()
 }
 func (s *Store) PutBackupDestination(ctx context.Context, p Principal, d backup.Destination, expected int64) (backup.Destination, error) {
+	ctx = WithBackupPrincipal(ctx, p)
+	if expected > 0 {
+		old, err := s.BackupDestination(ctx, d.ID)
+		if err != nil {
+			return d, err
+		}
+		d.Project = old.Project
+		d.Environment = old.Environment
+	} else {
+		d.Project = p.Project
+		d.Environment = p.Environment
+	}
 	if err := backupAdmin(p); err != nil {
 		return d, err
 	}
@@ -111,6 +123,15 @@ func (s *Store) PutBackupDestination(ctx context.Context, p Principal, d backup.
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_destinations").Scan(&count); err != nil {
 			return d, err
 		}
+		if !p.IsAdmin() {
+			var scopedCount int
+			if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_destinations WHERE config->>'project'=$1 AND config->>'environment'=$2", p.Project, p.Environment).Scan(&scopedCount); err != nil {
+				return d, err
+			}
+			if scopedCount >= 4 {
+				return d, fmt.Errorf("%w: at most four backup destinations per workspace", backup.ErrInput)
+			}
+		}
 		if count >= 32 {
 			return d, fmt.Errorf("%w: at most 32 destinations are supported", backup.ErrInput)
 		}
@@ -126,6 +147,9 @@ func (s *Store) PutBackupDestination(ctx context.Context, p Principal, d backup.
 	return result, tx.Commit(ctx)
 }
 func (s *Store) DeleteBackupDestination(ctx context.Context, p Principal, id string, revision int64) error {
+	if _, err := s.BackupDestination(WithBackupPrincipal(ctx, p), id); err != nil {
+		return err
+	}
 	if err := backupAdmin(p); err != nil {
 		return err
 	}
@@ -157,12 +181,12 @@ func (s *Store) DeleteBackupDestination(ctx context.Context, p Principal, id str
 	return tx.Commit(ctx)
 }
 
-const backupJobCols = "id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,error,bytes,cancel_requested,created_at,started_at,finished_at,lease"
+const backupJobCols = "id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,error,bytes,cancel_requested,created_at,started_at,finished_at,lease,authority"
 
 func scanBackupJob(row scanner) (backup.Job, error) {
 	var j backup.Job
 	var source, target []byte
-	err := row.Scan(&j.ID, &j.Kind, &j.Status, &j.DestinationID, &source, &target, &j.ArtifactID, &j.ScheduleID, &j.IdentityID, &j.KeyID, &j.Error, &j.Bytes, &j.CancelRequested, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.Lease)
+	err := row.Scan(&j.ID, &j.Kind, &j.Status, &j.DestinationID, &source, &target, &j.ArtifactID, &j.ScheduleID, &j.IdentityID, &j.KeyID, &j.Error, &j.Bytes, &j.CancelRequested, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.Lease, &j.Authority)
 	if err != nil {
 		return j, backupError(err)
 	}
@@ -175,10 +199,20 @@ func scanBackupJob(row scanner) (backup.Job, error) {
 	return j, err
 }
 func (s *Store) BackupJob(ctx context.Context, id string) (backup.Job, error) {
-	return scanBackupJob(s.Pool.QueryRow(ctx, "SELECT "+backupJobCols+" FROM backup_jobs WHERE id=$1", id))
+	return scanBackupJob(s.Pool.QueryRow(ctx, "SELECT "+backupJobCols+" FROM backup_jobs WHERE id=$1 AND ($2 OR (authority->>'project'=$3 AND authority->>'environment'=$4))", id, backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx)))
 }
 func (s *Store) BackupJobs(ctx context.Context, cursor, destination string) ([]backup.Job, string, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+backupJobCols+" FROM backup_jobs WHERE ($1='' OR (created_at,id)<(SELECT created_at,id FROM backup_jobs WHERE id=$1)) AND ($2='' OR destination_id=$2) ORDER BY created_at DESC,id DESC LIMIT 101", cursor, destination)
+	if cursor != "" {
+		if _, err := s.BackupJob(ctx, cursor); err != nil {
+			return nil, "", err
+		}
+	}
+	if destination != "" {
+		if _, err := s.BackupDestination(ctx, destination); err != nil {
+			return nil, "", err
+		}
+	}
+	rows, err := s.Pool.Query(ctx, "SELECT "+backupJobCols+" FROM backup_jobs WHERE ($3 OR (authority->>'project'=$4 AND authority->>'environment'=$5)) AND ($1='' OR (created_at,id)<(SELECT created_at,id FROM backup_jobs WHERE id=$1)) AND ($2='' OR destination_id=$2) ORDER BY created_at DESC,id DESC LIMIT 101", cursor, destination, backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx))
 	if err != nil {
 		return nil, "", err
 	}
@@ -207,6 +241,10 @@ func backupRequestHash(j backup.Job) string {
 	return hex.EncodeToString(sum[:])
 }
 func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, idem string) (backup.Job, error) {
+	if err := authorizeBackupJob(ctx, tx, p, j); err != nil {
+		return j, err
+	}
+	j.Authority = backupAuthority(p)
 	if err := rejectPreviewBackup(ctx, tx, j.Source.ApplicationID); err != nil {
 		return j, err
 	}
@@ -232,6 +270,15 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_jobs WHERE status IN ('queued','running')").Scan(&count); err != nil {
 		return j, err
 	}
+	if !p.IsAdmin() {
+		var scopedCount int
+		if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_jobs WHERE authority->>'project'=$1 AND authority->>'environment'=$2 AND status IN ('queued','running')", p.Project, p.Environment).Scan(&scopedCount); err != nil {
+			return j, err
+		}
+		if scopedCount >= 4 {
+			return j, fmt.Errorf("%w: at most four active backup jobs per workspace", backup.ErrConflict)
+		}
+	}
 	if count >= 64 {
 		return j, fmt.Errorf("%w: backup queue is full (64 jobs)", backup.ErrConflict)
 	}
@@ -249,7 +296,7 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 	if j.Target != nil {
 		target = JSON(j.Target)
 	}
-	result, err := scanBackupJob(tx.QueryRow(ctx, "INSERT INTO backup_jobs(id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,idempotency_key,request_hash) VALUES($1,$2,'queued',$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING "+backupJobCols, j.ID, j.Kind, j.DestinationID, JSON(j.Source), target, j.ArtifactID, j.ScheduleID, p.ID, p.KeyID, idem, hash))
+	result, err := scanBackupJob(tx.QueryRow(ctx, "INSERT INTO backup_jobs(id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,idempotency_key,request_hash,authority) VALUES($1,$2,'queued',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "+backupJobCols, j.ID, j.Kind, j.DestinationID, JSON(j.Source), target, j.ArtifactID, j.ScheduleID, p.ID, p.KeyID, idem, hash, j.Authority))
 	if err != nil {
 		return j, err
 	}
@@ -274,6 +321,9 @@ func (s *Store) EnqueueBackup(ctx context.Context, p Principal, j backup.Job, id
 	return result, tx.Commit(ctx)
 }
 func (s *Store) CancelBackupJob(ctx context.Context, p Principal, id string) (backup.Job, error) {
+	if _, err := s.BackupJob(WithBackupPrincipal(ctx, p), id); err != nil {
+		return backup.Job{}, err
+	}
 	if err := backupAdmin(p); err != nil {
 		return backup.Job{}, err
 	}
@@ -304,10 +354,20 @@ func scanBackupArtifact(row scanner) (backup.Artifact, error) {
 	return a, json.Unmarshal(source, &a.Source)
 }
 func (s *Store) BackupArtifact(ctx context.Context, id string) (backup.Artifact, error) {
-	return scanBackupArtifact(s.Pool.QueryRow(ctx, "SELECT "+backupArtifactCols+" FROM backup_artifacts WHERE id=$1 AND deleted_at IS NULL", id))
+	return scanBackupArtifact(s.Pool.QueryRow(ctx, "SELECT "+backupArtifactCols+" FROM backup_artifacts WHERE id=$1 AND deleted_at IS NULL AND ($2 OR destination_id IN (SELECT id FROM backup_destinations WHERE config->>'project'=$3 AND config->>'environment'=$4))", id, backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx)))
 }
 func (s *Store) BackupArtifacts(ctx context.Context, cursor, destination string) ([]backup.Artifact, string, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+backupArtifactCols+" FROM backup_artifacts WHERE deleted_at IS NULL AND ($1='' OR (created_at,id)<(SELECT created_at,id FROM backup_artifacts WHERE id=$1)) AND ($2='' OR destination_id=$2) ORDER BY created_at DESC,id DESC LIMIT 101", cursor, destination)
+	if cursor != "" {
+		if _, err := s.BackupArtifact(ctx, cursor); err != nil {
+			return nil, "", err
+		}
+	}
+	if destination != "" {
+		if _, err := s.BackupDestination(ctx, destination); err != nil {
+			return nil, "", err
+		}
+	}
+	rows, err := s.Pool.Query(ctx, "SELECT "+backupArtifactCols+" FROM backup_artifacts WHERE ($3 OR destination_id IN (SELECT id FROM backup_destinations WHERE config->>'project'=$4 AND config->>'environment'=$5)) AND deleted_at IS NULL AND ($1='' OR (created_at,id)<(SELECT created_at,id FROM backup_artifacts WHERE id=$1)) AND ($2='' OR destination_id=$2) ORDER BY created_at DESC,id DESC LIMIT 101", cursor, destination, backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx))
 	if err != nil {
 		return nil, "", err
 	}
@@ -333,6 +393,12 @@ func (s *Store) BackupArtifacts(ctx context.Context, cursor, destination string)
 const pruneUnusedBackupRestorePlans = "DELETE FROM backup_restore_plans WHERE id IN (SELECT id FROM backup_restore_plans WHERE used_at IS NULL AND expires_at<now() ORDER BY expires_at LIMIT 100)"
 
 func (s *Store) SaveBackupRestorePlan(ctx context.Context, p Principal, plan backup.RestorePlan) error {
+	if _, err := s.BackupArtifact(WithBackupPrincipal(ctx, p), plan.ArtifactID); err != nil {
+		return err
+	}
+	if err := s.AuthorizeBackupSource(ctx, p, plan.Target.Source); err != nil {
+		return err
+	}
 	if err := backupAdmin(p); err != nil {
 		return err
 	}
@@ -395,6 +461,9 @@ func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID
 	if plan.ID != planID || plan.ArtifactID != artifactID || plan.Confirmation != plan.Target.Database {
 		return j, backup.ErrConflict
 	}
+	if err := s.AuthorizeBackupSource(ctx, p, plan.Target.Source); err != nil {
+		return j, err
+	}
 	if confirmation != plan.Confirmation {
 		return j, fmt.Errorf("%w: type the exact new database name from the restore review", backup.ErrInput)
 	}
@@ -412,6 +481,9 @@ func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID
 		j, err = scanBackupJob(tx.QueryRow(ctx, "SELECT "+backupJobCols+" FROM backup_jobs WHERE id=$1", *acceptedJob))
 		if err != nil {
 			return j, err
+		}
+		if !p.IsAdmin() && (j.Authority == nil || j.Authority.Project != p.Project || j.Authority.Environment != p.Environment) {
+			return backup.Job{}, backup.ErrNotFound
 		}
 		expected := backup.Job{Kind: "restore", DestinationID: j.DestinationID, Source: j.Source, Target: &plan.Target, ArtifactID: artifactID}
 		if backupRequestHash(expected) != storedHash || backupRequestHash(j) != storedHash {

@@ -50,6 +50,13 @@ const AppearanceSettings = lazy(() =>
   import('./appearance-settings').then((module) => ({ default: module.AppearanceSettings })),
 )
 
+function revealNavigationItem(nav: HTMLElement, item: HTMLElement) {
+  const bounds = nav.getBoundingClientRect()
+  const rect = item.getBoundingClientRect()
+  if (rect.left < bounds.left + 4) nav.scrollLeft -= bounds.left + 4 - rect.left
+  if (rect.right > bounds.right - 4) nav.scrollLeft += rect.right - bounds.right + 4
+}
+
 export function DashboardShell({ children }: { children: ReactNode }) {
   useEditionAuth()
   const [mounted, setMounted] = useState(false)
@@ -261,6 +268,29 @@ function Workspace({
   const [assistantOpen, setAssistantOpen] = useState(false)
   const navigationTrigger = useRef<HTMLButtonElement>(null)
   const desktopNavigation = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const nav = desktopNavigation.current
+    if (!nav) return
+    const revealActive = () => {
+      const active = nav.querySelector<HTMLElement>('[data-active]')
+      if (!active) return
+      revealNavigationItem(nav, active)
+    }
+    const resize = new ResizeObserver(revealActive)
+    const observeLinks = () => {
+      resize.disconnect()
+      resize.observe(nav)
+      nav.querySelectorAll('a').forEach((link) => resize.observe(link))
+      revealActive()
+    }
+    const changes = new MutationObserver(observeLinks)
+    changes.observe(nav, { childList: true, subtree: true })
+    observeLinks()
+    return () => {
+      resize.disconnect()
+      changes.disconnect()
+    }
+  }, [location.pathname])
   const accountTrigger = useRef<HTMLButtonElement>(null)
   const environmentTrigger = useRef<HTMLButtonElement>(null)
   const [sessionError, setSessionError] = useState('')
@@ -346,7 +376,9 @@ function Workspace({
     { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/requests', icon: 'activity', label: 'Requests' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
-    ...(identity.admin ? [{ to: '/backups', icon: 'archive', label: 'Backups' }] : []),
+    ...(identity.can_manage_backups || identity.admin
+      ? [{ to: '/backups', icon: 'archive', label: 'Backups' }]
+      : []),
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ]
   const isActive = (to: string) =>
@@ -504,9 +536,13 @@ function Workspace({
             )}
           </div>
           <nav
-            className={`hako-global-nav ${dashboardEdition.cloud ? 'justify-end!' : ''}`}
+            className="hako-global-nav"
             aria-label="Main navigation"
             ref={desktopNavigation}
+            onFocusCapture={(event) => {
+              const link = (event.target as HTMLElement).closest('a')
+              if (link) revealNavigationItem(event.currentTarget, link)
+            }}
           >
             {links()}
           </nav>

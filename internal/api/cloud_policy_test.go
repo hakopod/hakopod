@@ -11,7 +11,7 @@ func TestCloudInstallationPaths(t *testing.T) {
 			t.Errorf("Cloud allowed installation path %s", path)
 		}
 	}
-	for _, path := range []string{"registries", "registries/private/sync", "applications/id/services/web/terminal", "applications/id/domains", "projects", "virtual-networks", "auth/security", "settings/appearance"} {
+	for _, path := range []string{"backup-destinations", "backup-targets", "backups", "backups/job", "backup-artifacts", "backup-schedules", "registries", "registries/private/sync", "applications/id/services/web/terminal", "applications/id/domains", "projects", "virtual-networks", "auth/security", "settings/appearance"} {
 		if cloudInstallationPath("/api/v1/" + path) {
 			t.Errorf("blocked workload/account path %s", path)
 		}

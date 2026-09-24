@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -34,8 +35,12 @@ type S3 struct {
 	transport *http.Transport
 }
 
-func NewS3(d Destination, c Credentials) *S3 {
+func NewS3(d Destination, c Credentials, blocked ...netip.Prefix) *S3 {
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 2, IdleConnTimeout: 30 * time.Second, DisableCompression: true}
+	if d.Project != "" {
+		transport.Proxy = nil
+		transport.DialContext = publicBackupDial(blocked)
+	}
 	client := s3.New(s3.Options{Region: d.Region, BaseEndpoint: aws.String(d.Endpoint), UsePathStyle: d.PathStyle, Credentials: credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, c.SessionToken), HTTPClient: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("object-store redirects are refused") }}, Retryer: retry.NewStandard(func(o *retry.StandardOptions) { o.MaxAttempts = 2 }), RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired, ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired})
 	return &S3{client: client, bucket: d.Bucket, transport: transport}
 }

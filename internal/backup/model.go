@@ -16,6 +16,13 @@ var ErrInput = errors.New("invalid backup input")
 var ErrConflict = errors.New("backup revision or state conflict")
 var ErrNotFound = errors.New("backup resource not found")
 
+// Authority preserves the accepted scope across worker and scheduler restarts.
+// It never grants authority: workers must reauthorize it against current membership.
+type Authority struct {
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+}
+
 type Source struct {
 	Kind          string `json:"kind"`
 	ApplicationID string `json:"application_id,omitempty"`
@@ -41,6 +48,8 @@ func (s Source) Validate() error {
 }
 
 type Destination struct {
+	Project              string    `json:"project,omitempty"`
+	Environment          string    `json:"environment,omitempty"`
 	ID                   string    `json:"id"`
 	Name                 string    `json:"name"`
 	Endpoint             string    `json:"endpoint"`
@@ -127,6 +136,7 @@ type Artifact struct {
 }
 
 type Job struct {
+	Authority       *Authority `json:"-"`
 	ID              string     `json:"id"`
 	Kind            string     `json:"kind"`
 	Status          string     `json:"status"`
@@ -147,18 +157,19 @@ type Job struct {
 }
 
 type Schedule struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	DestinationID  string    `json:"destination_id"`
-	Source         Source    `json:"source"`
-	IntervalHours  int       `json:"interval_hours"`
-	RetentionCount int       `json:"retention_count"`
-	Enabled        bool      `json:"enabled"`
-	Revision       int64     `json:"revision"`
-	NextRunAt      time.Time `json:"next_run_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	IdentityID     string    `json:"-"`
+	Authority      *Authority `json:"-"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	DestinationID  string     `json:"destination_id"`
+	Source         Source     `json:"source"`
+	IntervalHours  int        `json:"interval_hours"`
+	RetentionCount int        `json:"retention_count"`
+	Enabled        bool       `json:"enabled"`
+	Revision       int64      `json:"revision"`
+	NextRunAt      time.Time  `json:"next_run_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	IdentityID     string     `json:"-"`
 }
 
 func (s Schedule) Validate() error {

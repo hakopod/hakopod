@@ -159,8 +159,11 @@ func liveBackupSQL(t *testing.T, ctx context.Context, c *cluster.Client, d liveB
 		script = `export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h 127.0.0.1 -u root --batch --skip-column-names --database="$1" --execute="$2"`
 	}
 	options.Command = []string{"sh", "-c", script, "fixture-sql", database, sql}
-	var output bytes.Buffer
-	err = c.BackupExec(ctx, d.target, "db", options, uid, nil, &output, io.Discard)
+	var output, diagnostics bytes.Buffer
+	err = c.BackupExec(ctx, d.target, "db", options, uid, nil, &output, &diagnostics)
+	if err != nil {
+		err = fmt.Errorf("%w: %s", err, diagnostics.String())
+	}
 	if output.Len() > 64<<10 {
 		t.Fatal("SQL fixture output exceeded limit")
 	}

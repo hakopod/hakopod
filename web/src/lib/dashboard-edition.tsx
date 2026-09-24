@@ -30,6 +30,7 @@ export function useEditionFeatures() {
     git: true,
     terminal: true,
     operator: false,
+    hostedStorageGiB: 0,
     hostedFree: false,
     hostedCompute: false,
     computeURL: undefined as string | undefined,

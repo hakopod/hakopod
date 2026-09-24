@@ -40,6 +40,8 @@ type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
 type RuntimeConfig struct {
+	StorageBudget        func(context.Context, string, string) (int64, error)
+	AuthorizeBackup      func(context.Context, string, string, string) error
 	AdmitDeployment      DeploymentAdmission
 	CloudResourceCeiling *ResourceProfile
 	Backups              BackupConfig
@@ -94,6 +96,8 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	s.runtime = kube
 	s.store.ApplicationLimit = config.ApplicationLimit
 	s.store.AdmitDeployment = config.AdmitDeployment
+	s.store.AuthorizeBackup = config.AuthorizeBackup
+	s.store.StorageBudget = config.StorageBudget
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true}
 	server.ConfigureBackups(config.Backups)
 	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {

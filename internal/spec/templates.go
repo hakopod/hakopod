@@ -132,6 +132,7 @@ var modelRevisionPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var providerModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,199}$`)
 
 type TemplateOptions struct {
+	Size          string            `json:"size,omitempty"`
 	Values        map[string]string `json:"values,omitempty"`
 	Name          string            `json:"name"`
 	Public        bool              `json:"public"`
@@ -238,8 +239,16 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	if err := decoder.Decode(&app); err != nil {
 		return Application{}, fmt.Errorf("template source: %w", err)
 	}
+	if o.Size != "" {
+		if _, ok := Profiles[o.Size]; !ok {
+			return Application{}, fmt.Errorf("size: select a known service profile")
+		}
+	}
 	app.Name = o.Name
 	for name, service := range app.Services {
+		if o.Size != "" {
+			service.Size = o.Size
+		}
 		service.Architecture = o.Architecture
 		service.Public = service.Public && o.Public
 		if service.Volume != nil {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,8 @@ type Service struct {
 	CredentialKey []byte
 	StateDir      string
 	MaxBytes      int64
+	// BlockedEndpointCIDRs is trusted operator configuration, never destination input.
+	BlockedEndpointCIDRs []netip.Prefix
 	// Test/embedding seam; production lazily creates one official S3 client.
 	ObjectStore func(Destination, Credentials) ObjectStore
 	testMu      sync.Mutex
@@ -48,7 +51,7 @@ func (s *Service) storage(d Destination, c Credentials) ObjectStore {
 	if s.ObjectStore != nil {
 		return s.ObjectStore(d, c)
 	}
-	return NewS3(d, c)
+	return NewS3(d, c, s.BlockedEndpointCIDRs...)
 }
 func (s *Service) Run(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)

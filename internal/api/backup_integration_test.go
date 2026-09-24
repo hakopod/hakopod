@@ -113,7 +113,10 @@ func TestBackupDurabilityAuthorizationScheduling(t *testing.T) {
 	}
 	unauthorized := client
 	unauthorized.token = scoped
-	if status := unauthorized.request("GET", "/backup-destinations", nil, nil, ""); status != 403 {
+	var scopedDestinations struct {
+		Items []backup.Destination `json:"items"`
+	}
+	if status := unauthorized.request("GET", "/backup-destinations", nil, &scopedDestinations, ""); status != 200 || len(scopedDestinations.Items) != 0 {
 		t.Fatalf("scoped key accessed backup credentials: %d", status)
 	}
 	source := backup.Source{Kind: "management", Engine: "postgresql"}

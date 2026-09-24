@@ -60,7 +60,7 @@ export default function BackupRunForm() {
       >
         <FormSection
           title="Source and destination"
-          description="Only discovered database services and the management database are selectable."
+          description="Only available database sources in your scope are selectable."
           icon="database"
         >
           <BackupSourceFields

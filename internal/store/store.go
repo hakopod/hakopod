@@ -32,6 +32,8 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
 
 type Store struct {
+	StorageBudget        func(context.Context, string, string) (int64, error)
+	AuthorizeBackup      func(context.Context, string, string, string) error
 	AdmitDeployment      DeploymentAdmission
 	ExternalFactorPolicy func(context.Context, pgx.Tx, string) (bool, error)
 
@@ -136,31 +138,32 @@ func JSON(v any) []byte {
 }
 
 type Principal struct {
-	MFAVerified             bool             `json:"mfa_verified"`
-	MFARequired             bool             `json:"mfa_required"`
-	RuntimeScoped           bool             `json:"-"`
-	CanManageGitConnections bool             `json:"can_manage_git"`
-	CanManageApplications   bool             `json:"can_manage_applications"`
-	ID                      string           `json:"id"`
-	Name                    string           `json:"name"`
-	Admin                   bool             `json:"admin"`
-	Owner                   bool             `json:"owner"`
-	Email                   string           `json:"email,omitempty"`
-	CredentialType          string           `json:"credential_type"`
-	ProjectRoles            []ProjectRole    `json:"project_roles,omitempty"`
-	AvatarStyle             string           `json:"avatar_style,omitempty"`
-	AvatarSeed              string           `json:"avatar_seed,omitempty"`
-	AvatarURL               string           `json:"avatar_url,omitempty"`
-	ProfileRevision         int64            `json:"profile_revision"`
-	HostPermissions         []HostPermission `json:"host_permissions"`
-	KeyID                   string           `json:"-"`
-	Project                 string           `json:"project"`
-	Environment             string           `json:"environment"`
-	Application             string           `json:"application,omitempty"`
-	Permissions             []string         `json:"permissions"`
-	IdentityProject         string           `json:"-"`
-	IdentityEnvironment     string           `json:"-"`
-	IdentityPermissions     []string         `json:"-"`
+	CanManageDatabaseBackups bool             `json:"can_manage_backups"`
+	MFAVerified              bool             `json:"mfa_verified"`
+	MFARequired              bool             `json:"mfa_required"`
+	RuntimeScoped            bool             `json:"-"`
+	CanManageGitConnections  bool             `json:"can_manage_git"`
+	CanManageApplications    bool             `json:"can_manage_applications"`
+	ID                       string           `json:"id"`
+	Name                     string           `json:"name"`
+	Admin                    bool             `json:"admin"`
+	Owner                    bool             `json:"owner"`
+	Email                    string           `json:"email,omitempty"`
+	CredentialType           string           `json:"credential_type"`
+	ProjectRoles             []ProjectRole    `json:"project_roles,omitempty"`
+	AvatarStyle              string           `json:"avatar_style,omitempty"`
+	AvatarSeed               string           `json:"avatar_seed,omitempty"`
+	AvatarURL                string           `json:"avatar_url,omitempty"`
+	ProfileRevision          int64            `json:"profile_revision"`
+	HostPermissions          []HostPermission `json:"host_permissions"`
+	KeyID                    string           `json:"-"`
+	Project                  string           `json:"project"`
+	Environment              string           `json:"environment"`
+	Application              string           `json:"application,omitempty"`
+	Permissions              []string         `json:"permissions"`
+	IdentityProject          string           `json:"-"`
+	IdentityEnvironment      string           `json:"-"`
+	IdentityPermissions      []string         `json:"-"`
 }
 
 func contains(xs []string, s string) bool {
