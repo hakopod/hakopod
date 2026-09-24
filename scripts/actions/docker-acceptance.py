@@ -21,8 +21,8 @@ busybox = 'docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb
 script = r'''
 set -eu
 # All capabilities and mounts are inside gVisor, never on the host kernel.
-iface=$(ip route show default | awk '{print $5; exit}')
-addr=$(ip -4 -o addr show dev "$iface" | awk '{split($4,a,"/"); print a[1]; exit}')
+iface=$(ip route show default | awk '{for (i=1;i<NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+addr=$(ip -4 -o addr show dev "$iface" | awk '{for (i=1;i<NF;i++) if ($i=="inet") {split($(i+1),a,"/"); print a[1]; exit}}')
 mtu=$(cat "/sys/class/net/$iface/mtu")
 iptables_cmd=iptables
 if command -v iptables-legacy >/dev/null; then iptables_cmd=iptables-legacy; fi
