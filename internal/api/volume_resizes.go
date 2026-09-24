@@ -93,6 +93,10 @@ func (s *Server) planVolumeResize(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"claim": plan.Claim, "old_gib": plan.OldGiB, "size_gib": plan.SizeGiB, "temporary_gib": plan.SizeGiB, "peak_gib": plan.SizeGiB + plan.OldGiB, "services": plan.Services, "source_uid": string(state.SourceUID), "expected_revision": a.Revision, "warnings": []string{"All listed services stop while the filesystem is checked and copied. Shrinking proceeds only if the data fits with free-space headroom.", "The original remains retained and charged after switching. Confirm its deletion after checking your application to reclaim that storage.", "The resized filesystem uses a new named volume. Keep the resulting volume and mount settings in your Git configuration before deploying it again."}})
 }
 func (s *Server) startVolumeResize(w http.ResponseWriter, r *http.Request) {
+	if n := len(r.Header.Get("Idempotency-Key")); n < 8 || n > 128 {
+		problem(w, 400, "invalid_request", "Idempotency-Key must contain 8–128 characters.")
+		return
+	}
 	// Replay an accepted operation before inspecting a volume that maintenance
 	// may already have stopped or replaced.
 	id := store.ResizeID(who(r).ID, r.Header.Get("Idempotency-Key"))

@@ -138,9 +138,16 @@ def migrate(source, target, target_bytes):
     if [str(p) for p, _ in current] != [str(p) for p, _ in copied] or expected != fingerprint(target, copied):
         raise ValueError("filesystem verification failed; original data is preserved")
     root_info = source.stat()
-    if root_info.st_gid not in {os.getgid(), *os.getgroups()}:
-        raise ValueError("mount root requires an unavailable filesystem group")
-    os.chown(target, -1, root_info.st_gid)
+    root_group = root_info.st_gid
+    if root_group not in {os.getgid(), *os.getgroups()}:
+        # A local-path provisioner owns the mount root as root:root. Its
+        # directory is infrastructure metadata; the new service-owned data
+        # directory uses our existing group. Application files remain subject
+        # to the strict ownership checks and full verification above.
+        if root_info.st_uid != 0:
+            raise ValueError("mount root requires an unavailable filesystem group")
+        root_group = os.getgid()
+    os.chown(target, -1, root_group)
     os.chmod(target, stat.S_IMODE(root_info.st_mode))
     os.sync()
     return {"verified": True, "files": len(current), "bytes": total, "sha256": expected}

@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,6 +42,26 @@ func TestLiveVolumeResizeShrinkGrowAndRejectOverflow(t *testing.T) {
 		bounded, done := context.WithTimeout(context.Background(), 60*time.Second)
 		defer done()
 		_ = c.DeletePreview(bounded, target)
+	}()
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		bounded, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		pods, e := c.kube.CoreV1().Pods(Namespace(name)).List(bounded, metav1.ListOptions{Limit: 100})
+		if e == nil {
+			for _, pod := range pods.Items {
+				data, _ := json.Marshal(pod.Status)
+				t.Logf("pod %s status: %s", pod.Name, data)
+			}
+		}
+		events, e := c.kube.CoreV1().Events(Namespace(name)).List(bounded, metav1.ListOptions{Limit: 100})
+		if e == nil {
+			for _, event := range events.Items {
+				t.Logf("event %s %s: %s", event.InvolvedObject.Name, event.Reason, event.Message)
+			}
+		}
 	}()
 	if _, err = c.Deploy(ctx, target, nil); err != nil {
 		t.Fatal(err)

@@ -23,7 +23,7 @@ function request(
 }
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
-  const cases = [
+  const cases: { path: string; method: string; body?: object; query?: string }[] = [
     { path: 'applications/app-a/volume-resizes', method: 'GET' },
     {
       path: 'applications/app-a/volume-resizes/plan',

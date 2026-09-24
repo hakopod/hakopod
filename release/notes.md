@@ -1,27 +1,27 @@
-Hakopod 0.1.0-alpha.24 adds explicit retained-data reclamation and browser-authorized npm deployments.
+Hakopod 0.1.0-alpha.25 adds reviewed offline volume growth and shrinking, plus optional volume deletion when removing a service.
 
-## Reclaim retained data
+## Resize persistent volumes
 
-Deleting an application preserves its persistent data by default. Opt in to permanent data deletion during application confirmation, or reclaim an already deleted application's data from its project page. Both require the application name. Backups are kept. Current authorization is checked during cleanup, and storage reservations are released only after owned Kubernetes volumes are reclaimed. Failed reclamation remains visible and retryable.
+Use Resize in a service's storage section. The engine stops affected services, copies into a new volume and verifies contents and metadata before switching mounts. Shrinking never truncates the original filesystem. Both volumes remain reserved until you explicitly confirm deletion of the original after checking the application. Interrupted maintenance can be retried; pre-switch cancellation resumes the original, while post-switch recovery preserves both copies without rolling back new writes.
 
-Compute allocations remain separate from storage reservations. This release does not automatically delete existing retained data or upgrade customer nodes.
+The shared API and dashboard support self-hosted, Cloud hosted and upgraded BYOD engines. Targets range from 1 to 200 GiB and must fit the data plus free-space headroom. Physical provider capacity and workspace allowances still apply. Single-replica services with compatible file ownership are supported; scheduled jobs, deployment jobs, serverless scaling and block-device volumes are excluded. See `docs/volume-resizing.md` for recovery and provider limitations.
 
-## Guided npm deployments
+Resizing creates a new named volume and mount subdirectory. Update the resulting volume and mount settings in Git before redeploying.
 
-The public `@hakopod/cli` package guides deployment of clean, pushed Git repositories. Browser consent binds its session to one project/environment or Cloud workspace. Framework detection, build commands, the generated Git workflow and the deployment plan are reviewed before execution. Interrupted builds resume with persistent idempotency keys. Membership, MFA and Cloud approval policies remain enforced.
+## Delete unused service volumes explicitly
 
-The npm package has its own version and publication lifecycle. This server release provides its device-scope and build API support. The existing Go CLI remains available for TOML, logs and infrastructure administration.
+Service deletion offers an unchecked option to permanently remove its unused volumes. Shared mounts are retained. Cleanup is retryable, requires current management authority, and releases storage reservations only after owned storage is reclaimed. Backups remain intact.
 
 ## Upgrade
 
-Back up the installation before upgrading. Supported upgrade sources are declared in `release/upgrade-paths.json`, including alpha.23 and its supported predecessors. Download this release's installer.sh and run:
+Back up the installation, download this release's installer.sh, then run:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.24
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.25
 ```
 
-Existing deleted applications are added to the retained-data list without erasing their data. BYOD nodes need this engine release to expose the new reclamation API.
+Supported upgrade sources are declared in `release/upgrade-paths.json`, including alpha.24 and its supported predecessors. Schema 42 adds the durable resize journal. No existing customer volume is resized or erased by upgrading. BYOD nodes need the new engine version before they can execute resizing.
 
 ## Validation
 
-The full PostgreSQL-backed Go suite, vet, both dashboard builds/typechecks/tests, npm tests and packed-install checks passed. Independent rendered reviews cover both themes, mobile/desktop and failure states. Named development-cluster acceptance verified ownership denial, namespace/PVC/PV/native-secret cleanup and idempotent replay with local-path storage. This does not claim acceptance of every CSI driver or deletion of customer disks. Publication additionally requires native package smoke checks and the declared installation/upgrade matrix.
+PostgreSQL-backed tests cover maintenance exclusion, storage accounting, durable transitions and permission revocation. Dashboard builds and tests plus independent rendered reviews cover both editions/themes and mobile/desktop recovery controls. Publication also requires the native installation/upgrade matrix. The development-cluster resize test checks growth, shrink, data/link preservation and rejection of an undersized target; this does not certify every CSI provider or resize customer volumes.

@@ -8,7 +8,7 @@ Open a service's storage section and choose **Resize**. Review the target capaci
 
 The original stays intact while the helper copies and verifies file hashes, links and metadata. Only a verified copy can become the application's new volume. After the application is healthy and you have checked its data, explicitly confirm **Delete original volume** to reclaim the old allocation. Both copies remain charged until physical reclamation finishes. Existing backups are not deleted by this action.
 
-The resulting application revision uses a new named volume and a `data` subdirectory. Update the volume and mount settings in your committed Git configuration before the next deployment. Reusing the retained original claim is blocked until its maintenance record is completed.
+The resulting application revision uses a new named volume and a `data` subdirectory. Update the volume and mount settings in your committed Git configuration before the next deployment. Reusing the original claim name stays blocked even after deletion, so stale Git configuration cannot silently recreate it as empty storage.
 
 ## Capacity and supported workloads
 

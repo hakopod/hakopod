@@ -127,6 +127,9 @@ func TestVolumeResizeDurabilityQuotaAndAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.Release()
+	if _, err = s.Accept(ctx, p, a.Project, a.Environment, a.Spec, current.Revision, "stale-git-original"); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale Git recreated deleted original", err)
+	}
 	if err = s.Pool.QueryRow(ctx, "SELECT sum(size_gib) FROM storage_reservations WHERE application_id=$1", a.ID).Scan(&quota); err != nil || quota != 5 {
 		t.Fatal("incorrect quota after reclamation", quota, err)
 	}

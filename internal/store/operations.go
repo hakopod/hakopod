@@ -218,26 +218,23 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if resizePending {
 		return Deployment{}, fmt.Errorf("%w: finish volume maintenance before changing this application", ErrConflict)
 	}
-	// Retained originals cannot be silently reused while a resize owns them.
-	rows, resizeErr := tx.Query(ctx, "SELECT claim FROM volume_resizes WHERE application_id=$1 AND phase='original_retained'", a.ID)
-	if resizeErr != nil {
-		return Deployment{}, resizeErr
+	// A stale Git revision must not reattach an old copy or recreate an empty
+	// original after its explicit deletion. Retired claim names stay reserved.
+	plannedClaims := []string{}
+	for name := range next.Volumes {
+		plannedClaims = append(plannedClaims, "hakopod-volume-"+name)
 	}
-	for rows.Next() {
-		var claim string
-		if resizeErr = rows.Scan(&claim); resizeErr != nil {
-			rows.Close()
-			return Deployment{}, resizeErr
-		}
-		if spec.HasVolumeClaim(next, claim) {
-			rows.Close()
-			return Deployment{}, fmt.Errorf("original resize volume is retained; finalize its resize before reuse")
+	for name, svc := range next.Services {
+		if svc.Volume != nil {
+			plannedClaims = append(plannedClaims, name+"-data")
 		}
 	}
-	resizeErr = rows.Err()
-	rows.Close()
-	if resizeErr != nil {
-		return Deployment{}, resizeErr
+	var retired bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM volume_resizes WHERE application_id=$1 AND phase IN ('original_retained','completed') AND claim=ANY($2::text[]))", a.ID, plannedClaims).Scan(&retired); err != nil {
+		return Deployment{}, err
+	}
+	if retired {
+		return Deployment{}, fmt.Errorf("%w: this configuration references a volume replaced by resize; use the application's current volume and mount settings", ErrConflict)
 	}
 	claims, err := ServiceVolumeClaims(a.Spec, next, deleteServices)
 	if err != nil {
