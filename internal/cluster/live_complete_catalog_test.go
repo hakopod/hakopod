@@ -106,6 +106,7 @@ func TestLiveCompleteCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	password := strings.Repeat("fixture-only-", 4)
 	defer func() {
 		clean, done := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer done()
@@ -113,6 +114,21 @@ func TestLiveCompleteCatalog(t *testing.T) {
 		if err != nil || current.UID != ns.UID || owned(current, target) != nil || current.Labels["hakopod.io/acceptance"] != "complete-catalog" {
 			t.Error("fixture identity changed; retaining namespace")
 			return
+		}
+		if t.Failed() {
+			// Capture bounded, fixture-only diagnostics before reclaiming the namespace.
+			pods, err := c.kube.CoreV1().Pods(ns.Name).List(clean, metav1.ListOptions{})
+			if err == nil {
+				for _, pod := range pods.Items {
+					t.Logf("fixture pod %s: phase=%s conditions=%v containers=%v", pod.Name, pod.Status.Phase, pod.Status.Conditions, pod.Status.ContainerStatuses)
+					for _, container := range pod.Spec.Containers {
+						data, err := c.kube.CoreV1().Pods(ns.Name).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, TailLines: ptr(int64(60)), LimitBytes: ptr(int64(6000))}).DoRaw(clean)
+						if err == nil {
+							t.Logf("fixture logs %s/%s: %s", pod.Name, container.Name, strings.ReplaceAll(string(data), password, "[fixture credential]"))
+						}
+					}
+				}
+			}
 		}
 		claims, err := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).List(clean, metav1.ListOptions{})
 		if err != nil {
@@ -145,7 +161,6 @@ func TestLiveCompleteCatalog(t *testing.T) {
 		}
 		t.Error("fixture cleanup did not complete")
 	}()
-	password := strings.Repeat("fixture-only-", 4)
 	for _, ref := range spec.TemplateSecretNames(app) {
 		value := password
 		if ref == "encryption-key" {
