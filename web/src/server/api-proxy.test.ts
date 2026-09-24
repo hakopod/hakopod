@@ -24,6 +24,17 @@ function request(
 
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases: { path: string; method: string; body?: object; query?: string }[] = [
+    {
+      path: 'deployment-secret-requirements',
+      method: 'POST',
+      body: { project: 'demo', environment: 'preview', spec: { name: 'app', services: {} } },
+    },
+    {
+      path: 'secrets/requirements',
+      method: 'POST',
+      query: '?project=demo&environment=preview&application=app',
+      body: { value: 'synthetic-secret' },
+    },
     { path: 'applications/app-a/volume-resizes', method: 'GET' },
     {
       path: 'applications/app-a/volume-resizes/plan',

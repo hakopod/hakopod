@@ -70,6 +70,7 @@ export const allowed = [
   /^applications\/[A-Za-z0-9_-]+\/(?:services\/[A-Za-z0-9_-]+\/(?:move-plan|move)|service-moves(?:\/[A-Za-z0-9_-]+\/finish)?)$/,
   /^templates(?:\/[A-Za-z0-9_-]+\/(?:plan|deploy|secrets\/[A-Za-z0-9_-]+))?$/,
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
+  /^deployment-secret-requirements$/,
   /^secret-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
 ]
 
