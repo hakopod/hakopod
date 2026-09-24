@@ -74,7 +74,7 @@ try:
             'resources': {'requests': {'cpu': '500m', 'memory': '1Gi'}, 'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '6Gi'}},
             'securityContext': {'privileged': False, 'runAsUser': 0, 'capabilities': {'drop': ['ALL'], 'add': ['AUDIT_WRITE','CHOWN','DAC_OVERRIDE','FOWNER','FSETID','KILL','MKNOD','NET_BIND_SERVICE','NET_ADMIN','NET_RAW','SETFCAP','SETGID','SETPCAP','SETUID','SYS_ADMIN','SYS_CHROOT','SYS_PTRACE']}},
             'volumeMounts': [{'name': 'docker', 'mountPath': '/var/lib/docker'}]}],
-        'volumes': [{'name': 'docker', 'emptyDir': {'sizeLimit': '6Gi'}}]}})
+        'volumes': [{'name': 'docker', 'emptyDir': {'medium': 'Memory', 'sizeLimit': '2Gi'}}]}})
     deadline = time.monotonic() + 960
     while time.monotonic() < deadline:
         pod = json.loads(command(['-n', namespace, 'get', 'pod', 'docker-test', '-o', 'json']))
