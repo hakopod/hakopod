@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Plan } from '../lib/types'
 import { activeDeployment, message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
-import { useScope } from '../lib/scope'
+import { canAccess, useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import { currentDeploymentRuntime } from '../lib/runtime-health'
 import { RuntimeNotice } from '../components/runtime-notice'
@@ -81,6 +81,16 @@ function DeploymentDetail() {
   if (deployment.error || !deployment.data)
     return <ErrorState error={deployment.error} retry={() => void deployment.refetch()} />
   const release = deployment.data
+  const canManageVolumes =
+    Boolean(application.data?.project) &&
+    canAccess(scope.identity, application.data!.project, 'deployments:write') &&
+    Boolean(
+      scope.identity.admin ||
+      scope.identity.can_manage_applications ||
+      scope.identity.project_roles?.some(
+        (role) => role.project === application.data!.project && role.role === 'admin',
+      ),
+    )
   const runtimeHealth = currentDeploymentRuntime(
     application.error ? undefined : application.data,
     release.revision,
@@ -237,7 +247,7 @@ function DeploymentDetail() {
             {release.volume_cleanup.error && (
               <>
                 <p>{release.volume_cleanup.error}</p>
-                {scope.can('deployments:write') && (
+                {canManageVolumes && (
                   <Button
                     className="justify-self-start"
                     disabled={busy}
