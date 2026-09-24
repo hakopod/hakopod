@@ -253,6 +253,11 @@ import boto3
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.conf import settings
+from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+request = Request("http://main:8080/api/_health/", headers={"Host": urlsplit(os.environ["BASEROW_PUBLIC_URL"]).netloc})
+with urlopen(request, timeout=10) as response:
+    assert response.status == 200 and response.read() == b"OK"
 assert settings.AWS_DEFAULT_ACL is None
 assert settings.AWS_QUERYSTRING_AUTH is True
 client = boto3.client("s3", endpoint_url=os.environ["AWS_S3_ENDPOINT_URL"], region_name="us-east-1")
@@ -262,7 +267,12 @@ assert default_storage.open(key).read() == b"catalog-media-survives"
 assert "X-Amz-Signature=" in default_storage.url(key)
 default_storage.delete(key)
 print("Private S3 media round trip verified")
-`, "python", "-")
+`, "/bin/bash", "/baserow/backend/docker/docker-entrypoint.sh", "python", "-")
+		run("worker", "", "/bin/bash", "-ec", `for attempt in 1 2 3 4; do
+ /bin/bash /baserow/backend/docker/docker-entrypoint.sh celery-worker-healthcheck && exit 0
+ sleep 3
+done
+exit 1`)
 	}
 	if app.Services["main"].Volume != nil {
 		mount := app.Services["main"].Volume.MountPath

@@ -19,7 +19,7 @@ jobs:
       max-parallel: 2
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
-        template: [dagu, couchdb, blinko, bytebase, baserow]
+        template: [baserow, dagu, couchdb, blinko, bytebase]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
