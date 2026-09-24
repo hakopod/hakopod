@@ -294,7 +294,7 @@ print("Private S3 media round trip verified")
 			}
 		}
 	}
-	t.Log("Exact native preset reached readiness; authenticated access, configured persistence and applicable provider operations verified")
+	t.Log("Native preset reached readiness; applicable protocol, storage and restart checks passed")
 }
 
 func completeCatalogForward(t *testing.T, ctx context.Context, path, namespace string, port int32) string {
