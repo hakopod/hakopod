@@ -3057,7 +3057,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/secrets/requirements": {
+    "/deployment-secret-requirements": {
         parameters: {
             query?: never;
             header?: never;

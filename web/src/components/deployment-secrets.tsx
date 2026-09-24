@@ -47,7 +47,7 @@ export function DeploymentSecrets({
   if (!plan.required_secrets?.length) return null
   async function check() {
     const result = await unwrap(
-      client.POST('/secrets/requirements', {
+      client.POST('/deployment-secret-requirements', {
         body: { project, environment, spec: plan.spec },
       }),
     )

@@ -34,6 +34,6 @@ paths["/placement/nodes"]["get"]["parameters"].append({"name":"application","in"
 schemas["Serverless"] = obj({"min_replicas":{"type":"integer","minimum":0,"maximum":1,"default":0},"idle_seconds":{"type":"integer","minimum":30,"maximum":86400,"default":300},"startup_timeout_seconds":{"type":"integer","minimum":5,"maximum":300,"default":60},"request_timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":60},"max_concurrency":{"type":"integer","minimum":1,"maximum":64,"default":16}})
 schemas["Service"]["properties"]["serverless"] = ref("Serverless")
 
-route("/secrets/requirements", "post", "checkSecretRequirements", obj({"required_secrets": array(S), "missing_secrets": array(S)}, ["required_secrets", "missing_secrets"]), obj({"project": S, "environment": S, "spec": ref("Spec")}, ["project", "environment", "spec"]))
+route("/deployment-secret-requirements", "post", "checkSecretRequirements", obj({"required_secrets": array(S), "missing_secrets": array(S)}, ["required_secrets", "missing_secrets"]), obj({"project": S, "environment": S, "spec": ref("Spec")}, ["project", "environment", "spec"]))
 route("/secrets/{name}", "post", "createWorkloadSecret", obj({"name": S, "saved": B}, ["name", "saved"]), obj({"value": S, "generate": B, "format": {"type": "string", "enum": ["base64url", "hex"]}}), "201", scope=True)
 paths["/secrets/{name}"]["post"]["parameters"] += [{"name": "name", "in": "path", "required": True, "schema": S}, {"name": "application", "in": "query", "required": True, "schema": S}]

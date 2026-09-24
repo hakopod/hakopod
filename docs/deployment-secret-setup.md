@@ -25,7 +25,7 @@ provider-issued tokens, certificates or credentials for existing databases.
 Check an application's documented format before choosing generation.
 
 Creation never overwrites an existing value: retry or concurrent creation returns
-`409 secret_exists`. Recheck using `POST /api/v1/secrets/requirements` with
+`409 secret_exists`. Recheck using `POST /api/v1/deployment-secret-requirements` with
 `project`, `environment` and the canonical `spec`. Existing secret rotation stays
 an explicit operation through the Secrets page/PUT endpoint. Only metadata is
 returned. Cloud Team approval policy still applies to secret creation.
