@@ -1,0 +1,35 @@
+name: Managed Actions Docker runtime
+on:
+  push:
+    branches: ['codex/managed-actions-runtime']
+    paths: ['scripts/actions/**', '.github/workflows/actions-runtime.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: actions-runtime-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      HAKOPOD_DEV_SERVER_MEMORY: 6g
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - name: Start disposable named development cluster
+        run: scripts/local-up.sh
+      - name: Install pinned isolated Docker runtime
+        run: |
+          python3 scripts/actions/setup-dev-runtime.py
+          sleep 10
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+      - name: Verify Docker workloads inside gVisor
+        run: python3 scripts/actions/docker-acceptance.py
