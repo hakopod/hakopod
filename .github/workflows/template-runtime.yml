@@ -49,6 +49,10 @@ jobs:
           set -o pipefail
           mkdir -p .local/runtime-results
           HAKOPOD_VOLUME_RESIZE_TEST=1 go test ./internal/cluster -run '^TestLiveVolumeResizeShrinkGrowAndRejectOverflow$' -count=1 -json | tee .local/runtime-results/volume-resize.jsonl
+      - name: Verify missing secret setup and runtime scope
+        run: |
+          set -o pipefail
+          HAKOPOD_SECRET_SETUP_TEST=1 go test ./internal/cluster -run '^TestLiveDeploymentSecretSetup$' -count=1 -json | tee .local/runtime-results/secret-setup.jsonl
       - name: Validate catalog and lifecycle behavior
         run: |
           set -o pipefail
