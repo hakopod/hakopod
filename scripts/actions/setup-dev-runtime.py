@@ -30,11 +30,11 @@ with tempfile.TemporaryDirectory() as tmp:
         archive.extractall(root, filter='data')
     for name in ('runsc', 'containerd-shim-runsc-v1', 'gvisor-bin'):
         matches = list(root.rglob(name))
-        if len(matches) != 1 or not matches[0].is_file():
+        if len(matches) != 1 or not (matches[0].is_dir() if name == 'gvisor-bin' else matches[0].is_file()):
             raise SystemExit(f'Missing runtime file {name}')
         subprocess.run(['docker', 'cp', str(matches[0]), f'{node}:/usr/local/bin/{name}'], check=True)
     config = root / 'runsc-actions.toml'
-    config.write_text('[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n  allow-packet-socket-write = "true"\n')
+    config.write_text('[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n  allow-packet-socket-write = "true"\n  overlay2 = "root:memory,size=512m"\n')
     template = root / 'config-v3.toml.tmpl'
     template.write_text('''{{ template "base" . }}
 [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.hakopod-actions]
