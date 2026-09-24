@@ -47,7 +47,7 @@ export default function BuildForm({
   const features = useEditionFeatures()
   const [step, setStep] = useState(0)
   const [furthest, setFurthest] = useState(0)
-  const stepHeading = useRef<HTMLHeadingElement>(null)
+  const stepHeading = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const showStep = (next: number) => {
     setStep(next)
@@ -68,7 +68,7 @@ export default function BuildForm({
   const [connectionId, setConnectionId] = useState(build?.connection_id || '')
   const [repository, setRepository] = useState(build?.repository || '')
   const [branch, setBranch] = useState(build?.branch || 'main')
-  const [mode, setMode] = useState<Build['mode']>(build?.mode || 'dockerfile')
+  const [mode, setMode] = useState<Build['mode']>(build?.mode || 'framework')
   const [framework, setFramework] = useState(build?.framework || defaultFrameworkPlan)
   const [buildSecrets, setBuildSecrets] = useState(() => formatBuildSecrets(build?.build_secrets))
   const boundApplicationId = application?.id || build?.application_id
@@ -84,7 +84,6 @@ export default function BuildForm({
   const reuseApplication = linkedApp.data || application
   const [detecting, setDetecting] = useState(false)
   const [detectionError, setDetectionError] = useState('')
-  const [detectionNotes, setDetectionNotes] = useState<string[]>([])
   const [suggestion, setSuggestion] = useState<{
     source: string
     result: components['schemas']['BuildDetection']
@@ -107,7 +106,7 @@ export default function BuildForm({
   const [runtimeEnv, setRuntimeEnv] = useState(() => environmentRows(build?.env))
   const [runtimeArgs, setRuntimeArgs] = useState(() => formatProcessCommand(build?.args))
   const [dockerfile, setDockerfile] = useState(build?.dockerfile || 'Dockerfile')
-  const [port, setPort] = useState(build?.port || 8080)
+  const [port, setPort] = useState(build?.port || defaultFrameworkPlan.port)
   const [isPublic, setPublic] = useState(build?.public || false)
   const [size, setSize] = useState(build?.size || 'small')
   const [registry, setRegistry] = useState(build?.registry_credential || '')
@@ -146,6 +145,58 @@ export default function BuildForm({
   ])
   const currentSource = useRef(sourceFingerprint)
   currentSource.current = sourceFingerprint
+  const recipeEdited = useRef(Boolean(build))
+  const lastDetectedSource = useRef('')
+  const detection = suggestion?.source === sourceFingerprint ? suggestion.result : undefined
+  const canDetect = Boolean(
+    name &&
+    repository &&
+    branch &&
+    (scope.identity.admin || scope.identity.can_manage_git || boundApplicationId),
+  )
+  const applyDetection = (result: components['schemas']['BuildDetection']) => {
+    setMode(result.mode)
+    if (result.framework) {
+      setFramework({ ...result.framework })
+      setPort(result.framework.port)
+    }
+    if (result.dockerfile) setDockerfile(result.dockerfile)
+    recipeEdited.current = true
+  }
+  const detectRepository = async (applyInitial = false) => {
+    if (!canDetect) return
+    const source = sourceFingerprint
+    setDetecting(true)
+    setDetectionError('')
+    setSuggestion(null)
+    try {
+      const result = await unwrap(
+        client.POST('/builds/detect', {
+          body: {
+            project,
+            environment,
+            name,
+            service,
+            provider,
+            connection_id: connectionId,
+            repository,
+            branch,
+            context_path: context,
+            application_id: boundApplicationId,
+            mode: 'dockerfile',
+          },
+        }),
+      )
+      if (source !== currentSource.current) return
+      lastDetectedSource.current = source
+      setSuggestion({ source, result })
+      if (applyInitial && !recipeEdited.current) applyDetection(result)
+    } catch (cause) {
+      if (source === currentSource.current) setDetectionError(message(cause))
+    } finally {
+      setDetecting(false)
+    }
+  }
   useEffect(() => {
     if (error) {
       const invalid = formRef.current?.querySelector<HTMLElement>(
@@ -213,6 +264,46 @@ export default function BuildForm({
       icon="branch"
       help={
         <>
+          {(build || step > 0) && (
+            <FormHint title="Build summary">
+              <dl className="grid min-w-0 gap-3 text-sm [&_dd]:[overflow-wrap:anywhere] [&_dt]:text-[var(--muted)]">
+                <div>
+                  <dt>Repository</dt>
+                  <dd>
+                    {repository} · {branch}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Build directory</dt>
+                  <dd>
+                    <code>{context}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Recipe</dt>
+                  <dd>
+                    {mode === 'framework'
+                      ? frameworkLabel(framework.framework)
+                      : mode === 'dockerfile'
+                        ? 'Dockerfile'
+                        : 'Cloud Native Buildpacks'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Build location</dt>
+                  <dd>{provider === 'github' ? 'GitHub Actions' : 'GitLab CI'}</dd>
+                </div>
+                <div>
+                  <dt>Deployment</dt>
+                  <dd>
+                    {linked
+                      ? 'Keep linked service resources and networking'
+                      : 'Deploy a verified build to create the application'}
+                  </dd>
+                </div>
+              </dl>
+            </FormHint>
+          )}
           <FormHint title="Keep builds in Git">
             The reviewed workflow runs in your provider account. Hakopod deploys its verified image
             digest.
@@ -264,6 +355,8 @@ export default function BuildForm({
           setError('')
           try {
             if (!build && step < 3) {
+              if (step === 0 && lastDetectedSource.current !== sourceFingerprint)
+                await detectRepository(true)
               if (step === 1) {
                 parseField('build_args', () => parseBuildArgs(buildArgs))
                 parseField('build_secrets', () => parseBuildSecrets(buildSecrets))
@@ -347,13 +440,13 @@ export default function BuildForm({
       >
         <div className="form-body auth-form">
           {!build && (
-            <h2 ref={stepHeading} tabIndex={-1} className="text-base font-semibold">
-              {buildSteps[step]}
-            </h2>
+            <div ref={stepHeading} tabIndex={-1} className="sr-only" role="status">
+              Step {step + 1} of {buildSteps.length}: {buildSteps[step]}
+            </div>
           )}
           {error && <RequestError error={error} />}
           <fieldset
-            disabled={busy || (!build && step !== 0)}
+            disabled={busy || detecting || (!build && step !== 0)}
             className={build || step === 0 ? 'grid min-w-0 gap-4' : 'hidden'}
           >
             <FormSection
@@ -481,109 +574,71 @@ export default function BuildForm({
             disabled={busy || (!build && step !== 1)}
             className={build || step === 1 ? 'grid min-w-0 gap-4' : 'hidden'}
           >
-            <div className="grid gap-2">
-              <Button
-                type="button"
-                disabled={
-                  busy ||
-                  detecting ||
-                  !name ||
-                  !repository ||
-                  (!(scope.identity.admin || scope.identity.can_manage_git) && !boundApplicationId)
-                }
-                onClick={async (event) => {
-                  const form = event.currentTarget.closest('form')
-                  for (const field of form?.querySelectorAll<HTMLInputElement>(
-                    '[data-build-source]',
-                  ) || []) {
-                    if (!field.reportValidity()) return
-                  }
-                  setDetecting(true)
-                  setDetectionError('')
-                  setDetectionNotes([])
-                  setSuggestion(null)
-                  const source = sourceFingerprint
-                  try {
-                    const result = await unwrap(
-                      client.POST('/builds/detect', {
-                        body: {
-                          project,
-                          environment,
-                          name,
-                          service,
-                          provider,
-                          connection_id: connectionId,
-                          repository,
-                          branch,
-                          context_path: context,
-                          application_id: boundApplicationId,
-                          mode: 'dockerfile',
-                        },
-                      }),
-                    )
-                    if (source !== currentSource.current)
-                      throw new Error('Source changed while detecting. Read the repository again.')
-                    setSuggestion({ source, result })
-                    setDetectionNotes([
-                      ...result.warnings,
-                      'Detected at commit ' + result.commit_sha.slice(0, 12),
-                    ])
-                  } catch (err) {
-                    setDetectionError(message(err))
-                  } finally {
-                    setDetecting(false)
-                  }
-                }}
-              >
-                {detecting ? 'Reading repository…' : 'Detect framework'}
-              </Button>
-              {!(scope.identity.admin || scope.identity.can_manage_git) && (
-                <p className="muted-text">
-                  Detection uses this application's approved source repository. For a new
-                  repository, ask your workspace owner to approve the source or enter a reviewed
-                  recipe below.
-                </p>
-              )}
-              {detectionError && <RequestError error={detectionError} />}
-              {suggestion && suggestion.source === sourceFingerprint && (
-                <div className="grid gap-2">
-                  <p className="text-sm">
-                    Suggested:{' '}
-                    {suggestion.result.framework
-                      ? frameworkLabel(suggestion.result.framework.framework) +
-                        ' · ' +
-                        suggestion.result.framework.runtime +
-                        ' · ' +
-                        (suggestion.result.framework.output_directory ||
-                          suggestion.result.framework.start_command)
-                      : 'Existing Dockerfile'}
-                  </p>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
+              <div className="grid min-w-0 gap-1 text-sm" aria-live="polite">
+                <strong className="break-all">{repository || 'Choose a repository'}</strong>
+                <span className="break-all text-[var(--muted)]">
+                  {branch} · {context} · {provider === 'github' ? 'GitHub Actions' : 'GitLab CI'}
+                </span>
+                {detecting ? (
+                  <span>Reading repository…</span>
+                ) : detection ? (
+                  <span>
+                    Detected{' '}
+                    {detection.framework
+                      ? frameworkLabel(detection.framework.framework)
+                      : 'Dockerfile'}{' '}
+                    at commit <code>{detection.commit_sha.slice(0, 12)}</code>
+                  </span>
+                ) : suggestion ? (
+                  <span>Source changed. Detect again to refresh the recipe.</span>
+                ) : (
+                  <span>Choose a recipe or detect settings from your repository.</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {detection && (mode !== 'framework' || !detection.framework) && (
                   <Button
                     type="button"
                     disabled={busy || detecting}
-                    onClick={() => {
-                      const result = suggestion.result
-                      setMode(result.mode)
-                      if (result.framework) {
-                        setFramework(result.framework)
-                        setPort(result.framework.port)
-                      }
-                      if (result.dockerfile) setDockerfile(result.dockerfile)
-                      setSuggestion(null)
-                    }}
+                    onClick={() => applyDetection(detection)}
                   >
                     Use detected settings
                   </Button>
-                </div>
-              )}
-              {detectionNotes.length > 0 && (
-                <ul className="grid gap-1 text-sm" aria-live="polite">
-                  {detectionNotes.map((note) => (
+                )}
+                <Button
+                  type="button"
+                  disabled={busy || detecting || !canDetect}
+                  onClick={() => void detectRepository()}
+                >
+                  {detecting ? 'Detecting…' : detection ? 'Detect again' : 'Detect framework'}
+                </Button>
+              </div>
+            </div>
+            {!(scope.identity.admin || scope.identity.can_manage_git) && (
+              <p className="field-help">
+                Detection uses this application's approved source repository. Ask your workspace
+                owner to approve a new repository, or enter a reviewed recipe.
+              </p>
+            )}
+            {detectionError && (
+              <div role="status">
+                <RequestError error={detectionError} />
+                <p className="field-help">
+                  You can retry detection or configure the build recipe manually.
+                </p>
+              </div>
+            )}
+            {detection && detection.warnings.length > 0 && (
+              <details className="form-disclosure" open>
+                <summary>Review detection notes ({detection.warnings.length})</summary>
+                <ul className="grid gap-2 text-sm">
+                  {detection.warnings.map((note) => (
                     <li key={note}>{note}</li>
                   ))}
                 </ul>
-              )}
-            </div>
+              </details>
+            )}
             <FormSection
               title="Build recipe"
               description="Paths are relative to the repository root."
@@ -596,7 +651,11 @@ export default function BuildForm({
                     label="Build method"
                     value={mode}
                     error={fieldError(error, 'mode', `services.${service}.mode`)}
-                    onValueChange={(value) => setMode(value as Build['mode'])}
+                    onValueChange={(value) => {
+                      recipeEdited.current = true
+                      setMode(value as Build['mode'])
+                      if (value === 'framework') setPort(framework.port)
+                    }}
                     options={[
                       {
                         value: 'dockerfile',
@@ -611,42 +670,31 @@ export default function BuildForm({
                   />
                 </label>
               </div>
-              <label>
-                Target architecture
-                <SelectField
-                  label="Target architecture"
-                  value={architecture}
-                  error={fieldError(error, 'architecture', `services.${service}.architecture`)}
-                  onValueChange={(value) => setArchitecture(value as Build['architecture'] | '')}
-                  options={[
-                    {
-                      value: '',
-                      label: 'Infer from a uniform cluster',
-                    },
-                    {
-                      value: 'amd64',
-                      label: 'Linux AMD64',
-                    },
-                    {
-                      value: 'arm64',
-                      label: features.hostedCompute
-                        ? 'Linux ARM64 · Requires your own server'
-                        : 'Linux ARM64',
-                      disabled: features.hostedCompute,
-                    },
-                  ]}
-                />
-              </label>
               {mode === 'framework' && (
                 <FrameworkBuildFields
-                  value={framework}
+                  key={sourceFingerprint}
+                  value={{ ...framework, port: framework.runtime === 'static' ? 8080 : port }}
+                  detected={detection?.framework}
                   error={error}
                   onChange={(next) => {
+                    recipeEdited.current = true
                     setFramework(next)
-                    if (next.runtime !== framework.runtime) setPort(next.port)
+                    setPort(next.port)
                   }}
                 />
               )}
+              {linked &&
+                mode === 'framework' &&
+                Boolean(reuseApplication?.spec.services[service]?.port) &&
+                reuseApplication?.spec.services[service]?.port !==
+                  (framework.runtime === 'static' ? 8080 : port) && (
+                  <Note>
+                    The linked service routes traffic to port{' '}
+                    {reuseApplication?.spec.services[service]?.port}, but this recipe listens on
+                    port {framework.runtime === 'static' ? 8080 : port}. Match the server port or
+                    update the service networking before deploying.
+                  </Note>
+                )}
               {mode === 'dockerfile' ? (
                 <label>
                   Dockerfile path
@@ -677,6 +725,41 @@ export default function BuildForm({
                   />
                 </label>
               ) : null}
+              <details
+                className="form-disclosure"
+                open={Boolean(fieldError(error, 'architecture')) || undefined}
+              >
+                <summary>
+                  Build architecture{' '}
+                  <span className="muted-text">{architecture || 'Infer from cluster'}</span>
+                </summary>
+                <label>
+                  Target architecture
+                  <SelectField
+                    label="Target architecture"
+                    value={architecture}
+                    error={fieldError(error, 'architecture', `services.${service}.architecture`)}
+                    onValueChange={(value) => setArchitecture(value as Build['architecture'] | '')}
+                    options={[
+                      {
+                        value: '',
+                        label: 'Infer from a uniform cluster',
+                      },
+                      {
+                        value: 'amd64',
+                        label: 'Linux AMD64',
+                      },
+                      {
+                        value: 'arm64',
+                        label: features.hostedCompute
+                          ? 'Linux ARM64 · Requires your own server'
+                          : 'Linux ARM64',
+                        disabled: features.hostedCompute,
+                      },
+                    ]}
+                  />
+                </label>
+              </details>
               <details
                 className="form-disclosure"
                 open={
@@ -1082,6 +1165,20 @@ export default function BuildForm({
                         : `${framework.package_manager} · ${framework.runtime}`}
                   </dd>
                 </div>
+                {mode === 'framework' && (
+                  <div className="sm:col-span-2">
+                    <dt>Build commands</dt>
+                    <dd className="grid gap-1 break-all">
+                      <code>{framework.install_command}</code>
+                      <code>{framework.build_command}</code>
+                      <code>
+                        {framework.runtime === 'static'
+                          ? `Serve ${framework.output_directory} on port 8080`
+                          : `${framework.start_command} · port ${port}`}
+                      </code>
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Image registry</dt>
                   <dd>

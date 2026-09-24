@@ -7,11 +7,24 @@ they do not receive included compute.
 
 ## Automatic framework setup
 
-Open **Builds > Create build**, select the repository and choose **Detect framework**.
-Hakopod reads metadata at one resolved commit, then shows a suggested runtime,
-commands and output directory. **Use detected settings** applies that suggestion.
-Saving settings prepares a workflow for review; installation remains an explicit
-repository write by the administrator.
+Open **Builds > Create build**, select the repository and continue to **Build recipe**.
+Hakopod reads metadata at one resolved commit and fills the first untouched recipe.
+The framework cards show the selected and detected framework. Filter by category,
+choose another supported recipe, or open **Build settings** to edit its runtime,
+commands, output directory and server port. Switching frameworks preserves each
+recipe's draft while the framework picker stays open; manual recipes are starting
+points and need review against the repository's scripts and adapter.
+
+**Detect again** refreshes the observation without replacing edited settings.
+**Use detected settings** explicitly restores the repository suggestion. Changing
+the source invalidates old detection notes. If detection fails, retry or configure
+a recipe, Dockerfile or Cloud Native Buildpacks manually. The summary identifies
+the real build location: GitHub Actions or GitLab CI. The final review includes
+the effective commands; saving prepares a workflow for review, and installation
+remains an explicit repository write by an authorized repository manager.
+
+This picker is part of the Free, shared open-source dashboard. Cloud uses the same
+component and detection API. No Cloud subscription is required for framework setup.
 
 | Framework | Suggested runtime |
 | --- | --- |
