@@ -20,6 +20,9 @@ image = 'docker.io/library/docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b
 busybox = 'docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 script = r'''
 set -eu
+# Use the official dind image's legacy netfilter tools for gVisor's supported API.
+export PATH="/usr/local/sbin/.iptables-legacy:$PATH"
+iptables --version
 # All capabilities and mounts are inside gVisor, never on the host kernel.
 ip route show
 iface=$(ip route show | awk '$1=="default" {for (i=1;i<NF;i++) if ($i=="dev") {print $(i+1); exit}}')
@@ -55,15 +58,25 @@ for i in $(seq 1 30); do
   if docker run --rm --network actions-job "$TEST_IMAGE" wget -qO- http://database:8080/ > /tmp/service-result; then break; fi
   sleep 1
 done
-test "$(cat /tmp/service-result)" = service-ready
+failed=0
+if [ "$(cat /tmp/service-result)" != service-ready ]; then
+  failed=1
+  docker network inspect actions-job
+  docker run --rm --network actions-job "$TEST_IMAGE" sh -c 'cat /etc/resolv.conf; nslookup database || true'
+  tail -60 /tmp/daemon.log
+fi
 # A shell job reaches a published service port from the runner network namespace.
-test "$(wget -qO- http://127.0.0.1:18081/)" = service-ready
+if [ "$(wget -qO- http://127.0.0.1:18081/)" != service-ready ]; then failed=1; fi
 # BuildKit must execute a Dockerfile RUN instruction inside the sandbox.
 printf 'FROM %s\nRUN echo build-ready > /result\nCMD ["cat", "/result"]\n' "$TEST_IMAGE" > /workspace/Dockerfile
-docker build -t actions-build-test /workspace
-test "$(docker run --rm actions-build-test)" = build-ready
+if docker build -t actions-build-test /workspace; then
+  if [ "$(docker run --rm actions-build-test)" != build-ready ]; then failed=1; fi
+else
+  failed=1
+fi
 docker rm -f service
 docker network rm actions-job
+[ "$failed" = 0 ]
 echo 'PASS: container execution, shared workspace, service DNS, published service ports, Docker build'
 '''
 apply({'apiVersion': 'node.k8s.io/v1', 'kind': 'RuntimeClass', 'metadata': {'name': 'hakopod-actions'}, 'handler': 'hakopod-actions'})
