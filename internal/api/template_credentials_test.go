@@ -25,7 +25,11 @@ import (
 	clientconfig "k8s.io/client-go/tools/clientcmd/api"
 )
 
-func templateSecretKube(t *testing.T) *cluster.Client {
+func templateSecretKube(t *testing.T, architectures ...string) *cluster.Client {
+	architecture := "amd64"
+	if len(architectures) > 0 {
+		architecture = architectures[0]
+	}
 	t.Helper()
 	var mu sync.Mutex
 	secrets := map[string]corev1.Secret{}
@@ -42,7 +46,7 @@ func templateSecretKube(t *testing.T) *cluster.Client {
 			return
 		}
 		if r.URL.Path == "/api/v1/nodes" {
-			write(w, 200, map[string]any{"apiVersion": "v1", "kind": "NodeList", "items": []any{map[string]any{"metadata": map[string]any{"name": "fixture-node"}, "status": map[string]any{"conditions": []any{map[string]string{"type": "Ready", "status": "True"}}, "allocatable": map[string]string{"cpu": "8", "memory": "16Gi"}}}}})
+			write(w, 200, map[string]any{"apiVersion": "v1", "kind": "NodeList", "items": []any{map[string]any{"metadata": map[string]any{"name": "fixture-node", "labels": map[string]string{"kubernetes.io/arch": architecture}}, "status": map[string]any{"conditions": []any{map[string]string{"type": "Ready", "status": "True"}}, "allocatable": map[string]string{"cpu": "8", "memory": "16Gi"}}}}})
 			return
 		}
 		if r.URL.Path == "/api/v1/pods" {

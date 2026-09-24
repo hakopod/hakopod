@@ -311,6 +311,7 @@ func run() error {
 			Changes          []spec.Change    `json:"changes"`
 			Warnings         []string         `json:"warnings"`
 			ResourceProfiles any              `json:"resource_profiles"`
+			MissingSecrets   []string         `json:"missing_secrets"`
 		}
 		if len(envFiles) > 0 {
 			request := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "toml": string(data), "env_files": envFiles}
@@ -365,6 +366,9 @@ func run() error {
 		}
 		if command == "plan" {
 			return printJSON(plan)
+		}
+		if err = setupDeploymentSecrets(ctx, c, cfg.Project, cfg.Environment, plan.Spec, plan.MissingSecrets, *outputJSON); err != nil {
+			return err
 		}
 		// Submit the canonical reviewed full revision so retries do not merge a target
 		// into a later application state under a reused idempotency key.

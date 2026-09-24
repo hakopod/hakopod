@@ -1,3 +1,4 @@
+import { DeploymentSecrets } from '../components/deployment-secrets'
 import { GitRepositoryField } from '../components/git-repository-field'
 import { GitConnectionField } from '../components/git-connection-field'
 import { GitDeploymentPaths } from '../components/git-deployment-paths'
@@ -68,7 +69,7 @@ function ImportRepository() {
       <form
         onSubmit={async (event) => {
           event.preventDefault()
-          if (busy) return
+          if (busy || plan?.missing_secrets?.length) return
           setBusy(true)
           setError('')
           try {
@@ -148,6 +149,18 @@ function ImportRepository() {
                 </dl>
               </FormSection>
               <FormSection title="Initial application revision" icon="box">
+                <DeploymentSecrets
+                  plan={plan}
+                  project={plan.source.project}
+                  environment={plan.source.environment}
+                  busy={busy}
+                  onBusy={setBusy}
+                  onChange={(missing) =>
+                    setPlan((current) =>
+                      current ? { ...current, missing_secrets: missing } : current,
+                    )
+                  }
+                />
                 <DiffTable changes={plan.changes} />
                 {plan.warnings.map((warning) => (
                   <Note key={warning}>{warning}</Note>
@@ -266,9 +279,11 @@ function ImportRepository() {
           <Button
             variant="primary"
             type="submit"
-            disabled={busy || !scope.project || !scope.environment}
+            disabled={
+              busy || !scope.project || !scope.environment || Boolean(plan?.missing_secrets?.length)
+            }
           >
-            {busy ? 'Working…' : plan ? 'Create reviewed application' : 'Fetch and review TOML'}
+            {busy ? 'Working…' : plan ? 'Create application' : 'Fetch and review TOML'}
           </Button>
         </div>
       </form>

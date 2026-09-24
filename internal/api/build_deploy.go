@@ -133,7 +133,7 @@ func (s *Server) planBuildRun(w http.ResponseWriter, r *http.Request) {
 	if warnings == nil {
 		warnings = []string{}
 	}
-	write(w, 200, map[string]any{"application_id": id, "expected_revision": revision, "expected_config_revision": c.Revision, "spec": next, "changes": spec.Diff(old, next), "warnings": warnings, "resource_profiles": spec.Profiles})
+	s.writeDeploymentPlan(w, r, c.Project, c.Environment, next, map[string]any{"application_id": id, "expected_revision": revision, "expected_config_revision": c.Revision, "spec": next, "changes": spec.Diff(old, next), "warnings": warnings, "resource_profiles": spec.Profiles})
 }
 func (s *Server) finishBuildDeployment(ctx context.Context, c buildConfig, run buildRun, d store.Deployment) (store.Deployment, error) {
 	_, err := s.Store.Pool.Exec(ctx, "UPDATE build_configs SET application_id=$2 WHERE id=$1 AND (application_id IS NULL OR application_id=$2)", c.ID, d.ApplicationID)

@@ -3034,7 +3034,7 @@ export interface paths {
         };
         get?: never;
         put: operations["putWorkloadSecret"];
-        post?: never;
+        post: operations["createWorkloadSecret"];
         delete: operations["deleteWorkloadSecret"];
         options?: never;
         head?: never;
@@ -3051,6 +3051,22 @@ export interface paths {
         get: operations["listPlacementNodes"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/secrets/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["checkSecretRequirements"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3493,6 +3509,8 @@ export interface components {
             spec: components["schemas"]["Spec"];
             changes: components["schemas"]["Change"][];
             warnings: string[];
+            required_secrets?: string[];
+            missing_secrets?: string[];
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -4016,6 +4034,8 @@ export interface components {
             spec: components["schemas"]["Spec"];
             changes: components["schemas"]["Change"][];
             warnings: string[];
+            required_secrets?: string[];
+            missing_secrets?: string[];
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -4962,6 +4982,8 @@ export interface components {
             spec: components["schemas"]["Spec"];
             changes: components["schemas"]["Change"][];
             warnings: string[];
+            required_secrets?: string[];
+            missing_secrets?: string[];
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -5001,6 +5023,8 @@ export interface components {
             spec: components["schemas"]["Spec"];
             changes: components["schemas"]["Change"][];
             warnings: string[];
+            required_secrets?: string[];
+            missing_secrets?: string[];
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -5086,6 +5110,8 @@ export interface components {
             spec: components["schemas"]["Spec"];
             changes: components["schemas"]["Change"][];
             warnings: string[];
+            required_secrets: string[];
+            missing_secrets?: string[];
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -5098,7 +5124,6 @@ export interface components {
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
             };
-            required_secrets: string[];
             model_source?: string;
             toml: string;
             configuration: components["schemas"]["TemplateConfiguration"];
@@ -13787,6 +13812,53 @@ export interface operations {
             };
         };
     };
+    createWorkloadSecret: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+                application: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    value?: string;
+                    generate?: boolean;
+                    /** @enum {string} */
+                    format?: "base64url" | "hex";
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name: string;
+                        saved: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     deleteWorkloadSecret: {
         parameters: {
             query: {
@@ -13846,6 +13918,46 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["PlacementNode"][];
                         serverless_available: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    checkSecretRequirements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project: string;
+                    environment: string;
+                    spec: components["schemas"]["Spec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        required_secrets: string[];
+                        missing_secrets: string[];
                     };
                 };
             };

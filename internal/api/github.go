@@ -367,7 +367,7 @@ func (s *Server) planSource(w http.ResponseWriter, r *http.Request) {
 	if !s.validateDeliveryPlan(w, r, a.Project, a.Environment, next, &a) {
 		return
 	}
-	write(w, 200, map[string]any{"application_id": a.ID, "expected_revision": a.Revision, "spec": next, "changes": spec.Diff(&a.Spec, next), "warnings": deliveryWarnings(r, next), "commit_sha": commit, "expected_source_revision": b.Revision})
+	s.writeDeploymentPlan(w, r, a.Project, a.Environment, next, map[string]any{"application_id": a.ID, "expected_revision": a.Revision, "spec": next, "changes": spec.Diff(&a.Spec, next), "warnings": deliveryWarnings(r, next), "commit_sha": commit, "expected_source_revision": b.Revision})
 }
 func (s *Server) deploySource(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")

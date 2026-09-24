@@ -12353,6 +12353,103 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createWorkloadSecret",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "saved": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "saved"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "generate": {
+                    "type": "boolean"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "base64url",
+                      "hex"
+                    ]
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
       }
     },
     "/placement/nodes": {
@@ -12416,6 +12513,78 @@
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/secrets/requirements": {
+      "post": {
+        "operationId": "checkSecretRequirements",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "required_secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "missing_secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "required_secrets",
+                    "missing_secrets"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "spec": {
+                    "$ref": "#/components/schemas/Spec"
+                  }
+                },
+                "required": [
+                  "project",
+                  "environment",
+                  "spec"
+                ]
               }
             }
           }
@@ -13960,6 +14129,18 @@
             }
           },
           "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_secrets": {
             "type": "array",
             "items": {
               "type": "string"
@@ -15878,6 +16059,18 @@
             }
           },
           "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_secrets": {
             "type": "array",
             "items": {
               "type": "string"
@@ -19444,6 +19637,18 @@
               "type": "string"
             }
           },
+          "required_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "resource_profiles": {
             "type": "object",
             "additionalProperties": {
@@ -19576,6 +19781,18 @@
             }
           },
           "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_secrets": {
             "type": "array",
             "items": {
               "type": "string"
@@ -19900,6 +20117,18 @@
               "type": "string"
             }
           },
+          "required_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "resource_profiles": {
             "type": "object",
             "additionalProperties": {
@@ -19928,12 +20157,6 @@
             },
             "maxProperties": 20,
             "description": "Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations."
-          },
-          "required_secrets": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "model_source": {
             "type": "string"

@@ -174,6 +174,12 @@ func problem(w http.ResponseWriter, status int, code, message string) {
 	write(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 func failure(w http.ResponseWriter, err error) {
+	var missing *spec.MissingSecretsError
+	if errors.As(err, &missing) {
+		write(w, 409, map[string]any{"error": map[string]any{"code": "missing_secrets", "message": missing.Error(), "missing_secrets": missing.Names}})
+		return
+	}
+
 	switch {
 	case errors.Is(err, store.ErrUnauthorized):
 		problem(w, 401, "unauthorized", err.Error())
@@ -680,7 +686,7 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 	if in.Provenance == nil {
 		in.Provenance = map[string]store.SourceBuild{}
 	}
-	write(w, 200, map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance})
+	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance})
 }
 func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	var in input
@@ -697,7 +703,7 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := s.Store.AcceptWithVolumeCleanup(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), in.Provenance, in.DeleteServiceVolumes)
 	if err != nil {
-		if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrForbidden) {
+		if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrForbidden) || isMissingSecrets(err) {
 			failure(w, err)
 		} else {
 			problem(w, 400, "invalid_deployment", err.Error())

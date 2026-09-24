@@ -1,3 +1,4 @@
+import { DeploymentSecrets } from '../components/deployment-secrets'
 import { frameworkLabel } from '../components/framework-build-fields'
 import { Input } from '../components/ui/input'
 import { useEffect, useRef, useState } from 'react'
@@ -795,6 +796,18 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
               {deploymentPlan.warnings.map((warning) => (
                 <Note key={warning}>{warning}</Note>
               ))}
+              <DeploymentSecrets
+                plan={deploymentPlan}
+                project={build.project}
+                environment={build.environment}
+                busy={busy}
+                onBusy={setBusy}
+                onChange={(missing) =>
+                  setDeploymentPlan((current) =>
+                    current ? { ...current, missing_secrets: missing } : current,
+                  )
+                }
+              />
               <DiffTable changes={deploymentPlan.changes} />
             </>
           )}
@@ -812,7 +825,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
           </Button>
           <Button
             variant="primary"
-            disabled={busy || !deploymentPlan}
+            disabled={busy || !deploymentPlan || Boolean(deploymentPlan.missing_secrets?.length)}
             onClick={async () => {
               if (!deploymentPlan) return
               setBusy(true)

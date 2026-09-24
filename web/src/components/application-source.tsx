@@ -1,3 +1,4 @@
+import { DeploymentSecrets } from './deployment-secrets'
 import { GitRepositoryField } from './git-repository-field'
 import { GitConnectionField } from './git-connection-field'
 import { Input } from './ui/input'
@@ -198,6 +199,18 @@ export default function ApplicationSource({ application }: { application: Applic
               {plan.warnings.map((warning) => (
                 <Note key={warning}>{warning}</Note>
               ))}
+              <DeploymentSecrets
+                plan={plan}
+                project={application.project}
+                environment={application.environment}
+                busy={busy}
+                onBusy={setBusy}
+                onChange={(missing) =>
+                  setPlan((current) =>
+                    current ? { ...current, missing_secrets: missing } : current,
+                  )
+                }
+              />
               <DiffTable changes={plan.changes} />
             </>
           )}
@@ -209,7 +222,7 @@ export default function ApplicationSource({ application }: { application: Applic
           </Button>
           <Button
             variant="primary"
-            disabled={busy || !plan}
+            disabled={busy || !plan || Boolean(plan.missing_secrets?.length)}
             onClick={async () => {
               if (!plan || busy) return
               setBusy(true)

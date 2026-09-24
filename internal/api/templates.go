@@ -148,7 +148,7 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "toml": string(canonical), "configuration": in, "changes": spec.Diff(before, next), "warnings": warnings, "resource_profiles": spec.Profiles, "required_secrets": required, "model_source": func() string {
+	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "toml": string(canonical), "configuration": in, "changes": spec.Diff(before, next), "warnings": warnings, "resource_profiles": spec.Profiles, "required_secrets": required, "model_source": func() string {
 		if in.Model == "" || r.PathValue("id") != "vllm" {
 			return ""
 		}
