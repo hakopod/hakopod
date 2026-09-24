@@ -15,6 +15,7 @@ node = 'k3d-hakopod-dev-server-0'
 label = subprocess.check_output(['docker', 'inspect', '--format', '{{index .Config.Labels "k3d.cluster"}}', node], text=True).strip()
 if label != 'hakopod-dev':
     raise SystemExit('Unexpected development container')
+subprocess.run(['docker', 'exec', node, 'mkdir', '-p', '/usr/local/bin'], check=True)
 arch = subprocess.check_output(['uname', '-m'], text=True).strip()
 digests = {'x86_64': '81416511897ab8abd4e723d66823c5b0461a2ee3311cfa70d152404ef9b860cf', 'aarch64': '2b162adb35860f598ab2f89b9d752bff2c7ee6175c05d9cc532174a336cfb38c'}
 if arch not in digests:
