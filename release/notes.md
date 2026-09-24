@@ -1,25 +1,27 @@
-Hakopod 0.1.0-alpha.23 adds workspace-scoped encrypted database backups and trusted persistent-storage admission for hosted runtimes.
+Hakopod 0.1.0-alpha.24 adds explicit retained-data reclamation and browser-authorized npm deployments.
 
-## Database backups
+## Reclaim retained data
 
-Credentials scoped to a project and environment with deployment write access can configure PostgreSQL/MySQL backup destinations, schedules and reviewed restores. Destination credentials stay encrypted. Jobs retain their accepted scope and recheck current permissions; workspace users cannot access installation recovery or another workspace. Retained artifacts can restore into a new owned database after the original application has been deleted. Scoped object-store endpoints require public HTTPS and refuse private, metadata and operator-configured networks.
+Deleting an application preserves its persistent data by default. Opt in to permanent data deletion during application confirmation, or reclaim an already deleted application's data from its project page. Both require the application name. Backups are kept. Current authorization is checked during cleanup, and storage reservations are released only after owned Kubernetes volumes are reclaimed. Failed reclamation remains visible and retryable.
 
-Backups remain Free. Redis persistent storage is supported by its catalog template; Redis backup/restore is not implemented.
+Compute allocations remain separate from storage reservations. This release does not automatically delete existing retained data or upgrade customer nodes.
 
-## Persistent-storage embedding
+## Guided npm deployments
 
-Trusted runtimes can force a storage class and enforce transactional workspace storage reservations. Retained volumes continue consuming quota, concurrent admissions cannot oversubscribe the budget, and existing claim sizes are immutable. Template planning accepts a reviewed compute size. Private Cloud provisioning and credentials are not included in public artifacts.
+The public `@hakopod/cli` package guides deployment of clean, pushed Git repositories. Browser consent binds its session to one project/environment or Cloud workspace. Framework detection, build commands, the generated Git workflow and the deployment plan are reviewed before execution. Interrupted builds resume with persistent idempotency keys. Membership, MFA and Cloud approval policies remain enforced.
+
+The npm package has its own version and publication lifecycle. This server release provides its device-scope and build API support. The existing Go CLI remains available for TOML, logs and infrastructure administration.
 
 ## Upgrade
 
-Supported upgrade sources are alpha.8, alpha.9, alpha.10, alpha.12, alpha.13, alpha.14, alpha.15, alpha.17, alpha.18, alpha.19, alpha.20, alpha.21 and alpha.22. Back up the installation before upgrading. Download this release's installer.sh and run:
+Back up the installation before upgrading. Supported upgrade sources are declared in `release/upgrade-paths.json`, including alpha.23 and its supported predecessors. Download this release's installer.sh and run:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.23
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.24
 ```
 
-Publication does not automatically upgrade existing installations or enable hosted storage.
+Existing deleted applications are added to the retained-data list without erasing their data. BYOD nodes need this engine release to expose the new reclamation API.
 
 ## Validation
 
-The full PostgreSQL-backed Go suite, dashboard build/typecheck/tests and independent UI review passed. Named development-cluster checks verified sandboxed 1 GiB LVM persistence and allocation bounds; PostgreSQL, MySQL and Redis templates retained data across replacement under the small compute profile. Real encrypted PostgreSQL/MySQL restore checks passed, including corrupted objects, stale pods, existing database names and expired reviews. Publication additionally requires native package smoke and the declared installation/upgrade matrix.
+The full PostgreSQL-backed Go suite, vet, both dashboard builds/typechecks/tests, npm tests and packed-install checks passed. Independent rendered reviews cover both themes, mobile/desktop and failure states. Named development-cluster acceptance verified ownership denial, namespace/PVC/PV/native-secret cleanup and idempotent replay with local-path storage. This does not claim acceptance of every CSI driver or deletion of customer disks. Publication additionally requires native package smoke checks and the declared installation/upgrade matrix.
