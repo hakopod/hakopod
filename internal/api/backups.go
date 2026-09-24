@@ -21,14 +21,15 @@ func (s *Server) registerBackupRoutes(mux *http.ServeMux) {
 	}
 	for path, handler := range routes {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			if !admin(w, r) {
+			if !who(r).CanManageBackups() {
+				problem(w, 403, "forbidden", "Database backups require write access to the selected project and environment.")
 				return
 			}
 			if s.Backups == nil {
 				problem(w, 503, "backup_unavailable", "Backup worker is not configured.")
 				return
 			}
-			handler(w, r)
+			handler(w, r.WithContext(store.WithBackupPrincipal(r.Context(), who(r))))
 		})
 	}
 }
@@ -79,7 +80,11 @@ func (s *Server) putBackupDestination(w http.ResponseWriter, r *http.Request) {
 		backupFailure(w, err)
 		return
 	}
-	d := backup.Destination{ID: r.PathValue("id"), Name: strings.TrimSpace(in.Name), Endpoint: strings.TrimSuffix(in.Endpoint, "/"), Region: in.Region, Bucket: in.Bucket, Prefix: strings.TrimSuffix(in.Prefix, "/"), PathStyle: in.PathStyle, AllowHTTP: in.AllowHTTP}
+	if !who(r).IsAdmin() && (in.AllowHTTP || !strings.HasPrefix(in.Endpoint, "https://")) {
+		backupFailure(w, fmt.Errorf("%w: workspace backups require a public HTTPS endpoint", backup.ErrInput))
+		return
+	}
+	d := backup.Destination{Project: who(r).Project, Environment: who(r).Environment, ID: r.PathValue("id"), Name: strings.TrimSpace(in.Name), Endpoint: strings.TrimSuffix(in.Endpoint, "/"), Region: in.Region, Bucket: in.Bucket, Prefix: strings.TrimSuffix(in.Prefix, "/"), PathStyle: in.PathStyle, AllowHTTP: in.AllowHTTP}
 	var credentials backup.Credentials
 	var recovery string
 	if r.Method == "POST" {
@@ -121,6 +126,8 @@ func (s *Server) putBackupDestination(w http.ResponseWriter, r *http.Request) {
 			backupFailure(w, err)
 			return
 		}
+		d.Project = old.Project
+		d.Environment = old.Environment
 		d.EncryptionRecipient = old.EncryptionRecipient
 		if in.EncryptionIdentity != "" && in.EncryptionIdentity != credentials.EncryptionIdentity {
 			backupFailure(w, fmt.Errorf("%w: encryption identity is immutable", backup.ErrInput))
@@ -240,6 +247,10 @@ func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) {
 		backupFailure(w, err)
 		return
 	}
+	if err := s.Store.AuthorizeBackupSource(r.Context(), who(r), in.Source); err != nil {
+		backupFailure(w, err)
+		return
+	}
 	if _, err := s.Backups.Runtime.Resolve(r.Context(), in.Source); err != nil {
 		problem(w, 409, "backup_target_unavailable", err.Error())
 		return
@@ -334,6 +345,10 @@ func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if err := s.Store.AuthorizeBackupSource(r.Context(), who(r), backup.Source{Kind: "database", ApplicationID: application.ID}); err != nil {
+		backupFailure(w, err)
+		return
+	}
 	service, ok := application.Spec.Services[in.Service]
 	if !ok {
 		backupFailure(w, backup.ErrNotFound)
@@ -414,6 +429,10 @@ func (s *Server) putBackupSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	schedule := backup.Schedule{ID: id, Name: in.Name, DestinationID: in.DestinationID, Source: in.Source, IntervalHours: in.IntervalHours, RetentionCount: in.RetentionCount, Enabled: in.Enabled}
 	if err := schedule.Validate(); err != nil {
+		backupFailure(w, err)
+		return
+	}
+	if err := s.Store.AuthorizeBackupSource(r.Context(), who(r), in.Source); err != nil {
 		backupFailure(w, err)
 		return
 	}

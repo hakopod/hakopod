@@ -5,12 +5,15 @@ library for encryption, and the database's own dump/restore tools. There is one
 durable running backup or restore across API processes. The worker runs inside
 the Go server; it does not require another daemon.
 
-All backup APIs require an unrestricted administrator. Application deployment
-keys cannot read destination metadata, create schedules, or restore databases.
-Each manual operation records its actor and idempotency key. Running jobs
-recheck current authority and cancellation every two seconds. Scheduled jobs
-retain an administrator owner and stop being scheduled if that account loses
-administration or is disabled.
+Installation administrators can manage installation backups. Credentials scoped
+to a project and environment with deployment write permission can manage that
+workspace's database backups. Application-only credentials cannot manage backups.
+Destinations, schedules, jobs and artifacts are filtered before pagination;
+workspace credentials cannot access the management database or another workspace.
+Each operation records its actor and original scope. Running jobs recheck current
+membership and cancellation every two seconds. Schedules stop when their owner's
+current permission is revoked. Trusted Cloud embedding also rechecks workspace
+access, including custom-role permissions.
 
 ## Configure storage and recovery keys
 
@@ -18,7 +21,11 @@ Create an existing bucket in AWS S3 or another compatible service, then create a
 destination in the dashboard or `POST /api/v1/backup-destinations`. Configure its
 endpoint, region, bucket, prefix and path-style setting. HTTPS is required unless
 an administrator explicitly enables HTTP for trusted local storage. Redirects
-are refused. Credentials need object read/write/delete and multipart operations
+are refused. Workspace destinations require public HTTPS on port 443; every
+connection resolves DNS and dials the validated address, blocking private,
+metadata and operator-configured networks without using environment proxies.
+Trusted embedding can set `BackupConfig.BlockedEndpointCIDRs` for additional
+public infrastructure addresses. Credentials need object read/write/delete and multipart operations
 within the chosen prefix; Hakopod does not create production buckets.
 
 Access credentials and the age private identity are encrypted in PostgreSQL with
@@ -87,7 +94,7 @@ resulting archive. Hakopod does not install tools on the operator's Mac.
 with the same engine. It returns a review valid for ten minutes, its exact
 application revision and pod UID, the scope and warnings, and a generated
 `hp_restore_<id>` database name. Confirm that exact name to queue the restore.
-Reviews belong to their initiating administrator and are single-use, with
+Reviews belong to their initiating actor and are single-use, with
 idempotent acceptance retries. An accepted review becomes a receipt retained
 with its job until the completed job's 90-day retention ends. The exact same
 administrator, review, artifact, confirmation and idempotency key returns that
@@ -135,7 +142,7 @@ deletes only recorded artifacts from the same schedule and destination prefix;
 an active restore protects its artifact. Deletion is durably marked before
 storage calls, preventing a racing restore from being accepted; a failed
 deletion remains pending and the worker retries it. Manual artifacts persist until an
-administrator explicitly deletes them. Deleting a schedule leaves its artifacts
+authorized workspace writer or installation administrator explicitly deletes them. Deleting a schedule leaves its artifacts
 available. Destination deletion is refused while artifacts, schedules or active
 jobs still reference it.
 
@@ -158,6 +165,10 @@ directory for the API service.
 
 The queue holds at most 64 pending/running jobs. Destinations are capped at 32,
 schedules at 64, discovered targets at 128, and history pages at 100 with cursors.
+Workspace limits are four destinations, eight schedules and four queued/running
+jobs, within these installation-wide bounds. A full workspace queue does not
+block another workspace's schedules. Retained artifacts can restore into a new
+owned application after their original application has been deleted.
 Completed job rows are pruned after 90 days; successful artifact manifests remain
 until retention or explicit deletion. These bounds do not describe total
 database-server or object-store memory use.
@@ -172,6 +183,12 @@ reporting, coalesced scheduling, retention/deletion fencing and exact accepted
 restore retries after expiry/deletion. It also verifies rejection of changed
 requests and cleanup of accepted receipts with the job's 90-day retention.
 
+Workspace integration tests additionally exercise cross-scope destination,
+artifact, schedule and restore-target rejection, revoked scheduled authority,
+and restore after the original application is deleted. They use real isolated
+PostgreSQL schemas with synthetic database-runtime responses; real database
+execution is covered separately by the live acceptance below.
+
 The opt-in real test requires `HAKOPOD_BACKUP_TEST=1`,
 `HAKOPOD_TEST_DATABASE_URL`, and `HAKOPOD_TEST_KUBECONFIG` whose current context
 must be `k3d-hakopod-dev`. Run `go test -p 2 -timeout 15m -run
@@ -182,7 +199,7 @@ It never restores an operator database. Public AWS S3/other providers, large
 production datasets, cross-version migration and full host recovery need their
 own operator acceptance tests.
 
-Development acceptance passed on `k3d-hakopod-dev`: a PostgreSQL encrypted
+Earlier development acceptance passed on `k3d-hakopod-dev`: a PostgreSQL encrypted
 object of 11,536,709 bytes exercised multipart upload and restored 1,200 rows;
 a 2,186-byte MySQL object restored two rows. External management PostgreSQL
 backup/restoration preserved the fixture account in a separate database.

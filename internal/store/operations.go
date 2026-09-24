@@ -203,6 +203,9 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 			}
 		}
 	}
+	if err = s.reserveStorage(ctx, tx, a, next); err != nil {
+		return Deployment{}, err
+	}
 	if err = validateServerlessCapacity(ctx, tx, a.ID, next); err != nil {
 		return Deployment{}, err
 	}

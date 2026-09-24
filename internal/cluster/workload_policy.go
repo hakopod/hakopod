@@ -16,6 +16,7 @@ import (
 // sandbox selection and resource limits on every reconciliation.
 type WorkloadPolicy struct {
 	// Recreate avoids surge pods when a tenant reserves a fixed memory budget.
+	StorageClass      string
 	Recreate          bool
 	IdleHTTP          bool
 	NodeName          string

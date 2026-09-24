@@ -36,11 +36,14 @@ export function ComputeNotice({ creatingApplication = false }: { creatingApplica
         {features.hostedFree
           ? 'One application with one small service and one replica.'
           : 'One application with up to ten services and three replicas per service within your reserved memory budget.'}{' '}
-        Files on its container disk are temporary. Persistent storage, scheduled jobs and public TCP
-        ports require your own server. Images must support AMD64. Outbound connections are limited
-        to HTTP and HTTPS; databases and queues on other ports need your own server. Native
-        application secrets are supported. External secret providers, custom networking and
-        autoscaling require your own server.
+        Files on its container disk are temporary.{' '}
+        {features.hostedStorageGiB > 0
+          ? `${features.hostedStorageGiB} GiB of persistent storage is shared across this workspace, including retained volumes. Persistent services use one replica and stay running. Configure encrypted PostgreSQL and MySQL backups in Backups.`
+          : 'Persistent storage has not been enabled by the Cloud operator.'}{' '}
+        Scheduled jobs and public TCP ports require your own server. Images must support AMD64.
+        Outbound connections are limited to HTTP and HTTPS; databases and queues on other ports need
+        your own server. Native application secrets are supported. External secret providers, custom
+        networking and autoscaling require your own server.
       </p>
       {creatingApplication && applications.data?.items.length ? (
         <p>

@@ -44,7 +44,13 @@ export default function TemplateForm({
     Object.fromEntries((template.config_fields || []).map((field) => [field.name, field.default])),
   )
   const [isPublic, setPublic] = useState(false)
-  const [storage, setStorage] = useState(template.id === 'vllm' ? 30 : 5)
+  const [storage, setStorage] = useState(
+    features.hostedStorageGiB
+      ? Math.min(5, features.hostedStorageGiB)
+      : template.id === 'vllm'
+        ? 30
+        : 5,
+  )
   const [model, setModel] = useState('')
   const [revision, setRevision] = useState('')
   const [architecture, setArchitecture] = useState(features.hostedCompute ? 'amd64' : '')
@@ -102,6 +108,9 @@ export default function TemplateForm({
             public: isPublic,
             values,
             storage_gib: storage,
+            ...(features.hostedFree && ['postgresql', 'redis', 'mysql'].includes(template.id)
+              ? { size: 'small' as const }
+              : {}),
             architecture,
             ...(template.site_url_supported ? { site_url: siteURL } : {}),
             ...(template.database_config
@@ -159,22 +168,49 @@ export default function TemplateForm({
       setBusy(false)
     }
   }
-  if (template.deployable && features.hostedCompute && Boolean(template.workload_requirements?.length))
+  const unsupportedRequirements = (template.workload_requirements || []).filter((requirement) => {
+    if (requirement === 'persistent_storage' && features.hostedStorageGiB > 0) return false
+    if (
+      ['larger_service', 'multiple_services', 'multiple_replicas'].includes(requirement) &&
+      !features.hostedFree
+    )
+      return false
+    if (
+      requirement === 'larger_service' &&
+      features.hostedFree &&
+      ['postgresql', 'redis', 'mysql'].includes(template.id)
+    )
+      return false
+    return true
+  })
+  if (template.deployable && features.hostedCompute && unsupportedRequirements.length)
     return (
       <FormPage title={template.name} description={template.description} breadcrumbs={[]}>
         <section className="grid gap-4 py-6">
-          <h2>Requires your own server</h2>
-          <p>{template.name} needs capabilities outside hosted Free compute:</p>
+          <h2>
+            {unsupportedRequirements.length === 1 &&
+            unsupportedRequirements[0] === 'persistent_storage'
+              ? 'Persistent storage is being prepared'
+              : 'Requires your own server'}
+          </h2>
+          <p>
+            {unsupportedRequirements.length === 1 &&
+            unsupportedRequirements[0] === 'persistent_storage'
+              ? 'The Cloud operator has not enabled persistent storage yet. Your compute allocation is unchanged.'
+              : `${template.name} needs capabilities outside your hosted compute allocation:`}
+          </p>
           <ul className="list-disc pl-5">
-            {template.workload_requirements?.map((requirement) => (
+            {unsupportedRequirements.map((requirement) => (
               <li key={requirement}>
                 {workloadRequirementLabel[requirement] || requirement.replaceAll('_', ' ')}
               </li>
             ))}
           </ul>
           <p className="text-sm muted-text">
-            Connect a server you own to use this template. Existing hosted resources must be
-            released before changing compute.
+            {unsupportedRequirements.length === 1 &&
+            unsupportedRequirements[0] === 'persistent_storage'
+              ? 'Try again once storage is available, or connect your own server.'
+              : 'Connect a server you own to use this template. Existing hosted resources must be released before changing compute.'}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" asChild>
@@ -388,7 +424,7 @@ export default function TemplateForm({
                 <Input
                   type="number"
                   min={1}
-                  max={200}
+                  max={features.hostedCompute ? features.hostedStorageGiB : 200}
                   value={storage}
                   onChange={(e) => setStorage(Number(e.target.value))}
                   error={fieldError(error, 'storage_gib')}
@@ -605,10 +641,10 @@ export default function TemplateForm({
             (template.config_fields || []).some(
               (field) => field.required && !values[field.name]?.trim(),
             ) ||
-            !Number.isFinite(storage) ||
-            storage < 1 ||
-            storage > 200 ||
-            !Number.isInteger(storage) ||
+            (template.workload_requirements?.includes('persistent_storage') &&
+              (!Number.isInteger(storage) ||
+                storage < 1 ||
+                storage > (features.hostedCompute ? features.hostedStorageGiB : 200))) ||
             (template.database_config && (!databaseName || !databaseUser)) ||
             (template.id === 'vllm' && useModelToken && !/^[a-f0-9]{40}$/.test(revision)) ||
             (template.site_url_required && !siteURL) ||

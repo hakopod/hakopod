@@ -121,6 +121,7 @@
   }
 }
 .hako-global-nav {
+  @apply overflow-x-auto overflow-y-hidden px-1;
   grid-area: nav;
   justify-content: flex-start;
   gap: 16px;

@@ -119,7 +119,9 @@ export function DeploymentForm({
       setMode(initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService, addedService])
-  const limitIssues = features.hostedCompute ? hostedComputeIssues(spec, features.hostedFree) : []
+  const limitIssues = features.hostedCompute
+    ? hostedComputeIssues(spec, features.hostedFree, features.hostedStorageGiB)
+    : []
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)
     // Validate every environment and command draft before writing private
@@ -569,8 +571,8 @@ export function DeploymentForm({
                 {limitIssues.length > 0 && (
                   <div role="alert" className="field-error">
                     <p>
-                      This configuration exceeds hosted Free compute. Edit the settings or connect
-                      your own server. No values have been changed.
+                      This configuration exceeds your hosted compute allocation. Edit the settings
+                      or connect your own server. No values have been changed.
                     </p>
                     <ul>
                       {limitIssues.map((issue) => (

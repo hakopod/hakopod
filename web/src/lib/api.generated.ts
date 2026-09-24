@@ -3301,6 +3301,7 @@ export interface components {
             can_manage_previews?: boolean;
             can_manage_git?: boolean;
             can_manage_applications?: boolean;
+            can_manage_backups?: boolean;
         };
         Node: {
             name: string;
@@ -4955,6 +4956,11 @@ export interface components {
             application_id?: string;
             expected_revision?: number;
             service_name?: string;
+            /**
+             * @description Optional reviewed service size override.
+             * @enum {string}
+             */
+            size?: "small" | "medium" | "large";
         };
         TemplatePlan: {
             application_id: string;

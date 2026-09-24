@@ -49,6 +49,18 @@ func (c *Client) validateStorage(ctx context.Context, t Target) error {
 	if len(claims) == 0 {
 		return nil
 	}
+	policy, err := c.workloadPolicy(ctx, t)
+	if err != nil {
+		return err
+	}
+	if policy != nil && policy.StorageClass != "" {
+		for name, class := range claims {
+			if class != "" && class != policy.StorageClass {
+				return fmt.Errorf("storage class is managed by the runtime")
+			}
+			claims[name] = policy.StorageClass
+		}
+	}
 	setup, err := c.InstallationSetup(ctx)
 	if err != nil {
 		return err

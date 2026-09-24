@@ -1,3 +1,4 @@
+import { useScope } from '../lib/scope'
 import { Input } from './ui/input'
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
@@ -23,6 +24,7 @@ export default function BackupDestinationPage({ id }: { id?: string }) {
   return <BackupDestinationForm key={id || 'new'} destination={destination} />
 }
 function BackupDestinationForm({ destination }: { destination?: BackupDestination }) {
+  const scope = useScope()
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [name, setName] = useState(destination?.name || '')
@@ -83,7 +85,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               <code>{recovery}</code>
               <Copy value={recovery} label="Copy recovery key" />
             </div>
-            <label className="checkbox-row">
+            <label className="checkbox-row min-h-11">
               <Input
                 type="checkbox"
                 checked={saved}
@@ -211,7 +213,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
                   maxLength={512}
                 />
               </label>
-              <label className="checkbox-row">
+              <label className="checkbox-row min-h-11">
                 <Input
                   type="checkbox"
                   checked={pathStyle}
@@ -220,15 +222,23 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
                 />
                 Use path-style bucket addressing
               </label>
-              <label className="checkbox-row">
-                <Input
-                  type="checkbox"
-                  checked={allowHTTP}
-                  disabled={Boolean(destination)}
-                  onChange={(event) => setAllowHTTP(event.target.checked)}
-                />
-                Allow an HTTP endpoint
-              </label>
+              {scope.identity.admin && (
+                <label className="checkbox-row min-h-11">
+                  <Input
+                    type="checkbox"
+                    checked={allowHTTP}
+                    disabled={Boolean(destination)}
+                    onChange={(event) => setAllowHTTP(event.target.checked)}
+                  />
+                  Allow an HTTP endpoint
+                </label>
+              )}
+              {!scope.identity.admin && (
+                <FormHint title="Workspace storage">
+                  Use a public HTTPS S3-compatible endpoint on port 443. Private addresses and
+                  redirects are blocked.
+                </FormHint>
+              )}
               {allowHTTP && (
                 <Note>
                   HTTP exposes storage credentials and traffic to the network. Use it only for an

@@ -6,7 +6,7 @@ export function hostedFreeIssues(spec: Spec): string[] {
   return hostedComputeIssues(spec, true)
 }
 
-export function hostedComputeIssues(spec: Spec, free = false): string[] {
+export function hostedComputeIssues(spec: Spec, free = false, storageGiB = 0): string[] {
   const issues: string[] = []
   if (Object.keys(spec.services).length > (free ? 1 : 10))
     issues.push(
@@ -14,8 +14,19 @@ export function hostedComputeIssues(spec: Spec, free = false): string[] {
         ? 'services: Hosted Free supports one service. Connect your own server for multiple services.'
         : 'services: Hosted compute supports up to ten services.',
     )
-  if (Object.keys(spec.volumes || {}).length)
-    issues.push('volumes: Persistent storage requires your own server.')
+  const volumes = [
+    ...Object.values(spec.volumes || {}),
+    ...Object.values(spec.services).flatMap((s) => (s.volume ? [s.volume] : [])),
+  ]
+  if (
+    volumes.some((v) => v.size_gib < 1 || v.size_gib > storageGiB) ||
+    volumes.reduce((sum, v) => sum + v.size_gib, 0) > storageGiB
+  )
+    issues.push(
+      `volumes: Your workspace has ${storageGiB} GiB of persistent storage, including retained volumes.`,
+    )
+  if (volumes.some((v) => v.storage_class && v.storage_class !== 'hakopod-hosted-block'))
+    issues.push('volumes: The storage class is managed by Cloud.')
   if (Object.values(spec.networks || {}).some((network) => network.virtual_network))
     issues.push('networks: Shared virtual networks require your own server.')
   for (const [name, service] of Object.entries(spec.services)) {
@@ -32,6 +43,8 @@ export function hostedComputeIssues(spec: Spec, free = false): string[] {
           ? 'Hosted Free supports one replica.'
           : 'Hosted compute supports up to three replicas.',
       )
+    if ((service.volume || service.mounts?.length) && (service.replicas ?? 1) > 1)
+      add('replicas', 'Persistent storage supports one replica.')
     if (service.architecture && service.architecture !== 'amd64')
       add('architecture', 'Hosted compute runs AMD64 images.')
     for (const [field, unsupported] of Object.entries({
@@ -41,8 +54,8 @@ export function hostedComputeIssues(spec: Spec, free = false): string[] {
       private_egress: Boolean(service.private_egress?.length),
       job: Boolean(service.job),
       autoscaling: Boolean(service.autoscaling),
-      volume: Boolean(service.volume),
-      mounts: Boolean(service.mounts?.length),
+      volume: Boolean(service.volume) && storageGiB === 0,
+      mounts: Boolean(service.mounts?.length) && storageGiB === 0,
       public_tcp: Boolean(service.public_tcp?.length),
       certificate_mounts: Boolean(service.certificate_mounts?.length),
       aws_identity: Boolean(service.aws_identity),

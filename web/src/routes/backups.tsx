@@ -41,13 +41,16 @@ export const Route = createFileRoute('/backups')({
 function BackupsRoute() {
   const scope = useScope()
   const path = useLocation().pathname
-  if (!scope.identity.admin)
+  if (!scope.identity.admin && !scope.identity.can_manage_backups)
     return (
-      <Empty
-        icon="lock"
-        title="Administrator access required"
-        description="Database backup and restore operations are managed by installation administrators."
-      />
+      <>
+        <PageHeader title="Backups & restores" />
+        <Empty
+          icon="lock"
+          title="Write access required"
+          description="Choose a workspace where you can manage applications to configure database backups."
+        />
+      </>
     )
   return path === '/backups' ? <Backups /> : <Outlet />
 }
@@ -58,7 +61,7 @@ function Backups() {
   return (
     <>
       <PageHeader
-        eyebrow="OPERATOR / DATA PROTECTION"
+        eyebrow="DATA PROTECTION"
         title="Backups & restores"
         description="Encrypted database backups, object storage destinations, and reviewed restores."
         action={

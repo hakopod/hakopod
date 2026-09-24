@@ -13172,6 +13172,9 @@
           },
           "can_manage_applications": {
             "type": "boolean"
+          },
+          "can_manage_backups": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -19321,6 +19324,15 @@
           },
           "service_name": {
             "type": "string"
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "small",
+              "medium",
+              "large"
+            ],
+            "description": "Optional reviewed service size override."
           }
         },
         "required": [

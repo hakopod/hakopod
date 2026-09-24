@@ -149,6 +149,16 @@ func (c *Client) prepareStorage(ctx context.Context, t Target, name string, s sp
 }
 
 func (c *Client) ensureDataClaim(ctx context.Context, t Target, claimName, serviceName string, v spec.NamedVolume) error {
+	policy, err := c.workloadPolicy(ctx, t)
+	if err != nil {
+		return err
+	}
+	if policy != nil && policy.StorageClass != "" {
+		if v.StorageClass != "" && v.StorageClass != policy.StorageClass {
+			return fmt.Errorf("storage class is managed by the runtime")
+		}
+		v.StorageClass = policy.StorageClass
+	}
 	api := c.kube.CoreV1().PersistentVolumeClaims(Namespace(t.ApplicationID))
 	size := resource.MustParse(strconv.FormatInt(v.SizeGiB, 10) + "Gi")
 	mode := corev1.PersistentVolumeAccessMode(v.AccessMode)

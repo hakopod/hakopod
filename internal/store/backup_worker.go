@@ -54,7 +54,11 @@ func (s *Store) HeartbeatBackupJob(ctx context.Context, id, lease string) (bool,
 	if j.Status != "running" || j.Lease != lease || j.CancelRequested {
 		return true, nil
 	}
-	if j.KeyID != "" {
+	if j.Authority != nil {
+		if e := s.authorizeWorkerBackup(ctx, j); e != nil {
+			return true, e
+		}
+	} else if j.KeyID != "" {
 		p, e := s.KeyPrincipal(ctx, j.KeyID)
 		if e != nil {
 			return true, e
@@ -121,19 +125,19 @@ func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, messa
 	return tx.Commit(ctx)
 }
 
-const backupScheduleCols = "id,name,destination_id,source,interval_hours,retention_count,enabled,revision,next_run_at,created_at,updated_at,identity_id"
+const backupScheduleCols = "id,name,destination_id,source,interval_hours,retention_count,enabled,revision,next_run_at,created_at,updated_at,identity_id,authority"
 
 func scanBackupSchedule(row scanner) (backup.Schedule, error) {
 	var s backup.Schedule
 	var source []byte
-	err := row.Scan(&s.ID, &s.Name, &s.DestinationID, &source, &s.IntervalHours, &s.RetentionCount, &s.Enabled, &s.Revision, &s.NextRunAt, &s.CreatedAt, &s.UpdatedAt, &s.IdentityID)
+	err := row.Scan(&s.ID, &s.Name, &s.DestinationID, &source, &s.IntervalHours, &s.RetentionCount, &s.Enabled, &s.Revision, &s.NextRunAt, &s.CreatedAt, &s.UpdatedAt, &s.IdentityID, &s.Authority)
 	if err != nil {
 		return s, backupError(err)
 	}
 	return s, json.Unmarshal(source, &s.Source)
 }
 func (s *Store) BackupSchedules(ctx context.Context) ([]backup.Schedule, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT "+backupScheduleCols+" FROM backup_schedules ORDER BY created_at,id LIMIT 64")
+	rows, err := s.Pool.Query(ctx, "SELECT "+backupScheduleCols+" FROM backup_schedules WHERE ($1 OR (authority->>'project'=$2 AND authority->>'environment'=$3)) ORDER BY created_at,id LIMIT 64", backupUnscoped(ctx), backupProject(ctx), backupEnvironment(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +153,11 @@ func (s *Store) BackupSchedules(ctx context.Context) ([]backup.Schedule, error) 
 	return out, rows.Err()
 }
 func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule backup.Schedule, expected int64) (backup.Schedule, error) {
+	if expected > 0 {
+		if err := s.authorizeBackupSchedule(ctx, p, schedule.ID); err != nil {
+			return schedule, err
+		}
+	}
 	if err := backupAdmin(p); err != nil {
 		return schedule, err
 	}
@@ -163,6 +172,10 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044230)"); err != nil {
 		return schedule, err
 	}
+	if err = authorizeBackupJob(ctx, tx, p, backup.Job{DestinationID: schedule.DestinationID, Source: schedule.Source}); err != nil {
+		return schedule, err
+	}
+	schedule.Authority = backupAuthority(p)
 	if err = rejectPreviewBackup(ctx, tx, schedule.Source.ApplicationID); err != nil {
 		return schedule, err
 	}
@@ -179,6 +192,15 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_schedules").Scan(&count); err != nil {
 			return schedule, err
 		}
+		if !p.IsAdmin() {
+			var scopedCount int
+			if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_schedules WHERE authority->>'project'=$1 AND authority->>'environment'=$2", p.Project, p.Environment).Scan(&scopedCount); err != nil {
+				return schedule, err
+			}
+			if scopedCount >= 8 {
+				return schedule, fmt.Errorf("%w: at most eight backup schedules per workspace", backup.ErrConflict)
+			}
+		}
 		if count >= 64 {
 			return schedule, fmt.Errorf("%w: at most 64 schedules are supported", backup.ErrConflict)
 		}
@@ -191,7 +213,7 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 		return schedule, backup.ErrNotFound
 	}
 	schedule.NextRunAt = time.Now().UTC().Add(time.Duration(schedule.IntervalHours) * time.Hour)
-	result, err := scanBackupSchedule(tx.QueryRow(ctx, "INSERT INTO backup_schedules(id,name,destination_id,source,interval_hours,retention_count,enabled,revision,next_run_at,identity_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=excluded.name,destination_id=excluded.destination_id,source=excluded.source,interval_hours=excluded.interval_hours,retention_count=excluded.retention_count,enabled=excluded.enabled,revision=excluded.revision,next_run_at=excluded.next_run_at,identity_id=excluded.identity_id,updated_at=now() RETURNING "+backupScheduleCols, schedule.ID, schedule.Name, schedule.DestinationID, JSON(schedule.Source), schedule.IntervalHours, schedule.RetentionCount, schedule.Enabled, expected+1, schedule.NextRunAt, p.ID))
+	result, err := scanBackupSchedule(tx.QueryRow(ctx, "INSERT INTO backup_schedules(id,name,destination_id,source,interval_hours,retention_count,enabled,revision,next_run_at,identity_id,authority) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET name=excluded.name,destination_id=excluded.destination_id,source=excluded.source,interval_hours=excluded.interval_hours,retention_count=excluded.retention_count,enabled=excluded.enabled,revision=excluded.revision,next_run_at=excluded.next_run_at,identity_id=excluded.identity_id,authority=excluded.authority,updated_at=now() RETURNING "+backupScheduleCols, schedule.ID, schedule.Name, schedule.DestinationID, JSON(schedule.Source), schedule.IntervalHours, schedule.RetentionCount, schedule.Enabled, expected+1, schedule.NextRunAt, p.ID, schedule.Authority))
 	if err != nil {
 		return schedule, err
 	}
@@ -201,6 +223,9 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	return result, tx.Commit(ctx)
 }
 func (s *Store) DeleteBackupSchedule(ctx context.Context, p Principal, id string, revision int64) error {
+	if err := s.authorizeBackupSchedule(ctx, p, id); err != nil {
+		return err
+	}
 	if err := backupAdmin(p); err != nil {
 		return err
 	}
@@ -256,6 +281,12 @@ func (s *Store) QueueDueBackups(ctx context.Context) error {
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM identities WHERE id=$1 AND admin AND NOT disabled AND project='' AND environment=''),EXISTS(SELECT 1 FROM backup_jobs WHERE schedule_id=$2 AND status IN ('queued','running'))", schedule.IdentityID, schedule.ID).Scan(&authorized, &active); err != nil {
 			return err
 		}
+		var scoped Principal
+		if schedule.Authority != nil {
+			var e error
+			scoped, e = s.backupWorkerPrincipal(ctx, schedule.IdentityID, "", schedule.Authority)
+			authorized = e == nil
+		}
 		if !authorized {
 			if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET enabled=false,revision=revision+1,updated_at=now() WHERE id=$1", schedule.ID); err != nil {
 				return err
@@ -263,8 +294,36 @@ func (s *Store) QueueDueBackups(ctx context.Context) error {
 			continue
 		}
 		if !active {
+			var full bool
+			if err = tx.QueryRow(ctx, "SELECT count(*)>=64 OR count(*) FILTER (WHERE authority->>'project'=$1 AND authority->>'environment'=$2)>=4 FROM backup_jobs WHERE status IN ('queued','running')", scoped.Project, scoped.Environment).Scan(&full); err != nil {
+				return err
+			}
+			// Retry later without rolling back other workspaces' scheduled jobs.
+			if full {
+				if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET next_run_at=now()+interval '1 minute' WHERE id=$1", schedule.ID); err != nil {
+					return err
+				}
+				continue
+			}
+		}
+		if !active {
 			p := Principal{ID: schedule.IdentityID, Admin: true, Permissions: []string{"admin"}}
-			_, err = enqueueBackup(ctx, tx, p, backup.Job{Kind: "backup", DestinationID: schedule.DestinationID, Source: schedule.Source, ScheduleID: schedule.ID}, "schedule:"+schedule.ID+":"+schedule.NextRunAt.UTC().Format(time.RFC3339Nano))
+			if schedule.Authority != nil {
+				p = scoped
+			}
+			job := backup.Job{Kind: "backup", DestinationID: schedule.DestinationID, Source: schedule.Source, ScheduleID: schedule.ID}
+			if e := authorizeBackupJob(ctx, tx, p, job); e != nil {
+				if !errors.Is(e, backup.ErrNotFound) && !errors.Is(e, ErrForbidden) {
+					return e
+				}
+				// A deleted source or revoked destination must not stall every
+				// other workspace's scheduler transaction.
+				if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET enabled=false,revision=revision+1,updated_at=now() WHERE id=$1", schedule.ID); err != nil {
+					return err
+				}
+				continue
+			}
+			_, err = enqueueBackup(ctx, tx, p, job, "schedule:"+schedule.ID+":"+schedule.NextRunAt.UTC().Format(time.RFC3339Nano))
 			if err != nil {
 				return err
 			}
