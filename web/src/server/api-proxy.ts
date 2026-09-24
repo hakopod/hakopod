@@ -12,6 +12,7 @@ export const allowed = [
   /^roles(?:\/[A-Za-z0-9_:-]+)?$/,
   /^organization\/security$/,
   /^auth\/mfa\/verify$/,
+  /^deployments\/[A-Za-z0-9_-]+\/volume-cleanup$/,
   /^placement\/nodes$/,
   /^requests$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/requests\/routing$/,

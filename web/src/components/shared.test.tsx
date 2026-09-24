@@ -225,3 +225,5 @@ test('resource review combines explicit values with the selected size defaults',
     { CPURequest: '250m', CPULimit: '2', MemoryRequest: '256Mi', MemoryLimit: '512Mi' },
   )
 })
+
+import '../lib/service-volume-removal.test'

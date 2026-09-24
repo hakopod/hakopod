@@ -484,15 +484,16 @@ func (s *Server) application(w http.ResponseWriter, r *http.Request) {
 }
 
 type input struct {
-	Provenance       map[string]store.SourceBuild `json:"provenance,omitempty"`
-	EnvFiles         map[string]string            `json:"env_files,omitempty"`
-	Project          string                       `json:"project"`
-	Environment      string                       `json:"environment"`
-	Spec             *spec.Application            `json:"spec,omitempty"`
-	TOML             string                       `json:"toml,omitempty"`
-	Service          string                       `json:"service,omitempty"`
-	Services         []string                     `json:"services,omitempty"`
-	ExpectedRevision *int64                       `json:"expected_revision,omitempty"`
+	Provenance           map[string]store.SourceBuild `json:"provenance,omitempty"`
+	EnvFiles             map[string]string            `json:"env_files,omitempty"`
+	Project              string                       `json:"project"`
+	Environment          string                       `json:"environment"`
+	Spec                 *spec.Application            `json:"spec,omitempty"`
+	TOML                 string                       `json:"toml,omitempty"`
+	Service              string                       `json:"service,omitempty"`
+	Services             []string                     `json:"services,omitempty"`
+	DeleteServiceVolumes []string                     `json:"delete_service_volumes,omitempty"`
+	ExpectedRevision     *int64                       `json:"expected_revision,omitempty"`
 }
 
 func (s *Server) prepare(w http.ResponseWriter, r *http.Request, in input, permission string) (spec.Application, *store.Application, bool) {
@@ -662,6 +663,16 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 		rev = current.Revision
 		id = current.ID
 	}
+	if len(in.DeleteServiceVolumes) > 0 {
+		if current == nil || !who(r).CanManageApplication(in.Project, in.Environment, next.Name) {
+			failure(w, store.ErrForbidden)
+			return
+		}
+		if _, err := store.ServiceVolumeClaims(current.Spec, next, in.DeleteServiceVolumes); err != nil {
+			problem(w, 400, "invalid_volume_cleanup", err.Error())
+			return
+		}
+	}
 	warnings := deliveryWarnings(r, next)
 	if warnings == nil {
 		warnings = []string{}
@@ -684,7 +695,7 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := s.Store.AcceptWithProvenance(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), in.Provenance)
+	d, err := s.Store.AcceptWithVolumeCleanup(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), in.Provenance, in.DeleteServiceVolumes)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrForbidden) {
 			failure(w, err)
@@ -715,6 +726,11 @@ func (s *Server) deployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.Events = events
+	d.VolumeCleanup, err = s.Store.VolumeCleanup(r.Context(), d.ID)
+	if err != nil {
+		failure(w, err)
+		return
+	}
 	write(w, 200, d)
 }
 func (s *Server) idempotentDeployment(w http.ResponseWriter, r *http.Request) {

@@ -62,6 +62,10 @@ jobs:
         run: |
           set -o pipefail
           HAKOPOD_COMPOSE_TEST=1 go test ./internal/cluster -run '^TestLiveComposeImport$' -count=1 -json | tee .local/runtime-results/compose.jsonl
+      - name: Verify service volume reclamation
+        run: |
+          set -o pipefail
+          HAKOPOD_PREVIEW_TEST=1 go test ./internal/cluster -run '^TestLiveServiceVolumeCleanupPreservesOtherServices$' -count=1 -json | tee .local/runtime-results/service-volumes.jsonl
       - name: Verify explicit resources on deployments and jobs
         run: |
           set -o pipefail

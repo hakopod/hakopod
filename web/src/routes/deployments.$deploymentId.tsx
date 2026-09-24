@@ -36,11 +36,16 @@ function DeploymentDetail() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [cleanupError, setCleanupError] = useState('')
   const deployment = useQuery({
     queryKey: ['deployment', deploymentId],
     queryFn: ({ signal }) =>
       unwrap(client.GET('/deployments/{id}', { signal, params: { path: { id: deploymentId } } })),
-    refetchInterval: (query) => (activeDeployment(query.state.data?.status) ? 2500 : false),
+    refetchInterval: (query) =>
+      activeDeployment(query.state.data?.status) ||
+      query.state.data?.volume_cleanup?.status === 'reclaiming'
+        ? 2500
+        : false,
     gcTime: 0,
     refetchIntervalInBackground: false,
   })
@@ -217,6 +222,52 @@ function DeploymentDetail() {
           <Icon name="refresh" size={16} className={deployment.isFetching ? 'spin' : ''} />
         </Button>
       </div>
+      {release.volume_cleanup && (
+        <div className="note hako-note" role="status">
+          <div className="grid min-w-0 w-full gap-2 break-words">
+            <strong>Volume cleanup: {release.volume_cleanup.status}</strong>
+            <p className="break-all">{release.volume_cleanup.claims.join(', ')}</p>
+            <p>
+              {release.volume_cleanup.status === 'deleted'
+                ? 'Volumes reclaimed and storage quota released.'
+                : release.volume_cleanup.status === 'retained'
+                  ? 'Service removal did not succeed. Volumes were kept.'
+                  : 'Storage quota stays reserved until reclamation completes.'}
+            </p>
+            {release.volume_cleanup.error && (
+              <>
+                <p>{release.volume_cleanup.error}</p>
+                {scope.can('deployments:write') && (
+                  <Button
+                    className="justify-self-start"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      setCleanupError('')
+                      try {
+                        await unwrap(
+                          client.POST('/deployments/{id}/volume-cleanup', {
+                            params: { path: { id: release.id } },
+                            body: {},
+                          }),
+                        )
+                        await deployment.refetch()
+                      } catch (err) {
+                        setCleanupError(message(err))
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  >
+                    {busy ? 'Requesting…' : 'Retry volume cleanup'}
+                  </Button>
+                )}
+              </>
+            )}
+            {cleanupError && <RequestError error={cleanupError} />}
+          </div>
+        </div>
+      )}
       {release.recovery_state && (
         <div className="note hako-note" role="status">
           <strong>Release recovery: {release.recovery_state}</strong>

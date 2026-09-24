@@ -2315,6 +2315,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deployments/{id}/volume-cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryServiceVolumeCleanup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/runtime": {
         parameters: {
             query?: never;
@@ -3270,6 +3286,7 @@ export interface components {
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
             };
+            volume_cleanup?: components["schemas"]["VolumeCleanup"];
             recovery_error?: string;
             recovery_revision?: number;
             recovery_spec?: components["schemas"]["Spec"];
@@ -3395,6 +3412,7 @@ export interface components {
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
             };
+            delete_service_volumes?: string[];
         };
         PlanInput: {
             project: string;
@@ -3412,6 +3430,7 @@ export interface components {
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
             };
+            delete_service_volumes?: string[];
         };
         Change: {
             service: string;
@@ -4624,6 +4643,11 @@ export interface components {
             status: string;
             error: string;
             reserved_gib: number;
+        };
+        VolumeCleanup: {
+            claims: string[];
+            status: string;
+            error: string;
         };
         TLSConfig: {
             certificate?: string;
@@ -11448,6 +11472,43 @@ export interface operations {
                 "application/json": {
                     confirm_name: string;
                 };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    retryServiceVolumeCleanup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
             };
         };
         responses: {

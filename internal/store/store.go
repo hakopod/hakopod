@@ -441,6 +441,7 @@ type DeploymentSummary struct {
 	FinishedAt      *time.Time      `json:"finished_at"`
 }
 type Deployment struct {
+	VolumeCleanup    *VolumeCleanup         `json:"volume_cleanup,omitempty"`
 	Provenance       map[string]SourceBuild `json:"provenance,omitempty"`
 	RecoveryState    string                 `json:"recovery_state,omitempty"`
 	RecoveryRevision int64                  `json:"recovery_revision,omitempty"`

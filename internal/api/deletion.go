@@ -7,6 +7,7 @@ import (
 )
 
 func (s *Server) registerDeletionRoutes(routes *http.ServeMux) {
+	routes.HandleFunc("POST /api/v1/deployments/{id}/volume-cleanup", s.retryServiceVolumeCleanup)
 	routes.HandleFunc("GET /api/v1/storage/retained", s.listRetainedStorage)
 	routes.HandleFunc("DELETE /api/v1/storage/retained/{id}", s.deleteRetainedStorage)
 	routes.HandleFunc("DELETE /api/v1/projects/{id}", s.deleteProject)
@@ -50,4 +51,12 @@ func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) retryServiceVolumeCleanup(w http.ResponseWriter, r *http.Request) {
+	if err := s.Store.RetryServiceVolumeCleanup(r.Context(), who(r), r.PathValue("id")); err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 202, map[string]string{"status": "reclaiming"})
 }

@@ -12,3 +12,19 @@ export function withoutService(input: Spec, name: string): Spec {
   }
   return next
 }
+
+// Shared named volumes stay attached to remaining services. Only definitions
+// unused after this removal are eligible for the explicit data-deletion option.
+export function serviceVolumeRemoval(input: Spec, name: string) {
+  const spec = withoutService(input, name)
+  const claims: string[] = []
+  const service = input.services[name]
+  if (service?.volume) claims.push(`${name}-data`)
+  for (const mount of service?.mounts || []) {
+    if (Object.values(spec.services).some((other) => other.mounts?.some((m) => m.volume === mount.volume))) continue
+    if (spec.volumes) delete spec.volumes[mount.volume]
+    const claim = `hakopod-volume-${mount.volume}`
+    if (!claims.includes(claim)) claims.push(claim)
+  }
+  return { spec, claims }
+}
