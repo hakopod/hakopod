@@ -24,7 +24,13 @@ future releases do not change that endpoint automatically.
 
 Before creating a tag, add its version and supported source versions to
 `release/upgrade-paths.json` and set the installer acceptance workflow's default
-candidate to that version. Run the same preflight used by publication:
+candidate to that version. Declare only the last two published, installable
+versions as direct upgrade sources; exclude unpublished tags. Older versions
+are retired as direct upgrade sources and must upgrade through a supported
+intermediate release. The policy rejects more than two sources, bounding the
+native host matrix to 12 jobs: four fresh installs and four per upgrade source.
+Published tags and their original manifests remain unchanged.
+Run the same preflight used by publication:
 
 ```sh
 python3 release/publication.py version v0.1.0-alpha.14
