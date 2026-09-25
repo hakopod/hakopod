@@ -5,7 +5,7 @@ on:
       version:
         description: Candidate package version
         required: false
-        default: 0.1.0-alpha.26
+        default: 0.1.0-alpha.27
         type: string
   pull_request:
     paths:
@@ -27,7 +27,7 @@ jobs:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
       NODE_OPTIONS: --max-old-space-size=512
-      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.26' }}
+      RELEASE_VERSION: ${{ inputs.version || '0.1.0-alpha.27' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate candidate release policy
@@ -66,11 +66,11 @@ jobs:
     needs: build
     uses: ./.github/workflows/installer-hosts.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.26' }}
+      version: ${{ inputs.version || '0.1.0-alpha.27' }}
       artifact_name: installer-candidate
   smoke:
     needs: build
     uses: ./.github/workflows/installer-smoke.yml
     with:
-      version: ${{ inputs.version || '0.1.0-alpha.26' }}
+      version: ${{ inputs.version || '0.1.0-alpha.27' }}
       artifact_name: installer-candidate
