@@ -3580,8 +3580,12 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
         };
+        /** @description Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub. */
         Actions: {
-            repository: string;
+            repository?: string;
+            organization?: string;
+            /** @description Organization runner group ID; omit or use zero for the GitHub default group. */
+            runner_group_id?: number;
             credential: string;
             labels: string[];
             timeout_minutes?: number;

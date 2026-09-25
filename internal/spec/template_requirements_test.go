@@ -169,6 +169,10 @@ func TestTemplateCockroachCertificateBundle(t *testing.T) {
 
 func catalogTestValues(template Template) map[string]string {
 	values := map[string]string{}
+	// Managed Actions requires one of two alternative scopes, not both fields.
+	if template.ID == "managed-actions" {
+		values["organization"] = "hakopod"
+	}
 	for _, f := range template.ConfigFields {
 		if f.Default == "" && f.Required {
 			values[f.Name] = "operator@example.test"

@@ -57,10 +57,10 @@ func actionsTarget(p store.ActionsPool) cluster.Target {
 }
 
 type runnerProvider interface {
-	Register(context.Context, string, string, []string) (actions.Registration, error)
-	Get(context.Context, string, int64) (actions.Runner, error)
-	Find(context.Context, string, string) (*actions.Runner, error)
-	Delete(context.Context, string, int64) error
+	Register(context.Context, actions.Target, string, []string) (actions.Registration, error)
+	Get(context.Context, actions.Target, int64) (actions.Runner, error)
+	Find(context.Context, actions.Target, string) (*actions.Runner, error)
+	Delete(context.Context, actions.Target, int64) error
 }
 
 func actionsFence(ctx context.Context, t cluster.Target) error {
@@ -132,7 +132,7 @@ func (s *Server) RunActions(ctx context.Context) {
 func safeActionsError(err error) string {
 	var status *actions.StatusError
 	if errors.As(err, &status) {
-		return status.Error() + "; verify repository Administration write permission and retry"
+		return status.Error() + "; verify the selected scope and runner group, and organization Self-hosted runners or repository Administration read/write permission"
 	}
 	return "Runner reconciliation is waiting for GitHub, its scoped credential, or the sandbox. Cleanup will retry automatically."
 }
@@ -176,7 +176,7 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 	}
 	id := v.RunnerID
 	if id == 0 {
-		found, err := c.Find(ctx, v.Config.Actions.Repository, "hakopod-"+v.ID)
+		found, err := c.Find(ctx, v.Config.Actions.Target(), "hakopod-"+v.ID)
 		if err != nil {
 			return false, err
 		}
@@ -188,7 +188,7 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 		if err := actionsFence(ctx, t); err != nil {
 			return false, err
 		}
-		if err := c.Delete(ctx, v.Config.Actions.Repository, id); err != nil {
+		if err := c.Delete(ctx, v.Config.Actions.Target(), id); err != nil {
 			return false, err
 		}
 	}
@@ -251,7 +251,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 			}
 			continue
 		}
-		runner, err := client.Get(ctx, v.Config.Actions.Repository, v.RunnerID)
+		runner, err := client.Get(ctx, v.Config.Actions.Target(), v.RunnerID)
 		if actionsNotFound(err) {
 			gone, e := s.cleanupActionsSlot(ctx, t, p, v, client, true)
 			if e != nil {
@@ -350,7 +350,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err = actionsFence(ctx, t); err != nil {
 			return err
 		}
-		registered, err := client.Register(ctx, p.Config.Actions.Repository, "hakopod-"+v.ID, p.Config.Actions.Labels)
+		registered, err := client.Register(ctx, p.Config.Actions.Target(), "hakopod-"+v.ID, p.Config.Actions.Labels)
 		if err != nil {
 			return err
 		}

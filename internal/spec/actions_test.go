@@ -82,3 +82,33 @@ func TestActionsTemplateRequiresRepositoryAndManualCredential(t *testing.T) {
 		t.Fatal("provider token must be supplied manually")
 	}
 }
+
+func TestActionsOrganizationRoundTripAndTemplate(t *testing.T) {
+	for _, group := range []int64{0, 42} {
+		app := actionsFixture()
+		app.Services["runner"].Actions.Repository = ""
+		app.Services["runner"].Actions.Organization = "team"
+		app.Services["runner"].Actions.RunnerGroupID = group
+		normalized, err := Normalize(app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := toml.Marshal(normalized)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := Parse(encoded)
+		if err != nil || !reflect.DeepEqual(normalized, decoded) {
+			t.Fatal("organization roundtrip", err)
+		}
+	}
+	app, err := PlanTemplate("managed-actions", TemplateOptions{Name: "runners", Values: map[string]string{"organization": "team", "runner_group_id": "42"}})
+	if err != nil || app.Services["runner"].Actions.Organization != "team" || app.Services["runner"].Actions.RunnerGroupID != 42 {
+		t.Fatal(app, err)
+	}
+	for _, values := range []map[string]string{{"organization": "team", "repository": "team/repo"}, {"organization": "team", "runner_group_id": "-1"}, {"organization": "team", "runner_group_id": "1.5"}, {"repository": "team/repo", "runner_group_id": "42"}} {
+		if _, err := PlanTemplate("managed-actions", TemplateOptions{Name: "runners", Values: values}); err == nil {
+			t.Fatal("invalid scope accepted", values)
+		}
+	}
+}

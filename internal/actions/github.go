@@ -23,6 +23,23 @@ func ValidRepository(repository string) bool {
 	return repositoryPattern.MatchString(repository) && !strings.Contains(repository, "..")
 }
 
+// Target identifies one GitHub registration scope. Zero RunnerGroupID selects
+// the organization's default group; repository pools retain GitHub's group 1.
+type Target struct {
+	Repository    string
+	Organization  string
+	RunnerGroupID int64
+}
+
+var organizationPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
+
+func (t Target) Valid() bool {
+	if t.Organization != "" {
+		return t.Repository == "" && organizationPattern.MatchString(t.Organization) && !strings.Contains(t.Organization, "--") && t.RunnerGroupID >= 0 && t.RunnerGroupID <= 9007199254740991
+	}
+	return ValidRepository(t.Repository) && t.RunnerGroupID == 0
+}
+
 func ValidLabels(labels []string) bool {
 	if len(labels) < 1 || len(labels) > 8 {
 		return false
@@ -107,23 +124,65 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	}
 	return nil
 }
-func runnerBase(repository string) (string, error) {
-	if !ValidRepository(repository) {
-		return "", errors.New("select one GitHub.com owner/repository")
+func runnerBase(target Target) (string, error) {
+	if !target.Valid() {
+		return "", errors.New("select either a GitHub.com organization or owner/repository; runner groups apply only to organizations")
 	}
-	parts := strings.Split(repository, "/")
+	if target.Organization != "" {
+		return "/orgs/" + url.PathEscape(target.Organization) + "/actions/runners", nil
+	}
+	parts := strings.Split(target.Repository, "/")
 	return "/repos/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]) + "/actions/runners", nil
 }
-func (c *Client) Register(ctx context.Context, repository, name string, labels []string) (Registration, error) {
+
+func (c *Client) defaultRunnerGroup(ctx context.Context, organization string) (int64, error) {
+	for page := 1; page <= 10; page++ {
+		var result struct {
+			Total  int `json:"total_count"`
+			Groups []struct {
+				ID      int64 `json:"id"`
+				Default bool  `json:"default"`
+			} `json:"runner_groups"`
+		}
+		path := fmt.Sprintf("/orgs/%s/actions/runner-groups?per_page=100&page=%d", url.PathEscape(organization), page)
+		if err := c.request(ctx, http.MethodGet, path, nil, &result); err != nil {
+			return 0, err
+		}
+		if result.Total > 1000 || len(result.Groups) > 100 {
+			return 0, errors.New("runner group inventory exceeds the supported bound; select a runner group ID")
+		}
+		for _, group := range result.Groups {
+			if group.Default && group.ID > 0 {
+				return group.ID, nil
+			}
+		}
+		if len(result.Groups) < 100 {
+			break
+		}
+	}
+	return 0, errors.New("GitHub default runner group was not found; select a runner group ID")
+}
+
+func (c *Client) Register(ctx context.Context, target Target, name string, labels []string) (Registration, error) {
 	var result Registration
-	base, err := runnerBase(repository)
+	base, err := runnerBase(target)
 	if err != nil {
 		return result, err
 	}
 	if !labelPattern.MatchString(name) || !ValidLabels(labels) {
 		return result, errors.New("invalid runner name or labels")
 	}
-	err = c.request(ctx, http.MethodPost, base+"/generate-jitconfig", map[string]any{"name": name, "runner_group_id": 1, "labels": labels, "work_folder": "_work"}, &result)
+	group := int64(1)
+	if target.Organization != "" {
+		group = target.RunnerGroupID
+		if group == 0 {
+			group, err = c.defaultRunnerGroup(ctx, target.Organization)
+			if err != nil {
+				return result, err
+			}
+		}
+	}
+	err = c.request(ctx, http.MethodPost, base+"/generate-jitconfig", map[string]any{"name": name, "runner_group_id": group, "labels": labels, "work_folder": "_work"}, &result)
 	if err != nil {
 		return Registration{}, err
 	}
@@ -132,9 +191,9 @@ func (c *Client) Register(ctx context.Context, repository, name string, labels [
 	}
 	return result, nil
 }
-func (c *Client) Get(ctx context.Context, repository string, id int64) (Runner, error) {
+func (c *Client) Get(ctx context.Context, target Target, id int64) (Runner, error) {
 	var out Runner
-	base, err := runnerBase(repository)
+	base, err := runnerBase(target)
 	if err != nil {
 		return out, err
 	}
@@ -147,8 +206,8 @@ func (c *Client) Get(ctx context.Context, repository string, id int64) (Runner, 
 	}
 	return out, err
 }
-func (c *Client) Delete(ctx context.Context, repository string, id int64) error {
-	base, err := runnerBase(repository)
+func (c *Client) Delete(ctx context.Context, target Target, id int64) error {
+	base, err := runnerBase(target)
 	if err != nil {
 		return err
 	}
@@ -165,8 +224,8 @@ func (c *Client) Delete(ctx context.Context, repository string, id int64) error 
 
 // Find recovers an ambiguous registration response using its previously persisted
 // unique name. It never creates another runner while the first outcome is unknown.
-func (c *Client) Find(ctx context.Context, repository, name string) (*Runner, error) {
-	base, err := runnerBase(repository)
+func (c *Client) Find(ctx context.Context, target Target, name string) (*Runner, error) {
+	base, err := runnerBase(target)
 	if err != nil {
 		return nil, err
 	}
