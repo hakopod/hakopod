@@ -86,7 +86,9 @@ func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 		RuntimeClassName: ptr(ActionsRuntime), AutomountServiceAccountToken: ptr(false), EnableServiceLinks: ptr(false), RestartPolicy: corev1.RestartPolicyNever, ActiveDeadlineSeconds: ptr(s.Actions.TimeoutMinutes * 60), TerminationGracePeriodSeconds: ptr(int64(30)),
 		SecurityContext: &corev1.PodSecurityContext{FSGroup: ptr(int64(1001)), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 		InitContainers: []corev1.Container{
-			{Name: "prepare", Image: spec.ActionsRunnerImage, Command: []string{"sh", "-c", "cp -a /home/runner/. /runner/"}, SecurityContext: safe, Resources: copyResources, VolumeMounts: []corev1.VolumeMount{{Name: "runner", MountPath: "/runner"}}},
+			// The volume root belongs to kubelet. Copy files without trying to
+			// restore its timestamps or ownership as the unprivileged runner.
+			{Name: "prepare", Image: spec.ActionsRunnerImage, Command: []string{"sh", "-c", "cp -R /home/runner/. /runner/"}, SecurityContext: safe, Resources: copyResources, VolumeMounts: []corev1.VolumeMount{{Name: "runner", MountPath: "/runner"}}},
 			{Name: "docker", Image: ActionsDaemonImage, Command: []string{"sh", "-c", actionsDaemon}, RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways), Resources: actionsResources(s, 3),
 				SecurityContext: &corev1.SecurityContext{Privileged: ptr(false), RunAsUser: ptr(int64(0)), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}, Add: []corev1.Capability{"AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_ADMIN", "NET_RAW", "SETFCAP", "SETGID", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"}}},
 				Env:             []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker/docker.sock"}},
