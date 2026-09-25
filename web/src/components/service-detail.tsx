@@ -5,6 +5,7 @@ import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog } from './move-service-dialog'
 import { effectiveService } from '../lib/effective-service'
 import { RenameResource } from './rename-resource'
+import { ManagedActionsStatus } from './managed-actions-status'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -195,6 +196,14 @@ export function ServiceDetail({
             ? 'Live'
             : 'Paused'
   const edit = (mode: 'form' | 'toml') => {
+    if (service.actions && mode === 'form') {
+      void navigate({
+        to: '/templates/$templateId',
+        params: { templateId: 'managed-actions' },
+        search: { application: application.id, runner: serviceName },
+      })
+      return
+    }
     void navigate({
       to: '/applications/$applicationId/configure',
       params: { applicationId: application.id },
@@ -387,6 +396,11 @@ export function ServiceDetail({
             </section>
           )}
 
+          <>
+            {service.actions && (
+              <ManagedActionsStatus application={application} service={serviceName} />
+            )}
+          </>
           <div className="service-overview-grid">
             <section className="panel service-summary-panel">
               <div className="panel-heading">

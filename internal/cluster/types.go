@@ -65,6 +65,8 @@ type Options struct {
 }
 
 type Client struct {
+	actionsReconcile func(context.Context, Target) error
+	actionsObserve   func(context.Context, Target, string, spec.Service) (ServiceStatus, error)
 	// publicTCPAck is injected by unit tests; real clients always inspect HAProxy.
 	publicTCPAck func(context.Context, Target, []any, map[string]string) error
 	execConfig   *rest.Config

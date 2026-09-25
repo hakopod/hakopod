@@ -206,7 +206,28 @@ func (c *Client) observeJob(ctx context.Context, t Target, name string, s spec.S
 }
 
 func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
+	ns, nsErr := c.kube.CoreV1().Namespaces().Get(ctx, Namespace(t.ApplicationID), metav1.GetOptions{})
+	if nsErr != nil && !apierrors.IsNotFound(nsErr) {
+		return nsErr
+	}
+	if nsErr == nil {
+		for _, svc := range t.Spec.Services {
+			if (ns.Labels["hakopod.io/workload-kind"] == "actions") != (svc.Actions != nil) {
+				return fmt.Errorf("Managed Actions requires a dedicated application; create a new application instead of converting this one")
+			}
+		}
+	}
+
 	for name, s := range t.Spec.Services {
+		if s.Actions != nil {
+			d, e := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
+			if e == nil && d != nil {
+				return fmt.Errorf("%s: remove the existing service before creating a Managed Actions pool", name)
+			}
+			if e != nil && !apierrors.IsNotFound(e) {
+				return e
+			}
+		}
 		cron, err := c.kube.BatchV1().CronJobs(Namespace(t.ApplicationID)).Get(ctx, scheduledJobName(name), metav1.GetOptions{})
 		if err == nil && cron != nil && (s.Job == nil || s.Job.Schedule == nil) {
 			return fmt.Errorf("%s: remove the scheduled job before changing workload kind", name)

@@ -102,8 +102,19 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		}
 	}
 	order, _ := spec.Order(target.Spec)
+	if c.actionsReconcile != nil {
+		if err := c.waitActions(ctx, target); err != nil {
+			return c.observationAfterFailure(target), err
+		}
+	}
 	for _, name := range order {
 		svc := target.Spec.Services[name]
+		if svc.Actions != nil {
+			if c.actionsReconcile == nil {
+				return Observation{}, fmt.Errorf("Managed Actions controller is unavailable")
+			}
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return c.observationAfterFailure(target), err
 		}
@@ -236,6 +247,13 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	labels["pod-security.kubernetes.io/enforce"] = "restricted"
 	labels["pod-security.kubernetes.io/enforce-version"] = "v1.35"
 	labels["pod-security.kubernetes.io/warn"] = "restricted"
+	for _, svc := range t.Spec.Services {
+		if svc.Actions != nil {
+			labels["pod-security.kubernetes.io/enforce"] = "privileged"
+			labels["hakopod.io/workload-kind"] = "actions"
+			break
+		}
+	}
 	if apierrors.IsNotFound(err) {
 		_, err = api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns, Labels: labels}}, metav1.CreateOptions{})
 	} else if err == nil {

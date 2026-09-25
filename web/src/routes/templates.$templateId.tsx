@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import TemplateForm from '../components/template-form'
+import { ManagedActionsForm } from '../components/managed-actions-form'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
@@ -8,7 +9,7 @@ import { useScope, useResourceScope } from '../lib/scope'
 export const Route = createFileRoute('/templates/$templateId')({ component: ConfigureTemplate })
 function ConfigureTemplate() {
   const { templateId } = Route.useParams()
-  const { application: targetId } = Route.useSearch()
+  const { application: targetId, runner } = Route.useSearch()
   const target = useQuery({
     queryKey: ['application', targetId],
     queryFn: ({ signal }) =>
@@ -42,6 +43,15 @@ function ConfigureTemplate() {
         icon="lock"
         title="Deployment access required"
         description="Choose a project where you can create applications."
+      />
+    )
+  if (templateId === 'managed-actions')
+    return (
+      <ManagedActionsForm
+        key={`${targetId || 'new'}:${runner || 'new'}:${target.data?.project || scope.project}:${target.data?.environment || scope.environment}`}
+        application={target.data}
+        serviceName={runner}
+        onClose={() => void navigate({ to: '/templates', search: { application: targetId } })}
       />
     )
   return (

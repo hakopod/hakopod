@@ -31,6 +31,10 @@ func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 				corev1.ResourceRequestsCPU: p.CPURequest, corev1.ResourceLimitsCPU: p.CPULimit,
 				corev1.ResourceRequestsMemory: p.MemoryRequest, corev1.ResourceLimitsMemory: p.MemoryLimit,
 			}
+			if s.Actions != nil {
+				values[corev1.ResourceRequestsEphemeralStorage] = "512Mi"
+				values[corev1.ResourceLimitsEphemeralStorage] = "4Gi"
+			}
 			if budgets[name] == nil {
 				budgets[name] = corev1.ResourceList{}
 			}

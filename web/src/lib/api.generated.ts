@@ -276,6 +276,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedActionsCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alarms": {
         parameters: {
             query?: never;
@@ -3233,6 +3265,7 @@ export interface components {
                 [key: string]: components["schemas"]["SecretRef"];
             };
             autoscaling?: components["schemas"]["Autoscaling"];
+            actions?: components["schemas"]["Actions"];
             public_tcp?: components["schemas"]["PublicTCPListener"][];
             certificate_mounts?: components["schemas"]["CertificateMount"][];
             aws_identity?: string;
@@ -3546,6 +3579,36 @@ export interface components {
             created_at: string;
             started_at?: string | null;
             finished_at?: string | null;
+        };
+        Actions: {
+            repository: string;
+            credential: string;
+            labels: string[];
+            timeout_minutes?: number;
+        };
+        ActionsPool: {
+            application_id: string;
+            service: string;
+            project: string;
+            environment: string;
+            application_name: string;
+            revision: number;
+            config: components["schemas"]["Service"];
+            removed: boolean;
+            message: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ActionsSlot: {
+            id: string;
+            application_id: string;
+            service: string;
+            runner_id: number;
+            phase: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         Alarm: {
             id: string;
@@ -6088,6 +6151,79 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            pool: components["schemas"]["ActionsPool"];
+                            slots: components["schemas"]["ActionsSlot"][];
+                        }[];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedActionsCapabilities: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        licensed: boolean;
+                        runtime_ready: boolean;
+                        message: string;
+                        runner_image: string;
+                    };
                 };
             };
             /** @description Error */

@@ -22,6 +22,9 @@ func ValidatePreview(a Application) error {
 		disk += v.SizeGiB
 	}
 	for _, s := range a.Services {
+		if s.Actions != nil {
+			return fmt.Errorf("Managed Actions pools cannot be copied into previews")
+		}
 		if s.Size != "small" || s.Replicas > 1 || s.Autoscaling != nil || s.GPU != nil {
 			return fmt.Errorf("previews require the small profile, one replica and no autoscaling or GPU")
 		}

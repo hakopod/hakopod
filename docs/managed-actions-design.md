@@ -1,8 +1,10 @@
 # Managed Actions implementation plan
 
-Status: not available in the product. The repository-scoped GitHub client has unit
-coverage; the runner controller, entitlement gates, dashboard and live workflow
-acceptance are still required before enabling a catalog entry.
+Status: the runner controller, entitlement gates, catalog form, durable cleanup
+and optional installer module are implemented on the feature branch. See
+[Managed Actions](managed-actions.md) for the operator workflow. Release remains
+gated on real workflow acceptance and final visual review; implementation is not
+evidence of a deployed release.
 
 Managed Actions will offer replicated, single-job GitHub runners as a Pro
 capability. Each replica is one concurrent job slot. A completed job loses its

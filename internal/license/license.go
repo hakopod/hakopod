@@ -46,6 +46,7 @@ type Feature struct {
 }
 
 var catalog = []Feature{
+	{ID: "managed_actions", Name: "Managed Actions", Plan: "pro", Description: "Run repository-scoped GitHub Actions jobs in isolated, single-job runner pools."},
 	{ID: "custom_roles", Name: "Custom project roles", Plan: "pro", Description: "Choose deployment and log permissions for people and teams."},
 	{ID: "team_mfa", Name: "Organization MFA enforcement", Plan: "pro", Description: "Require verified multi-factor sessions for installation access."},
 	{ID: "deployments", Name: "Application deployments", Plan: "free", Description: "Deploy, review, roll back and observe applications."},
@@ -67,7 +68,7 @@ var catalog = []Feature{
 // imply advanced authority. Unsupported capabilities are not shown in the catalog.
 func knownEntitlement(id string) bool {
 	switch id {
-	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso":
+	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso", "managed_actions":
 		return true
 	}
 	return false

@@ -38,6 +38,8 @@ type Server struct {
 	Backups         *backup.Service
 	ProcessLogs     *serverlogs.Buffer
 	// Overrides are only set by in-process tests, never by an API request.
+	actionsTestRuntime    actionsRuntime
+	actionsClient         func(string) (runnerProvider, error)
 	maintenanceHTTP       *http.Client
 	githubHTTP            *http.Client
 	gitlabHTTP            *http.Client
@@ -125,6 +127,8 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/projects/{project}/environments", s.createEnvironment)
 	routes.HandleFunc("GET /api/v1/applications", s.applications)
 	routes.HandleFunc("GET /api/v1/applications/{id}", s.application)
+	routes.HandleFunc("GET /api/v1/applications/{id}/actions", s.actionsStatus)
+	routes.HandleFunc("GET /api/v1/actions/capabilities", s.actionsCapabilities)
 	routes.HandleFunc("GET /api/v1/applications/{id}/provenance", s.applicationProvenance)
 	s.registerPreviewRoutes(routes)
 	routes.HandleFunc("POST /api/v1/plan", s.plan)

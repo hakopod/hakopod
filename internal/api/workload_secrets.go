@@ -78,11 +78,20 @@ func (s *Server) deleteWorkloadSecret(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_secret", "invalid reference name")
 		return
 	}
+	required, err := s.Store.ActionsCredentialRequired(r.Context(), p, e, a, name)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if required {
+		problem(w, 409, "conflict", "Remove the runner pool and wait for GitHub registration cleanup before deleting its credential.")
+		return
+	}
 	if err := s.Cluster.DeleteWorkloadSecret(r.Context(), p, e, a, name); err != nil {
 		failure(w, err)
 		return
 	}
-	_, err := s.Store.Pool.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'secret.delete',$3)", who(r).ID, who(r).KeyID, p+"/"+e+"/"+a+"/"+name)
+	_, err = s.Store.Pool.Exec(r.Context(), "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'secret.delete',$3)", who(r).ID, who(r).KeyID, p+"/"+e+"/"+a+"/"+name)
 	if err != nil {
 		failure(w, err)
 		return

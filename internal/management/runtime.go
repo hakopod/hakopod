@@ -20,12 +20,18 @@ import (
 func Start(ctx context.Context, server *api.Server, domain string, rollout time.Duration) (http.Handler, func()) {
 	db, kube := server.Store, server.Cluster
 	db.ValidateDeployment = func(ctx context.Context, app store.Application, next spec.Application) error {
+		if spec.HasActiveActions(next) {
+			if err := db.RequireActions(ctx, app.Project, app.Environment); err != nil {
+				return err
+			}
+		}
 		if err := kube.ValidateWorkloadSecrets(ctx, app.Project, app.Environment, next); err != nil {
 			return err
 		}
 		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
 	server.ConfigureSecretProviders()
+	server.ConfigureActions()
 	db.ProtectedDomains = []string{domain}
 	if dashboard, err := url.Parse(server.Auth.PublicURL); err == nil {
 		db.ProtectedDomains = append(db.ProtectedDomains, strings.ToLower(dashboard.Hostname()))
@@ -33,7 +39,7 @@ func Start(ctx context.Context, server *api.Server, domain string, rollout time.
 	handler := server.Handler()
 	worker := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests} {
+	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests, server.RunActions} {
 		wg.Add(1)
 		go func(run func(context.Context)) { defer wg.Done(); run(ctx) }(run)
 	}

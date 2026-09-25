@@ -15,6 +15,7 @@ type RuntimeClaim struct {
 	application string
 	revision    int64
 	OperationID string
+	actions     bool
 }
 
 func (s *Store) ClaimRuntime(ctx context.Context, application string, revision int64) (*RuntimeClaim, error) {
@@ -47,6 +48,16 @@ func (c *RuntimeClaim) Check(ctx context.Context) error {
 	defer c.mu.Unlock()
 	if c.conn == nil || c.conn.Conn().IsClosed() {
 		return ErrClaimLost
+	}
+	if c.actions {
+		var pending bool
+		if err := c.conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM deployments WHERE application_id=$1 AND status IN ('queued','running'))`, c.application).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			return ErrClaimLost
+		}
+		return nil
 	}
 	var eligible bool
 	var operation string

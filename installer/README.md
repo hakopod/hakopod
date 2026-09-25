@@ -302,3 +302,7 @@ New installations bind the API process's separate activation listener to
 requests continue through HAProxy on 80/443. It is not a second management API.
 Existing upgrades retain their environment and need explicit activation before
 serverless plans are available. See [serverless setup](../docs/serverless.md).
+
+### Managed Actions runner sandbox
+
+Managed Actions is an optional Pro module. See [the setup and lifecycle guide](../docs/managed-actions.md). Run `sudo python3 ./installer/modules.py managed-actions` from the verified installer kit for your installed release during a maintenance window; it restarts K3s and does not change the default workload runtime.

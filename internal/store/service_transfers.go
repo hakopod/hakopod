@@ -80,6 +80,9 @@ func (t *ServiceTransfer) check(ctx context.Context, tx pgx.Tx, p Principal, pro
 		if err != nil {
 			return err
 		}
+		if a.Spec.Services[t.Service].Actions != nil {
+			return fmt.Errorf("Managed Actions pools cannot be moved; create a new pool with its own credential")
+		}
 		if a.Project != project || a.Environment != environment || !p.Allows("deployments:write", project, environment, a.Name) {
 			return ErrForbidden
 		}
@@ -95,6 +98,9 @@ func (t *ServiceTransfer) check(ctx context.Context, tx pgx.Tx, p Principal, pro
 		a, err := scanApp(tx.QueryRow(ctx, "SELECT "+appCols+" FROM applications WHERE id=$1 FOR UPDATE", id))
 		if err != nil {
 			return err
+		}
+		if a.Spec.Services[t.Service].Actions != nil {
+			return fmt.Errorf("Managed Actions pools cannot be moved; create a new pool with its own credential")
 		}
 		if a.Project != project || a.Environment != environment || !p.Allows("deployments:write", a.Project, a.Environment, a.Name) {
 			return ErrForbidden

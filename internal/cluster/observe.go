@@ -36,6 +36,20 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 	healthy := 0
 	for _, name := range spec.Names(t.Spec) {
 		svc := t.Spec.Services[name]
+		if svc.Actions != nil {
+			if c.actionsObserve == nil {
+				return result, fmt.Errorf("Managed Actions controller is unavailable")
+			}
+			status, err := c.actionsObserve(ctx, t, name, svc)
+			if err != nil {
+				return result, err
+			}
+			result.Services = append(result.Services, status)
+			if status.Status == "ready" || status.Status == "stopped" {
+				healthy++
+			}
+			continue
+		}
 		if svc.Job != nil {
 			var status ServiceStatus
 			var err error

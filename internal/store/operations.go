@@ -79,6 +79,9 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		return Deployment{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = s.requireActionsTx(ctx, tx, project, env, next); err != nil {
+		return Deployment{}, err
+	}
 	if initialShowcase != nil {
 		if err = s.lockShowcaseAcceptance(ctx, tx, p, project, env, next, *initialShowcase); err != nil {
 			return Deployment{}, err

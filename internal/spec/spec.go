@@ -31,6 +31,7 @@ type Application struct {
 }
 
 type Service struct {
+	Actions                 *Actions                `json:"actions,omitempty" toml:"actions"`
 	Serverless              *Serverless             `json:"serverless,omitempty" toml:"serverless,omitempty"`
 	NodeName                string                  `json:"node_name,omitempty" toml:"node_name,omitempty"`
 	Resources               *Resources              `json:"resources,omitempty" toml:"resources,omitempty"`
@@ -184,6 +185,16 @@ func Normalize(input Application) (Application, error) {
 	if app.Services == nil || len(app.Services) > 20 {
 		return Application{}, errors.New("services: provide an explicit services table with at most 20 services")
 	}
+	for _, s := range app.Services {
+		if s.Actions != nil {
+			for _, other := range app.Services {
+				if other.Actions == nil {
+					return Application{}, fmt.Errorf("Managed Actions pools need a dedicated application; keep ordinary services in another application")
+				}
+			}
+			break
+		}
+	}
 	if err := ValidateDomains(app); err != nil {
 		return Application{}, err
 	}
@@ -225,6 +236,9 @@ func Normalize(input Application) (Application, error) {
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		field := "services." + name
+		if err := normalizeActions(&svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if err := validateCertificateMounts(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
@@ -651,6 +665,10 @@ func validateEnvironment(field string, env map[string]string) error {
 }
 
 func EffectiveService(app Application, service Service) Service {
+	// Runner jobs must never inherit application credentials or environment.
+	if service.Actions != nil {
+		return service
+	}
 	refs := make(map[string]SecretRef, len(app.Secrets)+len(service.Secrets))
 	for k, v := range app.Secrets {
 		refs[k] = v
