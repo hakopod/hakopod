@@ -31,9 +31,16 @@ def runtime_section(root):
   runtime_path = "ROOT/containerd-shim-runsc-v1"
 [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.hakopod-actions.options]
   TypeUrl = "io.containerd.runsc.v1.options"
-  BinaryName = "ROOT/runsc"
   ConfigPath = "ROOT/runsc-actions.toml"
 '''.replace('ROOT', str(root)) + END
+
+
+def runtime_profile(root):
+    # Unlike runc, the runsc shim reads binary_name from this profile, not
+    # BinaryName in containerd's options table.
+    return ('binary_name = "' + str(root / 'runsc') + '"\n'
+            '[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n'
+            '  allow-packet-socket-write = "true"\n  overlay2 = "root:memory,size=512m"\n')
 
 
 def extend_template(current, root):
@@ -141,7 +148,7 @@ def install(config, marker, kube, read):
                 shutil.copytree(matches[0], stage / name, symlinks=True)
             else:
                 shutil.copy2(matches[0], stage / name, follow_symlinks=False)
-        (stage / 'runsc-actions.toml').write_text('[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n  allow-packet-socket-write = "true"\n  overlay2 = "root:memory,size=512m"\n')
+        (stage / 'runsc-actions.toml').write_text(runtime_profile(root))
         BASE.mkdir(exist_ok=True, mode=0o755)
         # Module setup uses umask077. The sandbox drops privileges before
         # starting its helper, so every owned parent must remain traversable.
