@@ -143,9 +143,13 @@ def install(config, marker, kube, read):
                 shutil.copy2(matches[0], stage / name, follow_symlinks=False)
         (stage / 'runsc-actions.toml').write_text('[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n  allow-packet-socket-write = "true"\n  overlay2 = "root:memory,size=512m"\n')
         BASE.mkdir(exist_ok=True, mode=0o755)
+        # Module setup uses umask077. The sandbox drops privileges before
+        # starting its helper, so every owned parent must remain traversable.
+        BASE.chmod(0o755)
         atomic_write(BASE / 'owner', ident)
         if not root.exists():
             shutil.copytree(stage, root, symlinks=True)
+        root.chmod(0o755)
         if updated != original:
             backup = BASE / 'containerd-template.before-actions'
             if not backup.exists():
