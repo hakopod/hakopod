@@ -1,27 +1,25 @@
-Hakopod 0.1.0-alpha.29 enables production Pro license activation and explicit lifetime owner grants.
+Hakopod 0.1.0-alpha.30 adds organization-wide Managed Actions runner pools.
 
-## Pro license activation
+## Organization runner pools
 
-Official binaries now include the vendor public verification key. The signing key remains outside the source repository, release artifacts and customer installations. Activate an installation-bound license in **Settings → License**. A trusted issuer alone does not enable paid features.
+Open **Catalog → Automation → Managed Actions** and choose Organization. A repository is no longer required. Pools use GitHub's default runner group, or an explicit runner group ID; repository access stays controlled by the group's policy in GitHub. Repository remains an alternative, and existing repository pools retain their scope.
 
-## Lifetime owner grants
+Organization pools require a GitHub credential with organization **Self-hosted runners: read and write** permission. Repository pools continue to use **Administration: read and write**. The credential stays in control-plane secret storage; jobs receive only a single-job registration. Scope changes drain old runners and recover or remove registrations using their original saved scope.
 
-An explicitly signed lifetime Pro grant has no expiry. Subscription licenses continue to require a finite expiry and renewal. Both enforce installation identity, not-before time, signed entitlements and monotonic sequences. Removing a lifetime license disables paid features and prevents reuse of that token; reactivation requires a newly issued higher sequence.
+The dashboard, TOML/API, catalog, review and status screens support both scopes. Secret setup shows the correct permissions, and users without deployment access now see why submission is unavailable.
 
 ## Upgrade
 
-Back up the installation and run the release installer:
-
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.29
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.30
 ```
 
-Direct upgrades are supported from alpha.26 and alpha.27, the last two published versions. Older installations must upgrade through a supported intermediate release. Alpha.28 was not published. Earlier releases cannot verify the new vendor licenses and reject lifetime claims. Existing time-limited v1 licenses remain compatible when their issuer is trusted. This upgrade does not install the optional Managed Actions runtime or change customer workloads.
+Direct upgrades are supported from alpha.27 and alpha.29, the last two published releases. Alpha.28 was not published. Older installations must upgrade through a supported intermediate release. This release retains production Pro license verification and lifetime owner grants from alpha.29.
+
+Managed Actions requires Pro access and the optional sandbox module installed from a verified release kit. An upgrade does not automatically install that runtime or register runners with GitHub.
 
 ## Validation
 
-The release is gated by Go/API tests, dashboard checks, artifact inspection and the native installer/upgrade matrix. License tests cover forged signatures, subscription expiry, explicit lifetime validation, installation binding, activation, removal and replay rejection.
+Engine tests with isolated PostgreSQL cover organization routes, default-group discovery, invalid targets, scope changes, interrupted registration and durable cleanup. Dashboard typecheck/build/tests and independent UI review cover both editions and themes, desktop/mobile, scope switching and failed requests. Real GitHub organization registration and workflow execution have not yet been exercised; the existing runner sandbox and pod specification are unchanged.
 
-## Bounded upgrade coverage
-
-Release acceptance covers fresh installations and the two supported upgrade sources across both managed-database architectures and amd64 local/external database modes. This keeps native host coverage at 12 jobs instead of accumulating retired releases.
+Publication remains gated by release artifact checks and native fresh-install/upgrade acceptance. The bounded matrix retains 12 host cases across managed, local and external database modes.
