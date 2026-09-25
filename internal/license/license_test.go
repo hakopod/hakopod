@@ -83,6 +83,27 @@ func TestSignedInstallationEntitlements(t *testing.T) {
 	if _, err = NewVerifier(nil).Verify(token, claims.InstallationID, now); State(err) != "issuer_not_configured" {
 		t.Fatal("unconfigured issuer accepted paid entitlements")
 	}
+	lifetime := advanced
+	lifetime.Lifetime = true
+	lifetime.ExpiresAt = 0
+	if _, err := v.Verify(sign(lifetime), claims.InstallationID, now.AddDate(100, 0, 0)); err != nil {
+		t.Fatal("explicit lifetime grant rejected", err)
+	}
+	if _, err := v.Verify(sign(lifetime), strings.Repeat("c", 32), now); State(err) != "wrong_installation" {
+		t.Fatal("lifetime grant accepted for another installation", err)
+	}
+	if _, err := v.Verify(sign(lifetime), claims.InstallationID, time.Unix(lifetime.NotBefore-1, 0)); State(err) != "not_yet_valid" {
+		t.Fatal("lifetime grant ignored not-before", err)
+	}
+	for _, invalid := range []Claims{
+		func() Claims { c := lifetime; c.Lifetime = false; return c }(),
+		func() Claims { c := lifetime; c.ExpiresAt = claims.ExpiresAt; return c }(),
+		func() Claims { c := lifetime; c.Plan = "free"; c.Features = nil; return c }(),
+	} {
+		if _, err := v.Verify(sign(invalid), claims.InstallationID, now); err == nil {
+			t.Fatal("invalid lifetime or missing subscription expiry accepted")
+		}
+	}
 }
 
 func TestFreeCollaborationCatalog(t *testing.T) {
@@ -93,6 +114,33 @@ func TestFreeCollaborationCatalog(t *testing.T) {
 	for _, id := range []string{"teams", "invitations", "project_rbac"} {
 		if !features[id].Enabled || features[id].Plan != "free" {
 			t.Fatalf("%s is not Free", id)
+		}
+	}
+}
+
+func TestReleaseIssuerRejectsForgedLicense(t *testing.T) {
+	v := ReleaseVerifier()
+	if !v.Configured() {
+		t.Fatal("release has no license verification key")
+	}
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	claims := Claims{Version: 1, KeyID: "hakopod-2026-09", LicenseID: strings.Repeat("a", 32), InstallationID: strings.Repeat("b", 32), Customer: "Ephemeral test customer", Plan: "pro", Sequence: 1, IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Features: []string{"managed_actions"}}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(private, append([]byte(Domain), payload...))
+	token := "hl1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
+	if _, err := v.Verify(token, claims.InstallationID, now); State(err) != "invalid_signature" {
+		t.Fatalf("forged production license: state=%s error=%v", State(err), err)
+	}
+	for _, feature := range Catalog(nil) {
+		if feature.Plan == "pro" && feature.Enabled {
+			t.Fatalf("configured issuer enabled %s without activation", feature.ID)
 		}
 	}
 }

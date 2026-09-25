@@ -67,8 +67,10 @@ func (s *Store) licenseStatus(record licenseRecord) LicenseStatus {
 		if claims.LicenseID != "" {
 			status.LicenseID = claims.LicenseID
 			status.LicensedTo = claims.Customer
-			expiry := time.Unix(claims.ExpiresAt, 0).UTC()
-			status.ExpiresAt = &expiry
+			if !claims.Lifetime {
+				expiry := time.Unix(claims.ExpiresAt, 0).UTC()
+				status.ExpiresAt = &expiry
+			}
 		}
 	} else if record.Sequence > 0 {
 		status.State = "inactive"

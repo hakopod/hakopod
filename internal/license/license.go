@@ -14,11 +14,12 @@ import (
 	"time"
 )
 
-// ReleaseKeys is set by the trusted release build with -ldflags -X. Values are
-// public keys only: key-id=base64url-key[,next-key-id=base64url-key]. An empty
-// trust set disables paid activation. No request or environment variable can
-// replace this trust set in a published binary.
-var ReleaseKeys string
+// ReleaseKeys contains the vendor's public verification keys, never signing
+// keys. Keeping the default in source gives every release build the same trust
+// anchor. A trusted distributor may override it with -ldflags -X using
+// key-id=base64url-key[,next-key-id=base64url-key]. An empty trust set disables
+// paid activation. Requests and environment variables cannot replace this set.
+var ReleaseKeys = "hakopod-2026-09=CrQD0KiOhy_RZgzhyKoVhIHuDQ925whZzVx0VE7VrgE"
 
 const Domain = "hakopod-license-v1\x00"
 const MaxTokenBytes = 16 << 10
@@ -34,6 +35,7 @@ type Claims struct {
 	IssuedAt       int64    `json:"issued_at"`
 	NotBefore      int64    `json:"not_before"`
 	ExpiresAt      int64    `json:"expires_at"`
+	Lifetime       bool     `json:"lifetime,omitempty"`
 	Features       []string `json:"features"`
 }
 
@@ -151,7 +153,16 @@ func (v *Verifier) Verify(token, installation string, now time.Time) (Claims, er
 	if !ok || !ed25519.Verify(key, append([]byte(Domain), payload...), signature) {
 		return invalid("invalid_signature")
 	}
-	if c.Version != 1 || !idPattern.MatchString(c.LicenseID) || !idPattern.MatchString(c.InstallationID) || c.Sequence < 1 || len(c.Customer) < 1 || len(c.Customer) > 200 || (c.Plan != "free" && c.Plan != "pro") || c.IssuedAt <= 0 || c.NotBefore < c.IssuedAt || c.ExpiresAt <= c.NotBefore || c.ExpiresAt-c.IssuedAt > int64((10*366*24*time.Hour)/time.Second) || len(c.Features) > 9 {
+	if c.Version != 1 || !idPattern.MatchString(c.LicenseID) || !idPattern.MatchString(c.InstallationID) || c.Sequence < 1 || len(c.Customer) < 1 || len(c.Customer) > 200 || (c.Plan != "free" && c.Plan != "pro") || c.IssuedAt <= 0 || c.NotBefore < c.IssuedAt || len(c.Features) > 9 {
+		return invalid("invalid")
+	}
+	// A missing or zero expiry must never turn a subscription into a lifetime
+	// license. The issuer must explicitly sign a lifetime Pro grant.
+	if c.Lifetime {
+		if c.Plan != "pro" || c.ExpiresAt != 0 {
+			return invalid("invalid")
+		}
+	} else if c.ExpiresAt <= c.NotBefore || c.ExpiresAt-c.IssuedAt > int64((10*366*24*time.Hour)/time.Second) {
 		return invalid("invalid")
 	}
 	seen := map[string]bool{}
@@ -167,7 +178,7 @@ func (v *Verifier) Verify(token, installation string, now time.Time) (Claims, er
 	if now.Unix() < c.NotBefore {
 		return c, &ValidationError{"not_yet_valid"}
 	}
-	if now.Unix() >= c.ExpiresAt {
+	if !c.Lifetime && now.Unix() >= c.ExpiresAt {
 		return c, &ValidationError{"expired"}
 	}
 	return c, nil
