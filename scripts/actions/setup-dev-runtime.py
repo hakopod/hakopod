@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Install a pinned runner sandbox only in this CI job's disposable k3d cluster."""
 import hashlib
-import io
 import os
 from pathlib import Path
 import subprocess
-import tarfile
 import tempfile
 import urllib.request
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "installer"))
-from actions_runtime import runtime_section
+from actions_runtime import runtime_section, unpack_runtime
 
 if os.environ.get('GITHUB_ACTIONS') != 'true':
     raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
@@ -29,8 +27,9 @@ if hashlib.sha256(data).hexdigest() != digests[arch]:
     raise SystemExit('gVisor checksum mismatch')
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
-    with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-        archive.extractall(root, filter='data')
+    archive = root / 'runtime.tar.bz2'
+    archive.write_bytes(data)
+    unpack_runtime(archive, root / 'unpacked')
     for name in ('runsc', 'containerd-shim-runsc-v1', 'gvisor-bin'):
         matches = list(root.rglob(name))
         if len(matches) != 1 or not (matches[0].is_dir() if name == 'gvisor-bin' else matches[0].is_file()):

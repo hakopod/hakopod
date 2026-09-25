@@ -6,7 +6,7 @@ It never alters the default runtime or uses a customer's Docker socket.
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
 import shutil
 import subprocess
@@ -57,6 +57,38 @@ def atomic_write(path, value, mode=0o644):
     os.replace(name, path)
 
 
+def unpack_runtime(source, destination):
+    """Extract the verified flat runtime bundle on Python 3.10 and later."""
+    destination = Path(destination)
+    if destination.exists() and any(destination.iterdir()):
+        raise ValueError('Runtime extraction destination must be empty')
+    with tarfile.open(source) as archive:
+        members = archive.getmembers()
+        if len(members) > 256 or sum(m.size for m in members) > 1024 ** 3:
+            raise ValueError('Runtime archive exceeds extraction bounds')
+        paths = set()
+        for member in members:
+            path = PurePosixPath(member.name)
+            if (path.is_absolute() or '..' in path.parts or not path.parts
+                    or '\\' in member.name or str(path) in paths
+                    or path.parts[0] not in ('runsc', 'containerd-shim-runsc-v1', 'gvisor-bin')
+                    or not (member.isfile() or member.isdir())):
+                raise ValueError('Unsafe runtime archive entry')
+            paths.add(str(path))
+        for member in members:
+            path = destination / member.name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if member.isdir():
+                path.mkdir(exist_ok=True)
+            else:
+                with archive.extractfile(member) as src, path.open('xb') as dst:
+                    shutil.copyfileobj(src, dst, 1024 * 1024)
+                path.chmod(0o755 if member.mode & 0o111 else 0o644)
+        for path in [destination, *destination.rglob('*')]:
+            if path.is_dir():
+                path.chmod(0o755)
+
+
 def install(config, marker, kube, read):
     if platform.system() != 'Linux' or platform.machine() not in DIGESTS:
         raise ValueError('Actions requires Linux AMD64 or ARM64')
@@ -97,10 +129,10 @@ def install(config, marker, kube, read):
         if digest.hexdigest() != DIGESTS[platform.machine()]:
             raise ValueError('Runtime checksum mismatch')
         extracted = tmp / 'extracted'
-        with tarfile.open(archive) as tar:
-            tar.extractall(extracted, filter='data')
+        unpack_runtime(archive, extracted)
         stage = tmp / 'runtime'
         stage.mkdir()
+        stage.chmod(0o755)
         for name in ('runsc', 'containerd-shim-runsc-v1', 'gvisor-bin'):
             matches = list(extracted.rglob(name))
             if len(matches) != 1:

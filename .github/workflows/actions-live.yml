@@ -1,8 +1,5 @@
 name: Managed Actions real GitHub jobs
 on:
-  push:
-    branches: ['codex/managed-actions-runtime']
-    paths: ['.github/workflows/actions-live.yml', 'internal/cluster/actions*', 'scripts/actions/setup-dev-runtime.py', 'installer/actions_runtime.py']
   workflow_dispatch:
 permissions:
   contents: read

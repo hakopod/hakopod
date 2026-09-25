@@ -452,8 +452,13 @@ def main():
                         'resources': {'requests': {'cpu': '10m', 'memory': '32Mi'},
                                       'limits': {'cpu': '100m', 'memory': '128Mi'}}}]}}
             run(kube + ['create', '-f', '-'], input=json.dumps(probe))
-            run(kube + ['-n', 'hakopod-system', 'wait', '--for=jsonpath={.status.phase}=Succeeded',
-                        'pod/actions-runtime-probe', '--timeout=180s'], timeout=200)
+            completed = run(kube + ['-n', 'hakopod-system', 'wait', '--for=jsonpath={.status.phase}=Succeeded',
+                                   'pod/actions-runtime-probe', '--timeout=180s'], timeout=200, ok=False)
+            if completed.returncode:
+                events = run(kube + ['-n', 'hakopod-system', 'get', 'events',
+                                    '--field-selector=involvedObject.name=actions-runtime-probe', '-o', 'json'])
+                messages = [event.get('message', '') for event in json.loads(events.stdout)['items']]
+                raise RuntimeError('Actions sandbox probe did not complete: ' + diagnostics('; '.join(messages[-5:])))
             health(setup_required=False)
             report['checks'].append('Shipped Actions runtime module installs idempotently and runs a sandbox pod on the native host')
         if psql:
