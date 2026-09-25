@@ -34,9 +34,16 @@ export function DeploymentSecrets({
   const [error, setError] = useState('')
   const missing = plan.missing_secrets || []
   const name = missing[0]
-  const providerCredential = Object.values(plan.spec.services).some(
-    (service) => service.actions?.credential === name,
+  const runnerCredentials = Object.values(plan.spec.services).flatMap((service) =>
+    service.actions?.credential === name ? [service.actions] : [],
   )
+  const providerCredential = runnerCredentials.length > 0
+  const runnerPermissions = [
+    runnerCredentials.some((actions) => actions.organization) && 'organization Self-hosted runners',
+    runnerCredentials.some((actions) => actions.repository) && 'repository Administration',
+  ]
+    .filter(Boolean)
+    .join(' and ')
   useEffect(() => {
     setValue('')
     setError('')
@@ -161,8 +168,8 @@ export function DeploymentSecrets({
           </div>
           {providerCredential ? (
             <Note>
-              Supply a GitHub token with repository Administration read and write permission. A
-              randomly generated password cannot authenticate to GitHub.
+              Supply a GitHub token with {runnerPermissions} read and write permission. A randomly
+              generated password cannot authenticate to GitHub.
             </Note>
           ) : (
             <details>

@@ -16,8 +16,11 @@ Provider credentials belong in scoped secret storage. They are used only by the
 control plane to obtain one-job JIT configuration. They must not appear in the
 runner's environment, image, TOML or logs. Registration identity must be persisted
 before calling GitHub, so a lost response can be reconciled by name instead of
-creating extra runners. Long-lived organization-wide tokens are unnecessary for
-the repository-scoped first implementation.
+creating extra runners. Pools select exactly one organization or repository.
+Organization pools use a credential with organization Self-hosted runners
+permission and either an explicit runner group or GitHub's default group. GitHub
+owns the group's repository policy. Each durable slot keeps its original scope
+and credential reference so edits cannot redirect observation or cleanup.
 
 The official runner image was verified at version 2.337.0 on September 24, 2026:
 `ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4`.

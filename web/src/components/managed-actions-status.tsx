@@ -75,8 +75,10 @@ export function ManagedActionsStatus({
         ) : (
           <>
             <p className="text-sm min-w-0 wrap-anywhere">
-              {item.pool.config.actions?.repository} ·{' '}
-              {removing ? 'Removal pending' : `${item.pool.config.replicas} configured job slots`}
+              {item.pool.config.actions?.organization
+                ? `Organization: ${item.pool.config.actions.organization} · Group: ${item.pool.config.actions.runner_group_id || 'GitHub default'}`
+                : `Repository: ${item.pool.config.actions?.repository}`}{' '}
+              · {removing ? 'Removal pending' : `${item.pool.config.replicas} configured job slots`}
             </p>
             {item.pool.message && <Note>{item.pool.message}</Note>}
             {item.slots.length === 0 ? (

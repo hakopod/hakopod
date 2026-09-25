@@ -2,6 +2,7 @@ package spec
 
 import (
 	"fmt"
+	"github.com/hakopod/hakopod/internal/actions"
 	"regexp"
 	"strings"
 
@@ -10,16 +11,21 @@ import (
 
 const ActionsRunnerImage = "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
 
-// Actions describes a repository-scoped pool of single-job runners. Credential
+// Actions describes an organization or repository pool of single-job runners. Credential
 // is a control-plane secret reference, never a job environment variable.
 type Actions struct {
-	Repository     string   `json:"repository" toml:"repository"`
+	Repository     string   `json:"repository,omitempty" toml:"repository,omitempty"`
+	Organization   string   `json:"organization,omitempty" toml:"organization,omitempty"`
+	RunnerGroupID  int64    `json:"runner_group_id,omitempty" toml:"runner_group_id,omitempty"`
 	Credential     string   `json:"credential" toml:"credential"`
 	Labels         []string `json:"labels" toml:"labels"`
 	TimeoutMinutes int64    `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
 }
 
-var actionsRepository = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
+func (a Actions) Target() actions.Target {
+	return actions.Target{Repository: a.Repository, Organization: a.Organization, RunnerGroupID: a.RunnerGroupID}
+}
+
 var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 func normalizeActions(s *Service) error {
@@ -27,8 +33,8 @@ func normalizeActions(s *Service) error {
 		return nil
 	}
 	a := s.Actions
-	if !actionsRepository.MatchString(a.Repository) || strings.Contains(a.Repository, "..") {
-		return fmt.Errorf("actions.repository: use a GitHub.com owner/repository")
+	if !a.Target().Valid() {
+		return fmt.Errorf("actions: select either a GitHub.com organization or owner/repository; a nonnegative runner_group_id is optional for organizations only")
 	}
 	if !(SecretRef{Ref: a.Credential}).Valid() || a.Credential == "" {
 		return fmt.Errorf("actions.credential: select an application secret")

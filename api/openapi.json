@@ -14419,6 +14419,15 @@
           "repository": {
             "type": "string"
           },
+          "organization": {
+            "type": "string"
+          },
+          "runner_group_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Organization runner group ID; omit or use zero for the GitHub default group."
+          },
           "credential": {
             "type": "string"
           },
@@ -14433,10 +14442,10 @@
           }
         },
         "required": [
-          "repository",
           "credential",
           "labels"
-        ]
+        ],
+        "description": "Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub."
       },
       "ActionsPool": {
         "type": "object",

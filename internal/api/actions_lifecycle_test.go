@@ -56,40 +56,54 @@ func actionsDatabase(t *testing.T) *store.Store {
 
 type actionsFake struct {
 	runners                             map[int64]actions.Runner
+	scopes                              map[int64]actions.Target
+	deleted                             []actions.Target
 	pods, configs                       map[string]bool
 	next                                int64
 	registerLost, saveLost, deleteFails bool
 }
 
-func (f *actionsFake) Register(_ context.Context, _ string, name string, _ []string) (actions.Registration, error) {
+func (f *actionsFake) Register(_ context.Context, target actions.Target, name string, _ []string) (actions.Registration, error) {
 	f.next++
 	r := actions.Runner{ID: f.next, Name: name, Status: "online"}
 	f.runners[r.ID] = r
+	if f.scopes == nil {
+		f.scopes = map[int64]actions.Target{}
+	}
+	f.scopes[r.ID] = target
 	if f.registerLost {
 		f.registerLost = false
 		return actions.Registration{}, errors.New("response lost")
 	}
 	return actions.Registration{Runner: r, EncodedConfig: "one-job-only"}, nil
 }
-func (f *actionsFake) Get(_ context.Context, _ string, id int64) (actions.Runner, error) {
+func (f *actionsFake) Get(_ context.Context, target actions.Target, id int64) (actions.Runner, error) {
+	if f.scopes[id] != target {
+		return actions.Runner{}, errors.New("wrong observation scope")
+	}
 	r, ok := f.runners[id]
 	if !ok {
 		return r, &actions.StatusError{Status: 404}
 	}
 	return r, nil
 }
-func (f *actionsFake) Find(_ context.Context, _ string, name string) (*actions.Runner, error) {
+func (f *actionsFake) Find(_ context.Context, target actions.Target, name string) (*actions.Runner, error) {
 	for _, r := range f.runners {
-		if r.Name == name {
+		if r.Name == name && f.scopes[r.ID] == target {
 			return &r, nil
 		}
 	}
 	return nil, nil
 }
-func (f *actionsFake) Delete(_ context.Context, _ string, id int64) error {
+func (f *actionsFake) Delete(_ context.Context, target actions.Target, id int64) error {
+	if f.scopes[id] != target {
+		return errors.New("wrong cleanup scope")
+	}
 	if f.deleteFails {
 		return &actions.StatusError{Status: 503}
 	}
+	f.deleted = append(f.deleted, target)
+	delete(f.scopes, id)
 	delete(f.runners, id)
 	return nil
 }
@@ -273,5 +287,75 @@ func TestActionsLostClaimNeverRegisters(t *testing.T) {
 	pools, err := s.Store.ActionsPools(ctx, "other-tenant")
 	if err != nil || len(pools) != 0 {
 		t.Fatal("cross-tenant inventory leaked", err)
+	}
+}
+
+func TestActionsScopeChangeDrainsUsingPersistedScope(t *testing.T) {
+	s, f, p, _ := actionsHarness(t)
+	ctx := context.Background()
+	reconcile := func() {
+		t.Helper()
+		if e := s.reconcileActionsPool(ctx, actionsTarget(p), p); e != nil {
+			t.Fatal(e)
+		}
+	}
+	reconcile()
+	r := f.runners[1]
+	r.Busy = true
+	f.runners[1] = r
+	// Change desired scope; old slot config must remain repository-scoped.
+	next := *p.Config.Actions
+	next.Repository = ""
+	next.Organization = "team"
+	next.RunnerGroupID = 82
+	p.Config.Actions = &next
+	reconcile()
+	if f.next != 1 || len(f.runners) != 1 {
+		t.Fatal("replaced busy repository runner")
+	}
+	r.Busy = false
+	f.runners[1] = r
+	reconcile()
+	if f.next != 2 || len(f.deleted) != 1 || f.deleted[0].Repository != "team/repo" || f.scopes[2] != next.Target() {
+		t.Fatal("wrong scope migration", f.deleted, f.scopes)
+	}
+	// A controller restart reads the organization's scope from durable slot data.
+	slots, e := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
+	if e != nil || len(slots) != 1 || slots[0].Config.Actions.Target() != next.Target() {
+		t.Fatal("scope not durable", slots, e)
+	}
+	p.Removed = true
+	f.deleteFails = true
+	if e := s.reconcileActionsPool(ctx, actionsTarget(p), p); e == nil {
+		t.Fatal("cleanup failure hidden")
+	}
+	f.deleteFails = false
+	reconcile()
+	if len(f.runners) != 0 || f.deleted[len(f.deleted)-1] != next.Target() {
+		t.Fatal("organization cleanup leaked", f.scopes)
+	}
+}
+
+func TestActionsLostOrganizationRegistrationRecoversOriginalScope(t *testing.T) {
+	s, f, p, _ := actionsHarness(t)
+	next := *p.Config.Actions
+	next.Repository = ""
+	next.Organization = "old-org"
+	p.Config.Actions = &next
+	f.registerLost = true
+	ctx := context.Background()
+	if e := s.reconcileActionsPool(ctx, actionsTarget(p), p); e == nil {
+		t.Fatal("expected lost registration")
+	}
+	changed := next
+	changed.Organization = "new-org"
+	p.Config.Actions = &changed
+	for i := 0; i < 2; i++ {
+		if e := s.reconcileActionsPool(ctx, actionsTarget(p), p); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if len(f.deleted) != 1 || f.deleted[0].Organization != "old-org" || len(f.runners) != 1 || f.scopes[2].Organization != "new-org" {
+		t.Fatal("ambiguous registration recovered in wrong organization", f.deleted, f.scopes)
 	}
 }

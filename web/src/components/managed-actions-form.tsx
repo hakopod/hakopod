@@ -32,6 +32,13 @@ export function ManagedActionsForm({
   const environment = application?.environment || scope.environment
   const [name, setName] = useState(application?.name || '')
   const [runnerName, setRunnerName] = useState(serviceName || 'runner')
+  const [runnerScope, setRunnerScope] = useState(
+    original?.actions?.repository ? 'repository' : 'organization',
+  )
+  const [organization, setOrganization] = useState(original?.actions?.organization || '')
+  const [runnerGroup, setRunnerGroup] = useState(
+    original?.actions?.runner_group_id ? String(original.actions.runner_group_id) : '',
+  )
   const [repository, setRepository] = useState(original?.actions?.repository || '')
   const [credential, setCredential] = useState(
     original?.actions?.credential || 'github-runner-token',
@@ -93,7 +100,9 @@ export function ManagedActionsForm({
         replicas: Number(replicas),
         architecture: architecture ? (architecture as 'amd64' | 'arm64') : undefined,
         actions: {
-          repository,
+          ...(runnerScope === 'organization'
+            ? { organization, runner_group_id: runnerGroup ? Number(runnerGroup) : undefined }
+            : { repository }),
           credential,
           labels: labels.split(',').map((label) => label.trim()),
           timeout_minutes: Number(timeout),
@@ -157,7 +166,7 @@ export function ManagedActionsForm({
     return (
       <FormPage
         title="Managed Actions"
-        description="Manage repository-scoped GitHub runner pools."
+        description="Manage organization or repository GitHub runner pools."
         breadcrumbs={[{ label: 'Catalog', to: '/templates' }]}
       >
         <Empty
@@ -170,7 +179,7 @@ export function ManagedActionsForm({
     return (
       <FormPage
         title="Managed Actions"
-        description="Manage repository-scoped GitHub runner pools."
+        description="Manage organization or repository GitHub runner pools."
         breadcrumbs={[{ label: 'Catalog', to: '/templates' }]}
       >
         <Empty
@@ -191,6 +200,9 @@ export function ManagedActionsForm({
         <ErrorState error={capabilities.error} retry={() => void capabilities.refetch()} />
       ) : (
         <>
+          {!canWrite && (
+            <Note>You need deployment write access to create or update runner pools.</Note>
+          )}
           {!capabilities.data.licensed && (
             <Note>
               Managed Actions requires{' '}
@@ -231,12 +243,23 @@ export function ManagedActionsForm({
             </Note>
           ) : plan ? (
             <>
-              <div className="min-w-0 wrap-anywhere" ref={reviewFocus} tabIndex={-1} aria-label="Review runner pool">
+              <div
+                className="min-w-0 wrap-anywhere"
+                ref={reviewFocus}
+                tabIndex={-1}
+                aria-label="Review runner pool"
+              >
                 <FormSection title="Review runner pool">
                   <dl className="grid grid-cols-1 gap-2 text-sm min-w-0 wrap-anywhere">
                     <div>
-                      Repository: <strong>{repository}</strong>
+                      {runnerScope === 'organization' ? 'Organization' : 'Repository'}:{' '}
+                      <strong>{runnerScope === 'organization' ? organization : repository}</strong>
                     </div>
+                    {runnerScope === 'organization' && (
+                      <div>
+                        Runner group: <strong>{runnerGroup || 'GitHub default group'}</strong>
+                      </div>
+                    )}
                     <div>
                       Application:{' '}
                       <strong>
@@ -330,18 +353,70 @@ export function ManagedActionsForm({
                   </label>
                 </div>
               </FormSection>
-              <FormSection title="GitHub repository">
-                <label className="grid gap-2">
-                  Repository
-                  <Input
-                    required
-                    value={repository}
-                    placeholder="your-team/your-repository"
-                    maxLength={201}
+              <FormSection title="GitHub access">
+                <div className="grid gap-2">
+                  <span>Runner scope</span>
+                  <SelectField
+                    label="Runner scope"
+                    value={runnerScope}
+                    onValueChange={setRunnerScope}
                     disabled={busy}
-                    onChange={(event) => setRepository(event.target.value)}
+                    options={[
+                      { value: 'organization', label: 'Organization' },
+                      { value: 'repository', label: 'Repository' },
+                    ]}
                   />
-                </label>
+                </div>
+                {runnerScope === 'organization' ? (
+                  <>
+                    <label className="grid gap-2">
+                      Organization
+                      <Input
+                        required
+                        value={organization}
+                        placeholder="your-team"
+                        maxLength={39}
+                        disabled={busy}
+                        onChange={(event) => setOrganization(event.target.value)}
+                        aria-describedby="actions-organization-help"
+                      />
+                      <span id="actions-organization-help" className="text-sm muted-text">
+                        Share this pool across repositories allowed by your GitHub runner group.
+                      </span>
+                    </label>
+                    <label className="grid gap-2">
+                      Runner group ID (optional)
+                      <Input
+                        type="number"
+                        min={1}
+                        max={9007199254740991}
+                        step={1}
+                        value={runnerGroup}
+                        placeholder="GitHub default group"
+                        disabled={busy}
+                        onChange={(event) => setRunnerGroup(event.target.value)}
+                        aria-describedby="actions-group-help"
+                      />
+                      <span id="actions-group-help" className="text-sm muted-text">
+                        Leave blank to use GitHub’s default group. For another group, copy its
+                        numeric ID from the group’s URL in your organization’s Settings → Actions →
+                        Runner groups. Manage repository access there.
+                      </span>
+                    </label>
+                  </>
+                ) : (
+                  <label className="grid gap-2">
+                    Repository
+                    <Input
+                      required
+                      value={repository}
+                      placeholder="your-team/your-repository"
+                      maxLength={201}
+                      disabled={busy}
+                      onChange={(event) => setRepository(event.target.value)}
+                    />
+                  </label>
+                )}
                 <label className="grid gap-2">
                   Application secret name
                   <Input
@@ -353,9 +428,12 @@ export function ManagedActionsForm({
                   />
                 </label>
                 <p className="text-sm muted-text">
-                  Save a fine-grained GitHub token with Administration: read and write for this
-                  repository during review. The token stays in the control plane; jobs receive only
-                  a single-job registration.
+                  Save a fine-grained GitHub token with{' '}
+                  {runnerScope === 'organization'
+                    ? 'organization Self-hosted runners: read and write'
+                    : 'repository Administration: read and write'}{' '}
+                  for this {runnerScope} during review. The token stays in the control plane; jobs
+                  receive only a single-job registration.
                 </p>
               </FormSection>
               <FormSection title="Runner pool">

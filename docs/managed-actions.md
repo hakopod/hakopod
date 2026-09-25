@@ -1,6 +1,6 @@
 # Managed Actions
 
-Open **Catalog → Automation → Managed Actions** to create a repository-scoped
+Open **Catalog → Automation → Managed Actions** to create an organization or repository
 GitHub Actions runner pool. Each replica is one concurrent job slot. This is a
 Pro capability (`managed_actions` in the signed installation license).
 
@@ -29,12 +29,18 @@ The module is not an automatic Cloud or BYOD node migration.
 ## Create a pool
 
 1. Choose a project and environment, then open Managed Actions in the catalog.
-2. Choose an application name, repository (`owner/repository`), labels, replica
+2. Choose an application name, GitHub organization (the default) or repository
+   (`owner/repository`), labels, replica
    count, architecture and maximum runner lifetime.
-3. During review, save an application-scoped fine-grained GitHub token with
-   **Administration: read and write** on that repository. Do not put the token
+3. Organization pools use the GitHub default runner group unless you enter a
+   runner group ID. Set which repositories can use the group in GitHub under
+   **Organization Settings → Actions → Runner groups**. Hakopod does not change
+   that access policy. A repository is not required for an organization pool.
+4. During review, save an application-scoped fine-grained GitHub token with
+   **Self-hosted runners: read and write** organization permission, or
+   **Administration: read and write** for a repository pool. Do not put the token
    itself in TOML or Git.
-4. Review the changes and deploy. The service page shows GitHub-observed runner
+5. Review the changes and deploy. The service page shows GitHub-observed runner
    state and the time of its last observation.
 
 Use your configured label in a workflow:
@@ -58,11 +64,19 @@ size = "compute"
 replicas = 2
 
 [services.runner.actions]
-repository = "your-team/your-repository"
+organization = "your-team"
+# runner_group_id = 42 # Optional; omit to discover GitHub’s default group.
 credential = "github-runner-token"
 labels = ["hakopod"]
 timeout_minutes = 60
 ```
+
+For a dedicated repository pool, replace `organization` with
+`repository = "your-team/your-repository"` and omit `runner_group_id`.
+Exactly one of `organization` or `repository` is required. Existing repository
+configurations remain valid. Scope or group changes drain old runners using their
+original registration scope before starting replacements. Keep the old credential
+available until cleanup finishes.
 
 The engine supplies the digest-pinned runner image. A runner application cannot
 contain ordinary services, persistent volumes or custom host access. Create a
@@ -82,7 +96,7 @@ Workspaces have a 2 GiB temporary disk limit; Docker data has a 2 GiB memory-bac
 limit. The maximum lifetime includes startup and waiting for a job. Jobs requiring
 more disk or a different runtime must use another runner type.
 
-The repository administration token stays in control-plane secret storage. A pod
+The GitHub runner-management token stays in control-plane secret storage. A pod
 gets only its one-job JIT registration. Configuring this pool does not replace
 Hakopod's application build provider.
 

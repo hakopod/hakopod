@@ -67,7 +67,7 @@ func Templates() []Template {
 		}
 		items[i].WorkloadRequirements = templateWorkloadRequirements(items[i].ID)
 	}
-	return append(items, Template{ID: "managed-actions", Name: "Managed Actions", Category: "automation", Description: "Repository-scoped GitHub Actions runners with isolated Docker support and single-job workspaces.", License: "Pro feature; GitHub Actions runner MIT", Upstream: "https://github.com/actions/runner", RequiredSecrets: []string{"github-runner-token"}, Requirements: []string{"Pro access", "Managed Actions sandbox installed", "A GitHub repository credential with Administration write permission", "A dedicated application; each replica is one concurrent job slot"}, Architectures: []string{"amd64", "arm64"}, ResourceSummary: "At least 4 GiB per runner including Docker and temporary storage", Verification: "Managed Actions runtime prerequisites are checked by this installation", Deployable: true, ConfigFields: []TemplateConfigField{{Name: "repository", Label: "GitHub repository", Required: true}, {Name: "labels", Label: "Runner labels", Default: "hakopod"}, {Name: "replicas", Label: "Concurrent jobs", Default: "1"}, {Name: "credential", Label: "Application secret", Default: "github-runner-token"}}, SecretFields: []TemplateSecretField{{Name: "github-runner-token", Description: "GitHub fine-grained repository token with Administration read and write", Format: "provider-key"}}, Providers: []string{}, Sources: []string{"https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners"}, WorkloadRequirements: []string{"managed_actions"}})
+	return append(items, Template{ID: "managed-actions", Name: "Managed Actions", Category: "automation", Description: "Organization or repository GitHub Actions runners with isolated Docker support and single-job workspaces.", License: "Pro feature; GitHub Actions runner MIT", Upstream: "https://github.com/actions/runner", RequiredSecrets: []string{"github-runner-token"}, Requirements: []string{"Pro access", "Managed Actions sandbox installed", "A GitHub credential with organization Self-hosted runners or repository Administration read/write permission", "A dedicated application; each replica is one concurrent job slot"}, Architectures: []string{"amd64", "arm64"}, ResourceSummary: "At least 4 GiB per runner including Docker and temporary storage", Verification: "Managed Actions runtime prerequisites are checked by this installation", Deployable: true, ConfigFields: []TemplateConfigField{{Name: "organization", Label: "GitHub organization", Description: "Choose an organization or a repository"}, {Name: "repository", Label: "GitHub repository", Description: "Optional alternative to organization"}, {Name: "runner_group_id", Label: "Organization runner group ID", Description: "Optional; uses the GitHub default group"}, {Name: "labels", Label: "Runner labels", Default: "hakopod"}, {Name: "replicas", Label: "Concurrent jobs", Default: "1"}, {Name: "credential", Label: "Application secret", Default: "github-runner-token"}}, SecretFields: []TemplateSecretField{{Name: "github-runner-token", Description: "GitHub fine-grained token: organization Self-hosted runners or repository Administration read and write", Format: "provider-key"}}, Providers: []string{}, Sources: []string{"https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners"}, WorkloadRequirements: []string{"managed_actions"}})
 }
 
 // Describe requirements from the embedded workload, not marketing text. Editions
@@ -158,7 +158,7 @@ func FromTemplate(id, name string, public bool, storage int64, model, modelRevis
 func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	if id == "managed-actions" {
 		for key := range o.Values {
-			if key != "repository" && key != "labels" && key != "replicas" && key != "credential" {
+			if key != "organization" && key != "runner_group_id" && key != "repository" && key != "labels" && key != "replicas" && key != "credential" {
 				return Application{}, fmt.Errorf("unknown runner pool field: %s", key)
 			}
 		}
@@ -168,6 +168,13 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			replicas, err = strconv.ParseInt(value, 10, 32)
 			if err != nil || replicas < 1 || replicas > 10 {
 				return Application{}, fmt.Errorf("replicas: choose 1–10 concurrent jobs")
+			}
+		}
+		group := int64(0)
+		if value := o.Values["runner_group_id"]; value != "" {
+			group, err = strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return Application{}, fmt.Errorf("runner_group_id: use a nonnegative integer")
 			}
 		}
 		credential := o.Values["credential"]
@@ -184,7 +191,7 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 		if o.Public {
 			return Application{}, fmt.Errorf("Managed Actions runners do not expose public ports")
 		}
-		return Normalize(Application{SchemaVersion: 1, Name: o.Name, Services: map[string]Service{"runner": {Image: ActionsRunnerImage, Size: o.Size, Architecture: o.Architecture, Replicas: int32(replicas), Actions: &Actions{Repository: o.Values["repository"], Credential: credential, Labels: labels}}}})
+		return Normalize(Application{SchemaVersion: 1, Name: o.Name, Services: map[string]Service{"runner": {Image: ActionsRunnerImage, Size: o.Size, Architecture: o.Architecture, Replicas: int32(replicas), Actions: &Actions{Organization: o.Values["organization"], RunnerGroupID: group, Repository: o.Values["repository"], Credential: credential, Labels: labels}}}})
 	}
 	if o.StorageGiB == 0 {
 		o.StorageGiB = 5

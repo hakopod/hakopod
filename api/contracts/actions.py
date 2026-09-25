@@ -1,4 +1,5 @@
-schemas["Actions"] = obj({"repository": S, "credential": S, "labels": array(S), "timeout_minutes": I}, ["repository", "credential", "labels"])
+schemas["Actions"] = obj({"repository": S, "organization": S, "runner_group_id": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "Organization runner group ID; omit or use zero for the GitHub default group."}, "credential": S, "labels": array(S), "timeout_minutes": I}, ["credential", "labels"])
+schemas["Actions"]["description"] = "Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub."
 schemas["Service"]["properties"]["actions"] = ref("Actions")
 schemas["ActionsPool"] = obj({"application_id":S,"service":S,"project":S,"environment":S,"application_name":S,"revision":I,"config":ref("Service"),"removed":B,"message":S,"updated_at":T},["application_id","service","project","environment","application_name","revision","config","removed","message","updated_at"])
 schemas["ActionsSlot"] = obj({"id":S,"application_id":S,"service":S,"runner_id":I,"phase":S,"created_at":T,"updated_at":T},["id","application_id","service","runner_id","phase","created_at","updated_at"])
