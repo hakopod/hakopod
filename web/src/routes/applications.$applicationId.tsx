@@ -1,3 +1,4 @@
+import { ManagedActionsStatus } from '../components/managed-actions-status'
 import { VolumeResizeOperations } from '../components/volume-resize'
 import { publicEndpoints } from '../lib/public-endpoints'
 import { PublicEndpoints } from '../components/public-endpoints'
@@ -305,6 +306,7 @@ function ApplicationDetail() {
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
+          <ManagedActionsStatus application={app} />
           <VolumeResizeOperations application={app} />
           {scope.can('deployments:write') && <ServiceMoves application={app} />}
           <div className="ops-section-description">

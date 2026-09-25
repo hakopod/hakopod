@@ -34,6 +34,9 @@ export function DeploymentSecrets({
   const [error, setError] = useState('')
   const missing = plan.missing_secrets || []
   const name = missing[0]
+  const providerCredential = Object.values(plan.spec.services).some(
+    (service) => service.actions?.credential === name,
+  )
   useEffect(() => {
     setValue('')
     setError('')
@@ -156,36 +159,43 @@ export function DeploymentSecrets({
               Recheck saved secrets
             </Button>
           </div>
-          <details>
-            <summary className="min-h-11 cursor-pointer py-3">
-              Generate a new password or random secret
-            </summary>
-            <div className="grid gap-3 pt-3">
-              <Note>
-                Use generation for a new password or random signing secret. Supply API tokens,
-                certificates and existing database passwords from their provider. Check the
-                application's required format.
-              </Note>
-              <SelectField
-                label="Generated format"
-                value={format}
-                onValueChange={setFormat}
-                disabled={busy}
-                options={[
-                  { value: 'base64url', label: 'URL-safe Base64 · 32 random bytes' },
-                  { value: 'hex', label: 'Hexadecimal · 64 characters' },
-                ]}
-              />
-              <Button
-                type="button"
-                variant="primary"
-                disabled={busy}
-                onClick={() => void save(true)}
-              >
-                Generate and save
-              </Button>
-            </div>
-          </details>
+          {providerCredential ? (
+            <Note>
+              Supply a GitHub token with repository Administration read and write permission. A
+              randomly generated password cannot authenticate to GitHub.
+            </Note>
+          ) : (
+            <details>
+              <summary className="min-h-11 cursor-pointer py-3">
+                Generate a new password or random secret
+              </summary>
+              <div className="grid gap-3 pt-3">
+                <Note>
+                  Use generation for a new password or random signing secret. Supply API tokens,
+                  certificates and existing database passwords from their provider. Check the
+                  application's required format.
+                </Note>
+                <SelectField
+                  label="Generated format"
+                  value={format}
+                  onValueChange={setFormat}
+                  disabled={busy}
+                  options={[
+                    { value: 'base64url', label: 'URL-safe Base64 · 32 random bytes' },
+                    { value: 'hex', label: 'Hexadecimal · 64 characters' },
+                  ]}
+                />
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => void save(true)}
+                >
+                  Generate and save
+                </Button>
+              </div>
+            </details>
+          )}
         </>
       ) : (
         <p role="status">All referenced application secrets are saved.</p>

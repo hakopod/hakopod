@@ -15,6 +15,9 @@ func TestCatalogRequirementsAndPersistentConstraints(t *testing.T) {
 			options.SiteURL = "https://workspace.example.test"
 		}
 		options.Values = catalogTestValues(template)
+		if template.ID == "managed-actions" {
+			options.Public = false
+		}
 		if template.Deployable && !slices.Contains(template.Architectures, options.Architecture) && len(template.Architectures) > 0 {
 			options.Architecture = template.Architectures[0]
 		}

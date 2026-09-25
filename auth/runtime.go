@@ -40,6 +40,8 @@ type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
 type RuntimeConfig struct {
+	// ActionsEntitled is trusted product state, never user TOML or headers.
+	ActionsEntitled          func(context.Context, string, string) (bool, error)
 	AuthorizeRetainedCleanup func(context.Context, AdmissionPrincipal, string, string) error
 	StorageBudget            func(context.Context, string, string) (int64, error)
 	AuthorizeBackup          func(context.Context, string, string, string) error
@@ -95,6 +97,19 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		return nil, nil, err
 	}
 	s.runtime = kube
+	s.store.ActionsAccess = func(ctx context.Context, project, environment string) error {
+		if config.ActionsEntitled == nil {
+			return store.ErrLicenseRequired
+		}
+		allowed, err := config.ActionsEntitled(ctx, project, environment)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return store.ErrLicenseRequired
+		}
+		return nil
+	}
 	s.store.ApplicationLimit = config.ApplicationLimit
 	s.store.AdmitDeployment = config.AdmitDeployment
 	s.store.AuthorizeBackup = config.AuthorizeBackup

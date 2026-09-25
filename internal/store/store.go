@@ -32,6 +32,8 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
 
 type Store struct {
+	// Trusted Cloud embedding policy. A managed installation without it fails closed.
+	ActionsAccess            func(context.Context, string, string) error
 	AuthorizeRetainedCleanup func(context.Context, Principal, string, string) error
 	DeviceScopes             func(context.Context, Principal) ([]DeviceScope, error)
 	StorageBudget            func(context.Context, string, string) (int64, error)

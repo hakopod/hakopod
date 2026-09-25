@@ -1,0 +1,90 @@
+name: Managed Actions real GitHub jobs
+on:
+  push:
+    branches: ['codex/managed-actions-runtime']
+    paths: ['.github/workflows/actions-live.yml', 'internal/cluster/actions_live_test.go']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: managed-actions-live
+  cancel-in-progress: false
+jobs:
+  sandbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      HAKOPOD_DEV_SERVER_MEMORY: 6g
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - run: scripts/local-up.sh
+      - name: Install sandbox on the disposable development node
+        run: |
+          python3 scripts/actions/setup-dev-runtime.py
+          sleep 10
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+      - name: Run product runner pods with single-job credentials
+        env:
+          HAKOPOD_ACTIONS_TEST_JIT: ${{ secrets.HAKOPOD_ACTIONS_ACCEPTANCE_JIT }}
+        run: |
+          test -n "$HAKOPOD_ACTIONS_TEST_JIT"
+          export KUBECONFIG="$PWD/.local/kubeconfig"
+          go test -p=1 ./internal/cluster -run '^TestManagedActionsGitHubJobsLive$' -v -count=1 -timeout=25m
+      - name: Diagnose disposable runner pods
+        if: failure()
+        run: |
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get pods -A
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get events -A --sort-by=.lastTimestamp | tail -50
+  shell-and-docker:
+    runs-on: [self-hosted, hakopod-live-shell]
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8.6.6-alpine@sha256:75934ddb37bfaebe3b4082ba673cac39f66495244134f33dd0a502ce03cdcd36
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Shell, JavaScript checkout and host service ports
+        run: |
+          test -f go.mod
+          docker run --rm --network host redis:8.6.6-alpine@sha256:75934ddb37bfaebe3b4082ba673cac39f66495244134f33dd0a502ce03cdcd36 redis-cli -h 127.0.0.1 ping | grep PONG
+      - name: Docker image action and shared workspace
+        uses: docker://busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+        with:
+          args: sh -c 'test -f /github/workspace/go.mod && echo docker-action-ok > /github/workspace/actions-fixture.txt'
+      - name: Docker build with RUN and bind mounts
+        run: |
+          test "$(cat actions-fixture.txt)" = docker-action-ok
+          mkdir -p /home/runner/actions-build
+          cat > /home/runner/actions-build/Dockerfile <<'DOCKERFILE'
+          FROM busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+          RUN echo built-inside-sandbox > /proof
+          CMD ["cat", "/proof"]
+          DOCKERFILE
+          docker build -t managed-actions-fixture /home/runner/actions-build
+          docker run --rm managed-actions-fixture | grep built-inside-sandbox
+  container-job:
+    runs-on: [self-hosted, hakopod-live-container]
+    timeout-minutes: 20
+    container:
+      image: redis:8.6.6-alpine@sha256:75934ddb37bfaebe3b4082ba673cac39f66495244134f33dd0a502ce03cdcd36
+    services:
+      redis:
+        image: redis:8.6.6-alpine@sha256:75934ddb37bfaebe3b4082ba673cac39f66495244134f33dd0a502ce03cdcd36
+    steps:
+      - name: Job container and service container DNS
+        run: |
+          redis-cli -h redis ping | grep PONG
+          echo job-container-ok > "$GITHUB_WORKSPACE/container-proof"
+          test "$(cat "$GITHUB_WORKSPACE/container-proof")" = job-container-ok

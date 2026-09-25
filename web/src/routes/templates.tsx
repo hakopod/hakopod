@@ -17,7 +17,8 @@ import { Copy, Empty, ErrorState, Loading, Note, PageHeader } from '../component
 export const Route = createFileRoute('/templates')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { q?: string; category?: string; application?: string } => ({
+  ): { q?: string; category?: string; application?: string; runner?: string } => ({
+    runner: typeof search.runner === 'string' ? search.runner : undefined,
     application: typeof search.application === 'string' ? search.application : undefined,
     q: typeof search.q === 'string' ? search.q.slice(0, 100) : undefined,
     category: typeof search.category === 'string' ? search.category.slice(0, 40) : undefined,
@@ -32,6 +33,7 @@ const labels: Record<string, string> = {
   database: 'Databases',
   agent: 'Agents',
   ai: 'AI & models',
+  automation: 'Automation',
 }
 function Templates() {
   const scope = useScope()
@@ -148,6 +150,7 @@ function Templates() {
                   size={28}
                 />
                 <Badge>{labels[template.category] || template.category}</Badge>
+                {template.id === 'managed-actions' && <Badge>Pro</Badge>}
               </div>
               <h2>{template.name}</h2>
               <span className="catalog-slug">{template.id}</span>

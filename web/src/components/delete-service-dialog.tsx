@@ -104,6 +104,12 @@ export function DeleteServiceDialog({
       description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. ${removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes) ? 'Volumes are kept unless you choose to delete them below. Backups are kept.' : 'Volumes and backups are kept.'} This creates a new application deployment.`}
     >
       <div className="grid gap-4 p-4">
+        {snapshot.spec.services[service]?.actions && (
+          <p className="text-sm">
+            Deleting this pool cancels running GitHub jobs and removes its runner registrations.
+            Cleanup continues automatically if GitHub is temporarily unavailable.
+          </p>
+        )}
         {!plan && (
           <p className="text-sm text-muted-foreground">
             Review the removal before confirming. References from other services must be resolved

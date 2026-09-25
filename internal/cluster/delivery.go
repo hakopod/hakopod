@@ -27,6 +27,14 @@ func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (Pref
 	return report, report.Validate()
 }
 func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
+	for _, svc := range t.Spec.Services {
+		if svc.Actions != nil && !svc.Suspended {
+			if err := c.ActionsAvailable(ctx); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	if err := c.validateServerless(t); err != nil {
 		return err
 	}

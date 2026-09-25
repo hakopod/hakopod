@@ -46,7 +46,10 @@ def apply_module(module):
         if item and item.get('metadata',{}).get('labels',{}).get('hakopod.com/installation')!=ident:
             raise ValueError('Refusing an unowned resource: '+kind+'/'+name)
     with tempfile.TemporaryDirectory(prefix='hakopod-module-') as tmp:
-        if module=='storage':
+        if module=='managed-actions':
+            from actions_runtime import install
+            install(config, marker, KUBE, read)
+        elif module=='storage':
             for item in read('get','storageclasses')['items']:
                 if item['metadata']['name']!='hakopod-local-path' and item['metadata'].get('annotations',{}).get('storageclass.kubernetes.io/is-default-class')=='true':
                     raise ValueError('Another default storage class is configured; no changes made')
@@ -72,5 +75,5 @@ def apply_module(module):
     print(module+' module is ready. Original installer resume inputs are unchanged.')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager'])
+    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions'])
     main(parser.parse_args().module)

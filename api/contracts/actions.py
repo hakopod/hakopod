@@ -1,0 +1,6 @@
+schemas["Actions"] = obj({"repository": S, "credential": S, "labels": array(S), "timeout_minutes": I}, ["repository", "credential", "labels"])
+schemas["Service"]["properties"]["actions"] = ref("Actions")
+schemas["ActionsPool"] = obj({"application_id":S,"service":S,"project":S,"environment":S,"application_name":S,"revision":I,"config":ref("Service"),"removed":B,"message":S,"updated_at":T},["application_id","service","project","environment","application_name","revision","config","removed","message","updated_at"])
+schemas["ActionsSlot"] = obj({"id":S,"application_id":S,"service":S,"runner_id":I,"phase":S,"created_at":T,"updated_at":T},["id","application_id","service","runner_id","phase","created_at","updated_at"])
+route("/applications/{id}/actions","get","getManagedActions",obj({"items":array(obj({"pool":ref("ActionsPool"),"slots":array(ref("ActionsSlot"))},["pool","slots"]))},["items"]))
+route("/actions/capabilities","get","getManagedActionsCapabilities",obj({"licensed":B,"runtime_ready":B,"message":S,"runner_image":S},["licensed","runtime_ready","message","runner_image"]),scope=True)

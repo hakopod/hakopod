@@ -8,6 +8,9 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.request
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "installer"))
+from actions_runtime import runtime_section
 
 if os.environ.get('GITHUB_ACTIONS') != 'true':
     raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
@@ -36,15 +39,9 @@ with tempfile.TemporaryDirectory() as tmp:
     config = root / 'runsc-actions.toml'
     config.write_text('[runsc_config]\n  platform = "systrap"\n  net-raw = "true"\n  allow-packet-socket-write = "true"\n  overlay2 = "root:memory,size=512m"\n')
     template = root / 'config-v3.toml.tmpl'
-    template.write_text('''{{ template "base" . }}
-[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.hakopod-actions]
-  runtime_type = "io.containerd.runsc.v1"
-[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.hakopod-actions.options]
-  TypeUrl = "io.containerd.runsc.v1.options"
-  ConfigPath = "/etc/runsc-actions.toml"
-''')
-    subprocess.run(['docker', 'exec', node, 'test', '!', '-e', '/etc/runsc-actions.toml'], check=True)
-    subprocess.run(['docker', 'cp', str(config), f'{node}:/etc/runsc-actions.toml'], check=True)
+    template.write_text('{{ template "base" . }}\n' + runtime_section(Path('/usr/local/bin')))
+    subprocess.run(['docker', 'exec', node, 'test', '!', '-e', '/usr/local/bin/runsc-actions.toml'], check=True)
+    subprocess.run(['docker', 'cp', str(config), f'{node}:/usr/local/bin/runsc-actions.toml'], check=True)
     subprocess.run(['docker', 'cp', str(template), f'{node}:/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl'], check=True)
 subprocess.run(['docker', 'restart', node], check=True)
 print('Installed pinned gVisor in the disposable development node')

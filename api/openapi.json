@@ -973,6 +973,134 @@
         }
       }
     },
+    "/applications/{id}/actions": {
+      "get": {
+        "operationId": "getManagedActions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "pool": {
+                            "$ref": "#/components/schemas/ActionsPool"
+                          },
+                          "slots": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/ActionsSlot"
+                            }
+                          }
+                        },
+                        "required": [
+                          "pool",
+                          "slots"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/actions/capabilities": {
+      "get": {
+        "operationId": "getManagedActionsCapabilities",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "licensed": {
+                      "type": "boolean"
+                    },
+                    "runtime_ready": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "runner_image": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "licensed",
+                    "runtime_ready",
+                    "message",
+                    "runner_image"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/alarms": {
       "get": {
         "operationId": "listAlarms",
@@ -13160,6 +13288,9 @@
           "autoscaling": {
             "$ref": "#/components/schemas/Autoscaling"
           },
+          "actions": {
+            "$ref": "#/components/schemas/Actions"
+          },
           "public_tcp": {
             "type": "array",
             "items": {
@@ -14280,6 +14411,116 @@
           "result",
           "error",
           "created_at"
+        ]
+      },
+      "Actions": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "credential": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeout_minutes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repository",
+          "credential",
+          "labels"
+        ]
+      },
+      "ActionsPool": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "config": {
+            "$ref": "#/components/schemas/Service"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "application_id",
+          "service",
+          "project",
+          "environment",
+          "application_name",
+          "revision",
+          "config",
+          "removed",
+          "message",
+          "updated_at"
+        ]
+      },
+      "ActionsSlot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "runner_id": {
+            "type": "integer"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "service",
+          "runner_id",
+          "phase",
+          "created_at",
+          "updated_at"
         ]
       },
       "Alarm": {

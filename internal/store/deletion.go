@@ -49,6 +49,13 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	if len(a.Spec.Services) != 0 {
 		return fmt.Errorf("%w: remove all services through a reviewed deployment before deleting this application", ErrConflict)
 	}
+	var actionsPending bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM actions_pools WHERE application_id=$1)", id).Scan(&actionsPending); err != nil {
+		return err
+	}
+	if actionsPending {
+		return fmt.Errorf("%w: wait for Managed Actions runner and registration cleanup", ErrConflict)
+	}
 	var ready bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM deployments WHERE application_id=$1 AND revision=$2 AND status='succeeded')
  AND NOT EXISTS(SELECT 1 FROM deployments WHERE application_id=$1 AND status IN ('queued','running'))`, id, expected).Scan(&ready); err != nil {
