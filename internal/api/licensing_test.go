@@ -9,6 +9,31 @@ import (
 	"time"
 )
 
+func TestLifetimeLicenseActivationAndRemoval(t *testing.T) {
+	h := newAuthHarness(t, nil)
+	owner := h.owner()
+	status := h.call("GET", "/license", owner, nil, 200)
+	claims := testLicenseClaims(status["installation_id"].(string), 2)
+	claims.Lifetime = true
+	claims.ExpiresAt = 0
+	token := testSignedLicense(h.licenseKey, claims)
+	active := h.call("PUT", "/license", owner, map[string]any{"license": token, "expected_revision": 1}, 200)
+	if active["valid"] != true || active["plan"] != "pro" || active["expires_at"] != nil {
+		t.Fatal("lifetime activation must be Pro without an expiry", active)
+	}
+	stored := h.call("GET", "/license", owner, nil, 200)
+	if stored["state"] != "active" || stored["expires_at"] != nil {
+		t.Fatal("stored lifetime status changed", stored)
+	}
+	h.call("POST", "/teams", owner, map[string]string{"name": "First lifetime team"}, 201)
+	h.call("POST", "/teams", owner, map[string]string{"name": "Second lifetime team"}, 201)
+	h.call("DELETE", "/license", owner, map[string]int64{"expected_revision": 2}, 200)
+	h.call("POST", "/teams", owner, map[string]string{"name": "After lifetime removal"}, 402)
+	h.call("PUT", "/license", owner, map[string]any{"license": token, "expected_revision": 3}, 409)
+	claims.Sequence = 3
+	h.call("PUT", "/license", owner, map[string]any{"license": testSignedLicense(h.licenseKey, claims), "expected_revision": 3}, 200)
+}
+
 func TestLicenseFreeCollaborationDowngradeAndRecovery(t *testing.T) {
 	h := newAuthHarness(t, nil)
 	ctx := context.Background()

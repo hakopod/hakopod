@@ -59,6 +59,13 @@ contains version `1`, issuer `key_id`, 32-character hexadecimal `license_id` and
 `installation_id`, customer name, `plan`, positive monotonic `sequence`, UTC Unix
 `issued_at`, `not_before`, `expires_at`, and explicit paid `features`.
 
+Subscriptions require a finite `expires_at` and a higher sequence on renewal.
+An owner lifetime grant must explicitly sign `lifetime:true`, `plan:"pro"` and
+`expires_at:0`. Omitting expiry never creates lifetime access. Lifetime grants
+still enforce signatures, installation binding, not-before time and sequence;
+removal and a signed downgrade still revoke access. Their status has a null
+`expires_at`. Older releases reject the new lifetime field and must be upgraded.
+
 Each database migration creates one durable random installation ID. The issuer
 signs for that ID. Moving a licensed database retains the installation identity;
 an independent installation needs its own license. Activation requires a browser
@@ -81,24 +88,25 @@ are bounded to 16 KiB and issuer trust is bounded to eight public keys.
 The license-generation code belongs to the separate local private repository at
 `private/license-issuer`. It is not imported into server/CLI builds and must not be
 published with the public repository. The parent repository stores only its
-submodule reference after integration. Its local bare origin is `../hakopod-license-issuer.git`; configure the
-actual authenticated hosted repository URL when one is available. No hosted
-repository has been created and neither repository has been published.
+submodule reference. The issuer repository is private and must remain separate
+from public release artifacts.
 
-No production keypair has been generated. The private issuer provides explicit
-key generation and signing commands; signing files must be private and remain
-outside either Git index. Its tests use temporary in-memory/temporary-directory
-keys. Public verification keys may be embedded in a trusted release using:
+The vendor public verification key `hakopod-2026-09` is compiled into the
+verifier by default. The private signing key stays in protected operator storage,
+outside Git and customer installations. The private issuer provides explicit key
+generation and signing commands; its tests use temporary keys. Trusted
+distributors can replace the public verification set at build time using:
 
 ```text
 -X github.com/hakopod/hakopod/internal/license.ReleaseKeys=issuer-id=BASE64URL_PUBLIC_KEY
 ```
 
-Comma-separated `key-id=public-key` entries allow a bounded rotation window. The
-current development binary has no production trust anchor and reports
-`issuer_configured:false`; a real paid activation requires the vendor's public
-verification key in the release. Never embed or configure an Ed25519 private key
-in Hakopod. License tokens and keys are never logged by these handlers.
+Comma-separated `key-id=public-key` entries allow a bounded rotation window.
+Releases through `v0.1.0-alpha.27` have no vendor trust anchor and require an
+upgrade before activation. A configured issuer does not grant Pro features:
+activation still requires a valid, installation-bound token with explicit
+entitlements. Never embed or configure an Ed25519 private key in Hakopod.
+License tokens and keys are never logged by these handlers.
 
 This is enforcement by the published application. Someone who controls the
 source, binary, database and machine can modify them; open-source code cannot
