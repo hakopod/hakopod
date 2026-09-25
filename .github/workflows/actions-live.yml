@@ -44,6 +44,11 @@ jobs:
         run: |
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get pods -A
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get events -A --sort-by=.lastTimestamp | tail -50
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get pods -A -o json | python3 -c 'import json,sys; [print(p["metadata"]["namespace"], p["metadata"]["name"]) for p in json.load(sys.stdin)["items"] if p["metadata"]["name"].startswith("actions-")]' | while read -r namespace pod; do
+            for container in prepare docker; do
+              kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev -n "$namespace" logs "$pod" -c "$container" --tail=40 || true
+            done
+          done
   shell-and-docker:
     runs-on: [self-hosted, hakopod-live-shell]
     timeout-minutes: 20
