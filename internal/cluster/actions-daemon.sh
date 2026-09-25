@@ -8,4 +8,7 @@ mtu=$(ip -o link show dev "$iface" | awk '{for (i=1;i<NF;i++) if ($i=="mtu") {pr
 echo 1 > /proc/sys/net/ipv4/ip_forward
 iptables -t nat -A POSTROUTING -o "$iface" -j SNAT --to-source "$addr" -p tcp
 iptables -t nat -A POSTROUTING -o "$iface" -j SNAT --to-source "$addr" -p udp
-exec dockerd --host=unix:///var/run/docker/docker.sock --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --storage-driver=vfs --feature=containerd-snapshotter=false
+# Containers in the sandbox share loopback. A filesystem socket on a gVisor
+# memory-backed mount is not shared across their separate mount namespaces.
+# Keep the standard socket in the daemon for nested GitHub job-container mounts.
+exec dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --storage-driver=vfs --feature=containerd-snapshotter=false
