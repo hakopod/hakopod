@@ -4,12 +4,21 @@ import argparse
 import json
 from pathlib import Path
 
+MAX_UPGRADE_SOURCES = 2
+
 
 def sources(version, required=False):
     policy = json.loads(Path(__file__).with_suffix('.json').read_text())
     if required and version not in policy:
         raise ValueError('Declare upgrade source versions in release/upgrade-paths.json before cutting a release')
-    return policy.get(version, [])
+    declared = policy.get(version, [])
+    if not isinstance(declared, list) or any(not isinstance(source, str) for source in declared):
+        raise ValueError('Upgrade sources must be a list of versions')
+    if len(declared) > MAX_UPGRADE_SOURCES:
+        raise ValueError('Declare only the last two published upgrade sources; older versions are retired')
+    if len(set(declared)) != len(declared) or version in declared:
+        raise ValueError('Upgrade sources must be distinct earlier versions')
+    return declared
 
 
 def matrix(version):

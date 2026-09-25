@@ -1,4 +1,4 @@
-Hakopod 0.1.0-alpha.28 enables production Pro license activation and explicit lifetime owner grants.
+Hakopod 0.1.0-alpha.29 enables production Pro license activation and explicit lifetime owner grants.
 
 ## Pro license activation
 
@@ -13,11 +13,15 @@ An explicitly signed lifetime Pro grant has no expiry. Subscription licenses con
 Back up the installation and run the release installer:
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.28
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.29
 ```
 
-Supported sources include alpha.27 and its supported predecessors. Earlier releases cannot verify the new vendor licenses and reject lifetime claims. Existing time-limited v1 licenses remain compatible when their issuer is trusted. This upgrade does not install the optional Managed Actions runtime or change customer workloads.
+Direct upgrades are supported from alpha.26 and alpha.27, the last two published versions. Older installations must upgrade through a supported intermediate release. Alpha.28 was not published. Earlier releases cannot verify the new vendor licenses and reject lifetime claims. Existing time-limited v1 licenses remain compatible when their issuer is trusted. This upgrade does not install the optional Managed Actions runtime or change customer workloads.
 
 ## Validation
 
 The release is gated by Go/API tests, dashboard checks, artifact inspection and the native installer/upgrade matrix. License tests cover forged signatures, subscription expiry, explicit lifetime validation, installation binding, activation, removal and replay rejection.
+
+## Bounded upgrade coverage
+
+Release acceptance covers fresh installations and the two supported upgrade sources across both managed-database architectures and amd64 local/external database modes. This keeps native host coverage at 12 jobs instead of accumulating retired releases.
