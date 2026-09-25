@@ -79,7 +79,7 @@ func actionsResources(s spec.Service, numerator int64) corev1.ResourceRequiremen
 func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 	name := "actions-" + id
 	safe := &corev1.SecurityContext{RunAsUser: ptr(int64(1001)), RunAsGroup: ptr(int64(1001)), RunAsNonRoot: ptr(true), AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}
-	mounts := []corev1.VolumeMount{{Name: "runner", MountPath: "/home/runner"}, {Name: "socket", MountPath: "/var/run/docker"}}
+	mounts := []corev1.VolumeMount{{Name: "runner", MountPath: "/home/runner"}}
 	copyResources := actionsResources(s, 4)
 	copyResources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse("4Gi")
 	p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, service)}, Spec: corev1.PodSpec{
@@ -91,12 +91,12 @@ func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 			{Name: "prepare", Image: spec.ActionsRunnerImage, Command: []string{"sh", "-c", "cp -R /home/runner/. /runner/"}, SecurityContext: safe, Resources: copyResources, VolumeMounts: []corev1.VolumeMount{{Name: "runner", MountPath: "/runner"}}},
 			{Name: "docker", Image: ActionsDaemonImage, Command: []string{"sh", "-c", actionsDaemon}, RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways), Resources: actionsResources(s, 3),
 				SecurityContext: &corev1.SecurityContext{Privileged: ptr(false), RunAsUser: ptr(int64(0)), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}, Add: []corev1.Capability{"AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_ADMIN", "NET_RAW", "SETFCAP", "SETGID", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"}}},
-				Env:             []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker/docker.sock"}},
+				Env:             []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker.sock"}},
 				StartupProbe:    &corev1.Probe{ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"docker", "info"}}}, PeriodSeconds: 2, FailureThreshold: 60, TimeoutSeconds: 2},
 				VolumeMounts:    append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "docker", MountPath: "/var/lib/docker"})},
 		},
-		Containers: []corev1.Container{{Name: service, Image: spec.ActionsRunnerImage, WorkingDir: "/home/runner", Command: []string{"sh", "-c", "exec ./run.sh --jitconfig \"$(cat /run/hakopod-jit/config)\""}, SecurityContext: safe, Resources: actionsResources(s, 1), Env: []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker/docker.sock"}, {Name: "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT", Value: "1"}}, VolumeMounts: append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "jit", MountPath: "/run/hakopod-jit", ReadOnly: true})}},
-		Volumes:    []corev1.Volume{{Name: "runner", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse("2Gi"))}}}, {Name: "socket", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: ptr(resource.MustParse("1Mi"))}}}, {Name: "docker", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: ptr(resource.MustParse("2Gi"))}}}, {Name: "jit", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr(int32(0440))}}}},
+		Containers: []corev1.Container{{Name: service, Image: spec.ActionsRunnerImage, WorkingDir: "/home/runner", Command: []string{"sh", "-c", "exec ./run.sh --jitconfig \"$(cat /run/hakopod-jit/config)\""}, SecurityContext: safe, Resources: actionsResources(s, 1), Env: []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "tcp://127.0.0.1:2375"}, {Name: "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT", Value: "1"}}, VolumeMounts: append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "jit", MountPath: "/run/hakopod-jit", ReadOnly: true})}},
+		Volumes:    []corev1.Volume{{Name: "runner", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse("2Gi"))}}}, {Name: "docker", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: ptr(resource.MustParse("2Gi"))}}}, {Name: "jit", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr(int32(0440))}}}},
 	}}
 	if s.Architecture != "" {
 		p.Spec.NodeSelector = map[string]string{"kubernetes.io/arch": s.Architecture}
