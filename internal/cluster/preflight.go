@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -179,15 +180,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		if pod.Namespace == Namespace(t.ApplicationID) && pod.Labels[ownerKey] == ownerID(t.ApplicationID) && pod.Labels[managedBy] == "hakopod" {
 			continue
 		}
-		var cpu, memory int64
-		for _, container := range pod.Spec.Containers {
-			cpu += container.Resources.Requests.Cpu().MilliValue()
-			memory += container.Resources.Requests.Memory().Value()
-		}
-		for _, container := range pod.Spec.InitContainers {
-			cpu = max(cpu, container.Resources.Requests.Cpu().MilliValue())
-			memory = max(memory, container.Resources.Requests.Memory().Value())
-		}
+		cpu, memory := podRequests(pod.Spec)
 		cpuFree -= cpu + pod.Spec.Overhead.Cpu().MilliValue()
 		memoryFree -= memory + pod.Spec.Overhead.Memory().Value()
 		free := nodeFree[pod.Spec.NodeName]
@@ -224,11 +217,11 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	for node, requested := range pinned {
 		free := nodeFree[node]
 		if requested[0] > free[0] || requested[1] > free[1] {
-			add("node_capacity", "blocked", node+": pinned services and their deployment jobs exceed available CPU or memory. Choose another node or reduce resource requests.")
+			add("node_capacity", "blocked", node+": "+capacityShortage(requested[0], requested[1], free[0], free[1]))
 		}
 	}
 	if cpuFree < r.CPURequestMillis || memoryFree < r.MemoryRequestBytes {
-		add("resources", "blocked", "The application and its largest deployment job exceed available CPU or memory requests after other workloads. Reduce replicas/profile sizes or add capacity.")
+		add("resources", "blocked", capacityShortage(r.CPURequestMillis, r.MemoryRequestBytes, cpuFree, memoryFree))
 	} else {
 		add("resources", "passed", "Aggregate resource requests fit observed capacity. Rolling updates, node placement and concurrent deployments can require additional headroom.")
 	}
@@ -283,4 +276,38 @@ func quantityValues(cpu, memory string) (int64, int64) {
 	c := resource.MustParse(cpu)
 	m := resource.MustParse(memory)
 	return c.MilliValue(), m.Value()
+}
+
+// Describe reservations, not usage or limits: the scheduler must fit requests.
+func capacityShortage(cpu, memory, freeCPU, freeMemory int64) string {
+	freeCPU, freeMemory = max(0, freeCPU), max(0, freeMemory)
+	shortages := []string{}
+	if cpu > freeCPU {
+		shortages = append(shortages, fmt.Sprintf("CPU short by %g cores", float64(cpu-freeCPU)/1000))
+	}
+	if memory > freeMemory {
+		shortages = append(shortages, "memory short by "+resource.NewQuantity(memory-freeMemory, resource.BinarySI).String())
+	}
+	return fmt.Sprintf("%s. Requested: %g CPU cores and %s memory. Available after other reservations: %g CPU cores and %s memory. Scheduling uses reservations, not current usage. Reduce resource requests or replicas, or add capacity.", strings.Join(shortages, "; "), float64(cpu)/1000, resource.NewQuantity(memory, resource.BinarySI).String(), float64(freeCPU)/1000, resource.NewQuantity(freeMemory, resource.BinarySI).String())
+}
+
+// Restartable init containers remain alongside app containers. Account for
+// their running sum as well as each initialization stage, like the scheduler.
+func podRequests(pod corev1.PodSpec) (int64, int64) {
+	var cpu, memory, sideCPU, sideMemory, initCPU, initMemory int64
+	for _, c := range pod.Containers {
+		cpu += c.Resources.Requests.Cpu().MilliValue()
+		memory += c.Resources.Requests.Memory().Value()
+	}
+	for _, c := range pod.InitContainers {
+		cCPU, cMemory := c.Resources.Requests.Cpu().MilliValue(), c.Resources.Requests.Memory().Value()
+		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			sideCPU += cCPU
+			sideMemory += cMemory
+			initCPU, initMemory = max(initCPU, sideCPU), max(initMemory, sideMemory)
+		} else {
+			initCPU, initMemory = max(initCPU, sideCPU+cCPU), max(initMemory, sideMemory+cMemory)
+		}
+	}
+	return max(cpu+sideCPU, initCPU), max(memory+sideMemory, initMemory)
 }

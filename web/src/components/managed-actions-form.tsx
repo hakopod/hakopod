@@ -14,6 +14,8 @@ import { FormPage, FormSection } from './form-page'
 import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { DeploymentSecrets } from './deployment-secrets'
 import { DiffTable } from './deploy-dialog'
+import { serviceResources } from '../lib/service-resources'
+import { runnerReservationLabel, type RunnerResources } from '../lib/runner-resources'
 
 export function ManagedActionsForm({
   application,
@@ -47,8 +49,15 @@ export function ManagedActionsForm({
   const [replicas, setReplicas] = useState(String(original?.replicas ?? 1))
   const [architecture, setArchitecture] = useState(original?.architecture || '')
   const [timeout, setTimeout] = useState(String(original?.actions?.timeout_minutes || 60))
+  const [resources, setResources] = useState<RunnerResources>(
+    original?.resources ||
+      (!original && dashboardEdition.cloud
+        ? { cpu_request: '500m', cpu_limit: '2500m', memory_request: '1Gi', memory_limit: '4Gi' }
+        : {}),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const capacityError = /\b(?:CPU|memory) short by\b/.test(error)
   const [plan, setPlan] = useState<Plan | null>(null)
   const key = useRef('')
   const capabilities = useQuery({
@@ -62,8 +71,21 @@ export function ManagedActionsForm({
       ),
     enabled: !!project && !!environment,
   })
+  const size = original?.size || (dashboardEdition.cloud ? 'large' : 'compute')
+  const effective = serviceResources(
+    { image: '', size, resources },
+    capabilities.data?.resource_profiles,
+  )
+  const effectiveResources: RunnerResources = {
+    cpu_request: resources.cpu_request ?? effective?.CPURequest,
+    cpu_limit: resources.cpu_limit ?? effective?.CPULimit,
+    memory_request: resources.memory_request ?? effective?.MemoryRequest,
+    memory_limit: resources.memory_limit ?? effective?.MemoryLimit,
+  }
+  const reservationLabel = runnerReservationLabel(effectiveResources, Number(replicas))
   const canWrite = canAccess(scope.identity, project, 'deployments:write')
-  const ready = canWrite && !!capabilities.data?.licensed && !!capabilities.data?.runtime_ready
+  const ready =
+    canWrite && !!capabilities.data?.licensed && !!capabilities.data?.runtime_ready && !!effective
   const reviewFocus = useRef<HTMLDivElement>(null)
   const nameFocus = useRef<HTMLInputElement>(null)
   const wasReview = useRef(false)
@@ -86,17 +108,8 @@ export function ManagedActionsForm({
         ...original,
         image: capabilities.data!.runner_image,
         public: false,
-        size: original?.size || (dashboardEdition.cloud ? 'large' : 'compute'),
-        resources:
-          original?.resources ||
-          (dashboardEdition.cloud
-            ? {
-                cpu_request: '500m',
-                cpu_limit: '2500m',
-                memory_request: '1Gi',
-                memory_limit: '4Gi',
-              }
-            : undefined),
+        size,
+        resources: Object.keys(resources).length ? resources : undefined,
         replicas: Number(replicas),
         architecture: architecture ? (architecture as 'amd64' | 'arm64') : undefined,
         actions: {
@@ -276,16 +289,20 @@ export function ManagedActionsForm({
                       Architecture: <strong>{architecture || 'Automatic'}</strong>
                     </div>
                     <div>
-                      Resource profile:{' '}
+                      Per slot reservation:{' '}
                       <strong>
-                        {original?.size ||
-                          (dashboardEdition.cloud
-                            ? 'large with runner resource limits'
-                            : 'compute')}
-                      </strong>{' '}
-                      per job slot; multiplied by {replicas} concurrent slots. Sandbox overhead is
-                      included.
+                        {effectiveResources.cpu_request} CPU / {effectiveResources.memory_request}{' '}
+                        memory
+                      </strong>
                     </div>
+                    <div>
+                      Per slot limit:{' '}
+                      <strong>
+                        {effectiveResources.cpu_limit} CPU / {effectiveResources.memory_limit}{' '}
+                        memory
+                      </strong>
+                    </div>
+                    <div>{reservationLabel} Sandbox overhead is included.</div>
                     <div>
                       Credential reference: <code>{credential}</code>
                     </div>
@@ -494,14 +511,84 @@ export function ManagedActionsForm({
                     />
                   </div>
                 </div>
-                <p className="text-sm muted-text">
-                  {dashboardEdition.cloud
-                    ? 'New Cloud pools use a 2.5 CPU and 4 GiB memory limit per slot.'
-                    : 'New pools use the Compute size: 4.8 CPU and about 4.8 GiB memory limit per slot.'}{' '}
-                  Adjust resource limits in the service configuration. Shell, JavaScript and
-                  Docker-based actions use fresh workspaces.
-                </p>
               </FormSection>
+              <FormSection title="Resources per runner">
+                <p id="runner-resources-help" className="text-sm muted-text">
+                  Reservations set aside capacity for each concurrent job. Limits cap usage; spare
+                  CPU can be shared up to that limit. Includes Docker and sandbox overhead. CPU:
+                  1000m = 1 core. Memory: 1024Mi = 1Gi.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      [
+                        'cpu_request',
+                        'Reserved CPU',
+                        'At least 200m per slot.',
+                        '^(?:[0-9]+(?:\\.[0-9]{1,3})?|[0-9]+m)$',
+                      ],
+                      [
+                        'cpu_limit',
+                        'CPU limit',
+                        'Must be at least the CPU reservation.',
+                        '^(?:[0-9]+(?:\\.[0-9]{1,3})?|[0-9]+m)$',
+                      ],
+                      [
+                        'memory_request',
+                        'Reserved memory',
+                        'At least 768Mi per slot.',
+                        '^[0-9]+(?:Ki|Mi|Gi|Ti|k|M|G|T)?$',
+                      ],
+                      [
+                        'memory_limit',
+                        'Memory limit',
+                        'At least 4Gi and at least the memory reservation.',
+                        '^[0-9]+(?:Ki|Mi|Gi|Ti|k|M|G|T)?$',
+                      ],
+                    ] as const
+                  ).map(([key, label, help, pattern]) => (
+                    <label className="grid gap-2" key={key}>
+                      {label}
+                      <Input
+                        required
+                        aria-label={label}
+                        aria-describedby={`runner-resources-help runner-${key}-help`}
+                        value={effectiveResources[key] ?? ''}
+                        disabled={busy || !effective}
+                        maxLength={32}
+                        pattern={pattern}
+                        onChange={(event) =>
+                          setResources((current) => ({ ...current, [key]: event.target.value }))
+                        }
+                      />
+                      <span id={`runner-${key}-help`} className="text-sm muted-text">
+                        {help}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-sm" role="status">
+                  {reservationLabel}
+                </p>
+                <p className="text-sm muted-text">
+                  Lower CPU reservations let more jobs share the machine; simultaneous builds may
+                  run slower. Available capacity and Cloud allowances still apply. Review checks
+                  current reservations.
+                </p>
+                {capabilities.data && !effective && (
+                  <Note>
+                    Resource defaults are unavailable. Refresh after updating this installation.
+                  </Note>
+                )}
+              </FormSection>
+              {capacityError && (
+                <p
+                  role="alert"
+                  className="field-help error min-w-0 whitespace-normal wrap-anywhere"
+                >
+                  {error}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button type="button" onClick={onClose}>
                   Cancel
@@ -514,7 +601,7 @@ export function ManagedActionsForm({
           )}
         </>
       )}
-      {error && <RequestError error={error} />}
+      {error && (!capacityError || plan) && <RequestError error={error} />}
     </FormPage>
   )
 }

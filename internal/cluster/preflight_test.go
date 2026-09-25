@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -77,5 +78,57 @@ func TestExtraHTTPIngressUsesDeclaredTargetPort(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("ingress policy did not allow mapped target port")
+	}
+}
+
+func TestRunnerPoolCapacityReportsExactShortage(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("32Gi")}}}
+	busy := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "busy", Namespace: "other"}, Spec: corev1.PodSpec{NodeName: "node", Containers: []corev1.Container{{Name: "busy", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3010m"), corev1.ResourceMemory: resource.MustParse("9Gi")}}}}}}
+	c := &Client{kube: fake.NewClientset(node, busy)}
+	target := testTarget(t)
+	runner := spec.Service{Image: spec.ActionsRunnerImage, Size: "compute", Replicas: 5, Actions: &spec.Actions{Repository: "example/repo", Credential: "runner-token"}}
+	target.Spec.Services = map[string]spec.Service{"runner": runner}
+	report, err := c.Preflight(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Validate() == nil || !strings.Contains(report.Validate().Error(), "CPU short by 5.01 cores") || !strings.Contains(report.Validate().Error(), "0.99 CPU cores") || strings.Contains(report.Validate().Error(), "memory short by") {
+		t.Fatal(report)
+	}
+	runner.Replicas = 3
+	runner.Resources = &spec.Resources{CPURequest: "250m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
+	target.Spec.Services["runner"] = runner
+	report, err = c.Preflight(context.Background(), target)
+	if err != nil || report.Validate() != nil || report.CPURequestMillis != 750 || report.MemoryRequestBytes != 3<<30 {
+		t.Fatal(report, err)
+	}
+}
+
+func TestCapacityShortageReportsMemoryAndExhaustedCapacity(t *testing.T) {
+	text := capacityShortage(500, 4<<30, 990, 3<<30)
+	if strings.Contains(text, "CPU short by") || !strings.Contains(text, "memory short by 1Gi") {
+		t.Fatal(text)
+	}
+	text = capacityShortage(500, 4<<30, -10, 0)
+	if !strings.Contains(text, "CPU short by 0.5 cores; memory short by 4Gi") || !strings.Contains(text, "Available after other reservations: 0 CPU cores and 0 memory") {
+		t.Fatal(text)
+	}
+}
+
+func TestPodRequestsIncludesNativeSidecarAndInitPeak(t *testing.T) {
+	container := func(name, cpu, memory string) corev1.Container {
+		return corev1.Container{Name: name, Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}}
+	}
+	sidecar := container("docker", "300m", "384Mi")
+	sidecar.RestartPolicy = ptr(corev1.ContainerRestartPolicyAlways)
+	pod := corev1.PodSpec{Containers: []corev1.Container{container("runner", "100m", "128Mi")}, InitContainers: []corev1.Container{sidecar}}
+	cpu, memory := podRequests(pod)
+	if cpu != 400 || memory != 512<<20 {
+		t.Fatal(cpu, memory)
+	}
+	pod.InitContainers = append(pod.InitContainers, container("prepare", "500m", "1Gi"))
+	cpu, memory = podRequests(pod)
+	if cpu != 800 || memory != 1408<<20 {
+		t.Fatal(cpu, memory)
 	}
 }
