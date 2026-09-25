@@ -18,6 +18,12 @@ project roles are administrator, developer and viewer. These fixed roles do not
 allow custom permissions or installation administration through an invitation.
 The authenticated `GET /api/v1/license` catalog is the UI's source of feature state.
 
+Managed Actions runner pools require the explicit `managed_actions` Pro
+entitlement and the optional isolated runtime. Open **Catalog → Automation →
+Managed Actions** after installing the runtime. Each replica runs one GitHub
+job, including Docker actions and service containers. See
+[Managed Actions](managed-actions.md) for setup, resource limits and draining.
+
 Advanced custom roles, user audit history/export and team-wide MFA enforcement
 are paid capabilities: `custom_roles`, `audit_history` and `team_mfa`. User audit history and CSV export are implemented in Settings → Audit events and
 `GET /api/v1/audit/history` / `GET /api/v1/audit/export`. They require installation

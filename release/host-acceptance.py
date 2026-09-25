@@ -433,6 +433,29 @@ def main():
             raise RuntimeError('Upgrade lost registry database metadata')
         api('POST', '/registries', token, dict(registry, name='after-repair'), 201)
         report['checks'].append('Git listing and registry save recovered; existing account/session, secrets and running workload preserved')
+        if args.mode == 'managed' and not args.upgrade_from:
+            # Exercise the shipped optional module on the disposable native host,
+            # including its actual systemd restart and absolute shim path.
+            module = ['python3', str(candidate_kit / 'installer/modules.py'), 'managed-actions']
+            run(module, timeout=600)
+            template = Path('/var/lib/hakopod/k3s/agent/etc/containerd/config-v3.toml.tmpl')
+            before_template = template.read_bytes()
+            run(module, timeout=600)
+            if template.read_bytes() != before_template:
+                raise RuntimeError('Repeating Actions setup changed the runtime template')
+            probe = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {
+                'name': 'actions-runtime-probe', 'namespace': 'hakopod-system'},
+                'spec': {'runtimeClassName': 'hakopod-actions', 'restartPolicy': 'Never',
+                    'automountServiceAccountToken': False,
+                    'containers': [{'name': 'probe', 'image': image,
+                        'command': ['sh', '-c', 'test ! -S /var/run/docker.sock'],
+                        'resources': {'requests': {'cpu': '10m', 'memory': '32Mi'},
+                                      'limits': {'cpu': '100m', 'memory': '128Mi'}}}]}}
+            run(kube + ['create', '-f', '-'], input=json.dumps(probe))
+            run(kube + ['-n', 'hakopod-system', 'wait', '--for=jsonpath={.status.phase}=Succeeded',
+                        'pod/actions-runtime-probe', '--timeout=180s'], timeout=200)
+            health(setup_required=False)
+            report['checks'].append('Shipped Actions runtime module installs idempotently and runs a sandbox pod on the native host')
         if psql:
             result = run(psql + ['-d', 'unrelated_sentinel', '-Atc', 'SELECT value FROM sentinel']).stdout.strip()
             if result != sentinel:
