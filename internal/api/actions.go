@@ -449,5 +449,5 @@ func (s *Server) actionsCapabilities(w http.ResponseWriter, r *http.Request) {
 	if runtime != nil {
 		message = "The Managed Actions sandbox is not ready on this installation."
 	}
-	write(w, 200, map[string]any{"licensed": err == nil, "runtime_ready": runtime == nil, "message": message, "runner_image": spec.ActionsRunnerImage})
+	write(w, 200, map[string]any{"licensed": err == nil, "runtime_ready": runtime == nil, "message": message, "runner_image": spec.ActionsRunnerImage, "resource_profiles": spec.Profiles})
 }

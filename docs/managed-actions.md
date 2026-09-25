@@ -43,6 +43,20 @@ The module is not an automatic Cloud or BYOD node migration.
 5. Review the changes and deploy. The service page shows GitHub-observed runner
    state and the time of its last observation.
 
+Under **Resources per runner**, set CPU and memory reservations separately from
+their limits. The form shows the total reservation across all concurrent slots.
+Each slot includes the runner, Docker and sandbox overhead: reserve at least
+200m CPU and 768Mi memory, with a memory limit of at least 4Gi. Requests must not
+exceed their limits. CPU accepts cores or millicores (`0.25` or `250m`); memory
+accepts quantities such as `1024Mi` or `1Gi`.
+
+Scheduling checks reserved capacity, not current usage. For example, five slots
+at 1200m each reserve six CPU cores even when the machine is idle. Lower CPU
+reservations allow jobs to share spare CPU up to their limits, with slower builds
+under contention. Capacity failures report the requested and available CPU and
+memory and the shortage. Cloud allowances still apply. Editing an existing pool
+preserves its resource overrides and inherited defaults until you change them.
+
 Use your configured label in a workflow:
 
 ```yaml

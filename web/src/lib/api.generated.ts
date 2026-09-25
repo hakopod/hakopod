@@ -6227,6 +6227,14 @@ export interface operations {
                         runtime_ready: boolean;
                         message: string;
                         runner_image: string;
+                        resource_profiles?: {
+                            [key: string]: {
+                                CPURequest?: string;
+                                CPULimit?: string;
+                                MemoryRequest?: string;
+                                MemoryLimit?: string;
+                            };
+                        };
                     };
                 };
             };

@@ -1076,6 +1076,27 @@
                     },
                     "runner_image": {
                       "type": "string"
+                    },
+                    "resource_profiles": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "CPURequest": {
+                            "type": "string"
+                          },
+                          "CPULimit": {
+                            "type": "string"
+                          },
+                          "MemoryRequest": {
+                            "type": "string"
+                          },
+                          "MemoryLimit": {
+                            "type": "string"
+                          }
+                        },
+                        "required": []
+                      }
                     }
                   },
                   "required": [
