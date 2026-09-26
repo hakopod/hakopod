@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func controlsFixture(t *testing.T) Application {
@@ -153,5 +155,101 @@ func TestSharedVolumeRequiresCompatibleGroups(t *testing.T) {
 	a.Services["client"] = s
 	if _, err := Normalize(a); err == nil {
 		t.Fatal("shared volume ownership can oscillate between services")
+	}
+}
+
+func backendHTTP2Fixture(t *testing.T) Application {
+	t.Helper()
+	a, err := Parse([]byte(`schema_version = 1
+name = "grpc"
+[services.api]
+image = "python:3.13-alpine"
+port = 50051
+public = true
+replicas = 1
+backend_http2 = true
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func TestBackendHTTP2NormalizeAndRoundTrip(t *testing.T) {
+	a := backendHTTP2Fixture(t)
+	if !a.Services["api"].BackendHTTP2 {
+		t.Fatal("backend_http2 not parsed")
+	}
+	b, err := Normalize(a)
+	if err != nil || !reflect.DeepEqual(a, b) {
+		t.Fatal("normalization is not stable", err)
+	}
+	off := b.Services["api"]
+	off.BackendHTTP2 = false
+	b.Services["api"] = off
+	changed := map[string]bool{}
+	for _, c := range Diff(&a, b) {
+		changed[c.Field] = true
+	}
+	if !changed["backend_http2"] {
+		t.Fatal("backend protocol change not reviewable in deployment plan")
+	}
+	data, err := toml.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTrip, err := Parse(data)
+	if err != nil || !reflect.DeepEqual(roundTrip, a) {
+		t.Fatalf("TOML backend_http2 round trip: %v", err)
+	}
+}
+
+func TestBackendHTTP2WithHealthcheckIsAcceptedAndWarned(t *testing.T) {
+	a := backendHTTP2Fixture(t)
+	s := a.Services["api"]
+	s.Healthcheck = "/health"
+	a.Services["api"] = s
+	b, err := Normalize(a)
+	if err != nil {
+		t.Fatalf("healthcheck with an HTTP/2 backend must stay accepted: %v", err)
+	}
+	const marker = "HTTP/2 backend keeps an HTTP/1.1 healthcheck"
+	if !strings.Contains(strings.Join(Warnings(b), "\n"), marker) {
+		t.Fatalf("silently fatal combination missing from deployment review: %v", Warnings(b))
+	}
+	only := backendHTTP2Fixture(t)
+	if strings.Contains(strings.Join(Warnings(only), "\n"), marker) {
+		t.Fatal("warning raised without a healthcheck")
+	}
+	probe := backendHTTP2Fixture(t)
+	ps := probe.Services["api"]
+	ps.BackendHTTP2 = false
+	ps.Healthcheck = "/health"
+	probe.Services["api"] = ps
+	if strings.Contains(strings.Join(Warnings(probe), "\n"), marker) {
+		t.Fatal("warning raised without an HTTP/2 backend")
+	}
+}
+
+func TestBackendHTTP2RejectsUnsupportedCombinations(t *testing.T) {
+	cases := map[string]func(*Service){
+		"not-public": func(s *Service) { s.Public = false },
+		"no-port":    func(s *Service) { s.Port = 0 },
+		"serverless": func(s *Service) { s.Serverless = &Serverless{} },
+		"http-endpoints": func(s *Service) {
+			s.HTTP = map[string]HTTPEndpoint{"admin": {Port: 50051}}
+		},
+	}
+	for name, modify := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := backendHTTP2Fixture(t)
+			s := a.Services["api"]
+			modify(&s)
+			a.Services["api"] = s
+			_, err := Normalize(a)
+			if err == nil || !strings.Contains(err.Error(), "backend_http2") {
+				t.Fatalf("unsupported backend protocol accepted: %v", err)
+			}
+		})
 	}
 }

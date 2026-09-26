@@ -32,5 +32,16 @@ func validateRuntimeService(service Service) error {
 			return errors.New("tls: resource names must use at most 63 lowercase letters, digits or hyphens")
 		}
 	}
+	if service.BackendHTTP2 {
+		if !service.Public || service.Port == 0 {
+			return errors.New("backend_http2: requires a public service with a port")
+		}
+		if service.Serverless != nil {
+			return errors.New("backend_http2: serverless services are reached through an HTTP/1.1 gateway")
+		}
+		if len(service.HTTP) > 0 {
+			return errors.New("backend_http2: applies to the whole service, so it cannot be combined with named http endpoints")
+		}
+	}
 	return nil
 }

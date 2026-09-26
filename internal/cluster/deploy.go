@@ -559,6 +559,13 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		}
 		wanted.Annotations = map[string]string{"haproxy.org/timeout-server": strconv.Itoa(svc.Serverless.StartupTimeoutSeconds+svc.Serverless.RequestTimeoutSeconds+10) + "s"}
 	}
+	if svc.BackendHTTP2 {
+		// HAProxy speaks HTTP/1.1 to backends unless the ingress asks for h2, which gRPC needs.
+		if wanted.Annotations == nil {
+			wanted.Annotations = map[string]string{}
+		}
+		wanted.Annotations["haproxy.org/server-proto"] = "h2"
+	}
 	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {
 		return err
 	}
@@ -580,6 +587,7 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	delete(current.Annotations, "haproxy.org/timeout-server")
 	delete(current.Annotations, "cert-manager.io/cluster-issuer")
 	delete(current.Annotations, "haproxy.org/ssl-redirect")
+	delete(current.Annotations, "haproxy.org/server-proto")
 	for key, value := range wanted.Annotations {
 		current.Annotations[key] = value
 	}

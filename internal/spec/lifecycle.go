@@ -82,7 +82,7 @@ func normalizeJobAndFiles(s *Service) error {
 		if j.TimeoutSeconds < 10 || j.TimeoutSeconds > 900 || j.Retries < 0 || j.Retries > 3 {
 			return fmt.Errorf("job: timeout_seconds must be 10–900 and retries 0–3")
 		}
-		if s.Replicas != 1 || s.Autoscaling != nil || s.Port != 0 || len(s.Ports) > 0 || s.Public || len(s.PublicTCP) > 0 || s.TLS != nil || s.Readiness != nil || s.Healthcheck != "" || len(s.CertificateMounts) > 0 || s.UpdateStrategy != "" {
+		if s.Replicas != 1 || s.Autoscaling != nil || s.Port != 0 || len(s.Ports) > 0 || s.Public || s.BackendHTTP2 || len(s.PublicTCP) > 0 || s.TLS != nil || s.Readiness != nil || s.Healthcheck != "" || len(s.CertificateMounts) > 0 || s.UpdateStrategy != "" {
 			return fmt.Errorf("job: require one replica without listeners, readiness checks, certificates, autoscaling or update strategy")
 		}
 	}
