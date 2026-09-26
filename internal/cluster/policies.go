@@ -110,6 +110,9 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 		// They never participate in (or broaden) a Cloud workload policy.
 		if t.policy == nil {
 			policy.Spec.Egress = append(policy.Spec.Egress, privateEgressRules(t.privateEgress[name])...)
+			if binding, granted := t.containerDaemon[name]; granted {
+				policy.Spec.Egress = append(policy.Spec.Egress, containerDaemonEgressRule(binding)...)
+			}
 		}
 		if svc.Serverless != nil && len(t.serverlessGatewayIPs) > 0 {
 			peers := []networkingv1.NetworkPolicyPeer{}

@@ -40,9 +40,12 @@ type Options struct {
 	DeploymentMode      string
 	PublicTCPPorts      []int32
 	// DedicatedPublicTCPNode is operator-only: an isolated BYO cluster with exactly this node.
-	DedicatedPublicTCPNode  string
-	AWSIdentityBindings     []AWSIdentityBinding
-	PrivateEgressBindings   []PrivateEgressBinding
+	DedicatedPublicTCPNode string
+	AWSIdentityBindings    []AWSIdentityBinding
+	PrivateEgressBindings  []PrivateEgressBinding
+	// ContainerDaemonBindings are installation-owned grants to a container
+	// daemon reached over the network with mutual TLS.
+	ContainerDaemonBindings []ContainerDaemonBinding
 	SupervisorURL           string
 	ProxyNamespace          string
 	ProxyConfigMap          string
@@ -81,6 +84,7 @@ type Target struct {
 	serverlessGatewayIPs []string
 
 	privateEgress                                    map[string][]PrivateEgressBinding
+	containerDaemon                                  map[string]ContainerDaemonBinding
 	policy                                           *WorkloadPolicy
 	Project, Environment, ApplicationID, OperationID string
 	Revision                                         int64
@@ -197,6 +201,13 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, fmt.Errorf("private egress bindings require a self-hosted installation")
 	}
 	options.PrivateEgressBindings = append([]PrivateEgressBinding(nil), options.PrivateEgressBindings...)
+	if err := ValidateContainerDaemonBindings(options.ContainerDaemonBindings); err != nil {
+		return nil, err
+	}
+	if err := validateContainerDaemonInstallation(mode, options.DedicatedPublicTCPNode, options.WorkloadPolicy != nil, options.ContainerDaemonBindings); err != nil {
+		return nil, err
+	}
+	options.ContainerDaemonBindings = append([]ContainerDaemonBinding(nil), options.ContainerDaemonBindings...)
 	for i := range options.PrivateEgressBindings {
 		b := &options.PrivateEgressBindings[i]
 		b.Services = append([]string(nil), b.Services...)
