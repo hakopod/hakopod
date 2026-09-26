@@ -79,6 +79,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
+	target.containerDaemon, err = c.resolveContainerDaemons(target)
+	if err != nil {
+		return Observation{}, err
+	}
 	target.serverlessGatewayIPs, err = c.serverlessGatewaySources(ctx, target)
 	if err != nil {
 		return Observation{}, err
@@ -208,6 +212,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupAWSIdentities(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
+	if err := c.cleanupContainerDaemons(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.activateScheduledJobs(ctx, target); err != nil {
@@ -410,6 +417,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
 	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {
+		return 0, err
+	}
+	if err := c.prepareContainerDaemon(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {

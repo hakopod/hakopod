@@ -27,6 +27,7 @@ type CloudCapabilities struct {
 	PublicTCP              bool     `json:"public_tcp"`
 	GPU                    bool     `json:"gpu"`
 	AWSIdentity            bool     `json:"aws_identity"`
+	ContainerDaemon        bool     `json:"container_daemon"`
 }
 
 func (c *Client) CloudMode() bool { return c.options.DeploymentMode == DeploymentManagedCloud }
@@ -53,6 +54,9 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 		return CloudCapabilities{}, fmt.Errorf("read managed-cloud node capacity: %w", err)
 	}
 	result.PublicTCP = c.options.DedicatedPublicTCPNode != "" && nodes.Continue == "" && len(nodes.Items) == 1 && nodes.Items[0].Name == c.options.DedicatedPublicTCPNode
+	// A container daemon is effective root on its host, so it needs the same
+	// isolated dedicated-node cluster shape that public TCP proves.
+	result.ContainerDaemon = result.PublicTCP
 	result.NodeCount = len(nodes.Items)
 	result.NodeCountComplete = nodes.Continue == ""
 	if result.NodeCount > limit+1 {
@@ -72,6 +76,11 @@ func (c *Client) ValidateCloudSpec(app spec.Application) error {
 	for name, service := range app.Services {
 		if len(service.PrivateEgress) > 0 {
 			return fmt.Errorf("%w: %s.private_egress requires a self-hosted installation", ErrCloudLimit, name)
+		}
+		// A container daemon is refused on managed cloud unless this runtime is
+		// the operator's isolated dedicated BYO node.
+		if service.ContainerDaemon != "" && c.options.DedicatedPublicTCPNode == "" {
+			return fmt.Errorf("%w: %s.container_daemon requires a self-hosted installation or a dedicated BYO node", ErrCloudLimit, name)
 		}
 		if service.GPU != nil || service.AWSIdentity != "" {
 			return fmt.Errorf("%w: %s cannot use GPU or AWS workload identity on Cloud", ErrCloudLimit, name)

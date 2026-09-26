@@ -73,6 +73,9 @@ func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
 	if err := c.ValidateAWSIdentities(t.Project, t.Environment, t.Spec); err != nil {
 		return err
 	}
+	if err := c.ValidateContainerDaemons(t.Project, t.Environment, t.Spec); err != nil {
+		return err
+	}
 	if err := c.ValidateBackendCertificates(ctx, t); err != nil {
 		return err
 	}
