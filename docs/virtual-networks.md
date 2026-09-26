@@ -112,6 +112,10 @@ Services can join several local or shared networks when their configuration and
 grants permit it. Mounts and filesystem permissions remain independent service
 settings; see [workload configuration](toml.md#named-volumes-and-filesystem-permissions).
 
+To keep the network definition and its applications in one repository, place
+`network.toml` beside one folder per application and use `hakopod deploy --dir`;
+see [deploying a folder of applications](cli-tree-deploy.md).
+
 ## Peer and port rules
 
 With no `network_access` block, a service accepts its declared ports from members

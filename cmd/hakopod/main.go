@@ -104,10 +104,40 @@ func run() error {
 	privateKeyFile := fs.String("private-key-file", "", "PEM private key file, maximum 32 KiB")
 	fromIngress := fs.Bool("from-ingress", false, "snapshot this service's existing HTTP ingress certificate")
 	commandJSON := fs.String("command-json", "", "terminal executable and arguments as a JSON array, defaults to /bin/sh")
+	dir := fs.String("dir", "", "folder tree: optional network.toml plus one application per subfolder")
+	only := fs.String("only", "", "with --dir, comma-separated folder or application names to include")
+	noNetwork := fs.Bool("no-network", false, "with --dir, validate network.toml locally but do not plan or apply it")
 	// Standard flags accept options before an identifier. Move ordinary positionals
 	// to the end so `status APP --json` and `--json APP` behave consistently.
 	if err := fs.Parse(reorder(os.Args[2:])); err != nil {
 		return &exitError{2, err.Error()}
+	}
+	explicitFile := false
+	fs.Visit(func(f *flag.Flag) { explicitFile = explicitFile || f.Name == "file" })
+	if !explicitFile {
+		// Linux filesystems are case-sensitive; accept HAKOPOD.toml and friends as the default.
+		if _, err := os.Stat(*file); os.IsNotExist(err) {
+			found, err := findConfigFile(".")
+			if err != nil {
+				return &exitError{2, err.Error()}
+			}
+			if found != "" {
+				*file = found
+			}
+		}
+	}
+	if *dir != "" {
+		if command != "validate" && command != "plan" && command != "deploy" {
+			return &exitError{2, "--dir applies only to validate, plan and deploy"}
+		}
+		if *service != "" || *idem != "" {
+			return &exitError{2, "--service and --idempotency-key cannot be combined with --dir; each application gets its own retry key"}
+		}
+		if explicitFile {
+			return &exitError{2, "--file cannot be combined with --dir; each folder's hakopod.toml is used"}
+		}
+	} else if *only != "" || *noNetwork {
+		return &exitError{2, "--only and --no-network require --dir"}
 	}
 	cfg, path, err := readConfig()
 	if err != nil {
@@ -152,6 +182,9 @@ func run() error {
 		}
 		fmt.Printf("Created %s. Context: %s/%s (select with login or --project/--environment).\n", *file, cfg.Project, cfg.Environment)
 		return nil
+	}
+	if command == "validate" && *dir != "" {
+		return validateTree(*dir, splitList(*only), *outputJSON)
 	}
 	if command == "validate" {
 		data, err := os.ReadFile(*file)
@@ -296,6 +329,9 @@ func run() error {
 	}
 	switch command {
 	case "plan", "deploy":
+		if *dir != "" {
+			return treeCommand(ctx, c, cfg, command, *dir, splitList(*only), *noNetwork, *wait, *outputJSON)
+		}
 		data, err := os.ReadFile(*file)
 		if err != nil {
 			return err
@@ -304,21 +340,9 @@ func run() error {
 		if err != nil {
 			return &exitError{2, err.Error()}
 		}
-		var plan struct {
-			ApplicationID    string           `json:"application_id"`
-			ExpectedRevision int64            `json:"expected_revision"`
-			Spec             spec.Application `json:"spec"`
-			Changes          []spec.Change    `json:"changes"`
-			Warnings         []string         `json:"warnings"`
-			ResourceProfiles any              `json:"resource_profiles"`
-			MissingSecrets   []string         `json:"missing_secrets"`
-		}
+		var plan appPlan
 		if len(envFiles) > 0 {
-			request := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "toml": string(data), "env_files": envFiles}
-			if *service != "" {
-				request["service"] = *service
-			}
-			if err = c.request(ctx, "POST", "/plan", request, "", &plan); err != nil {
+			if plan, err = planApplication(ctx, c, cfg, data, envFiles, *service); err != nil {
 				return err
 			}
 			parsedSpec = plan.Spec
@@ -354,13 +378,8 @@ func run() error {
 				return lookupErr
 			}
 		}
-		in := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "toml": string(data)}
-		if *service != "" {
-			in["service"] = *service
-		}
-
 		if len(envFiles) == 0 {
-			if err = c.request(ctx, "POST", "/plan", in, "", &plan); err != nil {
+			if plan, err = planApplication(ctx, c, cfg, data, nil, *service); err != nil {
 				return err
 			}
 		}
@@ -370,17 +389,11 @@ func run() error {
 		if err = setupDeploymentSecrets(ctx, c, cfg.Project, cfg.Environment, plan.Spec, plan.MissingSecrets, *outputJSON); err != nil {
 			return err
 		}
-		// Submit the canonical reviewed full revision so retries do not merge a target
-		// into a later application state under a reused idempotency key.
-		in = map[string]any{"project": cfg.Project, "environment": cfg.Environment, "spec": plan.Spec, "expected_revision": plan.ExpectedRevision}
 		if *idem == "" {
 			*idem = store.NewID()
 		}
-		if !*outputJSON {
-			fmt.Fprintf(os.Stderr, "Submitting %s revision %d (%d changes); retry key %s\n", plan.Spec.Name, plan.ExpectedRevision+1, len(plan.Changes), *idem)
-		}
-		var d store.Deployment
-		if err = c.request(ctx, "POST", "/deployments", in, *idem, &d); err != nil {
+		d, err := submitDeployment(ctx, c, cfg, plan, *idem, *outputJSON)
+		if err != nil {
 			return err
 		}
 		if *wait {
@@ -672,7 +685,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -699,6 +712,9 @@ func help() {
   hakopod validate
   hakopod plan --project demo --environment development
   hakopod deploy --project demo --environment development --wait
+  hakopod validate --dir devops
+  hakopod plan --dir devops --project demo --environment development
+  hakopod deploy --dir devops --project demo --environment development --wait [--only syne,lumen]
   hakopod status shop --project demo --environment development
   hakopod logs shop --service api --follow
   hakopod logs shop --service api --query "severity >= ERROR" --since 1h
@@ -724,6 +740,11 @@ Previews: hakopod preview-create APP --name pr-123 --file preview.toml --ttl 24h
 Agent integration: hakopod mcp --project PROJECT --environment ENV [--allow-deploy]
 
 Common flags: --file, --project, --environment, --service, --json.
+Folder trees: --dir ROOT reads an optional ROOT/network.toml and one hakopod.toml per
+subfolder; --only a,b limits it to those folders or application names. The network is
+applied first, then applications deploy in folder order, stopping at the first failure.
+Managing virtual networks requires a project administrator; CI machine keys can pass
+--no-network to validate network.toml locally and deploy only the applications.
 Exit codes: 0 success/accepted, 1 transport/server, 2 input, 3 forbidden,
 4 revision conflict, 5 failed/cancelled release. --wait exits only at terminal state.
 Logs are live and ephemeral; disconnecting does not cancel deployments.`)
