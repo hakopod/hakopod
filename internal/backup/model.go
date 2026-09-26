@@ -150,10 +150,14 @@ type Job struct {
 	Error           string     `json:"error"`
 	Bytes           int64      `json:"bytes"`
 	CancelRequested bool       `json:"cancel_requested"`
-	CreatedAt       time.Time  `json:"created_at"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	Lease           string     `json:"-"`
+	// EngineRef is the engine's own name for work it is performing itself. A job
+	// carrying one is polled rather than streamed, and stays claimable while it
+	// waits. Never exposed: it is an internal handle, not operator-facing state.
+	EngineRef  string     `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Lease      string     `json:"-"`
 }
 
 type Schedule struct {
@@ -222,7 +226,10 @@ type EngineStatus struct {
 type EngineBackup interface {
 	StartBackup(ctx context.Context, t Target, d Destination, c Credentials, prefix string) (ref string, err error)
 	PollBackup(ctx context.Context, t Target, ref string) (EngineStatus, error)
-	StartRestore(ctx context.Context, t Target, d Destination, c Credentials, prefix string) (ref string, err error)
+	// sourceDatabase is the database recorded in the artifact being restored, not
+	// whatever the target service declares today. Re-deriving it would restore the
+	// wrong database when an operator recovers into a service declaring another.
+	StartRestore(ctx context.Context, t Target, d Destination, c Credentials, prefix string, sourceDatabase string) (ref string, err error)
 	PollRestore(ctx context.Context, t Target, ref string) (EngineStatus, error)
 }
 
@@ -230,6 +237,9 @@ type Repository interface {
 	BackupDestination(context.Context, string) (Destination, error)
 	ClaimBackupJob(context.Context, string) (Job, error)
 	HeartbeatBackupJob(context.Context, string, string) (bool, error)
+	SetBackupJobEngineRef(ctx context.Context, id, lease, ref string) (bool, error)
+	ReleaseBackupJobToEngine(ctx context.Context, id, lease string) (bool, error)
+	BackupJobEngineRef(ctx context.Context, id string) (string, error)
 	FinishBackupJob(context.Context, Job, string, string, *Artifact) error
 	BackupArtifact(context.Context, string) (Artifact, error)
 	QueueDueBackups(context.Context) error

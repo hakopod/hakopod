@@ -35,7 +35,10 @@ func (s *Server) ConfigureBackups(config BackupConfig) {
 	if config.StateDir == "" {
 		config.StateDir = filepath.Join(os.TempDir(), "hakopod-backups")
 	}
-	s.Backups = &backup.Service{Repo: s.Store, Runtime: &backupRuntime{server: s, config: config}, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
+	// One runtime serves both roles: it streams logical dumps and it drives the
+	// engines that back themselves up.
+	runtime := &backupRuntime{server: s, config: config}
+	s.Backups = &backup.Service{Repo: s.Store, Runtime: runtime, Engine: runtime, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 }
 func (s *Server) RunBackups(ctx context.Context) {
 	if s.Backups != nil {
@@ -67,6 +70,18 @@ func declaredBackupSource(a store.Application, name string, service spec.Service
 	case "mysql", "mysql/mysql-server":
 		source.Engine = "mysql"
 		source.Database = service.Env["MYSQL_DATABASE"]
+	case "clickhouse/clickhouse-server":
+		source.Engine = "clickhouse"
+		// The ClickHouse blueprint declares no database variable at all, only a
+		// password secret, so the server's own default database is the one to
+		// back up unless the service names another.
+		source.Database = service.Env["CLICKHOUSE_DB"]
+		if source.Database == "" {
+			source.Database = service.Env["CLICKHOUSE_DATABASE"]
+		}
+		if source.Database == "" {
+			source.Database = "default"
+		}
 	default:
 		return source, false
 	}
@@ -313,4 +328,238 @@ func (r *backupRuntime) execute(ctx context.Context, target backup.Target, scrip
 		return fmt.Errorf("database tool failed or the selected pod changed; verify backup tools and privileges. A fresh restore database may be partial and is never dropped automatically")
 	}
 	return nil
+}
+
+// ClickHouse writes its own backup to object storage, so hakopod only issues a
+// statement and watches system.backups. Both bounds below are short on purpose:
+// a statement issued with ASYNC returns as soon as the server has accepted it,
+// and a poll is a single point lookup by id.
+const clickhouseStartTimeout = 60 * time.Second
+const clickhousePollTimeout = 20 * time.Second
+
+// clickhouseScript reads one statement from standard input and the password
+// from the pod environment, exactly as the PostgreSQL and MySQL scripts do.
+// Nothing secret may appear in argv: every element of the exec command becomes
+// a repeated command query parameter on the Kubernetes exec request URL, which
+// kube-apiserver audit, API-server access logs and any proxy in front of them
+// record verbatim. clickhouse-client speaks only the native protocol, so it
+// connects to port 9000 rather than the service's HTTP port. The password must
+// be a separate argument; an attached form is read as part of the option.
+const clickhouseScript = `set -eu
+exec clickhouse-client --host=127.0.0.1 --port=9000 --user "${CLICKHOUSE_USER:-default}" --password "${CLICKHOUSE_PASSWORD:?database password is unavailable}"`
+
+// The three ClickHouse statuses this implementation understands. Anything else,
+// including an empty or unparseable response, is an error rather than a state.
+const (
+	clickhouseBackupRunning  = "CREATING_BACKUP"
+	clickhouseBackupDone     = "BACKUP_CREATED"
+	clickhouseBackupFailed   = "BACKUP_FAILED"
+	clickhouseRestoreRunning = "RESTORING"
+	clickhouseRestoreDone    = "RESTORED"
+	clickhouseRestoreFailed  = "RESTORE_FAILED"
+)
+
+// clickhouseOutputLimit bounds the captured poll output. One row of three small
+// columns is a few dozen bytes; anything beyond this is a broken server.
+const clickhouseOutputLimit = 4096
+
+type boundedWriter struct {
+	buffer []byte
+	limit  int
+}
+
+func (w *boundedWriter) Write(data []byte) (int, error) {
+	if len(w.buffer)+len(data) > w.limit {
+		return 0, fmt.Errorf("database response exceeded its expected size")
+	}
+	w.buffer = append(w.buffer, data...)
+	return len(data), nil
+}
+
+// clickhouseString quotes a value for a single-quoted ClickHouse string. It is
+// applied to credentials and destination fields alike, so a value containing a
+// quote cannot end the literal early.
+func clickhouseString(value string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
+}
+
+// clickhouseIdentifier refuses anything outside the character set the declared
+// source and the generated restore name are already validated against, so a
+// database name can never carry statement syntax.
+func clickhouseIdentifier(name string) (string, error) {
+	if name == "" || len(name) > 63 {
+		return "", fmt.Errorf("invalid ClickHouse database name")
+	}
+	for _, c := range name {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			return "", fmt.Errorf("invalid ClickHouse database name")
+		}
+	}
+	return "`" + name + "`", nil
+}
+
+// clickhouseOperationID names the operation after the prefix it writes, so a
+// poll is a point lookup and an operator can correlate a row in system.backups
+// with the objects in the bucket. A random identifier would do neither.
+func clickhouseOperationID(kind, prefix string) (string, error) {
+	if prefix == "" || len(prefix) > 160 {
+		return "", fmt.Errorf("engine backup requires a bounded object prefix")
+	}
+	name := []rune("hakopod-" + kind + "-")
+	for _, c := range prefix {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
+			name = append(name, c)
+			continue
+		}
+		name = append(name, '-')
+	}
+	return string(name), nil
+}
+
+// clickhouseReference accepts only what clickhouseOperationID produces, so a
+// stored reference cannot carry statement syntax into the poll query.
+func clickhouseReference(ref string) error {
+	if !strings.HasPrefix(ref, "hakopod-") || len(ref) > 200 {
+		return fmt.Errorf("engine operation reference is missing or malformed")
+	}
+	for _, letter := range ref {
+		if !(letter >= 'a' && letter <= 'z' || letter >= 'A' && letter <= 'Z' || letter >= '0' && letter <= '9' || letter == '_' || letter == '-') {
+			return fmt.Errorf("engine operation reference is missing or malformed")
+		}
+	}
+	return nil
+}
+
+// clickhouseDestinationURL is the tree the engine writes under. The endpoint,
+// bucket and prefix are validated when the destination is saved.
+func clickhouseDestinationURL(d backup.Destination, prefix string) string {
+	return strings.TrimSuffix(d.Endpoint, "/") + "/" + d.Bucket + "/" + strings.Trim(prefix, "/")
+}
+
+func (r *backupRuntime) clickhouseStatement(ctx context.Context, target backup.Target, statement string, timeout time.Duration, out io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return r.execute(ctx, target, clickhouseScript, strings.NewReader(statement), out)
+}
+
+func (r *backupRuntime) StartBackup(ctx context.Context, target backup.Target, d backup.Destination, c backup.Credentials, prefix string) (string, error) {
+	if target.Kind != "database" || target.Engine != "clickhouse" {
+		return "", fmt.Errorf("engine-performed backup requires a ClickHouse service")
+	}
+	database, err := clickhouseIdentifier(target.Database)
+	if err != nil {
+		return "", err
+	}
+	id, err := clickhouseOperationID("backup", prefix)
+	if err != nil {
+		return "", err
+	}
+	statement := "BACKUP DATABASE " + database + " TO S3(" + clickhouseString(clickhouseDestinationURL(d, prefix)) + ", " + clickhouseString(c.AccessKeyID) + ", " + clickhouseString(c.SecretAccessKey) + ") SETTINGS id = " + clickhouseString(id) + " ASYNC\n"
+	if err = r.clickhouseStatement(ctx, target, statement, clickhouseStartTimeout, io.Discard); err != nil {
+		return "", fmt.Errorf("ClickHouse did not accept the backup statement; verify the service, its password and the destination endpoint, bucket and credentials")
+	}
+	return id, nil
+}
+
+func (r *backupRuntime) StartRestore(ctx context.Context, target backup.Target, d backup.Destination, c backup.Credentials, prefix string, sourceDatabase string) (string, error) {
+	// The same defensive check the logical restore path applies: the caller
+	// supplies a generated fresh name, and this refuses anything else.
+	if target.Kind != "database" || target.Engine != "clickhouse" || len(target.Database) != 31 || !strings.HasPrefix(target.Database, "hp_restore_") {
+		return "", fmt.Errorf("restore target must be a generated fresh database")
+	}
+	for _, letter := range target.Database {
+		if !(letter >= 'a' && letter <= 'z' || letter >= '0' && letter <= '9' || letter == '_') {
+			return "", fmt.Errorf("invalid restore database name")
+		}
+	}
+	into, err := clickhouseIdentifier(target.Database)
+	if err != nil {
+		return "", err
+	}
+	// The database name comes from the artifact, not from what this service
+	// declares now: recovering into a service that declares a different database
+	// must still restore what was backed up.
+	if sourceDatabase == "" {
+		return "", fmt.Errorf("the artifact records no source database to restore")
+	}
+	from, err := clickhouseIdentifier(sourceDatabase)
+	if err != nil {
+		return "", err
+	}
+	id, err := clickhouseOperationID("restore", prefix)
+	if err != nil {
+		return "", err
+	}
+	statement := "RESTORE DATABASE " + from + " AS " + into + " FROM S3(" + clickhouseString(clickhouseDestinationURL(d, prefix)) + ", " + clickhouseString(c.AccessKeyID) + ", " + clickhouseString(c.SecretAccessKey) + ") SETTINGS id = " + clickhouseString(id) + " ASYNC\n"
+	if err = r.clickhouseStatement(ctx, target, statement, clickhouseStartTimeout, io.Discard); err != nil {
+		return "", fmt.Errorf("ClickHouse did not accept the restore statement; verify the service, its password and the destination endpoint, bucket and credentials")
+	}
+	return id, nil
+}
+
+func (r *backupRuntime) PollBackup(ctx context.Context, target backup.Target, ref string) (backup.EngineStatus, error) {
+	return r.clickhousePoll(ctx, target, ref, clickhouseBackupRunning, clickhouseBackupDone, clickhouseBackupFailed, "ClickHouse reported that it could not write this backup. Check the ClickHouse server log for the failure; the reason is withheld here because the engine's own message repeats the statement, which contains the destination credentials.")
+}
+
+func (r *backupRuntime) PollRestore(ctx context.Context, target backup.Target, ref string) (backup.EngineStatus, error) {
+	return r.clickhousePoll(ctx, target, ref, clickhouseRestoreRunning, clickhouseRestoreDone, clickhouseRestoreFailed, "ClickHouse reported that it could not restore these files. Check the ClickHouse server log for the failure; the reason is withheld here because the engine's own message repeats the statement, which contains the destination credentials. The target database may be partial and is never dropped automatically.")
+}
+
+func (r *backupRuntime) clickhousePoll(ctx context.Context, target backup.Target, ref, running, done, failed, failure string) (backup.EngineStatus, error) {
+	status := backup.EngineStatus{}
+	if target.Kind != "database" || target.Engine != "clickhouse" {
+		return status, fmt.Errorf("engine-performed backup requires a ClickHouse service")
+	}
+	if err := clickhouseReference(ref); err != nil {
+		return status, err
+	}
+	// TSV escapes a tab or newline inside a value, so three fields on one line
+	// can never be confused with a status that contains whitespace.
+	statement := "SELECT status, total_size, num_files FROM system.backups WHERE id = " + clickhouseString(ref) + " ORDER BY start_time DESC LIMIT 1 FORMAT TSV\n"
+	out := &boundedWriter{limit: clickhouseOutputLimit}
+	if err := r.clickhouseStatement(ctx, target, statement, clickhousePollTimeout, out); err != nil {
+		return status, fmt.Errorf("could not read the ClickHouse backup status from the database service")
+	}
+	return clickhouseEngineStatus(string(out.buffer), running, done, failed, failure)
+}
+
+// clickhouseEngineStatus refuses anything it does not recognise. An empty
+// response means the server has forgotten the operation, which is a failure to
+// report to an operator, never a completed backup.
+func clickhouseEngineStatus(output, running, done, failed, failure string) (backup.EngineStatus, error) {
+	status := backup.EngineStatus{}
+	line := strings.TrimRight(output, "\r\n")
+	if line == "" {
+		return status, fmt.Errorf("ClickHouse no longer reports this operation; treat it as unfinished and check the server")
+	}
+	if strings.ContainsAny(line, "\r\n") {
+		return status, fmt.Errorf("ClickHouse returned more than one status row for this operation")
+	}
+	fields := strings.Split(line, "\t")
+	if len(fields) != 3 {
+		return status, fmt.Errorf("ClickHouse status response was not the expected three fields")
+	}
+	bytes, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return status, fmt.Errorf("ClickHouse reported an unreadable backup size")
+	}
+	files, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return status, fmt.Errorf("ClickHouse reported an unreadable backup file count")
+	}
+	status.Bytes = bytes
+	status.Files = files
+	switch fields[0] {
+	case running:
+		return status, nil
+	case done:
+		status.Done = true
+		return status, nil
+	case failed:
+		status.Done = true
+		status.Failed = true
+		status.Message = failure
+		return status, nil
+	}
+	return backup.EngineStatus{}, fmt.Errorf("ClickHouse reported an unrecognized operation status")
 }

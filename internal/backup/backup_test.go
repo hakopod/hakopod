@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testDestination(t *testing.T) (Destination, Credentials, []byte) {
@@ -118,22 +119,67 @@ func (o *testObjects) Get(context.Context, string) (io.ReadCloser, int64, error)
 func (o *testObjects) Delete(context.Context, string) error { o.deleted++; return nil }
 func (o *testObjects) Close()                               {}
 
+type finishedJob struct {
+	status, message string
+	artifact        *Artifact
+}
+
 type testRepository struct {
 	destination Destination
 	artifact    Artifact
+	// The rest stands in for what the store keeps for a job the database engine
+	// performs itself. job is what the next claim returns, or nil for an empty
+	// queue; engineRef is the parked job's recorded engine reference.
+	job        *Job
+	engineRef  string
+	parked     int
+	heartbeats int
+	cancelled  bool
+	leaseLost  bool
+	marked     int
+	finished   []finishedJob
 }
 
 func (r *testRepository) BackupDestination(context.Context, string) (Destination, error) {
 	return r.destination, nil
 }
-func (r *testRepository) ClaimBackupJob(context.Context, string) (Job, error) {
-	return Job{}, ErrNotFound
+func (r *testRepository) ClaimBackupJob(_ context.Context, lease string) (Job, error) {
+	if r.job == nil {
+		return Job{}, ErrNotFound
+	}
+	// The store keeps started_at across re-claims and hands back the recorded
+	// engine reference, so elapsed engine time stays truthful.
+	j := *r.job
+	j.Status, j.Lease, j.EngineRef, j.CancelRequested = "running", lease, r.engineRef, r.cancelled
+	if j.StartedAt == nil {
+		now := time.Now().UTC()
+		j.StartedAt = &now
+	}
+	r.job = &j
+	return j, nil
 }
 func (r *testRepository) HeartbeatBackupJob(context.Context, string, string) (bool, error) {
+	r.heartbeats++
+	return r.cancelled || r.leaseLost, nil
+}
+func (r *testRepository) FinishBackupJob(_ context.Context, _ Job, status, message string, a *Artifact) error {
+	r.finished = append(r.finished, finishedJob{status: status, message: message, artifact: a})
+	r.job = nil
+	return nil
+}
+func (r *testRepository) SetBackupJobEngineRef(_ context.Context, _, _, ref string) (bool, error) {
+	if r.leaseLost {
+		return true, nil
+	}
+	r.engineRef = ref
 	return false, nil
 }
-func (r *testRepository) FinishBackupJob(context.Context, Job, string, string, *Artifact) error {
-	return nil
+func (r *testRepository) ReleaseBackupJobToEngine(context.Context, string, string) (bool, error) {
+	r.parked++
+	return r.leaseLost, nil
+}
+func (r *testRepository) BackupJobEngineRef(context.Context, string) (string, error) {
+	return r.engineRef, nil
 }
 func (r *testRepository) BackupArtifact(context.Context, string) (Artifact, error) {
 	return r.artifact, nil
@@ -142,7 +188,10 @@ func (r *testRepository) QueueDueBackups(context.Context) error { return nil }
 func (r *testRepository) ExpiredBackupArtifacts(context.Context, int) ([]Artifact, error) {
 	return nil, nil
 }
-func (r *testRepository) MarkBackupArtifactDeleted(context.Context, string) error { return nil }
+func (r *testRepository) MarkBackupArtifactDeleted(context.Context, string) error {
+	r.marked++
+	return nil
+}
 func (r *testRepository) ClaimBackupArtifactDeletion(context.Context, string) (bool, error) {
 	return true, nil
 }
