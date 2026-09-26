@@ -682,12 +682,6 @@ export function ServiceDetail({
                   />
                 </dd>
               </div>
-              {service.backend_http2 && (
-                <div>
-                  <dt>Backend protocol</dt>
-                  <dd>HTTP/2 (h2)</dd>
-                </div>
-              )}
 
               <div>
                 <dt>Networks</dt>
