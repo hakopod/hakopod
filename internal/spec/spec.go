@@ -74,6 +74,7 @@ type Service struct {
 	RestartNonce            string                  `json:"restart_nonce,omitempty" toml:"restart_nonce"`
 	RegistryCredential      string                  `json:"registry_credential,omitempty" toml:"registry_credential"`
 	AWSIdentity             string                  `json:"aws_identity,omitempty" toml:"aws_identity"`
+	ContainerDaemon         string                  `json:"container_daemon,omitempty" toml:"container_daemon"`
 	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
 	// BackendHTTP2 makes the ingress speak HTTP/2 to this service, which gRPC needs.
 	BackendHTTP2 bool `json:"backend_http2,omitempty" toml:"backend_http2,omitempty"`
@@ -246,6 +247,9 @@ func Normalize(input Application) (Application, error) {
 		}
 		runtimeService := EffectiveService(app, svc)
 		if err := validateAWSIdentity(runtimeService); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
+		if err := validateContainerDaemon(runtimeService); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
 		if err := validateRuntimeService(svc); err != nil {
@@ -543,6 +547,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "registry_credential", a.RegistryCredential, b.RegistryCredential, false)
 		add(name, "tls", a.TLS, b.TLS, false)
 		add(name, "aws_identity", a.AWSIdentity, b.AWSIdentity, false)
+		add(name, "container_daemon", a.ContainerDaemon, b.ContainerDaemon, false)
 		add(name, "certificate_mounts", a.CertificateMounts, b.CertificateMounts, false)
 		add(name, "volume", a.Volume, b.Volume, false)
 		add(name, "mounts", a.Mounts, b.Mounts, false)
