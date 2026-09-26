@@ -3834,7 +3834,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql";
+            engine: "postgresql" | "mysql" | "clickhouse";
             database?: string;
         };
         BackupDestination: {
@@ -3878,7 +3878,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql";
+            engine: "postgresql" | "mysql" | "clickhouse";
             database?: string;
             application_name?: string;
             revision: number;
@@ -3892,9 +3892,12 @@ export interface components {
             job_id: string;
             destination_id: string;
             source: components["schemas"]["BackupSource"];
+            /** @description Destination key of the encrypted object for a logical dump. For a backup the database engine performed itself this is the prefix the engine wrote a tree of objects under, not a single object. */
             object_key: string;
-            sha256: string;
+            /** @description Hex SHA-256 the server computed over the encrypted object. Empty, and no longer required, for a backup the database engine performed itself: those bytes never passed through the server, so there is nothing for it to digest. */
+            sha256?: string;
             bytes: number;
+            /** @description Archive format the server recorded. A value beginning 'engine:' means the database engine wrote the backup to object storage itself, so the artifact has no digest and its object key is a prefix. */
             format: string;
             scope: string;
             schedule_id?: string;

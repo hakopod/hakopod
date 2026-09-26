@@ -298,7 +298,11 @@ func (s *Server) deleteBackupArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.Confirmation != r.PathValue("id") {
-		problem(w, 400, "confirmation_required", "Confirm the exact artifact ID to delete the encrypted object.")
+		// Deliberately not "the encrypted object": a backup the database engine
+		// performed is a tree of objects the server never encrypted. The check runs
+		// before the artifact is loaded, so the message cannot be per-kind without
+		// changing which error a wrong confirmation for a missing artifact returns.
+		problem(w, 400, "confirmation_required", "Confirm the exact artifact ID to delete this backup's objects from storage.")
 		return
 	}
 	a, err := s.Store.BackupArtifact(r.Context(), r.PathValue("id"))
@@ -323,6 +327,30 @@ func (s *Server) deleteBackupArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.RuntimeAudit(ctx, who(r), "backup.artifact.deleted", a.ID, map[string]any{})
 	write(w, 200, map[string]bool{"deleted": true})
+}
+
+// restoreWarnings is what an operator reads before retyping a database name to
+// authorize a destructive restore, so it must describe the checks this kind of
+// backup actually gets. A logical dump is downloaded, counted, checksummed and
+// fully authenticated before any SQL runs. A backup the database engine wrote
+// for itself has none of that: the bytes never passed through this server, there
+// is no digest and there is nothing to authenticate. The only independent
+// evidence is the object listing taken before the artifact was recorded.
+func restoreWarnings(source backup.Source) []string {
+	warnings := []string{"Creates only the new named database; an existing database is refused. Application connections are not changed.", "The encrypted object checksum and complete age authentication are verified before creating the target database.", "A failed or interrupted restore may leave the new database partial. It is never automatically dropped or retried.", "Preserve the recovery key separately. Database server roles, grants and server configuration are outside this logical restore."}
+	if backup.EngineManaged(source) {
+		warnings = []string{
+			"Restores into the new named database only. Application connections are not changed.",
+			"The database engine performed this backup itself and reported it finished. Before recording it, Hakopod listed the destination prefix and confirmed that objects exist there and that their number is at least the file count the engine reported writing. That listing is the whole of the confirmation.",
+			"Hakopod did not read, decrypt or checksum the contents of this backup. The bytes never passed through this server, so there is no checksum and no payload authentication to verify before the restore starts.",
+			"The database engine performs the restore. A failed or interrupted restore may leave the new database partial. It is never automatically dropped or retried, and cancelling stops Hakopod from waiting without aborting work the engine has already started.",
+			"Objects written by the database engine are not encrypted by Hakopod, so the destination's recovery key does not cover them. Database server users, grants, settings and other databases are outside this restore.",
+		}
+	}
+	if source.Kind == "management" {
+		warnings = append(warnings, "This restores management records into a separate database only. Reconnecting Hakopod requires an offline recovery procedure, the original authentication encryption key and matching cluster/configuration; this operation does not switch the running server.")
+	}
+	return warnings
 }
 func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 	if !s.backupEncryption(w) {
@@ -366,10 +394,7 @@ func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	id := store.NewID()
 	target.Database = "hp_restore_" + id[:20]
-	plan := backup.RestorePlan{ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: []string{"Creates only the new named database; an existing database is refused. Application connections are not changed.", "The encrypted object checksum and complete age authentication are verified before creating the target database.", "A failed or interrupted restore may leave the new database partial. It is never automatically dropped or retried.", "Preserve the recovery key separately. Database server roles, grants and server configuration are outside this logical restore."}}
-	if a.Source.Kind == "management" {
-		plan.Warnings = append(plan.Warnings, "This restores management records into a separate database only. Reconnecting Hakopod requires an offline recovery procedure, the original authentication encryption key and matching cluster/configuration; this operation does not switch the running server.")
-	}
+	plan := backup.RestorePlan{ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: restoreWarnings(a.Source)}
 	if err = s.Store.SaveBackupRestorePlan(r.Context(), who(r), plan); err != nil {
 		backupFailure(w, err)
 		return
