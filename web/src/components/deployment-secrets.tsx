@@ -35,7 +35,7 @@ export function DeploymentSecrets({
   const missing = plan.missing_secrets || []
   const name = missing[0]
   const runnerCredentials = Object.values(plan.spec.services).flatMap((service) =>
-    service.actions?.credential === name ? [service.actions] : [],
+    name && service.actions && service.actions.credential === name ? [service.actions] : [],
   )
   const providerCredential = runnerCredentials.length > 0
   const runnerPermissions = [
