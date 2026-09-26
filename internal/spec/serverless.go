@@ -33,8 +33,10 @@ func normalizeServerless(s *Service) error {
 	if v.MinReplicas < 0 || v.MinReplicas > 1 || v.IdleSeconds < 30 || v.IdleSeconds > 86400 || v.StartupTimeoutSeconds < 5 || v.StartupTimeoutSeconds > 300 || v.RequestTimeoutSeconds < 1 || v.RequestTimeoutSeconds > 300 || v.MaxConcurrency < 1 || v.MaxConcurrency > 64 {
 		return fmt.Errorf("serverless: min_replicas must be 0 or 1, idle_seconds 30–86400, startup_timeout_seconds 5–300, request_timeout_seconds 1–300 and max_concurrency 1–64")
 	}
-	if !s.Public || s.Port < 1 || s.Replicas != 1 || s.Job != nil || s.Autoscaling != nil || s.Volume != nil || len(s.Mounts) > 0 || s.GPU != nil || len(s.PublicTCP) > 0 || len(s.HTTP) > 0 || len(s.Ports) > 0 || len(s.CertificateMounts) > 0 {
-		return fmt.Errorf("serverless requires one public HTTP port and one saved replica, without jobs, autoscaling, persistent mounts, GPU, extra ports or backend certificates")
+	// A serverless service scales to zero between requests, so containers it
+	// created would outlive the client that is accountable for them.
+	if !s.Public || s.Port < 1 || s.Replicas != 1 || s.Job != nil || s.Autoscaling != nil || s.Volume != nil || len(s.Mounts) > 0 || s.GPU != nil || len(s.PublicTCP) > 0 || len(s.HTTP) > 0 || len(s.Ports) > 0 || len(s.CertificateMounts) > 0 || s.ContainerDaemon != "" {
+		return fmt.Errorf("serverless requires one public HTTP port and one saved replica, without jobs, autoscaling, persistent mounts, GPU, extra ports, backend certificates or a container daemon binding")
 	}
 	return nil
 }

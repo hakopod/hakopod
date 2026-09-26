@@ -106,8 +106,10 @@ func MoveService(source, destination Application, name, targetName string) (Appl
 	if svc.Job != nil {
 		return Application{}, Application{}, fmt.Errorf("jobs need an explicit schedule or execution handover to avoid running twice; create the job in the destination after disabling the original")
 	}
-	if svc.TLS != nil || len(svc.CertificateMounts) > 0 || svc.AWSIdentity != "" || len(svc.PublicTCP) > 0 {
-		return Application{}, Application{}, fmt.Errorf("this service has application-bound certificates, identity or public TCP; migrate those settings explicitly before moving")
+	// A container daemon grant names an exact application and service, so it
+	// cannot follow the service to another one.
+	if svc.TLS != nil || len(svc.CertificateMounts) > 0 || svc.AWSIdentity != "" || svc.ContainerDaemon != "" || len(svc.PublicTCP) > 0 {
+		return Application{}, Application{}, fmt.Errorf("this service has application-bound certificates, identity, a container daemon binding or public TCP; migrate those settings explicitly before moving")
 	}
 	for _, service := range source.Domains {
 		if service == name {

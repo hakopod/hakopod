@@ -28,8 +28,10 @@ func ValidatePreview(a Application) error {
 		if s.Size != "small" || s.Replicas > 1 || s.Autoscaling != nil || s.GPU != nil {
 			return fmt.Errorf("previews require the small profile, one replica and no autoscaling or GPU")
 		}
-		if len(s.PublicTCP) > 0 || len(s.CertificateMounts) > 0 || s.AWSIdentity != "" || s.TLS != nil {
-			return fmt.Errorf("previews do not expose public TCP or inherit certificates and AWS identities")
+		// A preview is a separate scope, so it cannot inherit a grant that names
+		// the original application and service.
+		if len(s.PublicTCP) > 0 || len(s.CertificateMounts) > 0 || s.AWSIdentity != "" || s.ContainerDaemon != "" || s.TLS != nil {
+			return fmt.Errorf("previews do not expose public TCP or inherit certificates, AWS identities or container daemon bindings")
 		}
 		if s.Job != nil && s.Job.Schedule != nil && !s.Suspended {
 			return fmt.Errorf("scheduled jobs must stay paused in previews")
