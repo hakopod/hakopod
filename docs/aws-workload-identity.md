@@ -6,7 +6,7 @@ This works with a self-managed K3s cluster on EC2 after its OpenID Connect issue
 
 ## Operator configuration
 
-Create a root-owned file such as `/etc/hakopod/aws-identities.toml`, readable by the API service user (for example `root:hakopod-api`, mode `0640`):
+Create a root-owned file such as `/etc/hakopod/aws-identities.toml`, readable by the API service user (for example `root:hakopod-api`, mode `0640`). Use mode `0600` if you point at it through the operator configuration file rather than the environment variable: that path refuses a file carrying any group or other permission bit, while the environment variable refuses only a group or other writable one.
 
 ```toml
 schema_version = 1

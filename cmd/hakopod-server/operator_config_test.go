@@ -281,3 +281,35 @@ func TestOperatorServerlessGatewayMapping(t *testing.T) {
 		t.Fatal(settings, err)
 	}
 }
+
+func TestOperatorContainerDaemonBindingsFileMapping(t *testing.T) {
+	dir := t.TempDir()
+	path := operatorSecret(t, dir, "container-daemons.toml", "schema_version = 1\n")
+	input := []byte("schema_version=1\n[container_daemons]\nfile='container-daemons.toml'\n")
+	settings, err := operatorSettings(input, dir, noOperatorEnvironment)
+	if err != nil || settings["HAKOPOD_CONTAINER_DAEMONS_FILE"] != path {
+		t.Fatalf("container daemon bindings file was not mapped: %v", err)
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := operatorSettings(input, dir, noOperatorEnvironment); err == nil {
+		t.Fatal("group-readable bindings reference was accepted")
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	managed := []byte("schema_version=1\n[server]\ndeployment_mode='managed-cloud'\n[container_daemons]\nfile='container-daemons.toml'\n")
+	if _, err := operatorSettings(managed, dir, noOperatorEnvironment); err == nil || !strings.Contains(err.Error(), "dedicated BYO node") {
+		t.Fatal("managed cloud without a dedicated node accepted container daemon bindings", err)
+	}
+	dedicated := func(key string) (string, bool) {
+		if key == "HAKOPOD_DEDICATED_TCP_NODE" {
+			return "byo-1", true
+		}
+		return "", false
+	}
+	if _, err := operatorSettings(managed, dir, dedicated); err != nil {
+		t.Fatal("dedicated BYO node was refused container daemon bindings", err)
+	}
+}
