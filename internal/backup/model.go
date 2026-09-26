@@ -41,8 +41,8 @@ func (s Source) Validate() error {
 		}
 		return nil
 	}
-	if s.Kind != "database" || !identifierID.MatchString(s.ApplicationID) || !identifier.MatchString(s.Service) || !identifier.MatchString(s.Database) || (s.Engine != "postgresql" && s.Engine != "mysql") {
-		return fmt.Errorf("%w: select a PostgreSQL or MySQL application service and database", ErrInput)
+	if s.Kind != "database" || !identifierID.MatchString(s.ApplicationID) || !identifier.MatchString(s.Service) || !identifier.MatchString(s.Database) || (s.Engine != "postgresql" && s.Engine != "mysql" && s.Engine != "clickhouse") {
+		return fmt.Errorf("%w: select a PostgreSQL, MySQL or ClickHouse application service and database", ErrInput)
 	}
 	return nil
 }
@@ -198,6 +198,34 @@ type Runtime interface {
 	Restore(context.Context, Target, io.Reader) error
 }
 
+// EngineStatus reports the progress of a backup the database engine runs by
+// itself. Bytes and Files are the engine's own counters, not measurements
+// hakopod made.
+type EngineStatus struct {
+	Done   bool
+	Failed bool
+	Bytes  int64
+	Files  int64
+	// Message is sanitized prose written for an operator. It must never carry
+	// raw engine output: it is stored on backup_jobs.error, served by the API
+	// and rendered in the dashboard, and a database exception routinely echoes
+	// the statement that caused it, which here contains the object-storage
+	// credentials the engine was given.
+	Message string
+}
+
+// EngineBackup covers engines that write their own backup to object storage, so
+// the bytes never pass through this process. The engine writes a tree under
+// prefix; ref identifies the running operation for polling. Both start calls
+// hand the engine object-store credentials, so nothing derived from them may
+// reach a status message or a log.
+type EngineBackup interface {
+	StartBackup(ctx context.Context, t Target, d Destination, c Credentials, prefix string) (ref string, err error)
+	PollBackup(ctx context.Context, t Target, ref string) (EngineStatus, error)
+	StartRestore(ctx context.Context, t Target, d Destination, c Credentials, prefix string) (ref string, err error)
+	PollRestore(ctx context.Context, t Target, ref string) (EngineStatus, error)
+}
+
 type Repository interface {
 	BackupDestination(context.Context, string) (Destination, error)
 	ClaimBackupJob(context.Context, string) (Job, error)
@@ -213,6 +241,9 @@ type Repository interface {
 func Scope(source Source) string {
 	if source.Kind == "management" {
 		return "Logical PostgreSQL dump of the Hakopod management database, including accounts, encrypted credential records, specifications, jobs and audit history. Excludes the authentication encryption key, installer configuration, Kubernetes state and secrets, application databases, persistent volumes, images and external object data. Recovery requires separately preserved encryption key/configuration and deliberate offline reconnection; restoring this dump does not activate another control plane."
+	}
+	if source.Engine == "clickhouse" {
+		return "ClickHouse backup of one database, written to object storage by the ClickHouse server itself using its BACKUP command. It covers the tables ClickHouse includes in that database backup and their data as the server saw them at that moment. It excludes server users, grants, settings and other databases. Hakopod does not read, decrypt or verify these files: it records what the server reported and where the files were written, so completeness and consistency are the server's guarantees, not hakopod's. Restoring replays the files back through the server into the target database."
 	}
 	if source.Engine == "mysql" {
 		return "Logical MySQL dump of one database using single-transaction/quick, including tables, triggers, routines and events. Transactional InnoDB data is consistent; concurrent DDL and non-transactional tables require an operator maintenance window. Excludes server users, grants, global settings, binlogs and point-in-time recovery."
