@@ -5,14 +5,33 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/jackc/pgx/v5"
 )
 
-// One durable running slot across API processes. Expired running work fails
-// visibly instead of replaying a restore that might have already created data.
+// An artifact whose format carries this prefix was written to object storage by
+// the database engine itself. The server never streamed the bytes, so it has no
+// digest of its own to record. Only the server writes the format column.
+const engineArtifactFormat = "engine:"
+
+// An engine backup name such as a ClickHouse backup identifier. The same bound
+// as the engine_ref column in migration 044.
+const maxEngineRef = 256
+
+// A resumable job is one waiting on a backup the database engine is performing
+// itself: hakopod holds only the engine's own identifier for it.
+const resumableBackupJob = "engine_ref IS NOT NULL"
+
+// One durable streaming slot across API processes, for the jobs that actually
+// move bytes through this server. A job that is only polling an engine parks in
+// 'queued' with its engine_ref instead of holding that slot, and stays claimable
+// while a dump streams, because polling competes for nothing. Expired running
+// work fails visibly instead of replaying a restore that might have already
+// created data, unless it is resumable: there the engine is still working and
+// only the poller died.
 func (s *Store) ClaimBackupJob(ctx context.Context, lease string) (backup.Job, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -22,6 +41,11 @@ func (s *Store) ClaimBackupJob(ctx context.Context, lease string) (backup.Job, e
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044231)"); err != nil {
 		return backup.Job{}, err
 	}
+	// Park resumable work before the reaper runs. Failing it would abandon a
+	// backup the engine goes on to finish, leaving objects nothing can delete.
+	if _, err = tx.Exec(ctx, "UPDATE backup_jobs SET status='queued',lease='',lease_until=NULL WHERE status='running' AND lease_until<now() AND "+resumableBackupJob); err != nil {
+		return backup.Job{}, err
+	}
 	if _, err = tx.Exec(ctx, "UPDATE backup_jobs SET status='failed',error='Worker stopped before confirming completion. Any new restore database may be partial; inspect it and create a new review. An unrecorded object or multipart upload may require storage cleanup.',finished_at=now(),lease='' WHERE status='running' AND lease_until<now()"); err != nil {
 		return backup.Job{}, err
 	}
@@ -29,13 +53,11 @@ func (s *Store) ClaimBackupJob(ctx context.Context, lease string) (backup.Job, e
 	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_jobs WHERE status='running')").Scan(&active); err != nil {
 		return backup.Job{}, err
 	}
-	if active {
-		if err = tx.Commit(ctx); err != nil {
-			return backup.Job{}, err
-		}
-		return backup.Job{}, backup.ErrNotFound
-	}
-	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET status='running',lease=$1,lease_until=now()+interval '30 seconds',started_at=now() WHERE id=(SELECT id FROM backup_jobs WHERE status='queued' AND NOT cancel_requested AND NOT EXISTS(SELECT 1 FROM volume_resizes vr WHERE (vr.application_id=backup_jobs.source->>'application_id' OR vr.application_id=backup_jobs.target->>'application_id') AND "+resizeBlocking+") ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING "+backupJobCols, lease))
+	// While a job streams, only resumable work may be claimed. A cancelled
+	// resumable job is still claimed so the worker can stop the engine and record
+	// the outcome; an ordinary queued job cancels without ever being claimed.
+	// started_at survives a re-claim so elapsed engine time stays truthful.
+	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET status='running',lease=$1,lease_until=now()+interval '30 seconds',started_at=COALESCE(started_at,now()) WHERE id=(SELECT id FROM backup_jobs WHERE status='queued' AND (NOT cancel_requested OR "+resumableBackupJob+") AND (NOT $2 OR "+resumableBackupJob+") AND NOT EXISTS(SELECT 1 FROM volume_resizes vr WHERE (vr.application_id=backup_jobs.source->>'application_id' OR vr.application_id=backup_jobs.target->>'application_id') AND "+resizeBlocking+") ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING "+backupJobCols, lease, active))
 	if err != nil {
 		if errors.Is(err, backup.ErrNotFound) {
 			if commitErr := tx.Commit(ctx); commitErr != nil {
@@ -81,6 +103,47 @@ func (s *Store) HeartbeatBackupJob(ctx context.Context, id, lease string) (bool,
 	}
 	return r.RowsAffected() != 1, nil
 }
+
+// Record the engine's own identifier for the backup it has started, so a later
+// poll can find it again. Safe to repeat, and only the lease holder may write it.
+// Reports true when the lease is no longer held, matching HeartbeatBackupJob.
+func (s *Store) SetBackupJobEngineRef(ctx context.Context, id, lease, ref string) (bool, error) {
+	if ref == "" || len(ref) > maxEngineRef {
+		return true, backup.ErrInput
+	}
+	r, err := s.Pool.Exec(ctx, "UPDATE backup_jobs SET engine_ref=$3 WHERE id=$1 AND status='running' AND lease=$2 AND lease_until>now()", id, lease, ref)
+	if err != nil {
+		return true, err
+	}
+	return r.RowsAffected() != 1, nil
+}
+
+// Park a job that is waiting on the engine. It gives up the streaming slot and
+// its lease but keeps its engine_ref and started_at, so ClaimBackupJob picks it
+// up again for the next poll instead of the reaper failing it. Reports true when
+// the job was not parked, which means the lease moved on and this worker should
+// stop touching the job.
+func (s *Store) ReleaseBackupJobToEngine(ctx context.Context, id, lease string) (bool, error) {
+	r, err := s.Pool.Exec(ctx, "UPDATE backup_jobs SET status='queued',lease='',lease_until=NULL WHERE id=$1 AND status='running' AND lease=$2 AND "+resumableBackupJob, id, lease)
+	if err != nil {
+		return true, err
+	}
+	return r.RowsAffected() != 1, nil
+}
+
+// The engine identifier a parked job is waiting on. Empty when the job is an
+// ordinary dump or has not reached the engine yet.
+func (s *Store) BackupJobEngineRef(ctx context.Context, id string) (string, error) {
+	var ref *string
+	if err := s.Pool.QueryRow(ctx, "SELECT engine_ref FROM backup_jobs WHERE id=$1", id).Scan(&ref); err != nil {
+		return "", backupError(err)
+	}
+	if ref == nil {
+		return "", nil
+	}
+	return *ref, nil
+}
+
 func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, message string, a *backup.Artifact) error {
 	if status != "succeeded" && status != "failed" && status != "cancelled" {
 		return backup.ErrInput
@@ -102,7 +165,10 @@ func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, messa
 	// A completed artifact remains useful even when a cancel arrived during the
 	// final object-store acknowledgement. Its successful commit is truthful.
 	if a != nil {
-		if status != "succeeded" || a.Bytes < 1 || a.SHA256 == "" {
+		// An engine-managed artifact has no server-computed digest, and the SQL
+		// check agrees. Its reported size still has to be real.
+		engineManaged := a.SHA256 == "" && strings.HasPrefix(a.Format, engineArtifactFormat)
+		if status != "succeeded" || a.Bytes < 1 || (len(a.SHA256) != 64 && !engineManaged) {
 			return backup.ErrInput
 		}
 		_, err = tx.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", a.ID, j.ID, a.DestinationID, JSON(a.Source), a.ObjectKey, a.SHA256, a.Bytes, a.Format, a.Scope, j.ScheduleID)
