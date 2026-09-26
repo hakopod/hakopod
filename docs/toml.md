@@ -6,6 +6,10 @@ and dependency cycles fail validation. TOML is capped at 256 KiB. `init` writes
 schema_version=1; project/environment come from CLI context or explicit CI flags,
 and are never embedded Kubernetes namespace or credential settings.
 
+The [Terraform provider](terraform.md) is the declarative alternative: it submits
+this same TOML through `hakopod_application`, so everything below applies to it
+unchanged.
+
 Required application fields are `name` and a `services` map. Each service needs
 an `image`. The minimum public service also needs `port` and `public=true`.
 One-service applications use exactly the same format as groups.
