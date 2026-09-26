@@ -60,7 +60,9 @@ failure.
 Use the public URL for invocation. Direct private Service DNS bypasses activation
 and activity tracking, and cannot wake a sleeping service. Persistent mounts,
 extra ports, public TCP, backend certificate mounts, GPU, HPA and deployment jobs
-cannot be combined with serverless. Databases and workers in the same application
+cannot be combined with serverless. `backend_http2` is rejected with serverless
+as well: the activation gateway is an HTTP/1.1 reverse proxy, so an h2-only
+backend would fail every request. Databases and workers in the same application
 remain ordinary services. This release does not add event triggers, a Lambda
 handler ABI, or horizontal request-based autoscaling.
 

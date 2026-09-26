@@ -3279,6 +3279,8 @@ export interface components {
             http?: {
                 [key: string]: components["schemas"]["HTTPEndpoint"];
             };
+            /** @description Opt-in: the ingress speaks HTTP/2 (h2) to this service's backend, for gRPC and other h2-only servers. Requires public with a port. Rejected with serverless or with named http endpoints. */
+            backend_http2?: boolean;
             readiness?: components["schemas"]["Readiness"];
             /** @enum {string} */
             update_strategy?: "rolling" | "recreate";

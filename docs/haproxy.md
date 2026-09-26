@@ -50,6 +50,23 @@ checks, backend connection limits and load balancing. `check-interval` only take
 effect where health checks are enabled. The editor does not change those
 annotations, enable disabled checks or expose arbitrary directives and credentials.
 
+One narrow exception exists, and it is not general annotation support: a service
+with `backend_http2 = true` gets `haproxy.org/server-proto: h2` on its own
+generated ingress, so the ingress speaks HTTP/2 to that service's backend instead
+of HTTP/1.1. This is for gRPC and other servers that accept only h2. A few other
+specification fields also write fixed controller annotations, such as the
+serverless timeout and TLS redirect and issuer annotations, but a specification
+cannot set arbitrary annotations, and the HAProxy editor still cannot set them.
+The annotation applies to the whole ingress, so it is rejected alongside named
+`http` endpoints, whose backends speak HTTP/1.1.
+
+Two consequences are worth planning for. Readiness probes run from Kubernetes
+straight to the pod over HTTP/1.1, so a `healthcheck` path against a pure gRPC
+server fails; omit `healthcheck`, and the declared port gets TCP readiness
+instead. A `readiness` table with `protocol = "tcp"` is optional. TLS ingresses
+also carry `haproxy.org/ssl-redirect: true`, and a gRPC client cannot follow the
+resulting 301, so point real clients at the TLS frontend.
+
 A reviewed change includes the database revision and Kubernetes resource version.
 Hakopod records the intent and an attributed audit event before applying it. The
 worker checks administrator authority again and rejects a stale ConfigMap. Failed

@@ -13348,6 +13348,10 @@
               "$ref": "#/components/schemas/HTTPEndpoint"
             }
           },
+          "backend_http2": {
+            "type": "boolean",
+            "description": "Opt-in: the ingress speaks HTTP/2 (h2) to this service's backend, for gRPC and other h2-only servers. Requires public with a port. Rejected with serverless or with named http endpoints."
+          },
           "readiness": {
             "$ref": "#/components/schemas/Readiness"
           },

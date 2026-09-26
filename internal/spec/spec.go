@@ -75,6 +75,8 @@ type Service struct {
 	RegistryCredential      string                  `json:"registry_credential,omitempty" toml:"registry_credential"`
 	AWSIdentity             string                  `json:"aws_identity,omitempty" toml:"aws_identity"`
 	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
+	// BackendHTTP2 makes the ingress speak HTTP/2 to this service, which gRPC needs.
+	BackendHTTP2 bool `json:"backend_http2,omitempty" toml:"backend_http2,omitempty"`
 }
 
 type Network struct {
@@ -527,6 +529,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "replicas", a.Replicas, b.Replicas, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
 		add(name, "readiness", a.Readiness, b.Readiness, false)
+		add(name, "backend_http2", a.BackendHTTP2, b.BackendHTTP2, false)
 		add(name, "update_strategy", a.UpdateStrategy, b.UpdateStrategy, false)
 		add(name, "env", a.Env, b.Env, true)
 		add(name, "command", a.Command, b.Command, false)
@@ -604,6 +607,9 @@ func Warnings(app Application) []string {
 		}
 		if internal && external {
 			warnings = append(warnings, name+": membership in an egress-enabled network permits external egress even with an internal network")
+		}
+		if svc.BackendHTTP2 && svc.Healthcheck != "" {
+			warnings = append(warnings, name+": HTTP/2 backend keeps an HTTP/1.1 healthcheck probe; a server that only speaks HTTP/2 rejects the probe, the pod never becomes ready and the deployment fails before routing changes. Remove the healthcheck path or serve it over HTTP/1.1.")
 		}
 		if svc.Public {
 			warnings = append(warnings, name+": public HTTP exposure; TLS requires an operator-configured certificate issuer")

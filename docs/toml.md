@@ -79,6 +79,7 @@ DNS routing and certificate coverage are separate checks.
 | `files` | Up to 16 total mounts: named read-only files with mount_path and content or a scoped secret reference |
 | `bindings` | Up to 16 private HTTP/database URL environment bindings derived from service ports and scoped credentials |
 | `http` | Up to four additional named HTTP endpoints on declared TCP service ports, with optional assigned custom domains |
+| `backend_http2` | false; true makes the ingress speak HTTP/2 (h2) to this service, for gRPC and other h2-only servers; requires `public` and a `port`; rejected with `serverless` or with named `http` endpoints |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
 | `network_access.from` | Optional allowlist of services in this application; an empty list denies local peer traffic |
 | `network_access.from_applications` | Up to32 exact application/service peers within a granted virtual network segment |

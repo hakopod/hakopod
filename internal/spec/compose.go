@@ -552,9 +552,10 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 			Readiness               *Readiness           `json:"readiness"`
 			FSGroup                 int64                `json:"fs_group"`
 			TerminationGraceSeconds int64                `json:"termination_grace_seconds"`
+			BackendHTTP2            bool                 `json:"backend_http2"`
 		}
 		if composeJSON(n, &ext) != nil {
-			return s, fmt.Errorf("%s.x-hakopod: invalid or unknown Hakopod option; use port, public, size, secrets, healthcheck, public_tcp, readiness, fs_group or termination_grace_seconds", f)
+			return s, fmt.Errorf("%s.x-hakopod: invalid or unknown Hakopod option; use port, public, size, secrets, healthcheck, public_tcp, readiness, fs_group, termination_grace_seconds or backend_http2", f)
 		}
 		if ext.Port != nil {
 			if s.Port != 0 && s.Port != *ext.Port {
@@ -581,6 +582,7 @@ func (r *composeReader) service(name string, node *yaml.Node) (Service, error) {
 		s.Readiness = ext.Readiness
 		s.FSGroup = ext.FSGroup
 		s.TerminationGraceSeconds = ext.TerminationGraceSeconds
+		s.BackendHTTP2 = ext.BackendHTTP2
 	}
 	if n := m["environment"]; n != nil {
 		env := map[string]*yaml.Node{}
