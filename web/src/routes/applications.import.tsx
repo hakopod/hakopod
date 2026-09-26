@@ -273,7 +273,13 @@ function ImportRepository() {
             </Button>
           ) : (
             <Button asChild>
-              <Link to="/applications/new">Cancel</Link>
+              {/* Keeps cancelling an import where it used to land. Without the
+                  mode, the new default would send it to the source build form,
+                  which is not where someone abandoning a configuration import
+                  expects to arrive. */}
+              <Link to="/applications/new" search={{ mode: 'form' as const }}>
+                Cancel
+              </Link>
             </Button>
           )}
           <Button

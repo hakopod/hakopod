@@ -9,6 +9,7 @@ test('explicit backend paths survive the input wrapper and route back to the rig
   for (const [error, step] of [
     ['invalid input: repository: Enter owner/repository', 0],
     ['invalid input: context_path: Use a relative directory', 0],
+    ['invalid input: submodules: Use true or false', 0],
     ['invalid input: framework.start_command: Provide a command', 1],
     ['build_args.PUBLIC_URL: Use a public URL', 1],
     ['services.web.port: Use a valid port', 2],
@@ -71,14 +72,29 @@ test('hosted Free advice permits private workers and native secrets without modi
   assert.deepEqual(invalid, before)
 })
 
-
 test('licensed hosted forms relax capacity without exposing private networking or placement', () => {
-  const spec = {schema_version: 1, name: 'hosted', services: {web: {image:'nginx:stable',size:'large',replicas:3,resources:{memory_limit:'1Gi'}}}} as Spec
+  const spec = {
+    schema_version: 1,
+    name: 'hosted',
+    services: {
+      web: {
+        image: 'nginx:stable',
+        size: 'large',
+        replicas: 3,
+        resources: { memory_limit: '1Gi' },
+      },
+    },
+  } as Spec
   assert.deepEqual(hostedComputeIssues(spec), [])
-  assert.ok(hostedFreeIssues(spec).some(issue => issue.includes('.size:')))
+  assert.ok(hostedFreeIssues(spec).some((issue) => issue.includes('.size:')))
   const invalid = structuredClone(spec)
-  Object.assign(invalid.services.web, {node_name:'operator',private_egress:['database'],replicas:4})
-  const issues=hostedComputeIssues(invalid)
-  for (const field of ['node_name','private_egress','replicas']) assert.ok(issues.some(issue=>issue.startsWith(`services.web.${field}:`)))
-  assert.equal(invalid.services.web.node_name,'operator')
+  Object.assign(invalid.services.web, {
+    node_name: 'operator',
+    private_egress: ['database'],
+    replicas: 4,
+  })
+  const issues = hostedComputeIssues(invalid)
+  for (const field of ['node_name', 'private_egress', 'replicas'])
+    assert.ok(issues.some((issue) => issue.startsWith(`services.web.${field}:`)))
+  assert.equal(invalid.services.web.node_name, 'operator')
 })

@@ -31,7 +31,7 @@ import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { FormPage, FormHint, FormSection } from './form-page'
-import { Note, RequestError } from './shared'
+import { HeadingHelp, Note, RequestError } from './shared'
 
 type Build = components['schemas']['BuildConfig']
 export default function BuildForm({
@@ -93,6 +93,7 @@ export default function BuildForm({
     build?.architecture || (features.hostedCompute ? 'amd64' : ''),
   )
   const [context, setContext] = useState(build?.context_path || '.')
+  const [submodules, setSubmodules] = useState(build ? Boolean(build.submodules) : true)
   const [buildArgs, setBuildArgs] = useState(() => formatBuildArgs(build?.build_args))
   const [runtimeMode, setRuntimeMode] = useState<'preserve' | 'default' | 'override'>(() => {
     if (build?.command?.length || build?.args?.length) return 'override'
@@ -280,6 +281,10 @@ export default function BuildForm({
                   </dd>
                 </div>
                 <div>
+                  <dt>Submodules</dt>
+                  <dd>{submodules ? 'Checked out recursively' : 'Not checked out'}</dd>
+                </div>
+                <div>
                   <dt>Recipe</dt>
                   <dd>
                     {mode === 'framework'
@@ -387,6 +392,7 @@ export default function BuildForm({
               mode,
               preset,
               context_path: context,
+              submodules,
               architecture: architecture || undefined,
               dockerfile,
               command:
@@ -567,6 +573,23 @@ export default function BuildForm({
                     monorepo.
                   </span>
                 </label>
+              </details>
+              <details className="form-disclosure" open={!submodules || undefined}>
+                <summary>Git submodules</summary>
+                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                  <label className="checkbox-row">
+                    <Input
+                      type="checkbox"
+                      checked={submodules}
+                      onChange={(e) => setSubmodules(e.target.checked)}
+                    />
+                    Check out submodules recursively
+                  </label>
+                  <HeadingHelp title="Git submodules">
+                    The workflow token is scoped to the repository that runs it, so a private
+                    submodule in another repository is not checked out.
+                  </HeadingHelp>
+                </div>
               </details>
             </FormSection>
           </fieldset>
@@ -1150,6 +1173,10 @@ export default function BuildForm({
                         : 'Dockerfile'}{' '}
                     · {context}
                   </dd>
+                </div>
+                <div>
+                  <dt>Submodules</dt>
+                  <dd>{submodules ? 'Checked out recursively' : 'Not checked out'}</dd>
                 </div>
                 <div>
                   <dt>Architecture</dt>
