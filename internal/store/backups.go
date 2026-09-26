@@ -181,14 +181,20 @@ func (s *Store) DeleteBackupDestination(ctx context.Context, p Principal, id str
 	return tx.Commit(ctx)
 }
 
-const backupJobCols = "id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,error,bytes,cancel_requested,created_at,started_at,finished_at,lease,authority"
+const backupJobCols = "id,kind,status,destination_id,source,target,artifact_id,schedule_id,identity_id,key_id,error,bytes,cancel_requested,created_at,started_at,finished_at,lease,authority,engine_ref"
 
 func scanBackupJob(row scanner) (backup.Job, error) {
 	var j backup.Job
 	var source, target []byte
-	err := row.Scan(&j.ID, &j.Kind, &j.Status, &j.DestinationID, &source, &target, &j.ArtifactID, &j.ScheduleID, &j.IdentityID, &j.KeyID, &j.Error, &j.Bytes, &j.CancelRequested, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.Lease, &j.Authority)
+	// engine_ref is null for every job that streams through this server, which is
+	// every job predating engine-managed backups.
+	var engineRef *string
+	err := row.Scan(&j.ID, &j.Kind, &j.Status, &j.DestinationID, &source, &target, &j.ArtifactID, &j.ScheduleID, &j.IdentityID, &j.KeyID, &j.Error, &j.Bytes, &j.CancelRequested, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.Lease, &j.Authority, &engineRef)
 	if err != nil {
 		return j, backupError(err)
+	}
+	if engineRef != nil {
+		j.EngineRef = *engineRef
 	}
 	if err = json.Unmarshal(source, &j.Source); err != nil {
 		return j, err
