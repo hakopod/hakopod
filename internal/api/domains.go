@@ -40,6 +40,7 @@ func (s *Server) registerDomainRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/applications/{id}/domains", s.beginDomain)
 	m.HandleFunc("POST /api/v1/applications/{id}/domains/{hostname}/verify", s.verifyDomain)
 	m.HandleFunc("DELETE /api/v1/applications/{id}/domains/{hostname}", s.discardDomain)
+	s.registerDNSRecordRoutes(m)
 }
 func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:read")

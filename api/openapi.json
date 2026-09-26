@@ -5808,6 +5808,206 @@
         }
       }
     },
+    "/dns-providers": {
+      "get": {
+        "operationId": "listDNSProviders",
+        "summary": "List DNS providers: full rows for administrators, names and kinds for a delegated project owner",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/DNSProvider"
+                          },
+                          {
+                            "$ref": "#/components/schemas/DNSProviderSummary"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dns-providers/{name}": {
+      "put": {
+        "operationId": "putDNSProvider",
+        "summary": "Create or update a DNS provider credential",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DNSProviderInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DNSProvider"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DNSProvider"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The revision changed"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteDNSProvider",
+        "summary": "Delete a DNS provider credential that owns no records",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The provider still owns records, or its revision changed"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{id}/domains": {
       "get": {
         "operationId": "listApplicationDomains",
@@ -5968,6 +6168,122 @@
                 "type": "object",
                 "properties": {},
                 "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/domains/dns-providers": {
+      "get": {
+        "operationId": "listApplicationDNSProviders",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DNSProviderSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/domains/dns-records": {
+      "post": {
+        "operationId": "createApplicationDNSRecords",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DNSRecordResult"
+                      }
+                    }
+                  },
+                  "required": [
+                    "results"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DNSRecordsInput"
               }
             }
           }
@@ -17022,6 +17338,234 @@
           "deliveries",
           "email_available",
           "encryption_ready"
+        ]
+      },
+      "DNSProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cloudflare"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "zone_filter": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            },
+            "description": "DNS zones this credential may write to. hakopod cannot see what a provider token really reaches, so this list is the enforceable boundary. Widening it requires re-entering the token."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "zone_filter",
+          "revision",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "A provider is installation-wide, or scoped to one project and one environment, never to a project alone. Credentials are never returned."
+      },
+      "DNSProviderSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cloudflare"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "description": "What a non-administrator sees: name and kind only, never the zone filter. The application listing adds the id the record endpoint takes."
+      },
+      "DNSProviderInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cloudflare"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "zone_filter": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            },
+            "description": "DNS zones this credential may write to. hakopod cannot see what a provider token really reaches, so this list is the enforceable boundary. Widening it requires re-entering the token."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Zero creates; the current revision updates."
+          },
+          "credentials": {
+            "type": "object",
+            "additionalProperties": false,
+            "writeOnly": true,
+            "properties": {
+              "token": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "token"
+            ],
+            "description": "Required on create. Omit on update to keep the stored token; a changed name, kind or zone filter requires it again."
+          }
+        },
+        "required": [
+          "kind",
+          "zone_filter",
+          "expected_revision"
+        ]
+      },
+      "DNSRecord": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "TXT",
+              "CNAME"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "value"
+        ]
+      },
+      "DNSRecordResult": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "exists",
+              "conflict",
+              "failed",
+              "skipped"
+            ],
+            "description": "created: written now. exists: identical records were already there. conflict: a different value occupies the name and replace_existing was false. failed: the provider refused or did not answer. skipped: not attempted, for a hostname this application is not awaiting verification for, or one left when the request ran out of time."
+          },
+          "message": {
+            "type": "string"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DNSRecord"
+            }
+          }
+        },
+        "required": [
+          "hostname",
+          "status",
+          "message",
+          "records"
+        ],
+        "description": "One hostname's outcome. Records reaching a provider is not verification: the domain stays awaiting DNS until the verify step confirms it."
+      },
+      "DNSRecordsInput": {
+        "type": "object",
+        "properties": {
+          "provider_id": {
+            "type": "string"
+          },
+          "hostnames": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            },
+            "description": "Hostnames this application is already awaiting or holding verification for."
+          },
+          "replace_existing": {
+            "type": "boolean",
+            "description": "Overwrite a different value already at the record name. Without it such a name is reported as a conflict and left alone."
+          }
+        },
+        "required": [
+          "provider_id",
+          "hostnames"
         ]
       },
       "Domain": {

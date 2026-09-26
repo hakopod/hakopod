@@ -19,6 +19,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/dnsprovider"
 	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -48,6 +49,7 @@ type Server struct {
 	githubAPIURL          string
 	githubTestCredentials func(context.Context) (map[string][]byte, error)
 	domainLookupTXT       func(context.Context, string) ([]string, error)
+	dnsClient             func(dnsprovider.Provider, dnsprovider.Credentials) (dnsprovider.Client, error)
 	mu                    sync.Mutex
 	buckets               map[string]bucket
 	concurrent            chan struct{}
@@ -97,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerInstallationRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
 	s.registerSecretProviderRoutes(routes)
+	s.registerDNSProviderRoutes(routes)
 	s.registerTemplateRoutes(routes)
 	s.registerProxyRoutes(routes)
 	s.registerDeletionRoutes(routes)

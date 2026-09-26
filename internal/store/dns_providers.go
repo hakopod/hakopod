@@ -26,6 +26,32 @@ func scanDNSProvider(row scanner) (dnsprovider.Provider, error) {
 // administrator, and the installation-wide and own-scope providers for a
 // delegated principal. Sealed credentials are removed, so no read path a request
 // can reach returns them.
+// DNSProvidersForApplication lists the providers one application may use, with
+// credentials scrubbed and the zone filter left behind. It takes no principal
+// on purpose: the caller has already authorized the application itself, and
+// gating this on the management permission would hide the picker from exactly
+// the people the feature is for, who hold deployments:write without owning the
+// project. Only enabled providers whose scope covers this project and
+// environment are returned.
+func (s *Store) DNSProvidersForApplication(ctx context.Context, project, environment string) ([]dnsprovider.Provider, error) {
+	rows, err := s.Pool.Query(ctx, "SELECT "+dnsProviderColumns+" FROM dns_providers WHERE enabled AND (project='' OR (project=$2 AND environment=$3)) ORDER BY lower(name) LIMIT $1", maxDNSProviders, project, environment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []dnsprovider.Provider{}
+	for rows.Next() {
+		provider, err := scanDNSProvider(rows)
+		if err != nil {
+			return nil, err
+		}
+		provider.EncryptedCredentials = nil
+		provider.ZoneFilter = nil
+		result = append(result, provider)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) DNSProviders(ctx context.Context, p Principal) ([]dnsprovider.Provider, error) {
 	if !p.CanManageDNSProviders() {
 		return nil, ErrForbidden
