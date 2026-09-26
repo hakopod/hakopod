@@ -56,6 +56,35 @@ func TestGitLabBuildWorkflowArchitectureAndSyntax(t *testing.T) {
 				if mode == "buildpacks" && !strings.Contains(workflow, "sha256sum -c -") {
 					t.Fatal("pack download has no pinned checksum")
 				}
+				if strings.Contains(workflow, "submodule") {
+					t.Fatal("a build without the submodules option must generate the CI file it generates today")
+				}
+				submodules := c
+				submodules.Submodules = true
+				enabled := buildWorkflow(submodules)
+				variables := "    GIT_SUBMODULE_STRATEGY: \"recursive\"\n    GIT_SUBMODULE_FORCE_HTTPS: \"true\"\n"
+				if !strings.Contains(enabled, "    GIT_DEPTH: \"1\"\n"+variables) {
+					t.Fatal("submodule clone variables missing beside GIT_DEPTH")
+				}
+				update := "      git submodule update --init --recursive\n"
+				detach := strings.Index(enabled, "      git checkout --detach")
+				if detach < 0 || strings.Index(enabled, update) < detach {
+					t.Fatal("submodules must be updated after HEAD moves to the source commit")
+				}
+				var enabledRoot map[string]any
+				if err := yaml.Unmarshal([]byte(enabled), &enabledRoot); err != nil {
+					t.Fatal(err)
+				}
+				for _, script := range enabledRoot[c.gitlabJobName()].(map[string]any)["script"].([]any) {
+					command := exec.Command("sh", "-n")
+					command.Stdin = strings.NewReader(script.(string))
+					if out, err := command.CombinedOutput(); err != nil {
+						t.Fatalf("invalid generated POSIX shell: %s", out)
+					}
+				}
+				if strings.Replace(strings.Replace(enabled, variables, "", 1), update, "", 1) != workflow {
+					t.Fatal("submodules changed the CI file outside the variables and the update command")
+				}
 			}
 		}
 	}

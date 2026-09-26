@@ -53,6 +53,7 @@ type buildConfig struct {
 	RegistryCredential string                     `json:"registry_credential,omitempty"`
 	Port               int                        `json:"port"`
 	Public             bool                       `json:"public"`
+	Submodules         bool                       `json:"submodules,omitempty"`
 	Size               string                     `json:"size"`
 	Revision           int64                      `json:"revision"`
 	InstalledRevision  int64                      `json:"installed_revision"`
@@ -65,6 +66,7 @@ type buildInput struct {
 	Command                *[]string                  `json:"command,omitempty"`
 	Args                   *[]string                  `json:"args,omitempty"`
 	Framework              *framework.Plan            `json:"framework,omitempty"`
+	Submodules             *bool                      `json:"submodules,omitempty"`
 	BuildSecrets           map[string]string          `json:"build_secrets,omitempty"`
 	BuildArgs              map[string]string          `json:"build_args,omitempty"`
 	Provider               string                     `json:"provider"`
@@ -149,6 +151,13 @@ func validBuildPath(value string) bool {
 }
 func normalizeBuild(in buildInput) (buildConfig, error) {
 	c := buildConfig{ReuseServices: append([]string(nil), in.ReuseServices...), Secrets: in.Secrets, Env: in.Env, Command: in.Command, Args: in.Args, Framework: in.Framework, BuildSecrets: in.BuildSecrets, BuildArgs: in.BuildArgs, ConnectionID: selectedGitConnection(in.Provider, in.ConnectionID), Architecture: in.Architecture, AutoBuild: in.AutoBuild, AutoDeploy: in.AutoDeploy, ApplicationID: in.ApplicationID, Project: in.Project, Environment: in.Environment, Name: in.Name, Service: in.Service, Repository: in.Repository, Branch: in.Branch, Mode: in.Mode, Preset: in.Preset, ContextPath: in.ContextPath, Dockerfile: in.Dockerfile, RegistryCredential: in.RegistryCredential, Port: in.Port, Public: in.Public, Size: in.Size}
+	// Only an update carries an expected revision, so an absent field means a new
+	// build (submodules on) rather than an existing build that never had it.
+	if in.Submodules != nil {
+		c.Submodules = *in.Submodules
+	} else {
+		c.Submodules = in.ExpectedConfigRevision == nil
+	}
 	if len(c.ReuseServices) > 19 || len(c.ReuseServices) > 0 && c.ApplicationID == "" {
 		return c, fmt.Errorf("%w: reuse_services: image reuse needs an existing application and at most 19 additional services", store.ErrInput)
 	}
@@ -500,16 +509,26 @@ func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, c)
 }
+
+const submoduleRequirement = "Submodules are checked out recursively; a private submodule in another repository will fail at checkout because the CI token only reaches this repository"
+
 func (s *Server) previewBuild(w http.ResponseWriter, r *http.Request) {
 	c, ok := s.authorizedBuild(w, r, "deployments:write")
 	if !ok {
 		return
 	}
 	if c.Provider == "gitlab" {
-		write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": []string{"GitLab.com CI/CD and Container Registry enabled for this project", "GitLab integration token with API access and repository commit/pipeline permissions", "One Hakopod-managed .gitlab-ci.yml per repository; existing unowned CI or another build's entrypoint will not be overwritten", "A platform administrator explicitly installs the reviewed CI file on the default branch", "Automatic builds also require this exact CI file on the selected source branch and authenticated Pipeline Hook events", "GitLab-hosted Linux runner capacity for the selected architecture and Docker-in-Docker", "Private registry.gitlab.com images require a persistent read_registry pull credential before deployment"}})
+		gitlab := []string{"GitLab.com CI/CD and Container Registry enabled for this project", "GitLab integration token with API access and repository commit/pipeline permissions", "One Hakopod-managed .gitlab-ci.yml per repository; existing unowned CI or another build's entrypoint will not be overwritten", "A platform administrator explicitly installs the reviewed CI file on the default branch", "Automatic builds also require this exact CI file on the selected source branch and authenticated Pipeline Hook events", "GitLab-hosted Linux runner capacity for the selected architecture and Docker-in-Docker", "Private registry.gitlab.com images require a persistent read_registry pull credential before deployment"}
+		if c.Submodules {
+			gitlab = append(gitlab, submoduleRequirement)
+		}
+		write(w, 200, map[string]any{"config": c, "workflow_path": c.workflowPath(), "workflow": buildWorkflow(c), "image_repository": c.imageName(), "requirements": gitlab})
 		return
 	}
 	requirements := []string{"GitHub Actions enabled for this repository", "GitHub App access with repository contents/workflows write and Actions write permissions", "A repository manager explicitly installs this reviewed workflow on the repository default branch", "Automatic builds also require this exact workflow on the selected source branch when it differs from the repository default branch", "GitHub-hosted Linux runner capacity for the selected architecture"}
+	if c.Submodules {
+		requirements = append(requirements, submoduleRequirement)
+	}
 	if c.ManagedRegistry != "" {
 		requirements = append(requirements, "Hakopod supplies private registry storage and scoped worker pull credentials automatically", "This workflow requests a short-lived GitHub Actions identity token to authorize image publishing")
 	} else {
