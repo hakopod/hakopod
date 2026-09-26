@@ -209,7 +209,7 @@ export function ApplicationList({
             <div className="ops-empty-grid">
               <Empty
                 title="Your next application starts here"
-                description="Deploy an image, build from a repository, or start with a template."
+                description="Build from a repository, deploy an image, or start with a template."
                 action={
                   <div className="toolbar-actions">
                     {scope.can('deployments:write') && (

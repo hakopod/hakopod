@@ -15,6 +15,7 @@ export function buildErrorStep(error: string, service: string): number | undefin
       'repository',
       'branch',
       'context_path',
+      'submodules',
     ],
     ['mode', 'preset', 'architecture', 'dockerfile', 'build_args', 'build_secrets', 'framework'],
     ['port', 'size', 'command', 'args', 'env', 'secrets', 'registry_credential', 'reuse_services'],

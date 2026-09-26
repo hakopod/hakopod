@@ -4054,6 +4054,7 @@ export interface components {
             port: number;
             public: boolean;
             size: string;
+            submodules?: boolean;
             auto_build: boolean;
             auto_deploy: boolean;
             revision: number;
@@ -4105,6 +4106,7 @@ export interface components {
             port?: number;
             public?: boolean;
             size?: string;
+            submodules?: boolean;
             auto_build?: boolean;
             auto_deploy?: boolean;
             /** @enum {string} */
