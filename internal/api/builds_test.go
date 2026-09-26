@@ -91,6 +91,18 @@ func TestBuildWorkflowArchitecturePinsAndArtifactBounds(t *testing.T) {
 				if mode == "buildpacks" && !strings.Contains(workflow, "builder-jammy-buildpackless-base@sha256:") {
 					t.Fatal("buildpacks did not use verified multi-architecture builder")
 				}
+				if strings.Contains(workflow, "submodules:") {
+					t.Fatal("a build without the submodules option must generate the workflow it generates today")
+				}
+				submodules := c
+				submodules.Submodules = true
+				enabled := buildWorkflow(submodules)
+				if !strings.Contains(enabled, "          ref: ${{ env.SOURCE_SHA }}\n          persist-credentials: false\n          submodules: recursive\n") {
+					t.Fatal("checkout step does not request recursive submodules")
+				}
+				if strings.Replace(enabled, "          submodules: recursive\n", "", 1) != workflow {
+					t.Fatal("submodules changed the workflow outside the checkout step")
+				}
 			}
 		}
 	}

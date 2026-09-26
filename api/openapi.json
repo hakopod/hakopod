@@ -15930,6 +15930,9 @@
           "size": {
             "type": "string"
           },
+          "submodules": {
+            "type": "boolean"
+          },
           "auto_build": {
             "type": "boolean"
           },
@@ -16107,6 +16110,9 @@
           },
           "size": {
             "type": "string"
+          },
+          "submodules": {
+            "type": "boolean"
           },
           "auto_build": {
             "type": "boolean"

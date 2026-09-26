@@ -49,7 +49,7 @@ case "$REQUEST_ID" in ''|*[!0-9a-f]*) exit 1;; esac
 [ "${#REQUEST_ID}" -eq 32 ]
 git fetch --no-tags origin "$SOURCE_SHA"
 git checkout --detach "$SOURCE_SHA"
-git remote set-url origin {{REPOSITORY_URL}}
+{{SUBMODULE_UPDATE}}git remote set-url origin {{REPOSITORY_URL}}
 attempt=0
 until docker info >/dev/null 2>&1; do
   attempt=$((attempt+1))
@@ -92,12 +92,24 @@ printf '{"build_id":"%s","request_id":"%s","commit_sha":"%s","image":"%s@%s"}\n'
 	if c.Mode == "framework" {
 		script = strings.ReplaceAll(script, "{{DOCKERFILE}}", "/tmp/hakopod.Dockerfile")
 	}
+	// The runner initializes submodules for the pipeline commit, so they must be
+	// updated again after HEAD moves to the requested source commit.
+	submoduleUpdate, submoduleVariables := "", ""
+	if c.Submodules {
+		submoduleUpdate = "git submodule update --init --recursive\n"
+		// Deliberately no GIT_SUBMODULE_DEPTH. It shallow-clones submodules at the
+		// pipeline commit, and the update below has to reach the commit this build
+		// is for, which a shallow history may not contain. A slower clone beats a
+		// checkout that fails on a repository whose submodule moved.
+		submoduleVariables = "    GIT_SUBMODULE_STRATEGY: \"recursive\"\n    GIT_SUBMODULE_FORCE_HTTPS: \"true\"\n"
+	}
+	script = strings.ReplaceAll(script, "{{SUBMODULE_UPDATE}}", submoduleUpdate)
 	script = strings.ReplaceAll(script, "{{BUILD_SECRETS}}", gitlabSecretFlags(c.BuildSecrets))
 	script = strings.NewReplacer("{{BUILD_ID}}", strconv.Quote(c.ID), "{{IMAGE}}", strconv.Quote(c.imageName()), "{{CONTEXT}}", strconv.Quote(c.ContextPath), "{{REPOSITORY_URL}}", strconv.Quote("https://gitlab.com/"+c.Repository+".git"), "{{PACK_URL}}", strconv.Quote("https://github.com/buildpacks/pack/releases/download/v0.40.9/"+packAsset), "{{PACK_CHECKSUM}}", strconv.Quote(packChecksum), "{{BUILDER}}", strconv.Quote(paketoBuilder), "{{PLATFORM}}", strconv.Quote("linux/"+c.Architecture), "{{DOCKERFILE}}", strconv.Quote(c.Dockerfile)).Replace(script)
 	script = strings.ReplaceAll(script, "{{PACK_ARGS}}", shellBuildArguments(c.BuildArgs, "--env"))
 	script = strings.ReplaceAll(script, "{{BUILD_ARGS}}", shellBuildArguments(c.BuildArgs, "--build-arg"))
 	var out strings.Builder
-	out.WriteString("# Managed by Hakopod build " + c.ID + ". Review through Hakopod before reinstalling.\nworkflow:\n  rules:\n" + rules + "stages: [build]\n" + c.gitlabJobName() + ":\n  stage: build\n  image: " + strconv.Quote(gitlabDockerCLI) + "\n  tags: [" + strconv.Quote(runner) + "]\n  timeout: 30m\n  interruptible: false\n  retry: 0\n  resource_group: " + strconv.Quote("hakopod-"+c.ID) + "\n  services:\n    - name: " + strconv.Quote(gitlabDockerDaemon) + "\n      alias: docker\n      command: [\"--tls=false\", \"--mtu=1400\"]\n  variables:\n    DOCKER_HOST: \"tcp://docker:2375\"\n    DOCKER_TLS_CERTDIR: \"\"\n    GIT_DEPTH: \"1\"\n  script:\n    - |\n")
+	out.WriteString("# Managed by Hakopod build " + c.ID + ". Review through Hakopod before reinstalling.\nworkflow:\n  rules:\n" + rules + "stages: [build]\n" + c.gitlabJobName() + ":\n  stage: build\n  image: " + strconv.Quote(gitlabDockerCLI) + "\n  tags: [" + strconv.Quote(runner) + "]\n  timeout: 30m\n  interruptible: false\n  retry: 0\n  resource_group: " + strconv.Quote("hakopod-"+c.ID) + "\n  services:\n    - name: " + strconv.Quote(gitlabDockerDaemon) + "\n      alias: docker\n      command: [\"--tls=false\", \"--mtu=1400\"]\n  variables:\n    DOCKER_HOST: \"tcp://docker:2375\"\n    DOCKER_TLS_CERTDIR: \"\"\n    GIT_DEPTH: \"1\"\n" + submoduleVariables + "  script:\n    - |\n")
 	for _, line := range strings.Split(strings.TrimSuffix(script, "\n"), "\n") {
 		out.WriteString("      " + line + "\n")
 	}

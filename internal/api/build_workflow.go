@@ -108,7 +108,7 @@ jobs:
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-      - name: Sign in to GitHub Container Registry
+{{SUBMODULES}}      - name: Sign in to GitHub Container Registry
         uses: {{LOGIN}}
         with:
           registry: ghcr.io
@@ -147,6 +147,11 @@ jobs:
 	}
 	text = strings.ReplaceAll(text, "{{RUNNER}}", runner)
 	text = strings.ReplaceAll(text, "{{PUSH_TRIGGER}}", push)
+	submodules := ""
+	if c.Submodules {
+		submodules = "          submodules: recursive\n"
+	}
+	text = strings.ReplaceAll(text, "{{SUBMODULES}}", submodules)
 	text = strings.ReplaceAll(text, "{{BUILD_STEP}}", build)
 	text = strings.ReplaceAll(text, "{{BUILD_ARGS}}", workflowBuildArguments(c.BuildArgs))
 	text = strings.ReplaceAll(text, "{{SECRET_ENV}}", buildSecretEnvironment(c.BuildSecrets))
