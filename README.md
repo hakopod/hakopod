@@ -224,6 +224,7 @@ python3 scripts/acceptance.py
 
 See the [local guide](docs/local-development.md), [architecture](docs/architecture.md),
 [threat model](docs/threat-model.md), [TOML reference](docs/toml.md),
+[Terraform provider](docs/terraform.md),
 [OpenAPI contract](api/openapi.json), and [contributor instructions](CONTRIBUTING.md).
 The project uses Apache-2.0 for original code; dependencies retain their own
 [licenses and notices](docs/licenses.md).
