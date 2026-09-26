@@ -47,6 +47,9 @@ const SMTPSettings = lazy(() =>
 const SecretProviders = lazy(() =>
   import('../components/secret-providers').then((module) => ({ default: module.SecretProviders })),
 )
+const DNSProviders = lazy(() =>
+  import('./settings.dns-providers').then((module) => ({ default: module.DNSProviders })),
+)
 const InstallationUsers = lazy(() =>
   import('../components/team-settings').then((m) => ({ default: m.InstallationUsers })),
 )
@@ -65,6 +68,7 @@ export const Route = createFileRoute('/settings')({
         'appearance',
         'license',
         'secret-providers',
+        'dns-providers',
         'login-providers',
         'smtp',
       ].includes(search.tab)
@@ -100,6 +104,7 @@ function Administration() {
       ? [
           { id: 'users', label: 'People', group: 'Installation' },
           { id: 'secret-providers', label: 'Secret providers', group: 'Installation' },
+          { id: 'dns-providers', label: 'DNS providers', group: 'Installation' },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
           ...(installation.allowed
@@ -136,6 +141,7 @@ function Administration() {
             <>
               {tab === 'users' && <InstallationUsers />}
               {tab === 'secret-providers' && <SecretProviders />}
+              {tab === 'dns-providers' && <DNSProviders />}
               {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}
               {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
