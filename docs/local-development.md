@@ -16,9 +16,10 @@ The startup script checksum-verifies a pinned k3d binary into `.local/bin`, crea
 
 This host blocks upstream UDP DNS from containers, so the local CoreDNS override forwards public queries to `1.1.1.1` and `8.8.8.8` over TCP with 64 concurrent requests maximum. Cluster service discovery remains local. `deploy/local/coredns-custom.yaml` is the operator-editable resolver configuration; use approved resolvers for your network. The K3s-managed Corefile is preserved, and both external and private DNS were tested from a real application pod.
 
-Use a second terminal for the dashboard, after building or installing its dependencies:
+Use a second terminal for the dashboard, after building or installing its dependencies. The dashboard depends on the shared component library as a local path, so its submodule has to be checked out first; without it `pnpm install` fails with `ENOENT: no such file or directory, scandir 'packages/ui/packages/ui'` rather than anything that names the cause.
 
 ```sh
+git submodule update --init packages/ui
 cd web
 pnpm install --frozen-lockfile
 HAKOPOD_WEB_ORIGIN=http://127.0.0.1:4173 pnpm dev --port 4173
