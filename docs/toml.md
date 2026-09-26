@@ -63,7 +63,7 @@ DNS routing and certificate coverage are separate checks.
 | `ports` | Up to 15 extra private TCP/UDP endpoints, with a name, port and optional target_port |
 | `public` | false; true adds public HTTP ingress and needs a port |
 | `public_tcp` | Up to 16 explicit TCP listeners per service, 64 per application: port, target_port and up to 16 source_cidrs; self-hosted only, using administrator-provisioned ingress ports |
-| `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS |
+| `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS; `source = "ingress"` follows the service's ingress certificate instead of a pinned upload, and needs `public` or at least one `public_tcp` listener |
 | `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
 | `size` | small; default resource profile below |
 | `resources` | Optional per-service CPU/memory requests and limits; overrides individual size defaults |
@@ -372,6 +372,15 @@ logs themselves can still contain sensitive data.
 See the [SMTP migration guide](smtp-migration.md) for public TCP, backend certificate
 mounts and AWS workload identity. These optional fields preserve existing schema
 v1 behavior: extra ports remain private, and `public`/`tls` still control HTTP.
+A service with no public HTTP but at least one `public_tcp` listener can still use
+`certificate_mounts` with `source = "ingress"`; Hakopod gives it an ingress that
+carries only a hostname and TLS, with no HTTP backend. `tls` itself remains public
+only, so such a service takes the installation's default TLS issuer. The mount
+can name only the service's generated hostname; `domains` maps a custom hostname
+only to a service that is public for HTTP, so a custom hostname on a TCP-only
+service needs an uploaded pinned certificate instead. See
+[backend certificates](backend-certificates.md) for what is and is not verified
+about automatic issuance for those hostnames.
 
 Public TCP requires server deployment mode `self-hosted`. The administrator
 selects this through `HAKOPOD_DEPLOYMENT_MODE` or `[server] deployment_mode` in

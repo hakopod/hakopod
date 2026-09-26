@@ -34,7 +34,15 @@ an external email provider. See [product modes](product-modes.md).
    `hakopod certificate-upload`, or the API. Existing host files can be read by
    the uploading client; the container never receives a host-directory mount.
    The result is a service-owned immutable reference. See
-   [backend certificates](backend-certificates.md).
+   [backend certificates](backend-certificates.md). An SMTP service that publishes
+   only public TCP can instead follow its ingress certificate automatically with
+   `source = "ingress"`, which avoids uploading a renewed PEM by hand. Read the
+   public-TCP section of that page first: the automatic mount can name only the
+   service's generated hostname, because a custom domain cannot be mapped to a
+   service that is not public for HTTP; the ingress shape and cert-manager's
+   ingress-shim are verified, but ACME HTTP-01 issuance for such a hostname is not,
+   and it needs the hostname's DNS to resolve to the HTTP ingress on port 80. An
+   uploaded pinned certificate remains the way to serve a custom SMTP hostname.
 4. If sending uses AWS, create a narrowly scoped role and OIDC trust for the
    exact service account. Register an operator binding for the exact project,
    environment, application and service. Copy the required permission policy

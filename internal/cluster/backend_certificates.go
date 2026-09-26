@@ -135,11 +135,28 @@ func (c *Client) ImportBackendIngressCertificate(ctx context.Context, t Target, 
 	return c.putBackendCertificate(ctx, t, service, hostname, secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], "ingress")
 }
 
+// A service published only over raw TCP keeps an owned ingress that carries a
+// hostname and TLS but no HTTP backend, so its automatic certificate mount
+// follows cert-manager renewals exactly like a public HTTP service does.
+func certificateOnlyIngress(svc spec.Service) bool {
+	if svc.Public || len(svc.PublicTCP) == 0 {
+		return false
+	}
+	for _, mount := range svc.CertificateMounts {
+		if mount.Source == "ingress" {
+			return true
+		}
+	}
+	return false
+}
+
 // The owned ingress chooses the source; callers never name arbitrary Secrets.
 func (c *Client) backendIngressSource(ctx context.Context, t Target, service, hostname string) (*corev1.Secret, error) {
 	svc, ok := t.Spec.Services[service]
-	if !ok || !svc.Public || !spec.ValidHostname(hostname) {
-		return nil, fmt.Errorf("ingress import requires this service's public HTTP certificate")
+	// A service published only over raw TCP terminates TLS itself and has no
+	// HTTP backend, but it still owns a certificate-only ingress to read from.
+	if !ok || (!svc.Public && len(svc.PublicTCP) == 0) || !spec.ValidHostname(hostname) {
+		return nil, fmt.Errorf("ingress import requires this service's public HTTP or public TCP certificate")
 	}
 	ingress, err := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID)).Get(ctx, service, metav1.GetOptions{})
 	if err != nil {

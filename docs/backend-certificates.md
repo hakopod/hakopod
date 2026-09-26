@@ -74,10 +74,10 @@ task after checking every retained revision that might need them.
 
 The same endpoint accepts `{"hostname":"mail.example.com","from_ingress":true}`
 instead of PEM values to snapshot the current certificate from this service's
-owned HTTP ingress. This supports an uploaded ingress certificate or one issued
+owned ingress. This supports an uploaded ingress certificate or one issued
 by cert-manager. The hostname must appear in that ingress's TLS hosts. Callers
 cannot select another service, namespace or arbitrary Secret. Services with only
-public TCP can upload a certificate managed outside Hakopod.
+public TCP can also upload a certificate managed outside Hakopod.
 
 The import endpoint and `--from-ingress` command still create pinned snapshots.
 To follow renewals automatically on a self-hosted installation, deploy the
@@ -99,7 +99,8 @@ and filesystem settings in the same service. `mail.example.com` must be a domain
 of this service and already appear on its active TLS ingress. The service needs
 an explicit TLS configuration or the installation's default TLS issuer. A mount
 has either `certificate` or `source`, never both. Automatic sources are disabled
-on Hakopod Cloud. TCP-only services can continue to upload pinned certificates.
+on Hakopod Cloud. A service published only over public TCP can use an automatic
+source too; see below. Pinned uploads remain available for any service.
 
 The existing reconciliation loop checks up to 50 applications per 15-second
 cycle, rotating one automatic-certificate service per application on each full
@@ -133,6 +134,87 @@ Use [SMTP readiness](readiness.md) to combine HTTP health with a real listener
 or STARTTLS check. Certificate renewal does not prove public routing, AWS access,
 mail authentication or outbound deliverability. Verify those separately before
 switching production traffic.
+
+### Services published only over public TCP
+
+`source = "ingress"` no longer requires `public = true`. A service with no public
+HTTP but at least one `public_tcp` listener and a `source = "ingress"` mount gets
+a certificate-only ingress, so it can follow renewals instead of having PEM files
+uploaded by hand forever. This fits a service that terminates TLS itself, such as
+an SMTP submission server or a tunnel server.
+
+```toml
+[services.tunnel]
+image = "example/tunnel:1"
+port = 7000
+public = false
+certificate_mounts = [
+  { source = "ingress", hostname = "tunnel-1a2b3c4d5e6f.apps.example.com", mount_path = "/certificates/tunnel" },
+]
+
+[[services.tunnel.public_tcp]]
+port = 7443
+target_port = 7000
+source_cidrs = ["0.0.0.0/0"]
+```
+
+That hostname is the service's generated hostname, not a custom domain. A
+TCP-only service can use only its generated hostname for an automatic
+certificate, because `domains` maps a custom hostname only to a service that is
+public for HTTP, so a custom hostname never reaches such a service's ingress TLS
+hosts and the deployment is refused with a message that the automatic
+certificate hostname must remain on this service's configured TLS ingress. The
+generated hostname has the shape `<service>-<twelve hex characters>.<the
+installation's application domain>`; Hakopod shows it as the service's URL on the
+dashboard service page and in the service status the API returns. To serve a
+custom hostname on a TCP-only service, upload a pinned certificate for it as
+described above; that path is unaffected by this constraint.
+
+The ingress Hakopod then owns carries a hostname and TLS but no HTTP backend:
+
+- `spec.rules` is exactly one entry with only a `host`, and no `http` block. The
+  ingress therefore routes no HTTP traffic and creates no backend. A rules-less
+  ingress is not an option; the API server rejects a spec with neither `rules`
+  nor `defaultBackend`, which is why the shape is a host-only rule.
+- `spec.tls` names the service's hostnames and the secret `hakopod-tls-<service>`,
+  with the `cert-manager.io/cluster-issuer` annotation, so cert-manager's existing
+  ingress-shim issues into it. The mount and renewal behavior described above is
+  then unchanged.
+- The ingress is created before the workload and is not deleted on each release,
+  so the certificate is not re-requested every deployment.
+
+Because `tls` itself still requires a public HTTP service, a TCP-only service
+takes its issuer from the installation's default TLS issuer. With no default
+issuer configured the ingress gets no TLS block and the mount reports that the
+hostname is not covered by the service's configured ingress TLS.
+
+Verified on a development cluster with cert-manager 1.21.2 and the HAProxy
+ingress controller 3.2.15: the API server accepts this shape; the controller
+creates no backend, does not restart, and logs one benign warning that HTTP rules
+for the host do not exist; cert-manager's ingress-shim issued a certificate for
+the shape in about twelve seconds with a matching SAN, and HAProxy loaded and
+served it. That run used a self-signed issuer, deliberately, to separate the
+ingress-shim question from ACME validation.
+
+Not verified: ACME HTTP-01 validation against an ingress with no `http` block.
+This is the plausible failure point, because the HTTP-01 solver works by
+injecting a temporary route for `/.well-known/acme-challenge/`. Hakopod only ever
+creates HTTP-01 solvers; there is no DNS-01 path. So for a public hostname the
+hostname's DNS must resolve to the HTTP ingress on port 80 for issuance to work
+at all, which is an operator DNS fact the platform cannot assert. Per-SNI
+certificate selection was also not discriminated in that run, because the probe
+ingress was the cluster's only TLS ingress and so doubled as the default
+certificate. Confirm issuance and SNI selection on your own installation before
+relying on automatic renewal for a public TCP hostname, and keep an uploaded
+pinned certificate as the fallback.
+
+Two operational notes. The first TLS ingress in a cluster with no existing
+certificate list triggers one full graceful HAProxy reload rather than a hitless
+runtime certificate update; later ones should use the runtime path. And on the
+very first release that introduces such a mount, if cert-manager has not finished
+issuing by the time the workload resolves the mount, that release fails with a
+message about the ingress certificate not having been issued or uploaded and
+succeeds on retry. This matches the existing behavior of the public HTTP path.
 
 `GET` on the same endpoint returns up to 64 historical certificate entries plus
 any active references outside that page, including the mount path, readiness,
