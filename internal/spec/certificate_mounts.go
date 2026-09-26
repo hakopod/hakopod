@@ -22,8 +22,8 @@ func validateCertificateMounts(service Service) error {
 	for _, mount := range service.CertificateMounts {
 		reference := mount.Certificate
 		if mount.Source != "" {
-			if mount.Source != "ingress" || mount.Certificate != "" || !service.Public {
-				return fmt.Errorf("certificate_mounts: source must be ingress on a public HTTP service, without a certificate reference")
+			if mount.Source != "ingress" || mount.Certificate != "" || (!service.Public && len(service.PublicTCP) == 0) {
+				return fmt.Errorf("certificate_mounts: source must be ingress on a service published over HTTP or public TCP, without a certificate reference")
 			}
 			reference = "ingress:" + mount.Hostname
 		} else if !runtimeName.MatchString(mount.Certificate) || strings.HasPrefix(mount.Certificate, "hp-auto-cert-") {

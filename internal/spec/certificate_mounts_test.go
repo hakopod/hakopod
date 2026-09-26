@@ -66,7 +66,24 @@ certificate_mounts=[{source='ingress',hostname='mail.example.com',mount_path='/c
 	if err != nil || !HasAutomaticCertificates(app) {
 		t.Fatal("automatic source rejected", err)
 	}
-	for _, body := range []string{strings.ReplaceAll(input, "public=true", "public=false"), strings.ReplaceAll(input, "source='ingress'", "source='arbitrary'"), strings.ReplaceAll(input, "source='ingress'", "source='ingress',certificate='manual'"), strings.ReplaceAll(input, "source='ingress'", "certificate='hp-auto-cert-reserved'")} {
+	tcpOnly := `name='tunnel'
+[services.gateway]
+image='example/tunnel:1'
+port=7000
+certificate_mounts=[{source='ingress',hostname='tunnel.example.com',mount_path='/certificates/tunnel'}]
+[[services.gateway.public_tcp]]
+port=7443
+target_port=7000
+source_cidrs=['0.0.0.0/0']
+`
+	tcpApp, err := Parse([]byte(tcpOnly))
+	if err != nil || !HasAutomaticCertificates(tcpApp) {
+		t.Fatal("automatic source rejected on a TCP-only service", err)
+	}
+	if _, err := Normalize(tcpApp); err != nil {
+		t.Fatal("TCP-only automatic mount rejected during normalization", err)
+	}
+	for _, body := range []string{strings.ReplaceAll(input, "public=true", "public=false"), strings.ReplaceAll(input, "source='ingress'", "source='arbitrary'"), strings.ReplaceAll(input, "source='ingress'", "source='ingress',certificate='manual'"), strings.ReplaceAll(input, "source='ingress'", "certificate='hp-auto-cert-reserved'"), tcpOnly[:strings.Index(tcpOnly, "[[services.gateway.public_tcp]]")]} {
 		if _, err := Parse([]byte(body)); err == nil {
 			t.Fatal("invalid source accepted")
 		}

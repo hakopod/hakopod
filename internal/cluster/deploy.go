@@ -41,7 +41,7 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		if !strings.Contains(svc.Image, "@sha256:") {
 			return Observation{}, fmt.Errorf("%s: deployment requires a resolved immutable image digest", name)
 		}
-		if svc.Public && c.options.AppDomain == "" {
+		if (svc.Public || certificateOnlyIngress(svc)) && c.options.AppDomain == "" {
 			return Observation{}, fmt.Errorf("%s: configure HAKOPOD_APP_DOMAIN before exposing a public service", name)
 		}
 	}
@@ -52,6 +52,14 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		return Observation{}, err
 	}
 	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
+		return Observation{}, err
+	}
+	// Delivery preflight reads the certificate this ingress carries, so the
+	// certificate-only ingress has to exist before validation runs. Applying it
+	// here is safe: it owns no workload and the apply is idempotent, so the
+	// reconcile below leaves it untouched. Only the apply moves early; deleting
+	// an ingress still waits until preflight has accepted the release.
+	if err := c.reconcileCertificateIngresses(ctx, target); err != nil {
 		return Observation{}, err
 	}
 	if err := c.ValidateDelivery(ctx, target); err != nil {
@@ -95,10 +103,8 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		if err := c.applyService(ctx, target, name, svc); err != nil {
 			return c.observationAfterFailure(target), err
 		}
-		if !svc.Public {
-			if err := c.deleteIngress(ctx, target, name); err != nil {
-				return c.observationAfterFailure(target), err
-			}
+		if err := c.reconcilePrivateIngress(ctx, target, name, svc); err != nil {
+			return c.observationAfterFailure(target), err
 		}
 	}
 	order, _ := spec.Order(target.Spec)
@@ -559,6 +565,13 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		}
 		wanted.Annotations = map[string]string{"haproxy.org/timeout-server": strconv.Itoa(svc.Serverless.StartupTimeoutSeconds+svc.Serverless.RequestTimeoutSeconds+10) + "s"}
 	}
+	if certificateOnlyIngress(svc) {
+		// The API server rejects an ingress with neither rules nor a default
+		// backend, and this service has no HTTP backend to route to, so carry
+		// the hostname alone. cert-manager reads only the TLS block and the
+		// issuer annotation; the proxy logs one benign missing-rules warning.
+		wanted.Spec.Rules = []networkingv1.IngressRule{{Host: c.hostname(t, name)}}
+	}
 	if svc.BackendHTTP2 {
 		// HAProxy speaks HTTP/1.1 to backends unless the ingress asks for h2, which gRPC needs.
 		if wanted.Annotations == nil {
@@ -600,6 +613,21 @@ func deleteOptions(meta metav1.Object) metav1.DeleteOptions {
 	return metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}}
 }
 
+// reconcilePrivateIngress runs before workloads for services without public
+// HTTP. A service published only over raw TCP that follows its ingress
+// certificate keeps a certificate-only ingress, created early so cert-manager
+// can issue before the workload mounts the certificate. Deleting it on every
+// release would re-request the certificate each time and hit ACME rate limits.
+func (c *Client) reconcilePrivateIngress(ctx context.Context, t Target, name string, svc spec.Service) error {
+	if svc.Public {
+		return nil
+	}
+	if certificateOnlyIngress(svc) {
+		return c.applyIngress(ctx, t, name, svc)
+	}
+	return c.deleteIngress(ctx, t, name)
+}
+
 func (c *Client) deleteIngress(ctx context.Context, t Target, name string) error {
 	if err := beforeStep(ctx, t); err != nil {
 		return err
@@ -616,6 +644,67 @@ func (c *Client) deleteIngress(ctx context.Context, t Target, name string) error
 		return err
 	}
 	return api.Delete(ctx, name, deleteOptions(current))
+}
+
+// Total budget for cert-manager to issue a certificate-only ingress certificate
+// on a first release. It is a hard bound: the release fails when it expires.
+const certificateIssueTimeout = 90 * time.Second
+
+// A service that mounts its own ingress certificate needs that ingress, and the
+// certificate behind it, before delivery preflight inspects the mount. Applying
+// the ingress early is idempotent and creates no workload.
+func (c *Client) reconcileCertificateIngresses(ctx context.Context, t Target) error {
+	for _, name := range spec.Names(t.Spec) {
+		svc := t.Spec.Services[name]
+		if !certificateOnlyIngress(svc) {
+			continue
+		}
+		if err := c.applyIngress(ctx, t, name, svc); err != nil {
+			return err
+		}
+		if err := c.waitIngressCertificate(ctx, t, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cert-manager issues into the ingress TLS Secret asynchronously, so a first
+// release waits a bounded time for it rather than failing until a later retry.
+func (c *Client) waitIngressCertificate(ctx context.Context, t Target, service string) error {
+	ingress, err := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID)).Get(ctx, service, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("%s: service ingress is unavailable", service)
+	}
+	hostname := c.hostname(t, service)
+	name := ""
+	for _, entry := range ingress.Spec.TLS {
+		for _, host := range entry.Hosts {
+			if host == hostname && entry.SecretName != "" {
+				name = entry.SecretName
+			}
+		}
+	}
+	if name == "" {
+		return fmt.Errorf("%s: configure a TLS issuer before mounting this service's ingress certificate", service)
+	}
+	api := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID))
+	deadline := time.Now().Add(certificateIssueTimeout)
+	for {
+		_, err := api.Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			return nil
+		}
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("%s: ingress certificate storage is unavailable", service)
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("%s: no certificate was issued for %s within %s; check that cert-manager is running and that %s resolves to this cluster", service, hostname, certificateIssueTimeout, hostname)
+		}
+		if err := sleepContext(ctx, 3*time.Second); err != nil {
+			return err
+		}
+	}
 }
 
 func (c *Client) applyHPA(ctx context.Context, t Target, name string, svc spec.Service) error {
