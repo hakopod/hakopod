@@ -213,15 +213,19 @@ alternative name.
 Hakopod only ever creates HTTP-01 solvers; there is no DNS-01 path. So for a
 public hostname the hostname's DNS must resolve to the HTTP ingress on port 80
 for issuance to work at all, which is an operator DNS fact the platform cannot
-assert. Per-SNI certificate selection was not discriminated in these runs,
-because the probe ingress was the cluster's only TLS ingress and so doubled as
-the default certificate. Confirm SNI selection on your own installation when
-several TLS ingresses exist, and keep an uploaded pinned certificate as the
-fallback for a hostname automatic issuance cannot cover.
+assert. Per-SNI certificate selection is also verified: with two
+certificate-only ingresses present, each with its own hostname and its own TLS
+secret, HAProxy serves each host its own leaf, confirmed by matching certificate
+serials on in-cluster handshakes. A handshake whose SNI matches no configured
+host receives the first certificate in the list rather than failing, because this
+deployment configures no default SSL certificate. Keep an uploaded pinned
+certificate as the fallback for a hostname automatic issuance cannot cover.
 
 Two operational notes. The first TLS ingress in a cluster with no existing
-certificate list triggers one full graceful HAProxy reload rather than a hitless
-runtime certificate update; later ones should use the runtime path. And on the
+certificate list triggers one full graceful HAProxy reload, because the
+certificate list file does not exist yet for a runtime update to edit. Every
+certificate after it is a hitless runtime update: adding a second such ingress
+produced one log line, no reload and no new worker process. And on the
 very first release that introduces such a mount, if cert-manager has not finished
 issuing by the time the workload resolves the mount, that release fails with a
 message about the ingress certificate not having been issued or uploaded and
