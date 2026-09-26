@@ -1512,6 +1512,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dns-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List DNS providers: full rows for administrators, names and kinds for a delegated project owner */
+        get: operations["listDNSProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dns-providers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Create or update a DNS provider credential */
+        put: operations["putDNSProvider"];
+        post?: never;
+        /** Delete a DNS provider credential that owns no records */
+        delete: operations["deleteDNSProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/domains": {
         parameters: {
             query?: never;
@@ -1538,6 +1573,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["verifyApplicationDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/domains/dns-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApplicationDNSProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/domains/dns-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createApplicationDNSRecords"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4267,6 +4334,74 @@ export interface components {
             deliveries: components["schemas"]["NotificationDelivery"][];
             email_available: boolean;
             encryption_ready: boolean;
+        };
+        /** @description A provider is installation-wide, or scoped to one project and one environment, never to a project alone. Credentials are never returned. */
+        DNSProvider: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "cloudflare";
+            project?: string;
+            environment?: string;
+            /** @description DNS zones this credential may write to. hakopod cannot see what a provider token really reaches, so this list is the enforceable boundary. Widening it requires re-entering the token. */
+            zone_filter: string[];
+            /** Format: int64 */
+            readonly revision: number;
+            enabled: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description What a non-administrator sees: name and kind only, never the zone filter. The application listing adds the id the record endpoint takes. */
+        DNSProviderSummary: {
+            id?: string;
+            name: string;
+            /** @enum {string} */
+            kind: "cloudflare";
+        };
+        DNSProviderInput: {
+            name?: string;
+            /** @enum {string} */
+            kind: "cloudflare";
+            project?: string;
+            environment?: string;
+            /** @description DNS zones this credential may write to. hakopod cannot see what a provider token really reaches, so this list is the enforceable boundary. Widening it requires re-entering the token. */
+            zone_filter: string[];
+            enabled?: boolean;
+            /**
+             * Format: int64
+             * @description Zero creates; the current revision updates.
+             */
+            expected_revision: number;
+            /** @description Required on create. Omit on update to keep the stored token; a changed name, kind or zone filter requires it again. */
+            credentials?: {
+                token: string;
+            };
+        };
+        DNSRecord: {
+            /** @enum {string} */
+            type: "TXT" | "CNAME";
+            name: string;
+            value: string;
+        };
+        /** @description One hostname's outcome. Records reaching a provider is not verification: the domain stays awaiting DNS until the verify step confirms it. */
+        DNSRecordResult: {
+            hostname: string;
+            /**
+             * @description created: written now. exists: identical records were already there. conflict: a different value occupies the name and replace_existing was false. failed: the provider refused or did not answer. skipped: not attempted, for a hostname this application is not awaiting verification for, or one left when the request ran out of time.
+             * @enum {string}
+             */
+            status: "created" | "exists" | "conflict" | "failed" | "skipped";
+            message: string;
+            records: components["schemas"]["DNSRecord"][];
+        };
+        DNSRecordsInput: {
+            provider_id: string;
+            /** @description Hostnames this application is already awaiting or holding verification for. */
+            hostnames: string[];
+            /** @description Overwrite a different value already at the record name. Without it such a name is reported as a conflict and left alone. */
+            replace_existing?: boolean;
         };
         Domain: {
             hostname: string;
@@ -9412,6 +9547,140 @@ export interface operations {
             };
         };
     };
+    listDNSProviders: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: (components["schemas"]["DNSProvider"] | components["schemas"]["DNSProviderSummary"])[];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putDNSProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DNSProviderInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DNSProvider"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DNSProvider"];
+                };
+            };
+            /** @description The revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteDNSProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project?: string;
+                    environment?: string;
+                    /** Format: int64 */
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description The provider still owns records, or its revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listApplicationDomains: {
         parameters: {
             query?: never;
@@ -9507,6 +9776,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Domain"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listApplicationDNSProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DNSProviderSummary"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createApplicationDNSRecords: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DNSRecordsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: components["schemas"]["DNSRecordResult"][];
+                    };
                 };
             };
             /** @description Error */

@@ -74,6 +74,7 @@ export const allowed = [
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
   /^deployment-secret-requirements$/,
   /^secret-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
+  /^dns-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
 ]
 
 export async function proxy({

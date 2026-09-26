@@ -79,6 +79,8 @@ export function parentNavigation(
       return { to: '/settings', search: { tab: parts[1] }, label: 'Back to settings' }
     if (parts[1] === 'secret-providers' && parts[2])
       return { to: '/settings/secret-providers', label: 'Back to providers' }
+    if (parts[1] === 'dns-providers' && parts[2])
+      return { to: '/settings/dns-providers', label: 'Back to DNS providers' }
     if (parts[1] === 'integrations' && parts[2])
       return { to: '/settings/integrations', label: 'Back to integrations' }
     return {
@@ -87,11 +89,13 @@ export function parentNavigation(
         tab:
           parts[1] === 'secret-providers'
             ? 'secret-providers'
-            : parts[1] === 'integrations'
-              ? 'github'
-              : parts[1] === 'host-access'
-                ? 'users'
-                : 'account',
+            : parts[1] === 'dns-providers'
+              ? 'dns-providers'
+              : parts[1] === 'integrations'
+                ? 'github'
+                : parts[1] === 'host-access'
+                  ? 'users'
+                  : 'account',
       },
       label: 'Back to settings',
     }

@@ -6,11 +6,24 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope, useResourceScope } from '../lib/scope'
+import type { components } from '../lib/api.generated'
 import type { Plan } from '../lib/types'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { DiffTable } from '../components/deploy-dialog'
 import { Button } from '../components/ui/button'
 import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+// The provider listing for an application deliberately carries no credential and
+// no zone filter, only the id, name and kind a chooser needs.
+type DNSProviderChoice = components['schemas']['DNSProviderSummary'] & { id: string }
+type RecordAction = { hostnames: string[]; truncated: boolean; replace: boolean }
+type RecordResult = components['schemas']['DNSRecordResult']
+const recordStatusCopy: Record<string, string> = {
+  created: 'Created at the provider',
+  exists: 'Already present, left as it is',
+  conflict: 'Something else is already at that name',
+  failed: 'Not created',
+  skipped: 'Skipped',
+}
 export const Route = createFileRoute('/applications/$applicationId/domains')({
   component: ApplicationDomains,
 })
@@ -36,6 +49,18 @@ function ApplicationDomains() {
       ),
     gcTime: 0,
   })
+  const dnsProviders = useQuery({
+    queryKey: ['application-dns-providers', applicationId],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/applications/{id}/domains/dns-providers', {
+          signal,
+          params: { path: { id: applicationId } },
+        }),
+      ),
+    enabled: scope.can('deployments:write'),
+    gcTime: 0,
+  })
   useResourceScope(application.data)
   const [hostname, setHostname] = useState('')
   const [service, setService] = useState('')
@@ -44,6 +69,9 @@ function ApplicationDomains() {
   const [plan, setPlan] = useState<Plan | null>(null)
   const [key, setKey] = useState('')
   const [domainAction, setDomainAction] = useState('')
+  const [recordAction, setRecordAction] = useState<RecordAction | null>(null)
+  const [recordResults, setRecordResults] = useState<RecordResult[] | null>(null)
+  const [recordProvider, setRecordProvider] = useState('')
   if (application.isPending || domains.isPending) return <Loading />
   if (application.error || domains.error || !application.data)
     return <ErrorState error={application.error || domains.error} />
@@ -53,6 +81,50 @@ function ApplicationDomains() {
     .map(([name]) => name)
   const selected = service || publicServices[0] || ''
   const canWrite = scope.can('deployments:write')
+  const providers: DNSProviderChoice[] = canWrite
+    ? (dnsProviders.data?.items || []).filter((item): item is DNSProviderChoice => Boolean(item.id))
+    : []
+  const provider = providers.find((item) => item.id === recordProvider) || providers[0]
+  const awaitingDNS = (domains.data?.items || []).filter((domain) => !domain.verified)
+  const conflicting = (recordResults || [])
+    .filter((result) => result.status === 'conflict')
+    .map((result) => result.hostname)
+  function reviewRecords(hostnames: string[], replace = false) {
+    setError('')
+    setRecordResults(replace ? recordResults : null)
+    setRecordProvider(provider?.id || '')
+    setRecordAction({
+      hostnames: hostnames.slice(0, 20),
+      truncated: hostnames.length > 20,
+      replace,
+    })
+    setKey(crypto.randomUUID())
+  }
+  async function createRecords() {
+    if (!recordAction || !recordProvider || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await unwrap(
+        client.POST('/applications/{id}/domains/dns-records', {
+          params: { path: { id: applicationId }, header: { 'Idempotency-Key': key } },
+          body: {
+            provider_id: recordProvider,
+            hostnames: recordAction.hostnames,
+            replace_existing: recordAction.replace,
+          },
+        }),
+      )
+      setRecordResults(result.results)
+      setRecordAction(null)
+      void cache.invalidateQueries({ queryKey: ['application', applicationId] })
+      await domains.refetch()
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   async function review(domain: string, target?: string) {
     setBusy(true)
     setError('')
@@ -86,7 +158,9 @@ function ApplicationDomains() {
   }
   return (
     <FormPage
-      title={plan ? 'Review domain changes' : `${app.name} domains`}
+      title={
+        plan ? 'Review domain changes' : recordAction ? 'Review DNS records' : `${app.name} domains`
+      }
       description="Prove domain ownership, review the application revision, then activate routing."
       breadcrumbs={[
         { label: 'Applications', to: `/projects/${encodeURIComponent(app.project)}` },
@@ -132,8 +206,144 @@ function ApplicationDomains() {
               <Note key={warning}>{warning}</Note>
             ))}
           </FormSection>
+        ) : recordAction ? (
+          <FormSection
+            title="Review DNS records"
+            description="The records that will be created at your DNS provider."
+          >
+            <Note>
+              Creating records is not verifying them. A provider accepting a record means it reached
+              that provider, not that it resolves yet, so these domains stay awaiting DNS until you
+              verify them.
+            </Note>
+            <label>
+              DNS provider
+              <SelectField
+                label="DNS provider"
+                value={recordProvider}
+                onValueChange={(value) => setRecordProvider(value)}
+                required
+                options={providers.map((item) => ({ value: item.id, label: item.name }))}
+              />
+            </label>
+            {recordAction.truncated && (
+              <Note>
+                At most 20 hostnames are written at a time. Run this again for the rest once these
+                are created.
+              </Note>
+            )}
+            {recordAction.hostnames.map((host) => {
+              const domain = domains.data?.items.find((item) => item.hostname === host)
+              const existing = (recordResults || []).find((result) => result.hostname === host)
+              return (
+                <div key={host} className="domain-record">
+                  <h3 className="break-all">{host}</h3>
+                  <dl className="service-definition-list">
+                    <div>
+                      <dt>TXT {domain?.verification_name}</dt>
+                      <dd className="break-text">
+                        <code>{domain?.verification_value}</code>
+                      </dd>
+                    </div>
+                    {Boolean(domain?.target) && (
+                      <div>
+                        <dt>CNAME {host}</dt>
+                        <dd className="break-text">
+                          <code>{domain?.target}</code>
+                        </dd>
+                      </div>
+                    )}
+                    {recordAction.replace && existing && (
+                      <div>
+                        <dt>Reported at that name</dt>
+                        <dd className="break-text">{existing.message}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              )
+            })}
+            {conflicting.some((host) => recordAction.hostnames.includes(host)) ? (
+              <label className="checkbox-row">
+                <Input
+                  type="checkbox"
+                  checked={recordAction.replace}
+                  onChange={(event) =>
+                    setRecordAction({ ...recordAction, replace: event.target.checked })
+                  }
+                />
+                Replace what is already at these names
+              </label>
+            ) : (
+              <p className="field-help">
+                Records that already exist are reported, never replaced. Replacing is offered once a
+                name is reported as taken by something else.
+              </p>
+            )}
+            {recordAction.replace && (
+              <Note>
+                Replacing overwrites the record that occupies each name above. hakopod does not read
+                that value back, so check it at your DNS provider first: anything else pointing at
+                those names stops working.
+              </Note>
+            )}
+          </FormSection>
         ) : (
           <>
+            {recordResults && (
+              <FormSection
+                title="DNS record results"
+                description="What your DNS provider reported for each hostname."
+              >
+                <Note>
+                  Records that were created have reached your DNS provider and have not propagated
+                  yet. These domains stay awaiting DNS; use Verify DNS once the records resolve.
+                </Note>
+                {recordResults.map((result) => (
+                  <div key={result.hostname} className="domain-record">
+                    <div className="section-toolbar">
+                      <div>
+                        <h3 className="break-all">{result.hostname}</h3>
+                        <p>{recordStatusCopy[result.status] || result.status}</p>
+                      </div>
+                    </div>
+                    {result.message && <p className="break-text m-0 text-sm">{result.message}</p>}
+                    {Boolean(result.records?.length) && (
+                      <>
+                        <p className="field-help">
+                          {result.status === 'created'
+                            ? 'These records are now at the provider.'
+                            : 'These are the records for this hostname; they were not written now.'}
+                        </p>
+                        <dl className="service-definition-list">
+                          {result.records?.map((record) => (
+                            <div key={`${record.type} ${record.name}`}>
+                              <dt>
+                                {record.type} {record.name}
+                              </dt>
+                              <dd className="break-text">
+                                <code>{record.value}</code>
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </>
+                    )}
+                  </div>
+                ))}
+                <div className="toolbar-actions">
+                  {canWrite && conflicting.length > 0 && (
+                    <Button disabled={busy} onClick={() => reviewRecords(conflicting, true)}>
+                      Review replacing {conflicting.length} taken name
+                      {conflicting.length === 1 ? '' : 's'}
+                    </Button>
+                  )}
+                  <Button disabled={busy} onClick={() => setRecordResults(null)}>
+                    Dismiss results
+                  </Button>
+                </div>
+              </FormSection>
+            )}
             <Note>
               Configured means ownership was verified and the mapping was accepted for routing.
               Deployment status, DNS resolution, and certificate readiness are reported separately.
@@ -143,6 +353,17 @@ function ApplicationDomains() {
               description="Saved domain mappings and ownership verification for this application."
               icon="globe"
             >
+              {canWrite && providers.length > 0 && awaitingDNS.length > 1 && (
+                <div className="toolbar-actions">
+                  <Button
+                    disabled={busy}
+                    onClick={() => reviewRecords(awaitingDNS.map((domain) => domain.hostname))}
+                  >
+                    Create DNS records for {awaitingDNS.length} domain
+                    {awaitingDNS.length === 1 ? '' : 's'} awaiting DNS
+                  </Button>
+                </div>
+              )}
               {!domains.data?.items.length ? (
                 <Empty
                   icon="globe"
@@ -193,6 +414,11 @@ function ApplicationDomains() {
                     </dl>
                     {canWrite && (
                       <div className="toolbar-actions">
+                        {providers.length > 0 && (
+                          <Button disabled={busy} onClick={() => reviewRecords([domain.hostname])}>
+                            Create DNS records
+                          </Button>
+                        )}
                         {!domain.verified && (
                           <Button
                             disabled={busy}
@@ -339,7 +565,24 @@ function ApplicationDomains() {
         {error && <ErrorState error={error} />}
       </div>
       <div className="form-footer">
-        {plan ? (
+        {recordAction ? (
+          <>
+            <Button disabled={busy} onClick={() => setRecordAction(null)}>
+              Back to domains
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !canWrite || !recordProvider}
+              onClick={() => void createRecords()}
+            >
+              {busy
+                ? 'Creating records…'
+                : recordAction.replace
+                  ? 'Replace and create DNS records'
+                  : 'Create DNS records'}
+            </Button>
+          </>
+        ) : plan ? (
           <>
             <Button disabled={busy} onClick={() => setPlan(null)}>
               Back to domains
