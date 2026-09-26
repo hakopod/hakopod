@@ -58,9 +58,17 @@ The available settings map to the same environment options used by the server:
 | `smtp.enabled`, `address`, `from` | `HAKOPOD_SMTP_ENABLED`, `HAKOPOD_SMTP_ADDRESS`, `HAKOPOD_SMTP_FROM` |
 | `smtp.security` (`starttls` by default, or `tls`) | `HAKOPOD_SMTP_SECURITY` |
 | `smtp.username`, `password_file` | `HAKOPOD_SMTP_USERNAME`, `HAKOPOD_SMTP_PASSWORD_FILE` |
+| `container_daemons.file` | `HAKOPOD_CONTAINER_DAEMONS_FILE` |
 | `backups.pg_dump_path` | `HAKOPOD_PG_DUMP_PATH` |
 | `backups.state_dir` | `HAKOPOD_BACKUP_STATE_DIR` |
 | `backups.managed_postgres` | `HAKOPOD_MANAGED_POSTGRES` |
+
+`container_daemons.file` points at the administrator file that approves container
+daemon bindings. Referenced from this TOML it follows the restricted-file rule
+above: mode `0600` or `0400` and at most 64 KiB. Startup refuses the file when a
+managed-cloud installation has no dedicated BYO node, because such an
+installation never grants a binding. See
+[container daemon access](container-daemon-access.md).
 
 Production dashboard origins require HTTPS. A non-loopback API listener requires
 TLS files or explicit trust in an HTTPS reverse proxy. Public ports are 1–65535;

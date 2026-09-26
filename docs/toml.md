@@ -65,6 +65,7 @@ DNS routing and certificate coverage are separate checks.
 | `public_tcp` | Up to 16 explicit TCP listeners per service, 64 per application: port, target_port and up to 16 source_cidrs; self-hosted only, using administrator-provisioned ingress ports |
 | `certificate_mounts` | Up to 4 service-owned certificate references with hostname and read-only mount_path; independent of HTTP TLS; `source = "ingress"` follows the service's ingress certificate instead of a pinned upload, and needs `public` or at least one `public_tcp` listener |
 | `aws_identity` | Name of an operator-approved AWS workload binding for this exact service |
+| `container_daemon` | Name of an operator-approved container daemon binding for this exact service; reserves the Docker client variables and a trust directory |
 | `size` | small; default resource profile below |
 | `resources` | Optional per-service CPU/memory requests and limits; overrides individual size defaults |
 | `replicas` | Per-service saved count; defaults to 1, allowed 1–20 (Cloud: at most 3) |
@@ -261,6 +262,30 @@ private CIDRs and TCP ports; a secret or environment variable grants no access.
 They also work for jobs and internal-only networks. Managed Cloud rejects this
 field. See [private database access](private-database-access.md) for administrator
 configuration, limits, revocation and availability.
+
+## Approved container daemons
+
+A service that creates containers can reference an administrator-approved
+container daemon reached over mutual TLS:
+
+```toml
+[services.worker]
+container_daemon = "runner-daemon"
+```
+
+This is an excerpt to add to an existing service table. One binding grants one
+exact project, environment, application and service. The service needs a network
+with external egress. Hakopod then manages the client configuration, so these six
+variables are rejected in `env`, `secrets` and `bindings`: `DOCKER_HOST`,
+`DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`, `DOCKER_CONFIG`, `DOCKER_API_VERSION`
+and `BUILDKIT_HOST`. The trust material is mounted read-only at the reserved
+directory `/var/run/secrets/hakopod/container-daemon`, and no `volume`, `mounts`,
+`certificate_mounts` or `temporary_mounts` path may overlap it in either
+direction. The field is refused on previews, actions pools, serverless services,
+jobs and scheduled jobs, and on a service transfer. Managed Cloud rejects it
+unless the installation has a dedicated BYO node. See
+[container daemon access](container-daemon-access.md) for administrator
+configuration, endpoint rules, what is injected and revocation.
 
 ## Named volumes and filesystem permissions
 

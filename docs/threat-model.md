@@ -65,6 +65,35 @@ NetworkPolicies have host-traffic limitations; see ADR 0002. Image-pull, node
 administration and cluster API traffic are platform operations, not workload
 egress privileges. There is no claim of encrypted east-west application traffic.
 
+## Container daemon access
+
+`container_daemon` does not change the boundaries above. No host path is mounted,
+no privileged container is created, no capability is added, and no cluster
+credential is handed to an application. The daemon is reached over the network
+with mutual TLS using material the operator supplies, and the endpoint validator
+refuses sockets and filesystem paths, plaintext schemes, hostnames, loopback,
+link-local and metadata addresses, the installer's pod and Service networks, and
+the Kubernetes API server address read from the server's own configuration.
+Egress is opened to that one address and port, as a `/32`, and to nothing else.
+
+What it does mean is equally plain. A granted service can create containers on a
+daemon that is effective root on its own host, and what those containers do is
+governed by that daemon, not by Hakopod. Two services granted the same daemon
+reach it with equal authority and can see, stop and delete each other's
+containers. The platform cannot enforce any isolation inside that daemon: the
+daemon's own API is the boundary, and nothing in this platform sits inside it.
+Choosing which host runs the daemon, what it will accept, and which services may
+reach it is the operator's responsibility, and approving a binding accepts it.
+
+The capability is available self-hosted, and on managed cloud only behind the
+dedicated customer-owned BYO node; a shared workload runtime is refused. It is
+refused on previews, service transfers, actions pools, serverless services, jobs
+and scheduled jobs. Revocation takes effect on the next deployment, because the
+grant is resolved again every time and nothing is cached; already-running pods
+keep their projected certificate until they are replaced, so urgent revocation
+must happen at the daemon. See [container daemon access](container-daemon-access.md).
+None of this has been exercised against a real daemon on a real cluster.
+
 ## Remaining release risks
 
 Local K3s kubeconfig is an operator credential; keep `.local` out of version

@@ -74,6 +74,9 @@ type operatorConfig struct {
 	AWS struct {
 		IdentitiesFile *string `toml:"identities_file"`
 	} `toml:"aws"`
+	ContainerDaemons struct {
+		File *string `toml:"file"`
+	} `toml:"container_daemons"`
 	Backups struct {
 		PGDumpPath      *string `toml:"pg_dump_path"`
 		StateDir        *string `toml:"state_dir"`
@@ -213,6 +216,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"smtp.username", "HAKOPOD_SMTP_USERNAME", c.SMTP.Username, false, false, false},
 		{"smtp.password_file", "HAKOPOD_SMTP_PASSWORD_FILE", c.SMTP.PasswordFile, true, true, true},
 		{"aws.identities_file", "HAKOPOD_AWS_IDENTITIES_FILE", c.AWS.IdentitiesFile, true, true, false},
+		{"container_daemons.file", "HAKOPOD_CONTAINER_DAEMONS_FILE", c.ContainerDaemons.File, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
 		{"backups.state_dir", "HAKOPOD_BACKUP_STATE_DIR", c.Backups.StateDir, false, false, false},
 		{"backups.managed_postgres", "HAKOPOD_MANAGED_POSTGRES", boolSetting(c.Backups.ManagedPostgres), false, false, false},
@@ -273,6 +277,12 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	}
 	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_DEDICATED_TCP_NODE") == "" && get("HAKOPOD_PUBLIC_TCP_PORTS") != "" {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
+	}
+	// Refuse the unusable combination at startup rather than once per deployment:
+	// a managed-cloud installation without the dedicated BYO node never grants a
+	// container daemon, so bindings configured there are dead configuration.
+	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_DEDICATED_TCP_NODE") == "" && get("HAKOPOD_CONTAINER_DAEMONS_FILE") != "" {
+		return nil, fmt.Errorf("managed-cloud installations cannot configure container daemon bindings without a dedicated BYO node")
 	}
 	if _, err := authConfigFrom(get); err != nil {
 		return nil, err
