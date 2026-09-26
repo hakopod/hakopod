@@ -196,17 +196,28 @@ the shape in about twelve seconds with a matching SAN, and HAProxy loaded and
 served it. That run used a self-signed issuer, deliberately, to separate the
 ingress-shim question from ACME validation.
 
-Not verified: ACME HTTP-01 validation against an ingress with no `http` block.
-This is the plausible failure point, because the HTTP-01 solver works by
-injecting a temporary route for `/.well-known/acme-challenge/`. Hakopod only ever
-creates HTTP-01 solvers; there is no DNS-01 path. So for a public hostname the
-hostname's DNS must resolve to the HTTP ingress on port 80 for issuance to work
-at all, which is an operator DNS fact the platform cannot assert. Per-SNI
-certificate selection was also not discriminated in that run, because the probe
-ingress was the cluster's only TLS ingress and so doubled as the default
-certificate. Confirm issuance and SNI selection on your own installation before
-relying on automatic renewal for a public TCP hostname, and keep an uploaded
-pinned certificate as the fallback.
+Verified: ACME HTTP-01 validation succeeds against an ingress with no `http`
+block. When the issuer configures an ingress class, the HTTP-01 solver does not
+insert a route into the certificate's own ingress. cert-manager provisions its
+own temporary solver pod, service and ingress for the challenge hostname and
+removes them once the challenge is valid, so the certificate-only ingress is read
+for its TLS block and never modified. Only an issuer that names an existing
+ingress instead of a class would behave otherwise. This was confirmed on the
+development cluster against a Pebble ACME server with an HTTP-01 solver on
+ingress class `haproxy`: the order reached `valid`, the challenge reported
+`DomainVerified` with HTTP-01 validation, a `cm-acme-http-solver-*` ingress,
+service and pod appeared and were cleaned up, the probe ingress stayed at
+generation 1, and the TLS secret was written with the host as its only subject
+alternative name.
+
+Hakopod only ever creates HTTP-01 solvers; there is no DNS-01 path. So for a
+public hostname the hostname's DNS must resolve to the HTTP ingress on port 80
+for issuance to work at all, which is an operator DNS fact the platform cannot
+assert. Per-SNI certificate selection was not discriminated in these runs,
+because the probe ingress was the cluster's only TLS ingress and so doubled as
+the default certificate. Confirm SNI selection on your own installation when
+several TLS ingresses exist, and keep an uploaded pinned certificate as the
+fallback for a hostname automatic issuance cannot cover.
 
 Two operational notes. The first TLS ingress in a cluster with no existing
 certificate list triggers one full graceful HAProxy reload rather than a hitless
