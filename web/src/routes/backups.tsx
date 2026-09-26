@@ -9,6 +9,7 @@ import { useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import {
   byteSize,
+  engineManaged,
   sourceLabel,
   useBackupDestinations,
   useBackupSchedules,
@@ -214,13 +215,21 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                             ? `…${item.object_key.slice(-47)}`
                             : item.object_key}
                         </code>
-                        <small className="field-help">{item.scope}</small>
+                        <small className="field-help">
+                          {item.scope}
+                          {engineManaged(item) ? ' · object prefix' : ''}
+                        </small>
                         {item.deletion_pending && (
                           <small className="field-help">Deletion pending</small>
                         )}
                       </td>
                       <td>{sourceLabel(item.source)}</td>
-                      <td>{byteSize(item.bytes)}</td>
+                      <td>
+                        {byteSize(item.bytes)}
+                        {engineManaged(item) && (
+                          <small className="field-help">Reported by the engine</small>
+                        )}
+                      </td>
                       <td>{timestamp(item.created_at)}</td>
                       <td>
                         <div className="toolbar-actions">
@@ -323,7 +332,11 @@ function RemoveArtifact({
         if (!open && !busy) onClose()
       }}
       title="Delete stored backup?"
-      description="This permanently deletes the encrypted object from the configured bucket."
+      description={
+        engineManaged(artifact)
+          ? 'This permanently deletes every object the database engine wrote under this prefix in the configured bucket.'
+          : 'This permanently deletes the encrypted object from the configured bucket.'
+      }
     >
       <form
         onSubmit={async (event) => {
@@ -355,7 +368,7 @@ function RemoveArtifact({
               <dd>{sourceLabel(artifact.source)}</dd>
             </div>
             <div>
-              <dt>Object</dt>
+              <dt>{engineManaged(artifact) ? 'Object prefix' : 'Object'}</dt>
               <dd className="break-text">
                 <code>{artifact.object_key}</code>
               </dd>

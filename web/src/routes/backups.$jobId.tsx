@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { timestamp, message } from '../lib/api'
-import { sourceLabel, byteSize } from '../lib/backups'
+import { sourceLabel, byteSize, engineManagedEngine } from '../lib/backups'
 import { FormPage, FormSection } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -46,6 +46,15 @@ function BackupJob() {
             </Button>
           )}
         </div>
+        {item.status === 'queued' &&
+          engineManagedEngine(item.source?.engine) &&
+          !item.cancel_requested && (
+            <p className="field-note">
+              Waiting on the database engine, which writes this backup to object storage itself.
+              Hakopod polls until it finishes and stops waiting after two hours. A queued job here
+              is not an idle one.
+            </p>
+          )}
         <dl className="service-definition-list">
           <div>
             <dt>Job ID</dt>

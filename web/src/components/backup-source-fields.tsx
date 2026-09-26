@@ -6,6 +6,7 @@ import {
   useBackupTargets,
   sourceKey,
   sourceFromTarget,
+  engineLabel,
   type BackupSource,
 } from '../lib/backups'
 import { ErrorState, Loading, Note } from './shared'
@@ -51,7 +52,7 @@ export function BackupSourceFields({
               label:
                 (item.kind === 'management'
                   ? 'Hakopod management database'
-                  : `${item.application_name || item.application_id} / ${item.service} · ${item.engine}`) +
+                  : `${item.application_name || item.application_id} / ${item.service} · ${engineLabel(item.engine)}`) +
                 (!item.available ? ' · unavailable' : ''),
               disabled: !item.available,
             })) ?? []),

@@ -5,11 +5,18 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
-import { byteSize, sourceKey, sourceLabel, useBackupTargets } from '../lib/backups'
+import {
+  byteSize,
+  engineLabel,
+  engineManaged,
+  sourceKey,
+  sourceLabel,
+  useBackupTargets,
+} from '../lib/backups'
 import type { components } from '../lib/api.generated'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { Button } from '../components/ui/button'
-import { Copy, ErrorState, Loading, Note } from '../components/shared'
+import { Copy, ErrorState, HeadingHelp, Loading, Note } from '../components/shared'
 export const Route = createFileRoute('/backups/artifacts/$artifactId/restore')({
   component: RestoreBackup,
 })
@@ -85,6 +92,13 @@ function RestoreBackup() {
               <dt>Size / format</dt>
               <dd>
                 {byteSize(item.bytes)} / {item.format}
+                {engineManaged(item) && (
+                  <HeadingHelp title="Size and format">
+                    The database engine wrote this backup to object storage itself and reported its
+                    size and file count. Hakopod listed the destination prefix and confirmed the
+                    objects are there; it did not read them.
+                  </HeadingHelp>
+                )}
               </dd>
             </div>
             <div>
@@ -93,10 +107,22 @@ function RestoreBackup() {
             </div>
             <div>
               <dt>Checksum</dt>
-              <dd className="break-text">
-                <code>{item.sha256}</code>
-                <Copy value={item.sha256} />
-              </dd>
+              {engineManaged(item) ? (
+                <dd>
+                  None. The database engine wrote this backup itself.
+                  <HeadingHelp title="Checksum">
+                    The bytes never passed through Hakopod, so there is no checksum to compute and
+                    no payload authentication to verify before this restore starts. Hakopod
+                    confirmed the objects exist in the destination rather than reading them, and the
+                    engine performs the restore from the objects it wrote.
+                  </HeadingHelp>
+                </dd>
+              ) : (
+                <dd className="break-text">
+                  <code>{item.sha256}</code>
+                  <Copy value={item.sha256 || ''} />
+                </dd>
+              )}
             </div>
           </dl>
         </FormSection>
@@ -148,7 +174,7 @@ function RestoreBackup() {
         ) : (
           <FormSection
             title="Target service"
-            description={`Only available ${item.source.engine} services are shown.`}
+            description={`Only available ${engineLabel(item.source.engine)} services are shown.`}
             icon="database"
           >
             <label>
