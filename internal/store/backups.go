@@ -332,7 +332,12 @@ func (s *Store) CancelBackupJob(ctx context.Context, p Principal, id string) (ba
 		return backup.Job{}, err
 	}
 	defer tx.Rollback(ctx)
-	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET cancel_requested=true,status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,finished_at=CASE WHEN status='queued' THEN now() ELSE finished_at END WHERE id=$1 RETURNING "+backupJobCols, id))
+	// A job parked while waiting on the engine is queued but not idle: the engine
+	// is writing objects. It stays queued so a worker re-claims it, stops the
+	// engine and records the outcome, instead of being declared cancelled while
+	// the engine keeps writing objects nothing would ever delete.
+	const idleQueued = "status='queued' AND engine_ref IS NULL"
+	j, err := scanBackupJob(tx.QueryRow(ctx, "UPDATE backup_jobs SET cancel_requested=true,status=CASE WHEN "+idleQueued+" THEN 'cancelled' ELSE status END,finished_at=CASE WHEN "+idleQueued+" THEN now() ELSE finished_at END WHERE id=$1 RETURNING "+backupJobCols, id))
 	if err != nil {
 		return j, err
 	}
