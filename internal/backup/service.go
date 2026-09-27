@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"filippo.io/age"
@@ -332,11 +331,11 @@ func (s *Service) restore(ctx context.Context, j Job) error {
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return fmt.Errorf("backup staging directory must be private (0700)")
 	}
-	var disk syscall.Statfs_t
-	if err = syscall.Statfs(directory, &disk); err != nil {
+	avail, known, err := availableDiskSpace(directory)
+	if err != nil {
 		return fmt.Errorf("backup staging free space is unavailable")
 	}
-	if uint64(disk.Bavail)*uint64(disk.Bsize) < uint64(a.Bytes)+(512<<20) {
+	if known && avail < uint64(a.Bytes)+(512<<20) {
 		return fmt.Errorf("restore needs space for the encrypted artifact plus 512 MiB free")
 	}
 	file, err := os.CreateTemp(directory, "hp-backup-*.age")
