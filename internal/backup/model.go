@@ -24,17 +24,37 @@ type Authority struct {
 }
 
 type Source struct {
-	Kind          string `json:"kind"`
-	ApplicationID string `json:"application_id,omitempty"`
-	Service       string `json:"service,omitempty"`
-	Engine        string `json:"engine"`
-	Database      string `json:"database,omitempty"`
+	ExternalName      string `json:"external_name,omitempty"`
+	ManagedDatabaseID string `json:"managed_database_id,omitempty"`
+	Kind              string `json:"kind"`
+	ApplicationID     string `json:"application_id,omitempty"`
+	Service           string `json:"service,omitempty"`
+	Engine            string `json:"engine"`
+	Database          string `json:"database,omitempty"`
 }
 
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,62}$`)
 var identifierID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 func (s Source) Validate() error {
+	if s.Kind == "docker_import" {
+		if !identifier.MatchString(s.ExternalName) || s.ManagedDatabaseID != "" || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis") {
+			return fmt.Errorf("%w: invalid Docker archive source", ErrInput)
+		}
+		return nil
+	}
+	if s.ExternalName != "" {
+		return fmt.Errorf("%w: external_name only belongs to imported archives", ErrInput)
+	}
+	if s.Kind == "managed_database" {
+		if !identifierID.MatchString(s.ManagedDatabaseID) || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis") {
+			return fmt.Errorf("%w: choose a managed PostgreSQL or Redis database", ErrInput)
+		}
+		return nil
+	}
+	if s.ManagedDatabaseID != "" {
+		return fmt.Errorf("%w: managed database identity does not match source kind", ErrInput)
+	}
 	if s.Kind == "management" {
 		if s.Engine != "postgresql" || s.ApplicationID != "" || s.Service != "" || s.Database != "" {
 			return fmt.Errorf("%w: management source only accepts engine postgresql", ErrInput)
@@ -109,6 +129,8 @@ func (d DestinationInput) Validate() error {
 }
 
 type Target struct {
+	SourceVersion       string `json:"source_version,omitempty"`
+	ManagedDatabaseName string `json:"managed_database_name,omitempty"`
 	Source
 	ApplicationName    string `json:"application_name,omitempty"`
 	Revision           int64  `json:"revision"`
@@ -120,6 +142,10 @@ type Target struct {
 }
 
 type Artifact struct {
+	SourceVersion   string     `json:"source_version,omitempty"`
+	SourceRevision  int64      `json:"source_revision,omitempty"`
+	CapturedAt      *time.Time `json:"captured_at,omitempty"`
+	VerifiedAt      *time.Time `json:"verified_at,omitempty"`
 	ID              string     `json:"id"`
 	JobID           string     `json:"job_id"`
 	DestinationID   string     `json:"destination_id"`
@@ -249,6 +275,9 @@ type Repository interface {
 }
 
 func Scope(source Source) string {
+	if source.Engine == "redis" {
+		return "Redis RDB snapshots preserve values and absolute expiry. Each primary shard is captured consistently; different shards have different recovery points. Excludes server configuration, cluster membership, users and access-control lists. Redis Cluster requires a cluster-aware client."
+	}
 	if source.Kind == "management" {
 		return "Logical PostgreSQL dump of the Hakopod management database, including accounts, encrypted credential records, specifications, jobs and audit history. Excludes the authentication encryption key, installer configuration, Kubernetes state and secrets, application databases, persistent volumes, images and external object data. Recovery requires separately preserved encryption key/configuration and deliberate offline reconnection; restoring this dump does not activate another control plane."
 	}
@@ -259,4 +288,11 @@ func Scope(source Source) string {
 		return "Logical MySQL dump of one database using single-transaction/quick, including tables, triggers, routines and events. Transactional InnoDB data is consistent; concurrent DDL and non-transactional tables require an operator maintenance window. Excludes server users, grants, global settings, binlogs and point-in-time recovery."
 	}
 	return "PostgreSQL custom-format logical dump of one database. Includes schema and data; excludes global roles, tablespaces, server configuration, WAL and point-in-time recovery. Restores without original ownership or ACLs into a new database owned by the target connection user."
+}
+
+func RestoreConfirmation(t Target) string {
+	if t.Kind == "managed_database" {
+		return t.ManagedDatabaseName
+	}
+	return t.Database
 }

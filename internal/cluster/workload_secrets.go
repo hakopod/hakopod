@@ -99,6 +99,15 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 		}
 	}
 	for key, binding := range s.Bindings {
+		if binding.ManagedDatabase != "" {
+			value, ok := t.databaseConnections[name][key]
+			if !ok {
+				return fmt.Errorf("managed database connection snapshot is incomplete")
+			}
+			data[key] = []byte(value.URL)
+			total += len(key) + len(data[key])
+			continue
+		}
 		var password []byte
 		if binding.Password != nil {
 			var ok bool

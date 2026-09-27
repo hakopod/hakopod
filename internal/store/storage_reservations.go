@@ -11,10 +11,10 @@ import (
 // applications retain their reservation until an operator verifies reclamation.
 // Kubernetes PVC requests alone do not enforce physical filesystem limits.
 func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, next spec.Application, migrationCredit ...int64) error {
-	if s.StorageBudget == nil {
+	if s.StorageBudget == nil && s.StorageBudgetTx == nil {
 		return nil
 	}
-	limit, err := s.StorageBudget(ctx, a.Project, a.Environment)
+	limit, err := s.storageBudgetTx(ctx, tx, a.Project, a.Environment)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 		}
 	}
 	var total int64
-	if err = tx.QueryRow(ctx, "SELECT COALESCE(sum(size_gib),0) FROM storage_reservations WHERE project=$1 AND environment=$2", a.Project, a.Environment).Scan(&total); err != nil {
+	if err = tx.QueryRow(ctx, "SELECT COALESCE((SELECT sum(size_gib) FROM storage_reservations WHERE project=$1 AND environment=$2),0)+COALESCE((SELECT sum(reserved_storage_gib) FROM managed_databases WHERE project=$1 AND environment=$2 AND deleted_at IS NULL),0)", a.Project, a.Environment).Scan(&total); err != nil {
 		return err
 	}
 	credit := int64(0)
@@ -70,4 +70,14 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 		return fmt.Errorf("workspace storage quota is %d GiB; %d GiB requested including retained volumes", limit, total)
 	}
 	return nil
+}
+
+func (s *Store) storageBudgetTx(ctx context.Context, tx pgx.Tx, project, environment string) (int64, error) {
+	if s.StorageBudgetTx != nil {
+		return s.StorageBudgetTx(ctx, tx, project, environment)
+	}
+	if s.StorageBudget == nil {
+		return 0, nil
+	}
+	return s.StorageBudget(ctx, project, environment)
 }

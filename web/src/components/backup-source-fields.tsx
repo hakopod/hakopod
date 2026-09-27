@@ -52,7 +52,9 @@ export function BackupSourceFields({
               label:
                 (item.kind === 'management'
                   ? 'Hakopod management database'
-                  : `${item.application_name || item.application_id} / ${item.service} · ${engineLabel(item.engine)}`) +
+                  : item.kind === 'managed_database'
+                    ? `${item.application_name || item.managed_database_id} · ${engineLabel(item.engine)}`
+                    : `${item.application_name || item.application_id} / ${item.service} · ${engineLabel(item.engine)}`) +
                 (!item.available ? ' · unavailable' : ''),
               disabled: !item.available,
             })) ?? []),

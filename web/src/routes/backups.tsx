@@ -215,10 +215,8 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                             ? `…${item.object_key.slice(-47)}`
                             : item.object_key}
                         </code>
-                        <small className="field-help">
-                          {item.scope}
-                          {engineManaged(item) ? ' · object prefix' : ''}
-                        </small>
+                        <HeadingHelp title="Recovery scope">{item.scope}</HeadingHelp>
+                        {engineManaged(item) && <small className="field-help">Object prefix</small>}
                         {item.deletion_pending && (
                           <small className="field-help">Deletion pending</small>
                         )}
@@ -238,13 +236,14 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                               Restore
                             </Button>
                           ) : (
-                            <Link
-                              className="button button-sm"
-                              to="/backups/artifacts/$artifactId/restore"
-                              params={{ artifactId: item.id }}
-                            >
-                              Restore
-                            </Link>
+                            <Button asChild size="sm">
+                              <Link
+                                to="/backups/artifacts/$artifactId/restore"
+                                params={{ artifactId: item.id }}
+                              >
+                                Restore
+                              </Link>
+                            </Button>
                           )}
                           <Button
                             size="sm"
@@ -252,6 +251,7 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                             disabled={item.deletion_pending}
                             onClick={() => setRemove(item)}
                           >
+                            <Icon name="trash" />
                             Delete
                           </Button>
                         </div>
@@ -272,14 +272,12 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                       </td>
                       <td>{timestamp(item.created_at)}</td>
                       <td>
-                        <Link
-                          className="button button-sm button-ghost"
-                          to="/backups/$jobId"
-                          params={{ jobId: item.id }}
-                        >
-                          Inspect
-                          <Icon name="chevron" size={14} />
-                        </Link>
+                        <Button asChild size="sm" variant="ghost">
+                          <Link to="/backups/$jobId" params={{ jobId: item.id }}>
+                            Inspect
+                            <Icon name="chevron" size={14} />
+                          </Link>
+                        </Button>
                       </td>
                     </tr>
                   ))}

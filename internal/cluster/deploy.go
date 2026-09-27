@@ -72,6 +72,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
+	if err := c.snapshotDatabaseBindings(ctx, &target); err != nil {
+		return Observation{}, err
+	}
 	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
 		return Observation{}, err
 	}
@@ -256,6 +259,13 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	api := c.kube.CoreV1().Namespaces()
 	current, err := api.Get(ctx, ns, metav1.GetOptions{})
 	labels := labelsFor(t, "")
+	for _, svc := range t.Spec.Services {
+		for _, b := range svc.Bindings {
+			if b.ManagedDatabase != "" {
+				labels["hakopod.io/database-access-"+b.ManagedDatabase] = "true"
+			}
+		}
+	}
 	labels[scopeKey] = scopeLabel(t.Project, t.Environment)
 	labels["pod-security.kubernetes.io/enforce"] = "restricted"
 	labels["pod-security.kubernetes.io/enforce-version"] = "v1.35"
@@ -272,6 +282,11 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 	} else if err == nil {
 		if err := owned(current, t); err != nil {
 			return err
+		}
+		for key := range current.Labels {
+			if strings.HasPrefix(key, "hakopod.io/database-access-") {
+				delete(current.Labels, key)
+			}
 		}
 		for key, value := range labels {
 			current.Labels[key] = value

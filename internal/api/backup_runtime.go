@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -109,6 +110,13 @@ func (r *backupRuntime) Targets(ctx context.Context) ([]backup.Target, error) {
 		result = append(result, management)
 
 	}
+	databases, err := r.server.Store.BackupManagedDatabases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range databases {
+		result = append(result, managedBackupTarget(d))
+	}
 	applications, err := r.server.Store.BackupApplications(ctx)
 	if err != nil {
 		return nil, err
@@ -137,6 +145,9 @@ func (r *backupRuntime) Resolve(ctx context.Context, source backup.Source) (back
 	target := backup.Target{Source: source}
 	if err := source.Validate(); err != nil {
 		return target, err
+	}
+	if source.Kind == "managed_database" {
+		return r.resolveManagedDatabase(ctx, source)
 	}
 	if source.Kind == "management" {
 		if r.config.ManagedPostgres {
@@ -197,8 +208,23 @@ func (r *backupRuntime) Resolve(ctx context.Context, source backup.Source) (back
 	target.Pod = options.Pod
 	target.PodUID = string(uid)
 	target.Available = true
+	if source.Engine == "postgresql" {
+		var version bytes.Buffer
+		if err = r.execute(ctx, target, postgresVersionScript, nil, &version); err != nil {
+			return target, err
+		}
+		number, err := strconv.Atoi(strings.TrimSpace(version.String()))
+		if err != nil || number < 100000 || number > 999999 {
+			return target, fmt.Errorf("PostgreSQL source version could not be verified")
+		}
+		target.SourceVersion = strconv.Itoa(number / 10000)
+	}
 	return target, nil
 }
+
+const postgresVersionScript = `set -eu
+export PGPASSWORD="${POSTGRES_PASSWORD:?database password is unavailable}"
+exec psql --host=127.0.0.1 --port=5432 --username="${POSTGRES_USER:-postgres}" --dbname="$1" --no-password -Atc 'SHOW server_version_num'`
 
 const postgresDumpScript = `set -eu
 export PGPASSWORD="${POSTGRES_PASSWORD:?database password is unavailable}"
@@ -225,6 +251,9 @@ export MYSQL_PWD="${MYSQL_ROOT_PASSWORD:?fresh-database restore requires the con
 exec mysql --no-defaults --host=127.0.0.1 --port=3306 --user=root --binary-mode --database="$1"`
 
 func (r *backupRuntime) Dump(ctx context.Context, target backup.Target, out io.Writer) error {
+	if target.Kind == "managed_database" {
+		return r.dumpManagedDatabase(ctx, target, out)
+	}
 	if target.Kind == "management" {
 		if r.config.ManagedPostgres {
 			if err := r.server.Cluster.ManagedBackupDump(ctx, target.Pod, types.UID(target.PodUID), target.RuntimeFingerprint, out); err != nil {
@@ -284,6 +313,9 @@ func managementDumpEnvironment(dsn string) ([]string, error) {
 	return environment, nil
 }
 func (r *backupRuntime) Restore(ctx context.Context, target backup.Target, input io.Reader) error {
+	if target.Kind == "managed_database" {
+		return r.restoreManagedDatabase(ctx, target, input)
+	}
 	if target.Kind != "database" || len(target.Database) != 31 || !strings.HasPrefix(target.Database, "hp_restore_") {
 		return fmt.Errorf("restore target must be a generated fresh database")
 	}

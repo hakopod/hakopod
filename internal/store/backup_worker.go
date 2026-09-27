@@ -171,9 +171,17 @@ func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, messa
 		if status != "succeeded" || a.Bytes < 1 || (len(a.SHA256) != 64 && !engineManaged) {
 			return backup.ErrInput
 		}
-		_, err = tx.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", a.ID, j.ID, a.DestinationID, JSON(a.Source), a.ObjectKey, a.SHA256, a.Bytes, a.Format, a.Scope, j.ScheduleID)
+		_, err = tx.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,source_revision,captured_at,verified_at,source_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)", a.ID, j.ID, a.DestinationID, JSON(a.Source), a.ObjectKey, a.SHA256, a.Bytes, a.Format, a.Scope, j.ScheduleID, a.SourceRevision, a.CapturedAt, a.VerifiedAt, a.SourceVersion)
 		if err != nil {
 			return err
+		}
+		if a.Source.Kind == "managed_database" {
+			if a.SourceRevision < 1 || a.CapturedAt == nil || a.VerifiedAt == nil || a.VerifiedAt.Before(*a.CapturedAt) {
+				return backup.ErrInput
+			}
+			if _, err = tx.Exec(ctx, "INSERT INTO managed_database_backup_verifications(artifact_id,database_id,revision,captured_at,verified_at,sha256) VALUES($1,$2,$3,$4,$5,$6)", a.ID, a.Source.ManagedDatabaseID, a.SourceRevision, a.CapturedAt, a.VerifiedAt, a.SHA256); err != nil {
+				return err
+			}
 		}
 		j.ArtifactID = a.ID
 		j.Bytes = a.Bytes

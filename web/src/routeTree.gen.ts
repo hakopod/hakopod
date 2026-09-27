@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlarmsRouteImport } from './routes/alarms'
 import { Route as BackupsRouteImport } from './routes/backups'
 import { Route as BuildsRouteImport } from './routes/builds'
+import { Route as DatabasesRouteImport } from './routes/databases'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
 import { Route as NetworksRouteImport } from './routes/networks'
 import { Route as RequestsRouteImport } from './routes/requests'
@@ -28,6 +29,9 @@ import { Route as BackupsJobIdRouteImport } from './routes/backups.$jobId'
 import { Route as BackupsNewRouteImport } from './routes/backups.new'
 import { Route as BuildsBuildIdRouteImport } from './routes/builds.$buildId'
 import { Route as BuildsNewRouteImport } from './routes/builds.new'
+import { Route as DatabasesDatabaseIdRouteImport } from './routes/databases.$databaseId'
+import { Route as DatabasesImportRouteImport } from './routes/databases.import'
+import { Route as DatabasesNewRouteImport } from './routes/databases.new'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
 import { Route as LoginDeviceRouteImport } from './routes/login.device'
 import { Route as LoginForgotRouteImport } from './routes/login.forgot'
@@ -55,6 +59,9 @@ import { Route as ApplicationsApplicationIdSourceRouteImport } from './routes/ap
 import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.destinations.new'
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
+import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databases.$databaseId.connect'
+import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
+import { Route as DatabasesDatabaseIdResizeRouteImport } from './routes/databases.$databaseId.resize'
 import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
@@ -96,6 +103,11 @@ const BackupsRoute = BackupsRouteImport.update({
 const BuildsRoute = BuildsRouteImport.update({
   id: '/builds',
   path: '/builds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DatabasesRoute = DatabasesRouteImport.update({
+  id: '/databases',
+  path: '/databases',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InfrastructureRoute = InfrastructureRouteImport.update({
@@ -173,6 +185,21 @@ const BuildsNewRoute = BuildsNewRouteImport.update({
   id: '/new',
   path: '/new',
   getParentRoute: () => BuildsRoute,
+} as any)
+const DatabasesDatabaseIdRoute = DatabasesDatabaseIdRouteImport.update({
+  id: '/$databaseId',
+  path: '/$databaseId',
+  getParentRoute: () => DatabasesRoute,
+} as any)
+const DatabasesImportRoute = DatabasesImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => DatabasesRoute,
+} as any)
+const DatabasesNewRoute = DatabasesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => DatabasesRoute,
 } as any)
 const DeploymentsDeploymentIdRoute = DeploymentsDeploymentIdRouteImport.update({
   id: '/deployments/$deploymentId',
@@ -315,6 +342,24 @@ const BuildsBuildIdEditRoute = BuildsBuildIdEditRouteImport.update({
   path: '/edit',
   getParentRoute: () => BuildsBuildIdRoute,
 } as any)
+const DatabasesDatabaseIdConnectRoute =
+  DatabasesDatabaseIdConnectRouteImport.update({
+    id: '/connect',
+    path: '/connect',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
+const DatabasesDatabaseIdRecoverRoute =
+  DatabasesDatabaseIdRecoverRouteImport.update({
+    id: '/recover',
+    path: '/recover',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
+const DatabasesDatabaseIdResizeRoute =
+  DatabasesDatabaseIdResizeRouteImport.update({
+    id: '/resize',
+    path: '/resize',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const InfrastructureRegistriesNameRoute =
   InfrastructureRegistriesNameRouteImport.update({
     id: '/registries/$name',
@@ -449,6 +494,7 @@ export interface FileRoutesByFullPath {
   '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
+  '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
   '/requests': typeof RequestsRoute
@@ -464,6 +510,9 @@ export interface FileRoutesByFullPath {
   '/backups/new': typeof BackupsNewRoute
   '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
   '/builds/new': typeof BuildsNewRoute
+  '/databases/$databaseId': typeof DatabasesDatabaseIdRouteWithChildren
+  '/databases/import': typeof DatabasesImportRoute
+  '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
@@ -491,6 +540,9 @@ export interface FileRoutesByFullPath {
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
+  '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
@@ -519,6 +571,7 @@ export interface FileRoutesByTo {
   '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
+  '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
   '/requests': typeof RequestsRoute
@@ -534,6 +587,9 @@ export interface FileRoutesByTo {
   '/backups/new': typeof BackupsNewRoute
   '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
   '/builds/new': typeof BuildsNewRoute
+  '/databases/$databaseId': typeof DatabasesDatabaseIdRouteWithChildren
+  '/databases/import': typeof DatabasesImportRoute
+  '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
@@ -561,6 +617,9 @@ export interface FileRoutesByTo {
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
+  '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
@@ -590,6 +649,7 @@ export interface FileRoutesById {
   '/alarms': typeof AlarmsRouteWithChildren
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
+  '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
   '/requests': typeof RequestsRoute
@@ -605,6 +665,9 @@ export interface FileRoutesById {
   '/backups/new': typeof BackupsNewRoute
   '/builds/$buildId': typeof BuildsBuildIdRouteWithChildren
   '/builds/new': typeof BuildsNewRoute
+  '/databases/$databaseId': typeof DatabasesDatabaseIdRouteWithChildren
+  '/databases/import': typeof DatabasesImportRoute
+  '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
@@ -632,6 +695,9 @@ export interface FileRoutesById {
   '/backups/destinations/new': typeof BackupsDestinationsNewRoute
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
+  '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
+  '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
@@ -662,6 +728,7 @@ export interface FileRouteTypes {
     | '/alarms'
     | '/backups'
     | '/builds'
+    | '/databases'
     | '/infrastructure'
     | '/networks'
     | '/requests'
@@ -677,6 +744,9 @@ export interface FileRouteTypes {
     | '/backups/new'
     | '/builds/$buildId'
     | '/builds/new'
+    | '/databases/$databaseId'
+    | '/databases/import'
+    | '/databases/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/forgot'
@@ -704,6 +774,9 @@ export interface FileRouteTypes {
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
+    | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/recover'
+    | '/databases/$databaseId/resize'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
@@ -732,6 +805,7 @@ export interface FileRouteTypes {
     | '/alarms'
     | '/backups'
     | '/builds'
+    | '/databases'
     | '/infrastructure'
     | '/networks'
     | '/requests'
@@ -747,6 +821,9 @@ export interface FileRouteTypes {
     | '/backups/new'
     | '/builds/$buildId'
     | '/builds/new'
+    | '/databases/$databaseId'
+    | '/databases/import'
+    | '/databases/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/forgot'
@@ -774,6 +851,9 @@ export interface FileRouteTypes {
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
+    | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/recover'
+    | '/databases/$databaseId/resize'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
@@ -802,6 +882,7 @@ export interface FileRouteTypes {
     | '/alarms'
     | '/backups'
     | '/builds'
+    | '/databases'
     | '/infrastructure'
     | '/networks'
     | '/requests'
@@ -817,6 +898,9 @@ export interface FileRouteTypes {
     | '/backups/new'
     | '/builds/$buildId'
     | '/builds/new'
+    | '/databases/$databaseId'
+    | '/databases/import'
+    | '/databases/new'
     | '/deployments/$deploymentId'
     | '/login/device'
     | '/login/forgot'
@@ -844,6 +928,9 @@ export interface FileRouteTypes {
     | '/backups/destinations/new'
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
+    | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/recover'
+    | '/databases/$databaseId/resize'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
@@ -873,6 +960,7 @@ export interface RootRouteChildren {
   AlarmsRoute: typeof AlarmsRouteWithChildren
   BackupsRoute: typeof BackupsRouteWithChildren
   BuildsRoute: typeof BuildsRouteWithChildren
+  DatabasesRoute: typeof DatabasesRouteWithChildren
   InfrastructureRoute: typeof InfrastructureRouteWithChildren
   NetworksRoute: typeof NetworksRouteWithChildren
   RequestsRoute: typeof RequestsRoute
@@ -922,6 +1010,13 @@ declare module '@tanstack/react-router' {
       path: '/builds'
       fullPath: '/builds'
       preLoaderRoute: typeof BuildsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/databases': {
+      id: '/databases'
+      path: '/databases'
+      fullPath: '/databases'
+      preLoaderRoute: typeof DatabasesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/infrastructure': {
@@ -1028,6 +1123,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/builds/new'
       preLoaderRoute: typeof BuildsNewRouteImport
       parentRoute: typeof BuildsRoute
+    }
+    '/databases/$databaseId': {
+      id: '/databases/$databaseId'
+      path: '/$databaseId'
+      fullPath: '/databases/$databaseId'
+      preLoaderRoute: typeof DatabasesDatabaseIdRouteImport
+      parentRoute: typeof DatabasesRoute
+    }
+    '/databases/import': {
+      id: '/databases/import'
+      path: '/import'
+      fullPath: '/databases/import'
+      preLoaderRoute: typeof DatabasesImportRouteImport
+      parentRoute: typeof DatabasesRoute
+    }
+    '/databases/new': {
+      id: '/databases/new'
+      path: '/new'
+      fullPath: '/databases/new'
+      preLoaderRoute: typeof DatabasesNewRouteImport
+      parentRoute: typeof DatabasesRoute
     }
     '/deployments/$deploymentId': {
       id: '/deployments/$deploymentId'
@@ -1217,6 +1333,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/builds/$buildId/edit'
       preLoaderRoute: typeof BuildsBuildIdEditRouteImport
       parentRoute: typeof BuildsBuildIdRoute
+    }
+    '/databases/$databaseId/connect': {
+      id: '/databases/$databaseId/connect'
+      path: '/connect'
+      fullPath: '/databases/$databaseId/connect'
+      preLoaderRoute: typeof DatabasesDatabaseIdConnectRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
+    '/databases/$databaseId/recover': {
+      id: '/databases/$databaseId/recover'
+      path: '/recover'
+      fullPath: '/databases/$databaseId/recover'
+      preLoaderRoute: typeof DatabasesDatabaseIdRecoverRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
+    '/databases/$databaseId/resize': {
+      id: '/databases/$databaseId/resize'
+      path: '/resize'
+      fullPath: '/databases/$databaseId/resize'
+      preLoaderRoute: typeof DatabasesDatabaseIdResizeRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
     }
     '/infrastructure/registries/$name': {
       id: '/infrastructure/registries/$name'
@@ -1436,6 +1573,37 @@ const BuildsRouteChildren: BuildsRouteChildren = {
 const BuildsRouteWithChildren =
   BuildsRoute._addFileChildren(BuildsRouteChildren)
 
+interface DatabasesDatabaseIdRouteChildren {
+  DatabasesDatabaseIdConnectRoute: typeof DatabasesDatabaseIdConnectRoute
+  DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
+  DatabasesDatabaseIdResizeRoute: typeof DatabasesDatabaseIdResizeRoute
+}
+
+const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
+  DatabasesDatabaseIdConnectRoute: DatabasesDatabaseIdConnectRoute,
+  DatabasesDatabaseIdRecoverRoute: DatabasesDatabaseIdRecoverRoute,
+  DatabasesDatabaseIdResizeRoute: DatabasesDatabaseIdResizeRoute,
+}
+
+const DatabasesDatabaseIdRouteWithChildren =
+  DatabasesDatabaseIdRoute._addFileChildren(DatabasesDatabaseIdRouteChildren)
+
+interface DatabasesRouteChildren {
+  DatabasesDatabaseIdRoute: typeof DatabasesDatabaseIdRouteWithChildren
+  DatabasesImportRoute: typeof DatabasesImportRoute
+  DatabasesNewRoute: typeof DatabasesNewRoute
+}
+
+const DatabasesRouteChildren: DatabasesRouteChildren = {
+  DatabasesDatabaseIdRoute: DatabasesDatabaseIdRouteWithChildren,
+  DatabasesImportRoute: DatabasesImportRoute,
+  DatabasesNewRoute: DatabasesNewRoute,
+}
+
+const DatabasesRouteWithChildren = DatabasesRoute._addFileChildren(
+  DatabasesRouteChildren,
+)
+
 interface InfrastructureRouteChildren {
   InfrastructureRegistriesNameRoute: typeof InfrastructureRegistriesNameRoute
   InfrastructureRegistriesNewRoute: typeof InfrastructureRegistriesNewRoute
@@ -1610,6 +1778,7 @@ const rootRouteChildren: RootRouteChildren = {
   AlarmsRoute: AlarmsRouteWithChildren,
   BackupsRoute: BackupsRouteWithChildren,
   BuildsRoute: BuildsRouteWithChildren,
+  DatabasesRoute: DatabasesRouteWithChildren,
   InfrastructureRoute: InfrastructureRouteWithChildren,
   NetworksRoute: NetworksRouteWithChildren,
   RequestsRoute: RequestsRoute,

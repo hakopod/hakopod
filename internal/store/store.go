@@ -32,6 +32,7 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
 
 type Store struct {
+	StorageBudgetTx func(context.Context, pgx.Tx, string, string) (int64, error)
 	// Trusted Cloud embedding policy. A managed installation without it fails closed.
 	ActionsAccess            func(context.Context, string, string) error
 	AuthorizeRetainedCleanup func(context.Context, Principal, string, string) error
@@ -39,6 +40,9 @@ type Store struct {
 	StorageBudget            func(context.Context, string, string) (int64, error)
 	AuthorizeBackup          func(context.Context, string, string, string) error
 	AdmitDeployment          DeploymentAdmission
+	RequireDatabaseAdmission bool
+	AdmitDatabase            DeploymentAdmission
+	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
 	ExternalFactorPolicy     func(context.Context, pgx.Tx, string) (bool, error)
 
 	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.

@@ -1,3 +1,4 @@
+import { ManagedDatabaseConnections } from './managed-database-connections'
 import { VolumeResizeButton } from './volume-resize'
 import { PublicEndpoints } from './public-endpoints'
 import type { PublicEndpoint } from '../lib/public-endpoints'
@@ -790,6 +791,7 @@ export function ServiceDetail({
           </Suspense>
         </Tabs.Content>
         <Tabs.Content value="environment" className="tab-content service-environment-tab">
+          <ManagedDatabaseConnections application={application} service={serviceName} />
           <div className="section-toolbar">
             <div>
               <div className="hako-section-heading-title">

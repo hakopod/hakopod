@@ -1,3 +1,7 @@
+import { useDatabases, databaseHealth } from '../lib/databases'
+import { useScope, canAccess } from '../lib/scope'
+import { Button } from './ui/button'
+import { ManagedDatabaseConnections } from './managed-database-connections'
 import { serviceProfileLabel } from '../lib/service-resources'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useState } from 'react'
@@ -11,23 +15,60 @@ import { HeadingHelp, Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
   const features = useEditionFeatures()
   const names = Object.keys(app.spec.services).slice(0, 32)
+  const databaseIDs = [
+    ...new Set(
+      names.flatMap((name) =>
+        Object.values(app.spec.services[name].bindings || {})
+          .map((b) => b.managed_database)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ),
+  ].slice(0, 32)
+  const { identity } = useScope()
+  const databases = useDatabases(
+    app.project,
+    app.environment,
+    !identity.application &&
+      canAccess(identity, app.project, 'deployments:read') &&
+      databaseIDs.length > 0,
+  )
+  const databaseByID = new Map(databases.data?.items.map((d) => [d.id, d]))
+  const nodes = [...names, ...databaseIDs.map((id) => `database:${id}`)]
   const [selected, setSelected] = useState(names[0] || '')
   const name = names.includes(selected) ? selected : names[0]
   const service = app.spec.services[name]
   const observed = app.observed?.services?.find((item) => item.name === name)
   const selectedHealth = serviceRuntimeHealth(observed, app.observed?.observed_at)
   const positions = new Map(
-    names.map((name, index) => [
+    nodes.map((name, index) => [
       name,
       { x: 32 + (index % 3) * 260, y: 52 + Math.floor(index / 3) * 156 },
     ]),
   )
-  const height = Math.max(280, Math.ceil(names.length / 3) * 156 + 65)
-  const edges = names.flatMap((name) =>
+  const height = Math.max(280, Math.ceil(nodes.length / 3) * 156 + 65)
+  const dependencies = names.flatMap((name) =>
     (app.spec.services[name].depends_on || [])
       .filter((dependency) => positions.has(dependency))
       .map((dependency) => ({ from: name, to: dependency })),
   )
+  const bindings = names.flatMap((name) =>
+    [
+      ...new Set(
+        Object.values(app.spec.services[name].bindings || {}).map((b) => b.managed_database),
+      ),
+    ]
+      .filter((id): id is string => Boolean(id && databaseIDs.includes(id)))
+      .map((id) => ({ from: name, to: `database:${id}` })),
+  )
+  const edges = [...dependencies, ...bindings]
+  function revealNode(element: HTMLElement) {
+    const viewport = element.closest('.topology-viewport')
+    if (!(viewport instanceof HTMLElement)) return
+    const node = element.getBoundingClientRect(),
+      visible = viewport.getBoundingClientRect()
+    if (node.left < visible.left + 8) viewport.scrollLeft += node.left - visible.left - 8
+    else if (node.right > visible.right - 8) viewport.scrollLeft += node.right - visible.right + 8
+  }
   return (
     <div className="ops-topology">
       <div className="section-toolbar">
@@ -35,12 +76,14 @@ export default function ApplicationTopology({ application: app }: { application:
           <div className="hako-section-heading-title">
             <h2>Service topology</h2>
             <HeadingHelp title="Service topology">
-              Applied services and declared readiness dependencies. Select a service to inspect it.
+              Saved services, readiness dependencies and managed database connections. Select a
+              service to inspect it. Database health comes from its own controller.
             </HeadingHelp>
           </div>
         </div>
         <Badge>
-          {names.length} services · {edges.length} dependencies
+          {names.length} services · {databaseIDs.length} databases · {dependencies.length}{' '}
+          dependencies
         </Badge>
       </div>
       <div className="topology-layout">
@@ -89,6 +132,7 @@ export default function ApplicationTopology({ application: app }: { application:
                   key={item}
                   className={`topology-node interactive ${name === item ? 'selected hatch' : ''}`}
                   style={{ left: at.x, top: at.y }}
+                  onFocus={(event) => revealNode(event.currentTarget)}
                   aria-pressed={name === item}
                   onClick={() => setSelected(item)}
                 >
@@ -112,9 +156,38 @@ export default function ApplicationTopology({ application: app }: { application:
                 </button>
               )
             })}
+            {databaseIDs.map((id) => {
+              const at = positions.get(`database:${id}`)!
+              const d = databaseByID.get(id)
+              return (
+                <Button
+                  asChild
+                  key={id}
+                  onFocus={(event) => revealNode(event.currentTarget)}
+                  className="topology-node grid-cols-[minmax(0,1fr)] justify-items-start text-left normal-case tracking-normal [&>*]:min-w-0 [&>*]:max-w-full [&>*]:truncate"
+                  style={{ left: at.x, top: at.y }}
+                >
+                  <Link
+                    to="/databases/$databaseId"
+                    params={{ databaseId: id }}
+                    search={{ project: app.project, environment: app.environment }}
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      {d ? databaseHealth(d) : 'Managed database'}
+                    </span>
+                    <strong className="block truncate">{d?.spec.name || id.slice(0, 8)}</strong>
+                    <small>
+                      {d
+                        ? `${d.spec.engine === 'redis' ? 'Redis' : 'PostgreSQL'} · ${d.spec.shards * (1 + d.spec.replicas)} configured members`
+                        : 'Open database details'}
+                    </small>
+                  </Link>
+                </Button>
+              )
+            })}
             <div className="topology-legend">
               <span className="dependency-line" />
-              Readiness dependency · no traffic rate inferred
+              Readiness dependencies and saved database connections · no traffic rate inferred
             </div>
           </div>
         </div>
@@ -203,6 +276,7 @@ export default function ApplicationTopology({ application: app }: { application:
           </Card>
         )}
       </div>
+      <ManagedDatabaseConnections application={app} />
       {Object.keys(app.spec.services).length > 32 && (
         <Note>
           The topology displays the first 32 services. Use the services list for the complete

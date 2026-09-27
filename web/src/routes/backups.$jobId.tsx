@@ -1,3 +1,4 @@
+import { useDatabase } from '../lib/databases'
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -58,7 +59,7 @@ function BackupJob() {
         <dl className="service-definition-list">
           <div>
             <dt>Job ID</dt>
-            <dd>
+            <dd className="min-w-0 break-all">
               <code>{item.id}</code>
               <Copy value={item.id} />
             </dd>
@@ -80,26 +81,35 @@ function BackupJob() {
           {item.target && (
             <div>
               <dt>Restore target</dt>
-              <dd>{sourceLabel(item.target)}</dd>
+              <dd className="min-w-0 break-all">
+                {item.target.managed_database_name || sourceLabel(item.target)}
+              </dd>
             </div>
           )}
         </dl>
         {item.error && <ErrorState error={item.error} />}
         <Note>
           {item.status === 'succeeded'
-            ? 'The job completed successfully. Stored backups can be reviewed in the artifact list.'
+            ? item.kind === 'restore' && item.target?.managed_database_id
+              ? 'Recovery completed. Inspect the recovered data before replacing an application connection.'
+              : 'The job completed successfully. Stored backups can be reviewed in the artifact list.'
             : active
               ? 'This page follows the active job. Completion is reported only when the backend finishes the operation.'
               : 'Inspect the recorded error before retrying.'}
         </Note>
-        {item.artifact_id && (
-          <Link
-            className="button"
-            to="/backups/artifacts/$artifactId/restore"
-            params={{ artifactId: item.artifact_id }}
-          >
-            Inspect stored backup
-          </Link>
+        {item.kind === 'restore' && item.target?.managed_database_id ? (
+          <RecoveredDatabaseLink id={item.target.managed_database_id} />
+        ) : (
+          item.artifact_id && (
+            <Button asChild>
+              <Link
+                to="/backups/artifacts/$artifactId/restore"
+                params={{ artifactId: item.artifact_id }}
+              >
+                Inspect stored backup
+              </Link>
+            </Button>
+          )
         )}
       </FormSection>
       <Dialog
@@ -148,5 +158,26 @@ function BackupJob() {
         </div>
       </Dialog>
     </FormPage>
+  )
+}
+
+function RecoveredDatabaseLink({ id }: { id: string }) {
+  const database = useDatabase(id)
+  if (database.isPending) return <Loading />
+  if (database.error || !database.data) return <ErrorState error={database.error} />
+  return (
+    <Button
+      asChild
+      variant="primary"
+      className="justify-self-start max-w-full whitespace-normal text-center"
+    >
+      <Link
+        to="/databases/$databaseId"
+        params={{ databaseId: id }}
+        search={{ project: database.data.project, environment: database.data.environment }}
+      >
+        Inspect recovered database
+      </Link>
+    </Button>
   )
 }

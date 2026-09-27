@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -247,5 +248,54 @@ func TestFailedDumpNeverBecomesArtifact(t *testing.T) {
 	a, err := service.create(context.Background(), Job{ID: strings.Repeat("e", 32), DestinationID: d.ID, Source: Source{Engine: "postgresql"}})
 	if err == nil || a != nil {
 		t.Fatal("failed producer became a successful artifact")
+	}
+}
+
+type managedTestRuntime struct{ testRuntime }
+
+func (r *managedTestRuntime) Resolve(_ context.Context, s Source) (Target, error) {
+	return Target{Source: s, Revision: 3, Available: true}, nil
+}
+
+type corruptReadObjects struct{ testObjects }
+
+func (o *corruptReadObjects) Get(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	b := bytes.Clone(o.data)
+	if len(b) > 0 {
+		b[len(b)-1] ^= 1
+	}
+	return io.NopCloser(bytes.NewReader(b)), int64(len(b)), nil
+}
+func TestManagedBackupVerificationRequiresDownloadedBytes(t *testing.T) {
+	d, _, key := testDestination(t)
+	for _, corrupt := range []bool{false, true} {
+		t.Run(fmt.Sprint(corrupt), func(t *testing.T) {
+			runtime := &managedTestRuntime{testRuntime: testRuntime{data: "PGDMPdevelopment-fixture"}}
+			objects := &corruptReadObjects{}
+			repo := &testRepository{destination: d}
+			service := &Service{Repo: repo, Runtime: runtime, CredentialKey: key, StateDir: t.TempDir()}
+			if err := os.Chmod(service.StateDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			service.ObjectStore = func(Destination, Credentials) ObjectStore {
+				if corrupt {
+					return objects
+				}
+				return &objects.testObjects
+			}
+			a, err := service.create(context.Background(), Job{ID: strings.Repeat("c", 32), Kind: "backup", DestinationID: d.ID, Source: Source{Kind: "managed_database", ManagedDatabaseID: strings.Repeat("d", 32), Engine: "postgresql"}})
+			if corrupt {
+				if err == nil || a != nil {
+					t.Fatal("corrupt downloaded archive counted as verified")
+				}
+				return
+			}
+			if err != nil || a == nil || a.CapturedAt == nil || a.VerifiedAt == nil || a.SourceRevision != 3 || a.VerifiedAt.Before(*a.CapturedAt) {
+				t.Fatal("valid archive verification", err)
+			}
+			if runtime.restoreCalls != 0 {
+				t.Fatal("verification restored data")
+			}
+		})
 	}
 }

@@ -6,9 +6,10 @@ export type BackupTarget = components['schemas']['BackupTarget']
 export type BackupDestination = components['schemas']['BackupDestination']
 export type BackupSchedule = components['schemas']['BackupSchedule']
 export const sourceKey = (source: BackupSource) =>
-  `${source.kind}/${source.application_id || ''}/${source.service || ''}/${source.engine}`
+  `${source.kind}/${source.managed_database_id || source.application_id || ''}/${source.service || ''}/${source.engine}`
 export const engineLabels: Record<string, string> = {
   postgresql: 'PostgreSQL',
+  redis: 'Redis',
   mysql: 'MySQL',
   clickhouse: 'ClickHouse',
 }
@@ -29,9 +30,14 @@ export const engineManagedEngine = (engine?: string) =>
 export const sourceLabel = (source: BackupSource) =>
   source.kind === 'management'
     ? 'Hakopod management database'
-    : `${source.application_id || ''} / ${source.service || ''} · ${engineLabel(source.engine)}${source.database ? ` / ${source.database}` : ''}`
+    : source.kind === 'docker_import'
+      ? `${source.external_name || 'Docker import'} · ${engineLabel(source.engine)}`
+      : source.kind === 'managed_database'
+        ? `${engineLabel(source.engine)} · ${source.managed_database_id || ''}`
+        : `${source.application_id || ''} / ${source.service || ''} · ${engineLabel(source.engine)}${source.database ? ` / ${source.database}` : ''}`
 export const sourceFromTarget = (target: BackupTarget): BackupSource => ({
   kind: target.kind,
+  managed_database_id: target.managed_database_id,
   engine: target.engine,
   application_id: target.application_id,
   service: target.service,

@@ -62,6 +62,14 @@ export function parentNavigation(
       return application(encodeURIComponent(search.application), 'source')
     return { to: '/builds', label: 'Back to builds' }
   }
+  if (parts[0] === 'databases' && parts[1]) {
+    const databaseScope: Record<string, string> = scope?.project
+      ? { project: scope.project, environment: scope.environment }
+      : {}
+    return parts[2]
+      ? { to: `/databases/${parts[1]}`, label: 'Back to database', search: databaseScope }
+      : { to: '/databases', label: 'Back to databases', search: databaseScope }
+  }
   if (parts[0] === 'backups' && parts[1]) {
     const tab = ['destinations', 'schedules', 'artifacts'].includes(parts[1]) ? parts[1] : 'jobs'
     return { to: '/backups', search: { tab }, label: 'Back to backups' }

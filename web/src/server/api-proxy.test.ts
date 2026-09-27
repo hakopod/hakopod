@@ -573,3 +573,35 @@ test('stop and resume forward reviewed mutations without bypassing session or or
     mock.mock.restore()
   }
 })
+
+test('database archive proxy streams raw bytes with session, origin and size bounds', async (t) => {
+  const path = `backup-imports/${'a'.repeat(32)}/archive`
+  const payload = new Uint8Array([0, 1, 2, 255, 10])
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    calls++
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    assert.equal(new Headers(init.headers).get('Content-Type'), 'application/octet-stream')
+    assert.ok(init.body instanceof ReadableStream)
+    assert.deepEqual(new Uint8Array(await new Response(init.body).arrayBuffer()), payload)
+    return Response.json({ id: 'artifact-fixture' }, { status: 201 })
+  })
+  const make = (source = origin, size = String(payload.byteLength)) => {
+    const r = request(path, 'PUT', undefined, true, source)
+    const headers = new Headers(r.headers)
+    headers.set('Content-Type', 'application/octet-stream')
+    headers.set('Content-Length', size)
+    return new Request(r.url, { method: 'PUT', headers, body: payload })
+  }
+  assert.equal((await proxy({ request: make(), params: { _splat: path } })).status, 201)
+  assert.equal(
+    (await proxy({ request: make('https://untrusted.invalid'), params: { _splat: path } })).status,
+    403,
+  )
+  assert.equal(
+    (await proxy({ request: make(origin, String(64 * 1024 * 1024 + 1)), params: { _splat: path } }))
+      .status,
+    413,
+  )
+  assert.equal(calls, 1)
+})

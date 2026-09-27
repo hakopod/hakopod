@@ -27,6 +27,8 @@ const (
 )
 
 type Options struct {
+	DatabasePolicy    DatabasePolicyResolver
+	DatabaseBindings  DatabaseBindingResolver
 	ServerlessAddress string
 
 	WorkloadPolicy WorkloadPolicyResolver
@@ -81,6 +83,7 @@ type Client struct {
 }
 
 type Target struct {
+	databaseConnections  map[string]map[string]DatabaseConnection
 	serverlessGatewayIPs []string
 
 	privateEgress                                    map[string][]PrivateEgressBinding

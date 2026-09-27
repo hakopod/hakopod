@@ -1,0 +1,228 @@
+import { useScope, canAccess } from '../lib/scope'
+import { useRef, useState } from 'react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { useDatabase } from '../lib/databases'
+import { client, unwrap } from '../lib/client'
+import type { components } from '../lib/api.generated'
+import { message, timestamp } from '../lib/api'
+import { Empty, ErrorState, Loading, Note } from '../components/shared'
+import { FormPage, FormSection } from '../components/form-page'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { SelectField } from '../components/ui/select'
+
+export const Route = createFileRoute('/databases/$databaseId/recover')({ component: Page })
+function Page() {
+  const id = Route.useParams().databaseId
+  return <Recover key={id} id={id} />
+}
+function Recover({ id }: { id: string }) {
+  const database = useDatabase(id)
+  const artifacts = useQuery({
+    queryKey: ['database-recovery-artifacts'],
+    queryFn: ({ signal }) => unwrap(client.GET('/backup-artifacts', { signal })),
+    gcTime: 0,
+  })
+  const [artifact, setArtifact] = useState('')
+  const [plan, setPlan] = useState<components['schemas']['BackupRestorePlan'] | null>(null)
+  const [confirmation, setConfirmation] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const key = useRef('')
+  const navigate = useNavigate()
+  const { identity } = useScope()
+  const frame = (content: React.ReactNode) => (
+    <FormPage
+      title="Recover into database"
+      description="Restore into a separate database and inspect it before replacing an application connection."
+      breadcrumbs={[]}
+    >
+      {content}
+    </FormPage>
+  )
+  if (database.isPending || artifacts.isPending) return frame(<Loading />)
+  if (database.error || artifacts.error)
+    return frame(<ErrorState error={database.error || artifacts.error} />)
+  const d = database.data
+  if (identity.application || !canAccess(identity, d.project, 'deployments:write'))
+    return frame(<Note>Recovery requires project deployment permission.</Note>)
+  const eligible = artifacts.data.items.filter(
+    (a) =>
+      a.source.engine === d.spec.engine &&
+      a.source.managed_database_id !== id &&
+      !a.deletion_pending,
+  )
+  const selected = artifacts.data.items.find((a) => a.id === artifact)
+  const expired = Boolean(plan && Date.parse(plan.expires_at) <= Date.now())
+  const search = { project: d.project, environment: d.environment }
+  if (d.status !== 'ready' || d.revision !== 1 || d.recovery)
+    return frame(
+      <Empty
+        title="Use a separate, unused database"
+        description="Recovery requires an empty database at revision 1. The source remains available."
+        action={
+          <Button asChild variant="primary">
+            <Link to="/databases/new" search={search}>
+              Create recovery target
+            </Link>
+          </Button>
+        }
+      />,
+    )
+  return (
+    <FormPage
+      title="Recover into database"
+      description="Restore into this separate database, inspect it, then explicitly replace the application connection and redeploy."
+      breadcrumbs={[]}
+    >
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault()
+          setBusy(true)
+          setError('')
+          try {
+            if (!plan) {
+              setPlan(
+                await unwrap(
+                  client.POST('/databases/{id}/restore-plan', {
+                    params: { path: { id } },
+                    body: { artifact_id: artifact },
+                  }),
+                ),
+              )
+              return
+            }
+            if (!key.current) key.current = crypto.randomUUID()
+            const job = await unwrap(
+              client.POST('/backup-artifacts/{id}/restore', {
+                params: { path: { id: artifact }, header: { 'Idempotency-Key': key.current } },
+                body: { plan_id: plan.id, confirmation },
+              }),
+            )
+            void navigate({ to: '/backups/$jobId', params: { jobId: job.id } })
+          } catch (err) {
+            setError(message(err))
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <FormSection title="Archive and target">
+          <p>
+            Target: {d.spec.name} · {d.spec.engine} {d.spec.version} · {d.project} / {d.environment}
+          </p>
+          {!eligible.length && (
+            <Empty
+              title="No eligible archives"
+              description="Create a matching PostgreSQL or Redis backup from another database before recovering into this target."
+              action={
+                <Button asChild>
+                  <Link to="/backups/new">Run backup</Link>
+                </Button>
+              }
+            />
+          )}
+          <label>
+            Archive
+            <SelectField
+              label="Archive"
+              value={artifact}
+              disabled={busy}
+              required
+              onValueChange={(value) => {
+                setArtifact(value)
+                setPlan(null)
+                setConfirmation('')
+                key.current = ''
+              }}
+              options={[
+                { value: '', label: 'Choose a matching archive' },
+                ...artifacts.data.items
+                  .filter(
+                    (a) =>
+                      a.source.engine === d.spec.engine &&
+                      a.source.managed_database_id !== id &&
+                      !a.deletion_pending,
+                  )
+                  .map((a) => ({
+                    value: a.id,
+                    label: `${timestamp(a.captured_at || a.created_at)} · ${a.source.managed_database_id?.slice(0, 8) || a.source.service || a.source.kind} · ${a.verified_at ? 'Verified' : 'Requires verification'}`,
+                  })),
+              ]}
+            />
+          </label>
+          {artifacts.data.next_cursor && (
+            <Note>
+              Showing the most recent 100 archives. Older archives remain available through the API.
+            </Note>
+          )}
+          <Note>
+            The archive is authenticated before recovery. PostgreSQL 17 archives can be staged in a
+            separate PostgreSQL 18 database. Changes after the recovery point require a fresh
+            capture before final cutover.
+          </Note>
+        </FormSection>
+        {plan && (
+          <FormSection title="Review recovery">
+            <p>Archive: {selected?.id}</p>
+            <p>
+              Captured: {timestamp(selected?.captured_at || selected?.created_at)} · Verified:{' '}
+              {timestamp(selected?.verified_at)}
+            </p>
+            <p className="break-all font-mono">SHA-256: {selected?.sha256 || 'Not recorded'}</p>
+            <p>
+              Target: {d.spec.name} · {d.spec.engine} {d.spec.version}
+            </p>
+            <p>
+              Review expires {timestamp(plan.expires_at)}.
+              {expired ? ' Refresh this review before proceeding.' : ''}
+            </p>
+            <Button
+              type="button"
+              onClick={() => {
+                setPlan(null)
+                setConfirmation('')
+                key.current = ''
+              }}
+            >
+              Edit or refresh review
+            </Button>
+            {plan.warnings.map((w) => (
+              <Note key={w}>{w}</Note>
+            ))}
+            <label>
+              Type {plan.confirmation} to confirm
+              <Input
+                required
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+              />
+            </label>
+          </FormSection>
+        )}
+        {error && (
+          <p role="alert" className="text-destructive py-3">
+            {error}
+          </p>
+        )}
+        <div className="form-footer">
+          <Button asChild>
+            <Link to="/databases/$databaseId" params={{ databaseId: id }} search={search}>
+              Cancel
+            </Link>
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={
+              busy || expired || !artifact || Boolean(plan && confirmation !== plan.confirmation)
+            }
+          >
+            {busy ? 'Working…' : plan ? 'Start recovery' : 'Review recovery'}
+          </Button>
+        </div>
+      </form>
+    </FormPage>
+  )
+}

@@ -31,6 +31,7 @@ func Start(ctx context.Context, server *api.Server, domain string, rollout time.
 		return kube.ValidateDelivery(ctx, cluster.Target{ApplicationID: app.ID, Project: app.Project, Environment: app.Environment, Spec: next, Revision: app.Revision})
 	}
 	server.ConfigureSecretProviders()
+	server.ConfigureDatabaseBindings()
 	server.ConfigureActions()
 	db.ProtectedDomains = []string{domain}
 	if dashboard, err := url.Parse(server.Auth.PublicURL); err == nil {
@@ -39,7 +40,7 @@ func Start(ctx context.Context, server *api.Server, domain string, rollout time.
 	handler := server.Handler()
 	worker := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests, server.RunActions} {
+	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunManagedDatabases, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests, server.RunActions} {
 		wg.Add(1)
 		go func(run func(context.Context)) { defer wg.Done(); run(ctx) }(run)
 	}

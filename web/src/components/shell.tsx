@@ -1,3 +1,4 @@
+import { useDatabase } from '../lib/databases'
 import AccountSettings from './account-settings'
 import { Brand, brandLabel } from './brand'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -210,6 +211,8 @@ function Workspace({
     staleTime: 5000,
     gcTime: 0,
   })
+  const databasePath = /^\/databases\/([a-f0-9]{32})(?:\/|$)/.exec(location.pathname)?.[1]
+  const database = useDatabase(databasePath)
   const applicationPath = /^\/applications\/([^/]+)/.exec(location.pathname)?.[1]
   const buildPath = /^\/builds\/([^/]+)/.exec(location.pathname)?.[1]
   const buildId = buildPath && buildPath !== 'new' ? buildPath : undefined
@@ -326,17 +329,28 @@ function Workspace({
   try {
     routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
   } catch {}
-  const routeScope = projectPath
-    ? resolveProjectRouteScope(projects.data?.items, routeProject, location.search.environment)
-    : undefined
-  const resourcePage = Boolean(applicationId || deploymentId || buildId)
-  const resourceData = buildId
-    ? build.isError
+  const databaseScopePage = /^\/databases(?:\/(?:new|import))?$/.test(location.pathname)
+  const routeScope = databaseScopePage
+    ? resolveProjectRouteScope(
+        projects.data?.items,
+        typeof location.search.project === 'string' ? location.search.project : '',
+        location.search.environment,
+      )
+    : projectPath
+      ? resolveProjectRouteScope(projects.data?.items, routeProject, location.search.environment)
+      : undefined
+  const resourcePage = Boolean(applicationId || deploymentId || buildId || databasePath)
+  const resourceData = databasePath
+    ? database.isError
       ? undefined
-      : build.data
-    : resource.isError
-      ? undefined
-      : resource.data
+      : database.data
+    : buildId
+      ? build.isError
+        ? undefined
+        : build.data
+      : resource.isError
+        ? undefined
+        : resource.data
   const resourceScope = resourcePage
     ? resolveProjectRouteScope(
         projects.data?.items,
@@ -373,6 +387,7 @@ function Workspace({
     },
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
+    { to: '/databases', search: { project, environment }, icon: 'database', label: 'Databases' },
     { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/requests', icon: 'activity', label: 'Requests' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
@@ -666,7 +681,11 @@ function Workspace({
                 </Note>
                 <AccountSettings />
               </>
-            ) : dashboardEdition.cloud || overview || projectPath || resourcePage ? (
+            ) : dashboardEdition.cloud ||
+              overview ||
+              projectPath ||
+              resourcePage ||
+              databaseScopePage ? (
               children
             ) : !project && projects.isPending ? (
               <Loading />

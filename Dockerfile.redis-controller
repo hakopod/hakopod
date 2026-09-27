@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628 AS build
+WORKDIR /source
+# Upstream's credential fix has not been included in a released image yet.
+ADD --checksum=sha256:e9c552a4176dc6172c7d348de55991e2419ae0b165b4bcfe5eb8625f7d0e81c4 https://codeload.github.com/OT-CONTAINER-KIT/redis-operator/tar.gz/c5017206e75f7743d79e82db47ec8c39d7410816 /tmp/source.tar.gz
+RUN tar -xzf /tmp/source.tar.gz --strip-components=1 && rm /tmp/source.tar.gz
+ENV GOMAXPROCS=2 GOMEMLIMIT=1500MiB CGO_ENABLED=0
+RUN go test -p 2 ./internal/k8sutils -run '^(TestGetRedisClusterAuthArgs|TestCheckRedisCLIAuthInEnv|TestClusterCheckCommand|TestWrapRedisCLIAuthSanitize)$'
+ARG TARGETOS
+ARG TARGETARCH
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -p 2 -trimpath -ldflags='-s -w' -o /operator ./cmd
+
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+LABEL org.opencontainers.image.source="https://github.com/OT-CONTAINER-KIT/redis-operator" \
+      org.opencontainers.image.revision="c5017206e75f7743d79e82db47ec8c39d7410816"
+COPY --from=build /operator /operator
+COPY --from=build /source/LICENSE /licenses/redis-operator.txt
+USER 65532:65532
+ENTRYPOINT ["/operator", "manager"]
