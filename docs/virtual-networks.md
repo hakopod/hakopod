@@ -113,8 +113,11 @@ grants permit it. Mounts and filesystem permissions remain independent service
 settings; see [workload configuration](toml.md#named-volumes-and-filesystem-permissions).
 
 To keep the network definition and its applications in one repository, place
-`network.toml` beside one folder per application and use `hakopod deploy --dir`;
-see [deploying a folder of applications](cli-tree-deploy.md).
+`network.toml` at the root of the tree, beside one folder per application, and
+use `hakopod deploy --dir`; see [deploying a folder of applications](cli-tree-deploy.md).
+Only the root copy is the network definition. A copy kept inside an application
+folder is ignored when that folder has a `hakopod.toml`, and is merged as one of
+that application's documents when it does not.
 
 ## Peer and port rules
 
