@@ -76,7 +76,15 @@ accept at most 1,000 pending items. GitHub Actions and GitLab CI perform source 
 the management host; bounded result artifacts carry the resulting image digest.
 
 Initial application limits: 20 services, 16 declared networks, 20 replicas per
-service, 20 pending releases per application, and 200 applications per environment.
+service, 20 custom domains, 32 application-level secrets, 16 named volumes, 20
+volume claims totalling at most 200 GiB, 20 pending releases per application,
+and 200 applications per environment. Each service additionally accepts at most
+128 effective environment variables, counted after application-level injection,
+and 32 effective secret references; an application's TOML document is limited
+to 256 KiB. Every service of an application also shares a single namespace
+resource quota (8 CPU and 8 GiB of requests, 16 CPU and 16 GiB of limits, 64
+pods, 25 Kubernetes services and 20 jobs), so services compete for that budget
+rather than each receiving it.
 These bounds protect one-process development installations; they are not claims
 of verified production capacity. Every resource profile is shown by `plan`.
 
