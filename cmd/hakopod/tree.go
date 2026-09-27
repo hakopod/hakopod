@@ -161,6 +161,13 @@ func loadTree(root string, only []string) (deployTree, error) {
 		}
 		app, err := loadFolder(e.Name(), dir)
 		if err != nil {
+			// A folder that could not have been selected is not the user's problem: with
+			// --only set, an unrelated sibling holding a stray .toml is skipped instead of
+			// failing the run. Only the folder NAME can match here -- the application name
+			// needs a successful load -- and a folder that cannot load cannot deploy either.
+			if len(only) > 0 && !slices.Contains(only, e.Name()) {
+				continue
+			}
 			at := app.Path
 			if at == "" {
 				at = dir
