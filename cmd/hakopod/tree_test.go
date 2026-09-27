@@ -56,11 +56,12 @@ func TestLoadTreeHappyPath(t *testing.T) {
 
 func TestLoadTreeMergesFolders(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"three/web.toml":     "image = 'nginx'\n",
-		"three/worker.toml":  "image = 'busybox'\n",
-		"three/cron.toml":    "image = 'alpine'\n",
+		"three/web.toml":    "image = 'nginx'\n",
+		"three/worker.toml": "image = 'busybox'\n",
+		"three/cron.toml":   "image = 'alpine'\n",
+		// hakopod.toml wins outright: api.toml beside it is ignored, not merged.
 		"mixed/api.toml":     "image = 'nginx'\n",
-		"mixed/hakopod.toml": "[services.worker]\nimage = 'busybox'\n[services.cron]\nimage = 'alpine'\n",
+		"mixed/hakopod.toml": "name = 'mixed'\n[services.worker]\nimage = 'busybox'\n[services.cron]\nimage = 'alpine'\n",
 		"lone/api.toml":      "image = 'nginx'\n",
 		"legacy/hakopod.toml": "name = 'renamed'\nenv_file = '.env'\n" +
 			"[services.web]\nimage = 'nginx'\n",
@@ -79,7 +80,6 @@ func TestLoadTreeMergesFolders(t *testing.T) {
 	}
 	for dir, want := range map[string][]string{
 		"three": {"web", "worker", "cron"},
-		"mixed": {"api", "worker", "cron"},
 		"lone":  {"api"},
 	} {
 		app := byDir[dir]
@@ -95,10 +95,73 @@ func TestLoadTreeMergesFolders(t *testing.T) {
 			}
 		}
 	}
-	// A single hakopod.toml keeps the legacy path: name from the document, env files read.
+	// A hakopod.toml keeps the legacy path: name from the document, env files read.
 	legacy := byDir["legacy"]
 	if legacy.Merged || legacy.Spec.Name != "renamed" || len(legacy.Data) == 0 || legacy.EnvFiles[".env"] != "TOKEN=abc\n" {
 		t.Fatalf("legacy folder changed: %+v", legacy)
+	}
+	// ...and it is not merged with the file beside it.
+	if mixed := byDir["mixed"]; mixed.Merged || len(mixed.Spec.Services) != 2 || mixed.Spec.Services["api"].Image != "" {
+		t.Fatalf("api.toml was merged into mixed/hakopod.toml: %+v", mixed)
+	}
+}
+
+// Merged mode is opt-in by the ABSENCE of hakopod.toml. A folder that has one never enters
+// it, whatever else is dropped beside it.
+func TestLoadFolderHakopodTOMLWins(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		// A backup copy kept beside the live file must not contribute services.
+		"backup/hakopod.toml":     "name = 'backup'\n[services.web]\nimage = 'nginx'\n",
+		"backup/hakopod.old.toml": "[services.stale]\nimage = 'busybox'\n",
+		// Merged mode would force the application name to the folder name; legacy must not.
+		"web/hakopod.toml": treeAppTOML("frontend", ""),
+		"web/extra.toml":   "[services.stale]\nimage = 'busybox'\n",
+		// A per-application copy of a virtual network document is documentation, ignored.
+		"docs/hakopod.toml": treeAppTOML("docs", ""),
+		"docs/network.toml": treeNetwork,
+	})
+	tree, err := loadTree(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byDir := map[string]treeApp{}
+	for _, app := range tree.Apps {
+		byDir[app.Dir] = app
+	}
+	if len(byDir) != 3 {
+		t.Fatalf("expected 3 applications, got %+v", tree.Apps)
+	}
+	for dir, wantName := range map[string]string{"backup": "backup", "web": "frontend", "docs": "docs"} {
+		app := byDir[dir]
+		if app.Merged || app.Spec.Name != wantName || len(app.Data) == 0 || !strings.EqualFold(filepath.Base(app.Path), "hakopod.toml") {
+			t.Fatalf("%s: expected the legacy path named %q, got %+v", dir, wantName, app)
+		}
+		// The regression that matters: nothing from the sibling file reached the spec.
+		if _, ok := app.Spec.Services["stale"]; ok {
+			t.Fatalf("%s: a sibling .toml was merged into the live application: %v", dir, app.Spec.Services)
+		}
+		if len(app.Spec.Services) != 1 {
+			t.Fatalf("%s: services %v, want exactly one from hakopod.toml", dir, app.Spec.Services)
+		}
+	}
+}
+
+func TestLoadFolderMergedNeedsLegalFolderName(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"ok/web.toml":     "image = 'nginx'\n",
+		"ok/api.toml":     "image = 'nginx'\n",
+		"my_app/web.toml": "image = 'nginx'\n",
+	})
+	_, err := loadTree(root, nil)
+	if err == nil || !strings.Contains(err.Error(), "my_app") || !strings.Contains(err.Error(), "becomes the application name") {
+		t.Fatalf("illegal merged folder name must name the folder, got %v", err)
+	}
+	tree, err := loadTree(root, []string{"ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Apps) != 1 || !tree.Apps[0].Merged || tree.Apps[0].Spec.Name != "ok" || len(tree.Apps[0].Spec.Services) != 2 {
+		t.Fatalf("merged folder wrong: %+v", tree.Apps)
 	}
 }
 
@@ -233,7 +296,10 @@ func TestLoadTreeRealDevops(t *testing.T) {
 		t.Fatalf("network %v, %d apps", tree.Network, len(tree.Apps))
 	}
 	for _, app := range tree.Apps {
-		t.Logf("network=%s app dir=%s name=%s", tree.Network.Name, app.Dir, app.Spec.Name)
+		t.Logf("network=%s app dir=%s name=%s merged=%v path=%s", tree.Network.Name, app.Dir, app.Spec.Name, app.Merged, filepath.Base(app.Path))
+		if app.Merged {
+			t.Errorf("%s: real tree must keep the legacy hakopod.toml path", app.Dir)
+		}
 	}
 }
 
