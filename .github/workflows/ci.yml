@@ -86,6 +86,7 @@ jobs:
           npm test
           npm pack --dry-run
       - name: Check the @hakopod/cli wrapper sources
+        working-directory: .
         run: |
           node --check packages/cli-binary/bin/hakopod.mjs
           node --check packages/cli-binary/generate.mjs
