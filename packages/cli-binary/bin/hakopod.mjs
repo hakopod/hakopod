@@ -23,7 +23,7 @@ try {
   binPath = require.resolve(`${pkgName}/${binName}`);
 } catch {
   process.stderr.write(
-    `hakopod: no binary available for platform ${key}; install via https://hakopod.dev/install.sh instead\n`,
+    `hakopod: no binary available for platform ${key}; install via https://hakopod.com/scripts/cli.sh instead\n`,
   );
   process.exit(1);
 }
