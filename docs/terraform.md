@@ -54,20 +54,23 @@ the provider cannot exceed them.
 - `hakopod_application` — an application specification, given either as
   application TOML in `config` or as the equivalent JSON in `spec`. Use one or
   the other, not both.
-- `hakopod_secret` — a secret value bound to an application or environment.
+- `hakopod_secret` — one application's secret, either a literal `value` or one
+  the server generates with `generate = true`. A generated value never enters
+  Terraform state.
 
 ## A worked example
 
 ```hcl
 resource "hakopod_project" "demo" {
-  name        = "demo"
-  environment = "production"
+  name         = "demo"
+  environments = ["production"]
 }
 
+# The application's name and its services come from the configuration, not
+# from a Terraform attribute.
 resource "hakopod_application" "shop" {
   project     = hakopod_project.demo.name
-  environment = "production"
-  name        = "shop"
+  environment = hakopod_project.demo.environments[0]
 
   config = <<-TOML
     schema_version = 1
