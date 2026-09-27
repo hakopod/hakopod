@@ -4,30 +4,42 @@
 of applications and one virtual network together. Use it when several
 applications share a network and are kept in one repository.
 
-Each immediate subfolder is one application. A folder may hold one file or many:
-every `.toml` file inside it is merged into that single application's
-specification, so one service per file is a valid way to lay out an application.
+Each immediate subfolder is one application, and one file decides how that folder
+is read. A folder holding a file named `hakopod.toml` is that document's
+application: it takes the same path it always took, its name comes from the
+`name` key inside the document, and every other `.toml` file in the folder is
+ignored. A folder holding at least one `.toml` file and no `hakopod.toml` is
+merged: every `.toml` file inside it becomes part of one application named after
+the folder, so one service per file is a valid way to lay out an application.
+
+Merged mode is opt-in by the absence of `hakopod.toml`, not by the number of
+files. Dropping a second file beside an existing `hakopod.toml` does not switch
+that folder to merged mode, so a `hakopod.old.toml` backup, a
+`hakopod-staging.toml` variant or a copy of the shared `network.toml` kept for
+reference is ignored rather than silently merged into the live application.
 
 ## Layout
 
 ```text
 devops/
 ├── network.toml          # optional: one virtual network, e.g. name = "shop"
-├── shop/                 # one application named "shop"
+├── shop/                 # merged: one application named "shop"
 │   ├── web.toml          # becomes services.web
 │   ├── api.toml          # becomes services.api
 │   └── data.toml         # may declare [services.*] tables itself
 └── billing/
-    └── hakopod.toml      # a single file: the existing path, unchanged
+    ├── hakopod.toml      # the existing path, unchanged; it names the application
+    └── hakopod.old.toml  # ignored, because hakopod.toml is present
 ```
 
 - The root may hold one `network.toml`. It uses the same format as
   **Networks → Create network → import**; see [virtual networks](virtual-networks.md#create-a-network).
-- Each immediate subfolder is one application, named after the folder. The
-  folder holding exactly one `hakopod.toml` keeps its previous behaviour; the
-  file name is matched case-insensitively, so `HAKOPOD.toml` works. A folder
-  holding two case variants, such as `hakopod.toml` and `HAKOPOD.toml`, is an
-  error.
+- Each immediate subfolder is one application. A folder with a `hakopod.toml`
+  keeps its previous behaviour and is named by the `name` key in that document;
+  a folder without one is merged and is named after the folder itself.
+- The file name `hakopod.toml` is matched case-insensitively, so `HAKOPOD.toml`
+  also claims its folder. A folder holding two case variants, such as
+  `hakopod.toml` and `HAKOPOD.toml`, is an error.
 - Deeper folders and hidden folders are ignored.
 
 Separately, without `--file` the CLI finds `hakopod.toml` in the current folder
@@ -35,6 +47,9 @@ case-insensitively. `HAKOPOD.toml` used to be missed on case-sensitive
 filesystems such as Linux.
 
 ## How files in one folder are merged
+
+This section describes a folder with no `hakopod.toml`. A folder that has one is
+read from that document alone, and nothing below applies to it.
 
 Files are read in filename order. Dotfiles and files that do not end in `.toml`
 are ignored. `network.toml` is only special at the root of the tree; inside an
@@ -47,6 +62,18 @@ Both kinds can sit in the same folder.
 
 The application's name is the folder name. A `name` key may repeat it, but a
 `name` that disagrees with the folder is an error.
+
+Because the folder name becomes the application name, a merged folder must be
+named legally for an application: 1 to 40 characters, lowercase letters, digits
+and dashes, starting with a letter and not ending with a dash. A folder called
+`my_app`, `Web` or `api.v2` fails validation:
+
+```text
+folder name "my_app" becomes the application name when several files are merged: rename the folder to 1-40 lowercase letters, digits or dashes, or keep one hakopod.toml that names the application itself
+```
+
+The constraint applies only to merged folders. A folder with a `hakopod.toml`
+may be named anything, because its application name comes from the document.
 
 Four keys exist at both application and service level: `networks`, `env`,
 `secrets` and `env_file`. In a bare-service file they are always service fields.
@@ -65,12 +92,31 @@ These rules make conflicts errors rather than silent winners:
 - Application-level `networks`, `env` and `secrets` merge key by key. The same
   key set in two files is an error.
 
-`env_file` is not supported in a merged folder, and a folder with more than one
-`.toml` file that uses it fails validation instead of quietly dropping it.
-`env_file` expansion happens on the server on the TOML path only, and a merged
-folder is submitted as a JSON specification. A folder with exactly one
-`hakopod.toml` still takes the TOML path and keeps `env_file`. See [environment
+`env_file` is not supported in a merged folder, and a merged folder that uses it
+fails validation naming the file, instead of quietly dropping it. `env_file`
+expansion happens on the server on the TOML path only, and a merged folder is
+submitted as a JSON specification. A folder with a `hakopod.toml` still takes the
+TOML path and keeps `env_file` working as it always did. See [environment
 files and shared variables](environment-and-build-reuse.md) for the alternatives.
+
+## Folders that hold an unrelated TOML file
+
+A subfolder holding a `.toml` file that is nothing to do with Hakopod, and no
+`hakopod.toml` to claim it, is still treated as an application, and it fails
+validation naming the file and the unknown key:
+
+```text
+mylib: Cargo.toml: unknown TOML fields: package (line 1, column 2)
+```
+
+A Rust crate's `Cargo.toml`, a `pyproject.toml` or a `netlify.toml` is therefore
+reported rather than silently deployed. The same strictness means a misnamed
+`hakopodd.toml` fails loudly instead of vanishing.
+
+`--only` is the way through a repository that mixes applications with other
+projects. When `--only` is set, a folder whose name is not listed and that fails
+to load is skipped silently instead of failing the run. With no `--only`, every
+folder's failure is an error.
 
 ## Services in one application already talk to each other
 
@@ -176,7 +222,9 @@ hakopod deploy --dir devops --project demo --environment production --only web,a
 
 `--only` accepts folder names or application names, separated by commas. It
 selects folders, and a folder is an application, so a merged folder is selected
-or skipped as a whole.
+or skipped as a whole. An unlisted folder that fails to load is skipped silently;
+see [folders that hold an unrelated TOML
+file](#folders-that-hold-an-unrelated-toml-file).
 
 ## What it does not do
 
