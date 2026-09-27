@@ -65,6 +65,9 @@ fi
 
 if [ -z "$HAKOPOD_VERSION" ]; then
   cli_log "Resolving latest hakopod release..."
+  # No draft filter needed: the releases API only returns drafts to callers with
+  # push access, and this script always runs unauthenticated. /releases/latest is
+  # not usable instead — it skips prereleases, and every release so far is one.
   cli_index="$cli_tmp/releases.json"
   cli_fetch "$HAKOPOD_API_URL?per_page=1" "$cli_index"
   HAKOPOD_VERSION=$(sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' "$cli_index" | head -n1)
@@ -115,4 +118,4 @@ case ":$PATH:" in
 esac
 
 cli_log "Installed hakopod to $HAKOPOD_INSTALL_DIR/hakopod"
-"$HAKOPOD_INSTALL_DIR/hakopod" --version
+"$HAKOPOD_INSTALL_DIR/hakopod" version
