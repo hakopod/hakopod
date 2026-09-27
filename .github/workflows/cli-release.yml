@@ -1,7 +1,7 @@
-name: Publish npm CLI
+name: Publish @hakopod/cloud
 on:
   push:
-    tags: ['cli-v*']
+    tags: ['cloud-v*']
 permissions:
   contents: read
 jobs:
@@ -23,7 +23,7 @@ jobs:
       - name: Verify version and package
         working-directory: packages/cli
         run: |
-          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(process.env.GITHUB_REF_NAME!==`cli-v${p.version}`) process.exit(1)'
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(process.env.GITHUB_REF_NAME!==`cloud-v${p.version}`) process.exit(1)'
           npm test
           npm pack --dry-run
       - name: Publish using npm trusted publishing
