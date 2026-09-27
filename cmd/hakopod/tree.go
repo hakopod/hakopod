@@ -14,10 +14,11 @@ import (
 
 type treeApp struct {
 	Dir      string            // folder name, e.g. "syne"
-	Path     string            // full path to the config file
-	Data     []byte            // raw TOML bytes
-	Spec     spec.Application  // from validateLocalConfiguration
-	EnvFiles map[string]string // from validateLocalConfiguration
+	Path     string            // config file, or the folder itself when Merged
+	Data     []byte            // raw TOML bytes; nil when Merged
+	Spec     spec.Application  // validateLocalConfiguration, or the merged and normalized folder
+	EnvFiles map[string]string // from validateLocalConfiguration; nil when Merged
+	Merged   bool              // several .toml files merged into one application; submitted as JSON spec
 }
 
 type deployTree struct {
@@ -57,6 +58,68 @@ func findNamed(dir, name string) (string, error) {
 
 func findConfigFile(dir string) (string, error) { return findNamed(dir, "hakopod.toml") }
 
+// findTOMLFiles returns every regular *.toml file directly inside dir, sorted by path so
+// that merge errors are deterministic. Dotfiles and subdirectories are skipped; symlinks
+// are followed like findNamed does.
+func findTOMLFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") || !strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode().IsRegular() {
+			paths = append(paths, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+// loadFolder reads one application folder. Exactly one hakopod.toml keeps the legacy TOML
+// path (env_file support, name from the document); anything else is merged into one
+// application named after the folder and submitted as a JSON spec.
+func loadFolder(name, dir string) (treeApp, error) {
+	// Two case variants of hakopod.toml are ambiguous, not two services.
+	if _, err := findConfigFile(dir); err != nil {
+		return treeApp{}, err
+	}
+	paths, err := findTOMLFiles(dir)
+	if err != nil || len(paths) == 0 {
+		return treeApp{}, err
+	}
+	app := treeApp{Dir: name, Path: paths[0]}
+	if len(paths) == 1 && strings.EqualFold(filepath.Base(paths[0]), "hakopod.toml") {
+		if app.Data, err = os.ReadFile(app.Path); err != nil {
+			return treeApp{}, err
+		}
+		app.Spec, app.EnvFiles, err = validateLocalConfiguration(app.Path, app.Data)
+		return app, err
+	}
+	files := make([]mergeFile, 0, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return treeApp{}, err
+		}
+		files = append(files, mergeFile{Path: path, Data: data})
+	}
+	merged, err := mergeFolder(name, files)
+	if err != nil {
+		return treeApp{}, err
+	}
+	app.Merged, app.Path = true, dir
+	app.Spec, err = spec.Normalize(merged)
+	return app, err
+}
+
 func loadTree(root string, only []string) (deployTree, error) {
 	tree := deployTree{Root: root}
 	var errs []error
@@ -93,23 +156,19 @@ func loadTree(root string, only []string) (deployTree, error) {
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() { // follows symlinked folders
 			continue
 		}
-		path, err := findConfigFile(dir)
+		app, err := loadFolder(e.Name(), dir)
 		if err != nil {
-			fail(dir, err)
+			at := app.Path
+			if at == "" {
+				at = dir
+			}
+			fail(at, err)
 			continue
 		}
-		if path == "" {
+		if app.Path == "" { // no *.toml directly inside: not an application folder
 			continue
 		}
-		app := treeApp{Dir: e.Name(), Path: path}
-		if app.Data, err = os.ReadFile(path); err != nil {
-			fail(path, err)
-			continue
-		}
-		if app.Spec, app.EnvFiles, err = validateLocalConfiguration(path, app.Data); err != nil {
-			fail(path, err)
-			continue
-		}
+		path := app.Path
 		if other, ok := names[app.Spec.Name]; ok {
 			fail(path, fmt.Errorf("application name %q is also used by %s/", app.Spec.Name, other))
 			continue

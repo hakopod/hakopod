@@ -35,6 +35,16 @@ func planApplication(ctx context.Context, c *client, cfg config, data []byte, en
 	return plan, err
 }
 
+// planMergedApplication plans a folder merged from several TOML files: there is no single
+// document to send, so the merged application goes as JSON. The server accepts exactly one
+// of spec or toml, so this never sends toml (and env_file is rejected by the merge).
+func planMergedApplication(ctx context.Context, c *client, cfg config, app spec.Application) (appPlan, error) {
+	var plan appPlan
+	in := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "spec": app}
+	err := c.request(ctx, "POST", "/plan", in, "", &plan)
+	return plan, err
+}
+
 // submitDeployment sends the canonical reviewed full revision so retries do not merge a
 // target into a later application state under a reused idempotency key.
 func submitDeployment(ctx context.Context, c *client, cfg config, plan appPlan, idem string, jsonOut bool) (store.Deployment, error) {
@@ -159,7 +169,12 @@ func treeCommand(ctx context.Context, c *client, cfg config, command, root strin
 	var firstErr error
 	for i, a := range tree.Apps {
 		results[i] = treeAppResult{Dir: a.Dir, Name: a.Spec.Name, Status: "not-run"}
-		if plans[i], err = planApplication(ctx, c, cfg, a.Data, a.EnvFiles, ""); err != nil {
+		if a.Merged {
+			plans[i], err = planMergedApplication(ctx, c, cfg, a.Spec)
+		} else {
+			plans[i], err = planApplication(ctx, c, cfg, a.Data, a.EnvFiles, "")
+		}
+		if err != nil {
 			results[i].Error, results[i].Status = err.Error(), "failed"
 			if firstErr == nil {
 				firstErr = err
