@@ -75,6 +75,16 @@ func TestMergeFolderSucceeds(t *testing.T) {
 			files:    mergeFiles("app/hakopod.toml", "env_file = [\".env\"]\n[services.web]\nimage = \"nginx\"\n"),
 			services: []string{"web"},
 		},
+		{
+			name:     "single legacy hakopod.toml keeps a service-level env_file",
+			files:    mergeFiles("app/hakopod.toml", "[services.web]\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
+			services: []string{"web"},
+		},
+		{
+			name:     "lone hakopod.toml shaped as a bare service keeps env_file",
+			files:    mergeFiles("app/hakopod.toml", "schema_version = 1\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
+			services: []string{"hakopod"},
+		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -297,6 +307,34 @@ func TestMergeFolderErrors(t *testing.T) {
 			name:  "env_file in a merged file named hakopod.toml",
 			files: mergeFiles("app/hakopod.toml", "env_file = [\".env\"]\n[services.a]\nimage = \"a\"\n", "app/web.toml", "image = \"nginx\"\n"),
 			want:  []string{"app/hakopod.toml", envFileUnsupported},
+		},
+		{
+			name:  "misspelled key in a bare service file",
+			files: mergeFiles("app/web.toml", "image = \"nginx\"\nimagee = \"nginx\"\n"),
+			want:  []string{"app/web.toml", "unknown TOML fields", "imagee", "line 2"},
+		},
+		{
+			name:  "misspelled key in a bare service file carrying schema_version",
+			files: mergeFiles("app/web.toml", "schema_version = 1\nimagee = \"nginx\"\n"),
+			want:  []string{"app/web.toml", "unknown TOML fields", "imagee"},
+		},
+		{
+			name:  "misspelled key inside an application document service table",
+			files: mergeFiles("app/hako.toml", "[services.web]\nimage = \"nginx\"\nimagee = \"nginx\"\n"),
+			want:  []string{"app/hako.toml", "unknown TOML fields", "services.web.imagee", "line 3"},
+		},
+		{
+			name:  "misspelled application-level key",
+			files: mergeFiles("app/hako.toml", "domainss = { \"a.test\" = \"a\" }\n[services.web]\nimage = \"nginx\"\n"),
+			want:  []string{"app/hako.toml", "unknown TOML fields", "domainss", "line 1"},
+		},
+		{
+			name: "env_file message wins over the unknown field message",
+			files: mergeFiles(
+				"app/a.toml", "env_file = [\".env\"]\nimagee = \"nginx\"\n",
+				"app/b.toml", "image = \"b\"\n",
+			),
+			want: []string{"app/a.toml", envFileUnsupported},
 		},
 		{
 			name:  "decode error names the path",
