@@ -179,8 +179,8 @@ hakopod plan --dir devops --project demo --environment production
 ```
 
 This reviews the network and every application and deploys nothing. As with a
-single-file `plan`, a single-file application's `env_file` references are
-imported into its secrets during review. An application that relies on a grant
+`plan` on one file, the `env_file` references of a folder with a `hakopod.toml`
+are imported into its secrets during review; a merged folder cannot use them. An application that relies on a grant
 the network file adds may show a plan error until the network has been applied.
 `--no-network` skips the network review as well, for keys that cannot manage
 networks.
