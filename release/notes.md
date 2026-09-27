@@ -1,37 +1,27 @@
-Hakopod 0.1.0-alpha.33 adds ClickHouse backups, DNS records created at the provider, gRPC backends, certificates for TCP-only services and operator-approved container daemons.
+Hakopod 0.1.0-alpha.34 deploys a whole folder of applications with one command, and lets an application be written as one file per service.
 
-## ClickHouse backups
+## Deploying a folder
 
-ClickHouse services can now be backed up and restored on a schedule or on demand, to the same object storage destinations as PostgreSQL and MySQL. ClickHouse performs the backup itself with `BACKUP ... TO S3`, so large databases are not streamed through the dump pipeline and are not bound by its size and time limits. A backup is recorded as complete only after the engine reports it created and its files are found at the destination; a run that is still in flight is shown as in flight rather than as success.
+`hakopod validate`, `plan` and `deploy` accept `--dir ROOT`. Each immediate subfolder of `ROOT` is one application and an optional `ROOT/network.toml` is one virtual network, so a repository of applications that share a network deploys with a single command. Validation is local and reports every problem at once. Deploy applies the network first, plans every application before writing any of them, then deploys them in folder-name order and stops at the first failure; an application that is healthy with no changes is skipped rather than restarted. `--only` selects folders by folder or application name, and `--no-network` lets a CI key that cannot manage networks deploy the applications alone.
 
-## DNS records at the provider
+## One file per service
 
-The custom domains page can create the records a domain needs directly at the DNS provider, for one domain or several at once. Cloudflare is the first supported provider. Provider credentials are stored encrypted, scoped to a project and environment, and can be limited to specific zones. An identical record is left alone, and a different record already at that name is reported as a conflict rather than overwritten unless replacement is explicitly requested.
+A folder holding a file named `hakopod.toml` keeps behaving exactly as before: that document is the application, its `name` key names it, and every other `.toml` file beside it is ignored. A folder with no `hakopod.toml` is merged instead: every `.toml` file in it becomes part of one application named after the folder. A file that has a `services` key contributes its `[services.*]` tables as written; a file without one is a single service named after the file, so `web.toml` becomes `services.web`.
 
-## gRPC and HTTP/2 backends
+Merged mode is opt-in by the absence of `hakopod.toml`, never by the number of files, so adding a file beside an existing configuration cannot change how a folder deploys. A `hakopod.old.toml` backup or a reference copy of the shared `network.toml` is ignored rather than merged into the live application.
 
-`backend_http2 = true` on a public service makes the ingress speak HTTP/2 to it, which gRPC servers require. Services without it keep HTTP/1.1.
+Conflicts are errors naming both files rather than silent winners: at most one file may set `name`, `recovery`, `inject_env`, `domains` or `volumes`; application-level `networks`, `env` and `secrets` merge key by key; a service defined twice is refused; and `schema_version` may repeat but not disagree. Every merged file is checked for unknown keys, so a misspelled `imagee` is reported with its line instead of being dropped. `env_file` is not supported in a merged folder and says so, because the server expands it only on the TOML path.
 
-## Certificates for TCP-only services
-
-Services published only over public TCP now receive an automatic certificate for their generated hostname, and can mount it to terminate TLS themselves. Custom hostnames on TCP-only services still need an uploaded certificate.
-
-## Container daemons
-
-An operator can register a container daemon reached over mutual TLS and approve it for specific services, which name it with `container_daemon`. Hakopod never mounts a host socket. Bindings require a self-hosted installation or a dedicated BYO node, and endpoints on loopback, link-local, cluster or API server addresses are refused.
-
-## Builds
-
-Builds can check out Git submodules recursively. A private submodule in another repository is not checked out, because the workflow token only reaches the repository that runs it. Creating an application now starts on building from source when a build-capable Git connection exists; otherwise the form is unchanged.
+Services inside one application already reach each other at their bare short name on a declared port with no configuration at all, so a folder of cooperating services needs no virtual network. A virtual network is only required to cross an application boundary. The trade-off is that a merged application is one release: a failed rollout of any service reverts every service in that application, and the 20-service limit and the shared namespace quota apply to the folder as a whole. Keep services in separate folders when they have independent release cadences.
 
 ## Upgrade
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.33
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.34
 ```
 
-Direct upgrades are supported from alpha.31 and alpha.32, the last two published versions. Older installations must upgrade through a supported intermediate release. This release adds two database migrations: DNS provider credentials get a new table, and backup records gain a column for engine-performed backups. Existing rows are not rewritten.
+Direct upgrades are supported from alpha.32 and alpha.33, the last two published versions. Older installations must upgrade through a supported intermediate release. This release adds no database migrations and changes no API or schema: everything in it is in the command-line tool, so an installation that does not use `--dir` behaves identically to alpha.33.
 
 ## Validation
 
-Engine, API and dashboard suites pass, with the template runtime matrix on amd64 and arm64. ClickHouse backup and restore were exercised against a real server and S3-compatible storage, with matching row counts and full-row hashes. HTTP/2 backends, HTTP-01 issuance for TCP-only services, per-SNI certificate selection and hitless certificate updates were exercised on a development cluster. Publication remains gated by packaged smoke tests and the bounded 12-case native install/upgrade matrix.
+Engine, API and dashboard suites pass. The folder-merge work was reviewed by two independent passes, one against the specification and one for blast radius, and the defects they found are fixed. It was then exercised against a development cluster on a tree of two applications, one merged from three files into four services and one from a single file: plan, deploy, a rerun that reported both unchanged without rolling any pod, and a one-file change that rolled only the service it touched. Sibling addressing by bare short name was confirmed from inside a running pod. The existing single-file `deploy --file` path is unchanged, and a real seven-application tree of single-file folders was confirmed to take the previous path unaltered.
