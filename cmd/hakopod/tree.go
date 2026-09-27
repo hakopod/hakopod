@@ -103,14 +103,17 @@ func loadFolder(name, dir string) (treeApp, error) {
 		app.Spec, app.EnvFiles, err = validateLocalConfiguration(app.Path, app.Data)
 		return app, err
 	}
+	// Merge errors quote mergeFile.Path, and the caller already prefixes the folder:
+	// the bare filename is the right granularity, so no absolute path reaches a message.
 	files := make([]mergeFile, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return treeApp{}, err
 		}
-		files = append(files, mergeFile{Path: path, Data: data})
+		files = append(files, mergeFile{Path: filepath.Base(path), Data: data})
 	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	merged, err := mergeFolder(name, files)
 	if err != nil {
 		return treeApp{}, err

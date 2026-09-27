@@ -110,10 +110,18 @@ func TestLoadTreeReportsMergeConflictsWithOtherErrors(t *testing.T) {
 		"fine/hakopod.toml": treeAppTOML("fine", ""),
 	})
 	_, err := loadTree(root, nil)
-	for _, want := range []string{"clash", "a.toml", "b.toml", "both set name", "broken", "api.toml"} {
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %v does not mention %s", err, want)
+	if err == nil {
+		t.Fatal("conflicting folder accepted")
+	}
+	// Both problems are reported, each prefixed with the folder, and merge messages name
+	// the bare filenames: an absolute path must never reach the message.
+	for _, want := range []string{"clash: a.toml and b.toml both set name", "broken: api.toml: "} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %v does not contain %q", err, want)
 		}
+	}
+	if strings.Contains(err.Error(), root) || strings.Contains(err.Error(), "/a.toml") {
+		t.Fatalf("absolute path leaked into %v", err)
 	}
 }
 
