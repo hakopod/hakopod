@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 ROOT=Path(__file__).resolve().parents[1]
 ENV=dict(os.environ,GOMAXPROCS='2',GOMEMLIMIT='256MiB',CGO_ENABLED='0',GOWORK='off')
-TARGETS=[('linux','amd64'),('linux','arm64'),('darwin','amd64'),('darwin','arm64')]
+TARGETS=[('linux','amd64'),('linux','arm64'),('darwin','amd64'),('darwin','arm64'),('windows','amd64'),('windows','arm64')]
 PUBLIC_BUILD_TAG='hakopod_selfhosted'
 
 def compile_command(package, destination, *, tags='', ldflags='-s -w'):
@@ -64,7 +64,7 @@ def archive(source,destination,epoch):
                     info.uid=info.gid=0
                     info.uname=info.gname=''
                     info.mtime=epoch
-                    info.mode=0o755 if path.name in ('hakopod','hakopod-server') else 0o644
+                    info.mode=0o755 if path.name in ('hakopod','hakopod-server','hakopod.exe') else 0o644
                     with path.open('rb') as file:bundle.addfile(info,file)
 
 def normalize_sbom_paths(destination,scan,go_cache,prefix='hakopod'):
@@ -119,31 +119,51 @@ def main():
     if any(not package['files'] for package in inventory['go']):raise SystemExit('A linked Go module is missing license/notice files; review before packaging')
     scan=stage/'sbom-source'
     scan.mkdir()
+    # CLI-only staging lives outside scan/ so syft (which catalogs scan/) never
+    # sees the copied/rebuilt binaries a second time.
+    cli_stage=stage/'cli-only'
+    cli_stage.mkdir()
     bundles=[]
+    cli_bundles=[]
     for system,arch in TARGETS:
-        name=f'hakopod_{version}_{system}_{arch}'
-        directory=scan/name
-        directory.mkdir()
         env=dict(ENV,GOOS=system,GOARCH=arch)
-        commands=['hakopod','hakopod-server'] if system=='linux' else ['hakopod']
-        for command in commands:
-            print(f'Building {command} for {system}/{arch}',flush=True)
-            run(build_command(command, directory/command, version),env=env,cwd=source)
-        for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,directory/filename)
-        shutil.copytree(notices/'go',directory/'third-party-licenses')
-        template_notices=directory/'third-party-licenses'/'hakopod-templates'
-        template_notices.mkdir()
-        for filename in ('LICENSE','LICENSE-Dokploy','NOTICE','THIRD_PARTY_NOTICES.md'):shutil.copyfile(source/'templates'/filename,template_notices/filename)
-        if system=='linux':
-            (directory/'api').mkdir()
-            shutil.copyfile(source/'api/openapi.json',directory/'api/openapi.json')
-        (directory/'README.txt').write_text(
-            f'Hakopod {version} - {system}/{arch}\n\n'
-            'See installer/README.md in the repository for host installation requirements.\n'
-            'Run hakopod version/help to inspect the CLI.\n'
-            + ('The OpenAPI contract is embedded in the server; api/openapi.json is also\nincluded for external tooling. The server requires an existing configured\nPostgreSQL database, Kubernetes credentials and explicit environment\nconfiguration; see the repository docs.\n' if system=='linux' else '')
-            + '\nLicense and third-party notices accompany this archive.\n')
-        bundles.append(directory)
+        cli_name=f'hakopod-cli_{version}_{system}_{arch}'
+        cli_directory=cli_stage/cli_name
+        cli_directory.mkdir()
+        if system=='windows':
+            # Windows ships CLI-only: no full bundle, no hakopod-server, and it
+            # is compiled once directly into the CLI staging dir (never scan/).
+            print(f'Building hakopod for {system}/{arch}',flush=True)
+            run(build_command('hakopod', cli_directory/'hakopod.exe', version),env=env,cwd=source)
+        else:
+            name=f'hakopod_{version}_{system}_{arch}'
+            directory=scan/name
+            directory.mkdir()
+            commands=['hakopod','hakopod-server'] if system=='linux' else ['hakopod']
+            for command in commands:
+                print(f'Building {command} for {system}/{arch}',flush=True)
+                run(build_command(command, directory/command, version),env=env,cwd=source)
+            for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,directory/filename)
+            shutil.copytree(notices/'go',directory/'third-party-licenses')
+            template_notices=directory/'third-party-licenses'/'hakopod-templates'
+            template_notices.mkdir()
+            for filename in ('LICENSE','LICENSE-Dokploy','NOTICE','THIRD_PARTY_NOTICES.md'):shutil.copyfile(source/'templates'/filename,template_notices/filename)
+            if system=='linux':
+                (directory/'api').mkdir()
+                shutil.copyfile(source/'api/openapi.json',directory/'api/openapi.json')
+            (directory/'README.txt').write_text(
+                f'Hakopod {version} - {system}/{arch}\n\n'
+                'See installer/README.md in the repository for host installation requirements.\n'
+                'Run hakopod version/help to inspect the CLI.\n'
+                + ('The OpenAPI contract is embedded in the server; api/openapi.json is also\nincluded for external tooling. The server requires an existing configured\nPostgreSQL database, Kubernetes credentials and explicit environment\nconfiguration; see the repository docs.\n' if system=='linux' else '')
+                + '\nLicense and third-party notices accompany this archive.\n')
+            bundles.append(directory)
+            # CLI-only archive reuses the already-built hakopod binary; never
+            # recompiled a second time.
+            shutil.copyfile(directory/'hakopod',cli_directory/'hakopod')
+            shutil.copymode(directory/'hakopod',cli_directory/'hakopod')
+        for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,cli_directory/filename)
+        cli_bundles.append(cli_directory)
     dashboard=scan/'dashboard-dependency-lock'
     dashboard.mkdir()
     for filename in ('package.json','pnpm-lock.yaml'):shutil.copyfile(source/'web'/filename,dashboard/filename)
@@ -159,7 +179,7 @@ def main():
          '-o','cyclonedx-json='+str(destination/'hakopod.cyclonedx.json'),
          '-o','syft-json='+str(destination/'hakopod.syft.json')],env=sbom_env)
     normalize_sbom_paths(destination,scan,go_cache)
-    for directory in bundles:archive(directory,destination/(directory.name+'.tar.gz'),epoch)
+    for directory in bundles+cli_bundles:archive(directory,destination/(directory.name+'.tar.gz'),epoch)
     archive(notices,destination/f'hakopod_{version}_dependency-notices.tar.gz',epoch)
     shutil.copyfile(notices/'inventory.json',destination/'dependency-license-inventory.json')
     try:revision=subprocess.check_output(['git','rev-parse','--verify','HEAD'],cwd=ROOT,env=ENV,text=True,stderr=subprocess.DEVNULL).strip()
