@@ -25,10 +25,10 @@ import {
 
 const help = `Hakopod — deploy committed Git repositories
 
-  npx @hakopod/cli deploy
-  npx @hakopod/cli login --url https://hakopod.example.com
-  npx @hakopod/cli status --url https://hakopod.example.com
-  npx @hakopod/cli logout --url https://hakopod.example.com
+  npx @hakopod/cloud deploy
+  npx @hakopod/cloud login --url https://hakopod.example.com
+  npx @hakopod/cloud status --url https://hakopod.example.com
+  npx @hakopod/cloud logout --url https://hakopod.example.com
 
 Options: --url <dashboard origin>  --name <application>  --context <directory>
          --build <existing build ID>  --yes (accept displayed reviews)  --no-browser  --help

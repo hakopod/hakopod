@@ -292,6 +292,6 @@ export async function deviceLogin(
     }
   }
   throw new Error(
-    "Sign-in expired. Run hakopod login again to get a new code.",
+    "Sign-in expired. Run hakopod-cloud login again to get a new code.",
   );
 }
