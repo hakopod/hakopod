@@ -41,9 +41,15 @@ func treeServer(t *testing.T, planFails, deployStatus string) (*client, *[]strin
 		case "POST /api/v1/virtual-networks/plan":
 			json.NewEncoder(w).Encode(networkPlan{Spec: network, Previous: &network, ExpectedRevision: 1})
 		case "POST /api/v1/plan":
-			var in struct{ TOML string }
+			var in struct {
+				TOML string
+				Spec spec.Application
+			}
 			json.Unmarshal(body, &in)
-			app, _ := spec.Parse([]byte(in.TOML))
+			app := in.Spec // a merged folder sends the application as JSON instead of TOML
+			if in.TOML != "" {
+				app, _ = spec.Parse([]byte(in.TOML))
+			}
 			if app.Name == planFails {
 				w.WriteHeader(400)
 				w.Write([]byte(`{"error":{"code":"invalid","message":"segment not granted"}}`))
@@ -114,6 +120,70 @@ func TestTreeDeploysEachAppWithOwnKey(t *testing.T) {
 	*writes = nil
 	if err := treeCommand(context.Background(), c, treeCfg, "plan", twoAppTree(t), []string{"beta"}, false, false, true); err != nil || len(*writes) != 0 {
 		t.Fatal(err, *writes)
+	}
+}
+
+// TestTreePlanBodyPerPath is the server contract: exactly one of spec or toml per request.
+// A merged folder has no single document to send, a legacy folder still sends its TOML.
+func TestTreePlanBodyPerPath(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"legacy/hakopod.toml": "name = 'legacy'\nenv_file = '.env'\n[services.web]\nimage = 'nginx'\n",
+		"legacy/.env":         "TOKEN=abc\n",
+		"merged/web.toml":     "image = 'nginx'\n",
+		"merged/worker.toml":  "image = 'busybox'\n",
+	})
+	var mu sync.Mutex
+	bodies := map[string]map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var in map[string]any
+		json.Unmarshal(raw, &in)
+		var app spec.Application
+		kind := "merged"
+		if _, sendsTOML := in["toml"]; sendsTOML {
+			kind = "legacy"
+		} else if encoded, err := json.Marshal(in["spec"]); err == nil {
+			json.Unmarshal(encoded, &app)
+		}
+		mu.Lock()
+		bodies[kind] = in
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(appPlan{Spec: app})
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, key: "k", http: server.Client()}
+	if err := treeCommand(context.Background(), c, treeCfg, "plan", root, nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+
+	merged, legacy := bodies["merged"], bodies["legacy"]
+	if merged == nil || legacy == nil {
+		t.Fatalf("both applications must be planned, got %v", bodies)
+	}
+	if _, ok := merged["toml"]; ok {
+		t.Fatalf("merged folder sent toml: %v", merged)
+	}
+	services, _ := merged["spec"].(map[string]any)["services"].(map[string]any)
+	if len(services) != 2 {
+		t.Fatalf("merged folder must send the merged spec, got %v", merged["spec"])
+	}
+	if _, ok := legacy["spec"]; ok {
+		t.Fatalf("legacy folder sent spec: %v", legacy)
+	}
+	if legacy["toml"] == "" || legacy["env_files"].(map[string]any)[".env"] != "TOKEN=abc\n" {
+		t.Fatalf("legacy folder must send toml plus env_files, got %v", legacy)
+	}
+}
+
+func TestTreeDeploysMergedFolder(t *testing.T) {
+	c, writes, _ := treeServer(t, "", "queued")
+	root := writeTree(t, map[string]string{"merged/web.toml": "image = 'nginx'\n", "merged/worker.toml": "image = 'busybox'\n"})
+	if err := treeCommand(context.Background(), c, treeCfg, "deploy", root, nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(*writes) != 1 || !strings.HasPrefix((*writes)[0], "POST /api/v1/deployments ") {
+		t.Fatalf("expected one deployment for the merged folder, got %v", *writes)
 	}
 }
 

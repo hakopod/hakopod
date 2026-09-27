@@ -54,6 +54,69 @@ func TestLoadTreeHappyPath(t *testing.T) {
 	}
 }
 
+func TestLoadTreeMergesFolders(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"three/web.toml":     "image = 'nginx'\n",
+		"three/worker.toml":  "image = 'busybox'\n",
+		"three/cron.toml":    "image = 'alpine'\n",
+		"mixed/api.toml":     "image = 'nginx'\n",
+		"mixed/hakopod.toml": "[services.worker]\nimage = 'busybox'\n[services.cron]\nimage = 'alpine'\n",
+		"lone/api.toml":      "image = 'nginx'\n",
+		"legacy/hakopod.toml": "name = 'renamed'\nenv_file = '.env'\n" +
+			"[services.web]\nimage = 'nginx'\n",
+		"legacy/.env": "TOKEN=abc\n",
+	})
+	tree, err := loadTree(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byDir := map[string]treeApp{}
+	for _, app := range tree.Apps {
+		byDir[app.Dir] = app
+	}
+	if len(byDir) != 4 {
+		t.Fatalf("expected 4 applications, got %+v", tree.Apps)
+	}
+	for dir, want := range map[string][]string{
+		"three": {"web", "worker", "cron"},
+		"mixed": {"api", "worker", "cron"},
+		"lone":  {"api"},
+	} {
+		app := byDir[dir]
+		if !app.Merged || app.Spec.Name != dir || app.Data != nil || app.EnvFiles != nil {
+			t.Fatalf("%s: expected a merged folder named after itself, got %+v", dir, app)
+		}
+		if len(app.Spec.Services) != len(want) {
+			t.Fatalf("%s: services %v, want %v", dir, app.Spec.Services, want)
+		}
+		for _, name := range want {
+			if _, ok := app.Spec.Services[name]; !ok {
+				t.Fatalf("%s: missing service %s in %v", dir, name, app.Spec.Services)
+			}
+		}
+	}
+	// A single hakopod.toml keeps the legacy path: name from the document, env files read.
+	legacy := byDir["legacy"]
+	if legacy.Merged || legacy.Spec.Name != "renamed" || len(legacy.Data) == 0 || legacy.EnvFiles[".env"] != "TOKEN=abc\n" {
+		t.Fatalf("legacy folder changed: %+v", legacy)
+	}
+}
+
+func TestLoadTreeReportsMergeConflictsWithOtherErrors(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"clash/a.toml":      "name = 'clash'\n[services.web]\nimage = 'nginx'\n",
+		"clash/b.toml":      "name = 'clash'\n[services.other]\nimage = 'nginx'\n",
+		"broken/api.toml":   "this is not toml",
+		"fine/hakopod.toml": treeAppTOML("fine", ""),
+	})
+	_, err := loadTree(root, nil)
+	for _, want := range []string{"clash", "a.toml", "b.toml", "both set name", "broken", "api.toml"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %v does not mention %s", err, want)
+		}
+	}
+}
+
 func TestLoadTreeErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
 		files map[string]string
@@ -102,6 +165,10 @@ func TestFindConfigFileAmbiguous(t *testing.T) {
 	}
 	if _, err := findConfigFile(dir); err == nil {
 		t.Fatal("two config files accepted")
+	}
+	// Case variants are ambiguous, never two files to merge.
+	if _, err := loadFolder("app", dir); err == nil {
+		t.Fatal("two config files merged instead of rejected")
 	}
 }
 
