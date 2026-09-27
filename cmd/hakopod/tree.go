@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -83,26 +84,41 @@ func findTOMLFiles(dir string) ([]string, error) {
 	return paths, nil
 }
 
-// loadFolder reads one application folder. Exactly one hakopod.toml keeps the legacy TOML
-// path (env_file support, name from the document); anything else is merged into one
-// application named after the folder and submitted as a JSON spec.
+// folderNamePattern mirrors spec.namePattern, which is unexported. Merged mode names the
+// application after its folder, so the folder name is checked here to say so; spec.Normalize
+// would reject it with a bare "name:" complaint that never mentions the folder.
+var folderNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
+
+// loadFolder reads one application folder. A hakopod.toml keeps the legacy TOML path
+// (env_file support, name from the document) and every other .toml beside it is ignored;
+// a folder with no hakopod.toml merges all its .toml files into one application named
+// after the folder and submits it as a JSON spec.
 func loadFolder(name, dir string) (treeApp, error) {
 	// Two case variants of hakopod.toml are ambiguous, not two services.
-	if _, err := findConfigFile(dir); err != nil {
+	cfg, err := findConfigFile(dir)
+	if err != nil {
 		return treeApp{}, err
 	}
-	paths, err := findTOMLFiles(dir)
-	if err != nil || len(paths) == 0 {
-		return treeApp{}, err
-	}
-	app := treeApp{Dir: name, Path: paths[0]}
-	if len(paths) == 1 && strings.EqualFold(filepath.Base(paths[0]), "hakopod.toml") {
-		if app.Data, err = os.ReadFile(app.Path); err != nil {
+	if cfg != "" {
+		// hakopod.toml owns the folder. Merged mode is opt-in by its absence, never
+		// entered by dropping a file next to it: a hakopod.old.toml backup is not
+		// merged into the live application, the document keeps naming it, and a
+		// documentation copy of network.toml is ignored the way it always was.
+		app := treeApp{Dir: name, Path: cfg}
+		if app.Data, err = os.ReadFile(cfg); err != nil {
 			return treeApp{}, err
 		}
 		app.Spec, app.EnvFiles, err = validateLocalConfiguration(app.Path, app.Data)
 		return app, err
 	}
+	paths, err := findTOMLFiles(dir)
+	if err != nil || len(paths) == 0 {
+		return treeApp{}, err
+	}
+	if !folderNamePattern.MatchString(name) {
+		return treeApp{}, fmt.Errorf("folder name %q becomes the application name when several files are merged: rename the folder to 1-40 lowercase letters, digits or dashes, or keep one hakopod.toml that names the application itself", name)
+	}
+	app := treeApp{Dir: name, Path: paths[0]}
 	// Merge errors quote mergeFile.Path, and the caller already prefixes the folder:
 	// the bare filename is the right granularity, so no absolute path reaches a message.
 	files := make([]mergeFile, 0, len(paths))
