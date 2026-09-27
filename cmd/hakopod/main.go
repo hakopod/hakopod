@@ -671,7 +671,7 @@ func readConfig() (config, string, error) {
 	if err != nil {
 		return c, path, err
 	}
-	if info.Mode().Perm()&0077 != 0 {
+	if err := checkConfigPerm(info); err != nil {
 		return c, path, fmt.Errorf("credential file %s must have mode 0600", path)
 	}
 	err = json.Unmarshal(data, &c)
