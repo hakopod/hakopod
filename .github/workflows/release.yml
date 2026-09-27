@@ -319,9 +319,22 @@ jobs:
         run: node packages/cli-binary/generate.mjs "$RELEASE_VERSION" .local/npm-archives .local/npm-packages
       - name: Publish the platform packages, then the wrapper
         run: |
+          # Publishing seven packages in sequence means a failure partway leaves
+          # the earlier ones published. npm refuses to republish a version, so a
+          # naive re-run would die on those instead of resuming. Skip what is
+          # already on the registry at this exact version.
+          publish() {
+            name=$(node -p "require('./$1/package.json').name")
+            version=$(node -p "require('./$1/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "skip $name@$version (already published)"
+              return 0
+            fi
+            npm publish --provenance --access public --tag latest "$1"
+          }
           # Platform packages first: the wrapper's optionalDependencies pin these
           # exact versions, and npm resolves them at install time.
           for package in .local/npm-packages/cli-*; do
-            npm publish --provenance --access public --tag latest "$package"
+            publish "$package"
           done
-          npm publish --provenance --access public --tag latest .local/npm-packages/cli
+          publish .local/npm-packages/cli
