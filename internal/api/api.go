@@ -210,6 +210,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
+		if errors.Is(err, io.EOF) {
+			problem(w, 400, "invalid_request", "request body is required and must be a JSON object")
+			return false
+		}
 		problem(w, 400, "invalid_request", "invalid JSON or unknown field: "+err.Error())
 		return false
 	}
