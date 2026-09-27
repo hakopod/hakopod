@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/hakopod/hakopod/internal/spec"
 )
 
 func mergeFiles(pairs ...string) []mergeFile {
@@ -71,19 +73,24 @@ func TestMergeFolderSucceeds(t *testing.T) {
 			services: []string{"a", "b"},
 		},
 		{
-			name:     "single legacy hakopod.toml keeps env_file",
-			files:    mergeFiles("app/hakopod.toml", "env_file = [\".env\"]\n[services.web]\nimage = \"nginx\"\n"),
+			// The caller accepts any extension case, so the service name drops it
+			// case-insensitively instead of keeping an invalid "web.TOML".
+			name:     "bare service file with an upper-case extension",
+			files:    mergeFiles("app/web.TOML", "image = \"nginx\"\n"),
 			services: []string{"web"},
 		},
 		{
-			name:     "single legacy hakopod.toml keeps a service-level env_file",
-			files:    mergeFiles("app/hakopod.toml", "[services.web]\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
+			name:     "bare service file may name the application it belongs to",
+			files:    mergeFiles("app/web.toml", "name = \"shop\"\nimage = \"nginx\"\n"),
 			services: []string{"web"},
 		},
 		{
-			name:     "lone hakopod.toml shaped as a bare service keeps env_file",
-			files:    mergeFiles("app/hakopod.toml", "schema_version = 1\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
-			services: []string{"hakopod"},
+			name: "bare service file's name agrees with an application document's",
+			files: mergeFiles(
+				"app/a.toml", "[services.a]\nimage = \"a\"\n",
+				"app/web.toml", "name = \"shop\"\nimage = \"nginx\"\n",
+			),
+			services: []string{"a", "web"},
 		},
 	}
 	for _, testCase := range cases {
@@ -162,6 +169,25 @@ func TestMergeFolderBareSchemaVersion(t *testing.T) {
 	}
 	if app.SchemaVersion != 2 {
 		t.Fatalf("schema_version = %d, want 2 passed through", app.SchemaVersion)
+	}
+}
+
+func TestMergeFolderExplicitEmptyServices(t *testing.T) {
+	// Removing every service is a legitimate operation: an explicit but empty
+	// [services] table must merge to a non-nil map, or spec.Normalize rejects it
+	// as an omitted services table.
+	app, err := mergeFolder("shop", mergeFiles("app/hakopod.toml", "schema_version = 1\n[services]\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.Services == nil {
+		t.Fatal("explicit empty [services] merged to a nil map")
+	}
+	if len(app.Services) != 0 {
+		t.Fatalf("services = %v, want empty", app.Services)
+	}
+	if _, err := spec.Normalize(app); err != nil {
+		t.Fatalf("normalize rejected an explicit empty services table: %v", err)
 	}
 }
 
@@ -304,9 +330,62 @@ func TestMergeFolderErrors(t *testing.T) {
 			want:  []string{"app/web.toml", envFileUnsupported},
 		},
 		{
-			name:  "env_file in a merged file named hakopod.toml",
-			files: mergeFiles("app/hakopod.toml", "env_file = [\".env\"]\n[services.a]\nimage = \"a\"\n", "app/web.toml", "image = \"nginx\"\n"),
+			// A lone hakopod.toml is routed to validateLocalConfiguration, never
+			// here, so a merged folder rejects env_file unconditionally.
+			name:  "env_file in a lone hakopod.toml",
+			files: mergeFiles("app/hakopod.toml", "env_file = [\".env\"]\n[services.web]\nimage = \"nginx\"\n"),
 			want:  []string{"app/hakopod.toml", envFileUnsupported},
+		},
+		{
+			name:  "service-level env_file in a lone hakopod.toml",
+			files: mergeFiles("app/hakopod.toml", "[services.web]\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
+			want:  []string{"app/hakopod.toml", envFileUnsupported},
+		},
+		{
+			name:  "env_file in a lone hakopod.toml shaped as a bare service",
+			files: mergeFiles("app/hakopod.toml", "schema_version = 1\nimage = \"nginx\"\nenv_file = [\".env\"]\n"),
+			want:  []string{"app/hakopod.toml", envFileUnsupported},
+		},
+		{
+			// A malformed value still uses the key: the unsupported message wins
+			// over "unknown TOML fields: env_file", which blames a misspelling.
+			name:  "empty env_file array is unsupported, not unknown",
+			files: mergeFiles("app/web.toml", "image = \"nginx\"\nenv_file = []\n"),
+			want:  []string{"app/web.toml", envFileUnsupported},
+		},
+		{
+			name:  "env_file of the wrong type is unsupported, not unknown",
+			files: mergeFiles("app/web.toml", "image = \"nginx\"\nenv_file = 5\n"),
+			want:  []string{"app/web.toml", envFileUnsupported},
+		},
+		{
+			name: "one service spelled with two extension cases",
+			files: mergeFiles(
+				"app/web.TOML", "image = \"a\"\n",
+				"app/web.toml", "image = \"b\"\n",
+			),
+			want: []string{"app/web.TOML", "app/web.toml", "web"},
+		},
+		{
+			name:  "bare service file naming another application",
+			files: mergeFiles("app/web.toml", "name = \"other\"\nimage = \"nginx\"\n"),
+			want:  []string{"app/web.toml", "other", "shop"},
+		},
+		{
+			name: "name set by both a bare service file and an application document",
+			files: mergeFiles(
+				"app/a.toml", "name = \"shop\"\n[services.a]\nimage = \"a\"\n",
+				"app/web.toml", "name = \"shop\"\nimage = \"nginx\"\n",
+			),
+			want: []string{"app/a.toml", "app/web.toml", "name"},
+		},
+		{
+			name: "name set by two bare service files",
+			files: mergeFiles(
+				"app/api.toml", "name = \"shop\"\nimage = \"api\"\n",
+				"app/web.toml", "name = \"shop\"\nimage = \"nginx\"\n",
+			),
+			want: []string{"app/api.toml", "app/web.toml", "name"},
 		},
 		{
 			name:  "misspelled key in a bare service file",
