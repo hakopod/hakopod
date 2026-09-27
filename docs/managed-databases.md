@@ -2,7 +2,7 @@
 
 Managed databases have their own project and environment, resource allocation, credentials, revision history, operation progress and lifecycle. Application replicas do not control database replication. The PostgreSQL and Redis controllers own replication and recovery of failed members.
 
-This feature is under development on `feat/managed-databases`; it has not been released. Cloud includes workspace admission, shared memory and storage quotas, trusted placement and deployment approvals. Hosted provisioning is opt-in; it is not enabled by this source change.
+Managed databases are included in the self-hosted development release starting with `v0.1.0-alpha.37`. Provisioning requires the controller installation described below; upgrading Hakopod does not install those controllers. Cloud workspace admission, quotas, trusted placement and approvals require the corresponding Cloud integration and a separate operator rollout. This OSS release does not enable hosted provisioning.
 
 ## Database configuration
 
