@@ -1979,6 +1979,214 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listManagedDatabases"];
+        put?: never;
+        post: operations["createManagedDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedDatabase"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManagedDatabase"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDatabaseOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revealDatabaseCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/resize-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewDatabaseResize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/resize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resizeManagedDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/restore-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewManagedDatabaseRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/connection-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewDatabaseConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replaceDatabaseConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["attestDatabaseInspection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewDatabaseImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getDatabaseImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-imports/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["uploadDatabaseImport"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/provenance": {
         parameters: {
             query?: never;
@@ -3899,12 +4107,14 @@ export interface components {
         };
         BackupSource: {
             /** @enum {string} */
-            kind: "database" | "management";
+            kind: "database" | "management" | "managed_database" | "docker_import";
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis";
             database?: string;
+            managed_database_id?: string;
+            external_name?: string;
         };
         BackupDestination: {
             id: string;
@@ -3922,6 +4132,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            project?: string;
+            environment?: string;
         };
         BackupDestinationInput: {
             name: string;
@@ -3943,11 +4155,11 @@ export interface components {
         };
         BackupTarget: {
             /** @enum {string} */
-            kind: "database" | "management";
+            kind: "database" | "management" | "managed_database" | "docker_import";
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis";
             database?: string;
             application_name?: string;
             revision: number;
@@ -3955,6 +4167,10 @@ export interface components {
             pod_uid?: string;
             available: boolean;
             message?: string;
+            managed_database_id?: string;
+            managed_database_name?: string;
+            runtime_fingerprint?: string;
+            source_version?: string;
         };
         BackupArtifact: {
             id: string;
@@ -3975,6 +4191,12 @@ export interface components {
             /** Format: date-time */
             deleted_at?: string;
             deletion_pending?: boolean;
+            source_revision?: number;
+            /** Format: date-time */
+            captured_at?: string;
+            /** Format: date-time */
+            verified_at?: string;
+            source_version?: string;
         };
         BackupJob: {
             id: string;
@@ -4639,16 +4861,162 @@ export interface components {
             mode?: 288 | 292;
         };
         ServiceBinding: {
-            service: string;
+            service?: string;
             /** @enum {string} */
             protocol: "http" | "postgres" | "mysql" | "redis";
             database?: string;
             username?: string;
             password?: components["schemas"]["SecretRef"];
+            managed_database?: string;
+            endpoint?: string;
+            cluster_aware?: boolean;
         };
         HTTPEndpoint: {
             port: number;
             domain?: string;
+        };
+        ManagedDatabaseSpec: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /** @enum {string} */
+            engine: "postgresql" | "redis";
+            version: string;
+            /** @enum {string} */
+            mode: "standalone" | "cluster";
+            replicas: number;
+            shards: number;
+            cpu: string;
+            memory: string;
+            storage_gib: number;
+        };
+        DatabaseMember: {
+            name: string;
+            uid: string;
+            role: string;
+            shard?: string;
+            ready: boolean;
+            node?: string;
+        };
+        DatabaseEndpoint: {
+            purpose: string;
+            host: string;
+            port: number;
+        };
+        DatabaseObservation: {
+            /** Format: date-time */
+            observed_at: string;
+            revision: number;
+            status: string;
+            message: string;
+            members: components["schemas"]["DatabaseMember"][];
+            endpoints: components["schemas"]["DatabaseEndpoint"][];
+            primary?: string;
+            slots_assigned?: number;
+            slots_healthy: boolean;
+            topology_fingerprint?: string;
+        };
+        DatabaseRecovery: {
+            artifact_id: string;
+            job_id: string;
+            source_id?: string;
+            source_revision?: number;
+            /** Format: date-time */
+            captured_at?: string;
+            /** Format: date-time */
+            restored_at?: string;
+            /** Format: date-time */
+            inspected_at?: string;
+        };
+        ManagedDatabase: {
+            id: string;
+            project: string;
+            environment: string;
+            revision: number;
+            spec: components["schemas"]["ManagedDatabaseSpec"];
+            status: string;
+            observation: components["schemas"]["DatabaseObservation"];
+            recovery?: components["schemas"]["DatabaseRecovery"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+        };
+        DatabaseBackupEvidence: {
+            artifact_id: string;
+            database_id: string;
+            revision: number;
+            /** Format: date-time */
+            captured_at: string;
+            /** Format: date-time */
+            verified_at: string;
+            sha256: string;
+        };
+        DatabaseResizePlan: {
+            current: components["schemas"]["ManagedDatabaseSpec"];
+            proposed: components["schemas"]["ManagedDatabaseSpec"];
+            expected_revision: number;
+            topology_fingerprint: string;
+            backup?: components["schemas"]["DatabaseBackupEvidence"];
+            blocked_reasons: string[];
+            warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabaseOperation: {
+            id: string;
+            database_id: string;
+            revision: number;
+            kind: string;
+            status: string;
+            phase: string;
+            message: string;
+            spec: components["schemas"]["ManagedDatabaseSpec"];
+            review?: components["schemas"]["DatabaseResizePlan"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        DatabaseConnectionPlan: {
+            id: string;
+            database_id: string;
+            database_name: string;
+            database_revision: number;
+            application_id: string;
+            application_name: string;
+            application_revision: number;
+            service: string;
+            variable: string;
+            previous_kind: string;
+            binding: components["schemas"]["ServiceBinding"];
+            recovery?: components["schemas"]["DatabaseRecovery"];
+            /** Format: date-time */
+            expires_at: string;
+            warnings: string[];
+        };
+        DatabaseImportSpec: {
+            destination_id: string;
+            source_name: string;
+            /** @enum {string} */
+            engine: "postgresql" | "redis";
+            source_version: string;
+            /** Format: date-time */
+            captured_at: string;
+            bytes: number;
+            sha256: string;
+        };
+        DatabaseImport: {
+            id: string;
+            spec: components["schemas"]["DatabaseImportSpec"];
+            status: string;
+            /** Format: date-time */
+            expires_at: string;
+            artifact_id?: string;
         };
         BuildProvenance: {
             /** @enum {string} */
@@ -10912,6 +11280,562 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LicenseStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listManagedDatabases: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ManagedDatabase"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createManagedDatabase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project: string;
+                    environment: string;
+                    spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedDatabase"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteManagedDatabase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDatabaseOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DatabaseOperation"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revealDatabaseCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        username: string;
+                        password: string;
+                        database: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewDatabaseResize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        plan: components["schemas"]["DatabaseResizePlan"];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resizeManagedDatabase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    expected_revision: number;
+                    spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewManagedDatabaseRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    artifact_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRestorePlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewDatabaseConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    application_id: string;
+                    service: string;
+                    variable: string;
+                    endpoint: string;
+                    cluster_aware: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    replaceDatabaseConnection: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    confirm_application: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    attestDatabaseInspection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    job_id: string;
+                    confirm_name: string;
+                    expected_revision: number;
+                    inspected: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedDatabase"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewDatabaseImport: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseImportSpec"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseImport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabaseImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseImport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    uploadDatabaseImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupArtifact"];
                 };
             };
             /** @description Error */

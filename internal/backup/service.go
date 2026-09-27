@@ -80,6 +80,15 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		if err == nil || time.Now().After(nextRetention) {
 			s.retention(ctx)
+			if imports, ok := s.Repo.(interface {
+				CleanupBackupImports(context.Context, func(context.Context, Import) error) error
+			}); ok {
+				clean, cancel := context.WithTimeout(ctx, 45*time.Second)
+				if e := imports.CleanupBackupImports(clean, s.DiscardImportedArchive); e != nil && ctx.Err() == nil {
+					slog.Warn("archive import cleanup deferred")
+				}
+				cancel()
+			}
 			nextRetention = time.Now().Add(time.Minute)
 		}
 		select {
@@ -182,6 +191,7 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 	if err != nil {
 		return nil, err
 	}
+	capturedAt := time.Now().UTC()
 	target, err := s.Runtime.Resolve(ctx, j.Source)
 	if err != nil {
 		return nil, err
@@ -204,6 +214,9 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 		encrypted, e := age.Encrypt(writer, recipient)
 		if e == nil {
 			prefix := "PGDMP"
+			if target.Engine == "redis" {
+				prefix = "HKREDIS1\n"
+			}
 			if target.Engine == "mysql" {
 				prefix = "-- MySQL dump"
 			}
@@ -233,11 +246,27 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 		return nil, fmt.Errorf("database dump did not complete")
 	}
 	artifact := &Artifact{ID: j.ID, JobID: j.ID, DestinationID: d.ID, Source: target.Source, ObjectKey: key, SHA256: digest, Bytes: bytes, Format: "age-v1+" + func() string {
+		if target.Engine == "redis" {
+			return "redis-shards-v1"
+		}
 		if target.Engine == "mysql" {
 			return "mysql-sql"
 		}
 		return "postgresql-custom"
 	}(), Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC()}
+	artifact.SourceRevision = target.Revision
+	artifact.SourceVersion = target.SourceVersion
+	artifact.CapturedAt = &capturedAt
+	if target.Kind == "managed_database" || target.Engine == "postgresql" {
+		if err = s.withVerifiedArchive(ctx, *artifact, d, func(reader io.Reader) error { return nil }); err != nil {
+			cleanup, c := context.WithTimeout(context.Background(), 15*time.Second)
+			defer c()
+			_ = store.Delete(cleanup, key)
+			return nil, fmt.Errorf("uploaded database archive could not be verified")
+		}
+		verifiedAt := time.Now().UTC()
+		artifact.VerifiedAt = &verifiedAt
+	}
 	manifest, _ := json.Marshal(struct {
 		SchemaVersion int       `json:"schema_version"`
 		Artifact      *Artifact `json:"artifact"`
@@ -285,7 +314,7 @@ func (w *dumpFormatWriter) Write(data []byte) (int, error) {
 }
 
 func (s *Service) restore(ctx context.Context, j Job) error {
-	if j.Target == nil || !strings.HasPrefix(j.Target.Database, "hp_restore_") {
+	if j.Target == nil || (j.Target.Kind != "managed_database" && !strings.HasPrefix(j.Target.Database, "hp_restore_")) {
 		return fmt.Errorf("restore requires a reviewed fresh database target")
 	}
 	a, err := s.Repo.BackupArtifact(ctx, j.ArtifactID)
@@ -305,6 +334,13 @@ func (s *Service) restore(ctx context.Context, j Job) error {
 	if engineArtifact(a) {
 		return s.engineRestore(ctx, j, a, d)
 	}
+	return s.withVerifiedArchive(ctx, a, d, func(reader io.Reader) error { return s.Runtime.Restore(ctx, *j.Target, reader) })
+}
+
+// withVerifiedArchive authenticates every encrypted frame and verifies the
+// downloaded bytes before invoking a callback that may change a target.
+func (s *Service) withVerifiedArchive(ctx context.Context, a Artifact, d Destination, consume func(io.Reader) error) error {
+	var err error
 	// A dump is staged on local disk and streamed, so it has to fit that bound.
 	if a.Bytes > s.limit() {
 		return fmt.Errorf("artifact and restore target do not match")
@@ -381,7 +417,7 @@ func (s *Service) restore(ctx context.Context, j Job) error {
 	if err != nil {
 		return fmt.Errorf("backup decryption failed")
 	}
-	return s.Runtime.Restore(ctx, *j.Target, contextReader{ctx: ctx, reader: plaintext})
+	return consume(contextReader{ctx: ctx, reader: plaintext})
 }
 
 type contextReader struct {

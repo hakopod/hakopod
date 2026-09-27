@@ -46,6 +46,17 @@ func authorizeBackupSource(ctx context.Context, q backupQuerier, p Principal, so
 	if p.IsAdmin() {
 		return nil
 	}
+	if source.Kind == "managed_database" {
+		var allowed bool
+		err := q.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM managed_databases WHERE id=$1 AND project=$2 AND environment=$3 AND deleted_at IS NULL)", source.ManagedDatabaseID, p.Project, p.Environment).Scan(&allowed)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return backup.ErrNotFound
+		}
+		return nil
+	}
 	if source.Kind != "database" {
 		return backup.ErrNotFound
 	}
@@ -64,7 +75,7 @@ func (s *Store) AuthorizeBackupSource(ctx context.Context, p Principal, source b
 }
 func authorizeBackupJob(ctx context.Context, q backupQuerier, p Principal, j backup.Job) error {
 	if j.Kind == "restore" && !p.IsAdmin() {
-		if !p.CanManageBackups() || j.Source.Kind != "database" || j.Target == nil {
+		if !p.CanManageBackups() || (j.Source.Kind != "database" && j.Source.Kind != "managed_database" && j.Source.Kind != "docker_import") || j.Target == nil {
 			return ErrForbidden
 		}
 		// An immutable artifact retains its workspace even if the original

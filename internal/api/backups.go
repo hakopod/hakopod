@@ -14,6 +14,7 @@ import (
 
 func (s *Server) registerBackupRoutes(mux *http.ServeMux) {
 	routes := map[string]http.HandlerFunc{
+		"POST /api/v1/backup-imports": s.prepareDatabaseImport, "GET /api/v1/backup-imports/{id}": s.databaseImport, "PUT /api/v1/backup-imports/{id}/archive": s.uploadDatabaseImport,
 		"GET /api/v1/backup-destinations": s.backupDestinations, "POST /api/v1/backup-destinations": s.putBackupDestination, "PUT /api/v1/backup-destinations/{id}": s.putBackupDestination, "DELETE /api/v1/backup-destinations/{id}": s.deleteBackupDestination, "POST /api/v1/backup-destinations/{id}/test": s.testBackupDestination,
 		"GET /api/v1/backup-targets": s.backupTargets, "GET /api/v1/backups": s.backupJobs, "POST /api/v1/backups": s.createBackup, "GET /api/v1/backups/{id}": s.backupJob, "POST /api/v1/backups/{id}/cancel": s.cancelBackup,
 		"GET /api/v1/backup-artifacts": s.backupArtifacts, "GET /api/v1/backup-artifacts/{id}": s.backupArtifact, "DELETE /api/v1/backup-artifacts/{id}": s.deleteBackupArtifact, "POST /api/v1/backup-artifacts/{id}/restore-plan": s.planBackupRestore, "POST /api/v1/backup-artifacts/{id}/restore": s.restoreBackup,

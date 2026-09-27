@@ -22,6 +22,9 @@ export const Route = createFileRoute('/backups/artifacts/$artifactId/restore')({
 })
 function RestoreBackup() {
   const { artifactId } = Route.useParams()
+  return <Restore key={artifactId} artifactId={artifactId} />
+}
+function Restore({ artifactId }: { artifactId: string }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
   const targets = useBackupTargets()
@@ -46,7 +49,14 @@ function RestoreBackup() {
   const eligible =
     targets.data?.items.filter(
       (target) =>
-        target.kind === 'database' && target.engine === item.source.engine && target.available,
+        (target.kind === 'managed_database' ||
+          (target.kind === 'database' &&
+            item.source.kind !== 'managed_database' &&
+            item.source.kind !== 'docker_import')) &&
+        target.engine === item.source.engine &&
+        target.available &&
+        (!target.managed_database_id ||
+          target.managed_database_id !== item.source.managed_database_id),
     ) || []
   const target = eligible.find((value) => sourceKey(value) === selected)
   return (
@@ -85,8 +95,8 @@ function RestoreBackup() {
               <dd>{sourceLabel(item.source)}</dd>
             </div>
             <div>
-              <dt>Created</dt>
-              <dd>{timestamp(item.created_at)}</dd>
+              <dt>Recovery point</dt>
+              <dd>{timestamp(item.captured_at || item.created_at)}</dd>
             </div>
             <div>
               <dt>Size / format</dt>
@@ -134,14 +144,12 @@ function RestoreBackup() {
           >
             <dl className="service-definition-list">
               <div>
-                <dt>Target service</dt>
-                <dd>{sourceLabel(plan.target)}</dd>
+                <dt>Target database</dt>
+                <dd>{plan.target.managed_database_name || sourceLabel(plan.target)}</dd>
               </div>
               <div>
-                <dt>Pod / application revision</dt>
-                <dd>
-                  <code>{plan.target.pod}</code> / r{plan.target.revision}
-                </dd>
+                <dt>Target revision</dt>
+                <dd>r{plan.target.revision}</dd>
               </div>
               <div>
                 <dt>New database</dt>
@@ -151,10 +159,17 @@ function RestoreBackup() {
                 </dd>
               </div>
               <div>
+                <dt>Review expires</dt>
+                <dd>{timestamp(plan.expires_at)}</dd>
+              </div>
+              <div>
                 <dt>Restore scope</dt>
                 <dd>{plan.scope}</dd>
               </div>
             </dl>
+            {Date.parse(plan.expires_at) <= Date.now() && (
+              <Note>This review expired. Choose the target again to refresh it.</Note>
+            )}
             {plan.warnings.map((warning) => (
               <Note key={warning}>{warning}</Note>
             ))}
@@ -173,8 +188,8 @@ function RestoreBackup() {
           </FormSection>
         ) : (
           <FormSection
-            title="Target service"
-            description={`Only available ${engineLabel(item.source.engine)} services are shown.`}
+            title="Target database"
+            description={`Only available ${engineLabel(item.source.engine)} targets are shown.`}
             icon="database"
           >
             <label>
@@ -187,17 +202,19 @@ function RestoreBackup() {
                 options={[
                   {
                     value: '',
-                    label: 'Choose a compatible database service',
+                    label: 'Choose a compatible database',
                   },
                   ...(eligible.map((value) => ({
                     value: sourceKey(value),
-                    label: (value.application_name || value.application_id) + ' / ' + value.service,
+                    label: value.managed_database_name || sourceLabel(value),
                   })) ?? []),
                 ]}
               />
             </label>
             {!eligible.length && (
-              <Note>Create a compatible database service before restoring this artifact.</Note>
+              <Note>
+                Create a separate, unused compatible database before restoring this artifact.
+              </Note>
             )}
           </FormSection>
         )}
@@ -215,14 +232,19 @@ function RestoreBackup() {
             Choose another target
           </Button>
         ) : (
-          <Link className="button" to="/backups" search={{ tab: 'artifacts' }}>
-            Cancel
-          </Link>
+          <Button asChild>
+            <Link to="/backups" search={{ tab: 'artifacts' }}>
+              Cancel
+            </Link>
+          </Button>
         )}
         <Button
           variant="primary"
           disabled={
-            busy || item.deletion_pending || (plan ? confirmation !== plan.confirmation : !target)
+            busy ||
+            item.deletion_pending ||
+            Boolean(plan && Date.parse(plan.expires_at) <= Date.now()) ||
+            (plan ? confirmation !== plan.confirmation : !target)
           }
           onClick={async () => {
             if (busy || item.deletion_pending) return
@@ -238,6 +260,16 @@ function RestoreBackup() {
                 )
                 void cache.invalidateQueries({ queryKey: ['backups'] })
                 void navigate({ to: '/backups/$jobId', params: { jobId: job.id } })
+              } else if (target?.managed_database_id) {
+                const value = await unwrap(
+                  client.POST('/databases/{id}/restore-plan', {
+                    params: { path: { id: target.managed_database_id } },
+                    body: { artifact_id: artifactId },
+                  }),
+                )
+                setPlan(value)
+                setRequestKey(crypto.randomUUID())
+                setConfirmation('')
               } else if (target?.application_id && target.service) {
                 const value = await unwrap(
                   client.POST('/backup-artifacts/{id}/restore-plan', {

@@ -86,6 +86,18 @@ func run() error {
 	wait := fs.Bool("wait", false, "wait for final deployment outcome")
 	idem := fs.String("idempotency-key", "", "stable retry key (generated if omitted)")
 	revision := fs.Int64("revision", 0, "successful revision to restore")
+	reviewID := fs.String("review-id", "", "accepted database resize or recovery review")
+	databaseApplication := fs.String("application-id", "", "application ID for a managed database connection")
+	databaseVariable := fs.String("variable", "DATABASE_URL", "managed database connection environment variable")
+	databaseEndpoint := fs.String("endpoint", "read_write", "managed database endpoint: read_write, read_only or cluster")
+	databaseClusterAware := fs.Bool("cluster-aware", false, "acknowledge that the application uses a cluster-aware Redis client")
+	databaseRecoveryJob := fs.String("job-id", "", "completed database recovery job to inspect")
+	databaseInspected := fs.Bool("inspected", false, "attest that the recovered data was inspected")
+	importDestination := fs.String("destination-id", "", "archive import S3 destination")
+	importEngine := fs.String("engine", "postgresql", "archive import engine: postgresql or redis")
+	importVersion := fs.String("source-version", "", "archive import source major version")
+	importCaptured := fs.String("captured-at", "", "archive recovery point as RFC3339, including timezone")
+	artifactID := fs.String("artifact-id", "", "verified database backup archive")
 	apiURL := fs.String("api-url", "", "management API HTTPS origin")
 	keyStdin := fs.Bool("key-stdin", false, "read login API key from stdin")
 	noBrowser := fs.Bool("no-browser", false, "show browser authorization URL without opening it")
@@ -277,6 +289,8 @@ func run() error {
 		arg = fs.Arg(0)
 	}
 	switch command {
+	case "database":
+		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, JobID: *databaseRecoveryJob, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
 	case "previews", "preview-create", "preview-delete":
 		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
 	case "mcp":
@@ -731,6 +745,18 @@ func help() {
   hakopod key-create --name ci --project demo --environment production --ttl 24h
   hakopod key-revoke KEY_ID
   hakopod cancel DEPLOYMENT_ID
+  hakopod database list --project demo --environment development
+  hakopod database create --file database.toml --project demo --environment development
+  hakopod database show DATABASE_ID
+  hakopod database resize-plan DATABASE_ID --file database.toml
+  hakopod database resize DATABASE_ID --file database.toml --review-id REVIEW_ID --revision 1
+  hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write
+  hakopod database connect DATABASE_ID --review-id REVIEW_ID --name APP_NAME
+  hakopod database inspect DATABASE_ID --job-id JOB_ID --revision 1 --name DATABASE_NAME --inspected
+  hakopod database import-plan --file DUMP --destination-id DESTINATION_ID --name docker-source --engine postgresql --source-version 17 --captured-at RFC3339
+  hakopod database import IMPORT_ID --file DUMP --name docker-source
+  hakopod database restore-plan DATABASE_ID --artifact-id ARTIFACT_ID
+  hakopod database restore DATABASE_ID --artifact-id ARTIFACT_ID --review-id REVIEW_ID --name TARGET_NAME
 
 CI: set HAKOPOD_API_URL and HAKOPOD_API_KEY in the CI secret store.
 Previews: hakopod preview-create APP --name pr-123 --file preview.toml --ttl 24h --acknowledge-data-expiry

@@ -51,6 +51,17 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 		// DNS is scoped to kube-dns pods, never all kube-system addresses.
 		udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
 		dnsPort := intstr.FromInt32(53)
+		for variable, b := range svc.Bindings {
+			if b.ManagedDatabase == "" {
+				continue
+			}
+			connection, ok := t.databaseConnections[name][variable]
+			if !ok {
+				continue
+			}
+			port := intstr.FromInt32(connection.Port)
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": DatabaseNamespace(b.ManagedDatabase)}}}}, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}}})
+		}
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}}}},
 			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dnsPort}, {Protocol: &tcp, Port: &dnsPort}},

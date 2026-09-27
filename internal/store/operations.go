@@ -66,14 +66,15 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		Expected             int64
 		// Omission preserves hashes for ordinary pre-seeding deployment calls;
 		// presence distinguishes rollback intent even when the desired spec is identical.
-		SeedResolved         *spec.Application      `json:",omitempty"`
-		InitialSource        *InitialSource         `json:",omitempty"`
-		InitialPreview       *InitialPreview        `json:",omitempty"`
-		ShowcaseID           string                 `json:",omitempty"`
-		Transfer             *ServiceTransfer       `json:",omitempty"`
-		Provenance           map[string]SourceBuild `json:",omitempty"`
-		DeleteServiceVolumes []string               `json:",omitempty"`
-	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer, provenance, deleteServices}))
+		SeedResolved             *spec.Application      `json:",omitempty"`
+		InitialSource            *InitialSource         `json:",omitempty"`
+		InitialPreview           *InitialPreview        `json:",omitempty"`
+		ShowcaseID               string                 `json:",omitempty"`
+		Transfer                 *ServiceTransfer       `json:",omitempty"`
+		Provenance               map[string]SourceBuild `json:",omitempty"`
+		DeleteServiceVolumes     []string               `json:",omitempty"`
+		DatabaseConnectionReview string                 `json:",omitempty"`
+	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer, provenance, deleteServices, databaseConnectionReviewID(ctx)}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
@@ -193,6 +194,19 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	}
 	if a.Revision != expected {
 		return Deployment{}, fmt.Errorf("%w: expected %d, current revision is %d; plan again", ErrConflict, expected, a.Revision)
+	}
+	if err = s.checkApplicationAllocation(ctx, tx, a, next); err != nil {
+		return Deployment{}, err
+	}
+	bindingSpecs := []spec.Application{next}
+	if seed != nil {
+		bindingSpecs = append(bindingSpecs, *seed)
+	}
+	if err = validateDatabaseBindingsTx(ctx, tx, p, a, bindingSpecs...); err != nil {
+		return Deployment{}, err
+	}
+	if err = consumeDatabaseConnectionReview(ctx, tx, p, a, next); err != nil {
+		return Deployment{}, err
 	}
 	if s.ValidateDeployment == nil && (spec.HasDeliveryCapabilities(next) || seed != nil && spec.HasDeliveryCapabilities(*seed)) {
 		return Deployment{}, errors.New("node placement, serverless and other delivery capabilities require a configured runtime validator")

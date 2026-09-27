@@ -5,13 +5,17 @@ import (
 	"errors"
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/management"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	"net/http"
 	"time"
 )
 
+type DatabaseSpec = database.Spec
+type DatabasePolicy = cluster.DatabasePolicy
 type WorkloadPolicy = cluster.WorkloadPolicy
 type WorkloadSpec = spec.Application
 type WorkloadService = spec.Service
@@ -40,12 +44,16 @@ type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
 type RuntimeConfig struct {
+	StorageBudgetTx func(context.Context, pgx.Tx, string, string) (int64, error)
 	// ActionsEntitled is trusted product state, never user TOML or headers.
 	ActionsEntitled          func(context.Context, string, string) (bool, error)
 	AuthorizeRetainedCleanup func(context.Context, AdmissionPrincipal, string, string) error
 	StorageBudget            func(context.Context, string, string) (int64, error)
 	AuthorizeBackup          func(context.Context, string, string, string) error
 	AdmitDeployment          DeploymentAdmission
+	AdmitDatabase            DeploymentAdmission
+	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
+	DatabasePolicy           cluster.DatabasePolicyResolver
 	CloudResourceCeiling     *ResourceProfile
 	Backups                  BackupConfig
 	BuildRegistry            string
@@ -86,7 +94,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{WorkloadPolicy: config.WorkloadPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{DatabasePolicy: config.DatabasePolicy, WorkloadPolicy: config.WorkloadPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,6 +120,10 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	}
 	s.store.ApplicationLimit = config.ApplicationLimit
 	s.store.AdmitDeployment = config.AdmitDeployment
+	s.store.RequireDatabaseAdmission = true
+	s.store.AdmitDatabase = config.AdmitDatabase
+	s.store.ComputeBudget = config.ComputeBudget
+	s.store.StorageBudgetTx = config.StorageBudgetTx
 	s.store.AuthorizeBackup = config.AuthorizeBackup
 	s.store.StorageBudget = config.StorageBudget
 	s.store.AuthorizeRetainedCleanup = config.AuthorizeRetainedCleanup

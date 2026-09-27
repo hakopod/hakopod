@@ -1995,3 +1995,8 @@
 .ops-card-link:disabled {
   @apply bg-transparent;
 }
+
+.ops-topology .topology-node.button {
+  @apply normal-case tracking-normal;
+  color: var(--foreground);
+}

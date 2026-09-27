@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/backup"
+	"github.com/hakopod/hakopod/internal/database"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -118,6 +119,15 @@ func (s *Store) PutBackupDestination(ctx context.Context, p Principal, d backup.
 	if revision != expected {
 		return d, backup.ErrConflict
 	}
+	if expected > 0 {
+		var importing bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_imports WHERE spec->>'destination_id'=$1 AND status IN ('pending','uploading','cleaning'))", d.ID).Scan(&importing); err != nil {
+			return d, err
+		}
+		if importing {
+			return d, fmt.Errorf("%w: destination has an active archive import", backup.ErrConflict)
+		}
+	}
 	if expected == 0 {
 		var count int
 		if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_destinations").Scan(&count); err != nil {
@@ -162,7 +172,7 @@ func (s *Store) DeleteBackupDestination(ctx context.Context, p Principal, id str
 		return err
 	}
 	var used bool
-	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_artifacts WHERE destination_id=$1 AND deleted_at IS NULL) OR EXISTS(SELECT 1 FROM backup_jobs WHERE destination_id=$1 AND status IN ('queued','running')) OR EXISTS(SELECT 1 FROM backup_schedules WHERE destination_id=$1)", id).Scan(&used); err != nil {
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_artifacts WHERE destination_id=$1 AND deleted_at IS NULL) OR EXISTS(SELECT 1 FROM backup_jobs WHERE destination_id=$1 AND status IN ('queued','running')) OR EXISTS(SELECT 1 FROM backup_schedules WHERE destination_id=$1) OR EXISTS(SELECT 1 FROM backup_imports WHERE spec->>'destination_id'=$1 AND status IN ('pending','uploading','cleaning'))", id).Scan(&used); err != nil {
 		return err
 	}
 	if used {
@@ -249,6 +259,15 @@ func backupRequestHash(j backup.Job) string {
 func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, idem string) (backup.Job, error) {
 	if err := authorizeBackupJob(ctx, tx, p, j); err != nil {
 		return j, err
+	}
+	if j.Kind == "backup" && j.Source.Kind == "managed_database" {
+		var status string
+		if err := tx.QueryRow(ctx, "SELECT status FROM managed_databases WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", j.Source.ManagedDatabaseID).Scan(&status); err != nil {
+			return j, backupError(err)
+		}
+		if status != "ready" {
+			return j, backup.ErrConflict
+		}
 	}
 	j.Authority = backupAuthority(p)
 	if err := rejectPreviewBackup(ctx, tx, j.Source.ApplicationID); err != nil {
@@ -353,12 +372,12 @@ func (s *Store) CancelBackupJob(ctx context.Context, p Principal, id string) (ba
 	return j, tx.Commit(ctx)
 }
 
-const backupArtifactCols = "id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,created_at,deleted_at,deletion_pending"
+const backupArtifactCols = "id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,created_at,deleted_at,deletion_pending,source_revision,captured_at,verified_at,source_version"
 
 func scanBackupArtifact(row scanner) (backup.Artifact, error) {
 	var a backup.Artifact
 	var source []byte
-	err := row.Scan(&a.ID, &a.JobID, &a.DestinationID, &source, &a.ObjectKey, &a.SHA256, &a.Bytes, &a.Format, &a.Scope, &a.ScheduleID, &a.CreatedAt, &a.DeletedAt, &a.DeletionPending)
+	err := row.Scan(&a.ID, &a.JobID, &a.DestinationID, &source, &a.ObjectKey, &a.SHA256, &a.Bytes, &a.Format, &a.Scope, &a.ScheduleID, &a.CreatedAt, &a.DeletedAt, &a.DeletionPending, &a.SourceRevision, &a.CapturedAt, &a.VerifiedAt, &a.SourceVersion)
 	if err != nil {
 		return a, backupError(err)
 	}
@@ -428,6 +447,15 @@ func (s *Store) SaveBackupRestorePlan(ctx context.Context, p Principal, plan bac
 	if !available {
 		return backup.ErrConflict
 	}
+	if plan.Target.Kind == "managed_database" {
+		a, err := scanBackupArtifact(tx.QueryRow(ctx, "SELECT "+backupArtifactCols+" FROM backup_artifacts WHERE id=$1", plan.ArtifactID))
+		if err != nil {
+			return err
+		}
+		if err = validateManagedRestoreTarget(ctx, tx, a, plan.Target); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.Exec(ctx, pruneUnusedBackupRestorePlans); err != nil {
 		return err
 	}
@@ -469,7 +497,7 @@ func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID
 	if err = json.Unmarshal(data, &plan); err != nil {
 		return j, err
 	}
-	if plan.ID != planID || plan.ArtifactID != artifactID || plan.Confirmation != plan.Target.Database {
+	if plan.ID != planID || plan.ArtifactID != artifactID || plan.Confirmation != backup.RestoreConfirmation(plan.Target) {
 		return j, backup.ErrConflict
 	}
 	if err := s.AuthorizeBackupSource(ctx, p, plan.Target.Source); err != nil {
@@ -516,15 +544,52 @@ func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID
 	if err != nil {
 		return j, err
 	}
+	if plan.Target.Kind == "managed_database" {
+		if err = validateManagedRestoreTarget(ctx, tx, a, plan.Target); err != nil {
+			return j, err
+		}
+	}
 	j = backup.Job{Kind: "restore", DestinationID: a.DestinationID, Source: a.Source, Target: &plan.Target, ArtifactID: a.ID}
 	result, err := enqueueBackup(ctx, tx, p, j, idem)
 	if err != nil {
 		return j, err
 	}
+	if plan.Target.Kind == "managed_database" {
+		origin := database.Recovery{ArtifactID: a.ID, JobID: result.ID, SourceID: a.Source.ManagedDatabaseID, SourceRevision: a.SourceRevision, CapturedAt: a.CapturedAt}
+		if _, err = tx.Exec(ctx, "UPDATE managed_databases SET status='restoring',recovery=$2,updated_at=now() WHERE id=$1", plan.Target.ManagedDatabaseID, JSON(origin)); err != nil {
+			return j, err
+		}
+	}
 	if _, err = tx.Exec(ctx, "UPDATE backup_restore_plans SET used_at=now(),job_id=$2 WHERE id=$1", planID, result.ID); err != nil {
 		return j, err
 	}
 	return result, tx.Commit(ctx)
+}
+
+// Review and acceptance take the same database lock as connection changes.
+// Rechecking at acceptance prevents a connection added after review from racing recovery.
+func validateManagedRestoreTarget(ctx context.Context, tx pgx.Tx, a backup.Artifact, target backup.Target) error {
+	d, err := scanDatabase(tx.QueryRow(ctx, "SELECT "+databaseCols+" FROM managed_databases WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", target.ManagedDatabaseID))
+	if err != nil {
+		return err
+	}
+	if err = backup.ValidateManagedRecovery(a, d.Spec.Engine, d.Spec.Version); err != nil {
+		return err
+	}
+	if err = databaseUnreferenced(ctx, tx, d.ID); err != nil {
+		return err
+	}
+	if d.Revision != 1 || d.Revision != target.Revision || d.Status != "ready" || d.Recovery != nil || a.Source.ManagedDatabaseID == d.ID || d.Spec.Engine != a.Source.Engine || target.ManagedDatabaseName != d.Spec.Name {
+		return fmt.Errorf("%w: create a separate, unused database for recovery", backup.ErrConflict)
+	}
+	var busy bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_jobs WHERE status IN ('queued','running') AND (source->>'managed_database_id'=$1 OR target->>'managed_database_id'=$1))", d.ID).Scan(&busy); err != nil {
+		return err
+	}
+	if busy {
+		return backup.ErrConflict
+	}
+	return nil
 }
 
 // Preview data has an explicit expiry lifecycle. Do not create backup/restore

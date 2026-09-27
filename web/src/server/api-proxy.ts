@@ -8,6 +8,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
+  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect))?)?$/,
   /^actions\/capabilities$/,
   /^applications\/[A-Za-z0-9_-]+\/actions$/,
   /^storage\/retained(?:\/[a-f0-9]{32})?$/,
@@ -50,6 +51,7 @@ export const allowed = [
   /^nodes\/[A-Za-z0-9_.-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input))?)?$/,
   /^backup-destinations(?:\/[A-Za-z0-9_-]+(?:\/test)?)?$/,
   /^backup-targets$/,
+  /^backup-imports(?:\/[a-f0-9]{32}(?:\/archive)?)?$/,
   /^backups(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?$/,
   /^backup-artifacts(?:\/[A-Za-z0-9_-]+(?:\/(?:restore-plan|restore))?)?$/,
   /^backup-schedules(?:\/[A-Za-z0-9_-]+)?$/,
@@ -119,8 +121,39 @@ export async function proxy({
     if (token) headers.set('Authorization', `Bearer ${token}`)
     const idempotency = request.headers.get('idempotency-key')
     if (idempotency) headers.set('Idempotency-Key', idempotency)
-    let body: string | undefined
-    if (!['GET', 'HEAD'].includes(request.method)) {
+    const archiveUpload =
+      /^backup-imports\/[a-f0-9]{32}\/archive$/.test(path) && request.method === 'PUT'
+    let body: BodyInit | undefined
+    if (archiveUpload) {
+      const limit = 64 * 1024 * 1024
+      const length = request.headers.get('content-length')
+      if (request.headers.get('content-type') !== 'application/octet-stream' || !request.body)
+        return Response.json(
+          { error: { message: 'Upload a raw database archive.' } },
+          { status: 400, headers: privateHeaders },
+        )
+      if (length !== null && (!/^\d+$/.test(length) || Number(length) > limit))
+        return Response.json(
+          {
+            error: {
+              message: 'Browser imports are limited to 64 MiB. Use the CLI for larger archives.',
+            },
+          },
+          { status: 413, headers: privateHeaders },
+        )
+      let received = 0
+      body = request.body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            received += chunk.byteLength
+            if (received > limit) throw new Error('Archive exceeds browser upload limit')
+            controller.enqueue(chunk)
+          },
+        }),
+      )
+      headers.set('Content-Type', 'application/octet-stream')
+      if (length !== null) headers.set('Content-Length', length)
+    } else if (!['GET', 'HEAD'].includes(request.method)) {
       const payload = await boundedBody(request, 1024 * 1024)
       if (payload === null)
         return Response.json(
@@ -141,11 +174,18 @@ export async function proxy({
       method: request.method,
       headers,
       body,
+      ...(archiveUpload ? { duplex: 'half' as const } : {}),
       redirect: 'error',
       signal: AbortSignal.any([
         request.signal,
         AbortSignal.timeout(
-          terminalStream || deploymentEvents ? 11 * 60 * 1000 : streaming ? 5 * 60 * 1000 : 30000,
+          archiveUpload
+            ? 15 * 60 * 1000
+            : terminalStream || deploymentEvents
+              ? 11 * 60 * 1000
+              : streaming
+                ? 5 * 60 * 1000
+                : 30000,
         ),
       ]),
     })

@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const liveMinioImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+const liveS3Image = "chrislusf/seaweedfs:4.06@sha256:a064c6923daf4451c943cec2f437a67523d7792ee589089bc4d4c27a61d78dea"
 const liveBackupPostgres = "docker.io/library/postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
 const liveBackupMySQL = "docker.io/library/mysql:8.4.11@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a"
 
@@ -41,14 +43,19 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 	name := "hakopod-backup-smoke-" + store.NewID()[:10]
 	access := "fixture-access"
 	secret := store.NewID() + store.NewID()
-	command := exec.CommandContext(ctx, "docker", "run", "--rm", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "MINIO_ROOT_USER="+access, "-e", "MINIO_ROOT_PASSWORD="+secret, "-e", "GOMEMLIMIT=256MiB", liveMinioImage, "server", "/data", "--console-address", ":9001")
+	config := filepath.Join(t.TempDir(), "s3.json")
+	body, _ := json.Marshal(map[string]any{"identities": []any{map[string]any{"name": "development-fixture", "credentials": []any{map[string]string{"accessKey": access, "secretKey": secret}}, "actions": []string{"Admin", "Read", "Write", "List", "Tagging"}}}})
+	if err := os.WriteFile(config, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(ctx, "docker", "run", "--rm", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "GOMEMLIMIT=256MiB", "--mount", "type=bind,source="+config+",target=/etc/seaweedfs/s3.json,readonly", liveS3Image, "server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data", "-master.volumeSizeLimitMB=8", "-volume.max=16", "-ip=127.0.0.1", "-ip.bind=0.0.0.0")
 	if err := command.Run(); err != nil {
 		t.Fatal("start disposable S3 server", err)
 	}
 	t.Cleanup(func() {
 		clean, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := exec.CommandContext(clean, "docker", "rm", "--force", name).Run(); err != nil {
+		if err := exec.CommandContext(clean, "docker", "rm", "--force", "--volumes", name).Run(); err != nil {
 			t.Error("remove disposable S3 container", err)
 		}
 	})
@@ -57,26 +64,42 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 		t.Fatal(err)
 	}
 	endpoint := "http://" + strings.TrimSpace(string(port))
-	httpClient := &http.Client{Timeout: time.Second}
+	client := s3.New(s3.Options{Region: "us-east-1", BaseEndpoint: aws.String(endpoint), UsePathStyle: true, Credentials: credentials.NewStaticCredentialsProvider(access, secret, ""), RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired, ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired, HTTPClient: &http.Client{Timeout: 3 * time.Second}})
+	ready, cancelReady := context.WithTimeout(ctx, 90*time.Second)
+	defer cancelReady()
 	for {
-		response, err := httpClient.Get(endpoint + "/minio/health/live")
-		if err == nil {
-			response.Body.Close()
-			if response.StatusCode == 200 {
-				break
-			}
+		if _, err = client.ListBuckets(ready, &s3.ListBucketsInput{}); err == nil {
+			break
 		}
 		select {
-		case <-ctx.Done():
+		case <-ready.Done():
 			t.Fatal("S3 readiness timed out")
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(time.Second):
 		}
 	}
-	client := s3.New(s3.Options{Region: "us-east-1", BaseEndpoint: aws.String(endpoint), UsePathStyle: true, Credentials: credentials.NewStaticCredentialsProvider(access, secret, ""), RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired, ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired})
 	if _, err = client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String("hakopod-backup-tests")}); err != nil {
 		t.Fatal("create disposable S3 bucket", err)
 	}
+	if _, err = client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("readiness"), Body: strings.NewReader("development fixture")}); err != nil {
+		logs, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "40", name).CombinedOutput()
+		// The fixture logs contain only storage startup and volume allocation facts.
+		for _, line := range strings.Split(string(logs), "\n") {
+			if strings.Contains(line, "volume") || strings.Contains(line, "disk") {
+				t.Log(line)
+			}
+		}
+		t.Fatal("S3 write readiness failed")
+	}
 	return endpoint, access, secret, client
+}
+
+func TestLiveBackupObjectStore(t *testing.T) {
+	if os.Getenv("HAKOPOD_MANAGED_DATABASE_BACKUP_TEST") != "1" {
+		t.Skip("requires disposable Docker S3 fixture")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	liveBackupObjectStore(t, ctx)
 }
 
 type liveBackupDatabase struct {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -11,11 +12,14 @@ import (
 // Binding derives a private service URL at deployment time. Only references
 // enter revisions; resolved credentials remain in application-scoped Secrets.
 type Binding struct {
-	Service  string     `json:"service" toml:"service"`
-	Protocol string     `json:"protocol" toml:"protocol"`
-	Database string     `json:"database,omitempty" toml:"database"`
-	Username string     `json:"username,omitempty" toml:"username"`
-	Password *SecretRef `json:"password,omitempty" toml:"password"`
+	ManagedDatabase string     `json:"managed_database,omitempty" toml:"managed_database"`
+	Endpoint        string     `json:"endpoint,omitempty" toml:"endpoint"`
+	ClusterAware    bool       `json:"cluster_aware,omitempty" toml:"cluster_aware"`
+	Service         string     `json:"service,omitempty" toml:"service"`
+	Protocol        string     `json:"protocol" toml:"protocol"`
+	Database        string     `json:"database,omitempty" toml:"database"`
+	Username        string     `json:"username,omitempty" toml:"username"`
+	Password        *SecretRef `json:"password,omitempty" toml:"password"`
 }
 
 func BindingSecretKey(name string) string { return "__binding_" + name }
@@ -37,6 +41,24 @@ func validateBindings(app Application) error {
 			}
 			if _, ok := s.Secrets[BindingSecretKey(key)]; ok {
 				return fmt.Errorf("services.%s.bindings: reserved secret key collision", name)
+			}
+			if b.ManagedDatabase != "" {
+				if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ManagedDatabase) || b.Service != "" || b.Password != nil || b.Username != "" || b.Database != "" {
+					return fmt.Errorf("managed database bindings require only a database ID, protocol and endpoint")
+				}
+				if b.Protocol != "postgres" && b.Protocol != "redis" {
+					return fmt.Errorf("managed database protocol must be postgres or redis")
+				}
+				if b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "cluster" {
+					return fmt.Errorf("choose a managed database endpoint")
+				}
+				if b.Protocol == "postgres" && (b.Endpoint == "cluster" || b.ClusterAware) || b.Protocol == "redis" && (b.Endpoint == "read_only" || (b.Endpoint == "cluster") != b.ClusterAware) {
+					return fmt.Errorf("database endpoint and cluster-aware acknowledgement do not match the protocol")
+				}
+				continue
+			}
+			if b.Endpoint != "" || b.ClusterAware {
+				return fmt.Errorf("endpoint and cluster_aware require a managed database")
 			}
 			target, ok := app.Services[b.Service]
 			if !ok || target.Job != nil || target.Port == 0 || !AllowsPeer(app, name, b.Service) {
