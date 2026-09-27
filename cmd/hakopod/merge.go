@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -20,6 +21,62 @@ type mergeFile struct {
 var singleOwnerKeys = []string{"name", "recovery", "inject_env", "domains", "volumes"}
 
 const envFileUnsupported = "env_file is not supported when several files are merged; put those services in one hakopod.toml, or use secret references"
+
+// strictDecode decodes one file into target, rejecting unknown keys so that a
+// typo like imagee is reported instead of silently dropped. It reports field
+// locations the way spec.Parse does, never the decoder's contextual source
+// excerpt, which would echo the file's values back.
+func strictDecode(path string, data []byte, target any) error {
+	err := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(target)
+	var strict *toml.StrictMissingError
+	if errors.As(err, &strict) {
+		fields := make([]string, 0, len(strict.Errors))
+		for i, item := range strict.Errors {
+			if i >= 16 {
+				break
+			}
+			line, column := item.Position()
+			fields = append(fields, fmt.Sprintf("%s (line %d, column %d)", strings.Join(item.Key(), "."), line, column))
+		}
+		return fmt.Errorf("%s: unknown TOML fields: %s", path, strings.Join(fields, ", "))
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
+}
+
+// trimmed re-encodes a document whose legitimate-but-fieldless keys have been
+// removed, so the strict decoder never sees them. Callers pass the original
+// bytes back when nothing was removed, which keeps error positions exact.
+func trimmed(document map[string]any, data []byte, removed bool) ([]byte, error) {
+	if !removed {
+		return data, nil
+	}
+	return toml.Marshal(document)
+}
+
+// dropEnvFile removes env_file at both levels. Only the exempted lone
+// hakopod.toml reaches it; every other file is rejected before decoding.
+func dropEnvFile(document map[string]any) bool {
+	removed := false
+	if _, carries := document["env_file"]; carries {
+		delete(document, "env_file")
+		removed = true
+	}
+	services, _ := document["services"].(map[string]any)
+	for _, value := range services {
+		table, isTable := value.(map[string]any)
+		if !isTable {
+			continue
+		}
+		if _, carries := table["env_file"]; carries {
+			delete(table, "env_file")
+			removed = true
+		}
+	}
+	return removed
+}
 
 // mergeFolder merges every file into one application named appName. Files must
 // already be sorted by Path so that errors are deterministic. It does no disk
@@ -69,12 +126,15 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 			return spec.Application{}, fmt.Errorf("%s: %w", file.Path, err)
 		}
 
+		removed := legacy && dropEnvFile(document)
+
 		if _, isApplication := document["services"]; !isApplication {
 			// A bare service file: the service is named after the file. Its
 			// schema_version is an application-level key, not a service field, so
 			// take it out of the table before the rest becomes the service.
 			if value, carries := document["schema_version"]; carries {
 				delete(document, "schema_version")
+				removed = true
 				version, ok := value.(int64)
 				if !ok {
 					return spec.Application{}, fmt.Errorf("%s: schema_version must be an integer", file.Path)
@@ -83,9 +143,13 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 					return spec.Application{}, err
 				}
 			}
-			var service spec.Service
-			if err := toml.Unmarshal(file.Data, &service); err != nil {
+			data, err := trimmed(document, file.Data, removed)
+			if err != nil {
 				return spec.Application{}, fmt.Errorf("%s: %w", file.Path, err)
+			}
+			var service spec.Service
+			if err := strictDecode(file.Path, data, &service); err != nil {
+				return spec.Application{}, err
 			}
 			name := strings.TrimSuffix(filepath.Base(file.Path), ".toml")
 			if err := claim("services."+name, file.Path); err != nil {
@@ -98,9 +162,13 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 			continue
 		}
 
-		var app spec.Application
-		if err := toml.Unmarshal(file.Data, &app); err != nil {
+		data, err := trimmed(document, file.Data, removed)
+		if err != nil {
 			return spec.Application{}, fmt.Errorf("%s: %w", file.Path, err)
+		}
+		var app spec.Application
+		if err := strictDecode(file.Path, data, &app); err != nil {
+			return spec.Application{}, err
 		}
 
 		for _, key := range singleOwnerKeys {
