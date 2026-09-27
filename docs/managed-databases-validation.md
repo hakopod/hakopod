@@ -1,6 +1,6 @@
 # Managed database validation
 
-This records development acceptance for the unreleased managed database change. It is not production deployment evidence.
+This records development acceptance of the managed database change before the `v0.1.0-alpha.37` release. It is not production deployment evidence.
 
 ## Durable state and dashboards
 
