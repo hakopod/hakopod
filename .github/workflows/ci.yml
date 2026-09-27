@@ -80,8 +80,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: Test and inspect npm CLI package
+      - name: Test and inspect the @hakopod/cloud package
         working-directory: packages/cli
         run: |
           npm test
           npm pack --dry-run
+      - name: Check the @hakopod/cli wrapper sources
+        run: |
+          node --check packages/cli-binary/bin/hakopod.mjs
+          node --check packages/cli-binary/generate.mjs

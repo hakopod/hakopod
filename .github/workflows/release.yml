@@ -279,3 +279,49 @@ jobs:
           gh release create "$RELEASE_TAG" "$directory"/* --verify-tag --draft "${flags[@]}" \
             --title "Hakopod $RELEASE_VERSION" --notes-file release/notes.md
           gh release edit "$RELEASE_TAG" --draft=false "${flags[@]}"
+  npm-cli:
+    needs: [build, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    environment: npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No registry-url on purpose. It writes an .npmrc with
+      # _authToken=${NODE_AUTH_TOKEN}, and with NODE_AUTH_TOKEN unset npm reads an
+      # empty credential, believes it is authenticated, skips the OIDC exchange and
+      # PUTs anonymously. The registry answers 404, not 401, so the cause is invisible.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - name: Stage the CLI archives against the published checksums
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          directory=".local/publication/$RELEASE_VERSION"
+          # The archives are what the release publishes; re-verify before repackaging.
+          (cd "$directory" && grep 'hakopod-cli_' SHA256SUMS | sha256sum --check --strict)
+          for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64 windows_arm64; do
+            target=".local/npm-archives/$platform"
+            mkdir -p "$target"
+            tar -xzf "$directory/hakopod-cli_${RELEASE_VERSION}_${platform}.tar.gz" \
+              -C "$target" --strip-components=1
+          done
+      - name: Generate the npm packages
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: node packages/cli-binary/generate.mjs "$RELEASE_VERSION" .local/npm-archives .local/npm-packages
+      - name: Publish the platform packages, then the wrapper
+        run: |
+          # Platform packages first: the wrapper's optionalDependencies pin these
+          # exact versions, and npm resolves them at install time.
+          for package in .local/npm-packages/cli-*; do
+            npm publish --provenance --access public --tag latest "$package"
+          done
+          npm publish --provenance --access public --tag latest .local/npm-packages/cli
