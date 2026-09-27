@@ -13,6 +13,10 @@ jobs:
     environment: npm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No registry-url on purpose. It writes an .npmrc with
+      # _authToken=${NODE_AUTH_TOKEN}, and with NODE_AUTH_TOKEN unset npm reads an
+      # empty credential, believes it is authenticated, skips the OIDC exchange and
+      # PUTs anonymously. The registry answers 404, not 401, so the cause is invisible.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -22,20 +26,6 @@ jobs:
           node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(process.env.GITHUB_REF_NAME!==`cli-v${p.version}`) process.exit(1)'
           npm test
           npm pack --dry-run
-      - name: Show the publishing context
-        working-directory: packages/cli
-        run: |
-          echo "npm $(npm --version), node $(node --version)"
-          echo "userconfig: ${NPM_CONFIG_USERCONFIG:-<unset>}"
-          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
-            echo "--- userconfig contents, token values masked ---"
-            sed -E 's/(_authToken=).*/\1<masked>/' "${NPM_CONFIG_USERCONFIG}"
-          else
-            echo "no userconfig file, which is what trusted publishing wants"
-          fi
-          echo "OIDC request URL present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
       - name: Publish using npm trusted publishing
         working-directory: packages/cli
-        # Verbose so the OIDC token exchange with the registry is visible. A silent
-        # jump straight to PUT means npm found a credential and skipped the exchange.
-        run: npm publish --provenance --access public --tag latest --loglevel verbose
+        run: npm publish --provenance --access public --tag latest
