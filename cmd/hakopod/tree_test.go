@@ -160,6 +160,46 @@ func TestLoadTreeOnly(t *testing.T) {
 	}
 }
 
+// A mixed repository has folders that are not applications but do hold a .toml. Without
+// --only every one of them must fail loudly; --only is the escape hatch.
+func TestLoadTreeOnlyRescuesUnrelatedFolder(t *testing.T) {
+	files := map[string]string{
+		"good/hakopod.toml": treeAppTOML("good", ""),
+		"mylib/Cargo.toml":  "[package]\nname = \"mylib\"\n",
+	}
+	root := writeTree(t, files)
+
+	_, err := loadTree(root, nil)
+	if err == nil || !strings.Contains(err.Error(), "mylib: Cargo.toml") {
+		t.Fatalf("stray Cargo.toml must fail the tree by default, got %v", err)
+	}
+	t.Logf("no --only: %v", err)
+
+	tree, err := loadTree(root, []string{"good"})
+	if err != nil {
+		t.Fatalf("--only good must skip the unselectable sibling: %v", err)
+	}
+	if len(tree.Apps) != 1 || tree.Apps[0].Dir != "good" {
+		t.Fatalf("--only good: %+v", tree.Apps)
+	}
+
+	// Explicitly asking for the broken folder still reports it.
+	if _, err := loadTree(root, []string{"mylib"}); err == nil || !strings.Contains(err.Error(), "mylib: Cargo.toml") {
+		t.Fatalf("--only mylib must surface the failure, got %v", err)
+	}
+
+	// --only naming nothing real still gives the no-match error.
+	if _, err := loadTree(root, []string{"nope"}); err == nil || !strings.Contains(err.Error(), "--only nope: no application folder or name matches") {
+		t.Fatalf("--only nope: %v", err)
+	}
+
+	// A root network.toml failure is never suppressed by --only.
+	files["network.toml"] = "not toml at all"
+	if _, err := loadTree(writeTree(t, files), []string{"good"}); err == nil || !strings.Contains(err.Error(), "network.toml:") {
+		t.Fatalf("broken root network.toml must fail even with --only, got %v", err)
+	}
+}
+
 func TestFindConfigFileAmbiguous(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"hakopod.toml", "HAKOPOD.toml"} {
