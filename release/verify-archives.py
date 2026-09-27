@@ -31,6 +31,7 @@ def main():
         raise SystemExit('version must be one safe path component')
     destination=ROOT/'.local/releases'/args.version
     stage=ROOT/'.local/release-stage'/args.version/'sbom-source'
+    cli_stage=stage.parent/'cli-only'
     if not (destination/'.hakopod-generated').is_file():raise SystemExit('Run release/build.py first')
     provenance=json.loads((destination/'provenance.json').read_text())
     assert provenance['source_fingerprint_sha256']==build.fingerprint()[0],'working-tree source differs from the release snapshot'
@@ -45,20 +46,39 @@ def main():
             if '_dependency-notices' not in bundle.name:
                 assert any(name.endswith('/LICENSE') for name in names)
                 assert any(name.endswith('/NOTICE') for name in names)
-                assert any('/third-party-licenses/' in name for name in names)
-            for entry in archive.getmembers():
-                if Path(entry.name).name not in ('hakopod','hakopod-server'):continue
-                blob=archive.extractfile(entry).read()
-                binary=stage/entry.name
-                digest=hashlib.sha256(blob).hexdigest()
-                assert digest==hashlib.sha256(binary.read_bytes()).hexdigest(),'archive binary differs from scanned stage'
-                kind=subprocess.check_output(['file','-b',str(binary)],text=True).strip()
-                if '_linux_' in entry.name:assert 'ELF' in kind and 'statically linked' in kind
-                if '_darwin_' in entry.name:assert 'Mach-O' in kind
-                if '_arm64/' in entry.name:assert 'arm64' in kind or 'aarch64' in kind
-                if '_amd64/' in entry.name:assert 'x86_64' in kind or 'x86-64' in kind
-                settings = selfhosted_build_settings(subprocess.check_output(['go','version','-m',str(binary)],text=True))
-                binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
+                if bundle.name.startswith('hakopod_'):
+                    assert any('/third-party-licenses/' in name for name in names)
+            if bundle.name.startswith('hakopod_'):
+                for entry in archive.getmembers():
+                    if Path(entry.name).name not in ('hakopod','hakopod-server'):continue
+                    blob=archive.extractfile(entry).read()
+                    binary=stage/entry.name
+                    digest=hashlib.sha256(blob).hexdigest()
+                    assert digest==hashlib.sha256(binary.read_bytes()).hexdigest(),'archive binary differs from scanned stage'
+                    kind=subprocess.check_output(['file','-b',str(binary)],text=True).strip()
+                    if '_linux_' in entry.name:assert 'ELF' in kind and 'statically linked' in kind
+                    if '_darwin_' in entry.name:assert 'Mach-O' in kind
+                    if '_arm64/' in entry.name:assert 'arm64' in kind or 'aarch64' in kind
+                    if '_amd64/' in entry.name:assert 'x86_64' in kind or 'x86-64' in kind
+                    settings = selfhosted_build_settings(subprocess.check_output(['go','version','-m',str(binary)],text=True))
+                    binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
+            elif bundle.name.startswith('hakopod-cli_'):
+                # Minimal family: exactly the binary plus LICENSE and NOTICE, nothing else.
+                files=[member for member in archive.getmembers() if member.isfile()]
+                leaf_names=sorted(Path(member.name).name for member in files)
+                assert leaf_names in (['LICENSE','NOTICE','hakopod'],['LICENSE','NOTICE','hakopod.exe'])
+                binary_member=next(member for member in files if Path(member.name).name in ('hakopod','hakopod.exe'))
+                blob=archive.extractfile(binary_member).read()
+                stem=bundle.name[:-len('.tar.gz')]
+                if '_windows_' not in bundle.name:
+                    full_bundle_binary=stage/stem.replace('hakopod-cli_','hakopod_',1)/'hakopod'
+                    assert hashlib.sha256(blob).hexdigest()==hashlib.sha256(full_bundle_binary.read_bytes()).hexdigest(),'CLI archive binary was not copied from the full bundle unchanged'
+                else:
+                    windows_binary=cli_stage/stem/'hakopod.exe'
+                    kind=subprocess.check_output(['file','-b',str(windows_binary)],text=True).strip()
+                    assert 'PE32' in kind
+                    if '_arm64' in bundle.name:assert 'Aarch64' in kind or 'ARM64' in kind
+                    if '_amd64' in bundle.name:assert 'x86-64' in kind or 'x86_64' in kind
     assert len(binaries)==6
     host_os=build.output(['go','env','GOHOSTOS'])
     host_arch=build.output(['go','env','GOHOSTARCH'])
@@ -89,6 +109,6 @@ def main():
     (destination/'verification.json').write_text(json.dumps(report,indent=2)+'\n')
     (destination/'SHA256SUMS').write_text('\n'.join(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name for path in sorted(destination.iterdir()) if path.is_file() and not path.name.startswith('.') and path.name!='SHA256SUMS')+'\n')
     subprocess.run(['shasum','-a','256','-c','SHA256SUMS'],cwd=destination,check=True)
-    print('Verified all six archived binaries, native CLI, source snapshot, notices and SBOMs.',flush=True)
+    print('Verified all six full-bundle binaries, all CLI-only archives, native CLI, source snapshot, notices and SBOMs.',flush=True)
 
 if __name__=='__main__':main()
