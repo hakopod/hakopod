@@ -1,11 +1,11 @@
 {
-  "name": "@hakopod/cli",
-  "version": "0.1.0-alpha.2",
+  "name": "@hakopod/cloud",
+  "version": "0.1.0-alpha.3",
   "description": "Guided Git deployments to Hakopod Cloud and self-hosted Hakopod",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
-    "hakopod": "src/main.mjs"
+    "hakopod-cloud": "src/main.mjs"
   },
   "engines": {
     "node": ">=22.12.0"

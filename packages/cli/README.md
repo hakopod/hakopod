@@ -1,13 +1,13 @@
-# Hakopod CLI
+# Hakopod Cloud CLI
 
 Deploy a committed Git repository to Hakopod Cloud or your own Hakopod installation.
 Requires Node.js 22.12+ and Git. This package uses the shared engine API; it does not
 download or execute another binary during npm installation.
 
 ```sh
-npx @hakopod/cli deploy
+npx @hakopod/cloud deploy
 # Or point it at your own dashboard:
-npx @hakopod/cli deploy --url https://hakopod.example.com
+npx @hakopod/cloud deploy --url https://hakopod.example.com
 ```
 
 The first run opens browser sign-in. Create an account if needed, compare the
@@ -32,11 +32,11 @@ Cloud Team approvals do not report success. Approval must be completed in Cloud.
 Run the same command after interruption to resume an accepted build/deployment.
 
 ```sh
-npx @hakopod/cli login --url https://cloud.hakopod.com
-npx @hakopod/cli deploy --name my-app --context apps/web
-npx @hakopod/cli deploy --build BUILD_ID  # link an existing build for this exact source/scope
-npx @hakopod/cli status
-npx @hakopod/cli logout
+npx @hakopod/cloud login --url https://cloud.hakopod.com
+npx @hakopod/cloud deploy --name my-app --context apps/web
+npx @hakopod/cloud deploy --build BUILD_ID  # link an existing build for this exact source/scope
+npx @hakopod/cloud status
+npx @hakopod/cloud logout
 ```
 
 `--no-browser` prints the sign-in URL without opening it. `--yes` accepts the
@@ -62,6 +62,6 @@ Use an engine/Cloud server release containing npm CLI device-scope support. Olde
 servers may expose only the image-based Go CLI API. That CLI remains available for
 TOML, machine API keys, logs and infrastructure administration.
 
-For local development: `npm test`, `npm pack`, then `npx --package ./hakopod-cli-*.tgz hakopod --help`.
+For local development: `npm test`, `npm pack`, then `npx --package ./hakopod-cloud-*.tgz hakopod-cloud --help`.
 The package archive contains only public JavaScript, this documentation and the
 Apache-2.0 license. CI tests it and inspects its package contents.
