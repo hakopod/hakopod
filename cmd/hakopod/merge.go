@@ -40,6 +40,22 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 		owner[key] = path
 		return nil
 	}
+	// agreeSchemaVersion applies the agree-or-conflict rule to one file's
+	// schema_version. Both document shapes route through it: a bare service file
+	// carries the key just as often as an application document does.
+	agreeSchemaVersion := func(version int, path string) error {
+		if version == 0 {
+			return nil
+		}
+		if merged.SchemaVersion != 0 && merged.SchemaVersion != version {
+			return fmt.Errorf("%s and %s set different schema_version values (%d and %d)", owner["schema_version"], path, merged.SchemaVersion, version)
+		}
+		merged.SchemaVersion = version
+		if _, seen := owner["schema_version"]; !seen {
+			owner["schema_version"] = path
+		}
+		return nil
+	}
 
 	for _, file := range files {
 		if !legacy {
@@ -54,7 +70,19 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 		}
 
 		if _, isApplication := document["services"]; !isApplication {
-			// A bare service file: the service is named after the file.
+			// A bare service file: the service is named after the file. Its
+			// schema_version is an application-level key, not a service field, so
+			// take it out of the table before the rest becomes the service.
+			if value, carries := document["schema_version"]; carries {
+				delete(document, "schema_version")
+				version, ok := value.(int64)
+				if !ok {
+					return spec.Application{}, fmt.Errorf("%s: schema_version must be an integer", file.Path)
+				}
+				if err := agreeSchemaVersion(int(version), file.Path); err != nil {
+					return spec.Application{}, err
+				}
+			}
 			var service spec.Service
 			if err := toml.Unmarshal(file.Data, &service); err != nil {
 				return spec.Application{}, fmt.Errorf("%s: %w", file.Path, err)
@@ -86,14 +114,8 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 		if app.Name != "" && app.Name != appName {
 			return spec.Application{}, fmt.Errorf("%s sets name %q but the folder is application %q", file.Path, app.Name, appName)
 		}
-		if app.SchemaVersion != 0 {
-			if merged.SchemaVersion != 0 && merged.SchemaVersion != app.SchemaVersion {
-				return spec.Application{}, fmt.Errorf("%s and %s set different schema_version values (%d and %d)", owner["schema_version"], file.Path, merged.SchemaVersion, app.SchemaVersion)
-			}
-			merged.SchemaVersion = app.SchemaVersion
-			if _, seen := owner["schema_version"]; !seen {
-				owner["schema_version"] = file.Path
-			}
+		if err := agreeSchemaVersion(app.SchemaVersion, file.Path); err != nil {
+			return spec.Application{}, err
 		}
 		if app.Recovery != nil {
 			merged.Recovery = app.Recovery

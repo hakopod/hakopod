@@ -55,6 +55,14 @@ func TestMergeFolderSucceeds(t *testing.T) {
 			services: []string{"a", "b"},
 		},
 		{
+			name: "bare service file with schema_version agrees with an application document",
+			files: mergeFiles(
+				"app/a.toml", "schema_version = 1\n[services.a]\nimage = \"a\"\n",
+				"app/web.toml", "schema_version = 1\nimage = \"nginx\"\n",
+			),
+			services: []string{"a", "web"},
+		},
+		{
 			name: "different keys in networks, env and secrets merge cleanly",
 			files: mergeFiles(
 				"app/a.toml", "env = { A = \"1\" }\n[networks.edge]\ninternal = false\n[secrets.one]\nref = \"one\"\n[services.a]\nimage = \"a\"\n",
@@ -120,6 +128,30 @@ func TestMergeFolderDetails(t *testing.T) {
 	}
 	if web.Env["PORT"] != "80" {
 		t.Fatalf("service env = %v", web.Env)
+	}
+}
+
+func TestMergeFolderBareSchemaVersion(t *testing.T) {
+	// A bare service file's schema_version is an application-level value, and the
+	// rest of the document is still the service.
+	app, err := mergeFolder("shop", mergeFiles("app/web.toml", "schema_version = 1\nimage = \"nginx\"\nport = 80\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.SchemaVersion != 1 {
+		t.Fatalf("schema_version = %d, want 1", app.SchemaVersion)
+	}
+	if web := app.Services["web"]; web.Image != "nginx" || web.Port != 80 {
+		t.Fatalf("service web = %+v", web)
+	}
+
+	// An unsupported version passes through for spec.Normalize to reject.
+	app, err = mergeFolder("shop", mergeFiles("app/web.toml", "schema_version = 2\nimage = \"nginx\"\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.SchemaVersion != 2 {
+		t.Fatalf("schema_version = %d, want 2 passed through", app.SchemaVersion)
 	}
 }
 
@@ -197,6 +229,27 @@ func TestMergeFolderErrors(t *testing.T) {
 				"app/b.toml", "schema_version = 2\n[services.b]\nimage = \"b\"\n",
 			),
 			want: []string{"app/a.toml", "app/b.toml", "schema_version"},
+		},
+		{
+			name: "bare service file schema_version conflicts with an application document",
+			files: mergeFiles(
+				"app/a.toml", "schema_version = 1\n[services.a]\nimage = \"a\"\n",
+				"app/web.toml", "schema_version = 2\nimage = \"nginx\"\n",
+			),
+			want: []string{"app/a.toml", "app/web.toml", "schema_version"},
+		},
+		{
+			name: "two bare service files with different schema_version",
+			files: mergeFiles(
+				"app/api.toml", "schema_version = 2\nimage = \"api\"\n",
+				"app/web.toml", "schema_version = 1\nimage = \"nginx\"\n",
+			),
+			want: []string{"app/api.toml", "app/web.toml", "schema_version"},
+		},
+		{
+			name:  "bare service file schema_version of the wrong type",
+			files: mergeFiles("app/web.toml", "schema_version = \"one\"\nimage = \"nginx\"\n"),
+			want:  []string{"app/web.toml", "schema_version must be an integer"},
 		},
 		{
 			name:  "name disagrees with folder",
