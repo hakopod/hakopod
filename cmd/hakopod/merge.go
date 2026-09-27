@@ -56,26 +56,34 @@ func trimmed(document map[string]any, data []byte, removed bool) ([]byte, error)
 	return toml.Marshal(document)
 }
 
-// dropEnvFile removes env_file at both levels. Only the exempted lone
-// hakopod.toml reaches it; every other file is rejected before decoding.
-func dropEnvFile(document map[string]any) bool {
-	removed := false
+// carriesEnvFile reports whether the document sets env_file at either level.
+// It reads the already-parsed table rather than spec.EnvironmentFileNames so a
+// malformed value (env_file = 5) is still recognised as use of the key and gets
+// the unsupported message instead of "unknown TOML fields: env_file".
+func carriesEnvFile(document map[string]any) bool {
 	if _, carries := document["env_file"]; carries {
-		delete(document, "env_file")
-		removed = true
+		return true
 	}
 	services, _ := document["services"].(map[string]any)
 	for _, value := range services {
-		table, isTable := value.(map[string]any)
-		if !isTable {
-			continue
-		}
-		if _, carries := table["env_file"]; carries {
-			delete(table, "env_file")
-			removed = true
+		if table, isTable := value.(map[string]any); isTable {
+			if _, carries := table["env_file"]; carries {
+				return true
+			}
 		}
 	}
-	return removed
+	return false
+}
+
+// serviceName is the file's basename without its .toml extension, which is
+// matched case-insensitively because the caller accepts web.TOML. Two spellings
+// of one name therefore collide as a duplicate service rather than diverging.
+func serviceName(path string) string {
+	base := filepath.Base(path)
+	if ext := filepath.Ext(base); strings.EqualFold(ext, ".toml") {
+		return base[:len(base)-len(ext)]
+	}
+	return base
 }
 
 // mergeFolder merges every file into one application named appName. Files must
@@ -85,8 +93,6 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 	if len(files) == 0 {
 		return spec.Application{}, errors.New("no TOML files to merge")
 	}
-	legacy := len(files) == 1 && filepath.Base(files[0].Path) == "hakopod.toml"
-
 	merged := spec.Application{Name: appName}
 	// owner records which file first set a key, for "both paths" conflict errors.
 	owner := map[string]string{}
@@ -115,23 +121,31 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 	}
 
 	for _, file := range files {
-		if !legacy {
-			if names, err := spec.EnvironmentFileNames(file.Data); err == nil && len(names) > 0 {
-				return spec.Application{}, fmt.Errorf("%s: %s", file.Path, envFileUnsupported)
-			}
-		}
-
 		var document map[string]any
 		if err := toml.Unmarshal(file.Data, &document); err != nil {
 			return spec.Application{}, fmt.Errorf("%s: %w", file.Path, err)
 		}
+		if carriesEnvFile(document) {
+			return spec.Application{}, fmt.Errorf("%s: %s", file.Path, envFileUnsupported)
+		}
 
-		removed := legacy && dropEnvFile(document)
+		removed := false
 
 		if _, isApplication := document["services"]; !isApplication {
 			// A bare service file: the service is named after the file. Its
-			// schema_version is an application-level key, not a service field, so
-			// take it out of the table before the rest becomes the service.
+			// name and schema_version are application-level keys, not service
+			// fields, so take them out of the table before the rest becomes the
+			// service. Both obey the same rules as in an application document.
+			if value, carries := document["name"]; carries {
+				delete(document, "name")
+				removed = true
+				if err := claim("name", file.Path); err != nil {
+					return spec.Application{}, err
+				}
+				if text, _ := value.(string); text != appName {
+					return spec.Application{}, fmt.Errorf("%s sets name %q but the folder is application %q", file.Path, fmt.Sprint(value), appName)
+				}
+			}
 			if value, carries := document["schema_version"]; carries {
 				delete(document, "schema_version")
 				removed = true
@@ -151,7 +165,7 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 			if err := strictDecode(file.Path, data, &service); err != nil {
 				return spec.Application{}, err
 			}
-			name := strings.TrimSuffix(filepath.Base(file.Path), ".toml")
+			name := serviceName(file.Path)
 			if err := claim("services."+name, file.Path); err != nil {
 				return spec.Application{}, fmt.Errorf("%s and %s both define service %q", owner["services."+name], file.Path, name)
 			}
@@ -239,6 +253,12 @@ func mergeFolder(appName string, files []mergeFile) (spec.Application, error) {
 				merged.Services = map[string]spec.Service{}
 			}
 			merged.Services[name] = service
+		}
+		// The typed decoder leaves an explicit empty [services] table as a nil
+		// map, as spec.Parse notes: preserve its presence so removing every
+		// service stays a legitimate operation instead of meaning "omitted".
+		if services, ok := document["services"].(map[string]any); ok && len(services) == 0 && merged.Services == nil {
+			merged.Services = map[string]spec.Service{}
 		}
 	}
 	merged.Name = appName
