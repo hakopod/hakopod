@@ -96,7 +96,9 @@ else
 fi
 
 mkdir -p "$cli_tmp/extract"
-tar -xzf "$cli_tmp/$cli_archive" -C "$cli_tmp/extract"
+# Release archives wrap their contents in one top-level directory named after
+# the archive, so strip it rather than guessing that directory's name here.
+tar -xzf "$cli_tmp/$cli_archive" -C "$cli_tmp/extract" --strip-components=1
 [ -f "$cli_tmp/extract/hakopod" ] || cli_die "archive did not contain a hakopod binary"
 
 if [ -z "$HAKOPOD_INSTALL_DIR" ]; then
