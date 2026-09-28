@@ -116,6 +116,7 @@ func (s *Store) SyncActions(ctx context.Context, app Application, next spec.Appl
 }
 func (s *Store) NewActionsSlot(ctx context.Context, p ActionsPool) (ActionsSlot, error) {
 	v := ActionsSlot{ID: NewID(), ApplicationID: p.ApplicationID, Service: p.Service, Config: p.Config, Phase: "intent"}
+	v.Config.Image = spec.ActionsRunnerImage
 	err := s.Pool.QueryRow(ctx, `INSERT INTO actions_slots(id,application_id,service,config) SELECT $1,$2,$3,$4 WHERE (SELECT count(*) FROM actions_slots WHERE application_id=$2 AND service=$3)<10 RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config)).Scan(&v.CreatedAt, &v.UpdatedAt)
 	return v, err
 }

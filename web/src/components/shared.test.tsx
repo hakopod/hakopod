@@ -234,8 +234,14 @@ import '../lib/service-volume-removal.test'
 // when users copy/download the displayed window.
 import { cleanWorkflowLog, logTimestamp } from '../lib/actions-logs'
 test('workflow logs strip terminal controls and preserve literal markup', () => {
-  assert.equal(cleanWorkflowLog('\u001b[31merror\u001b[0m <script>literal</script>'), 'error <script>literal</script>')
-  assert.equal(cleanWorkflowLog('\u001b]8;;https://example.invalid\u0007label\u001b]8;;\u0007'), 'label')
+  assert.equal(
+    cleanWorkflowLog('\u001b[31merror\u001b[0m <script>literal</script>'),
+    'error <script>literal</script>',
+  )
+  assert.equal(
+    cleanWorkflowLog('\u001b]8;;https://example.invalid\u0007label\u001b]8;;\u0007'),
+    'label',
+  )
   assert.equal(logTimestamp('2026-09-29T00:00:00.000Z output')?.text, 'output')
   assert.equal(logTimestamp('not a timestamp'), null)
 })

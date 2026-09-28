@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -80,16 +82,29 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 	state, message := "ready", ""
 	var client *actions.Client
 	checked := 0
+	order := make([]int, len(jobs))
 	for i := range jobs {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool { return jobs[order[i]].CheckedAt.Before(jobs[order[j]].CheckedAt) })
+	for _, i := range order {
 		item := &jobs[i]
 		if !item.Observation.Valid(p.Config.Actions.Target()) {
 			continue
 		}
-		if item.Job != nil && (item.Job.Status == "completed" || time.Since(item.UpdatedAt) < 15*time.Second) {
+		if item.Job != nil && (item.Job.Status == "completed" || time.Since(item.CheckedAt) < 15*time.Second) {
 			continue
 		}
 		if checked >= 5 {
 			break
+		}
+		claimed, e := s.Store.ClaimActionsJobRefresh(ctx, p.ApplicationID, p.Service, item.SlotID)
+		if e != nil {
+			authFailure(w, e)
+			return
+		}
+		if !claimed {
+			continue
 		}
 		checked++
 		if client == nil {
@@ -113,15 +128,30 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 			item.UpdatedAt = time.Now().UTC()
 		}
 	}
+	// Fit the shared Cloud proxy budget even for workflows with many steps.
+	bounded := jobs[:0]
+	size := 512
+	truncated := false
+	for _, item := range jobs {
+		encoded, _ := json.Marshal(item)
+		if size+len(encoded) > 1536<<10 {
+			truncated = true
+			break
+		}
+		size += len(encoded)
+		bounded = append(bounded, item)
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	write(w, 200, map[string]any{"items": jobs, "state": state, "message": message, "observed_at": time.Now().UTC(), "limit": 100})
+	write(w, 200, map[string]any{"items": bounded, "state": state, "message": message, "observed_at": time.Now().UTC(), "limit": 100, "truncated": truncated})
 }
 func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.authorizedActionsPool(w, r, "logs:read")
 	if !ok {
 		return
 	}
-	if !s.streamSlot(w) { return }
+	if !s.streamSlot(w) {
+		return
+	}
 	defer func() { <-s.streams }()
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
@@ -144,11 +174,15 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 	respond := func(lines []actions.LogLine, truncated bool, source, state, message string) {
 		principal, accessErr := s.Store.KeyPrincipal(ctx, who(r).KeyID)
 		if accessErr != nil || !principal.Allows("logs:read", p.Project, p.Environment, p.ApplicationName) {
-			problem(w, 403, "forbidden", "Log access was revoked."); return
+			problem(w, 403, "forbidden", "Log access was revoked.")
+			return
 		}
 		if lines == nil {
 			lines = []actions.LogLine{}
 		}
+		var bounded bool
+		lines, bounded = actions.BoundLogLines(lines, source == "runner")
+		truncated = truncated || bounded
 		w.Header().Set("Cache-Control", "no-store")
 		write(w, 200, map[string]any{"lines": lines, "truncated": truncated, "source": source, "state": state, "message": message, "observed_at": time.Now().UTC()})
 	}

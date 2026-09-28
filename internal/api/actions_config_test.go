@@ -10,7 +10,7 @@ import (
 func TestActionsConfigMatchesApprovedResolvedImage(t *testing.T) {
 	saved := spec.Service{Image: spec.ActionsRunnerImage, Replicas: 1, Actions: &spec.Actions{Repository: "team/repo", Credential: "token"}}
 	resolved := saved
-	resolved.Image = strings.Replace(saved.Image, ":2.337.0@", "@", 1)
+	resolved.Image = strings.Split(saved.Image, ":")[0] + "@" + strings.SplitN(saved.Image, "@", 2)[1]
 	if !sameActionsConfig(saved, resolved) || !sameActionsConfig(resolved, saved) {
 		t.Fatal("approved image resolution changed runner identity")
 	}

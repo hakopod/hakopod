@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,26 @@ func TestWorkflowLogsRefuseCredentialRedirect(t *testing.T) {
 		srv.Close()
 		if err == nil || called != 1 || strings.Contains(err.Error(), location) {
 			t.Fatal("unsafe redirect", err, called)
+		}
+	}
+}
+
+func TestEscapedWorkflowLogsFitCloudProxy(t *testing.T) {
+	lines := []LogLine{}
+	for i := 1; i <= 100; i++ {
+		lines = append(lines, LogLine{Number: int64(i), Text: strings.Repeat("<>&", 4096)})
+	}
+	for _, newest := range []bool{false, true} {
+		bounded, truncated := BoundLogLines(lines, newest)
+		encoded, err := json.Marshal(map[string]any{"lines": bounded})
+		if err != nil || !truncated || len(bounded) == 0 || len(encoded) >= 2<<20 {
+			t.Fatal("escaped logs exceed Cloud proxy limit", len(encoded), err)
+		}
+		if newest && bounded[len(bounded)-1].Number != 100 {
+			t.Fatal("live window lost latest output")
+		}
+		if !newest && bounded[0].Number != 1 {
+			t.Fatal("completed window lost first output")
 		}
 	}
 }

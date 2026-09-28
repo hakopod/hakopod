@@ -1169,6 +1169,9 @@
                     },
                     "limit": {
                       "type": "integer"
+                    },
+                    "truncated": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -1176,7 +1179,8 @@
                     "state",
                     "message",
                     "observed_at",
-                    "limit"
+                    "limit",
+                    "truncated"
                   ]
                 }
               }
@@ -16085,6 +16089,9 @@
             "items": {
               "$ref": "#/components/schemas/ActionsStep"
             }
+          },
+          "steps_truncated": {
+            "type": "boolean"
           }
         },
         "required": [

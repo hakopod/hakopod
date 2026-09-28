@@ -8,6 +8,7 @@ import (
 )
 
 type ActionsJob struct {
+	CheckedAt   time.Time           `json:"-"`
 	SlotID      string              `json:"slot_id"`
 	RunnerID    int64               `json:"runner_id"`
 	Observation actions.Observation `json:"observation"`
@@ -29,7 +30,7 @@ func (s *Store) RecordActionsJob(ctx context.Context, slot ActionsSlot, o action
 	return err
 }
 func (s *Store) ActionsJobs(ctx context.Context, app, service string) ([]ActionsJob, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT slot_id,runner_id,observation,provider_job,created_at,updated_at FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at>=now()-interval '30 days' ORDER BY created_at DESC,slot_id LIMIT 100`, app, service)
+	rows, err := s.Pool.Query(ctx, `SELECT slot_id,runner_id,observation,provider_job,created_at,updated_at,checked_at FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at>=now()-interval '30 days' ORDER BY created_at DESC,slot_id LIMIT 100`, app, service)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +39,7 @@ func (s *Store) ActionsJobs(ctx context.Context, app, service string) ([]Actions
 	for rows.Next() {
 		var item ActionsJob
 		var observation, job []byte
-		if err = rows.Scan(&item.SlotID, &item.RunnerID, &observation, &job, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err = rows.Scan(&item.SlotID, &item.RunnerID, &observation, &job, &item.CreatedAt, &item.UpdatedAt, &item.CheckedAt); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal(observation, &item.Observation); err != nil {
@@ -56,4 +57,11 @@ func (s *Store) ActionsJobs(ctx context.Context, app, service string) ([]Actions
 func (s *Store) UpdateActionsJob(ctx context.Context, app, service, slot string, job actions.Job) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE actions_jobs SET provider_job=$4,updated_at=now() WHERE application_id=$1 AND service=$2 AND slot_id=$3`, app, service, slot, JSON(job))
 	return err
+}
+
+// A database lease prevents concurrent dashboard readers from multiplying
+// provider requests. Failed/pending jobs rejoin the refresh rotation too.
+func (s *Store) ClaimActionsJobRefresh(ctx context.Context, app, service, slot string) (bool, error) {
+	result, err := s.Pool.Exec(ctx, `UPDATE actions_jobs SET checked_at=now() WHERE application_id=$1 AND service=$2 AND slot_id=$3 AND checked_at<now()-interval '15 seconds'`, app, service, slot)
+	return err == nil && result.RowsAffected() == 1, err
 }

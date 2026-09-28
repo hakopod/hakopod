@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	actionsRunnerRepository    = "ghcr.io/actions/actions-runner"
-	actionsRunnerDigest        = "sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
-	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0@" + actionsRunnerDigest
+	actionsRunnerRepository    = "ghcr.io/hakopod/actions-runner"
+	actionsRunnerDigest        = "sha256:537bb6ad98ed0f4ebb3cd6d595d5c956af5887c93d148b4b6d6e9f1301069dff"
+	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0-hakopod-10386e7c1943aeee52923e2b82e7f0bd1b4e7012@" + actionsRunnerDigest
 	actionsRunnerResolvedImage = actionsRunnerRepository + "@" + actionsRunnerDigest
 )
 
@@ -36,6 +36,11 @@ var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 // IsActionsRunnerImage accepts only the approved tagged or resolved reference.
 func IsActionsRunnerImage(image string) bool {
+	return IsCurrentActionsRunnerImage(image) || image == "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4" || image == "ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
+}
+
+// Saved upstream references remain valid; new slots always use the current pin.
+func IsCurrentActionsRunnerImage(image string) bool {
 	return image == ActionsRunnerImage || image == actionsRunnerResolvedImage
 }
 
