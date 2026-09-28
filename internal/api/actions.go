@@ -155,6 +155,11 @@ func (s *Server) runnerClient(ctx context.Context, t cluster.Target, config spec
 	return actions.New(token)
 }
 func sameActionsConfig(a, b spec.Service) bool {
+	// Saved specifications retain the tag; resolved releases omit it.
+	// These two approved references identify the same immutable image.
+	if spec.IsActionsRunnerImage(a.Image) && spec.IsActionsRunnerImage(b.Image) {
+		a.Image = b.Image
+	}
 	a.Replicas = 1
 	b.Replicas = 1
 	a.Suspended = false
