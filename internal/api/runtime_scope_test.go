@@ -1,9 +1,23 @@
 package api
 
 import (
+	"context"
 	"github.com/hakopod/hakopod/internal/store"
 	"testing"
 )
+
+func TestRuntimeMachineNeedsExplicitEmbeddingBindingAndKeepsKeyCeiling(t *testing.T) {
+	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "machine", Project: "one", Environment: "production", Permissions: []string{"deployments:read", "deployments:write"}, ProjectRoles: []store.ProjectRole{{Project: "one", Role: "admin"}}}
+	scope := RuntimeScope{AllowMachine: true, Identity: p.ID, Project: p.Project, Environment: p.Environment, Permissions: []string{"deployments:read", "deployments:write", "applications:manage"}, Authorize: func(context.Context) error { return nil }}
+	narrowed, err := scopedRuntimePrincipal(p, scope)
+	if err != nil || !narrowed.Allows("deployments:write", "one", "production", "") || narrowed.CanManageApplication("one", "production", "app") || narrowed.IsAdmin() {
+		t.Fatal("machine authority widened", err)
+	}
+	scope.Authorize = nil
+	if _, err = scopedRuntimePrincipal(p, scope); err == nil {
+		t.Fatal("machine without live product authorizer accepted")
+	}
+}
 
 func TestRuntimeScopeCannotGrantOrCrossWorkspaceAuthority(t *testing.T) {
 	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "browser", Permissions: []string{"admin"}, ProjectRoles: []store.ProjectRole{{Project: "free-alice", Role: "developer"}, {Project: "other", Role: "developer"}}}

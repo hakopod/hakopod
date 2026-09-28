@@ -89,6 +89,24 @@ func (s *Store) DatabaseOperations(ctx context.Context, p Principal, id string) 
 	return out, rows.Err()
 }
 
+// DatabaseOperation remains readable after deletion, so callers can distinguish
+// completed deletion from a missing or inaccessible resource. Scope is checked
+// against the original database identity, including its retained tombstone.
+func (s *Store) DatabaseOperation(ctx context.Context, p Principal, id string) (database.Operation, error) {
+	op, err := scanDatabaseOperation(s.Pool.QueryRow(ctx, "SELECT "+databaseOperationCols+" FROM managed_database_operations WHERE id=$1", id))
+	if err != nil {
+		return database.Operation{}, err
+	}
+	var project, environment string
+	if err = s.Pool.QueryRow(ctx, "SELECT project,environment FROM managed_databases WHERE id=$1", op.DatabaseID).Scan(&project, &environment); err != nil {
+		return database.Operation{}, err
+	}
+	if !p.AllowsDatabase(project, environment, false) {
+		return database.Operation{}, pgx.ErrNoRows
+	}
+	return op, nil
+}
+
 // AcceptDatabase stores the immutable revision, durable operation and audit in
 // one transaction. Resource limits serialize on the environment row.
 func (s *Store) AcceptDatabase(ctx context.Context, p Principal, d database.Resource, expected int64, idem, kind string) (database.Operation, error) {

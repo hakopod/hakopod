@@ -14,6 +14,7 @@ import (
 )
 
 func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/database-operations/{id}", s.databaseOperation)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connection-plan", s.databaseConnectionPlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connect", s.databaseConnect)
 	mux.HandleFunc("POST /api/v1/databases/{id}/inspect", s.databaseInspect)
@@ -26,6 +27,14 @@ func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize-plan", s.databaseResizePlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize", s.resizeDatabase)
 	mux.HandleFunc("POST /api/v1/databases/{id}/restore-plan", s.managedDatabaseRestorePlan)
+}
+func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
+	op, err := s.Store.DatabaseOperation(r.Context(), who(r), r.PathValue("id"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, http.StatusOK, op)
 }
 func (s *Server) databases(w http.ResponseWriter, r *http.Request) {
 	project, environment := scope(r)

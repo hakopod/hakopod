@@ -5,7 +5,10 @@ import { apiURL, boundedBytes, privateHeaders } from './session.ts'
 const routes: [RegExp, string[]][] = [
   [/^me$/, ['GET']],
   [/^auth\/logout$/, ['POST']],
-  [/^projects(?:\/[A-Za-z0-9_-]+\/environments)?$/, ['GET']],
+  [/^projects$/, ['GET', 'POST']],
+  [/^projects\/[A-Za-z0-9_-]+$/, ['DELETE']],
+  [/^projects\/[A-Za-z0-9_-]+\/environments$/, ['POST']],
+  [/^cloud\/capabilities$/, ['GET']],
   [/^git\/connections$/, ['GET']],
   [/^builds$/, ['GET', 'POST']],
   [/^builds\/detect$/, ['POST']],
@@ -15,11 +18,47 @@ const routes: [RegExp, string[]][] = [
   [/^builds\/[A-Za-z0-9_-]+\/runs\/[A-Za-z0-9_-]+\/(?:plan|deploy)$/, ['POST']],
   [/^auth\/device\/(?:start|token)$/, ['POST']],
   [/^applications$/, ['GET']],
-  [/^applications\/[A-Za-z0-9_-]+$/, ['GET']],
+  [/^applications\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
   [/^applications\/[A-Za-z0-9_-]+\/provenance$/, ['GET']],
+  [/^applications\/[A-Za-z0-9_-]+\/rollback$/, ['POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/logs$/, ['GET']],
+  [/^applications\/[A-Za-z0-9_-]+\/logs\/query$/, ['POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/runtime$/, ['GET']],
+  [
+    /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/(?:scale|restart|stop|resume)$/,
+    ['POST'],
+  ],
+  [/^databases$/, ['GET', 'POST']],
+  [/^databases\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
+  [/^databases\/[A-Za-z0-9_-]+\/operations$/, ['GET']],
+  [
+    /^databases\/[A-Za-z0-9_-]+\/(?:credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect)$/,
+    ['POST'],
+  ],
+  [/^database-operations\/[A-Za-z0-9_-]+$/, ['GET']],
+  [/^backup-destinations$/, ['GET', 'POST']],
+  [/^backup-destinations\/[A-Za-z0-9_-]+$/, ['PUT', 'DELETE']],
+  [/^backup-destinations\/[A-Za-z0-9_-]+\/test$/, ['POST']],
+  [/^backup-targets$/, ['GET']],
+  [/^backups$/, ['GET', 'POST']],
+  [/^backups\/[A-Za-z0-9_-]+$/, ['GET']],
+  [/^backups\/[A-Za-z0-9_-]+\/cancel$/, ['POST']],
+  [/^backup-artifacts$/, ['GET']],
+  [/^backup-artifacts\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
+  [/^backup-artifacts\/[A-Za-z0-9_-]+\/(?:restore-plan|restore)$/, ['POST']],
+  [/^backup-schedules$/, ['GET', 'POST']],
+  [/^backup-schedules\/[A-Za-z0-9_-]+$/, ['PUT', 'DELETE']],
+  [/^backup-imports$/, ['POST']],
+  [/^backup-imports\/[A-Za-z0-9_-]+$/, ['GET']],
+  [/^virtual-networks$/, ['GET', 'POST']],
+  [/^virtual-networks\/plan$/, ['POST']],
+  [/^virtual-networks\/[A-Za-z0-9_-]+$/, ['GET', 'PUT', 'DELETE']],
+  [/^secrets$/, ['GET']],
+  [/^secrets\/[A-Za-z0-9_.-]+$/, ['POST', 'PUT', 'DELETE']],
   [/^plan$/, ['POST']],
   [/^deployments$/, ['POST']],
   [/^deployments\/[A-Za-z0-9_-]+$/, ['GET']],
+  [/^deployments\/[A-Za-z0-9_-]+\/cancel$/, ['POST']],
   [/^idempotency\/[A-Za-z0-9_.:-]+$/, ['GET']],
   [/^openapi\.json$/, ['GET']],
 ]
@@ -51,13 +90,18 @@ export async function forwardAutomationAPI(request: Request) {
     const headers = new Headers({ Accept: 'application/json' })
     if (!deviceExchange && authorization) headers.set('Authorization', authorization)
     const workspace = request.headers.get('X-Hakopod-Workspace')
+    if (workspace && !/^[a-f0-9]{32}$/.test(workspace))
+      return Response.json(
+        { error: { code: 'invalid_scope', message: 'Use an exact Cloud workspace ID.' } },
+        { status: 400, headers: privateHeaders },
+      )
     if (!deviceExchange && workspace && /^[a-f0-9]{32}$/.test(workspace))
       headers.set('X-Hakopod-Workspace', workspace)
     for (const name of ['Content-Type', 'Idempotency-Key']) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
     }
-    const body = ['POST', 'PUT'].includes(request.method)
+    const body = ['POST', 'PUT', 'DELETE'].includes(request.method)
       ? await boundedBytes(request, 1024 * 1024)
       : undefined
     if (body === null)

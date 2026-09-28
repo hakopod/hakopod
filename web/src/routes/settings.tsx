@@ -91,6 +91,9 @@ function Administration() {
     { id: 'appearance', label: 'Appearance', group: 'Personal' },
     { id: 'teams', label: 'Teams & access', group: 'Workspace' },
     { id: 'license', label: 'License & features', group: 'Workspace' },
+    ...(scope.identity.can_manage_keys && !scope.identity.admin
+      ? [{ id: 'keys', label: 'API keys', group: 'Workspace' }]
+      : []),
     ...(scope.identity.admin || scope.identity.can_manage_git
       ? [
           {
@@ -134,6 +137,7 @@ function Administration() {
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'teams' && <TeamSettings />}
           {tab === 'license' && <LicenseSettings />}
+          {(scope.identity.admin || scope.identity.can_manage_keys) && tab === 'keys' && <Keys />}
           {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
             <GitConnectionsPanel />
           )}
@@ -142,7 +146,6 @@ function Administration() {
               {tab === 'users' && <InstallationUsers />}
               {tab === 'secret-providers' && <SecretProviders />}
               {tab === 'dns-providers' && <DNSProviders />}
-              {tab === 'keys' && <Keys />}
               {tab === 'audit' && <AuditLog />}
               {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
               {installation.allowed && tab === 'smtp' && <SMTPSettings />}
@@ -164,7 +167,7 @@ function Keys() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const keys = useQuery({
-    queryKey: ['keys'],
+    queryKey: ['keys', scope.project, scope.environment],
     queryFn: ({ signal }) => unwrap(client.GET('/keys', { signal })),
     staleTime: 30000,
   })
@@ -292,6 +295,7 @@ function Keys() {
         authorized services; treat it as a trusted capability.
       </Note>
       <CreateKey
+        key={`${scope.project}:${scope.environment}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         project={scope.project}
@@ -367,11 +371,21 @@ function CreateKey({
   const [name, setName] = useState('')
   const [application, setApplication] = useState('')
   const [days, setDays] = useState(30)
-  const [permissions, setPermissions] = useState([
-    'deployments:read',
-    'deployments:write',
-    'logs:read',
-  ])
+  const [access, setAccess] = useState('deploy')
+  const [reviewing, setReviewing] = useState(false)
+  const permissions =
+    access === 'read'
+      ? ['deployments:read', 'logs:read']
+      : access === 'manage'
+        ? [
+            'deployments:read',
+            'deployments:write',
+            'logs:read',
+            'networks:write',
+            'git:manage',
+            'applications:manage',
+          ]
+        : ['deployments:read', 'deployments:write', 'logs:read']
   const [created, setCreated] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -381,6 +395,7 @@ function CreateKey({
       if (!value) {
         setCreated('')
         setName('')
+        setReviewing(false)
         setError('')
       }
     }
@@ -408,6 +423,17 @@ function CreateKey({
         onSubmit={async (event) => {
           event.preventDefault()
           if (busy || created) return
+          if (!reviewing) {
+            if (!rotation && application && access === 'manage') {
+              setError(
+                'Manage workloads needs access to the whole environment. Clear the application restriction or choose Deploy.',
+              )
+              return
+            }
+            setError('')
+            setReviewing(true)
+            return
+          }
           setBusy(true)
           setError('')
           try {
@@ -441,8 +467,40 @@ function CreateKey({
                 <Copy value={created} label="Copy key" />
               </div>
               <Note>
-                Store this key in your CI secret store or the CLI credential store. It is never
-                placed in URLs, exported configuration, or key lists.
+                Store this key as HAKOPOD_API_KEY in your secret manager. Set HAKOPOD_API_URL to
+                this dashboard's address. The SDK reads the key's scope when it connects.
+              </Note>
+            </>
+          ) : reviewing ? (
+            <>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt>Name</dt>
+                <dd className="min-w-0 break-words">{rotation?.name || name}</dd>
+                <dt>Project</dt>
+                <dd className="min-w-0 break-words">
+                  {rotation ? rotation.project || 'Installation' : project}
+                </dd>
+                <dt>Environment</dt>
+                <dd className="min-w-0 break-words">
+                  {rotation ? rotation.environment || 'All environments' : environment}
+                </dd>
+                <dt>Application</dt>
+                <dd className="min-w-0 break-words">
+                  {rotation
+                    ? rotation.application || 'All in this environment'
+                    : application || 'All in this environment'}
+                </dd>
+                <dt>Expires in</dt>
+                <dd>{days} days</dd>
+              </dl>
+              <p className="text-sm break-words">
+                Permissions: {(rotation?.permissions || permissions).join(', ')}
+              </p>
+              <Note>
+                Deployment access can run code, change databases and reveal database credentials.
+                Keep the key in a secret store. Existing workloads continue if the key expires or is
+                revoked.
+                {rotation && ' The previous key expires within 15 minutes of rotation.'}
               </Note>
             </>
           ) : rotation ? (
@@ -491,14 +549,16 @@ function CreateKey({
                 />
               </label>
               <div className="form-grid-two">
-                <label>
-                  Application restriction
-                  <Input
-                    placeholder="All in this environment"
-                    value={application}
-                    onChange={(event) => setApplication(event.target.value)}
-                  />
-                </label>
+                {!dashboardEdition.cloud && (
+                  <label>
+                    Application restriction
+                    <Input
+                      placeholder="All in this environment"
+                      value={application}
+                      onChange={(event) => setApplication(event.target.value)}
+                    />
+                  </label>
+                )}
                 <label>
                   Expires in
                   <SelectField
@@ -526,30 +586,26 @@ function CreateKey({
                   />
                 </label>
               </div>
-              <label>Permissions</label>
-              <div className="permission-checkboxes">
-                {['deployments:read', 'deployments:write', 'logs:read', 'networks:write'].map(
-                  (permission) => (
-                    <label className="checkbox-label" key={permission}>
-                      <Input
-                        type="checkbox"
-                        checked={permissions.includes(permission)}
-                        onChange={(event) =>
-                          setPermissions((previous) =>
-                            event.target.checked
-                              ? [...previous, permission]
-                              : previous.filter((item) => item !== permission),
-                          )
-                        }
-                      />
-                      <code>{permission}</code>
-                    </label>
-                  ),
-                )}
-              </div>
+              <label>
+                Access
+                <SelectField
+                  label="Access"
+                  value={access}
+                  onValueChange={setAccess}
+                  options={[
+                    { value: 'read', label: 'Read only — inspect workloads and logs' },
+                    { value: 'deploy', label: 'Deploy — apps, services and databases' },
+                    {
+                      value: 'manage',
+                      label: 'Manage workloads — includes Git, networks and app deletion',
+                    },
+                  ]}
+                />
+              </label>
               <Note>
-                Scoped keys cannot administer the platform or retrieve secret values. Network
-                management requires deployments:write and no application restriction.
+                Deployment access can run code and reveal database credentials. Manage workloads
+                also permits Git setup, private network changes and application deletion; it needs
+                access to the whole environment. These keys cannot administer the installation.
               </Note>
             </>
           )}
@@ -562,15 +618,25 @@ function CreateKey({
             </Button>
           ) : (
             <>
-              <Button type="button" disabled={busy} onClick={() => close(false)}>
-                Cancel
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => (reviewing ? setReviewing(false) : close(false))}
+              >
+                {reviewing ? 'Back' : 'Cancel'}
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={busy || (!rotation && (!permissions.length || !project || !environment))}
               >
-                {busy ? 'Creating…' : rotation ? 'Rotate API key' : 'Create API key'}
+                {busy
+                  ? 'Creating…'
+                  : !reviewing
+                    ? 'Review API key'
+                    : rotation
+                      ? 'Rotate API key'
+                      : 'Create API key'}
               </Button>
             </>
           )}

@@ -8,6 +8,7 @@ import (
 )
 
 type RuntimeScope struct {
+	AllowMachine                   bool
 	Identity, Project, Environment string
 	Permissions                    []string
 	Authorize                      func(context.Context) error
@@ -20,11 +21,12 @@ func WithRuntimeScope(r *http.Request, scope RuntimeScope) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), runtimeScopeKey{}, scope))
 }
 func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Principal, error) {
-	if scope.Identity == "" || scope.Project == "" || scope.Environment == "" || p.ID != scope.Identity || (p.CredentialType != "browser" && p.CredentialType != "cli") || !p.Allows("deployments:read", scope.Project, scope.Environment, "") {
+	machine := scope.AllowMachine && p.CredentialType == "machine" && p.Project == scope.Project && p.Environment == scope.Environment && p.Application == "" && scope.Authorize != nil
+	if scope.Identity == "" || scope.Project == "" || scope.Environment == "" || p.ID != scope.Identity || (!machine && p.CredentialType != "browser" && p.CredentialType != "cli") || !p.Allows("deployments:read", scope.Project, scope.Environment, "") {
 		return store.Principal{}, store.ErrForbidden
 	}
 	permissions := []string{}
-	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write"} {
+	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage"} {
 		if p.Allows(value, scope.Project, scope.Environment, "") && (scope.Permissions == nil || slices.Contains(scope.Permissions, value)) {
 			permissions = append(permissions, value)
 		}
