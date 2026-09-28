@@ -18,9 +18,10 @@ jobs:
           cmake --version
       - name: Stream masked output
         run: |
-          echo '::add-mask::hakopod-private-fixture-marker'
+          masked=$(head -c 24 /dev/urandom | base64)
+          echo "::add-mask::$masked"
           for n in $(seq 1 30); do
-            printf 'workflow-visible-line-%s hakopod-private-fixture-marker\n' "$n"
+            printf 'workflow-visible-line-%s %s\n' "$n" "$masked"
             sleep 1
           done
       - name: Compile a native program
