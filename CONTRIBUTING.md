@@ -58,3 +58,16 @@ Mark unsupported capabilities clearly; do not hide failures with mock data.
 
 Use small pull requests describing the user-visible change, validation, and
 remaining risks. Preserve dependency notices. Contributions use Apache-2.0.
+
+## Contributions and Hakopod Cloud
+
+Hakopod Cloud is a hosted extension of the open-source Hakopod engine and
+dashboard in this repository. Contributions accepted here are made available
+under Apache-2.0 and may be used, modified and distributed in both self-hosted
+Hakopod and Hakopod Cloud, including commercial services.
+
+Contributors retain copyright in their work. Apache-2.0 grants the permissions
+and patent license described in [LICENSE](LICENSE); contributing does not
+transfer ownership to Hakopod or grant exclusive rights. Cloud-specific code
+maintained outside this repository can have separate terms. Those terms do not
+change the license of contributions to this repository.

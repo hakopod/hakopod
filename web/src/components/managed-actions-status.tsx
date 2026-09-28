@@ -50,6 +50,17 @@ export function ManagedActionsStatus({
     <section className="panel mb-4">
       <div className="panel-heading">
         <h2>GitHub runners</h2>
+        {!removing && (
+          <Button size="sm" asChild>
+            <Link
+              to="/applications/$applicationId"
+              params={{ applicationId: application.id }}
+              search={{ service, tab: 'actions' }}
+            >
+              Workflow activity
+            </Link>
+          </Button>
+        )}
         {!removing && canAccess(scope.identity, application.project, 'deployments:write') && (
           <Button size="sm" asChild>
             <Link

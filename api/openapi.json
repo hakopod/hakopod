@@ -1122,6 +1122,176 @@
         }
       }
     },
+    "/applications/{id}/actions/{service}/jobs": {
+      "get": {
+        "operationId": "listActionsJobs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActionsJob"
+                      }
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "observed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "state",
+                    "message",
+                    "observed_at",
+                    "limit"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/actions/{service}/jobs/{slot}/logs": {
+      "get": {
+        "operationId": "getActionsJobLogs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "number",
+                          "text"
+                        ]
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "observed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "lines",
+                    "truncated",
+                    "source",
+                    "state",
+                    "message",
+                    "observed_at"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/alarms": {
       "get": {
         "operationId": "listAlarms",
@@ -15787,6 +15957,186 @@
           "service",
           "runner_id",
           "phase",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ActionsObservation": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "integer"
+          },
+          "run_number": {
+            "type": "integer"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "job_key": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "workflow",
+          "run_id",
+          "run_number",
+          "attempt",
+          "job_key",
+          "branch",
+          "sha"
+        ]
+      },
+      "ActionsStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "conclusion",
+          "number",
+          "started_at",
+          "completed_at"
+        ]
+      },
+      "ActionsWorkflowJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "integer"
+          },
+          "run_attempt": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "runner_id": {
+            "type": "integer"
+          },
+          "runner_name": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionsStep"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "run_attempt",
+          "name",
+          "status",
+          "conclusion",
+          "runner_id",
+          "runner_name",
+          "started_at",
+          "completed_at",
+          "steps"
+        ]
+      },
+      "ActionsJob": {
+        "type": "object",
+        "properties": {
+          "slot_id": {
+            "type": "string"
+          },
+          "runner_id": {
+            "type": "integer"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/ActionsObservation"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionsWorkflowJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "slot_id",
+          "runner_id",
+          "observation",
+          "job",
           "created_at",
           "updated_at"
         ]
