@@ -122,6 +122,56 @@ class UpgradeLifecycleTests(unittest.TestCase):
         self.assertEqual(m.redact_log('API ready'),'API ready')
 
 class MaintenanceRegressionTests(unittest.TestCase):
+    def test_unsupported_upgrade_suggests_only_a_verified_intermediate(self):
+        manifest = {'schema_version': 1, 'version': '0.1.0-alpha.38',
+                    'from_versions': ['0.1.0-alpha.36', '0.1.0-alpha.37'],
+                    'runtime_pins_sha256': m.host.digest(Path(m.__file__).with_name('pins.json'))}
+        for candidate, available, expected in [('0.1.0-alpha.36', True, True),
+                                                ('0.1.0-alpha.34', False, False),
+                                                ('0.1.0-alpha.39', True, False), ('', False, False)]:
+            with patch.object(m, 'current', return_value='0.1.0-alpha.34'), patch.object(m, 'release_check', return_value={
+                    'current_version': '0.1.0-alpha.34', 'latest_version': candidate, 'update_available': available}):
+                with self.assertRaises(m.UnsupportedUpgradeError) as caught:
+                    m.check_upgrade(manifest, '0.1.0-alpha.38')
+                message = str(caught.exception)
+                self.assertIn('Supported source versions: 0.1.0-alpha.36, 0.1.0-alpha.37', message)
+                self.assertEqual('Next supported step:' in message, expected)
+                if expected:
+                    self.assertIn('sudo sh installer.sh --upgrade --version 0.1.0-alpha.36', message)
+                    self.assertIn('retry: sudo sh installer.sh --upgrade --version 0.1.0-alpha.38', message)
+
+    def test_release_check_finds_intermediate_beyond_the_three_newest(self):
+        import hashlib
+        releases = []
+        manifests = {}
+        for number in range(39, 30, -1):
+            target = f'0.1.0-alpha.{number}'
+            base = f'https://github.com/hakopod/hakopod/releases/download/v{target}/'
+            raw = json.dumps({'schema_version': 1, 'version': target,
+                              'from_versions': [f'0.1.0-alpha.{number-2}', f'0.1.0-alpha.{number-1}'],
+                              'runtime_pins_sha256': m.host.digest(Path(m.__file__).with_name('pins.json'))}).encode()
+            manifests[base + 'upgrade.json'] = raw
+            manifests[base + 'SHA256SUMS'] = (hashlib.sha256(raw).hexdigest() + '  upgrade.json\n').encode()
+            releases.append({'tag_name': 'v' + target, 'draft': False, 'prerelease': True,
+                             'assets': [{'name': name, 'browser_download_url': base + name} for name in ('upgrade.json', 'SHA256SUMS')]})
+        def fetch(url, limit):
+            return json.dumps(releases).encode() if '/releases?' in url else manifests[url]
+        with patch.object(m, 'current', return_value='0.1.0-alpha.34'), patch.object(m, 'CACHE', None), patch.object(m, 'CACHE_AT', 0), patch.object(m, 'fetch', side_effect=fetch) as mocked:
+            result = m.release_check()
+            self.assertTrue(result['update_available'])
+            self.assertEqual(result['latest_version'], '0.1.0-alpha.36')
+            self.assertEqual(mocked.call_count, 9)
+        # Even with many incompatible candidates the lookup stays bounded.
+        with patch.object(m, 'current', return_value='0.1.0-alpha.1'), patch.object(m, 'CACHE', None), patch.object(m, 'CACHE_AT', 0), patch.object(m, 'fetch', side_effect=fetch) as mocked:
+            self.assertFalse(m.release_check()['update_available'])
+            self.assertEqual(mocked.call_count, 1 + 2*m.MAX_UPGRADE_CANDIDATES)
+
+    def test_malformed_manifest_cannot_supply_upgrade_commands(self):
+        for sources in ['0.1.0-alpha.36', [None], ['0.1.0-alpha.36;id'], ['1.0.0'] * 3]:
+            with self.assertRaises(ValueError):
+                m.validate_manifest({'schema_version': 1, 'version': '0.1.0-alpha.38', 'from_versions': sources},
+                                    '0.1.0-alpha.34', '0.1.0-alpha.38')
+
     def test_existing_database_backup_uses_explicit_libpq_fields(self):
         from types import SimpleNamespace
         for mode, host in [('local', '127.0.0.1'), ('external', 'database.example.test')]:

@@ -16,15 +16,39 @@ review the upgrade before running it:
 
 ```sh
 curl --fail --location --proto '=https' --tlsv1.2 \
-  https://hakopod.com/scripts/installer.sh -o installer.sh
+  https://hakopod.com/scripts/installer.sh -o installer.sh &&
 sudo sh installer.sh --upgrade --version RELEASE_VERSION
 ```
 
-Use an actual published version without `v`. The website bootstrap defaults to
-its stamped release. `--upgrade` cannot be combined with `--resume` or `--config`.
+Use an actual published version without `v`. Keep `&&` between the download and
+execution so a failed download cannot run an older local copy. If the website is
+unavailable, download `installer.sh` from the same tagged release's official
+GitHub assets instead.
+
+Without `--version`, the bootstrap discovers the newest complete stable GitHub
+release (or a prerelease when no stable release is available). It does not choose
+an intermediate upgrade automatically. `--upgrade` cannot be combined with
+`--resume` or `--config`.
 It asks for `upgrade RELEASE_VERSION`; `--yes` accepts that plan unattended.
-`--dry-run` verifies downloaded artifacts without stopping services; runtime
-compatibility and backups are checked during the actual upgrade.
+`--dry-run` verifies the installer kit and checksummed compatibility manifest
+against the installed version without stopping services. Older kits without a
+read-only compatibility check cannot report a successful dry run. Server and
+dashboard artifacts, installed runtime and backups are checked by the actual
+upgrade, without first downloading a duplicate copy in the bootstrap.
+
+Releases support only explicitly tested source versions. An unsupported upgrade
+lists the accepted sources. New helpers also use the bounded release check to
+suggest a verified next step when one is found; a suggestion never bypasses the
+normal confirmation or compatibility checks. For example, alpha.34 can reach
+alpha.38 through alpha.36, as declared in those published manifests:
+
+```sh
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.36 &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.38
+```
+
+The guidance and dry-run improvements apply to newly packaged bootstraps and
+helpers; previously published release assets remain unchanged.
 
 New installs include `hakopod-maintenance`, a root-owned service accessible only
 through a local Unix socket. The API service can request fixed log/status/upgrade
@@ -35,7 +59,7 @@ upgrade. Helper and runtime migrations need a separate reviewed procedure.
 
 Updates checks the official GitHub release API and caches results for 15 minutes.
 Stable installs stay on stable releases; alpha installs include prereleases.
-Checks inspect at most 30 release records and three candidate manifests, newest
+Checks inspect at most 30 release records and eight candidate manifests, newest
 first, within the current major/minor series. A release must provide an
 `upgrade.json` compatibility manifest and checksummed binary/dashboard assets.
 The manifest must explicitly name the installed source version and match the

@@ -35,13 +35,42 @@ class BootstrapTest(unittest.TestCase):
             stack.enter_context(patch.object(bootstrap, 'architecture', return_value='amd64'))
             stack.enter_context(patch.object(bootstrap.os, 'geteuid', return_value=0))
             stack.enter_context(patch.object(bootstrap.shutil, 'which', return_value='/bin/bash'))
-            stack.enter_context(patch.object(bootstrap, 'download'))
+            downloads = stack.enter_context(patch.object(bootstrap, 'download'))
             stack.enter_context(patch.object(bootstrap, 'checksums', return_value=dict.fromkeys(names, 'a'*64)))
             stack.enter_context(patch.object(bootstrap, 'extract_kit', side_effect=extract))
             run = stack.enter_context(patch.object(bootstrap.subprocess, 'run', return_value=types.SimpleNamespace(returncode=17)))
             self.assertEqual(bootstrap.main(['--upgrade', '--version', target, '--yes']), 17)
             self.assertEqual(run.call_count, 1)
             self.assertIn('--check-upgrade', run.call_args.args[0])
+            self.assertFalse(any('linux_amd64' in call.args[0] or 'dashboard.tar.gz' in call.args[0] for call in downloads.call_args_list))
+
+    def test_upgrade_dry_run_requires_successful_compatibility_check(self):
+        for supported, returncode in [(True, 0), (True, 17), (False, 0)]:
+            with self.subTest(supported=supported, returncode=returncode), tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
+                target = '0.1.0-alpha.38'
+                names = [f'hakopod_{target}_installer.tar.gz', 'upgrade.json']
+                def extract(source, destination, root):
+                    helper = destination / root / 'installer/maintenance.py'
+                    helper.parent.mkdir(parents=True)
+                    helper.write_text("# supports '--check-upgrade'\n" if supported else '# older helper\n')
+                stack.enter_context(patch.object(bootstrap, 'architecture', return_value='amd64'))
+                stack.enter_context(patch.object(bootstrap.shutil, 'which', return_value='/bin/bash'))
+                downloads = stack.enter_context(patch.object(bootstrap, 'download'))
+                stack.enter_context(patch.object(bootstrap, 'checksums', return_value=dict.fromkeys(names, 'a'*64)))
+                stack.enter_context(patch.object(bootstrap, 'extract_kit', side_effect=extract))
+                run = stack.enter_context(patch.object(bootstrap.subprocess, 'run', return_value=types.SimpleNamespace(returncode=returncode)))
+                output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                if supported:
+                    self.assertEqual(bootstrap.main(['--upgrade', '--version', target, '--dry-run']), returncode or None)
+                    self.assertEqual(run.call_count, 1)
+                    self.assertIn('--check-upgrade', run.call_args.args[0])
+                    self.assertNotIn('--upgrade', run.call_args.args[0])
+                    self.assertEqual('No services were stopped' in output.getvalue(), returncode == 0)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'cannot check upgrade compatibility'):
+                        bootstrap.main(['--upgrade', '--version', target, '--dry-run'])
+                    run.assert_not_called()
+                self.assertFalse(any('linux_' in call.args[0] or 'dashboard.tar.gz' in call.args[0] for call in downloads.call_args_list))
 
     def release(self, value, prerelease=True, draft=False):
         names = ['SHA256SUMS', 'installer.sh'] + ['hakopod_' + value + '_' + part + '.tar.gz'

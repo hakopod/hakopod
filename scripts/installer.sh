@@ -295,20 +295,15 @@ def main(argv=None):
             download(base + 'SHA256SUMS', manifest, 32768)
             hashes = checksums(manifest)
             kit = 'hakopod_' + selected + '_installer'
-            names = [(kit + '.tar.gz', 16 * MIB), ('hakopod_' + selected + '_linux_' + arch + '.tar.gz', 128 * MIB),
-                     ('hakopod_' + selected + '_dashboard.tar.gz', 128 * MIB)]
-            for name, limit in names:
-                if name not in hashes:
-                    raise ValueError('Release checksum inventory is missing ' + name)
-                download(base + name, directory / name, limit, hashes[name])
+            kit_name = kit + '.tar.gz'
+            if kit_name not in hashes:
+                raise ValueError('Release checksum inventory is missing ' + kit_name)
+            download(base + kit_name, directory / kit_name, 16 * MIB, hashes[kit_name])
             extract_kit(directory / (kit + '.tar.gz'), directory / 'kit', kit)
             if args.upgrade:
                 helper = directory / 'kit' / kit / 'installer/maintenance.py'
                 if not helper.is_file():
                     raise ValueError('This release does not include upgrade support; do not use resume as an upgrade')
-                if args.dry_run:
-                    print('Verified release artifacts. Upgrade stops only API/dashboard, backs up PostgreSQL and configuration, then switches binaries. Compatibility is checked before stopping services.')
-                    return
                 # Reject unsupported versions before asking to stop management services.
                 if 'upgrade.json' not in hashes:
                     raise ValueError('This release has no upgrade compatibility manifest')
@@ -319,11 +314,23 @@ def main(argv=None):
                                               '--manifest', str(directory / 'upgrade.json')], check=False)
                     if checked.returncode:
                         return checked.returncode
+                elif args.dry_run:
+                    raise ValueError('This release cannot check upgrade compatibility without applying it; no services were stopped')
+                if args.dry_run:
+                    print('Verified installer kit and upgrade compatibility manifest. No services were stopped. The actual upgrade verifies server/dashboard artifacts and installed runtime, backs up PostgreSQL/configuration, then restarts API/dashboard.')
+                    return
                 if not args.yes:
                     print('Upgrade to ' + selected + ': stop API/dashboard, back up PostgreSQL/configuration, then restart. Applications keep running. Type upgrade ' + selected + ' to continue:', flush=True)
                     if terminal.readline().strip() != 'upgrade ' + selected:
                         raise ValueError('Upgrade cancelled')
                 return subprocess.run(['python3', str(helper), '--upgrade', selected], check=False).returncode
+            # Upgrade helpers fetch and verify these themselves after preflight.
+            # Fresh installs still receive the complete verified artifact set.
+            for name in ('hakopod_' + selected + '_linux_' + arch + '.tar.gz',
+                         'hakopod_' + selected + '_dashboard.tar.gz'):
+                if name not in hashes:
+                    raise ValueError('Release checksum inventory is missing ' + name)
+                download(base + name, directory / name, 128 * MIB, hashes[name])
             command = ['bash', str(directory / 'kit' / kit / 'scripts/install.sh'), '--artifact-dir', str(directory),
                        '--arch', arch, '--version', selected]
             if args.config:
