@@ -308,6 +308,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/actions/{service}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listActionsJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/actions/{service}/jobs/{slot}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getActionsJobLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alarms": {
         parameters: {
             query?: never;
@@ -3910,6 +3942,51 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        ActionsObservation: {
+            repository: string;
+            workflow: string;
+            run_id: number;
+            run_number: number;
+            attempt: number;
+            job_key: string;
+            branch: string;
+            sha: string;
+        };
+        ActionsStep: {
+            name: string;
+            status: string;
+            conclusion: string;
+            number: number;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        ActionsWorkflowJob: {
+            id: number;
+            run_id: number;
+            run_attempt: number;
+            name: string;
+            status: string;
+            conclusion: string;
+            runner_id: number;
+            runner_name: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            completed_at: string | null;
+            steps: components["schemas"]["ActionsStep"][];
+        };
+        ActionsJob: {
+            slot_id: string;
+            runner_id: number;
+            observation: components["schemas"]["ActionsObservation"];
+            job: components["schemas"]["ActionsWorkflowJob"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         Alarm: {
             id: string;
             rule: string;
@@ -6764,6 +6841,89 @@ export interface operations {
                                 MemoryLimit?: string;
                             };
                         };
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listActionsJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ActionsJob"][];
+                        state: string;
+                        message: string;
+                        /** Format: date-time */
+                        observed_at: string;
+                        limit: number;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getActionsJobLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        lines: {
+                            number: number;
+                            text: string;
+                        }[];
+                        truncated: boolean;
+                        source: string;
+                        state: string;
+                        message: string;
+                        /** Format: date-time */
+                        observed_at: string;
                     };
                 };
             };

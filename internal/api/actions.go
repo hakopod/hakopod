@@ -230,6 +230,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err := actionsFence(ctx, t); err != nil {
 			return err
 		}
+		s.observeActionsJob(ctx, t, v)
 		if p.Removed {
 			if _, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID); err != nil {
 				return err

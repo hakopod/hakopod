@@ -13,6 +13,14 @@ It remains a development release; production installation and operational recove
 have separate acceptance gates.
 The website and guides are at [hakopod.com](https://hakopod.com).
 
+## Open source and Cloud
+
+Hakopod is licensed under [Apache-2.0](LICENSE). [Hakopod Cloud](https://cloud.hakopod.com)
+is a hosted extension of this open-source engine and dashboard. Code contributed
+here may be used in both the self-hosted edition and the commercial Cloud
+service under Apache-2.0. Contributors retain copyright; Cloud-specific code
+outside this repository may have separate terms. See [Contributing](CONTRIBUTING.md#contributions-and-hakopod-cloud).
+
 ## Install on a Linux server
 
 On a fresh dedicated Ubuntu 24.04/26.04 or Debian 12/13 server, with amd64 or

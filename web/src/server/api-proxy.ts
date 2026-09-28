@@ -12,6 +12,7 @@ export const allowed = [
   /^database-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,
   /^applications\/[A-Za-z0-9_-]+\/actions$/,
+  /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/jobs(?:\/[A-Za-z0-9_-]+\/logs)?$/,
   /^storage\/retained(?:\/[a-f0-9]{32})?$/,
   /^roles(?:\/[A-Za-z0-9_:-]+)?$/,
   /^organization\/security$/,

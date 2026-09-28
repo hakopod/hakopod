@@ -6,6 +6,7 @@ import { serviceProfileLabel } from '../lib/service-resources'
 import { MoveServiceDialog } from './move-service-dialog'
 import { effectiveService } from '../lib/effective-service'
 import { RenameResource } from './rename-resource'
+import { ManagedActionsWorkflows } from './managed-actions-workflows'
 import { ManagedActionsStatus } from './managed-actions-status'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -43,6 +44,7 @@ const ServiceSecrets = lazy(() =>
   import('./service-secrets').then((m) => ({ default: m.ServiceSecrets })),
 )
 const serviceTabs = [
+  'actions',
   'overview',
   'pods',
   'logs',
@@ -318,6 +320,7 @@ export function ServiceDetail({
         >
           {[
             ['overview', 'activity', 'Overview'],
+            ['actions', 'activity', 'Actions'],
             ['pods', 'box', 'Pods'],
             ['logs', 'activity', 'Logs'],
             ['requests', 'activity', 'Requests'],
@@ -329,7 +332,9 @@ export function ServiceDetail({
           ]
             .filter(
               ([value]) =>
-                (value !== 'terminal' || features.terminal) && (value !== 'source' || features.git),
+                (value !== 'actions' || Boolean(service.actions)) &&
+                (value !== 'terminal' || features.terminal) &&
+                (value !== 'source' || features.git),
             )
             .map(([value, icon, label]) => (
               <Tabs.Trigger className="tab-trigger" key={value} value={value}>
@@ -338,6 +343,11 @@ export function ServiceDetail({
               </Tabs.Trigger>
             ))}
         </Tabs.List>
+        <Tabs.Content value="actions" className="tab-content">
+          {service.actions && (
+            <ManagedActionsWorkflows application={application} service={serviceName} />
+          )}
+        </Tabs.Content>
         <Tabs.Content value="requests" className="tab-content">
           {scope.can('logs:read') ? (
             <Requests key={serviceName} applicationId={application.id} service={serviceName} />

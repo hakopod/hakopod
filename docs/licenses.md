@@ -87,3 +87,12 @@ Sources:
 - https://www.mozilla.org/en-US/MPL/2.0/
 - https://creativecommons.org/licenses/by/4.0/
 - https://github.com/anchore/syft/releases/tag/v1.51.1
+
+## Hakopod Cloud
+
+Hakopod Cloud extends the Apache-2.0 engine and dashboard in this repository.
+Apache-2.0 permits commercial use, modification and distribution, including use
+of community contributions in Cloud. Contributor copyright and applicable
+license/notice obligations remain in force. Cloud-specific code outside this
+repository may have separate terms; it does not relicense this repository.
+See [the contribution policy](../CONTRIBUTING.md#contributions-and-hakopod-cloud).

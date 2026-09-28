@@ -56,11 +56,19 @@ const ApplicationSource = lazy(() => import('../components/application-source'))
 export const Route = createFileRoute('/applications/$applicationId')({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { service?: string; tab?: string; pod?: string } => ({
+  ): {
+    service?: string
+    tab?: string
+    pod?: string
+    run?: string
+    job?: string
+    runner?: string
+  } => ({
     service: typeof search.service === 'string' ? search.service : undefined,
     tab:
       typeof search.tab === 'string' &&
       [
+        'actions',
         'topology',
         'services',
         'deployments',
@@ -80,6 +88,9 @@ export const Route = createFileRoute('/applications/$applicationId')({
       ].includes(search.tab)
         ? search.tab
         : undefined,
+    run: typeof search.run === 'string' ? search.run.slice(0, 256) : undefined,
+    job: typeof search.job === 'string' ? search.job.slice(0, 64) : undefined,
+    runner: typeof search.runner === 'string' ? search.runner.slice(0, 64) : undefined,
     pod: typeof search.pod === 'string' ? search.pod : undefined,
   }),
   component: ApplicationRoute,
