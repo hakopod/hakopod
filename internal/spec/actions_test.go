@@ -4,6 +4,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,42 @@ func TestActionsRejectUnsafeWorkloadControls(t *testing.T) {
 	app.Services["web"] = Service{Image: "nginx:alpine"}
 	if _, err := Normalize(app); err == nil {
 		t.Fatal("mixed privileged namespace")
+	}
+}
+
+func TestActionsResolvedImageRemainsValid(t *testing.T) {
+	for _, image := range []string{ActionsRunnerImage, actionsRunnerResolvedImage} {
+		app := actionsFixture()
+		svc := app.Services["runner"]
+		svc.Image = image
+		app.Services["runner"] = svc
+		app, err := Normalize(app)
+		if err != nil || app.Services["runner"].Image != image {
+			t.Fatalf("approved image changed or rejected: %q: %v", image, err)
+		}
+		encoded, err := toml.Marshal(app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := Parse(encoded)
+		if err != nil || !reflect.DeepEqual(app, decoded) {
+			t.Fatalf("resolved release did not round trip: %v", err)
+		}
+	}
+	for _, image := range []string{
+		actionsRunnerRepository + ":2.337.0",
+		actionsRunnerRepository + "@sha256:" + strings.Repeat("a", 64),
+		"example.invalid/actions/actions-runner@" + actionsRunnerDigest,
+		"ghcr.io/other/actions-runner@" + actionsRunnerDigest,
+		actionsRunnerRepository + ":unapproved@" + actionsRunnerDigest,
+	} {
+		app := actionsFixture()
+		svc := app.Services["runner"]
+		svc.Image = image
+		app.Services["runner"] = svc
+		if _, err := Normalize(app); err == nil {
+			t.Fatalf("unapproved image accepted: %q", image)
+		}
 	}
 }
 func TestActionsTemplateRequiresRepositoryAndManualCredential(t *testing.T) {

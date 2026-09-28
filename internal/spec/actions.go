@@ -9,7 +9,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-const ActionsRunnerImage = "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
+const (
+	actionsRunnerRepository    = "ghcr.io/actions/actions-runner"
+	actionsRunnerDigest        = "sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
+	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0@" + actionsRunnerDigest
+	actionsRunnerResolvedImage = actionsRunnerRepository + "@" + actionsRunnerDigest
+)
 
 // Actions describes an organization or repository pool of single-job runners. Credential
 // is a control-plane secret reference, never a job environment variable.
@@ -66,7 +71,9 @@ func normalizeActions(s *Service) error {
 	if s.Image == "" {
 		s.Image = ActionsRunnerImage
 	}
-	if s.Image != ActionsRunnerImage {
+	// Registry resolution removes the tag while preserving the approved
+	// repository and digest. Both forms must survive deployment validation.
+	if s.Image != ActionsRunnerImage && s.Image != actionsRunnerResolvedImage {
 		return fmt.Errorf("actions runners use the verified, digest-pinned runner image")
 	}
 	if s.Size == "" {

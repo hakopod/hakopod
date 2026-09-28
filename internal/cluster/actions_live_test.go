@@ -39,6 +39,17 @@ func TestManagedActionsWorkspaceLive(t *testing.T) {
 	s.Actions.TimeoutMinutes = 10
 	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "1500m", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
 	target.Spec.Services["runner"] = s
+	// Use the same resolution and validation sequence as the durable worker.
+	// Pinned registry references lose their tag after digest verification.
+	target.Spec, err = c.Resolve(ctx, target.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.Spec, err = spec.Normalize(target.Spec)
+	if err != nil {
+		t.Fatal("resolved runner release is invalid", err)
+	}
+	s = target.Spec.Services["runner"]
 	if err = c.bootstrap(ctx, target); err != nil {
 		t.Fatal(err)
 	}
