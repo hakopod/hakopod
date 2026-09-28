@@ -11,6 +11,13 @@ observe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(observe)
 
 class ObserverTest(unittest.TestCase):
+    def test_projected_jit_allows_only_explicit_config_symlink(self):
+        with tempfile.TemporaryDirectory() as root:
+            value = Path(root) / 'value'; value.write_bytes(b'opaque-jit-fixture')
+            projected = Path(root) / 'config'; projected.symlink_to(value)
+            with self.assertRaises(OSError): observe.read_regular(projected, 1024)
+            self.assertEqual(observe.read_regular(projected, 1024, projected_config=True), b'opaque-jit-fixture')
+
     def test_root_pages_rotation_and_symlinks(self):
         with tempfile.TemporaryDirectory() as root:
             pages = Path(root) / '_diag/pages'

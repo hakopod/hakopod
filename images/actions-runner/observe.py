@@ -26,8 +26,13 @@ FIELDS = {'repository': 'GITHUB_REPOSITORY', 'workflow': 'GITHUB_WORKFLOW',
           'branch': 'GITHUB_REF_NAME', 'sha': 'GITHUB_SHA'}
 
 
-def read_regular(path, limit):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def read_regular(path, limit, *, projected_config=False):
+    # Kubernetes projects this trusted read-only Secret volume through symlinks.
+    # All job-controlled observation and log paths still reject symlinks.
+    flags = os.O_RDONLY | os.O_NONBLOCK
+    if not projected_config:
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
     with os.fdopen(fd, 'rb') as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError('not a regular observation')
@@ -148,7 +153,7 @@ def run():
     thread.start()
     env = dict(os.environ, ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT='1',
                ACTIONS_RUNNER_HOOK_JOB_STARTED='/usr/local/bin/hakopod-job-started')
-    config = read_regular('/run/hakopod-jit/config', 128 * 1024).decode().strip()
+    config = read_regular('/run/hakopod-jit/config', 128 * 1024, projected_config=True).decode().strip()
     child = subprocess.Popen(['./run.sh', '--jitconfig', config], env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     for signum in (signal.SIGTERM, signal.SIGINT):
