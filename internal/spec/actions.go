@@ -11,8 +11,8 @@ import (
 
 const (
 	actionsRunnerRepository    = "ghcr.io/hakopod/actions-runner"
-	actionsRunnerDigest        = "sha256:537bb6ad98ed0f4ebb3cd6d595d5c956af5887c93d148b4b6d6e9f1301069dff"
-	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0-hakopod-10386e7c1943aeee52923e2b82e7f0bd1b4e7012@" + actionsRunnerDigest
+	actionsRunnerDigest        = "sha256:63768a269f453a8e386588ae77b3ff9bdf911244c0276aad28b324d629be1489"
+	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0-hakopod-37ab7a0390da5202ab3ac7cb12983d6d08f146bf@" + actionsRunnerDigest
 	actionsRunnerResolvedImage = actionsRunnerRepository + "@" + actionsRunnerDigest
 )
 

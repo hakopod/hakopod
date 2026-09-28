@@ -20,7 +20,7 @@ func TestActionsConfigMatchesApprovedResolvedImage(t *testing.T) {
 	for name, change := range map[string]func(*spec.Service){
 		"digest": func(s *spec.Service) { s.Image = strings.Split(s.Image, "@")[0] + "@sha256:" + strings.Repeat("a", 64) },
 		"repository": func(s *spec.Service) {
-			s.Image = strings.Replace(s.Image, "actions/actions-runner", "other/actions-runner", 1)
+			s.Image = strings.Replace(s.Image, "ghcr.io/hakopod/", "ghcr.io/other/", 1)
 		},
 		"unapproved tag": func(s *spec.Service) { s.Image = strings.Replace(s.Image, "@", ":unapproved@", 1) },
 		"restart":        func(s *spec.Service) { s.RestartNonce = "new-revision" },
