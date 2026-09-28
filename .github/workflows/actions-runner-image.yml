@@ -45,7 +45,7 @@ jobs:
         run: |
           docker run --rm --cpus=2 --memory=3g --cap-drop=ALL \
             --security-opt=no-new-privileges \
-            --tmpfs /tmp:rw,nosuid,nodev,size=2g,uid=1001,gid=1001 \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=2g,uid=1001,gid=1001 \
             --mount "type=bind,src=$pythonLocation,dst=$pythonLocation,readonly" \
             --mount "type=bind,src=$PWD/images/actions-runner/smoke.sh,dst=/smoke.sh,readonly" \
             -e "HAKOPOD_SMOKE_PYTHON=$pythonLocation/bin/python" \
