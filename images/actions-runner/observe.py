@@ -152,7 +152,7 @@ def run():
     thread = threading.Thread(target=collect, daemon=True)
     thread.start()
     env = dict(os.environ, ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT='1',
-               ACTIONS_RUNNER_HOOK_JOB_STARTED='/usr/local/bin/hakopod-job-started')
+               ACTIONS_RUNNER_HOOK_JOB_STARTED='/usr/local/bin/hakopod-job-started.sh')
     config = read_regular('/run/hakopod-jit/config', 128 * 1024, projected_config=True).decode().strip()
     child = subprocess.Popen(['./run.sh', '--jitconfig', config], env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
