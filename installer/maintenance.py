@@ -38,6 +38,7 @@ INSTALL_LOCK = Path('/run/lock/hakopod-install.lock')
 LOCK = threading.Lock()
 CACHE = None
 CACHE_AT = 0
+MAX_UPGRADE_CANDIDATES = 8
 
 
 def version_key(value):
@@ -102,7 +103,7 @@ def release_check():
         if not isinstance(releases, list):
             raise ValueError('Invalid release list')
         release = None
-        for _ in range(3):
+        for _ in range(MAX_UPGRADE_CANDIDATES):
             candidate = eligible(releases, installed)
             if candidate is None: break
             releases.remove(candidate)
@@ -183,13 +184,41 @@ def download(release, name, checksums, directory, limit):
     return destination
 
 
+class UnsupportedUpgradeError(ValueError):
+    """A valid release does not accept this installed source version."""
+
+
 def validate_manifest(manifest, installed, target):
-    if manifest.get('schema_version') != 1 or manifest.get('version') != target or installed not in manifest.get('from_versions', []):
-        raise ValueError(f'Upgrade from {installed} to {target} is not supported by this release. No services were stopped. Use a release that explicitly supports your installed version; do not use --resume to upgrade.')
+    if not isinstance(manifest, dict) or manifest.get('schema_version') != 1 or manifest.get('version') != target:
+        raise ValueError('Invalid upgrade compatibility manifest')
+    sources = manifest.get('from_versions')
+    if not isinstance(sources, list) or len(sources) > 2 or any(not isinstance(source, str) for source in sources):
+        raise ValueError('Invalid upgrade source versions')
+    for source in sources:
+        version_key(source)
+    if installed not in sources:
+        accepted = ', '.join(sources) if sources else 'none'
+        raise UnsupportedUpgradeError(f'Upgrade from {installed} to {target} is not supported by this release. No services were stopped. Supported source versions: {accepted}. Use a release that explicitly supports your installed version; do not use --resume to upgrade.')
     if version_key(target) <= version_key(installed) or version_key(target)[:2] != version_key(installed)[:2]:
         raise ValueError('Only newer releases in the same major/minor series are supported')
     if manifest.get('runtime_pins_sha256') != host.digest(Path(__file__).with_name('pins.json')):
         raise ValueError('Runtime dependencies changed; follow the release manual upgrade guide')
+
+
+def check_upgrade(manifest, target):
+    installed = current()
+    try:
+        validate_manifest(manifest, installed, target)
+    except UnsupportedUpgradeError as error:
+        # Reuse the bounded release check; it verifies each candidate's checksum,
+        # source compatibility and runtime pins before suggesting a next step.
+        result = release_check()
+        candidate = result.get('latest_version')
+        if (result.get('update_available') and result.get('current_version') == installed
+                and candidate and version_key(installed) < version_key(candidate) < version_key(target)):
+            raise UnsupportedUpgradeError(str(error) + '\nNext supported step: sudo sh installer.sh --upgrade --version ' + candidate
+                                          + '\nAfter that succeeds, retry: sudo sh installer.sh --upgrade --version ' + target) from None
+        raise
 
 
 def validate_installed_runtime():
@@ -570,7 +599,7 @@ if __name__ == '__main__':
     if args.check_upgrade:
         try:
             if args.manifest is None: raise ValueError('An upgrade manifest is required')
-            validate_manifest(host.read_json(args.manifest), current(), args.check_upgrade)
+            check_upgrade(host.read_json(args.manifest), args.check_upgrade)
         except ValueError as error:
             raise SystemExit('Hakopod upgrade: ' + str(error)) from None
     elif args.enable:
