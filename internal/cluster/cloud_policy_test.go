@@ -72,12 +72,12 @@ func TestCloudReconciliationRejectsBeforeMutation(t *testing.T) {
 }
 
 func TestOperatorNodeCapacityIsBoundedAndDoesNotRelaxCustomerPolicy(t *testing.T) {
-	for _, limit := range []int{-1, 0, 1, 2, 3} {
+	for _, limit := range []int{-1, 0, 1, 2, 3, 4} {
 		for _, count := range []int{0, 1, 2, 3, 4} {
 			t.Run(fmt.Sprintf("limit=%d/count=%d", limit, count), func(t *testing.T) {
 				c := cloudClient(count)
 				c.options.OperatorNodeLimit = limit
-				allowed := (limit == 0 || limit == 1) && count == 1 || limit == 2 && count >= 1 && count <= 2
+				allowed := (limit == 0 || limit == 1) && count == 1 || (limit == 2 || limit == 3) && count >= 1 && count <= limit
 				err := c.ValidateCloudCapacity(context.Background())
 				if (err == nil) != allowed {
 					t.Fatalf("allowed=%v err=%v", allowed, err)

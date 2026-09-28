@@ -1,9 +1,10 @@
 # Managed Actions temporary workspace UI review
 
-Independent review completed on 2026-09-28 for the temporary workspace field in
-`web/src/components/managed-actions-form.tsx`. No product UI findings remain.
+Independent reviews completed on 2026-09-28 for the temporary workspace field in
+`web/src/components/managed-actions-form.tsx`. No product UI findings remain. The
+shared-storage follow-up below supersedes the initial separate Docker limit copy.
 
-## Scope and evidence
+## Initial review scope and evidence
 
 The reviewed change adds a whole-number GiB input, sends its value in the plan,
 and displays the per-slot amount before deployment. Source coverage included the
@@ -34,7 +35,7 @@ were stopped after the review; evidence and scripts remain in the task directory
 - Reviewed form SHA-256, equal in the local checkout and VM source:
   `572bab184b5169ec9b6c0e9b57de14b601476454e3151c56d99c7e7bef6f4e24`.
 
-## Completed checks
+## Initial completed checks
 
 | Coverage | Result |
 | --- | --- |
@@ -61,6 +62,45 @@ route families and screen-reader speech output were not newly exercised. This
 review verifies the affected form and its states, not backend enforcement or
 successful provisioning. The standing checklist below is retained as a reference;
 the table above is the result of this scoped pass.
+
+## Follow-up: shared source and Docker storage
+
+The helper now reads: “2–16 GiB per slot, shared by source, tools, Docker images
+and build files. Reserved on the runner node and deleted after each job.” This
+pass reviewed that explanation, including its accessible association with the
+workspace input. It does not establish that the runtime enforces the shared
+storage allowance; Kubernetes acceptance remains a separate check.
+
+The fixture was rebuilt from the updated component on the VM. All 57 recorded
+render and interaction cases passed again, covering self-hosted and Cloud, dark
+and Paper, and 1440, 390 and 320 pixel widths. Creation, existing and legacy pool
+values, review/back, plan and deployment failures, stale revision, range and
+integer validation, busy and denied states, keyboard stepping, Tab order and
+touch focus all passed. The assertions also checked the exact revised helper
+text, its `aria-describedby` association, and its visible bounds.
+
+The shorter explanation remains readable without clipping: one 20px line at
+1440px, three lines / 60px at 390px, and four lines / 80px at 320px. The input
+remains 44px high and 246px wide at 320px. The page retains its 24px desktop and
+16px mobile inset; no document overflow was found. All 77 follow-up screenshots
+were inspected through 10 contact sheets, followed by full-resolution narrow
+resource and focus captures. No UI changes were needed.
+
+Follow-up evidence is retained under the same VM `ui-review` directory:
+
+- `shared-storage-build.log`: successful updated fixture build.
+- `shared-storage-evidence/results.json` and `shared-storage-run.log`: 57 passing
+  cases; `shared-storage-evidence/` contains the screenshots and contact sheets.
+- `shared-storage-dashboard-build.log`: the regular `source/web` `npm run build`
+  completed successfully for the client and server. It ran in the existing
+  `node:24-bookworm-slim` VM image, capped at 2 CPUs and 2 GiB memory, with network
+  access disabled and existing dependencies reused.
+- Reviewed form SHA-256, equal in the checkout and VM source:
+  `3857ee15299f2f38b0f02470bfea7be3337f3147faae5b424165e66244be9706`.
+
+The browser, task-owned build container and loopback fixture server were stopped
+after this follow-up. The initial evidence remains available separately. No
+production workload or API was changed, and no local build ran.
 
 ## Standing checklist
 
