@@ -73,6 +73,47 @@ func TestActionsSandboxAndResourceBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestActionsWorkspaceStorageIsReservedAndBounded(t *testing.T) {
+	for _, size := range []int64{0, 2, 8, 16} {
+		target := runnerTarget(t)
+		s := target.Spec.Services["runner"]
+		s.Actions.WorkspaceSizeGiB = size
+		p := actionsPod(target, "runner", "slot", s)
+		want := resource.NewQuantity(max(2, size)<<30, resource.BinarySI)
+		workspace := p.Spec.Volumes[0].EmptyDir
+		if workspace == nil || workspace.Medium != "" || workspace.SizeLimit.Cmp(*want) != 0 {
+			t.Fatal("workspace bound missing", size, workspace)
+		}
+		for _, container := range []corev1.Container{p.Spec.InitContainers[0], p.Spec.Containers[0]} {
+			reserved := container.Resources.Requests[corev1.ResourceEphemeralStorage]
+			limited := container.Resources.Limits[corev1.ResourceEphemeralStorage]
+			if reserved.Cmp(*want) < 0 || limited.Cmp(*want) <= 0 {
+				t.Fatal("workspace was not reserved with log headroom", size, container.Name)
+			}
+		}
+		if p.Spec.Volumes[1].EmptyDir.SizeLimit.Cmp(resource.MustParse("2Gi")) != 0 {
+			t.Fatal("workspace change expanded memory-backed Docker storage")
+		}
+		target.Spec.Services["runner"] = s
+		quota := &corev1.ResourceQuota{Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{}}}
+		serviceResourceQuota(quota, target)
+		for _, kind := range []corev1.ResourceName{corev1.ResourceRequestsEphemeralStorage, corev1.ResourceLimitsEphemeralStorage} {
+			total := resource.MustParse("0")
+			for _, container := range []corev1.Container{p.Spec.InitContainers[1], p.Spec.Containers[0]} {
+				budget := container.Resources.Requests
+				if kind == corev1.ResourceLimitsEphemeralStorage {
+					budget = container.Resources.Limits
+				}
+				total.Add(budget[corev1.ResourceEphemeralStorage])
+			}
+			total.Mul(2) // Include one draining slot while the revision changes.
+			if available := quota.Spec.Hard[kind]; available.Cmp(total) < 0 {
+				t.Fatal("namespace cannot admit runner and draining slot", size, kind)
+			}
+		}
+	}
+}
 func TestActionsRuntimeFailsClosedAndMutationsAreFenced(t *testing.T) {
 	target := runnerTarget(t)
 	k := fake.NewClientset()

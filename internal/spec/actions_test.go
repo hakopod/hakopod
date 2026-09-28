@@ -40,19 +40,22 @@ func TestActionsCanonicalAndCredentialIsolation(t *testing.T) {
 }
 func TestActionsRejectUnsafeWorkloadControls(t *testing.T) {
 	for name, mutate := range map[string]func(*Service){
-		"image":            func(s *Service) { s.Image = "ubuntu:latest" },
-		"public":           func(s *Service) { s.Public = true },
-		"env":              func(s *Service) { s.Env = map[string]string{"TOKEN": "value"} },
-		"mount":            func(s *Service) { s.Volume = &Volume{SizeGiB: 1, MountPath: "/work"} },
-		"command":          func(s *Service) { s.Command = []string{"sh"} },
-		"replicas":         func(s *Service) { s.Replicas = 11 },
-		"memory":           func(s *Service) { s.Resources = &Resources{MemoryLimit: "1Gi"} },
-		"invalid-memory":   func(s *Service) { s.Resources = &Resources{MemoryLimit: "bad"} },
-		"invalid-cpu":      func(s *Service) { s.Resources = &Resources{CPURequest: "bad"} },
-		"overhead":         func(s *Service) { s.Resources = &Resources{MemoryRequest: "1Mi"} },
-		"provider-url":     func(s *Service) { s.Actions.Repository = "https://evil.invalid/repo" },
-		"timeout":          func(s *Service) { s.Actions.TimeoutMinutes = 361 },
-		"duplicate-labels": func(s *Service) { s.Actions.Labels = []string{"Linux", "linux"} },
+		"image":              func(s *Service) { s.Image = "ubuntu:latest" },
+		"public":             func(s *Service) { s.Public = true },
+		"env":                func(s *Service) { s.Env = map[string]string{"TOKEN": "value"} },
+		"mount":              func(s *Service) { s.Volume = &Volume{SizeGiB: 1, MountPath: "/work"} },
+		"command":            func(s *Service) { s.Command = []string{"sh"} },
+		"replicas":           func(s *Service) { s.Replicas = 11 },
+		"memory":             func(s *Service) { s.Resources = &Resources{MemoryLimit: "1Gi"} },
+		"invalid-memory":     func(s *Service) { s.Resources = &Resources{MemoryLimit: "bad"} },
+		"invalid-cpu":        func(s *Service) { s.Resources = &Resources{CPURequest: "bad"} },
+		"overhead":           func(s *Service) { s.Resources = &Resources{MemoryRequest: "1Mi"} },
+		"provider-url":       func(s *Service) { s.Actions.Repository = "https://evil.invalid/repo" },
+		"timeout":            func(s *Service) { s.Actions.TimeoutMinutes = 361 },
+		"workspace-small":    func(s *Service) { s.Actions.WorkspaceSizeGiB = 1 },
+		"workspace-negative": func(s *Service) { s.Actions.WorkspaceSizeGiB = -1 },
+		"workspace-large":    func(s *Service) { s.Actions.WorkspaceSizeGiB = 17 },
+		"duplicate-labels":   func(s *Service) { s.Actions.Labels = []string{"Linux", "linux"} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := actionsFixture()

@@ -49,6 +49,9 @@ export function ManagedActionsForm({
   const [replicas, setReplicas] = useState(String(original?.replicas ?? 1))
   const [architecture, setArchitecture] = useState(original?.architecture || '')
   const [timeout, setTimeout] = useState(String(original?.actions?.timeout_minutes || 60))
+  const [workspaceSize, setWorkspaceSize] = useState(
+    String(original?.actions?.workspace_size_gib || 2),
+  )
   const [resources, setResources] = useState<RunnerResources>(
     original?.resources ||
       (!original && dashboardEdition.cloud
@@ -119,6 +122,7 @@ export function ManagedActionsForm({
           credential,
           labels: labels.split(',').map((label) => label.trim()),
           timeout_minutes: Number(timeout),
+          workspace_size_gib: Number(workspaceSize),
         },
       }
       const result = await unwrap(
@@ -303,6 +307,9 @@ export function ManagedActionsForm({
                       </strong>
                     </div>
                     <div>{reservationLabel} Sandbox overhead is included.</div>
+                    <div>
+                      Temporary workspace: <strong>{workspaceSize} GiB per slot</strong>
+                    </div>
                     <div>
                       Credential reference: <code>{credential}</code>
                     </div>
@@ -570,6 +577,24 @@ export function ManagedActionsForm({
                 <p className="text-sm" role="status">
                   {reservationLabel}
                 </p>
+                <label className="grid gap-2">
+                  Temporary workspace (GiB)
+                  <Input
+                    type="number"
+                    min={2}
+                    max={16}
+                    step={1}
+                    required
+                    value={workspaceSize}
+                    disabled={busy}
+                    aria-describedby="runner-workspace-help"
+                    onChange={(event) => setWorkspaceSize(event.target.value)}
+                  />
+                  <span id="runner-workspace-help" className="text-sm muted-text">
+                    2–16 GiB per slot for source, tool downloads and build files. Reserved on the
+                    runner node and deleted after each job. Docker has a separate 2 GiB limit.
+                  </span>
+                </label>
                 <p className="text-sm muted-text">
                   Lower CPU reservations let more jobs share the machine; simultaneous builds may
                   run slower. Available capacity and Cloud allowances still apply. Review checks

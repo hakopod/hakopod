@@ -14,12 +14,13 @@ const ActionsRunnerImage = "ghcr.io/actions/actions-runner:2.337.0@sha256:e54962
 // Actions describes an organization or repository pool of single-job runners. Credential
 // is a control-plane secret reference, never a job environment variable.
 type Actions struct {
-	Repository     string   `json:"repository,omitempty" toml:"repository,omitempty"`
-	Organization   string   `json:"organization,omitempty" toml:"organization,omitempty"`
-	RunnerGroupID  int64    `json:"runner_group_id,omitempty" toml:"runner_group_id,omitempty"`
-	Credential     string   `json:"credential" toml:"credential"`
-	Labels         []string `json:"labels" toml:"labels"`
-	TimeoutMinutes int64    `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
+	Repository       string   `json:"repository,omitempty" toml:"repository,omitempty"`
+	Organization     string   `json:"organization,omitempty" toml:"organization,omitempty"`
+	RunnerGroupID    int64    `json:"runner_group_id,omitempty" toml:"runner_group_id,omitempty"`
+	Credential       string   `json:"credential" toml:"credential"`
+	Labels           []string `json:"labels" toml:"labels"`
+	TimeoutMinutes   int64    `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
+	WorkspaceSizeGiB int64    `json:"workspace_size_gib,omitempty" toml:"workspace_size_gib,omitempty"`
 }
 
 func (a Actions) Target() actions.Target {
@@ -59,6 +60,9 @@ func normalizeActions(s *Service) error {
 	if a.TimeoutMinutes < 5 || a.TimeoutMinutes > 360 {
 		return fmt.Errorf("actions.timeout_minutes: choose 5–360 minutes")
 	}
+	if a.WorkspaceSizeGiB < 0 || a.WorkspaceSizeGiB == 1 || a.WorkspaceSizeGiB > 16 {
+		return fmt.Errorf("actions.workspace_size_gib: choose 2–16 GiB of temporary workspace storage")
+	}
 	if s.Image == "" {
 		s.Image = ActionsRunnerImage
 	}
@@ -92,6 +96,14 @@ func normalizeActions(s *Service) error {
 		return fmt.Errorf("actions pools require at least 4Gi memory per job slot, including Docker and temporary storage")
 	}
 	return nil
+}
+
+// ActionsWorkspaceGiB retains the existing default for saved pool revisions.
+func ActionsWorkspaceGiB(a *Actions) int64 {
+	if a == nil || a.WorkspaceSizeGiB == 0 {
+		return 2
+	}
+	return a.WorkspaceSizeGiB
 }
 
 func HasActiveActions(a Application) bool {

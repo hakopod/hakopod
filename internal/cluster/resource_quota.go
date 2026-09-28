@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,8 +33,9 @@ func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 				corev1.ResourceRequestsMemory: p.MemoryRequest, corev1.ResourceLimitsMemory: p.MemoryLimit,
 			}
 			if s.Actions != nil {
-				values[corev1.ResourceRequestsEphemeralStorage] = "512Mi"
-				values[corev1.ResourceLimitsEphemeralStorage] = "4Gi"
+				workspace := spec.ActionsWorkspaceGiB(s.Actions)
+				values[corev1.ResourceRequestsEphemeralStorage] = fmt.Sprintf("%dMi", workspace*1024+256)
+				values[corev1.ResourceLimitsEphemeralStorage] = fmt.Sprintf("%dGi", workspace+3)
 			}
 			if budgets[name] == nil {
 				budgets[name] = corev1.ResourceList{}
