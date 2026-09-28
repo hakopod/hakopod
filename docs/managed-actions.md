@@ -106,7 +106,10 @@ Linux sandbox; arbitrary devices, kernel modules and nested VMs are unavailable.
 
 The declared per-slot CPU and memory budget includes the runner, Docker sidecar
 and 512 MiB/100m sandbox allowance. At least 4 GiB of memory limit is required.
-Workspaces have a 2 GiB temporary disk limit; Docker data has a 2 GiB memory-backed
+Workspaces default to 2 GiB of temporary disk. Set `actions.workspace_size_gib`
+to 2–16 GiB for larger source trees, tool downloads and build files. The node
+reserves that workspace plus container/log headroom before scheduling each slot;
+workspace data is deleted after every job. Docker data has a separate 2 GiB memory-backed
 limit. The maximum lifetime includes startup and waiting for a job. Jobs requiring
 more disk or a different runtime must use another runner type.
 

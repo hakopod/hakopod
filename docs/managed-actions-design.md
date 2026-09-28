@@ -75,6 +75,13 @@ bounded; no host Docker socket, host path or Kubernetes credential is exposed.
 Using the daemon image's default nftables tools broke service DNS; selecting its
 provided legacy tools fixed that failure on both architectures.
 
+The workspace sizing acceptance passed on Linux AMD64 in the named
+`k3d-hakopod-dev` cluster on 2026-09-28. It used the product pod builder, wrote
+2304 MiB to a 4 GiB workspace, and checked that file from a nested Docker
+container. Namespace quotas include the selected workspace and container
+headroom, including a draining revision. This test does not register a GitHub
+runner or prove that a particular repository's workflow fits its chosen budget.
+
 ## Implementation boundary
 
 Represent a pool as a service in the existing versioned application spec so its

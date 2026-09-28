@@ -15692,6 +15692,12 @@
           },
           "timeout_minutes": {
             "type": "integer"
+          },
+          "workspace_size_gib": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 16,
+            "description": "Defaults to 2 GiB. Temporary workspace storage reserved on the runner node per slot. Deleted after each job. Docker retains its separate 2 GiB memory-backed limit."
           }
         },
         "required": [

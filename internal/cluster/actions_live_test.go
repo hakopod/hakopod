@@ -14,6 +14,75 @@ import (
 	"time"
 )
 
+func TestManagedActionsWorkspaceLive(t *testing.T) {
+	if os.Getenv("HAKOPOD_ACTIONS_WORKSPACE_TEST") != "1" {
+		t.Skip("requires the named development cluster with the Actions sandbox")
+	}
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("only the named development cluster is permitted")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	c, err := New(path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.ActionsAvailable(ctx); err != nil {
+		t.Fatal(err)
+	}
+	target := runnerTarget(t)
+	target.ApplicationID = "actions-workspace-development"
+	s := target.Spec.Services["runner"]
+	s.Actions.WorkspaceSizeGiB = 4
+	s.Actions.TimeoutMinutes = 10
+	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "1500m", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
+	target.Spec.Services["runner"] = s
+	if err = c.bootstrap(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 30*time.Second)
+		defer done()
+		if err := c.kube.CoreV1().Namespaces().Delete(cleanup, Namespace(target.ApplicationID), metav1.DeleteOptions{}); err != nil {
+			t.Error(err)
+		}
+	})
+	if err = c.SaveActionsConfig(ctx, target, "runner", "workspace-fixture", "unused-development-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	pod := actionsPod(target, "runner", "workspace-fixture", s)
+	// Exercise the product's pod volumes and reservations without registering a
+	// GitHub runner. This fixture contains no provider or registration credential.
+	pod.Spec.Containers[0].Command = []string{"sh", "-c", `set -eu
+test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+mkdir -p /home/runner/_work
+dd if=/dev/zero of=/home/runner/_work/storage-probe bs=1048576 count=2304
+test "$(stat -c %s /home/runner/_work/storage-probe)" = 2415919104
+docker run --rm -v /home/runner/_work:/work docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0 sh -c 'test "$(stat -c %s /work/storage-probe)" = 2415919104'
+echo 'PASS: workspace above 2 GiB is writable and shared with nested containers'
+`}
+	if _, err = c.kube.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		current, err := c.kube.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Status.Phase == corev1.PodSucceeded {
+			return
+		}
+		if current.Status.Phase == corev1.PodFailed {
+			t.Fatalf("workspace fixture failed: %s %s", current.Status.Reason, current.Status.Message)
+		}
+		if err = sleepContext(ctx, 2*time.Second); err != nil {
+			t.Fatal("workspace fixture did not finish", err)
+		}
+	}
+}
+
 // The only credentials accepted by this fixture are single-job JIT configs.
 // It never receives the repository administration token used to issue them.
 func TestManagedActionsGitHubJobsLive(t *testing.T) {
