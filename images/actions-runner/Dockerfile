@@ -23,5 +23,8 @@ RUN set -eu; \
     install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" /usr/local/bin/gh; \
     rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${TARGETARCH}"
 
+COPY observe.py /usr/local/lib/hakopod/observe.py
+COPY --chmod=0755 job-started.sh /usr/local/bin/hakopod-job-started
+
 USER runner
 WORKDIR /home/runner
