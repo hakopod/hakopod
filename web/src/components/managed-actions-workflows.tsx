@@ -43,7 +43,7 @@ function StateIcon({ status }: { status: string }) {
     <Icon
       aria-hidden="true"
       size={16}
-      className={`shrink-0 ${status === 'in_progress' ? 'animate-spin motion-reduce:animate-none' : ''} ${status === 'success' ? 'text-[var(--success)]' : status === 'failure' ? 'text-[var(--error)]' : ''}`}
+      className={`shrink-0 ${status === 'in_progress' ? 'animate-spin motion-reduce:animate-none' : ''} ${status === 'success' ? 'text-[var(--success)]' : status === 'failure' ? 'text-[var(--destructive)]' : ''}`}
     />
   )
 }
@@ -115,19 +115,29 @@ export function ManagedActionsWorkflows({
     ...new Set([...slots.map((slot) => slot.id), ...all.map((job) => job.slot_id)]),
   ]
   return (
-    <section className="min-w-0 grid gap-4" aria-label="Workflow activity">
+    <section className="min-w-0 grid grid-cols-1 gap-4" aria-label="Workflow activity">
       <div
         className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm"
         aria-label="Runner pool activity"
       >
         <span>
-          <strong>{countsKnown ? fresh.filter((slot) => slot.phase === 'busy').length : '—'}</strong> Running jobs
+          <strong>
+            {countsKnown ? fresh.filter((slot) => slot.phase === 'busy').length : '—'}
+          </strong>{' '}
+          Running jobs
         </span>
         <span>
-          <strong>{countsKnown ? fresh.filter((slot) => slot.phase === 'online').length : '—'}</strong> Idle runners
+          <strong>
+            {countsKnown ? fresh.filter((slot) => slot.phase === 'online').length : '—'}
+          </strong>{' '}
+          Idle runners
         </span>
         <span>
-          <strong>{countsKnown ? fresh.filter((slot) => !['busy', 'online'].includes(slot.phase)).length : '—'}</strong>{' '}
+          <strong>
+            {countsKnown
+              ? fresh.filter((slot) => !['busy', 'online'].includes(slot.phase)).length
+              : '—'}
+          </strong>{' '}
           Starting / cleanup
         </span>
         <span className="muted-text">{pool?.pool.config.replicas ?? '—'} configured slots</span>
@@ -146,6 +156,7 @@ export function ManagedActionsWorkflows({
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,280px)_auto] items-end">
         <SelectField
           label="Workflow run"
+          disabled={jobs.isPending || Boolean(jobs.error && !jobs.data)}
           value={run}
           onValueChange={(value) => select({ run: value, job: undefined })}
           options={
@@ -154,7 +165,16 @@ export function ManagedActionsWorkflows({
                   value: runKey(item),
                   label: `${item.observation.workflow} #${item.observation.run_number} · Attempt ${item.observation.attempt} · ${item.observation.repository}`,
                 }))
-              : [{ value: '', label: 'No workflow runs yet' }]
+              : [
+                  {
+                    value: '',
+                    label: jobs.isPending
+                      ? 'Loading workflow runs…'
+                      : jobs.error
+                        ? 'Workflow runs unavailable'
+                        : 'No workflow runs yet',
+                  },
+                ]
           }
         />
         <SelectField
@@ -180,10 +200,15 @@ export function ManagedActionsWorkflows({
         </Button>
       </div>
       {jobs.data?.message && <Note>{jobs.data.message}</Note>}
+      {jobs.data?.truncated && (
+        <Note>
+          Older job details exceed this history window. Open GitHub for the full workflow history.
+        </Note>
+      )}
       {jobs.error && <ErrorState error={jobs.error} retry={() => void jobs.refetch()} />}
       {jobs.isPending ? (
         <Loading />
-      ) : !all.length ? (
+      ) : jobs.error && !jobs.data ? null : !all.length ? (
         <Empty
           title="No jobs recorded yet"
           description="Jobs appear when a runner using the current Hakopod image starts a workflow. Queued jobs have not been assigned to a runner, so GitHub remains the source for queue status."
@@ -200,7 +225,7 @@ export function ManagedActionsWorkflows({
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
             <div className="min-w-0">
               <h2 className="text-base font-semibold wrap-anywhere">
                 {header.observation.workflow}{' '}
@@ -221,7 +246,7 @@ export function ManagedActionsWorkflows({
               </a>
             </Button>
           </div>
-          <div className="grid min-w-0 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 min-w-0 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
             <nav className="hidden md:block min-w-0" aria-label="Jobs in this workflow run">
               <h3 className="text-xs muted-text uppercase tracking-wide mb-2">
                 Jobs · {runJobs.length}
@@ -250,8 +275,8 @@ export function ManagedActionsWorkflows({
                 })}
               </ul>
             </nav>
-            <div className="min-w-0 grid content-start gap-3">
-              <div className="md:hidden">
+            <div className="min-w-0 grid grid-cols-1 content-start gap-3">
+              <div className="md:hidden min-w-0">
                 <SelectField
                   label="Job"
                   value={selected.slot_id}
@@ -348,13 +373,16 @@ function WorkflowJob({
       {Date.now() - Date.parse(item.updated_at) > 120000 && item.job?.status !== 'completed' && (
         <Note>Job status is out of date. Refresh to check GitHub again.</Note>
       )}
+      {item.job?.steps_truncated && (
+        <Note>Some step details exceed this window. Open the job on GitHub to see every step.</Note>
+      )}
       {steps.length > 0 ? (
-        <div className="min-w-0 border rounded-md overflow-hidden">
+        <div className="min-w-0 border border-border rounded-md overflow-hidden">
           {steps.map((value) => {
             const open = expanded === value.number
             const state = value.conclusion || value.status
             return (
-              <div key={value.number} className="border-b last:border-b-0">
+              <div key={value.number} className="border-b border-border last:border-b-0">
                 <button
                   type="button"
                   aria-expanded={open}
@@ -375,15 +403,15 @@ function WorkflowJob({
                   <span className="sr-only">{label(state)}</span>
                 </button>
                 <div id={`workflow-step-${item.slot_id}-${value.number}`} hidden={!open}>
-                {open && (
-                  <LogViewer
-                    key={value.number}
-                    lines={lines}
-                    title={value.name}
-                    loading={logs.isPending && canReadLogs}
-                    permitted={canReadLogs}
-                  />
-                )}
+                  {open && (
+                    <LogViewer
+                      key={value.number}
+                      lines={lines}
+                      title={value.name}
+                      loading={logs.isPending && canReadLogs}
+                      permitted={canReadLogs}
+                    />
+                  )}
                 </div>
               </div>
             )
@@ -478,13 +506,16 @@ function LogViewer({
       </p>
     )
   return (
-    <section className="min-w-0 border rounded-md" aria-label={`${title} output`}>
-      <div className="flex flex-wrap items-center gap-2 border-b p-2">
+    <section className="min-w-0 border border-border rounded-md" aria-label={`${title} output`}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border p-2">
         <Input
           className="min-w-0 flex-1 basis-44"
           type="search"
           value={search}
-          onChange={(event) => { setSearch(event.target.value); setWindowEnd(null) }}
+          onChange={(event) => {
+            setSearch(event.target.value)
+            setWindowEnd(null)
+          }}
           aria-label={`Search ${title} log window`}
           placeholder="Search this log window"
         />
@@ -514,12 +545,33 @@ function LogViewer({
       {matches.length > 1000 && (
         <div className="flex flex-wrap items-center justify-between gap-2 p-2 text-xs muted-text">
           <span>
-            Showing lines {start + 1}–{end} of {matches.length}. Search covers the entire loaded window.
+            Showing lines {start + 1}–{end} of {matches.length}. Search covers the entire loaded
+            window.
           </span>
-          <div className="flex gap-2">
-            <Button size="sm" disabled={start === 0} onClick={() => { setWindowEnd(start); setFollow(false) }}>Earlier lines</Button>
-            <Button size="sm" disabled={end === matches.length} onClick={() => { setWindowEnd(Math.min(matches.length, end + 1000)); setFollow(false) }}>Later lines</Button>
-            <Button size="sm" disabled={end === matches.length} onClick={() => setWindowEnd(null)}>Latest lines</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={start === 0}
+              onClick={() => {
+                setWindowEnd(start)
+                setFollow(false)
+              }}
+            >
+              Earlier lines
+            </Button>
+            <Button
+              size="sm"
+              disabled={end === matches.length}
+              onClick={() => {
+                setWindowEnd(Math.min(matches.length, end + 1000))
+                setFollow(false)
+              }}
+            >
+              Later lines
+            </Button>
+            <Button size="sm" disabled={end === matches.length} onClick={() => setWindowEnd(null)}>
+              Latest lines
+            </Button>
           </div>
         </div>
       )}

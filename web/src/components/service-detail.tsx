@@ -111,13 +111,16 @@ export function ServiceDetail({
   const [moving, setMoving] = useState(false)
   const serviceActionsTrigger = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState(
-    initialTab && serviceTabs.includes(initialTab) ? initialTab : 'overview',
+    initialTab && serviceTabs.includes(initialTab) && (initialTab !== 'actions' || service?.actions)
+      ? initialTab
+      : 'overview',
   )
   const [terminalPod, setTerminalPod] = useState(initialPod || '')
   const navigationRoot = useActiveSection(tab, '.tab-list')
   useEffect(() => {
-    if (initialTab && serviceTabs.includes(initialTab)) setTab(initialTab)
-  }, [initialTab])
+    if (initialTab && serviceTabs.includes(initialTab))
+      setTab(initialTab === 'actions' && !service?.actions ? 'overview' : initialTab)
+  }, [initialTab, Boolean(service?.actions)])
   const [restartOpen, setRestartOpen] = useState(false)
   const [requestKey, setRequestKey] = useState('')
   const [busy, setBusy] = useState(false)

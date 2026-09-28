@@ -155,8 +155,8 @@ func (s *Server) runnerClient(ctx context.Context, t cluster.Target, config spec
 	return actions.New(token)
 }
 func sameActionsConfig(a, b spec.Service) bool {
-	// Saved specifications retain the tag; resolved releases omit it.
-	// These two approved references identify the same immutable image.
+	// Saved and resolved references can retain a prior approved image.
+	// Image upgrades are handled separately by the idle-runner drain check.
 	if spec.IsActionsRunnerImage(a.Image) && spec.IsActionsRunnerImage(b.Image) {
 		a.Image = b.Image
 	}
@@ -244,7 +244,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err != nil {
 			return err
 		}
-		retire := p.Removed || p.Config.Suspended || !allowed || !sameActionsConfig(v.Config, p.Config) || retained >= desired
+		retire := p.Removed || p.Config.Suspended || !allowed || !spec.IsCurrentActionsRunnerImage(v.Config.Image) || !sameActionsConfig(v.Config, p.Config) || retained >= desired
 		// An intent survives a lost registration response. Recover and remove it
 		// by its persisted unique name before creating another registration.
 		if v.Phase == "intent" || v.Phase == "cleanup" || phase == "Succeeded" || phase == "Failed" || phase == "deleting" || (phase == "missing" && v.Phase != "starting") {

@@ -47,17 +47,18 @@ type Step struct {
 	CompletedAt *time.Time `json:"completed_at"`
 }
 type Job struct {
-	ID          int64      `json:"id"`
-	RunID       int64      `json:"run_id"`
-	RunAttempt  int64      `json:"run_attempt"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`
-	Conclusion  string     `json:"conclusion"`
-	RunnerID    int64      `json:"runner_id"`
-	RunnerName  string     `json:"runner_name"`
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
-	Steps       []Step     `json:"steps"`
+	StepsTruncated bool       `json:"steps_truncated"`
+	ID             int64      `json:"id"`
+	RunID          int64      `json:"run_id"`
+	RunAttempt     int64      `json:"run_attempt"`
+	Name           string     `json:"name"`
+	Status         string     `json:"status"`
+	Conclusion     string     `json:"conclusion"`
+	RunnerID       int64      `json:"runner_id"`
+	RunnerName     string     `json:"runner_name"`
+	StartedAt      *time.Time `json:"started_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+	Steps          []Step     `json:"steps"`
 }
 
 // AssignedJob cannot return jobs belonging to another runner in the same repo.
@@ -79,6 +80,24 @@ func (c *Client) AssignedJob(ctx context.Context, o Observation, runnerID int64,
 		}
 		for _, job := range result.Jobs {
 			if job.RunnerID == runnerID && job.RunnerName == runnerName && job.RunID == o.RunID && job.RunAttempt == o.Attempt && job.ID > 0 && len(job.Steps) <= 1000 {
+				// Keep cached job details below 32 KiB; providers can return large
+				// step inventories. The UI keeps the GitHub link for the rest.
+				if len(job.Name) > 512 {
+					job.Name = job.Name[:512]
+				}
+				for i := range job.Steps {
+					if len(job.Steps[i].Name) > 512 {
+						job.Steps[i].Name = job.Steps[i].Name[:512]
+					}
+				}
+				for {
+					encoded, _ := json.Marshal(job)
+					if len(encoded) <= 32<<10 || len(job.Steps) == 0 {
+						break
+					}
+					job.Steps = job.Steps[:len(job.Steps)-1]
+					job.StepsTruncated = true
+				}
 				return &job, nil
 			}
 		}
@@ -145,6 +164,27 @@ func ParseOutput(data []byte) Output {
 	return out
 }
 
+// BoundLogLines accounts for JSON escaping as well as text bytes. Live output
+// keeps its newest window; completed output keeps its beginning.
+func BoundLogLines(lines []LogLine, newest bool) ([]LogLine, bool) {
+	size := 512
+	for n := 0; n < len(lines); n++ {
+		i := n
+		if newest {
+			i = len(lines) - 1 - n
+		}
+		encoded, _ := json.Marshal(lines[i])
+		if size+len(encoded)+1 > 1536<<10 {
+			if newest {
+				return lines[i+1:], true
+			}
+			return lines[:i], true
+		}
+		size += len(encoded) + 1
+	}
+	return lines, false
+}
+
 // JobLogs uses a separate credential-free transport for GitHub's signed URL.
 // No arbitrary redirect host, Authorization forwarding or redirect chain.
 func (c *Client) JobLogs(ctx context.Context, repository string, id int64) ([]LogLine, bool, error) {
@@ -192,12 +232,20 @@ func (c *Client) JobLogs(ctx context.Context, repository string, id int64) ([]Lo
 		data = data[:1<<20]
 	}
 	lines := []LogLine{}
+	encodedBytes := 512
 	for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
 		if i >= 10000 {
 			truncated = true
 			break
 		}
-		lines = append(lines, LogLine{Number: int64(i + 1), Text: strings.TrimSuffix(line, "\r")})
+		item := LogLine{Number: int64(i + 1), Text: strings.TrimSuffix(line, "\r")}
+		encoded, _ := json.Marshal(item)
+		if encodedBytes+len(encoded) > 1536<<10 {
+			truncated = true
+			break
+		}
+		encodedBytes += len(encoded)
+		lines = append(lines, item)
 	}
 	return lines, truncated, nil
 }

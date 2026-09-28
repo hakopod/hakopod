@@ -3976,6 +3976,7 @@ export interface components {
             /** Format: date-time */
             completed_at: string | null;
             steps: components["schemas"]["ActionsStep"][];
+            steps_truncated?: boolean;
         };
         ActionsJob: {
             slot_id: string;
@@ -6880,6 +6881,7 @@ export interface operations {
                         /** Format: date-time */
                         observed_at: string;
                         limit: number;
+                        truncated: boolean;
                     };
                 };
             };

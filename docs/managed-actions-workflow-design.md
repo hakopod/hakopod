@@ -29,3 +29,14 @@ forwarding Authorization or accepting another redirect. Bodies and deadlines are
 bounded. The UI renders text, removes terminal control sequences, and cannot
 execute log HTML. Provider errors, missing permissions, deletion, stale metadata,
 and log retention expiry stay visible. No new service or log database is added.
+
+## Runtime verification
+
+The isolated development workflow [run 36481872038, attempt 2](https://github.com/hakopod/hakopod/actions/runs/36481872038/attempts/2)
+passed on the named `k3d-hakopod-dev` cluster. It verified UID 1001, GitHub CLI,
+C/C++ build tools, a generated masked value in live output while the job ran,
+and completed steps and log retrieval from GitHub. It published and deployed
+no application. The observer image also passes native AMD64 and ARM64 Python
+3.12 source builds of zxing-cpp 2.3.0. The development candidate was imported
+by digest; this check does not establish anonymous registry pull availability
+or a production rollout.

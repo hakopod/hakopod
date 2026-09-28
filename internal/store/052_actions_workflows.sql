@@ -6,6 +6,7 @@ CREATE TABLE actions_jobs (
     observation jsonb NOT NULL,
     provider_job jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    checked_at timestamptz NOT NULL DEFAULT 'epoch'
 );
 CREATE INDEX actions_jobs_pool ON actions_jobs(application_id, service, created_at DESC, slot_id);
