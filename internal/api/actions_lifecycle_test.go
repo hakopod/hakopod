@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -168,6 +169,35 @@ func actionsHarness(t *testing.T) (*Server, *actionsFake, store.ActionsPool, *bo
 	fake := &actionsFake{runners: map[int64]actions.Runner{}, pods: map[string]bool{}, configs: map[string]bool{}}
 	return &Server{Store: db, actionsTestRuntime: fake, actionsClient: func(string) (runnerProvider, error) { return fake, nil }}, fake, pools[0], &allowed
 }
+func TestActionsResolvedPoolReportsSavedConfigurationReady(t *testing.T) {
+	s, f, p, _ := actionsHarness(t)
+	ctx := context.Background()
+	saved := p.Config
+	p.Config.Image = strings.Replace(saved.Image, ":2.337.0@", "@", 1)
+	for _, busy := range []bool{false, true} {
+		if err := s.reconcileActionsPool(ctx, actionsTarget(p), p); err != nil {
+			t.Fatal(err)
+		}
+		runner := f.runners[1]
+		runner.Busy = busy
+		f.runners[1] = runner
+		if err := s.reconcileActionsPool(ctx, actionsTarget(p), p); err != nil {
+			t.Fatal(err)
+		}
+		observed, err := s.observeActions(ctx, actionsTarget(p), p.Service, saved)
+		if err != nil || observed.Status != "ready" || observed.Ready != 1 {
+			t.Fatalf("saved configuration did not observe its resolved runner (busy=%v): %+v, %v", busy, observed, err)
+		}
+	}
+	p.Config = saved
+	if err := s.reconcileActionsPool(ctx, actionsTarget(p), p); err != nil {
+		t.Fatal(err)
+	}
+	if f.next != 1 || len(f.deleted) != 0 {
+		t.Fatal("equivalent image reference replaced the active runner")
+	}
+}
+
 func TestActionsDrainingExpiryAndRemovalRetainCleanup(t *testing.T) {
 	s, f, p, allowed := actionsHarness(t)
 	ctx := context.Background()

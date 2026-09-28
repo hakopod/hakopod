@@ -34,6 +34,11 @@ func (a Actions) Target() actions.Target {
 
 var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
+// IsActionsRunnerImage accepts only the approved tagged or resolved reference.
+func IsActionsRunnerImage(image string) bool {
+	return image == ActionsRunnerImage || image == actionsRunnerResolvedImage
+}
+
 func normalizeActions(s *Service) error {
 	if s.Actions == nil {
 		return nil
@@ -73,7 +78,7 @@ func normalizeActions(s *Service) error {
 	}
 	// Registry resolution removes the tag while preserving the approved
 	// repository and digest. Both forms must survive deployment validation.
-	if s.Image != ActionsRunnerImage && s.Image != actionsRunnerResolvedImage {
+	if !IsActionsRunnerImage(s.Image) {
 		return fmt.Errorf("actions runners use the verified, digest-pinned runner image")
 	}
 	if s.Size == "" {
