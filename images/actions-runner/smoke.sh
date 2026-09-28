@@ -34,6 +34,9 @@ payload = "Hakopod managed runner native build"
 barcode = zxingcpp.write_barcode(zxingcpp.BarcodeFormat.QRCode, payload)
 result = zxingcpp.read_barcode(barcode)
 assert result is not None and result.text == payload
-assert decode(np.asarray(barcode))[0].data.decode() == payload
+image = np.repeat(np.repeat(np.asarray(barcode), 8, axis=0), 8, axis=1)
+image = np.pad(image, 32, constant_values=255)
+decoded = decode(image)
+assert decoded and decoded[0].data.decode() == payload
 print("Python 3.12 zxing-cpp source build and barcode round trip passed")
 PY
