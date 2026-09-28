@@ -11396,6 +11396,43 @@
         }
       }
     },
+    "/database-operations/{id}": {
+      "get": {
+        "operationId": "getDatabaseOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/secret-providers": {
       "get": {
         "operationId": "listSecretProviders",
@@ -15110,6 +15147,9 @@
             "items": {
               "$ref": "#/components/schemas/HostPermission"
             }
+          },
+          "can_manage_keys": {
+            "type": "boolean"
           },
           "can_manage_previews": {
             "type": "boolean"

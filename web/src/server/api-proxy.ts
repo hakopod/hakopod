@@ -9,6 +9,7 @@ import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } 
 
 export const allowed = [
   /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect))?)?$/,
+  /^database-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,
   /^applications\/[A-Za-z0-9_-]+\/actions$/,
   /^storage\/retained(?:\/[a-f0-9]{32})?$/,

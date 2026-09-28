@@ -17,3 +17,9 @@ func ServeWorkspaceRuntime(handler http.Handler, w http.ResponseWriter, r *http.
 func ServeAuthorizedWorkspaceRuntime(handler http.Handler, w http.ResponseWriter, r *http.Request, identity, project, environment string, permissions []string, authorize func(context.Context) error) {
 	handler.ServeHTTP(w, api.WithRuntimeScope(r, api.RuntimeScope{Identity: identity, Project: project, Environment: environment, Permissions: permissions, Authorize: authorize}))
 }
+
+// The embedding verified an issued automation key and its current workspace
+// binding. Engine authorization still intersects key and current identity rights.
+func ServeAuthorizedAutomationRuntime(handler http.Handler, w http.ResponseWriter, r *http.Request, identity, project, environment string, permissions []string, authorize func(context.Context) error) {
+	handler.ServeHTTP(w, api.WithRuntimeScope(r, api.RuntimeScope{AllowMachine: true, Identity: identity, Project: project, Environment: environment, Permissions: permissions, Authorize: authorize}))
+}

@@ -206,7 +206,8 @@ func (p Principal) Allows(permission, project, environment, application string) 
 	if p.Email != "" && !p.Admin {
 		identityOK = false
 		for _, role := range p.ProjectRoles {
-			if role.Project == project && contains(role.permissions(), permission) {
+			management := p.CredentialType == "machine" && role.Role == "admin" && contains([]string{"networks:write", "git:manage", "applications:manage"}, permission)
+			if role.Project == project && (contains(role.permissions(), permission) || management) {
 				identityOK = true
 				break
 			}

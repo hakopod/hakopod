@@ -162,4 +162,17 @@ func TestManagedDatabaseNameIsReusableOnlyAfterDeletionCompletes(t *testing.T) {
 	if err != nil || current.ID == d.ID {
 		t.Fatal("replacement reused historical identity", err)
 	}
+	operation, err := s.DatabaseOperation(ctx, p, claim.ID)
+	if err != nil || operation.DatabaseID != d.ID || operation.Status != "succeeded" {
+		t.Fatal("deleted database operation disappeared", err)
+	}
+	for _, limited := range []Principal{
+		{Project: "elsewhere", Environment: "development", Permissions: []string{"deployments:read"}, Admin: true},
+		{Project: "demo", Environment: "production", Permissions: []string{"deployments:read"}, Admin: true},
+		{Project: "demo", Environment: "development", Application: "app", Permissions: []string{"deployments:read"}, Admin: true},
+	} {
+		if _, err := s.DatabaseOperation(ctx, limited, claim.ID); !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatal("operation scope leaked", err)
+		}
+	}
 }

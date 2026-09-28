@@ -628,14 +628,15 @@ function Workspace({
                 <Icon name="shield" />
                 Account security
               </MenuItem>
-              {identity.admin && dashboardEdition.settings('keys', features) && (
-                <MenuItem
-                  onSelect={() => void navigate({ to: '/settings', search: { tab: 'keys' } })}
-                >
-                  <Icon name="key" />
-                  API keys
-                </MenuItem>
-              )}
+              {(identity.admin || identity.can_manage_keys) &&
+                dashboardEdition.settings('keys', features) && (
+                  <MenuItem
+                    onSelect={() => void navigate({ to: '/settings', search: { tab: 'keys' } })}
+                  >
+                    <Icon name="key" />
+                    API keys
+                  </MenuItem>
+                )}
               <MenuItem
                 onSelect={() =>
                   void navigate(

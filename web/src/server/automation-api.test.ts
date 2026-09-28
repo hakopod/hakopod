@@ -33,7 +33,6 @@ test('CI fetches an application with its own key, without a browser session', as
   })
   const response = await request('applications/' + app, 'GET', undefined, {
     Cookie: 'hakopod_session=browser',
-    'X-Hakopod-Workspace': 'another-workspace',
     'X-Forwarded-For': '127.0.0.1',
   })
   assert.equal(response.status, 200)
@@ -44,6 +43,17 @@ test('CI fetches an application with its own key, without a browser session', as
     'celery-beat',
     'celery-worker',
   ])
+})
+
+test('an invalid explicit workspace fails before forwarding instead of changing scope', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new Error('must not forward')
+  })
+  const response = await request('me', 'GET', undefined, {
+    'X-Hakopod-Workspace': 'another-workspace',
+  })
+  assert.equal(response.status, 400)
+  assert.equal((await response.json()).error.code, 'invalid_scope')
 })
 
 test('CI forwards exact reviewed group payloads, idempotency and scope queries', async (t) => {
@@ -105,11 +115,91 @@ test('CI denies cookies, browser tokens, unsupported methods/routes and oversize
       401,
     )
   }
-  assert.equal((await request('applications/' + app, 'DELETE')).status, 405)
+  assert.equal((await request('applications/' + app, 'PATCH')).status, 405)
   assert.equal((await request('keys')).status, 404)
   assert.equal((await request('cloud/workspaces')).status, 404)
   assert.equal((await request('deployments', 'POST', 'x'.repeat(1024 * 1024 + 1))).status, 413)
   assert.equal(fetch.mock.callCount(), 0)
+})
+
+test('SDK lifecycle routes forward scoped machine credentials and DELETE confirmation bodies', async (t) => {
+  const cases = [
+    ['POST', 'projects'],
+    ['POST', 'projects/demo/environments'],
+    ['DELETE', 'projects/demo'],
+    ['GET', 'cloud/capabilities'],
+    ['DELETE', 'applications/' + app],
+    ['POST', 'applications/' + app + '/services/web/scale'],
+    ['POST', 'applications/' + app + '/services/web/restart'],
+    ['POST', 'applications/' + app + '/services/web/stop'],
+    ['POST', 'applications/' + app + '/services/web/resume'],
+    ['GET', 'applications/' + app + '/services/web/runtime'],
+    ['GET', 'applications/' + app + '/logs'],
+    ['POST', 'applications/' + app + '/rollback'],
+    ['POST', 'databases'],
+    ['GET', 'databases/db'],
+    ['DELETE', 'databases/db'],
+    ['GET', 'database-operations/operation'],
+    ['POST', 'databases/db/resize-plan'],
+    ['POST', 'databases/db/resize'],
+    ['POST', 'databases/db/credentials'],
+    ['POST', 'databases/db/connection-plan'],
+    ['POST', 'databases/db/connect'],
+    ['POST', 'virtual-networks/plan'],
+    ['POST', 'virtual-networks'],
+    ['PUT', 'virtual-networks/private'],
+    ['DELETE', 'virtual-networks/private'],
+    ['POST', 'secrets/example'],
+    ['PUT', 'secrets/example'],
+    ['DELETE', 'secrets/example'],
+    ['POST', 'deployments/release/cancel'],
+  ]
+  const payload = JSON.stringify({ confirm_name: 'fixture', expected_revision: 1 })
+  for (const [method, path] of cases) {
+    const mock = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+      assert.equal(new URL(String(url)).pathname, '/api/v1/' + path)
+      assert.equal(new URL(String(url)).searchParams.get('project'), 'fixture')
+      const headers = new Headers(init?.headers)
+      assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
+      assert.equal(headers.get('X-Hakopod-Workspace'), 'a'.repeat(32))
+      assert.equal(headers.get('Cookie'), null)
+      assert.equal(headers.get('Idempotency-Key'), 'sdk-fixture-key')
+      assert.equal(init?.method, method)
+      if (method !== 'GET')
+        assert.equal(new TextDecoder().decode(init?.body as Uint8Array), payload)
+      return Response.json({ fixture: true })
+    })
+    const response = await request(
+      path + '?project=fixture&environment=development',
+      method,
+      method === 'GET' ? undefined : payload,
+      {
+        'X-Hakopod-Workspace': 'a'.repeat(32),
+        'Idempotency-Key': 'sdk-fixture-key',
+        Cookie: 'unrelated=browser',
+      },
+    )
+    assert.equal(response.status, 200, method + ' ' + path)
+    assert.equal(mock.mock.callCount(), 1)
+    mock.mock.restore()
+  }
+})
+
+test('SDK forwarding retains administrative exclusions and bounds DELETE input', async (t) => {
+  const upstream = t.mock.method(globalThis, 'fetch', async () => {
+    throw new Error('must not forward')
+  })
+  for (const path of [
+    'keys',
+    'installation',
+    'nodes',
+    'auth/security',
+    'projects/demo/members',
+    'virtual-networks/private/candidates',
+  ])
+    assert.equal((await request(path)).status, 404, path)
+  assert.equal((await request('databases/db', 'DELETE', 'x'.repeat(1024 * 1024 + 1))).status, 413)
+  assert.equal(upstream.mock.callCount(), 0)
 })
 
 test('CI lookup routes retain response data and transport failure stays explicit', async (t) => {

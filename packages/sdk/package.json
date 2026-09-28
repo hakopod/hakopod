@@ -1,0 +1,45 @@
+{
+  "name": "@hakopod/sdk",
+  "version": "0.1.0-alpha.1",
+  "description": "Typed deployment and database automation for Hakopod Cloud and self-hosted Hakopod",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.generated.d.ts",
+      "import": "./dist/api.generated.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && tsc -p test/tsconfig.json && node --test test/*.test.mjs",
+    "generate": "openapi-typescript ../../api/openapi.json -o src/api.generated.ts",
+    "check:generated": "node scripts/check-generated.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hakopod/hakopod.git",
+    "directory": "packages/sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
