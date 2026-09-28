@@ -70,8 +70,12 @@ a real workflow, tenant isolation or the product lifecycle.
 The tested profile uses gVisor release-20260907.0 with systrap, net-raw,
 allow-packet-socket-write, and a memory-backed root overlay. Docker 29.8.1 uses its
 legacy iptables binaries, VFS storage with the containerd image store disabled,
-and explicit in-sandbox TCP/UDP SNAT. The Docker data mount is memory-backed and
-bounded; no host Docker socket, host path or Kubernetes credential is exposed.
+and explicit in-sandbox TCP/UDP SNAT. Docker data now shares the bounded,
+disk-backed runner workspace at `/home/runner/.docker-data`; no host Docker
+socket, host path or Kubernetes credential is exposed. The original 2 GiB
+memory-backed Docker volume could not pull the multi-layer PostgreSQL image
+used by Cloud CI. VFS still copies layers, so jobs must budget for expanded
+image and build storage.
 Using the daemon image's default nftables tools broke service DNS; selecting its
 provided legacy tools fixed that failure on both architectures.
 
@@ -109,3 +113,10 @@ observation, deletion, secret handling and UI together. Run a real GitHub workfl
 covering JavaScript actions, Docker actions, a container job, service containers,
 and docker build. Then verify concurrent slots, restarts, ambiguous registration,
 API outages, scaling, deletion, credential rotation, license expiry and isolation.
+
+The shared Docker storage acceptance passed on Linux AMD64 in the named
+`k3d-hakopod-dev` cluster on 2026-09-28. It wrote 2304 MiB to the shared workspace,
+checked that file inside a nested container, then pulled the pinned PostgreSQL
+17.11 Bookworm image, started the database and queried it. A BuildKit Dockerfile
+RUN step also passed. This used an 8 GiB disk allowance and the product pod
+builder; it does not by itself prove a complete Cloud packaging workflow.

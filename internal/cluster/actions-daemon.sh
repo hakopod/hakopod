@@ -11,4 +11,6 @@ iptables -t nat -A POSTROUTING -o "$iface" -j SNAT --to-source "$addr" -p udp
 # Containers in the sandbox share loopback. A filesystem socket on a gVisor
 # memory-backed mount is not shared across their separate mount namespaces.
 # Keep the standard socket in the daemon for nested GitHub job-container mounts.
-exec dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --storage-driver=vfs --feature=containerd-snapshotter=false
+# Docker images and build layers share the bounded, disk-backed workspace.
+# Keeping them off the memory-backed root avoids exhausting RAM during pulls.
+exec dockerd --data-root=/home/runner/.docker-data --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --storage-driver=vfs --feature=containerd-snapshotter=false
