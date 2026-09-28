@@ -1,27 +1,35 @@
-Hakopod 0.1.0-alpha.37 adds managed PostgreSQL and Redis with their own resources, credentials, operation progress and lifecycle (#120).
+Hakopod 0.1.0-alpha.38 adds a TypeScript SDK source preview and makes managed GitHub Actions runners ready for larger builds.
 
-## Managed databases
+## TypeScript SDK and scoped keys
 
-- Run PostgreSQL 17 or 18 standalone or with replicas. Private read/write and read-only endpoints connect applications; the database controller owns replication and primary recovery independently of application replicas.
-- Run Redis 8 standalone or as a cluster with shards and replicas. Reviewed shard growth and reduction require a verified backup from the last hour and healthy cluster topology and slot ownership. Redis Cluster requires a cluster-aware client.
-- Back up to an eligible S3 destination manually, hourly or daily. Archives are encrypted, checksummed and read back before being marked verified. Redis backups preserve values and expiry with per-shard consistency.
-- Restore into a separate database, inspect the data, then explicitly replace the application's saved connection and redeploy. Import eligible Docker PostgreSQL or Redis archives, or stage a PostgreSQL 17-to-18 logical copy, while the source remains available. Changes after the captured recovery point require a fresh capture before final cutover.
-- Use the same scoped workflows through the dashboard, CLI and API. Database deletion reclaims owned storage before releasing reservations and allowing name reuse.
+- Manage applications, services, private networks and PostgreSQL/Redis databases through `app()`, `service()`, `network()` and `db()` using an API URL and scoped key. Self-hosted Hakopod and Cloud share the API; Cloud also needs its matching workspace authorization integration.
+- Review plans before applying, wait for durable operations, inspect real runtime and logs, and reject stale revisions. Database replication, recovery and authorization remain owned by the server.
+- Issue, rotate and revoke automation keys in Settings. Cloud keys are bound to their workspace and installation and retain current membership, permissions and approval checks.
+
+The SDK is a source preview at [`packages/sdk`](https://github.com/hakopod/hakopod/tree/v0.1.0-alpha.38/packages/sdk). Its package version is `0.1.0-alpha.1`; this server release does not publish `@hakopod/sdk` to npm. Build and pack it using the documented instructions. Keep API keys in trusted scripts, CI or server code.
+
+## Managed GitHub Actions
+
+- Choose 2–16 GiB of temporary disk per runner. Source, tools, Docker images and build files share the reservation and are removed after the job.
+- Keep Docker data on the reserved workspace instead of a separate memory-backed filesystem. CPU, memory, disk and lifetime bounds still apply; Docker's VFS storage can consume more disk than compressed image sizes suggest.
+- Accept both canonical representations of the exact approved runner image digest. Image resolution no longer makes a valid runner deployment fail its own validation.
+- Compare saved and resolved runner configurations consistently so a healthy runner remains Ready and retains its slot.
+- Allow an explicitly configured dedicated Actions node in Cloud, and provide a bounded development acceptance path for real candidate jobs.
+
+Managed Actions requires its Pro capability and a separately configured sandbox runtime. Upgrading does not install that runtime or change GitHub runner-group access. See the [setup and capacity guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.38/docs/managed-actions.md).
 
 ## Installation and upgrade
 
 ```sh
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.37
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.38
 ```
 
-Direct upgrades are supported from alpha.35 and alpha.36. Older installations must use a supported intermediate release. This release adds management database migrations 046–050 for database resources, archives, imports, allocations and reusable names. Take and verify an installation backup before upgrading; a binary rollback does not undo schema or data changes.
+Direct upgrades are supported from alpha.36 and alpha.37. Older installations must use a supported intermediate release. Migration 051 adds automation-key scope bindings. Take and verify an installation backup before upgrading; swapping binaries does not undo database migrations or data changes.
 
-Database provisioning needs a separate controller rollout. PostgreSQL requires CloudNativePG 1.30.1. Redis requires a digest-pinned controller built from upstream commit `c5017206e75f7743d79e82db47ec8c39d7410816`, which fixes credential exposure in command handling, with the documented 20-minute command deadline. The older released Redis controller is rejected. The source includes its reproducible build recipe; this release does not publish a controller image or install controllers automatically.
+The managed PostgreSQL and Redis features from alpha.37 remain included. Their separate controller requirements and recovery limits still apply; read the [managed database guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.38/docs/managed-databases.md).
 
-Read the [managed database guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.37/docs/managed-databases.md) before provisioning. The controller installation script is for the named development cluster only. Cloud requires its corresponding integration and a separate operator rollout; this OSS release does not enable hosted databases.
+## Validation
 
-## Validation and limits
+The merged implementation passed the Go, SDK and dashboard CI suites and template runtime acceptance on amd64 and arm64. Development-cluster acceptance covered the SDK's PostgreSQL/application/network lifecycle and managed-runner shared disk behavior. The migrated private Cloud and website workflows completed real jobs on the managed runner. These checks do not establish machine-level high availability or compatibility with every GitHub workflow.
 
-The feature passed the complete Go suite against isolated PostgreSQL, Go vet, the dashboard build, TypeScript checks and 93 dashboard tests. Independent rendered UI review covered both themes, desktop and mobile, keyboard/touch use and failure handling. Real development-cluster checks covered PostgreSQL replication and primary recovery, private bindings, same-major and 17-to-18 restores, Redis recovery and 3-to-4-to-3 shard resizing with retained values and expiry, corrupt archive rejection, and owned-volume reclamation. See the [validation record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.37/docs/managed-databases-validation.md).
-
-Publication is gated on fresh release source checks, packaged smoke tests and native fresh-install and upgrade acceptance on amd64 and arm64. The Redis controller was built for both architectures; its runtime acceptance was on amd64. Development tests do not establish production availability, multi-node resilience or hosted LVM byte-limit enforcement. Replicas on one worker cannot survive loss of that worker, VM or shared disk. This remains an alpha release for evaluation.
+Publication is gated on fresh source checks, packaged smoke tests, native fresh-install and upgrade acceptance on amd64 and arm64, probe-image checks, checksums and build provenance. See the [SDK acceptance record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.38/docs/typescript-sdk-acceptance.md) and [managed Actions verification](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.38/docs/managed-actions-design.md) for scope and limitations.
