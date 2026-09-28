@@ -1,0 +1,30 @@
+name: Managed workflow observer acceptance
+on:
+  push:
+    branches: [test/managed-workflow-observer]
+    paths: ['.github/workflows/workflow-observer-acceptance.yml']
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, hakopod-workflow-development]
+    timeout-minutes: 12
+    steps:
+      - name: Verify the managed image
+        run: |
+          test "$(id -u)" = 1001
+          gh --version
+          cc --version
+          cmake --version
+      - name: Stream masked output
+        run: |
+          echo '::add-mask::hakopod-private-fixture-marker'
+          for n in $(seq 1 30); do
+            printf 'workflow-visible-line-%s hakopod-private-fixture-marker\n' "$n"
+            sleep 1
+          done
+      - name: Compile a native program
+        run: |
+          printf '#include <stdio.h>\nint main(void){puts("native-toolchain-ok");return 0;}\n' > /tmp/workflow-smoke.c
+          cc /tmp/workflow-smoke.c -o /tmp/workflow-smoke
+          /tmp/workflow-smoke
