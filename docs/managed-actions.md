@@ -141,3 +141,14 @@ claims. These use real isolated PostgreSQL with deterministic provider failures.
 builder; its credentials are single-job registrations, never the repository
 administration token. Consult the release verification record for actual runs
 and architecture coverage.
+
+Before migrating an existing workflow, `TestManagedActionsCandidateJobLive` can
+run one disposable registration in `k3d-hakopod-dev`. It uses the product pod
+builder with a 4 GiB memory budget and 8 GiB workspace. Set
+`HAKOPOD_ACTIONS_CANDIDATE_TEST=1`, `HAKOPOD_TEST_KUBECONFIG` and
+`HAKOPOD_ACTIONS_CANDIDATE_JIT_FILE` (a mode-0600 file containing only that JIT
+configuration), then run the test with a 118-minute Go test timeout. An optional
+`HAKOPOD_ACTIONS_CANDIDATE_LOG_FILE` saves at most 4 MiB of private diagnostics to
+a new mode-0600 file before cleanup. Run candidates sequentially. A runner exiting
+successfully does not establish a successful workflow: check GitHub's job
+conclusion and recorded runner identity separately.
