@@ -43,7 +43,7 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 	if limit == 0 {
 		limit = 1
 	}
-	if limit < 1 || limit > 2 {
+	if limit < 1 || limit > 3 {
 		return CloudCapabilities{}, fmt.Errorf("%w: invalid operator node limit", ErrCloudLimit)
 	}
 	result := CloudCapabilities{Version: 1, Mode: DeploymentManagedCloud, Enforced: true, NodeLimit: limit, ServicesPerApplication: 10, ReplicasPerService: 3, Profiles: []string{"small", "medium", "large"}}

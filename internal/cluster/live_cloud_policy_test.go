@@ -77,3 +77,33 @@ func TestLiveOperatorTwoNodeCapacity(t *testing.T) {
 		t.Fatalf("customer accepted second node: %v", err)
 	}
 }
+
+// Three nodes are permitted only through trusted embedding configuration.
+func TestLiveOperatorActionsNodeCapacity(t *testing.T) {
+	if os.Getenv("HAKOPOD_OPERATOR_ACTIONS_NODE_TEST") != "1" {
+		t.Skip("requires three nodes in the named development cluster")
+	}
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("requires k3d-hakopod-dev")
+	}
+	c, err := New(path, Options{DeploymentMode: DeploymentManagedCloud, OperatorNodeLimit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	caps, err := c.CloudCapabilities(ctx)
+	if err != nil || caps.NodeCount != 3 || !caps.NodeCountComplete {
+		t.Fatal("requires three real nodes", caps, err)
+	}
+	if err := c.ValidateCloudCapacity(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{0, 2} {
+		c.options.OperatorNodeLimit = limit
+		if err := c.ValidateCloudCapacity(ctx); !errors.Is(err, ErrCloudLimit) {
+			t.Fatalf("limit %d accepted third node: %v", limit, err)
+		}
+	}
+}

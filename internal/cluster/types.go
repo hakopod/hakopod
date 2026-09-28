@@ -35,7 +35,7 @@ type Options struct {
 	// CloudResourceCeiling is trusted embedding configuration; workload policy still enforces each tenant budget.
 	CloudResourceCeiling *spec.Profile
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
-	// Zero preserves the single-node customer policy; supported values are 1 or 2.
+	// Zero preserves the single-node customer policy; supported values are 1 through 3.
 	OperatorNodeLimit   int
 	ApprovedDomains     func(context.Context, string) (map[string]bool, error)
 	ReadinessProbeImage string
