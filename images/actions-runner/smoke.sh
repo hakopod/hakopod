@@ -26,6 +26,7 @@ venv/bin/python -m pip wheel --no-cache-dir --no-binary=zxing-cpp --wheel-dir wh
 venv/bin/python -m pip install --no-cache-dir wheels/zxing_cpp-2.3.0-*.whl numpy==2.2.6 pyzbar==0.1.9
 venv/bin/python - <<'PY'
 import sys
+import numpy as np
 import zxingcpp
 from pyzbar.pyzbar import decode
 assert sys.version_info[:2] == (3, 12), sys.version
@@ -33,6 +34,6 @@ payload = "Hakopod managed runner native build"
 barcode = zxingcpp.write_barcode(zxingcpp.BarcodeFormat.QRCode, payload)
 result = zxingcpp.read_barcode(barcode)
 assert result is not None and result.text == payload
-assert decode(barcode)[0].data.decode() == payload
+assert decode(np.asarray(barcode))[0].data.decode() == payload
 print("Python 3.12 zxing-cpp source build and barcode round trip passed")
 PY
