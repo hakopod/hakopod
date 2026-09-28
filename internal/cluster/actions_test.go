@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"strings"
 	"testing"
 )
 
@@ -92,8 +93,14 @@ func TestActionsWorkspaceStorageIsReservedAndBounded(t *testing.T) {
 				t.Fatal("workspace was not reserved with log headroom", size, container.Name)
 			}
 		}
-		if p.Spec.Volumes[1].EmptyDir.SizeLimit.Cmp(resource.MustParse("2Gi")) != 0 {
-			t.Fatal("workspace change expanded memory-backed Docker storage")
+		for _, volume := range p.Spec.Volumes {
+			if volume.EmptyDir != nil && volume.Name != "runner" {
+				t.Fatal("Docker must share the reserved workspace, not an extra volume")
+			}
+		}
+		daemon := p.Spec.InitContainers[1]
+		if !strings.Contains(daemon.Command[2], "--data-root=/home/runner/.docker-data") || len(daemon.VolumeMounts) != 1 || daemon.VolumeMounts[0].Name != "runner" || daemon.VolumeMounts[0].MountPath != "/home/runner" {
+			t.Fatal("Docker data is outside the bounded workspace")
 		}
 		target.Spec.Services["runner"] = s
 		quota := &corev1.ResourceQuota{Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{}}}

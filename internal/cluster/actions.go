@@ -75,8 +75,8 @@ func actionsResources(s spec.Service, numerator int64) corev1.ResourceRequiremen
 	}
 	storageRequest, storageLimit := resource.MustParse("256Mi"), resource.MustParse("2Gi")
 	if numerator != 3 {
-		// Reserve the workspace on the node before scheduling a runner. Leave
-		// another GiB for its logs and writable container layer.
+		// Reserve the shared workspace and Docker data before scheduling a
+		// runner. Leave another GiB for logs and its writable container layer.
 		storageRequest = resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions)))
 		storageLimit = resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions)+1))
 	}
@@ -99,10 +99,10 @@ func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 				SecurityContext: &corev1.SecurityContext{Privileged: ptr(false), RunAsUser: ptr(int64(0)), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}, Add: []corev1.Capability{"AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_ADMIN", "NET_RAW", "SETFCAP", "SETGID", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"}}},
 				Env:             []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker.sock"}},
 				StartupProbe:    &corev1.Probe{ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"docker", "info"}}}, PeriodSeconds: 2, FailureThreshold: 60, TimeoutSeconds: 2},
-				VolumeMounts:    append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "docker", MountPath: "/var/lib/docker"})},
+				VolumeMounts:    mounts},
 		},
 		Containers: []corev1.Container{{Name: service, Image: spec.ActionsRunnerImage, WorkingDir: "/home/runner", Command: []string{"sh", "-c", "exec ./run.sh --jitconfig \"$(cat /run/hakopod-jit/config)\""}, SecurityContext: safe, Resources: actionsResources(s, 1), Env: []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "tcp://127.0.0.1:2375"}, {Name: "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT", Value: "1"}}, VolumeMounts: append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "jit", MountPath: "/run/hakopod-jit", ReadOnly: true})}},
-		Volumes:    []corev1.Volume{{Name: "runner", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions))))}}}, {Name: "docker", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: ptr(resource.MustParse("2Gi"))}}}, {Name: "jit", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr(int32(0440))}}}},
+		Volumes:    []corev1.Volume{{Name: "runner", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions))))}}}, {Name: "jit", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr(int32(0440))}}}},
 	}}
 	if s.Architecture != "" {
 		p.Spec.NodeSelector = map[string]string{"kubernetes.io/arch": s.Architecture}

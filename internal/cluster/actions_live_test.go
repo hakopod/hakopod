@@ -35,7 +35,7 @@ func TestManagedActionsWorkspaceLive(t *testing.T) {
 	target := runnerTarget(t)
 	target.ApplicationID = "actions-workspace-development"
 	s := target.Spec.Services["runner"]
-	s.Actions.WorkspaceSizeGiB = 4
+	s.Actions.WorkspaceSizeGiB = 8
 	s.Actions.TimeoutMinutes = 10
 	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "1500m", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
 	target.Spec.Services["runner"] = s
@@ -61,7 +61,21 @@ mkdir -p /home/runner/_work
 dd if=/dev/zero of=/home/runner/_work/storage-probe bs=1048576 count=2304
 test "$(stat -c %s /home/runner/_work/storage-probe)" = 2415919104
 docker run --rm -v /home/runner/_work:/work docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0 sh -c 'test "$(stat -c %s /work/storage-probe)" = 2415919104'
-echo 'PASS: workspace above 2 GiB is writable and shared with nested containers'
+test "$(docker info --format '{{.DockerRootDir}}')" = /home/runner/.docker-data
+rm /home/runner/_work/storage-probe
+# This multi-layer image exhausted the former 2 GiB memory-backed data volume.
+docker run -d --name storage-postgres -e POSTGRES_PASSWORD=development-fixture postgres:17.11-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+trap 'docker rm -f storage-postgres' EXIT
+ready=false
+for attempt in $(seq 1 60); do
+  if docker exec storage-postgres pg_isready -U postgres; then ready=true; break; fi
+  sleep 2
+done
+$ready
+test "$(docker exec storage-postgres psql -U postgres -Atc 'select 42')" = 42
+printf 'FROM docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0\nRUN echo nested-build > /proof\n' | docker build -t storage-fixture -
+test "$(docker run --rm storage-fixture cat /proof)" = nested-build
+echo 'PASS: disk-backed workspace, PostgreSQL service and nested Docker build'
 `}
 	if _, err = c.kube.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)

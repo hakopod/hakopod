@@ -107,10 +107,11 @@ Linux sandbox; arbitrary devices, kernel modules and nested VMs are unavailable.
 The declared per-slot CPU and memory budget includes the runner, Docker sidecar
 and 512 MiB/100m sandbox allowance. At least 4 GiB of memory limit is required.
 Workspaces default to 2 GiB of temporary disk. Set `actions.workspace_size_gib`
-to 2–16 GiB for larger source trees, tool downloads and build files. The node
-reserves that workspace plus container/log headroom before scheduling each slot;
-workspace data is deleted after every job. Docker data has a separate 2 GiB memory-backed
-limit. The maximum lifetime includes startup and waiting for a job. Jobs requiring
+to 2–16 GiB for larger jobs. Source, tools, Docker images and build files share
+this disk allowance. The node reserves it plus container/log headroom before
+scheduling each slot; all workspace and Docker data is deleted after every job.
+Docker uses VFS, so image layers and builds can require substantially more disk
+than their compressed download size. The maximum lifetime includes startup and waiting for a job. Jobs requiring
 more disk or a different runtime must use another runner type.
 
 The GitHub runner-management token stays in control-plane secret storage. A pod

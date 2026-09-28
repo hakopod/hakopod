@@ -3883,7 +3883,7 @@ export interface components {
             credential: string;
             labels: string[];
             timeout_minutes?: number;
-            /** @description Defaults to 2 GiB. Temporary workspace storage reserved on the runner node per slot. Deleted after each job. Docker retains its separate 2 GiB memory-backed limit. */
+            /** @description Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job. */
             workspace_size_gib?: number;
         };
         ActionsPool: {

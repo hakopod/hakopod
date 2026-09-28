@@ -591,8 +591,8 @@ export function ManagedActionsForm({
                     onChange={(event) => setWorkspaceSize(event.target.value)}
                   />
                   <span id="runner-workspace-help" className="text-sm muted-text">
-                    2–16 GiB per slot for source, tool downloads and build files. Reserved on the
-                    runner node and deleted after each job. Docker has a separate 2 GiB limit.
+                    2–16 GiB per slot, shared by source, tools, Docker images and build files.
+                    Reserved on the runner node and deleted after each job.
                   </span>
                 </label>
                 <p className="text-sm muted-text">
