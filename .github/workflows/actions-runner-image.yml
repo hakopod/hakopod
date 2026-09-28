@@ -1,0 +1,82 @@
+name: Managed runner image
+on:
+  pull_request:
+    paths: ['images/actions-runner/**', '.github/workflows/actions-runner-image.yml']
+  push:
+    branches: [main]
+    paths: ['images/actions-runner/**', '.github/workflows/actions-runner-image.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: managed-runner-image-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Build image on its native architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker build --build-arg TARGETARCH="$ARCH" \
+            --label org.opencontainers.image.source=https://github.com/hakopod/hakopod \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -t "ghcr.io/hakopod/actions-runner:${GITHUB_SHA}-${ARCH}" images/actions-runner
+      - name: Verify native build tools as the unprivileged runner
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm --cpus=2 --memory=3g --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2g,uid=1001,gid=1001 \
+            --mount "type=bind,src=$pythonLocation,dst=$pythonLocation,readonly" \
+            --mount "type=bind,src=$PWD/images/actions-runner/smoke.sh,dst=/smoke.sh,readonly" \
+            -e "HAKOPOD_SMOKE_PYTHON=$pythonLocation/bin/python" \
+            -e "LD_LIBRARY_PATH=$pythonLocation/lib" \
+            "ghcr.io/hakopod/actions-runner:${GITHUB_SHA}-${ARCH}" sh /smoke.sh
+      - name: Publish tested architecture
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "ghcr.io/hakopod/actions-runner:${GITHUB_SHA}-${ARCH}"
+          docker logout ghcr.io
+  manifest:
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Publish the tested multi-architecture manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image=ghcr.io/hakopod/actions-runner
+          docker buildx imagetools create -t "$image:2.337.0-hakopod-${GITHUB_SHA}" \
+            "$image:${GITHUB_SHA}-amd64" "$image:${GITHUB_SHA}-arm64"
+          docker buildx imagetools inspect "$image:2.337.0-hakopod-${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker logout ghcr.io
