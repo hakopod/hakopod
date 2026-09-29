@@ -1,6 +1,16 @@
 name: Managed Actions real GitHub jobs
 on:
   workflow_dispatch:
+    inputs:
+      observer:
+        type: boolean
+        default: false
+      runner_label:
+        type: string
+        default: unused-observer-fixture
+      jit_secret:
+        type: string
+        default: HAKOPOD_UNUSED_OBSERVER_JIT
 permissions:
   contents: read
 concurrency:
@@ -8,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   sandbox:
+    if: ${{ !inputs.observer }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -47,6 +58,7 @@ jobs:
             done
           done
   shell-and-docker:
+    if: ${{ !inputs.observer }}
     runs-on: [self-hosted, hakopod-live-shell]
     timeout-minutes: 20
     services:
@@ -87,6 +99,7 @@ jobs:
           docker build -t managed-actions-fixture /home/runner/actions-build
           docker run --rm managed-actions-fixture | grep built-inside-sandbox
   container-job:
+    if: ${{ !inputs.observer }}
     runs-on: [self-hosted, hakopod-live-container]
     timeout-minutes: 20
     container:
@@ -100,3 +113,81 @@ jobs:
           redis-cli -h redis ping | grep PONG
           echo job-container-ok > "$GITHUB_WORKSPACE/container-proof"
           test "$(cat "$GITHUB_WORKSPACE/container-proof")" = job-container-ok
+
+  observer-host:
+    if: ${{ inputs.observer }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    env:
+      HAKOPOD_DEV_SERVER_MEMORY: 6g
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - run: scripts/local-up.sh
+      - name: Install development sandbox
+        run: |
+          python3 scripts/actions/setup-dev-runtime.py
+          sleep 10
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+      - name: Verify live masked output and completed GitHub logs
+        env:
+          FIXTURE_JSON: ${{ secrets[inputs.jit_secret] }}
+          READ_TOKEN: ${{ github.token }}
+          HAKOPOD_ACTIONS_OBSERVER_TEST: '1'
+          HAKOPOD_ACTIONS_OBSERVER_EXTERNAL_CLEANUP: '1'
+        run: |
+          python3 - <<'PYFIXTURE'
+          import json,os,pathlib
+          root=pathlib.Path('.local/observer-fixture');root.mkdir(mode=0o700)
+          data=json.loads(os.environ['FIXTURE_JSON'])
+          values={'jit':data['encoded_jit_config'],'identity':json.dumps({'slot_id':data['runner']['name'].removeprefix('hakopod-'),'runner_id':data['runner']['id']}),'token':os.environ['READ_TOKEN']}
+          for name,value in values.items():
+              fd=os.open(root/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+              with os.fdopen(fd,'w') as output: output.write(value)
+          PYFIXTURE
+          export HAKOPOD_TEST_KUBECONFIG="$PWD/.local/kubeconfig"
+          export HAKOPOD_ACTIONS_OBSERVER_JIT="$PWD/.local/observer-fixture/jit"
+          export HAKOPOD_ACTIONS_OBSERVER_IDENTITY="$PWD/.local/observer-fixture/identity"
+          export HAKOPOD_ACTIONS_OBSERVER_TOKEN="$PWD/.local/observer-fixture/token"
+          unset FIXTURE_JSON READ_TOKEN
+          go test -p=2 ./internal/cluster -run '^TestManagedWorkflowObserverLive$' -v -count=1 -timeout=16m
+      - name: Stop disposable cluster
+        if: always()
+        run: scripts/local-down.sh
+  observer-job:
+    if: ${{ inputs.observer }}
+    runs-on: [self-hosted, '${{ inputs.runner_label }}']
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Compile native program
+        run: |
+          printf '#include <stdio.h>\nint main(void){puts("native-toolchain-ok");return 0;}\n' > /tmp/hakopod-native.c
+          cc /tmp/hakopod-native.c -o /tmp/hakopod-native
+          /tmp/hakopod-native
+      - name: Verify grouped masked output while running
+        shell: bash
+        run: |
+          mask=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+          echo "::add-mask::$mask"
+          echo '::group::Masked development fixture output'
+          for number in $(seq 1 15); do
+            echo "workflow-visible-line-$number $mask"
+            sleep 2
+          done
+          echo '::endgroup::'

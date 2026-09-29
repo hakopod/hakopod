@@ -232,7 +232,14 @@ import '../lib/service-volume-removal.test'
 
 // Log text must not retain executable terminal hyperlinks or conceal payloads
 // when users copy/download the displayed window.
-import { cleanWorkflowLog, logTimestamp, groupWorkflowLines } from '../lib/actions-logs'
+import {
+  cleanWorkflowLog,
+  logTimestamp,
+  groupWorkflowLines,
+  workflowLogPage,
+  reconcileWorkflowExpansion,
+  workflowLogDownload,
+} from '../lib/actions-logs'
 test('workflow logs strip terminal controls and preserve literal markup', () => {
   assert.equal(
     cleanWorkflowLog('\u001b[31merror\u001b[0m <script>literal</script>'),
@@ -265,7 +272,7 @@ test('workflow groups preserve rows, nested failures and unfinished output', () 
   assert.equal(groups.get(1)?.count, 1)
   assert.equal(groups.get(4)?.attention, true)
   assert.equal(groups.get(5)?.attention, true)
-  assert.equal(groups.get(9)?.attention, true)
+  assert.equal(groups.get(9)?.unfinished, true)
   assert.deepEqual(rows.find((line) => line.number === 6)?.parents, [4, 5])
   assert.equal(rows.at(-1)?.text, lines.at(-1)?.text)
   assert.equal(
@@ -277,4 +284,125 @@ test('workflow group window keeps unmatched delimiters and bounds nesting', () =
   assert.equal(groupWorkflowLines([{ number: 1, text: '##[endgroup]' }]).rows.length, 1)
   const lines = Array.from({ length: 1000 }, (_, number) => ({ number, text: '##[group]Nested' }))
   assert.ok(groupWorkflowLines(lines).rows.every((row) => row.parents.length <= 32))
+})
+
+test('workflow paging retains full group context and caps rows including search ancestors', () => {
+  const lines = [
+    '##[group]Large build',
+    ...Array.from({ length: 2400 }, (_, i) => `output ${i}`),
+    '##[endgroup]',
+  ].map((text, i) => ({ number: i + 1, text }))
+  const parsed = groupWorkflowLines(lines)
+  let page = workflowLogPage(parsed, '', null)
+  assert.equal(page.rows[0].number, 1)
+  assert.equal(parsed.groups.get(1)?.count, 2400)
+  assert.equal(parsed.groups.get(1)?.unfinished, false)
+  assert.ok(page.rows.length <= 1000)
+  const lastStart = page.start
+  const earlier = workflowLogPage(parsed, '', lastStart)
+  assert.equal(earlier.end, lastStart)
+  assert.equal(workflowLogPage(parsed, '', earlier.end + 1).start, lastStart)
+  const nested = Array.from({ length: 500 }, (_, i) => [
+    `##[group]Outer ${i}`,
+    '##[group]Inner',
+    'needle',
+    '##[endgroup]',
+    '##[endgroup]',
+  ])
+    .flat()
+    .map((text, i) => ({ number: i + 1, text }))
+  const tree = groupWorkflowLines(nested)
+  page = workflowLogPage(tree, 'needle', null)
+  assert.ok(page.rows.length <= 1000)
+  assert.equal(page.total, 500)
+  for (const row of page.rows)
+    for (const id of row.parents) assert.ok(page.rows.some((parent) => parent.number === id))
+})
+
+test('workflow expansion survives closing live groups and resets identity and source state', () => {
+  const parse = (texts: string[]) =>
+    groupWorkflowLines(texts.map((text, i) => ({ number: i + 1, text })))
+  const live = parse(['##[group]Build', 'compiling'])
+  let state = reconcileWorkflowExpansion({}, live, false, false)
+  assert.equal(state[1].open, true)
+  const complete = parse(['##[group]Build', 'compiling', '##[endgroup]'])
+  state = reconcileWorkflowExpansion(state, complete, false, false)
+  assert.equal(state[1].open, true)
+  state[1].open = false
+  state = reconcileWorkflowExpansion(state, complete, true, false)
+  assert.equal(state[1].open, true, 'job failure exposes diagnostics regardless of wording')
+  state[1].open = false
+  state = reconcileWorkflowExpansion(
+    state,
+    parse(['##[group]Build', '##[error]new failure', '##[endgroup]']),
+    true,
+    true,
+  )
+  assert.equal(state[1].open, true, 'new annotation exposes a previously closed group')
+  assert.equal(
+    reconcileWorkflowExpansion(
+      state,
+      parse(['##[group]Different source', 'okay', '##[endgroup]']),
+      false,
+      false,
+    )[1].open,
+    false,
+  )
+  assert.deepEqual(reconcileWorkflowExpansion(state, parse(['ordinary output']), false, false), {})
+  assert.equal(
+    reconcileWorkflowExpansion({}, complete, false, false)[1].open,
+    false,
+    'source reset starts fresh',
+  )
+})
+
+test('workflow parsing and state remain bounded and download retains original source text', () => {
+  const huge = 'a'.repeat(65536)
+  const lines = [
+    { number: 1, text: '##[group]Build' },
+    { number: 2, text: huge, rawText: '\x1b[31m' + huge },
+    { number: 3, text: '##[endgroup]' },
+  ]
+  assert.equal(workflowLogPage(groupWorkflowLines(lines), '', null).rows[1].text.length, 65536)
+  assert.equal(workflowLogDownload(lines), '##[group]Build\n\x1b[31m' + huge + '\n##[endgroup]')
+  const many = groupWorkflowLines(
+    Array.from({ length: 10001 }, (_, i) => [
+      { number: i * 2, text: '##[group]g' },
+      { number: i * 2 + 1, text: '##[endgroup]' },
+    ]).flat(),
+  )
+  assert.equal(Object.keys(reconcileWorkflowExpansion({}, many, false, false)).length, 10000)
+})
+
+import { observedServiceImage } from '../lib/service-image'
+import type { Service, ServiceStatus } from '../lib/types'
+test('managed image display requires observed runtime images while ordinary services retain fallback', () => {
+  const ordinary = { image: 'saved-image' } as Service
+  const managed = { ...ordinary, actions: { repository: 'fixture/repo' } } as Service
+  const old = { image: 'historical-scalar' } as ServiceStatus
+  assert.equal(observedServiceImage(ordinary), 'saved-image')
+  assert.equal(observedServiceImage(ordinary, old), 'historical-scalar')
+  assert.equal(observedServiceImage(managed), undefined)
+  assert.equal(observedServiceImage(managed, old), undefined)
+  assert.equal(
+    observedServiceImage(managed, { ...old, images: ['old-runtime', 'new-runtime'] }),
+    'old-runtime, new-runtime',
+  )
+})
+
+test('new failure reopens a group already marked by an earlier warning', () => {
+  const parse = (extra: string[]) =>
+    groupWorkflowLines(
+      ['##[group]Build', '##[warning]Earlier warning', ...extra, '##[endgroup]'].map(
+        (text, number) => ({ number, text }),
+      ),
+    )
+  const first = parse([])
+  const previous = reconcileWorkflowExpansion({}, first, false, false)
+  previous[0].open = false
+  assert.equal(reconcileWorkflowExpansion(previous, first, false, false)[0].open, false)
+  assert.equal(
+    reconcileWorkflowExpansion(previous, parse(['npm ERR! later failure']), false, false)[0].open,
+    true,
+  )
 })

@@ -1,21 +1,42 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { groupWorkflowLines, logTimestamp, type WorkflowLine } from '../lib/actions-logs'
+import { reconcileWorkflowExpansion, logTimestamp, type WorkflowGroups } from '../lib/actions-logs'
 
 export function WorkflowLogLines({
-  lines,
+  parsed,
+  rows,
   wrap,
   timestamps,
   searching,
+  failed,
+  source,
 }: {
-  lines: WorkflowLine[]
+  parsed: WorkflowGroups
+  rows: WorkflowGroups['rows']
   wrap: boolean
   timestamps: boolean
   searching: boolean
+  failed: boolean
+  source: string
 }) {
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({})
-  const { rows, groups } = groupWorkflowLines(lines)
-  const isOpen = (id: number) => searching || (expanded[id] ?? groups.get(id)!.attention)
+  const [state, setState] = useState(() => ({
+    parsed,
+    source,
+    failed,
+    expanded: reconcileWorkflowExpansion({}, parsed, failed, false),
+  }))
+  let expanded = state.expanded
+  if (state.parsed !== parsed || state.source !== source || state.failed !== failed) {
+    expanded = reconcileWorkflowExpansion(
+      state.source === source ? state.expanded : {},
+      parsed,
+      failed,
+      state.source === source && state.failed,
+    )
+    setState({ parsed, source, failed, expanded })
+  }
+  const { groups } = parsed
+  const isOpen = (id: number) => searching || expanded[id]?.open || false
   return rows.map((row) => {
     if (row.parents.some((id) => !isOpen(id))) return null
     const group = groups.get(row.number)
@@ -30,9 +51,18 @@ export function WorkflowLogLines({
         >
           {row.number}
         </span>
-        {timestamps && !group && (
+        {timestamps && (
           <span className="muted-text border-r border-border px-2 whitespace-nowrap">
-            {parsed ? new Date(parsed.timestamp).toISOString().slice(11, 23) : ''}
+            {parsed ? (
+              <time
+                dateTime={new Date(parsed.timestamp).toISOString()}
+                title={new Date(parsed.timestamp).toISOString()}
+              >
+                {new Date(parsed.timestamp).toISOString().slice(11, 23)}
+              </time>
+            ) : (
+              ''
+            )}
           </span>
         )}
         <span
@@ -54,7 +84,7 @@ export function WorkflowLogLines({
         </span>
       </>
     )
-    const className = `grid ${timestamps && !group ? 'grid-cols-[2.5rem_6.5rem_minmax(0,1fr)] sm:grid-cols-[3.5rem_7rem_minmax(0,1fr)]' : 'grid-cols-[2.5rem_minmax(0,1fr)] sm:grid-cols-[3.5rem_minmax(0,1fr)]'} border-b border-border text-left min-w-full ${wrap ? 'w-full' : 'w-max'} ${group ? 'py-2 font-medium focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2' : 'py-0.5'}`
+    const className = `grid ${timestamps ? 'grid-cols-[2.5rem_6.5rem_minmax(0,1fr)] sm:grid-cols-[3.5rem_7rem_minmax(0,1fr)]' : 'grid-cols-[2.5rem_minmax(0,1fr)] sm:grid-cols-[3.5rem_minmax(0,1fr)]'} border-b border-border text-left min-w-full ${wrap ? 'w-full' : 'w-max'} ${group ? 'py-2 font-medium focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2' : 'py-0.5'}`
     return group ? (
       <button
         type="button"
@@ -62,7 +92,13 @@ export function WorkflowLogLines({
         className={className}
         aria-expanded={isOpen(row.number)}
         onClick={() =>
-          setExpanded((previous) => ({ ...previous, [row.number]: !isOpen(row.number) }))
+          setState((previous) => ({
+            ...previous,
+            expanded: {
+              ...previous.expanded,
+              [row.number]: { ...previous.expanded[row.number], open: !isOpen(row.number) },
+            },
+          }))
         }
       >
         {cells}

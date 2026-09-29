@@ -29,6 +29,9 @@ func TestManagedWorkflowObserverLive(t *testing.T) {
 		t.Fatal("only k3d-hakopod-dev is permitted")
 	}
 	image := os.Getenv("HAKOPOD_ACTIONS_OBSERVER_IMAGE")
+	if image == "" {
+		image = spec.ActionsRunnerImage
+	}
 	if !strings.Contains(image, "@sha256:") {
 		t.Fatal("supply the candidate digest")
 	}
@@ -54,7 +57,7 @@ func TestManagedWorkflowObserverLive(t *testing.T) {
 		t.Fatal("invalid development runner identity")
 	}
 	jit := strings.TrimSpace(string(readPrivate("HAKOPOD_ACTIONS_OBSERVER_JIT")))
-	provider, err := actions.New(strings.TrimSpace(string(readPrivate("HAKOPOD_ACTIONS_OBSERVER_TOKEN"))))
+	provider, err := actions.NewWithBudget(strings.TrimSpace(string(readPrivate("HAKOPOD_ACTIONS_OBSERVER_TOKEN"))), &actions.RequestBudget{})
 	if err != nil {
 		t.Fatal("GitHub fixture credential unavailable")
 	}
@@ -92,8 +95,12 @@ func TestManagedWorkflowObserverLive(t *testing.T) {
 		if e := c.kube.CoreV1().Namespaces().Delete(cleanup, Namespace(target.ApplicationID), metav1.DeleteOptions{}); e != nil {
 			t.Error("development namespace cleanup failed")
 		}
-		if e := provider.Delete(cleanup, actions.Target{Repository: "hakopod/hakopod"}, identity.RunnerID); e != nil {
-			t.Error("development runner registration cleanup failed")
+		// A CI read-only token cannot administer registrations. In external
+		// cleanup mode the dispatch harness owns this one explicit runner ID.
+		if os.Getenv("HAKOPOD_ACTIONS_OBSERVER_EXTERNAL_CLEANUP") != "1" {
+			if e := provider.Delete(cleanup, actions.Target{Repository: "hakopod/hakopod"}, identity.RunnerID); e != nil {
+				t.Error("development runner registration cleanup failed")
+			}
 		}
 	})
 	if err = c.SaveActionsConfig(ctx, target, "runner", identity.SlotID, jit); err != nil {

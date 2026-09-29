@@ -14966,6 +14966,12 @@
           "message": {
             "type": "string"
           },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "endpoints": {
             "type": "object",
             "additionalProperties": {

@@ -48,6 +48,13 @@ func (s *Server) authorizedActionsPool(w http.ResponseWriter, r *http.Request, p
 }
 func workflowState(err error) (string, string) {
 	var status *actions.StatusError
+	if errors.As(err, &status) && (status.Status == 401 || status.Status == 403) {
+		return "permission_denied", "GitHub could not authorize this request. Check Actions read permission and repository access; a provider cooldown may also apply."
+	}
+	var retry *actions.RetryError
+	if errors.As(err, &retry) {
+		return "rate_limited", retry.Error() + ". Try again after this time."
+	}
 	if errors.As(err, &status) {
 		switch status.Status {
 		case 401, 403:
@@ -61,11 +68,7 @@ func workflowState(err error) (string, string) {
 	return "disconnected", "GitHub is temporarily unavailable. The last observation is shown."
 }
 func (s *Server) workflowClient(ctx context.Context, p store.ActionsPool) (*actions.Client, error) {
-	token, err := s.actionRuntime().ActionsCredential(ctx, actionsTarget(p), p.Config.Actions.Credential)
-	if err != nil {
-		return nil, err
-	}
-	return actions.New(token)
+	return s.actionsProvider(ctx, actionsTarget(p), p.Config.Actions.Credential)
 }
 func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.authorizedActionsPool(w, r, "deployments:read")

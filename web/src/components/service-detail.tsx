@@ -1,3 +1,4 @@
+import { observedServiceImage } from '../lib/service-image'
 import { ManagedDatabaseConnections } from './managed-database-connections'
 import { VolumeResizeButton } from './volume-resize'
 import { PublicEndpoints } from './public-endpoints'
@@ -473,7 +474,9 @@ export function ServiceDetail({
                 </div>
                 <div>
                   <dt>Container image</dt>
-                  <dd className="mono break-text">{observed?.image || service.image}</dd>
+                  <dd className="mono break-text">
+                    {observedServiceImage(service, observed) || 'No runner image observed'}
+                  </dd>
                 </div>
                 <div>
                   <dt>Observed</dt>

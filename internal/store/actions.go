@@ -101,14 +101,14 @@ func (s *Store) SyncActions(ctx context.Context, app Application, next spec.Appl
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `UPDATE actions_pools SET removed=true,updated_at=now() WHERE application_id=$1`, app.ID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE actions_pools SET removed=true,updated_at=now(),next_reconcile_at=now() WHERE application_id=$1`, app.ID); err != nil {
 		return err
 	}
 	for name, svc := range next.Services {
 		if svc.Actions == nil {
 			continue
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO actions_pools(application_id,service,project,environment,application_name,revision,config) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(application_id,service) DO UPDATE SET revision=EXCLUDED.revision,config=EXCLUDED.config,removed=false,updated_at=now()`, app.ID, name, app.Project, app.Environment, app.Name, revision, JSON(svc)); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO actions_pools(application_id,service,project,environment,application_name,revision,config) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(application_id,service) DO UPDATE SET revision=EXCLUDED.revision,config=EXCLUDED.config,removed=false,updated_at=now(),next_reconcile_at=now()`, app.ID, name, app.Project, app.Environment, app.Name, revision, JSON(svc)); err != nil {
 			return err
 		}
 	}

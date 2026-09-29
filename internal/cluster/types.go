@@ -139,6 +139,7 @@ type ServiceStatus struct {
 	Ready           int32             `json:"ready"`
 	Desired         int32             `json:"desired"`
 	Image           string            `json:"image"`
+	Images          []string          `json:"images,omitempty"`
 	URL             string            `json:"url,omitempty"`
 	InternalAddress string            `json:"internal_address,omitempty"`
 	Message         string            `json:"message,omitempty"`

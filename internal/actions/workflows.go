@@ -198,13 +198,17 @@ func (c *Client) JobLogs(ctx context.Context, repository string, id int64) ([]Lo
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	res, err := c.http.Do(req)
+	res, err := c.doAPI(req)
 	if err != nil {
+		var retry *RetryError
+		if errors.As(err, &retry) {
+			return nil, false, err
+		}
 		return nil, false, errors.New("GitHub logs are unavailable")
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusFound {
-		return nil, false, &StatusError{Status: res.StatusCode}
+		return nil, false, c.retryError(res.StatusCode)
 	}
 	signed, err := url.Parse(res.Header.Get("Location"))
 	if err != nil || signed.Scheme != "https" || signed.User != nil || signed.Port() != "" || !strings.HasSuffix(signed.Hostname(), ".blob.core.windows.net") {
