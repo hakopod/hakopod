@@ -28,6 +28,48 @@ func TestWorkflowIdentityRequiresExactRunnerAndAttempt(t *testing.T) {
 		t.Fatal("escaped organization")
 	}
 }
+
+func TestKnownWorkflowIdentityRequiresEveryRecordedBinding(t *testing.T) {
+	for _, scenario := range []string{"valid", "job", "run", "attempt", "runner-id", "runner-name"} {
+		t.Run(scenario, func(t *testing.T) {
+			job := Job{ID: 3, RunID: 9, RunAttempt: 2, RunnerID: 42, RunnerName: "hakopod-one"}
+			switch scenario {
+			case "job":
+				job.ID++
+			case "run":
+				job.RunID++
+			case "attempt":
+				job.RunAttempt++
+			case "runner-id":
+				job.RunnerID++
+			case "runner-name":
+				job.RunnerName = "hakopod-other"
+			}
+			requests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/team/repo/actions/jobs/3" || r.Method != http.MethodGet {
+					t.Error("known identity rescanned workflow", r.Method, r.URL.Path)
+				}
+				_ = json.NewEncoder(w).Encode(job)
+			}))
+			defer srv.Close()
+			client, _ := New("private-known-workflow-test-token")
+			client.base = srv.URL
+			actual, err := client.AssignedJobID(context.Background(), Observation{Repository: "team/repo", RunID: 9, Attempt: 2}, 42, "hakopod-one", 3)
+			if scenario == "valid" {
+				if err != nil || actual == nil || actual.ID != 3 {
+					t.Fatal(actual, err)
+				}
+			} else if err == nil || actual != nil {
+				t.Fatal("mismatched known job identity accepted", actual, err)
+			}
+			if requests != 1 {
+				t.Fatal("known identity did not use exactly one lookup", requests)
+			}
+		})
+	}
+}
 func TestWorkflowParserRejectsDiagnosticsAndBoundsOutput(t *testing.T) {
 	data := []byte("[WORKER] private diagnostic\nHAKOPOD_WORKFLOW_V1 {\"job\":{\"repository\":\"team/repo\"},\"line\":2,\"text\":\"masked ***\"}\nHAKOPOD_WORKFLOW_V1 {\"line\":2,\"text\":\"duplicate\"}\n")
 	out := ParseOutput(data)

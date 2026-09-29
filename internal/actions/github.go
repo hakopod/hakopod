@@ -55,10 +55,11 @@ func ValidLabels(labels []string) bool {
 }
 
 type Runner struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Busy   bool   `json:"busy"`
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	Busy       bool      `json:"busy"`
+	ObservedAt time.Time `json:"-"`
 }
 type Registration struct {
 	Runner        Runner `json:"runner"`
@@ -73,6 +74,9 @@ type Client struct {
 	base         string
 	budget       *RequestBudget
 	registration *registrationReservation
+	cleanup      *registrationReservation
+	workflow     *registrationReservation
+	lookup       *registrationReservation
 }
 
 func New(token string) (*Client, error) {
@@ -92,7 +96,14 @@ func NewWithBudget(token string, budget *RequestBudget) (*Client, error) {
 }
 
 // StatusError excludes provider response bodies, which may contain credentials.
-type StatusError struct{ Status int }
+type StatusError struct {
+	Status int
+	Scope  bool
+}
+
+// ErrRunnerAbsent requires a successful scoped name lookup returning no runner.
+// GitHub404 alone can also mean a credential lost access to the scope.
+var ErrRunnerAbsent = errors.New("GitHub confirmed the recorded runner is absent")
 
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("GitHub runner request returned HTTP %d", e.Status)
@@ -151,6 +162,9 @@ func runnerBase(target Target) (string, error) {
 }
 
 func (c *Client) defaultRunnerGroup(ctx context.Context, organization string) (int64, error) {
+	if c.budget != nil {
+		return c.budget.defaultGroup(ctx, c, organization)
+	}
 	for page := 1; page <= 10; page++ {
 		var result struct {
 			Total  int `json:"total_count"`
@@ -191,7 +205,11 @@ func (c *Client) Register(ctx context.Context, target Target, name string, label
 	if target.Organization != "" {
 		group = target.RunnerGroupID
 		if group == 0 {
-			group, err = c.defaultRunnerGroup(ctx, target.Organization)
+			if c.registration != nil && c.registration.target == target {
+				group = c.registration.group
+			} else {
+				group, err = c.defaultRunnerGroup(ctx, target.Organization)
+			}
 			if err != nil {
 				return result, err
 			}
@@ -207,6 +225,57 @@ func (c *Client) Register(ctx context.Context, target Target, name string, label
 	return result, nil
 }
 func (c *Client) Get(ctx context.Context, target Target, id int64) (Runner, error) {
+	if c.budget != nil {
+		return c.budget.inventoryRunner(ctx, c, target, id, "")
+	}
+	return c.GetFresh(ctx, target, id)
+}
+
+func (c *Client) ObserveRunner(ctx context.Context, target Target, id int64, name string, fresh bool) (Runner, error) {
+	if fresh || c.budget == nil {
+		return c.GetKnownFresh(ctx, target, id, name)
+	}
+	return c.budget.inventoryRunner(ctx, c, target, id, name)
+}
+
+// GetKnownFresh reserves identity GET and scoped name confirmation together.
+// Only confirmed absence may retire a live pod; scope failures leave it alone.
+func (c *Client) GetKnownFresh(ctx context.Context, target Target, id int64, name string) (Runner, error) {
+	if !target.Valid() || id <= 0 || !labelPattern.MatchString(name) {
+		return Runner{}, errors.New("invalid recorded runner identity")
+	}
+	if c.budget != nil && c.cleanup == nil {
+		reservation, err := c.reserveRequests(ctx, 2)
+		if err != nil {
+			return Runner{}, err
+		}
+		c.lookup = reservation
+		defer reservation.release()
+	}
+	runner, err := c.GetFresh(ctx, target, id)
+	var status *StatusError
+	if !errors.As(err, &status) || status.Status != 404 {
+		return runner, err
+	}
+	found, err := c.Find(ctx, target, name)
+	if err != nil {
+		return Runner{}, err
+	}
+	if found == nil {
+		return Runner{}, ErrRunnerAbsent
+	}
+	if found.ID != id {
+		return Runner{}, errors.New("GitHub returned another runner for the recorded name")
+	}
+	// An ID endpoint which denies a runner still present by name is uncertain.
+	// Keep the pod until a fresh identity check succeeds; the name response must
+	// not authorize retirement or turn a two-request cleanup into three calls.
+	return Runner{}, errors.New("GitHub runner identity and name observations disagree")
+}
+
+// GetFresh is mandatory before deciding an idle runner can be retired. A cached
+// snapshot is suitable for status, never for terminating a potentially busy job.
+func (c *Client) GetFresh(ctx context.Context, target Target, id int64) (Runner, error) {
 	var out Runner
 	base, err := runnerBase(target)
 	if err != nil {
@@ -218,6 +287,12 @@ func (c *Client) Get(ctx context.Context, target Target, id int64) (Runner, erro
 	err = c.request(ctx, http.MethodGet, fmt.Sprintf("%s/%d", base, id), nil, &out)
 	if err == nil && out.ID != id {
 		return Runner{}, errors.New("GitHub returned a different runner identity")
+	}
+	if err == nil {
+		out.ObservedAt = time.Now()
+		if c.budget != nil {
+			out.ObservedAt = c.budget.time()
+		}
 	}
 	return out, err
 }
@@ -256,6 +331,10 @@ func (c *Client) Find(ctx context.Context, target Target, name string) (*Runner,
 	}
 	err = c.request(ctx, http.MethodGet, base+"?per_page=100&name="+url.QueryEscape(name), nil, &list)
 	if err != nil {
+		var status *StatusError
+		if errors.As(err, &status) && status.Status == 404 {
+			return nil, &StatusError{Status: 404, Scope: true}
+		}
 		return nil, err
 	}
 	if len(list.Runners) > 100 {

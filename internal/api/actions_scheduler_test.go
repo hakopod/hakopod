@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -125,6 +126,78 @@ func TestActionsSchedulingLeaseRecoveryAndProviderDeadline(t *testing.T) {
 	}
 }
 
+func TestActionsCancelledClaimClosesItsSessionBeforeReleaseReturns(t *testing.T) {
+	db := actionsDatabase(t)
+	ctx := context.Background()
+	claim, err := db.ClaimActions(ctx, "cancelled-claim-fixture")
+	if err != nil || claim == nil {
+		t.Fatal("fixture claim unavailable", err)
+	}
+	defer claim.Release()
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	// Keep the fence query in flight until its context is cancelled. pgx closes
+	// this session asynchronously, while the separate transaction stays open.
+	if _, err = tx.Exec(ctx, `LOCK TABLE deployments IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	fence, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
+	err = claim.Check(fence)
+	cancel()
+	if err == nil {
+		t.Fatal("blocked fence was not cancelled")
+	}
+	started := time.Now()
+	claim.Release()
+	if elapsed := time.Since(started); elapsed > 3500*time.Millisecond {
+		t.Fatal("claim release exceeded its bounded cleanup deadline", elapsed)
+	}
+	var held int
+	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database())`).Scan(&held); err != nil || held != 0 {
+		t.Fatal("cancelled session retained its application claim after release", held, err)
+	}
+	if err = claim.Check(ctx); !errors.Is(err, store.ErrClaimLost) {
+		t.Fatal("released claim remained usable", err)
+	}
+}
+
+func TestActionsSchedulerRereadsSelectedPoolBeyondHistoricalPage(t *testing.T) {
+	server, fake, pool, _ := actionsHarness(t)
+	ctx := context.Background()
+	_, err := server.Store.Pool.Exec(ctx, `INSERT INTO actions_pools(application_id,service,project,environment,application_name,revision,config,removed)
+SELECT application_id,'old-'||lpad(i::text,3,'0'),project,environment,application_name,revision,config,true
+FROM actions_pools CROSS JOIN generate_series(1,205) AS i WHERE application_id=$1 AND service=$2`, pool.ApplicationID, pool.Service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := server.Store.ActionsPoolsPage(ctx, pool.ApplicationID, "", "")
+	if err != nil || len(page) != 200 || page[len(page)-1].Service == pool.Service {
+		t.Fatal("fixture did not place active pool beyond first historical page", len(page), err)
+	}
+	err = server.reconcileScheduledActions(ctx, pool)
+	var warm *actionsWarmup
+	if err != nil && !errors.As(err, &warm) {
+		t.Fatal(err)
+	}
+	if len(fake.runners) != 1 || len(fake.pods) != 1 {
+		t.Fatal("historical pool page hid selected active service", len(fake.runners), len(fake.pods))
+	}
+	// A stale queued selection must still observe a newly suspended pool under
+	// the application lock rather than registering another runner.
+	if _, err = server.Store.Pool.Exec(ctx, `UPDATE actions_pools SET config=jsonb_set(config,'{suspended}','true'::jsonb) WHERE application_id=$1 AND service=$2`, pool.ApplicationID, pool.Service); err != nil {
+		t.Fatal(err)
+	}
+	if err = server.reconcileScheduledActions(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.runners) != 0 || len(fake.pods) != 0 {
+		t.Fatal("selected pool was not reread under lock", len(fake.runners), len(fake.pods))
+	}
+}
+
 type actionsTestTransport func(*http.Request) (*http.Response, error)
 
 func (f actionsTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -139,7 +212,7 @@ type acceleratedActionsSchedule struct {
 }
 
 func (s *acceleratedActionsSchedule) now() time.Time {
-	return s.start.Add(time.Duration(s.seconds.Load()) * time.Second)
+	return s.start.Add(time.Duration(s.seconds.Load()) * 250 * time.Millisecond)
 }
 func (s *acceleratedActionsSchedule) NextActionsPool(ctx context.Context) (*store.ActionsPoolWork, error) {
 	s.seconds.Add(1)
@@ -170,61 +243,91 @@ func TestActionsSchedulerSharedCredentialFairnessAcross100Pools(t *testing.T) {
 		}
 	}
 	schedule := &acceleratedActionsSchedule{Store: db, start: time.Now()}
+	if _, err := db.Pool.Exec(context.Background(), `UPDATE actions_slots SET updated_at=now()-interval '3 minutes'`); err != nil {
+		t.Fatal(err)
+	}
 	server := &Server{Store: db, actionsTestRuntime: fake, actionsBudget: actions.NewRequestBudget(schedule.now)}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var mu sync.Mutex
-	seen := map[int64]bool{}
-	requests := 0
-	firstPool := map[int64]time.Duration{}
+	requests, pages, direct := 0, 0, 0
+	firstPool := map[string]time.Duration{}
 	started := time.Now()
 	oldTransport := http.DefaultTransport
 	http.DefaultTransport = actionsTestTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "api.github.com" || r.Method != "GET" {
 			return nil, fmt.Errorf("unexpected qualification request")
 		}
-		id, err := strconv.ParseInt(r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:], 10, 64)
-		if err != nil {
-			return nil, err
-		}
 		mu.Lock()
 		requests++
 		status := 200
 		header := http.Header{}
-		if requests == 37 {
+		body := "{}"
+		if requests == 3 {
 			status = 429
 			header.Set("Retry-After", "60")
-		} else {
-			seen[id] = true
-			pool := (id - 1) / 10
-			if _, exists := firstPool[pool]; !exists {
-				firstPool[pool] = time.Since(started)
+		} else if strings.HasSuffix(r.URL.Path, "/runners") {
+			pages++
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			runners := []actions.Runner{}
+			for id := (page-1)*100 + 1; id <= min(1000, page*100); id++ {
+				runners = append(runners, actions.Runner{ID: int64(id), Name: fmt.Sprintf("runner-%d", id), Status: "online"})
 			}
+			data, _ := json.Marshal(map[string]any{"total_count": 1000, "runners": runners})
+			body = string(data)
+		} else {
+			direct++
+			id, err := strconv.ParseInt(r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:], 10, 64)
+			if err != nil {
+				mu.Unlock()
+				return nil, err
+			}
+			body = fmt.Sprintf(`{"id":%d,"status":"online","busy":false}`, id)
 		}
-		complete := len(seen) == 1000
 		mu.Unlock()
-		if complete {
-			cancel()
-		}
-		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"id":%d,"status":"online","busy":false}`, id))), Request: r}, nil
+		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
 	defer func() { http.DefaultTransport = oldTransport }()
-	runActionsWorkersWithClock(ctx, schedule, server.reconcileScheduledActions, schedule.now)
+	runActionsWorkersWithClock(ctx, schedule, func(ctx context.Context, p store.ActionsPool) error {
+		err := server.reconcileScheduledActions(ctx, p)
+		var fresh int
+		if e := db.Pool.QueryRow(ctx, `SELECT count(*) FROM actions_slots WHERE application_id=$1 AND updated_at>=$2`, p.ApplicationID, schedule.start).Scan(&fresh); e == nil && fresh == 10 {
+			mu.Lock()
+			if _, exists := firstPool[p.ApplicationID]; !exists {
+				firstPool[p.ApplicationID] = time.Since(started)
+			}
+			done := len(firstPool) == 100
+			mu.Unlock()
+			if done {
+				cancel()
+			}
+		}
+		return err
+	}, schedule.now)
 	var heldLocks int
 	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database())`).Scan(&heldLocks); err != nil || heldLocks != 0 {
 		t.Fatal("shutdown leaked application claims", heldLocks, err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(seen) != 1000 || len(firstPool) != 100 {
-		t.Fatalf("shared credential starved slots/pools: %d/1000 slots, %d/100 pools, %d requests, logical %s", len(seen), len(firstPool), requests, time.Duration(schedule.seconds.Load())*time.Second)
+	var freshCount int
+	var oldest time.Time
+	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*),min(updated_at) FROM actions_slots WHERE updated_at>=$1`, schedule.start).Scan(&freshCount, &oldest); err != nil {
+		t.Fatal(err)
+	}
+	if freshCount != 1000 || len(firstPool) != 100 || requests > 100 {
+		t.Fatalf("shared credential batching/fairness failed: %d/1000 slots, %d/100 pools, %d requests, logical %s", freshCount, len(firstPool), requests, schedule.now().Sub(schedule.start))
+	}
+	maxAge := schedule.now().Sub(oldest)
+	if maxAge >= 2*time.Minute {
+		t.Fatalf("provider observations exceeded readiness freshness: %s", maxAge)
 	}
 	latencies := make([]time.Duration, 0, len(firstPool))
 	for _, latency := range firstPool {
 		latencies = append(latencies, latency)
 	}
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
-	t.Logf("real PostgreSQL; 100 pools / 1,000 slots / one shared credential, injected 429: all observed; requests=%d logical=%s wall=%s first-service p95=%s max=%s", requests, time.Duration(schedule.seconds.Load())*time.Second, time.Since(started), latencies[94], latencies[99])
+	t.Logf("real PostgreSQL;100 pools/1000 slots/one credential, injected60s429:all fresh; requests=%d pages=%d direct=%d logical=%s max observation age=%s wall=%s first-service p95=%s max=%s", requests, pages, direct, schedule.now().Sub(schedule.start), maxAge, time.Since(started), latencies[94], latencies[99])
 }
 
 func TestActionsKnownBudgetExhaustionDoesNotCreateRegistrationIntent(t *testing.T) {
@@ -242,7 +345,9 @@ func TestActionsKnownBudgetExhaustionDoesNotCreateRegistrationIntent(t *testing.
 		t.Fatal(err)
 	}
 	for i := 0; i < 10; i++ {
-		if _, err = client.Get(context.Background(), pool.Config.Actions.Target(), 1); err != nil {
+		if _, err = client.(interface {
+			GetFresh(context.Context, actions.Target, int64) (actions.Runner, error)
+		}).GetFresh(context.Background(), pool.Config.Actions.Target(), 1); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -254,5 +359,189 @@ func TestActionsKnownBudgetExhaustionDoesNotCreateRegistrationIntent(t *testing.
 	slots, err := server.Store.ActionsSlots(context.Background(), pool.ApplicationID, pool.Service)
 	if err != nil || len(slots) != 0 {
 		t.Fatal("local throttle manufactured an ambiguous registration", slots, err)
+	}
+}
+
+func TestActionsCleanupRetryWaitsForNewlyBusyRunner(t *testing.T) {
+	server, fake, pool, _ := actionsHarness(t)
+	ctx := context.Background()
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal(err)
+	}
+	pool.Config.Suspended = true
+	fake.deleteFails = true
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err == nil {
+		t.Fatal("fixture deletion did not fail")
+	}
+	runner := fake.runners[1]
+	runner.Busy = true
+	fake.runners[1] = runner
+	fake.deleteFails = false
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.runners) != 1 || len(fake.pods) != 1 {
+		t.Fatal("cleanup retry interrupted a newly assigned job")
+	}
+	runner.Busy = false
+	fake.runners[1] = runner
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.runners) != 0 || len(fake.pods) != 0 {
+		t.Fatal("idle runner did not finish draining")
+	}
+}
+
+func TestActionsWarmupFillsTenSlotsWithoutTenSecondPauses(t *testing.T) {
+	server, fake, pool, _ := actionsHarness(t)
+	pool.Config.Replicas = 10
+	app := store.Application{ID: pool.ApplicationID, Project: pool.Project, Environment: pool.Environment, Name: pool.ApplicationName}
+	if err := server.Store.SyncActions(context.Background(), app, actionsTarget(pool).Spec, pool.Revision); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
+	defer cancel()
+	started := time.Now()
+	ready := false
+	runActionsWorkers(ctx, server.Store, func(ctx context.Context, p store.ActionsPool) error {
+		err := server.reconcileScheduledActions(ctx, p)
+		slots, e := server.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
+		if e == nil && len(slots) == 10 {
+			all := true
+			for _, slot := range slots {
+				all = all && slot.Phase == "online"
+			}
+			if all {
+				ready = true
+				cancel()
+			}
+		}
+		return err
+	})
+	if !ready || len(fake.runners) != 10 {
+		t.Fatalf("warmup stalled: ready=%v runners=%d elapsed=%s", ready, len(fake.runners), time.Since(started))
+	}
+	t.Logf("real PostgreSQL, simulated immediate-ready runtime/provider:10 durable registrations and10 online slots in %s; one registration per pass", time.Since(started))
+}
+
+func TestActionsProviderScopeFailuresNeverDeleteRunningPods(t *testing.T) {
+	for _, phase := range []string{"online", "starting", "cleanup"} {
+		t.Run(phase, func(t *testing.T) {
+			server, fake, pool, _ := actionsHarness(t)
+			ctx := context.Background()
+			if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+				t.Fatal(err)
+			}
+			slots, err := server.Store.ActionsSlots(ctx, pool.ApplicationID, pool.Service)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = server.Store.UpdateActionsSlot(ctx, slots[0].ID, 1, phase); err != nil {
+				t.Fatal(err)
+			}
+			server.actionsClient = nil
+			deletes := 0
+			old := http.DefaultTransport
+			http.DefaultTransport = actionsTestTransport(func(r *http.Request) (*http.Response, error) {
+				if r.Method == http.MethodDelete {
+					deletes++
+				}
+				return &http.Response{StatusCode: 404, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+			})
+			defer func() { http.DefaultTransport = old }()
+			if err = server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err == nil {
+				t.Fatal("provider scope failure disappeared")
+			}
+			if len(fake.pods) != 1 || deletes != 0 {
+				t.Fatal("inaccessible scope caused destructive runner cleanup", len(fake.pods), deletes)
+			}
+		})
+	}
+}
+
+func TestActionsProviderBusyConflictRetainsPod(t *testing.T) {
+	server, fake, pool, _ := actionsHarness(t)
+	ctx := context.Background()
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal(err)
+	}
+	pool.Config.Suspended = true
+	server.actionsClient = nil
+	old := http.DefaultTransport
+	http.DefaultTransport = actionsTestTransport(func(r *http.Request) (*http.Response, error) {
+		status := 200
+		body := `{"id":1,"status":"online","busy":false}`
+		if r.Method == http.MethodDelete {
+			status = 422
+			body = ""
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	defer func() { http.DefaultTransport = old }()
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err == nil {
+		t.Fatal("provider busy conflict disappeared")
+	}
+	if len(fake.pods) != 1 {
+		t.Fatal("provider422 removed running pod")
+	}
+}
+
+func TestActionsCleanupContradictoryIdentityWaitsForDirectRecovery(t *testing.T) {
+	server, fake, pool, _ := actionsHarness(t)
+	ctx := context.Background()
+	if err := server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal(err)
+	}
+	slots, err := server.Store.ActionsSlots(ctx, pool.ApplicationID, pool.Service)
+	if err != nil || len(slots) != 1 {
+		t.Fatal(slots, err)
+	}
+	pool.Config.Suspended = true
+	server.actionsClient = nil
+	now := time.Now()
+	server.actionsBudget = actions.NewRequestBudget(func() time.Time { return now })
+	contradictory, requests, deletes := false, 0, 0
+	old := http.DefaultTransport
+	http.DefaultTransport = actionsTestTransport(func(r *http.Request) (*http.Response, error) {
+		requests++
+		status := 200
+		body := fmt.Sprintf(`{"id":1,"name":"hakopod-%s","status":"online","busy":false}`, slots[0].ID)
+		if r.Method == http.MethodDelete {
+			deletes++
+			status = 204
+			body = ""
+		} else if r.URL.Query().Get("name") != "" {
+			body = fmt.Sprintf(`{"total_count":1,"runners":[%s]}`, body)
+		} else if contradictory {
+			status = 404
+			body = ""
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	defer func() { http.DefaultTransport = old }()
+	client, err := server.actionsProvider(ctx, actionsTarget(pool), pool.Config.Actions.Credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		if _, err = client.GetFresh(ctx, pool.Config.Actions.Target(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	contradictory = true
+	if err = server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err == nil || errors.Is(err, actions.ErrRunnerAbsent) {
+		t.Fatal("contradictory404 did not preserve uncertain identity", err)
+	}
+	if deletes != 0 || requests != 10 || len(fake.pods) != 1 {
+		t.Fatal("contradictory identity attempted retirement", deletes, requests, len(fake.pods))
+	}
+	contradictory = false
+	now = now.Add(2 * time.Second)
+	if err = server.reconcileActionsPool(ctx, actionsTarget(pool), pool); err != nil {
+		t.Fatal("consistent direct identity did not resume cleanup", err)
+	}
+	if deletes != 1 || requests != 12 || len(fake.pods) != 0 {
+		t.Fatal("cleanup failed to complete within two replenished credits", deletes, requests, len(fake.pods))
 	}
 }

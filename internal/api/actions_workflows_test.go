@@ -43,6 +43,7 @@ func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	pools, _ := db.ActionsPools(ctx, app.ID)
+	actionsRetiredHistory(t, db, app.ID, "runner")
 	slot, err := db.NewActionsSlot(ctx, pools[0])
 	if err != nil {
 		t.Fatal(err)

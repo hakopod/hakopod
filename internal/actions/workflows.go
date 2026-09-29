@@ -66,6 +66,14 @@ func (c *Client) AssignedJob(ctx context.Context, o Observation, runnerID int64,
 	if !ValidRepository(o.Repository) || o.RunID <= 0 || o.Attempt < 1 || runnerID <= 0 || !labelPattern.MatchString(runnerName) {
 		return nil, errors.New("invalid workflow identity")
 	}
+	if c.budget != nil && c.workflow == nil {
+		reservation, err := c.reserveRequests(ctx, 5)
+		if err != nil {
+			return nil, err
+		}
+		c.workflow = reservation
+		defer reservation.release()
+	}
 	for page := 1; page <= 5; page++ {
 		var result struct {
 			Jobs  []Job `json:"jobs"`
@@ -80,25 +88,7 @@ func (c *Client) AssignedJob(ctx context.Context, o Observation, runnerID int64,
 		}
 		for _, job := range result.Jobs {
 			if job.RunnerID == runnerID && job.RunnerName == runnerName && job.RunID == o.RunID && job.RunAttempt == o.Attempt && job.ID > 0 && len(job.Steps) <= 1000 {
-				// Keep cached job details below 32 KiB; providers can return large
-				// step inventories. The UI keeps the GitHub link for the rest.
-				if len(job.Name) > 512 {
-					job.Name = job.Name[:512]
-				}
-				for i := range job.Steps {
-					if len(job.Steps[i].Name) > 512 {
-						job.Steps[i].Name = job.Steps[i].Name[:512]
-					}
-				}
-				for {
-					encoded, _ := json.Marshal(job)
-					if len(encoded) <= 32<<10 || len(job.Steps) == 0 {
-						break
-					}
-					job.Steps = job.Steps[:len(job.Steps)-1]
-					job.StepsTruncated = true
-				}
-				return &job, nil
+				return boundedJob(job), nil
 			}
 		}
 		if len(result.Jobs) < 100 {
@@ -106,6 +96,43 @@ func (c *Client) AssignedJob(ctx context.Context, o Observation, runnerID int64,
 		}
 	}
 	return nil, errors.New("workflow has more than 500 jobs; open it in GitHub")
+}
+
+// AssignedJobID revalidates a previously discovered job without rescanning its
+// workflow. Every identity binding is checked again against GitHub's response.
+func (c *Client) AssignedJobID(ctx context.Context, o Observation, runnerID int64, runnerName string, jobID int64) (*Job, error) {
+	if !ValidRepository(o.Repository) || o.RunID <= 0 || o.Attempt < 1 || runnerID <= 0 || jobID <= 0 || !labelPattern.MatchString(runnerName) {
+		return nil, errors.New("invalid workflow identity")
+	}
+	var job Job
+	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/actions/jobs/%d", o.Repository, jobID), nil, &job); err != nil {
+		return nil, err
+	}
+	if job.ID != jobID || job.RunnerID != runnerID || job.RunnerName != runnerName || job.RunID != o.RunID || job.RunAttempt != o.Attempt || len(job.Steps) > 1000 {
+		return nil, errors.New("GitHub job does not match the recorded runner, run and attempt")
+	}
+	return boundedJob(job), nil
+}
+
+func boundedJob(job Job) *Job {
+	// Keep cached details below32KiB even when providers return many steps.
+	if len(job.Name) > 512 {
+		job.Name = job.Name[:512]
+	}
+	for i := range job.Steps {
+		if len(job.Steps[i].Name) > 512 {
+			job.Steps[i].Name = job.Steps[i].Name[:512]
+		}
+	}
+	for {
+		encoded, _ := json.Marshal(job)
+		if len(encoded) <= 32<<10 || len(job.Steps) == 0 {
+			break
+		}
+		job.Steps = job.Steps[:len(job.Steps)-1]
+		job.StepsTruncated = true
+	}
+	return &job
 }
 
 type LogLine struct {
@@ -211,6 +238,12 @@ func (c *Client) JobLogs(ctx context.Context, repository string, id int64) ([]Lo
 		return nil, false, c.retryError(res.StatusCode)
 	}
 	signed, err := url.Parse(res.Header.Get("Location"))
+	// The signed download has its own bounded stream. Release this credential's
+	// GitHub request permit before waiting on the external object transfer.
+	_ = res.Body.Close()
+	if c.workflow != nil {
+		c.workflow.release()
+	}
 	if err != nil || signed.Scheme != "https" || signed.User != nil || signed.Port() != "" || !strings.HasSuffix(signed.Hostname(), ".blob.core.windows.net") {
 		return nil, false, errors.New("GitHub returned an unsupported log download location")
 	}

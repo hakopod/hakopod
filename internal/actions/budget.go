@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -27,6 +28,7 @@ type RetryError struct {
 	At       time.Time
 	Status   int
 	Progress bool
+	Local    bool
 }
 
 type requestProgressKey struct{}
@@ -69,9 +71,13 @@ type credentialBudget struct {
 // control plane. It stores only credential hashes, has bounded state, and fails
 // closed when every entry is active. Its zero value is ready for use.
 type RequestBudget struct {
-	mu      sync.Mutex
-	entries map[[32]byte]*credentialBudget
-	now     func() time.Time
+	mu               sync.Mutex
+	entries          map[[32]byte]*credentialBudget
+	now              func() time.Time
+	inventoryMu      sync.Mutex
+	inventories      map[inventoryKey]*runnerInventory
+	inventoryRecords int
+	groups           map[inventoryKey]*runnerGroup
 }
 
 // NewRequestBudget accepts a trusted clock for deterministic qualification.
@@ -103,7 +109,7 @@ func (b *RequestBudget) reserve(key [32]byte, cost int) (*credentialBudget, erro
 				}
 			}
 			if len(b.entries) >= maxCredentialBudgets {
-				return nil, &RetryError{At: now.Add(time.Minute)}
+				return nil, &RetryError{At: now.Add(time.Minute), Local: true}
 			}
 		}
 		v = &credentialBudget{tokens: credentialBurst, updated: now}
@@ -116,10 +122,10 @@ func (b *RequestBudget) reserve(key [32]byte, cost int) (*credentialBudget, erro
 		return nil, &RetryError{At: v.blocked, Status: v.status}
 	}
 	if v.inflight >= credentialConcurrency {
-		return nil, &RetryError{At: now.Add(time.Second)}
+		return nil, &RetryError{At: now.Add(time.Second), Local: true}
 	}
 	if v.tokens < float64(cost) {
-		return nil, &RetryError{At: now.Add(time.Duration(math.Ceil((float64(cost) - v.tokens) / credentialRate * float64(time.Second))))}
+		return nil, &RetryError{At: now.Add(time.Duration(math.Ceil((float64(cost) - v.tokens) / credentialRate * float64(time.Second)))), Local: true}
 	}
 	v.tokens -= float64(cost)
 	v.inflight++
@@ -196,9 +202,19 @@ func (c *Client) doAPI(req *http.Request) (*http.Response, error) {
 	}
 	var v *credentialBudget
 	var err error
-	reserved := c.registration != nil && c.registration.remaining > 0
+	reservation := c.registration
+	if reservation == nil {
+		reservation = c.cleanup
+	}
+	if reservation == nil {
+		reservation = c.workflow
+	}
+	if reservation == nil {
+		reservation = c.lookup
+	}
+	reserved := reservation != nil && reservation.remaining > 0
 	if reserved {
-		v = c.registration.state
+		v = reservation.state
 		c.budget.mu.Lock()
 		blocked := v.blocked.After(c.budget.time())
 		deadline, status := v.blocked, v.status
@@ -206,7 +222,7 @@ func (c *Client) doAPI(req *http.Request) (*http.Response, error) {
 		if blocked {
 			return nil, &RetryError{At: deadline, Status: status}
 		}
-		c.registration.remaining--
+		reservation.remaining--
 	} else {
 		v, err = c.budget.acquire(sha256.Sum256([]byte(c.token)))
 	}
@@ -250,6 +266,9 @@ func (c *Client) retryError(status int) error {
 type registrationReservation struct {
 	state     *credentialBudget
 	remaining int
+	target    Target
+	group     int64
+	release   func()
 }
 
 // PrepareRegistration reserves bounded request credits before the controller
@@ -265,27 +284,96 @@ func (c *Client) PrepareRegistration(ctx context.Context, target Target) (func()
 	if c.budget == nil {
 		return func() {}, nil
 	}
-	if c.registration != nil {
+	if c.registration != nil || c.cleanup != nil || c.workflow != nil || c.lookup != nil {
 		return nil, fmt.Errorf("runner registration already has a request reservation")
 	}
-	cost := 1
+	group := int64(1)
 	if target.Organization != "" && target.RunnerGroupID == 0 {
-		cost = 2
+		var err error
+		group, err = c.defaultRunnerGroup(ctx, target.Organization)
+		if err != nil {
+			return nil, err
+		}
+	} else if target.Organization != "" {
+		group = target.RunnerGroupID
+	}
+	reservation, err := c.reserveRequests(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	reservation.target = target
+	reservation.group = group
+	c.registration = reservation
+	return reservation.release, nil
+}
+
+func (c *Client) reserveRequests(ctx context.Context, cost int) (*registrationReservation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if c.registration != nil || c.cleanup != nil || c.workflow != nil || c.lookup != nil {
+		return nil, errors.New("runner client already has a request reservation")
 	}
 	state, err := c.budget.reserve(sha256.Sum256([]byte(c.token)), cost)
 	if err != nil {
 		return nil, err
 	}
 	reservation := &registrationReservation{state: state, remaining: cost}
-	c.registration = reservation
 	var once sync.Once
-	return func() {
+	reservation.release = func() {
 		once.Do(func() {
 			c.budget.mu.Lock()
 			state.tokens = math.Min(credentialBurst, state.tokens+float64(reservation.remaining))
 			state.inflight--
 			c.budget.mu.Unlock()
-			c.registration = nil
+			if c.registration == reservation {
+				c.registration = nil
+			}
+			if c.cleanup == reservation {
+				c.cleanup = nil
+			}
+			if c.workflow == reservation {
+				c.workflow = nil
+			}
+			if c.lookup == reservation {
+				c.lookup = nil
+			}
 		})
-	}, nil
+	}
+	return reservation, nil
+}
+
+// PrepareCleanup preserves enough credits to check busy state and delete the
+// same runner. Otherwise repeated single-credit retries could never delete it.
+func (c *Client) PrepareCleanup(ctx context.Context, target Target, id int64) (func(), error) {
+	if !target.Valid() || id <= 0 {
+		return nil, errors.New("invalid runner cleanup identity")
+	}
+	if c.budget == nil {
+		return func() {}, nil
+	}
+	reservation, err := c.reserveRequests(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
+	c.cleanup = reservation
+	return reservation.release, nil
+}
+
+// PrepareWorkflowLogs reserves verification and the logs redirect together.
+// Initial discovery remains bounded to five job pages; known IDs use one GET.
+func (c *Client) PrepareWorkflowLogs(ctx context.Context, knownJob bool) (func(), error) {
+	if c.budget == nil {
+		return func() {}, nil
+	}
+	cost := 6
+	if knownJob {
+		cost = 2
+	}
+	reservation, err := c.reserveRequests(ctx, cost)
+	if err != nil {
+		return nil, err
+	}
+	c.workflow = reservation
+	return reservation.release, nil
 }
