@@ -193,12 +193,13 @@ request authors should not read. Caches are an optimization: GitHub can evict
 them, and a missing cache must leave the workflow able to install dependencies.
 
 Runner 2.337.0 supports the current cache service and `actions/cache@v5`.
-The cache action uses tar and selects zstd when present, otherwise gzip. Runner
-image source includes and smoke-tests tar and zstd; an existing engine pin may
-still use gzip until that image is published and promoted. Compression is part
-of GitHub's cache version, so the first job after that change can miss an older
-gzip cache and populate a new one. A job container must
-provide its own compatible archive tools. Installation firewalls must allow
+The promoted runner image includes tar and zstd, with archive round trips
+smoke-tested on AMD64 and ARM64. The cache action selects zstd when present,
+otherwise gzip. Existing saved image references remain valid: after the server
+upgrade, busy runners finish their job and replacement runners use the promoted
+image. Compression is part of GitHub's cache version, so the first zstd job can
+miss an older gzip cache and populate a new one. A job container must provide
+its own compatible archive tools. Installation firewalls must allow
 GitHub Actions cache traffic, including `results-receiver.actions.githubusercontent.com`
 and `*.blob.core.windows.net`, over HTTPS. The managed namespace's public egress
 rule already permits this traffic without granting private-network access.

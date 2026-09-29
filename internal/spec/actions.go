@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	actionsRunnerRepository    = "ghcr.io/hakopod/actions-runner"
-	actionsRunnerDigest        = "sha256:63768a269f453a8e386588ae77b3ff9bdf911244c0276aad28b324d629be1489"
-	ActionsRunnerImage         = actionsRunnerRepository + ":2.337.0-hakopod-37ab7a0390da5202ab3ac7cb12983d6d08f146bf@" + actionsRunnerDigest
-	actionsRunnerResolvedImage = actionsRunnerRepository + "@" + actionsRunnerDigest
+	actionsRunnerRepository     = "ghcr.io/hakopod/actions-runner"
+	actionsRunnerDigest         = "sha256:1e05326c75ff1412c68e7e2aed6541fa2e3dd07a8ce6389c9246fc253d7eb3b2"
+	ActionsRunnerImage          = actionsRunnerRepository + ":2.337.0-hakopod-6d9a8152b7f5dafa1bfc5bbf1a24207710c746a7@" + actionsRunnerDigest
+	actionsRunnerResolvedImage  = actionsRunnerRepository + "@" + actionsRunnerDigest
+	previousActionsRunnerDigest = "sha256:63768a269f453a8e386588ae77b3ff9bdf911244c0276aad28b324d629be1489"
+	previousActionsRunnerImage  = actionsRunnerRepository + ":2.337.0-hakopod-37ab7a0390da5202ab3ac7cb12983d6d08f146bf@" + previousActionsRunnerDigest
 )
 
 // Actions describes an organization or repository pool of single-job runners. Credential
@@ -34,12 +36,20 @@ func (a Actions) Target() actions.Target {
 
 var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
-// IsActionsRunnerImage accepts only the approved tagged or resolved reference.
+// IsActionsRunnerImage retains exact approved references for saved revisions.
 func IsActionsRunnerImage(image string) bool {
-	return IsCurrentActionsRunnerImage(image) || image == "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4" || image == "ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
+	switch image {
+	case ActionsRunnerImage, actionsRunnerResolvedImage,
+		previousActionsRunnerImage, actionsRunnerRepository + "@" + previousActionsRunnerDigest,
+		"ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
+		"ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4":
+		return true
+	default:
+		return false
+	}
 }
 
-// Saved upstream references remain valid; new slots always use the current pin.
+// New slots use the current pin; prior approved images drain after their job.
 func IsCurrentActionsRunnerImage(image string) bool {
 	return image == ActionsRunnerImage || image == actionsRunnerResolvedImage
 }

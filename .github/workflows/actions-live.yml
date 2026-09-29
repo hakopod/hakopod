@@ -2,6 +2,11 @@ name: Managed Actions real GitHub jobs
 on:
   workflow_dispatch:
     inputs:
+      architecture:
+        description: Native architecture for sandbox and cache acceptance
+        type: choice
+        options: [amd64, arm64]
+        default: amd64
       observer:
         type: boolean
         default: false
@@ -27,7 +32,7 @@ concurrency:
 jobs:
   sandbox:
     if: ${{ !inputs.observer || inputs.cache }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     env:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
@@ -228,7 +233,7 @@ jobs:
           set -eu
           test ! -e .hakopod-cache-fixture
           tar --version | head -1
-          if command -v zstd; then zstd --version; else gzip --version | head -1; echo 'Cache archive uses gzip'; fi
+          zstd --version
           mkdir .hakopod-cache-fixture
           dd if=/dev/urandom of=.hakopod-cache-fixture/payload bs=1048576 count=8 status=none
           printf '%s\n' "$FIXTURE_RUNNER" > .hakopod-cache-fixture/source-runner
@@ -255,6 +260,7 @@ jobs:
           test -n "$SOURCE_RUNNER"
           test "$CURRENT_RUNNER" != "$SOURCE_RUNNER"
           test ! -e .hakopod-cache-fixture
+          zstd --version
       - name: Restore the exact saved cache
         id: restore
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
