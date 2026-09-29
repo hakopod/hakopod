@@ -26,6 +26,10 @@ func (f *actionsPoolReadinessFixture) ActionsPoolAvailable(_ context.Context, ta
 	return f.check(target, config)
 }
 
+func (f *actionsPoolReadinessFixture) ActionsScopeAvailable(_ context.Context, target cluster.Target) error {
+	return f.check(target, spec.Service{})
+}
+
 func TestActionsRegistrationUsesPoolReadinessBeforeCreatingIntent(t *testing.T) {
 	for _, ready := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unavailable", true: "available"}[ready], func(t *testing.T) {

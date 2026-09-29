@@ -16,6 +16,7 @@ import (
 )
 
 type actionsRuntime interface {
+	ActionsScopeAvailable(context.Context, cluster.Target) error
 	ActionsPoolAvailable(context.Context, cluster.Target, spec.Service) error
 	ActionsCredential(context.Context, cluster.Target, string) (string, error)
 	ActionsPodPhase(context.Context, cluster.Target, string) (string, error)
@@ -519,7 +520,7 @@ func (s *Server) actionsCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	runtime := s.actionRuntime().ActionsPoolAvailable(ctx, cluster.Target{Project: project, Environment: env}, spec.Service{})
+	runtime := s.actionRuntime().ActionsScopeAvailable(ctx, cluster.Target{Project: project, Environment: env})
 	message := ""
 	if runtime != nil {
 		message = "The Managed Actions sandbox is not ready in this environment."

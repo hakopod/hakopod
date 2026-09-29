@@ -54,6 +54,20 @@ type actionsPlacement struct {
 	selector map[string]string
 }
 
+// ActionsScopeAvailable checks discovery readiness without inventing a pool or
+// applying an ordinary workload's allocation to an Actions request.
+func (c *Client) ActionsScopeAvailable(ctx context.Context, t Target) error {
+	if err := c.actionsRuntimeAvailable(ctx); err != nil {
+		return err
+	}
+	policy, err := c.placementPolicy(ctx, t, "actions")
+	if err != nil {
+		return err
+	}
+	_, err = c.availableActionsPlacement(ctx, policy, spec.Service{})
+	return err
+}
+
 // ActionsPoolAvailable checks the pool's effective placement before the
 // controller requests a single-job registration from GitHub.
 func (c *Client) ActionsPoolAvailable(ctx context.Context, t Target, s spec.Service) error {
@@ -69,6 +83,10 @@ func (c *Client) actionsPoolPlacement(ctx context.Context, t Target, s spec.Serv
 	if err != nil {
 		return nil, err
 	}
+	return c.availableActionsPlacement(ctx, policy, s)
+}
+
+func (c *Client) availableActionsPlacement(ctx context.Context, policy *WorkloadPolicy, s spec.Service) (*actionsPlacement, error) {
 	if c.options.DeploymentMode == DeploymentManagedCloud && policy == nil && c.options.DedicatedPublicTCPNode == "" && c.options.OperatorNodeLimit == 0 {
 		return nil, fmt.Errorf("Managed Actions compute is not allocated to this environment")
 	}

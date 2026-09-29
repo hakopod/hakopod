@@ -108,7 +108,8 @@ func (f *actionsFake) Delete(_ context.Context, target actions.Target, id int64)
 	delete(f.runners, id)
 	return nil
 }
-func (f *actionsFake) ActionsAvailable(context.Context) error { return nil }
+func (f *actionsFake) ActionsAvailable(context.Context) error                      { return nil }
+func (f *actionsFake) ActionsScopeAvailable(context.Context, cluster.Target) error { return nil }
 func (f *actionsFake) ActionsPoolAvailable(context.Context, cluster.Target, spec.Service) error {
 	return nil
 }
