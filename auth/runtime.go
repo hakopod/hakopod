@@ -17,6 +17,7 @@ import (
 type DatabaseSpec = database.Spec
 type DatabasePolicy = cluster.DatabasePolicy
 type WorkloadPolicy = cluster.WorkloadPolicy
+type PlacementRequest = cluster.PlacementRequest
 type WorkloadSpec = spec.Application
 type WorkloadService = spec.Service
 type ResourceProfile = spec.Profile
@@ -58,6 +59,7 @@ type RuntimeConfig struct {
 	Backups                  BackupConfig
 	BuildRegistry            string
 	WorkloadPolicy           cluster.WorkloadPolicyResolver
+	PlacementPolicy          cluster.PlacementPolicyResolver
 	ApplicationLimit         func(context.Context, string, string) (int, error)
 	// NodeLimit bounds the private operator cluster. Zero defaults to one.
 	NodeLimit       int
@@ -94,7 +96,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{DatabasePolicy: config.DatabasePolicy, WorkloadPolicy: config.WorkloadPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{DatabasePolicy: config.DatabasePolicy, WorkloadPolicy: config.WorkloadPolicy, PlacementPolicy: config.PlacementPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
 	if err != nil {
 		return nil, nil, err
 	}

@@ -57,7 +57,7 @@ func (c *Client) PlacementNodesForRuntime(ctx context.Context, t Target, runtime
 	if runtime != "" && runtime != "actions" {
 		return nil, fmt.Errorf("unsupported placement runtime")
 	}
-	p, err := c.workloadPolicy(ctx, t)
+	p, err := c.placementPolicy(ctx, t, runtime)
 	if err != nil {
 		return nil, err
 	}

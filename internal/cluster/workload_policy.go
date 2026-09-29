@@ -30,6 +30,28 @@ type WorkloadPolicy struct {
 
 type WorkloadPolicyResolver func(context.Context, string, string, spec.Application) (WorkloadPolicy, error)
 
+// PlacementRequest describes an authorized discovery request, not a workload.
+// Runtime is empty for ordinary placement or "actions" for managed runners.
+type PlacementRequest struct {
+	Project, Environment, Application, Runtime string
+}
+
+type PlacementPolicyResolver func(context.Context, PlacementRequest) (WorkloadPolicy, error)
+
+func (c *Client) placementPolicy(ctx context.Context, t Target, runtime string) (*WorkloadPolicy, error) {
+	if runtime != "" && runtime != "actions" {
+		return nil, fmt.Errorf("unsupported placement runtime")
+	}
+	if c.options.PlacementPolicy == nil {
+		return c.workloadPolicy(ctx, t)
+	}
+	p, err := c.options.PlacementPolicy(ctx, PlacementRequest{Project: t.Project, Environment: t.Environment, Application: t.Spec.Name, Runtime: runtime})
+	if err != nil {
+		return nil, err
+	}
+	return checkedWorkloadPolicy(p)
+}
+
 func (c *Client) workloadPolicy(ctx context.Context, t Target) (*WorkloadPolicy, error) {
 	if c.options.WorkloadPolicy == nil {
 		return nil, nil
@@ -38,6 +60,10 @@ func (c *Client) workloadPolicy(ctx context.Context, t Target) (*WorkloadPolicy,
 	if err != nil {
 		return nil, err
 	}
+	return checkedWorkloadPolicy(p)
+}
+
+func checkedWorkloadPolicy(p WorkloadPolicy) (*WorkloadPolicy, error) {
 	if p.NodeName == "" || len(p.Quota) > 32 || len(p.EgressPorts) > 16 || len(p.DeniedEgressCIDRs) > 16 {
 		return nil, fmt.Errorf("invalid runtime workload policy")
 	}

@@ -32,6 +32,8 @@ type Options struct {
 	ServerlessAddress string
 
 	WorkloadPolicy WorkloadPolicyResolver
+	// PlacementPolicy resolves discovery only; workload admission always uses WorkloadPolicy.
+	PlacementPolicy PlacementPolicyResolver
 	// CloudResourceCeiling is trusted embedding configuration; workload policy still enforces each tenant budget.
 	CloudResourceCeiling *spec.Profile
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
