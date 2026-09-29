@@ -48,7 +48,7 @@ export function ManagedActionsStatus({
 
   return (
     <section className="panel mb-4">
-      <div className="panel-heading">
+      <div className="panel-heading flex-wrap">
         <h2>GitHub runners</h2>
         {!removing && (
           <Button size="sm" asChild>

@@ -36,7 +36,7 @@ export function WorkflowLogLines({
           </span>
         )}
         <span
-          className={`min-w-0 px-3 ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}
+          className={`min-w-0 px-3 ${wrap ? 'whitespace-pre-wrap wrap-anywhere' : 'whitespace-pre'}`}
         >
           {group &&
             (isOpen(row.number) ? (

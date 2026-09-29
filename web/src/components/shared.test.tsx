@@ -244,6 +244,7 @@ test('workflow logs strip terminal controls and preserve literal markup', () => 
   )
   assert.equal(logTimestamp('2026-09-29T00:00:00.000Z output')?.text, 'output')
   assert.equal(logTimestamp('not a timestamp'), null)
+  assert.equal(logTimestamp('2026-99-99T99:99:99.000Z invalid'), null)
 })
 
 test('workflow groups preserve rows, nested failures and unfinished output', () => {

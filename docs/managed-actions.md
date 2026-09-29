@@ -129,6 +129,47 @@ The GitHub runner-management token stays in control-plane secret storage. A pod
 gets only its one-job JIT registration. Configuring this pool does not replace
 Hakopod's application build provider.
 
+## Building images for another architecture
+
+`docker/setup-qemu-action` registers interpreters through the kernel's
+`binfmt_misc` filesystem. The managed gVisor sandbox does not provide this
+filesystem, so that action fails with `cannot mount binfmt_misc` even when the
+nested Docker container requests `--privileged`. Do not add host mounts or
+switch runners to a privileged host runtime to bypass this failure.
+
+BuildKit has a separate user-space emulator path for Dockerfile `RUN`
+instructions. The [runtime acceptance run](https://github.com/hakopod/hakopod/actions/runs/36533856191)
+verified both AMD64 and ARM64 Dockerfile `RUN` instructions from each host
+architecture with the pinned BuildKit image below, inside the managed gVisor
+sandbox. This does not enable foreign
+architecture `docker run` commands or arbitrary cross-architecture job containers.
+
+For a BuildKit cross-build, omit `docker/setup-qemu-action` and configure a
+container builder with its bundled emulators and native snapshotter:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: docker/setup-buildx-action@v3
+    with:
+      driver: docker-container
+      driver-opts: |
+        image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+      buildkitd-flags: --oci-worker-snapshotter=native
+  # Authenticate to your registry before a build that pushes images.
+  - uses: docker/build-push-action@v6
+    with:
+      context: .
+      platforms: linux/amd64,linux/arm64
+      push: false
+      outputs: type=oci,dest=/tmp/image.tar
+```
+
+Both emulation and the native snapshotter consume the same per-job CPU, memory
+and workspace limits. Emulated compilation may be substantially slower than a
+native build. Native pools for each architecture remain an alternative for large
+builds.
+
 ## Updates and removal
 
 Scaling down, pausing, configuration changes and license expiry drain busy jobs.
