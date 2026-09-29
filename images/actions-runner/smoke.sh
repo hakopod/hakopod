@@ -3,7 +3,7 @@ set -eu
 
 test "$(id -u)" = 1001
 test -f /home/runner/run.sh
-for tool in cc c++ make cmake ninja pkg-config gh git jq psql; do
+for tool in cc c++ make cmake ninja pkg-config gh git jq tar zstd psql; do
     command -v "$tool"
 done
 gh --version
@@ -11,6 +11,12 @@ gh --version
 scratch=$(mktemp -d /tmp/hakopod-runner-smoke.XXXXXX)
 trap 'rm -rf "$scratch"' EXIT
 cd "$scratch"
+# GitHub's cache action uses the runner's archive tools, without host access.
+mkdir cache-source cache-restored
+printf 'Managed Actions cache archive\n' > cache-source/proof
+tar --use-compress-program='zstd -T1' -cf cache.tar.zst -C cache-source proof
+tar --use-compress-program='zstd -d' -xf cache.tar.zst -C cache-restored
+cmp cache-source/proof cache-restored/proof
 cat > hello.c <<'EOF'
 #include <stdio.h>
 int main(void) { puts("C toolchain works"); return 0; }

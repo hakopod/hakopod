@@ -5,12 +5,20 @@ on:
       observer:
         type: boolean
         default: false
+      cache:
+        description: Verify native GitHub cache across two fresh managed jobs
+        type: boolean
+        default: false
       runner_label:
         type: string
         default: unused-observer-fixture
       jit_secret:
         type: string
         default: HAKOPOD_UNUSED_OBSERVER_JIT
+      restore_runner_label:
+        description: Second single-job runner label for the cache restore job
+        type: string
+        default: unused-cache-restore-fixture
 permissions:
   contents: read
 concurrency:
@@ -18,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   sandbox:
-    if: ${{ !inputs.observer }}
+    if: ${{ !inputs.observer || inputs.cache }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -42,7 +50,7 @@ jobs:
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
       - name: Run product runner pods with single-job credentials
         env:
-          HAKOPOD_ACTIONS_TEST_JIT: ${{ secrets.HAKOPOD_ACTIONS_ACCEPTANCE_JIT }}
+          HAKOPOD_ACTIONS_TEST_JIT: ${{ secrets[inputs.cache && inputs.jit_secret || 'HAKOPOD_ACTIONS_ACCEPTANCE_JIT'] }}
         run: |
           test -n "$HAKOPOD_ACTIONS_TEST_JIT"
           export KUBECONFIG="$PWD/.local/kubeconfig"
@@ -57,8 +65,11 @@ jobs:
               kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev -n "$namespace" logs "$pod" -c "$container" --tail=40 || true
             done
           done
+      - name: Stop disposable cluster
+        if: always()
+        run: scripts/local-down.sh
   shell-and-docker:
-    if: ${{ !inputs.observer }}
+    if: ${{ !inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, hakopod-live-shell]
     timeout-minutes: 20
     services:
@@ -99,7 +110,7 @@ jobs:
           docker build -t managed-actions-fixture /home/runner/actions-build
           docker run --rm managed-actions-fixture | grep built-inside-sandbox
   container-job:
-    if: ${{ !inputs.observer }}
+    if: ${{ !inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, hakopod-live-container]
     timeout-minutes: 20
     container:
@@ -115,7 +126,7 @@ jobs:
           test "$(cat "$GITHUB_WORKSPACE/container-proof")" = job-container-ok
 
   observer-host:
-    if: ${{ inputs.observer }}
+    if: ${{ inputs.observer && !inputs.cache }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -173,7 +184,7 @@ jobs:
         if: always()
         run: scripts/local-down.sh
   observer-job:
-    if: ${{ inputs.observer }}
+    if: ${{ inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, '${{ inputs.runner_label }}']
     timeout-minutes: 10
     permissions:
@@ -198,3 +209,70 @@ jobs:
             sleep 2
           done
           echo '::endgroup::'
+
+  cache-save:
+    if: ${{ inputs.cache }}
+    runs-on: [self-hosted, '${{ inputs.runner_label }}']
+    timeout-minutes: 10
+    outputs:
+      runner: ${{ steps.fixture.outputs.runner }}
+      checksum: ${{ steps.fixture.outputs.checksum }}
+      key: ${{ steps.fixture.outputs.key }}
+    steps:
+      - name: Create a bounded dependency cache fixture
+        id: fixture
+        env:
+          FIXTURE_RUNNER: ${{ runner.name }}
+          FIXTURE_KEY: hakopod-managed-cache-v1-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}-${{ runner.arch }}
+        run: |
+          set -eu
+          test ! -e .hakopod-cache-fixture
+          tar --version | head -1
+          if command -v zstd; then zstd --version; else echo 'Cache archive uses gzip'; fi
+          mkdir .hakopod-cache-fixture
+          dd if=/dev/urandom of=.hakopod-cache-fixture/payload bs=1048576 count=8 status=none
+          printf '%s\n' "$FIXTURE_RUNNER" > .hakopod-cache-fixture/source-runner
+          checksum=$(sha256sum .hakopod-cache-fixture/payload | cut -d ' ' -f1)
+          printf 'runner=%s\nchecksum=%s\nkey=%s\n' "$FIXTURE_RUNNER" "$checksum" "$FIXTURE_KEY" >> "$GITHUB_OUTPUT"
+      - name: Save to GitHub's repository and branch scoped cache
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: .hakopod-cache-fixture
+          key: ${{ steps.fixture.outputs.key }}
+
+  cache-restore:
+    if: ${{ inputs.cache }}
+    needs: cache-save
+    runs-on: [self-hosted, '${{ inputs.restore_runner_label }}']
+    timeout-minutes: 10
+    steps:
+      - name: Verify a different runner starts without the first job's files
+        env:
+          SOURCE_RUNNER: ${{ needs.cache-save.outputs.runner }}
+          CURRENT_RUNNER: ${{ runner.name }}
+        run: |
+          set -eu
+          test -n "$SOURCE_RUNNER"
+          test "$CURRENT_RUNNER" != "$SOURCE_RUNNER"
+          test ! -e .hakopod-cache-fixture
+      - name: Restore the exact saved cache
+        id: restore
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+        with:
+          path: .hakopod-cache-fixture
+          key: ${{ needs.cache-save.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Verify cross-job cache identity and contents
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          EXPECTED_SHA: ${{ needs.cache-save.outputs.checksum }}
+          SOURCE_RUNNER: ${{ needs.cache-save.outputs.runner }}
+          CACHE_KEY: ${{ needs.cache-save.outputs.key }}
+        run: |
+          set -eu
+          test "$CACHE_HIT" = true
+          test "$(cat .hakopod-cache-fixture/source-runner)" = "$SOURCE_RUNNER"
+          printf '%s  .hakopod-cache-fixture/payload\n' "$EXPECTED_SHA" | sha256sum --check --strict
+          printf 'Verified an exact GitHub cache hit on a different managed runner: `%s` (8 MiB payload).\n' "$CACHE_KEY" >> "$GITHUB_STEP_SUMMARY"

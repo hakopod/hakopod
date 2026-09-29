@@ -6,7 +6,7 @@ ARG GH_VERSION=2.101.0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential cmake ninja-build pkg-config python3-dev python3-venv \
-       ca-certificates curl git jq unzip postgresql-client libpq-dev libzbar0 \
+       ca-certificates curl git jq tar zstd unzip postgresql-client libpq-dev libzbar0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Release checksums are pinned independently for both native architectures.
