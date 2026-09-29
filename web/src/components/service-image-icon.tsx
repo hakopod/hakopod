@@ -1,4 +1,5 @@
 import { ServiceIcon } from './service-icon'
+import type { Service } from '../lib/types'
 
 const imageNames: Record<string, string> = {
   postgres: 'postgresql',
@@ -22,7 +23,16 @@ const imageNames: Record<string, string> = {
   python: 'python',
 }
 
-export function ServiceImageIcon({ image, size = 22 }: { image: string; size?: number }) {
+export function ServiceImageIcon({
+  image,
+  actions,
+  size = 22,
+}: {
+  image: string
+  actions?: Service['actions']
+  size?: number
+}) {
+  if (actions) return <ServiceIcon name="github" size={size} />
   const name = image.split('/').at(-1)?.split(/[:@]/)[0] || ''
   return <ServiceIcon name={imageNames[name] || 'docker'} size={size} />
 }

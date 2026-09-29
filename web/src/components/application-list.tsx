@@ -240,7 +240,11 @@ export function ApplicationList({
                       {Object.values(app.spec.services)
                         .slice(0, 3)
                         .map((service, index) => (
-                          <ServiceImageIcon key={index} image={service.image} />
+                          <ServiceImageIcon
+                            key={index}
+                            image={service.image}
+                            actions={service.actions}
+                          />
                         ))}
                     </div>
                     <Status value={healthByID.get(app.id)?.status} small />

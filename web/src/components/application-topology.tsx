@@ -11,6 +11,7 @@ import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import type { Application } from '../lib/types'
 import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-health'
 import { Icon } from './icons'
+import { ServiceIcon } from './service-icon'
 import { HeadingHelp, Copy, Status, Note } from './shared'
 export default function ApplicationTopology({ application: app }: { application: Application }) {
   const features = useEditionFeatures()
@@ -139,10 +140,14 @@ export default function ApplicationTopology({ application: app }: { application:
                   <Brackets />
                   <Status value={health.status} small />
                   <div className="min-w-0">
-                    <Icon
-                      name={config.public ? 'globe' : config.port ? 'box' : 'terminal'}
-                      size={18}
-                    />
+                    {config.actions ? (
+                      <ServiceIcon name="github" size={18} />
+                    ) : (
+                      <Icon
+                        name={config.public ? 'globe' : config.port ? 'box' : 'terminal'}
+                        size={18}
+                      />
+                    )}
                     <strong className="min-w-0 truncate">
                       {app.service_display_names?.[item] || item}
                     </strong>

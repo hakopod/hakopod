@@ -38,10 +38,21 @@ The module is not an automatic Cloud or BYOD node migration.
    that access policy. A repository is not required for an organization pool.
 4. During review, save an application-scoped fine-grained GitHub token with
    **Self-hosted runners: read and write** organization permission, or
-   **Administration: read and write** for a repository pool. Do not put the token
-   itself in TOML or Git.
+   **Administration: read and write** for a repository pool. Both scopes also
+   need **Actions: Read-only** under repository permissions for job steps and
+   completed logs. Give the token access to every repository whose jobs the pool
+   will run, including private repositories. Do not put the token itself in TOML
+   or Git.
 5. Review the changes and deploy. The service page shows GitHub-observed runner
    state and the time of its last observation.
+
+The pool form and secret-entry review both include **How to create the GitHub
+token**. In GitHub, open **Settings → Developer settings → Personal access
+tokens → Fine-grained tokens**, create a token, and choose the organization or
+account that owns the repositories as its **Resource owner**. Set a name and
+expiration, select repositories, add the permissions above, then generate the
+token and save it in Hakopod. If the organization requires approval, an owner
+must approve the token before it can access those repositories.
 
 Under **Resources per runner**, set CPU and memory reservations separately from
 their limits. The form shows the total reservation across all concurrent slots.

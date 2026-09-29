@@ -335,7 +335,10 @@ function ApplicationDetail() {
                 <article key={name} className="ops-catalog-card interactive">
                   <Brackets />
                   <div className="ops-card-heading">
-                    <ServiceImageIcon image={runtime?.image || service.image} />
+                    <ServiceImageIcon
+                      image={runtime?.image || service.image}
+                      actions={service.actions}
+                    />
                     <Status value={serviceHealth.status} small />
                     <div className="ops-card-actions">
                       <RenameResource application={app} service={name} />
