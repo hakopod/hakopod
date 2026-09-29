@@ -33,15 +33,13 @@ func (s *Server) authorizedActionsPool(w http.ResponseWriter, r *http.Request, p
 	if !ok {
 		return store.ActionsPool{}, false
 	}
-	pools, err := s.Store.ActionsPools(r.Context(), a.ID)
+	pool, err := s.Store.ActionsPool(r.Context(), a.ID, r.PathValue("service"))
 	if err != nil {
 		authFailure(w, err)
 		return store.ActionsPool{}, false
 	}
-	for _, pool := range pools {
-		if pool.Service == r.PathValue("service") {
-			return pool, true
-		}
+	if pool != nil {
+		return *pool, true
 	}
 	problem(w, 404, "not_found", "This runner pool is no longer available.")
 	return store.ActionsPool{}, false
@@ -117,7 +115,12 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		job, e := client.AssignedJob(ctx, item.Observation, item.RunnerID, "hakopod-"+item.SlotID)
+		var job *actions.Job
+		if item.Job != nil && item.Job.ID > 0 {
+			job, e = client.AssignedJobID(ctx, item.Observation, item.RunnerID, "hakopod-"+item.SlotID, item.Job.ID)
+		} else {
+			job, e = client.AssignedJob(ctx, item.Observation, item.RunnerID, "hakopod-"+item.SlotID)
+		}
 		if e != nil {
 			state, message = workflowState(e)
 			break
@@ -215,7 +218,20 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Always revalidate with GitHub before requesting a completed log body.
-	job, err := client.AssignedJob(ctx, selected.Observation, selected.RunnerID, "hakopod-"+selected.SlotID)
+	known := selected.Job != nil && selected.Job.ID > 0
+	release, err := client.PrepareWorkflowLogs(ctx, known)
+	if err != nil {
+		state, message := workflowState(err)
+		respond(nil, false, "github", state, message)
+		return
+	}
+	defer release()
+	var job *actions.Job
+	if known {
+		job, err = client.AssignedJobID(ctx, selected.Observation, selected.RunnerID, "hakopod-"+selected.SlotID, selected.Job.ID)
+	} else {
+		job, err = client.AssignedJob(ctx, selected.Observation, selected.RunnerID, "hakopod-"+selected.SlotID)
+	}
 	if err != nil {
 		state, message := workflowState(err)
 		respond(nil, false, "github", state, message)

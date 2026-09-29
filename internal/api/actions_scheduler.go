@@ -13,6 +13,16 @@ import (
 
 const actionsWorkers = 4
 
+type actionsWarmupKey struct{}
+type actionsWarmup struct{ pending bool }
+
+func (*actionsWarmup) Error() string { return "Runner pool still has empty job slots" }
+func requestActionsWarmup(ctx context.Context) {
+	if warm, ok := ctx.Value(actionsWarmupKey{}).(*actionsWarmup); ok {
+		warm.pending = true
+	}
+}
+
 type actionsSchedule interface {
 	NextActionsPool(context.Context) (*store.ActionsPoolWork, error)
 	CompleteActionsPool(context.Context, store.ActionsPoolWork, time.Time, bool) error
@@ -46,6 +56,11 @@ func runActionsWorkersWithClock(ctx context.Context, schedule actionsSchedule, r
 				next := now().Add(10 * time.Second)
 				var retry *actions.RetryError
 				progress := err == nil
+				var warm *actionsWarmup
+				if errors.As(err, &warm) {
+					next = now().Add(time.Second)
+					progress = true
+				}
 				if errors.As(err, &retry) {
 					next = maxTime(now().Add(time.Second), retry.At)
 					progress = retry.Progress
@@ -67,6 +82,8 @@ func maxTime(a, b time.Time) time.Time {
 }
 
 func (s *Server) reconcileScheduledActions(ctx context.Context, p store.ActionsPool) error {
+	warm := &actionsWarmup{}
+	ctx = context.WithValue(ctx, actionsWarmupKey{}, warm)
 	claim, err := s.Store.ClaimActions(ctx, p.ApplicationID)
 	if err != nil || claim == nil {
 		return err
@@ -74,27 +91,29 @@ func (s *Server) reconcileScheduledActions(ctx context.Context, p store.ActionsP
 	defer claim.Release()
 	// Re-read under the application lock so a queued task cannot restore an old
 	// deployment's pool configuration or scope.
-	pools, err := s.Store.ActionsPools(ctx, p.ApplicationID)
+	fresh, err := s.Store.ActionsPool(ctx, p.ApplicationID, p.Service)
+	if err != nil || fresh == nil {
+		return err
+	}
+	p = *fresh
+	t := actionsTarget(p)
+	t.BeforeStep = claim.Check
+	err = s.reconcileActionsPool(ctx, t, p)
 	if err != nil {
-		return err
-	}
-	for _, fresh := range pools {
-		if fresh.Service != p.Service {
-			continue
+		// Persist a safe explanation even when the reconciliation timed out.
+		message, done := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		text := safeActionsError(err)
+		var retry *actions.RetryError
+		if errors.As(err, &retry) && retry.Local {
+			text = ""
 		}
-		p = fresh
-		t := actionsTarget(p)
-		t.BeforeStep = claim.Check
-		err = s.reconcileActionsPool(ctx, t, p)
-		if err != nil {
-			// Persist a safe explanation even when the reconciliation timed out.
-			message, done := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-			_ = s.Store.ActionsMessage(message, p, safeActionsError(err))
-			done()
-		}
-		return err
+		_ = s.Store.ActionsMessage(message, p, text)
+		done()
 	}
-	return nil
+	if err == nil && warm.pending {
+		return warm
+	}
+	return err
 }
 
 func (s *Server) actionsProvider(ctx context.Context, t cluster.Target, credential string) (*actions.Client, error) {

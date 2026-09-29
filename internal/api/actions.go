@@ -95,8 +95,11 @@ func safeActionsError(err error) string {
 	return "Runner reconciliation is waiting for GitHub, its scoped credential, or the sandbox. Cleanup will retry automatically."
 }
 func actionsNotFound(err error) bool {
+	if errors.Is(err, actions.ErrRunnerAbsent) {
+		return true
+	}
 	var status *actions.StatusError
-	return errors.As(err, &status) && status.Status == 404
+	return errors.As(err, &status) && status.Status == 404 && !status.Scope
 }
 
 func (s *Server) runnerClient(ctx context.Context, t cluster.Target, config spec.Service) (runnerProvider, error) {
@@ -145,15 +148,64 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 		}
 		if found != nil {
 			id = found.ID
+			if err = s.Store.UpdateActionsSlot(ctx, v.ID, id, "cleanup"); err != nil {
+				return false, err
+			}
 		}
 	}
 	if id > 0 {
+		release := func() {}
+		providerGone := false
+		if !force {
+			if reserved, ok := c.(interface {
+				PrepareCleanup(context.Context, actions.Target, int64) (func(), error)
+			}); ok {
+				var err error
+				release, err = reserved.PrepareCleanup(ctx, v.Config.Actions.Target(), id)
+				if err != nil {
+					return false, err
+				}
+				defer release()
+			}
+			var current actions.Runner
+			var err error
+			if fresh, ok := c.(interface {
+				GetKnownFresh(context.Context, actions.Target, int64, string) (actions.Runner, error)
+			}); ok {
+				current, err = fresh.GetKnownFresh(ctx, v.Config.Actions.Target(), id, "hakopod-"+v.ID)
+			} else {
+				current, err = c.Get(ctx, v.Config.Actions.Target(), id)
+			}
+			if err != nil && !actionsNotFound(err) {
+				return false, err
+			}
+			if actionsNotFound(err) {
+				if !errors.Is(err, actions.ErrRunnerAbsent) {
+					found, e := c.Find(ctx, v.Config.Actions.Target(), "hakopod-"+v.ID)
+					if e != nil {
+						return false, e
+					}
+					if found != nil {
+						return false, nil
+					}
+				}
+				providerGone = true
+			}
+			// A failed deletion leaves the runner able to accept another job.
+			// Revalidate on every cleanup retry, including persisted cleanup intent.
+			if err == nil && current.Busy {
+				return false, nil
+			}
+		}
 		if err := actionsFence(ctx, t); err != nil {
 			return false, err
 		}
-		if err := c.Delete(ctx, v.Config.Actions.Target(), id); err != nil {
-			return false, err
+		if !providerGone {
+			if err := c.Delete(ctx, v.Config.Actions.Target(), id); err != nil {
+				return false, err
+			}
 		}
+		release()
 	}
 	gone, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID)
 	if err != nil || !gone {
@@ -211,6 +263,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err = s.startActionsSlot(ctx, t, p); err != nil {
 			return err
 		}
+		requestActionsWarmup(ctx)
 		return s.Store.ActionsMessage(ctx, p, "")
 	}
 	for _, v := range slots {
@@ -234,7 +287,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		retire := p.Removed || p.Config.Suspended || !allowed || !spec.IsCurrentActionsRunnerImage(v.Config.Image) || !sameActionsConfig(v.Config, p.Config) || retained >= desired
 		// An intent survives a lost registration response. Recover and remove it
 		// by its persisted unique name before creating another registration.
-		if v.Phase == "intent" || v.Phase == "cleanup" || phase == "Succeeded" || phase == "Failed" || phase == "deleting" || (phase == "missing" && v.Phase != "starting") {
+		if retire || v.Phase == "intent" || v.Phase == "cleanup" || phase == "Succeeded" || phase == "Failed" || phase == "deleting" || (phase == "missing" && v.Phase != "starting") {
 			gone, err := s.cleanupActionsSlot(ctx, t, p, v, client, p.Removed)
 			if err != nil {
 				return err
@@ -244,8 +297,24 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 			}
 			continue
 		}
-		runner, err := client.Get(ctx, v.Config.Actions.Target(), v.RunnerID)
+		var runner actions.Runner
+		if observer, ok := client.(interface {
+			ObserveRunner(context.Context, actions.Target, int64, string, bool) (actions.Runner, error)
+		}); ok {
+			runner, err = observer.ObserveRunner(ctx, v.Config.Actions.Target(), v.RunnerID, "hakopod-"+v.ID, v.Phase == "starting")
+		} else {
+			runner, err = client.Get(ctx, v.Config.Actions.Target(), v.RunnerID)
+		}
 		if actionsNotFound(err) {
+			if !errors.Is(err, actions.ErrRunnerAbsent) {
+				found, e := client.Find(ctx, v.Config.Actions.Target(), "hakopod-"+v.ID)
+				if e != nil {
+					return e
+				}
+				if found != nil {
+					return errors.New("GitHub runner presence is waiting for a consistent status")
+				}
+			}
 			gone, e := s.cleanupActionsSlot(ctx, t, p, v, client, true)
 			if e != nil {
 				return e
@@ -257,26 +326,6 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		}
 		if err != nil {
 			return err
-		}
-		if retire && !runner.Busy {
-			gone, err := s.cleanupActionsSlot(ctx, t, p, v, client, false)
-			if err != nil {
-				return err
-			}
-			if gone {
-				remaining--
-			}
-			continue
-		}
-		if p.Removed {
-			gone, err := s.cleanupActionsSlot(ctx, t, p, v, client, true)
-			if err != nil {
-				return err
-			}
-			if gone {
-				remaining--
-			}
-			continue
 		}
 		if phase == "missing" {
 			exists, e := s.actionRuntime().HasActionsConfig(ctx, t, v.ID)
@@ -301,7 +350,10 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if runner.Busy {
 			state = "busy"
 		}
-		if err = s.Store.UpdateActionsSlot(ctx, v.ID, v.RunnerID, state); err != nil {
+		if state == "starting" {
+			requestActionsWarmup(ctx)
+		}
+		if err = s.Store.ObserveActionsSlot(ctx, v.ID, v.RunnerID, state, runner.ObservedAt); err != nil {
 			return err
 		}
 		if !retire {
@@ -329,6 +381,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err = s.startActionsSlot(ctx, t, p); err != nil {
 			return err
 		}
+		requestActionsWarmup(ctx)
 	}
 	return s.Store.ActionsMessage(ctx, p, "")
 }
@@ -344,10 +397,11 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 	if err != nil {
 		return err
 	}
+	release := func() {}
 	if reserving, ok := client.(interface {
 		PrepareRegistration(context.Context, actions.Target) (func(), error)
 	}); ok {
-		release, err := reserving.PrepareRegistration(ctx, p.Config.Actions.Target())
+		release, err = reserving.PrepareRegistration(ctx, p.Config.Actions.Target())
 		if err != nil {
 			return err
 		}
@@ -367,6 +421,7 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 	if err != nil {
 		return err
 	}
+	release()
 	if err = actionsFence(ctx, t); err != nil {
 		return err
 	}
@@ -384,46 +439,40 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 	if config.Suspended {
 		result.Desired = 0
 	}
-	pools, err := s.Store.ActionsPools(ctx, t.ApplicationID)
+	p, err := s.Store.ActionsPool(ctx, t.ApplicationID, name)
 	if err != nil {
 		return result, err
 	}
-	found := false
-	for _, p := range pools {
-		if p.Service != name {
-			continue
-		}
-		found = true
-		result.Message = p.Message
-		slots, e := s.Store.ActionsSlots(ctx, t.ApplicationID, name)
-		if e != nil {
-			return result, e
-		}
-		observer, ok := s.actionRuntime().(actionsImageRuntime)
-		if !ok {
-			return result, fmt.Errorf("runner image observation is unavailable")
-		}
-		result.Images, e = observer.ActionsPodImages(ctx, t, name)
-		if e != nil {
-			return result, e
-		}
-		if len(result.Images) == 1 {
-			result.Image = result.Images[0]
-		}
-		for _, v := range slots {
-			if sameActionsConfig(v.Config, config) && (v.Phase == "online" || v.Phase == "busy") && time.Since(v.UpdatedAt) < 2*time.Minute {
-				result.Ready++
-			}
-		}
-		if config.Suspended && len(slots) == 0 {
-			result.Status = "stopped"
-		}
-		if !config.Suspended && result.Ready >= result.Desired && p.Message == "" {
-			result.Status = "ready"
+	if p == nil {
+		result.Status = "missing"
+		return result, nil
+	}
+	result.Message = p.Message
+	slots, err := s.Store.ActionsSlots(ctx, t.ApplicationID, name)
+	if err != nil {
+		return result, err
+	}
+	observer, ok := s.actionRuntime().(actionsImageRuntime)
+	if !ok {
+		return result, fmt.Errorf("runner image observation is unavailable")
+	}
+	result.Images, err = observer.ActionsPodImages(ctx, t, name)
+	if err != nil {
+		return result, err
+	}
+	if len(result.Images) == 1 {
+		result.Image = result.Images[0]
+	}
+	for _, v := range slots {
+		if sameActionsConfig(v.Config, config) && (v.Phase == "online" || v.Phase == "busy") && time.Since(v.UpdatedAt) < 2*time.Minute {
+			result.Ready++
 		}
 	}
-	if !found {
-		result.Status = "missing"
+	if config.Suspended && len(slots) == 0 {
+		result.Status = "stopped"
+	}
+	if !config.Suspended && result.Ready >= result.Desired && p.Message == "" {
+		result.Status = "ready"
 	}
 	return result, nil
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,7 +45,34 @@ func (s *Store) RequireActions(ctx context.Context, project, env string) error {
 }
 
 func (s *Store) ActionsPools(ctx context.Context, application string) ([]ActionsPool, error) {
-	return s.ActionsPoolsPage(ctx, application, "", "")
+	if application == "" {
+		return s.ActionsPoolsPage(ctx, application, "", "")
+	}
+	// Current services must remain visible when failed cleanup accumulates more
+	// retired pools than the bounded history window. Fleet keyset order is separate.
+	rows, err := s.Pool.Query(ctx, `SELECT application_id,service,project,environment,application_name,revision,config,removed,message,updated_at FROM actions_pools WHERE application_id=$1 ORDER BY removed,service LIMIT 200`, application)
+	if err != nil {
+		return nil, err
+	}
+	return scanActionsPools(rows)
+}
+
+// ActionsPool rereads one leased service without depending on inventory pages.
+// Historical removed pools may outnumber a single bounded page.
+func (s *Store) ActionsPool(ctx context.Context, application, service string) (*ActionsPool, error) {
+	p := &ActionsPool{}
+	var data []byte
+	err := s.Pool.QueryRow(ctx, `SELECT application_id,service,project,environment,application_name,revision,config,removed,message,updated_at FROM actions_pools WHERE application_id=$1 AND service=$2`, application, service).Scan(&p.ApplicationID, &p.Service, &p.Project, &p.Environment, &p.ApplicationName, &p.Revision, &data, &p.Removed, &p.Message, &p.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(data, &p.Config); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (s *Store) ActionsPoolsPage(ctx context.Context, application, afterApplication, afterService string) ([]ActionsPool, error) {
@@ -52,15 +80,19 @@ func (s *Store) ActionsPoolsPage(ctx context.Context, application, afterApplicat
 	if err != nil {
 		return nil, err
 	}
+	return scanActionsPools(rows)
+}
+
+func scanActionsPools(rows pgx.Rows) ([]ActionsPool, error) {
 	defer rows.Close()
 	out := []ActionsPool{}
 	for rows.Next() {
 		var p ActionsPool
 		var data []byte
-		if err = rows.Scan(&p.ApplicationID, &p.Service, &p.Project, &p.Environment, &p.ApplicationName, &p.Revision, &data, &p.Removed, &p.Message, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ApplicationID, &p.Service, &p.Project, &p.Environment, &p.ApplicationName, &p.Revision, &data, &p.Removed, &p.Message, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
-		if err = json.Unmarshal(data, &p.Config); err != nil {
+		if err := json.Unmarshal(data, &p.Config); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -122,6 +154,16 @@ func (s *Store) NewActionsSlot(ctx context.Context, p ActionsPool) (ActionsSlot,
 }
 func (s *Store) UpdateActionsSlot(ctx context.Context, id string, runner int64, phase string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET runner_id=$2,phase=$3,updated_at=now() WHERE id=$1`, id, runner, phase)
+	return err
+}
+
+// Cached provider observations retain their original timestamp. Reading a
+// snapshot again must never turn old GitHub data into a fresh health report.
+func (s *Store) ObserveActionsSlot(ctx context.Context, id string, runner int64, phase string, observedAt time.Time) error {
+	if observedAt.IsZero() {
+		return s.UpdateActionsSlot(ctx, id, runner, phase)
+	}
+	_, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET runner_id=$2,phase=$3,updated_at=$4 WHERE id=$1`, id, runner, phase, observedAt)
 	return err
 }
 func (s *Store) DeleteActionsSlot(ctx context.Context, id string) error {

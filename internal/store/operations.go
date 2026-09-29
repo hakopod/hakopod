@@ -405,6 +405,14 @@ func releaseClaimConnection(conn *pgxpool.Conn) {
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock_all()"); err != nil {
 		// Never return a possibly locked live connection to the shared pool.
 		_ = conn.Conn().Close(ctx)
+		// Query cancellation marks pgx closed before its asynchronous socket
+		// cleanup finishes. Wait within the existing release deadline so worker
+		// shutdown does not leave that session holding an application claim.
+		select {
+		case <-conn.Conn().PgConn().CleanupDone():
+		case <-ctx.Done():
+			_ = conn.Conn().PgConn().Conn().Close()
+		}
 	}
 	conn.Release()
 }
