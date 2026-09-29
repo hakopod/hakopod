@@ -108,12 +108,13 @@ func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 		p.Spec.NodeSelector = map[string]string{"kubernetes.io/arch": s.Architecture}
 	}
 	if s.NodeName != "" {
-		p.Spec.NodeSelector = map[string]string{"kubernetes.io/hostname": s.NodeName}
-		if s.Architecture != "" {
-			p.Spec.NodeSelector["kubernetes.io/arch"] = s.Architecture
-		}
+		pinActionsNode(&p.Spec, s.NodeName)
 	}
 	return p
+}
+
+func pinActionsNode(pod *corev1.PodSpec, name string) {
+	pod.Affinity = &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchFields: []corev1.NodeSelectorRequirement{{Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{name}}}}}}}}
 }
 
 func (c *Client) SaveActionsConfig(ctx context.Context, t Target, service, id, config string) error {
@@ -143,11 +144,17 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 	if err != nil {
 		return err
 	}
+	selectedNode := s.NodeName
 	if policy != nil {
+		if selectedNode != "" && selectedNode != policy.NodeName {
+			return fmt.Errorf("selected Managed Actions node conflicts with the node allocated by the runtime")
+		}
+		selectedNode = policy.NodeName
 		copy := *policy
 		copy.RuntimeClass = ActionsRuntime
 		copy.MemoryRequest = ""
 		applyWorkloadPolicy(&copy, &p.Spec)
+		pinActionsNode(&p.Spec, selectedNode)
 	}
 	p.Spec.NodeSelector = mergeActionsSelector(p.Spec.NodeSelector)
 	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: labels.SelectorFromSet(p.Spec.NodeSelector).String(), Limit: 500})
@@ -156,6 +163,9 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 	}
 	ready := false
 	for _, n := range nodes.Items {
+		if selectedNode != "" && n.Name != selectedNode {
+			continue
+		}
 		ready = ready || actionsNodeReady(n)
 	}
 	if !ready {

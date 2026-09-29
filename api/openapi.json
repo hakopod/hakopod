@@ -14026,6 +14026,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "runtime",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "actions"
+              ]
+            },
+            "description": "Include Managed Actions sandbox readiness when determining whether a node is available. Omit for ordinary workload placement."
           }
         ],
         "responses": {

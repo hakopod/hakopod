@@ -108,6 +108,11 @@ func (s *Server) placementNodes(w http.ResponseWriter, r *http.Request) {
 		failure(w, store.ErrForbidden)
 		return
 	}
+	runtime := r.URL.Query().Get("runtime")
+	if len(r.URL.Query()["runtime"]) > 1 || runtime != "" && runtime != "actions" {
+		problem(w, 400, "invalid_runtime", "Placement runtime must be actions when specified.")
+		return
+	}
 	if s.Cluster == nil {
 		problem(w, 503, "cluster_unavailable", "Node placement is unavailable.")
 		return
@@ -115,7 +120,7 @@ func (s *Server) placementNodes(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	target := cluster.Target{Project: project, Environment: environment, Spec: spec.Application{Name: application}}
-	nodes, err := s.Cluster.PlacementNodes(ctx, target)
+	nodes, err := s.Cluster.PlacementNodesForRuntime(ctx, target, runtime)
 	if err != nil {
 		problem(w, 503, "placement_unavailable", "Could not load the nodes available in this environment.")
 		return

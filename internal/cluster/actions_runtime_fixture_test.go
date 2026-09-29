@@ -40,6 +40,7 @@ func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
 		}
 		target.Project = "actions-development-fixture"
 		s := target.Spec.Services["runner"]
+		s.NodeName = "k3d-hakopod-dev-server-0"
 		s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
 		s.Actions.TimeoutMinutes = 24
 		s.Actions.WorkspaceSizeGiB = 8
@@ -109,6 +110,15 @@ func TestActionsRuntimeImageObservationLive(t *testing.T) {
 	case "running":
 		if len(images) != 1 || !strings.Contains(images[0], "ghcr.io/hakopod/actions-runner") || !strings.Contains(images[0], "@sha256:") {
 			t.Fatalf("expected one observed running managed image, got %v", images)
+		}
+		nodes, err := c.PlacementNodesForRuntime(ctx, target, "actions")
+		if err != nil || len(nodes) != 1 || nodes[0].Name != "k3d-hakopod-dev-server-0" || !nodes[0].Available {
+			t.Fatalf("named development node is not an eligible runner target: %v %v", nodes, err)
+		}
+		service := target.Spec.Services["runner"]
+		service.NodeName = "hakopod-actions-deliberately-missing-fixture"
+		if err := c.StartActionsPod(ctx, target, "runner", "missing-placement", service); err == nil || !strings.Contains(err.Error(), "No ready Managed Actions node matches") {
+			t.Fatalf("missing selected node did not fail before registration/pod creation: %v", err)
 		}
 	case "absent":
 		if len(images) != 0 {

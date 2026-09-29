@@ -48,6 +48,15 @@ func nodeUnavailable(node corev1.Node, policy *WorkloadPolicy, gpu bool) string 
 }
 
 func (c *Client) PlacementNodes(ctx context.Context, t Target) ([]PlacementNode, error) {
+	return c.PlacementNodesForRuntime(ctx, t, "")
+}
+
+// PlacementNodesForRuntime preserves the trusted allocation boundary while
+// describing additional runtime requirements for the same bounded inventory.
+func (c *Client) PlacementNodesForRuntime(ctx context.Context, t Target, runtime string) ([]PlacementNode, error) {
+	if runtime != "" && runtime != "actions" {
+		return nil, fmt.Errorf("unsupported placement runtime")
+	}
 	p, err := c.workloadPolicy(ctx, t)
 	if err != nil {
 		return nil, err
@@ -69,9 +78,22 @@ func (c *Client) PlacementNodes(ctx context.Context, t Target) ([]PlacementNode,
 			continue
 		}
 		reason := nodeUnavailable(n, p, false)
+		if runtime == "actions" {
+			reason = actionsNodeUnavailable(n, p)
+		}
 		out = append(out, PlacementNode{Name: n.Name, Architecture: n.Labels["kubernetes.io/arch"], Available: reason == "", Reason: reason})
 	}
 	return out, nil
+}
+
+func actionsNodeUnavailable(node corev1.Node, policy *WorkloadPolicy) string {
+	if reason := nodeUnavailable(node, policy, false); reason != "" {
+		return reason
+	}
+	if node.Labels["hakopod.io/actions-runtime"] != "ready" {
+		return "Managed Actions sandbox is not ready on this node"
+	}
+	return ""
 }
 
 func matchNodeRequirements(reqs []corev1.NodeSelectorRequirement, values map[string]string) bool {
@@ -139,7 +161,11 @@ func (c *Client) validatePlacement(ctx context.Context, t Target) error {
 		if err != nil {
 			return err
 		}
-		if reason := nodeUnavailable(*n, p, svc.GPU != nil); reason != "" {
+		reason := nodeUnavailable(*n, p, svc.GPU != nil)
+		if svc.Actions != nil {
+			reason = actionsNodeUnavailable(*n, p)
+		}
+		if reason != "" {
 			return fmt.Errorf("services.%s.node_name: %s", name, reason)
 		}
 		if svc.Architecture != "" && n.Labels["kubernetes.io/arch"] != svc.Architecture {

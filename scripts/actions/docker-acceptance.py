@@ -241,6 +241,7 @@ def main():
     started = time.monotonic()
     apply(fixtures['workload'])
     startup = wait_for(workload_ns, lambda pod: any(event['phase'] == 'sandbox-boundary' for event in logs(workload_ns, 'workload')), timeout=360)
+    assert startup['spec'].get('nodeName') == NODE, 'runner did not use the explicitly selected node'
     record('runner-and-docker-ready', started, includes_pinned_image_pulls=True, pod_timings=startup_timings(startup))
     boundary_checks(workload_ns)
     started = time.monotonic()

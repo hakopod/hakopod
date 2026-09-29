@@ -31,6 +31,7 @@ schemas["Service"]["properties"]["node_name"] = {**S,"maxLength":253,"descriptio
 schemas["PlacementNode"] = obj({"name":S,"architecture":S,"available":B,"reason":S}, ["name","architecture","available","reason"])
 route("/placement/nodes", "get", "listPlacementNodes", obj({"items":array(ref("PlacementNode")),"serverless_available":B},["items","serverless_available"]), scope=True)
 paths["/placement/nodes"]["get"]["parameters"].append({"name":"application","in":"query","schema":S})
+paths["/placement/nodes"]["get"]["parameters"].append({"name":"runtime","in":"query","schema":{"type":"string","enum":["actions"]},"description":"Include Managed Actions sandbox readiness when determining whether a node is available. Omit for ordinary workload placement."})
 schemas["Serverless"] = obj({"min_replicas":{"type":"integer","minimum":0,"maximum":1,"default":0},"idle_seconds":{"type":"integer","minimum":30,"maximum":86400,"default":300},"startup_timeout_seconds":{"type":"integer","minimum":5,"maximum":300,"default":60},"request_timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":60},"max_concurrency":{"type":"integer","minimum":1,"maximum":64,"default":16}})
 schemas["Service"]["properties"]["serverless"] = ref("Serverless")
 
