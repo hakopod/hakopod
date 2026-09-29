@@ -140,6 +140,13 @@ jobs:
           python3 scripts/actions/setup-dev-runtime.py
           sleep 10
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+          python3 - <<'PYRUNTIME'
+          import json,subprocess
+          runtime={'apiVersion':'node.k8s.io/v1','kind':'RuntimeClass','metadata':{'name':'hakopod-actions','labels':{'app.kubernetes.io/managed-by':'hakopod'}},'handler':'hakopod-actions','scheduling':{'nodeSelector':{'hakopod.io/actions-runtime':'ready'}},'overhead':{'podFixed':{'cpu':'100m','memory':'512Mi'}}}
+          kube=['kubectl','--kubeconfig','.local/kubeconfig','--context','k3d-hakopod-dev']
+          subprocess.run(kube+['create','-f','-'],input=json.dumps(runtime),text=True,check=True)
+          subprocess.run(kube+['label','node','k3d-hakopod-dev-server-0','hakopod.io/actions-runtime=ready'],check=True)
+          PYRUNTIME
       - name: Verify live masked output and completed GitHub logs
         env:
           FIXTURE_JSON: ${{ secrets[inputs.jit_secret] }}
