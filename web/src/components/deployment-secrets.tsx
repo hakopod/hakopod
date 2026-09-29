@@ -7,6 +7,7 @@ import { Textarea } from './ui/textarea'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Note, RequestError } from './shared'
+import { ManagedActionsTokenHelp } from './managed-actions-token-help'
 
 // Shared by raw TOML, Compose, source imports and built-image review. Values
 // stay in this form only, never in TOML, query caches or deployment history.
@@ -38,12 +39,6 @@ export function DeploymentSecrets({
     name && service.actions && service.actions.credential === name ? [service.actions] : [],
   )
   const providerCredential = runnerCredentials.length > 0
-  const runnerPermissions = [
-    runnerCredentials.some((actions) => actions.organization) && 'organization Self-hosted runners',
-    runnerCredentials.some((actions) => actions.repository) && 'repository Administration',
-  ]
-    .filter(Boolean)
-    .join(' and ')
   useEffect(() => {
     setValue('')
     setError('')
@@ -167,10 +162,10 @@ export function DeploymentSecrets({
             </Button>
           </div>
           {providerCredential ? (
-            <Note>
-              Supply a GitHub token with {runnerPermissions} read and write permission. A randomly
-              generated password cannot authenticate to GitHub.
-            </Note>
+            <ManagedActionsTokenHelp
+              organization={runnerCredentials.some((actions) => Boolean(actions.organization))}
+              repository={runnerCredentials.some((actions) => Boolean(actions.repository))}
+            />
           ) : (
             <details>
               <summary className="min-h-11 cursor-pointer py-3">

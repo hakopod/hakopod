@@ -48,11 +48,11 @@ test('ordinary service review survives saving the final missing secret', () => {
   const plan = { ...ordinaryPlan, required_secrets: ['database-password'] }
   const missing = render({ ...plan, missing_secrets: ['database-password'] })
   assert.match(missing, /Generate and save/)
-  assert.doesNotMatch(missing, /Supply a GitHub token/)
+  assert.doesNotMatch(missing, /How to create the GitHub token/)
   for (const missing_secrets of [[], undefined]) {
     const saved = render({ ...plan, missing_secrets })
     assert.match(saved, /All referenced application secrets are saved/)
-    assert.doesNotMatch(saved, /Generate and save|Supply a GitHub token/)
+    assert.doesNotMatch(saved, /Generate and save|How to create the GitHub token/)
   }
 })
 
@@ -77,7 +77,9 @@ test('mixed runner and ordinary services retain scoped token instructions and pr
     missing_secrets: ['github-token'],
   }
   const missing = render(plan)
-  assert.match(missing, /organization Self-hosted runners and repository Administration/)
+  assert.match(missing, /Self-hosted runners: Read and write/)
+  assert.match(missing, /Administration: Read and write/)
+  assert.match(missing, /Actions: Read-only/)
   assert.doesNotMatch(missing, /Generate and save/)
   assert.match(
     render({ ...plan, missing_secrets: [] }),

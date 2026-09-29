@@ -13,6 +13,7 @@ import { SelectField } from './ui/select'
 import { FormPage, FormSection } from './form-page'
 import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { DeploymentSecrets } from './deployment-secrets'
+import { ManagedActionsTokenHelp } from './managed-actions-token-help'
 import { DiffTable } from './deploy-dialog'
 import { serviceResources } from '../lib/service-resources'
 import { runnerReservationLabel, type RunnerResources } from '../lib/runner-resources'
@@ -451,13 +452,12 @@ export function ManagedActionsForm({
                     onChange={(event) => setCredential(event.target.value)}
                   />
                 </label>
+                <ManagedActionsTokenHelp
+                  organization={runnerScope === 'organization'}
+                  repository={runnerScope === 'repository'}
+                />
                 <p className="text-sm muted-text">
-                  Save a fine-grained GitHub token with{' '}
-                  {runnerScope === 'organization'
-                    ? 'organization Self-hosted runners: read and write'
-                    : 'repository Administration: read and write'}{' '}
-                  for this {runnerScope} during review. The token stays in the control plane; jobs
-                  receive only a single-job registration.
+                  You’ll save the token as this application secret during review.
                 </p>
               </FormSection>
               <FormSection title="Runner pool">
