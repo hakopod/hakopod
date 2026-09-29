@@ -360,7 +360,7 @@ export function ManagedActionsForm({
                       readOnly={!!application}
                       disabled={busy}
                       value={name}
-                      pattern="[a-z][a-z0-9-]{0,39}"
+                      pattern={'[a-z][a-z0-9\\-]{0,39}'}
                       maxLength={40}
                       onChange={(event) => setName(event.target.value)}
                     />
@@ -371,7 +371,7 @@ export function ManagedActionsForm({
                       required
                       disabled={!!original || busy}
                       value={runnerName}
-                      pattern="[a-z][a-z0-9-]{0,39}"
+                      pattern={'[a-z][a-z0-9\\-]{0,39}'}
                       maxLength={40}
                       onChange={(event) => setRunnerName(event.target.value)}
                     />
