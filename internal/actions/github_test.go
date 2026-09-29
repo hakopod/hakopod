@@ -180,3 +180,44 @@ func TestDefaultGroupDiscoveryFailsClosed(t *testing.T) {
 		server.Close()
 	}
 }
+
+func TestAmbiguousRegistrationRecoveryUsesPersistedNameInLargeFleet(t *testing.T) {
+	for _, target := range []Target{{Organization: "team"}, {Repository: "team/repo"}} {
+		t.Run(fmt.Sprint(target), func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Query().Get("name") != "hakopod-persisted" || r.URL.Query().Get("per_page") != "100" || r.URL.Query().Get("page") != "" {
+					t.Error("recovery scanned an unfiltered fleet", r.URL.RawQuery)
+				}
+				// Even a provider returning the fleet-wide total cannot force an
+				// unbounded scan when the exact persisted identity was returned.
+				fmt.Fprint(w, `{"total_count":100000,"runners":[{"id":99,"name":"hakopod-persisted"}]}`)
+			}))
+			defer server.Close()
+			for restart := 0; restart < 2; restart++ {
+				client, _ := New("fixture_persisted_registration_token")
+				client.base = server.URL
+				runner, err := client.Find(context.Background(), target, "hakopod-persisted")
+				if err != nil || runner == nil || runner.ID != 99 {
+					t.Fatal("large-fleet recovery failed", runner, err)
+				}
+			}
+			if calls != 2 {
+				t.Fatalf("recovery used %d requests after two simulated restarts", calls)
+			}
+		})
+	}
+}
+
+func TestNamedRecoveryDoesNotMistakeIgnoredFilterForAbsence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"total_count":100000,"runners":[{"id":99,"name":"unrelated"}]}`)
+	}))
+	defer server.Close()
+	client, _ := New("fixture_persisted_registration_token")
+	client.base = server.URL
+	if runner, err := client.Find(context.Background(), Target{Organization: "team"}, "hakopod-persisted"); err == nil || runner != nil {
+		t.Fatal("unrelated page incorrectly proved absence", runner, err)
+	}
+}
