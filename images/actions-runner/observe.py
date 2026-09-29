@@ -24,6 +24,7 @@ FIELDS = {'repository': 'GITHUB_REPOSITORY', 'workflow': 'GITHUB_WORKFLOW',
           'run_id': 'GITHUB_RUN_ID', 'run_number': 'GITHUB_RUN_NUMBER',
           'attempt': 'GITHUB_RUN_ATTEMPT', 'job_key': 'GITHUB_JOB',
           'branch': 'GITHUB_REF_NAME', 'sha': 'GITHUB_SHA'}
+MAX_RECORD = 16 * 1024
 
 
 def read_regular(path, limit, *, projected_config=False):
@@ -63,6 +64,13 @@ class Collector:
         self.last_metadata = 0
         self.total = 0
         self.truncated = False
+        self.redaction_incomplete = False
+
+    def withheld(self, message):
+        self.line += 1
+        self.redaction_incomplete = True
+        self.emit({'line': self.line, 'text': message,
+                   'truncated': True, 'redaction_incomplete': True})
 
     def tick(self):
         try:
@@ -105,11 +113,11 @@ class Collector:
                 if not stat.S_ISREG(os.fstat(fd).st_mode):
                     os.close(fd)
                     continue
-                self.files[path] = (os.fdopen(fd, 'rb', buffering=0), b'')
+                self.files[path] = (os.fdopen(fd, 'rb', buffering=0), b'', False)
             except OSError:
                 continue
         had_output = False
-        for path, (stream, pending) in list(self.files.items()):
+        for path, (stream, pending, dropping) in list(self.files.items()):
             data = stream.read(65536)
             had_output = had_output or bool(data)
             self.total += len(data)
@@ -118,22 +126,37 @@ class Collector:
                 self.emit({'truncated': True})
                 break
             pending += data
-            while b'\n' in pending or len(pending) > 16384:
-                split = pending.find(b'\n', 0, 16384)
-                split = split + 1 if split >= 0 else min(16384, len(pending))
-                line, pending = pending[:split], pending[split:]
+            while pending:
+                split = pending.find(b'\n')
+                if dropping:
+                    # Once a physical record is oversized, no later chunk of
+                    # it becomes a separate log line or an apparent mask value.
+                    if split < 0:
+                        pending = b''
+                        break
+                    pending, dropping = pending[split + 1:], False
+                    continue
+                if split < 0:
+                    if len(pending) > MAX_RECORD:
+                        self.withheld('[log line withheld: physical record exceeded 16 KiB]')
+                        pending, dropping = b'', True
+                    break
+                line, pending = pending[:split], pending[split + 1:]
+                if len(line) > MAX_RECORD:
+                    self.withheld('[log line withheld: physical record exceeded 16 KiB]')
+                    continue
                 self.line += 1
                 self.emit({'line': self.line, 'text': line.decode('utf-8-sig', errors='replace').rstrip('\r\n')})
-            self.files[path] = (stream, pending)
+            self.files[path] = (stream, pending, dropping)
             if not data and os.fstat(stream.fileno()).st_nlink == 0:
                 if pending:
-                    self.line += 1
-                    self.emit({'line': self.line, 'text': pending.decode('utf-8-sig', errors='replace')})
+                    self.withheld('[incomplete log line withheld]')
                 stream.close()
                 self.closed.add(path)
                 del self.files[path]
         if self.metadata and had_output:
-            self.emit({'job': self.metadata, 'truncated': self.truncated})
+            self.emit({'job': self.metadata, 'truncated': self.truncated or self.redaction_incomplete,
+                       'redaction_incomplete': self.redaction_incomplete})
 
 
 def run():
@@ -173,7 +196,9 @@ def run():
     except (OSError, ValueError):
         pass
     if collector.metadata:
-        emit({'job': collector.metadata, 'finished': True, 'truncated': collector.truncated})
+        emit({'job': collector.metadata, 'finished': True,
+              'truncated': collector.truncated or collector.redaction_incomplete,
+              'redaction_incomplete': collector.redaction_incomplete})
     return code
 
 

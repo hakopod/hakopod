@@ -150,13 +150,21 @@ func (c *Client) QueryLogs(ctx context.Context, t Target, o LogQueryOptions, mat
 			result.Warnings = append(result.Warnings, "Container "+o.Container+" is absent in "+pod.Name)
 			continue
 		}
+		if managedRunnerDiagnostics(pod) {
+			result.Warnings = append(result.Warnings, "Runner diagnostics are private. Open the verified workflow logs for this job.")
+			continue
+		}
+		mask, err := c.podLogMasker(ctx, pod, o.Container)
+		if err != nil {
+			return result, fmt.Errorf("log redaction secrets are unavailable")
+		}
 		stream, err := c.kube.CoreV1().Pods(ns).GetLogs(pod.Name, &corev1.PodLogOptions{Container: o.Container, Previous: o.Previous, Timestamps: true, TailLines: &o.Tail, SinceSeconds: &o.SinceSeconds, LimitBytes: ptr(int64(1 << 20))}).Stream(ctx)
 		if err != nil {
 			result.Warnings = append(result.Warnings, "Logs are currently unavailable for "+pod.Name)
 			continue
 		}
 		result.Pods++
-		scanner := bufio.NewScanner(io.LimitReader(stream, 1<<20))
+		scanner := bufio.NewScanner(mask.TimestampedReader(io.LimitReader(stream, 1<<20)))
 		scanner.Buffer(make([]byte, 4096), 64<<10)
 		lines, totalBytes := 0, 0
 		for scanner.Scan() {

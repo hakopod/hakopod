@@ -144,8 +144,27 @@ func nativeRefresh(t *testing.T, s *Server, pool store.ActionsPool, slot store.A
 	return job
 }
 
+type nativeScopedCredentialRuntime struct {
+	*gitlabLifecycleFake
+	pool     store.ActionsPool
+	original *spec.Actions
+}
+
+func (f *nativeScopedCredentialRuntime) ActionsCredential(ctx context.Context, target cluster.Target, reference string) (string, error) {
+	f.t.Helper()
+	config, ok := target.Spec.Services[f.pool.Service]
+	if target.ApplicationID != f.pool.ApplicationID || target.Project != f.pool.Project || target.Environment != f.pool.Environment || target.Spec.Name != f.pool.ApplicationName || len(target.Spec.Services) != 1 || !ok {
+		f.t.Fatal("historical credential lookup escaped the owning application and service")
+	}
+	if !reflect.DeepEqual(config.Actions, f.original) {
+		f.t.Fatal("historical credential lookup substituted the current pool for the saved slot configuration")
+	}
+	return f.gitlabLifecycleFake.ActionsCredential(ctx, target, reference)
+}
+
 func TestNativeWorkflowDiscoveryHistoryAndOriginalCredentialBinding(t *testing.T) {
 	s, f, pool, slot, _, key := nativeWorkflowFixture(t)
+	s.actionsTestRuntime = &nativeScopedCredentialRuntime{gitlabLifecycleFake: f, pool: pool, original: slot.Config.Actions}
 	if h := nativeHistory(t, s, pool, slot); h.Job.NativeJob != nil || h.Job.DiscoveryState != "pending" {
 		t.Fatal("launch placeholder invented an assigned job")
 	}
@@ -175,8 +194,13 @@ func TestNativeWorkflowDiscoveryHistoryAndOriginalCredentialBinding(t *testing.T
 		t.Fatalf("history response = %d %s", response.Code, response.Body.String())
 	}
 	response = nativeRequest(handler, "GET", base+"/"+slot.ID+"/logs", key)
-	if response.Code != 200 || !strings.Contains(response.Body.String(), "development provider job trace") || !strings.Contains(response.Body.String(), `"source":"gitlab"`) || f.managerLogReads != 0 || f.traceCalls != 1 || !reflect.DeepEqual(f.credentials, []string{"original-jobs"}) {
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "development provider job trace") || !strings.Contains(response.Body.String(), `"source":"gitlab"`) || f.managerLogReads != 0 || f.traceCalls != 1 {
 		t.Fatalf("native logs did not preserve provider-only source and original scope: %d %s", response.Code, response.Body.String())
+	}
+	// Redaction resolves the original read and optional management credentials;
+	// the provider client separately resolves only the original read credential.
+	if want := []string{"original-jobs", "original-management", "original-jobs"}; !reflect.DeepEqual(f.credentials, want) {
+		t.Fatalf("historical log credential lookups = %v, want %v", f.credentials, want)
 	}
 }
 
@@ -244,6 +268,7 @@ func TestNativeHistoricalJobRequiresDurableCleanupAndRefreshesCompletion(t *test
 
 func TestNativeWorkflowLogAndCancellationAuthorization(t *testing.T) {
 	s, f, pool, slot, owner, _ := nativeWorkflowFixture(t)
+	s.actionsTestRuntime = &nativeScopedCredentialRuntime{gitlabLifecycleFake: f, pool: pool, original: slot.Config.Actions}
 	nativeRefresh(t, s, pool, slot)
 	ctx := context.Background()
 	changed := *pool.Config.Actions
@@ -278,6 +303,13 @@ func TestNativeWorkflowLogAndCancellationAuthorization(t *testing.T) {
 			if response.Code != test.logs || strings.Contains(response.Body.String(), gitlabLifecycleToken) {
 				t.Fatalf("logs authorization = %d %s", response.Code, response.Body.String())
 			}
+			if test.logs == 200 {
+				if want := []string{"original-jobs", "original-management", "original-jobs"}; !reflect.DeepEqual(f.credentials, want) {
+					t.Fatalf("authorized log credential lookups = %v, want %v", f.credentials, want)
+				}
+			} else if len(f.credentials) != 0 {
+				t.Fatal("denied log request resolved a provider credential", f.credentials)
+			}
 			f.credentials = nil
 			f.readFailure = true // Cancellation must use management access even if the read credential is revoked.
 			response = nativeRequest(handler, "POST", base+"/cancel", key)
@@ -287,6 +319,9 @@ func TestNativeWorkflowLogAndCancellationAuthorization(t *testing.T) {
 			}
 			if test.cancel == 202 && !reflect.DeepEqual(f.credentials, []string{"original-management"}) {
 				t.Fatal("cancellation used the optional read credential", f.credentials)
+			}
+			if test.cancel != 202 && len(f.credentials) != 0 {
+				t.Fatal("denied cancellation resolved a provider credential", f.credentials)
 			}
 		})
 	}

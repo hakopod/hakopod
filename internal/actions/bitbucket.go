@@ -34,6 +34,7 @@ type BitbucketClientOptions struct {
 
 type BitbucketClient struct {
 	target        ProviderTarget
+	logSecrets    []string
 	authorization string
 	http          *http.Client
 	budget        *RequestBudget
@@ -54,13 +55,14 @@ func NewBitbucketClient(target ProviderTarget, credential BitbucketCredential, o
 	if options.Budget == nil {
 		options.Budget = &RequestBudget{}
 	}
-	return &BitbucketClient{target: target, authorization: authorization, http: newBitbucketHTTP(), budget: options.Budget, budgetKey: sha256.Sum256([]byte("bitbucket\x00" + bitbucketOrigin + "\x00" + authorization))}, nil
+	return &BitbucketClient{target: target, authorization: authorization, logSecrets: []string{credential.AccessToken, credential.APIToken, authorization}, http: newBitbucketHTTP(), budget: options.Budget, budgetKey: sha256.Sum256([]byte("bitbucket\x00" + bitbucketOrigin + "\x00" + authorization))}, nil
 }
 
 func (c *BitbucketClient) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
-		Provider: ProviderBitbucket, Available: false,
+		Provider: ProviderBitbucket, Available: false, Lifecycle: "dedicated",
 		Reason:            "Bitbucket runner execution, safe drain and registration revocation are not yet qualified",
+		MinimumResources:  ProviderMinimumResources{CPURequest: "1", CPULimit: "1", MemoryRequest: "8Gi", MemoryLimit: "8Gi", WorkspaceGiB: 4},
 		Cache:             ProviderCacheCapabilities{Reason: "Native cache and artifact isolation are not yet qualified"},
 		Build:             ProviderBuildCapabilities{NativeArchitectures: []string{}, Reason: "Native and cross-architecture builds are not yet qualified"},
 		Isolation:         ProviderIsolationCapabilities{Reason: "The public runner API does not establish a safe single-job drain boundary"},

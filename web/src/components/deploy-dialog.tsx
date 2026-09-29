@@ -69,7 +69,7 @@ export function DeploymentForm({
     .map(([, service]) => service.actions)
     .find((actions) => actions && actionsNeedTOML(actions))
   const tomlOnlyReason = nativeActions
-    ? `${actionsProviderName(nativeActions)} runner settings are preserved in TOML. Managed execution is not available for this provider.`
+    ? `${actionsProviderName(nativeActions)} runner settings are preserved in TOML. Use the runner pool setup for guided provider configuration.`
     : undefined
   const features = useEditionFeatures()
   const scope = useScope()

@@ -23,7 +23,7 @@ def main():
     if version not in ("go version go1.26.8 linux/amd64", "go version go1.26.8 linux/arm64"):
         raise SystemExit("Use the qualified Go 1.26.8 Linux toolchain")
     files = [root / name for name in (
-        "source.lock.json", "transport.patch", "build-native.sh", "source-manifest.py", "Dockerfile", "LICENSE.upstream",
+        "source.lock.json", "transport.patch", "cache.patch", "build-native.sh", "source-manifest.py", "Dockerfile", "LICENSE.upstream",
     )]
     files.extend((root / "overlay").rglob("*.go.in"))
     manifest = {

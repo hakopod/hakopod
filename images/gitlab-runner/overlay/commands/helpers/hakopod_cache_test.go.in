@@ -1,0 +1,96 @@
+package helpers
+
+import (
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+func hakopodCachePolicyFixture(t *testing.T) *hakopodCachePolicy {
+	t.Helper()
+	p, err := parseHakopodCachePolicy(strings.NewReader(`{"schema_version":1,"origin":"https://cache.example.test","bucket":"runner-cache","prefix":"hakopod/v1/` + strings.Repeat("a", 64) + `","max_archive_bytes":1048576}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+type hakopodCacheTestTransport func(*http.Request) (*http.Response, error)
+
+func (f hakopodCacheTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestHakopodCacheRejectsRedirectsCredentialsAndOtherObjects(t *testing.T) {
+	p := hakopodCachePolicyFixture(t)
+	called := 0
+	base := hakopodCacheTestTransport(func(r *http.Request) (*http.Response, error) {
+		called++
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("JOB-TOKEN") != "" || r.Header.Get("Referer") != "" {
+			t.Fatal("unrelated credential forwarded")
+		}
+		return &http.Response{StatusCode: 200, ContentLength: 2, Body: io.NopCloser(strings.NewReader("ok")), Header: http.Header{}}, nil
+	})
+	transport := hakopodCacheTransport{base: base, policy: p}
+	good := p.Origin + "/" + p.Bucket + "/" + p.Prefix + "/project/12/key?X-Amz-Signature=synthetic"
+	req, _ := http.NewRequest(http.MethodGet, good, nil)
+	req.Header = http.Header{"Authorization": []string{"synthetic"}, "Cookie": []string{"synthetic"}, "Job-Token": []string{"synthetic"}, "Referer": []string{"synthetic"}}
+	res, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	for _, raw := range []string{strings.Replace(good, "https:", "http:", 1), strings.Replace(good, "cache.example.test", "other.example.test", 1), strings.Replace(good, "/runner-cache/", "/other-cache/", 1), strings.Replace(good, p.Prefix, "hakopod/v1/"+strings.Repeat("b", 64), 1), strings.Replace(good, "/12/key", "/12/%2e%2e/other", 1), strings.Replace(good, "/12/key", "/invalid/key", 1), strings.Replace(good, "/12/key", "/12/key#fragment", 1)} {
+		r, _ := http.NewRequest(http.MethodGet, raw, nil)
+		if _, err := transport.RoundTrip(r); err == nil {
+			t.Fatal("foreign cache request accepted")
+		}
+	}
+	if called != 1 {
+		t.Fatal("denied request reached network")
+	}
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		transport.base = hakopodCacheTestTransport(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{"Location": []string{good}}}, nil
+		})
+		if _, err := transport.RoundTrip(req); err == nil {
+			t.Fatal("redirect accepted")
+		}
+	}
+}
+
+func TestHakopodCacheSizeAndPolicyBounds(t *testing.T) {
+	p := hakopodCachePolicyFixture(t)
+	r, _ := http.NewRequest(http.MethodGet, p.Origin+"/"+p.Bucket+"/"+p.Prefix+"/project/12/key", nil)
+	for _, size := range []int64{-1, p.MaxArchiveBytes + 1} {
+		transport := hakopodCacheTransport{policy: p, base: hakopodCacheTestTransport(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, ContentLength: size, Body: io.NopCloser(strings.NewReader("body"))}, nil
+		})}
+		if _, err := transport.RoundTrip(r); err == nil {
+			t.Fatal("unbounded download accepted")
+		}
+	}
+	reader := &hakopodCacheBody{ReadCloser: io.NopCloser(strings.NewReader("12345")), remaining: 4}
+	if _, err := io.ReadAll(reader); err == nil {
+		t.Fatal("stream exceeded bound")
+	}
+	for _, raw := range []string{`{}`, `{"schema_version":1,"schema_version":1}`, `{"Schema_Version":1}`, strings.Repeat(" ", 4097)} {
+		if _, err := parseHakopodCachePolicy(strings.NewReader(raw)); err == nil {
+			t.Fatal("invalid policy accepted")
+		}
+	}
+}
+
+func TestHakopodCacheTransientUploadFailuresRetainBoundedNativeRetry(t *testing.T) {
+	for _, status := range []int{429, 500, 502, 503, 504} {
+		err := hakopodCacheUploadStatus(status)
+		if _, ok := err.(retryableError); !ok || strings.Contains(err.Error(), "Signature") {
+			t.Fatal("transient storage failure lost sanitized native retry")
+		}
+	}
+	for _, status := range []int{301, 302, 400, 401, 403, 404, 413} {
+		err := hakopodCacheUploadStatus(status)
+		if _, ok := err.(retryableError); ok || err == nil {
+			t.Fatal("policy or permanent storage failure became retryable")
+		}
+	}
+}

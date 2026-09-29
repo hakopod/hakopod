@@ -72,6 +72,25 @@ func gitlabActionsPod(t Target, service, id string, s spec.Service, registration
 		{Name: "registration", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: pod.Name, DefaultMode: ptr(int32(0440)), Items: []corev1.KeyToPath{{Key: "config.toml", Path: "config.toml"}}}}},
 		{Name: "transport-policy", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: pod.Name}, DefaultMode: ptr(int32(0444))}}},
 	}
+	policyItems := []corev1.KeyToPath{{Key: "transport-policy.json", Path: "transport-policy.json"}}
+	if len(runtime.CAPEM) > 0 {
+		policyItems = append(policyItems, corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"})
+	}
+	if s.Actions.Cache != nil {
+		policyItems = append(policyItems, corev1.KeyToPath{Key: "cache-policy.json", Path: "cache-policy.json"})
+		if len(runtime.Cache.CAPEM) > 0 {
+			policyItems = append(policyItems, corev1.KeyToPath{Key: "cache-ca.crt", Path: "cache-ca.crt"})
+		}
+	}
+	pod.Spec.Volumes[4].ConfigMap.Items = policyItems
+	if len(runtime.RegistryCAs) > 0 {
+		items := make([]corev1.KeyToPath, 0, len(runtime.RegistryCAs))
+		for i, ca := range runtime.RegistryCAs {
+			items = append(items, corev1.KeyToPath{Key: fmt.Sprintf("registry-ca-%d.crt", i), Path: ca.Registry + "/ca.crt"})
+		}
+		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: "registry-trust", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: pod.Name}, DefaultMode: ptr(int32(0444)), Items: items}}})
+		pod.Spec.InitContainers[1].VolumeMounts = append(pod.Spec.InitContainers[1].VolumeMounts, corev1.VolumeMount{Name: "registry-trust", MountPath: "/etc/docker/certs.d", ReadOnly: true})
+	}
 	return pod, nil
 }
 
@@ -99,6 +118,9 @@ func (c *Client) SaveGitLabActionsConfig(ctx context.Context, t Target, service,
 		return err
 	}
 	if err = c.gitlabActionsNamespace(ctx, t); err != nil {
+		return err
+	}
+	if err = c.RefreshGitLabActionsNetwork(ctx, t, service, id, runtime); err != nil {
 		return err
 	}
 	if err = beforeStep(ctx, t); err != nil {
@@ -160,8 +182,14 @@ func (c *Client) gitlabActionsPoliciesReady(ctx context.Context, t Target, servi
 }
 
 // StartGitLabActionsPod verifies decrypted original registration material before
-// creating a pod. This does not enable GitLab provider selection in the API.
+// creating a pod. Execution proof must match its original image and scope.
 func (c *Client) StartGitLabActionsPod(ctx context.Context, t Target, service, id string, s spec.Service, registration actions.GitLabManagerConfig, runtime GitLabActionsRuntime) error {
+	if err := ValidateGitLabActionsExecution(runtime, s.Actions != nil && s.Actions.Cache != nil); err != nil {
+		return err
+	}
+	if s.Actions == nil || validateGitLabExecutionScope(runtime, s.Actions.GitLab) != nil {
+		return errors.New("GitLab native execution has not qualified this runner scope")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	secret, public, err := gitlabActionsArtifacts(t, service, id, s, registration, runtime)
@@ -188,6 +216,9 @@ func (c *Client) StartGitLabActionsPod(ctx context.Context, t Target, service, i
 	policyTarget := t
 	policyTarget.policy = placement.policy
 	if err = c.gitlabActionsPoliciesReady(ctx, policyTarget, service); err != nil {
+		return err
+	}
+	if err = c.RefreshGitLabActionsNetwork(ctx, policyTarget, service, id, runtime); err != nil {
 		return err
 	}
 	pod, err := gitlabActionsPod(t, service, id, s, registration, runtime)
@@ -287,6 +318,9 @@ func (c *Client) DeleteGitLabActionsPolicy(ctx context.Context, t Target, id str
 		return errors.New("GitLab transport policy must remain until its runner pod is gone")
 	} else if !apierrors.IsNotFound(err) {
 		return errors.New("GitLab runner absence could not be verified")
+	}
+	if err := c.deleteGitLabSlotNetwork(ctx, t, id); err != nil {
+		return err
 	}
 	api := c.kube.CoreV1().ConfigMaps(namespace)
 	current, err := api.Get(ctx, name, metav1.GetOptions{})

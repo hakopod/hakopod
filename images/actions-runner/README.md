@@ -18,3 +18,9 @@ The image workflow publishes only tested main-branch builds. Each architecture
 gets a source-SHA tag, followed by one combined manifest. Pin that
 manifest's digest in the engine after publication. Existing busy jobs finish
 on their original image; replacement runners use the engine's current pin.
+
+The workflow observer forwards complete physical paging-log records up to
+16 KiB. It withholds longer records and incomplete suffixes, without splitting
+secret values across artificial lines. Any skipped record marks live redaction
+state incomplete; the API then withholds that live output and completed logs
+remain available from GitHub after the job finishes.

@@ -9,20 +9,21 @@ import (
 )
 
 type ActionsJob struct {
-	Provider         actions.Provider     `json:"provider,omitempty"`
-	ProviderRunnerID string               `json:"provider_runner_id,omitempty"`
-	NativeJob        *actions.ProviderJob `json:"native_job,omitempty"`
-	DiscoveryState   string               `json:"discovery_state,omitempty"`
-	ProviderRemoved  bool                 `json:"-"`
-	CanCancel        bool                 `json:"can_cancel,omitempty"`
-	ProviderConfig   *spec.Actions        `json:"-"`
-	CheckedAt        time.Time            `json:"-"`
-	SlotID           string               `json:"slot_id"`
-	RunnerID         int64                `json:"runner_id"`
-	Observation      actions.Observation  `json:"observation"`
-	Job              *actions.Job         `json:"job"`
-	CreatedAt        time.Time            `json:"created_at"`
-	UpdatedAt        time.Time            `json:"updated_at"`
+	EncryptedProviderIntent []byte               `json:"-"`
+	Provider                actions.Provider     `json:"provider,omitempty"`
+	ProviderRunnerID        string               `json:"provider_runner_id,omitempty"`
+	NativeJob               *actions.ProviderJob `json:"native_job,omitempty"`
+	DiscoveryState          string               `json:"discovery_state,omitempty"`
+	ProviderRemoved         bool                 `json:"-"`
+	CanCancel               bool                 `json:"can_cancel,omitempty"`
+	ProviderConfig          *spec.Actions        `json:"-"`
+	CheckedAt               time.Time            `json:"-"`
+	SlotID                  string               `json:"slot_id"`
+	RunnerID                int64                `json:"runner_id"`
+	Observation             actions.Observation  `json:"observation"`
+	Job                     *actions.Job         `json:"job"`
+	CreatedAt               time.Time            `json:"created_at"`
+	UpdatedAt               time.Time            `json:"updated_at"`
 }
 
 func (s *Store) RecordActionsJob(ctx context.Context, slot ActionsSlot, o actions.Observation) error {

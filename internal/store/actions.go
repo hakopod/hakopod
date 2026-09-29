@@ -30,6 +30,7 @@ type ActionsSlot struct {
 	ProviderCleanupConfirmed bool         `json:"-"`
 	ProviderRunnerID         string       `json:"provider_runner_id,omitempty"`
 	EncryptedRegistration    []byte       `json:"-"`
+	EncryptedProviderIntent  []byte       `json:"-"`
 	ID                       string       `json:"id"`
 	ApplicationID            string       `json:"application_id"`
 	Service                  string       `json:"service"`
@@ -109,7 +110,7 @@ func scanActionsPools(rows pgx.Rows) ([]ActionsPool, error) {
 	return out, rows.Err()
 }
 func (s *Store) ActionsSlots(ctx context.Context, app, service string) ([]ActionsSlot, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
+	rows, err := s.Pool.Query(ctx, `SELECT id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed,encrypted_provider_intent FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +119,7 @@ func (s *Store) ActionsSlots(ctx context.Context, app, service string) ([]Action
 	for rows.Next() {
 		var v ActionsSlot
 		var data []byte
-		if err = rows.Scan(&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed); err != nil {
+		if err = rows.Scan(&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed, &v.EncryptedProviderIntent); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal(data, &v.Config); err != nil {
@@ -153,7 +154,30 @@ func (s *Store) SyncActions(ctx context.Context, app Application, next spec.Appl
 	return tx.Commit(ctx)
 }
 func (s *Store) NewActionsSlot(ctx context.Context, p ActionsPool) (ActionsSlot, error) {
+	return s.newActionsSlot(ctx, p, nil)
+}
+
+// The pure sealer runs before the insert. A committed intent always contains
+// its original trust, including when the subsequent provider response is lost.
+func (s *Store) NewActionsSlotWithIntent(ctx context.Context, p ActionsPool, seal func(ActionsSlot) ([]byte, error)) (ActionsSlot, error) {
+	if seal == nil || p.Config.Actions == nil || p.Config.Actions.Provider.Effective() != actions.ProviderGitLab {
+		return ActionsSlot{}, ErrInput
+	}
+	return s.newActionsSlot(ctx, p, seal)
+}
+
+func (s *Store) newActionsSlot(ctx context.Context, p ActionsPool, seal func(ActionsSlot) ([]byte, error)) (ActionsSlot, error) {
 	v := ActionsSlot{ID: NewID(), ApplicationID: p.ApplicationID, Service: p.Service, Config: p.Config, Phase: "intent"}
+	if seal != nil {
+		var err error
+		v.EncryptedProviderIntent, err = seal(v)
+		if err != nil {
+			return ActionsSlot{}, err
+		}
+		if len(v.EncryptedProviderIntent) < 29 || len(v.EncryptedProviderIntent) > actions.MaxSealedRegistrationBytes {
+			return ActionsSlot{}, ErrInput
+		}
+	}
 	if v.Config.Actions != nil && v.Config.Actions.Provider.Effective() == actions.ProviderGitHub {
 		v.Config.Image = spec.ActionsRunnerImage
 	}
@@ -163,9 +187,9 @@ func (s *Store) NewActionsSlot(ctx context.Context, p ActionsPool) (ActionsSlot,
 		err := s.Pool.QueryRow(ctx, `WITH eligible_pool AS (
  SELECT 1 FROM actions_pools WHERE application_id=$2 AND service=$3 AND provider_hold_reason='' FOR UPDATE
 )
- INSERT INTO actions_slots(id,application_id,service,config) SELECT $1,$2,$3,$4
+ INSERT INTO actions_slots(id,application_id,service,config,encrypted_provider_intent) SELECT $1,$2,$3,$4,$5
  WHERE EXISTS(SELECT 1 FROM eligible_pool) AND (SELECT count(*) FROM actions_slots WHERE application_id=$2 AND service=$3)<10
- RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config)).Scan(&v.CreatedAt, &v.UpdatedAt)
+ RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config), v.EncryptedProviderIntent).Scan(&v.CreatedAt, &v.UpdatedAt)
 		return v, err
 	}
 	err := s.Pool.QueryRow(ctx, `INSERT INTO actions_slots(id,application_id,service,config) SELECT $1,$2,$3,$4 WHERE (SELECT count(*) FROM actions_slots WHERE application_id=$2 AND service=$3)<10 RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config)).Scan(&v.CreatedAt, &v.UpdatedAt)
@@ -246,13 +270,13 @@ func (s *Store) ActionsCredentialRequired(ctx context.Context, project, environm
 	var required bool
 	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(
  SELECT 1 FROM actions_pools p WHERE p.project=$1 AND p.environment=$2 AND p.application_name=$3
- AND ((NOT p.removed AND $4 IN (p.config->'actions'->>'credential',p.config->'actions'->>'jobs_credential'))
+ AND ((NOT p.removed AND $4 IN (p.config->'actions'->>'credential',p.config->'actions'->>'jobs_credential',p.config->'actions'->'cache'->>'credential'))
  OR EXISTS(SELECT 1 FROM actions_slots v WHERE v.application_id=p.application_id AND v.service=p.service
- AND $4 IN (v.config->'actions'->>'credential',v.config->'actions'->>'jobs_credential')))
+ AND $4 IN (v.config->'actions'->>'credential',v.config->'actions'->>'jobs_credential',v.config->'actions'->'cache'->>'credential')))
 ) OR EXISTS(
  SELECT 1 FROM applications a CROSS JOIN LATERAL jsonb_each(a.spec->'services') AS svc
  WHERE a.project=$1 AND a.environment=$2 AND a.name=$3
- AND $4 IN (svc.value->'actions'->>'credential',svc.value->'actions'->>'jobs_credential')
+ AND $4 IN (svc.value->'actions'->>'credential',svc.value->'actions'->>'jobs_credential',svc.value->'actions'->'cache'->>'credential')
 ) OR EXISTS(
  SELECT 1 FROM actions_jobs j JOIN applications a ON a.id=j.application_id
  WHERE a.project=$1 AND a.environment=$2 AND a.name=$3 AND j.created_at>=now()-interval '30 days'

@@ -52,6 +52,9 @@ type GitLabActionsImages struct {
 	ManagerBinarySHA256      string
 	HelperBinarySHA256       string
 	VerificationReportSHA256 string
+	CacheProtocolVersion     int
+	ExecutionReportSHA256    string
+	Execution                *GitLabActionsExecutionQualification
 }
 
 // GitLabActionsTransportPolicy contains only public network policy. Its file
@@ -63,9 +66,15 @@ type GitLabActionsTransportPolicy struct {
 }
 
 type GitLabActionsRuntime struct {
-	Images          GitLabActionsImages
-	TransportPolicy GitLabActionsTransportPolicy
-	CAPEM           []byte
+	Images              GitLabActionsImages
+	TransportPolicy     GitLabActionsTransportPolicy
+	CAPEM               []byte
+	ControlPlaneTrust   *actions.GitLabTrustPolicy
+	PrivateDestinations []ManagedActionsDestination
+	RegistryCAs         []ManagedActionsRegistryCA
+	ClusterPodCIDRs     []string
+	ClusterServiceCIDRs []string
+	Cache               *GitLabActionsCache
 }
 
 func ValidateGitLabActionsRuntime(runtime GitLabActionsRuntime) error {
@@ -108,7 +117,27 @@ func ValidateGitLabActionsRuntime(runtime GitLabActionsRuntime) error {
 	if err != nil || len(encoded) > 32<<10 || len(runtime.CAPEM) > 64<<10 {
 		return errors.New("GitLab native transport policy exceeds its size bound")
 	}
-	remaining := bytes.TrimSpace(runtime.CAPEM)
+	if err := validateGitLabCA(runtime.CAPEM); err != nil {
+		return err
+	}
+	if err := validateGitLabRuntimeDestinations(runtime); err != nil {
+		return err
+	}
+	if err := validateGitLabCache(runtime); err != nil {
+		return err
+	}
+	encodedRuntime, err := json.Marshal(runtime)
+	if err != nil || len(encodedRuntime) > 96<<10 {
+		return errors.New("GitLab resolved runtime exceeds its storage bound")
+	}
+	return nil
+}
+
+func validateGitLabCA(data []byte) error {
+	if len(data) > 64<<10 {
+		return errors.New("GitLab native trust exceeds its size bound")
+	}
+	remaining := bytes.TrimSpace(data)
 	for count := 0; len(remaining) > 0; count++ {
 		block, rest := pem.Decode(remaining)
 		if count >= 32 || block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 || !bytes.HasPrefix(remaining, []byte("-----BEGIN CERTIFICATE-----")) {
@@ -141,8 +170,19 @@ func validateGitLabActions(t Target, service, id string, s spec.Service, registr
 	if s.Actions.TimeoutMinutes < 5 || s.Actions.TimeoutMinutes > 360 || registration.TimeoutSeconds != s.Actions.TimeoutMinutes*60 || (registration.ExpiresAt != nil && !registration.ExpiresAt.After(time.Now())) {
 		return errors.New("GitLab registration is expired or does not match its bounded job timeout")
 	}
-	if s.Architecture != runtime.Images.Architecture || spec.ActionsWorkspaceGiB(s.Actions) < 2 || spec.ActionsWorkspaceGiB(s.Actions) > 16 {
+	if s.Image != runtime.Images.Manager || s.Architecture != runtime.Images.Architecture || spec.ActionsWorkspaceGiB(s.Actions) < 2 || spec.ActionsWorkspaceGiB(s.Actions) > 16 {
 		return errors.New("GitLab requires explicit matching architecture and bounded temporary storage")
+	}
+	if (s.Actions.Cache == nil) != (registration.CacheCredentials == nil) || (s.Actions.Cache != nil && runtime.Cache == nil) {
+		return errors.New("GitLab cache must match its installation binding and private credentials")
+	}
+	if s.Actions.Cache != nil {
+		if s.Actions.Cache.Credential == "" || !(spec.SecretRef{Ref: s.Actions.Cache.Credential}).Valid() {
+			return errors.New("GitLab cache requires an application secret reference")
+		}
+		if err := registration.CacheCredentials.Validate(); err != nil {
+			return err
+		}
 	}
 	profile := spec.EffectiveResources(s)
 	for _, bounds := range []struct{ value, minimum, maximum string }{
@@ -192,6 +232,7 @@ type gitlabNativeRunnerConfig struct {
 	OutputLimit        int                      `toml:"output_limit"`
 	Environment        []string                 `toml:"environment"`
 	Docker             gitlabNativeDockerConfig `toml:"docker"`
+	Cache              *gitlabNativeCacheConfig `toml:"cache,omitempty"`
 }
 
 type gitlabNativeConfig struct {
@@ -201,7 +242,7 @@ type gitlabNativeConfig struct {
 	Runners         []gitlabNativeRunnerConfig `toml:"runners"`
 }
 
-func gitlabActionsConfig(s spec.Service, registration actions.GitLabManagerConfig, runtime GitLabActionsRuntime) ([]byte, error) {
+func gitlabActionsConfig(t Target, service string, s spec.Service, registration actions.GitLabManagerConfig, runtime GitLabActionsRuntime) ([]byte, error) {
 	daemon := actionsResources(s, 3)
 	memory, cpu := daemon.Limits[corev1.ResourceMemory], daemon.Limits[corev1.ResourceCPU]
 	jobMemory, serviceMemory := memory.Value()/2, memory.Value()/8
@@ -215,6 +256,12 @@ func gitlabActionsConfig(s spec.Service, registration actions.GitLabManagerConfi
 		caFile = gitlabActionsPolicyDirectory + "/ca.crt"
 		volumes = append(volumes, gitlabActionsDaemonPolicyDirectory+"/ca.crt:"+caFile+":ro")
 	}
+	if s.Actions.Cache != nil {
+		volumes = append(volumes, gitlabActionsDaemonPolicyDirectory+"/cache-policy.json:"+gitlabActionsPolicyDirectory+"/cache-policy.json:ro")
+		if len(runtime.Cache.CAPEM) > 0 {
+			volumes = append(volumes, gitlabActionsDaemonPolicyDirectory+"/cache-ca.crt:"+gitlabActionsPolicyDirectory+"/cache-ca.crt:ro")
+		}
+	}
 	config := gitlabNativeConfig{Concurrent: 1, CheckInterval: 3, ShutdownTimeout: 45, Runners: []gitlabNativeRunnerConfig{{
 		Name: registration.Name, URL: registration.URL, Token: registration.Token, Executor: "docker", TLSCAFile: caFile,
 		Limit: 1, RequestConcurrency: 1, OutputLimit: 1024,
@@ -226,6 +273,10 @@ func gitlabActionsConfig(s spec.Service, registration actions.GitLabManagerConfi
 			CPUs: fmt.Sprintf("%d.%03d", jobCPU/1000, jobCPU%1000), ServiceCPUs: fmt.Sprintf("%d.%03d", serviceCPU/1000, serviceCPU%1000), ServicesLimit: 2, PidsLimit: 512,
 		},
 	}}}
+	if s.Actions.Cache != nil {
+		config.Runners[0].Cache = gitlabCacheConfig(t, service, runtime.Cache, registration.CacheCredentials)
+		config.Runners[0].Environment = append(config.Runners[0].Environment, "CACHE_COMPRESSION_FORMAT=tarzstd", "CACHE_COMPRESSION_LEVEL=fast", "FF_HASH_CACHE_KEYS=1")
+	}
 	encoded, err := toml.Marshal(config)
 	if err != nil || len(encoded) > 128<<10 {
 		return nil, errors.New("GitLab native configuration could not be encoded within its bound")
@@ -253,7 +304,7 @@ func gitlabActionsArtifacts(t Target, service, id string, s spec.Service, regist
 	if err := validateGitLabActions(t, service, id, s, registration, runtime); err != nil {
 		return nil, nil, err
 	}
-	config, err := gitlabActionsConfig(s, registration, runtime)
+	config, err := gitlabActionsConfig(t, service, s, registration, runtime)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -263,6 +314,19 @@ func gitlabActionsArtifacts(t Target, service, id string, s spec.Service, regist
 	public := &corev1.ConfigMap{ObjectMeta: *meta.DeepCopy(), Immutable: ptr(true), Data: map[string]string{"transport-policy.json": string(policy)}}
 	if len(runtime.CAPEM) > 0 {
 		public.Data["ca.crt"] = string(runtime.CAPEM)
+	}
+	if s.Actions.Cache != nil {
+		data, err := json.Marshal(gitlabCachePolicyFor(t, service, runtime.Cache))
+		if err != nil {
+			return nil, nil, errors.New("GitLab cache policy could not be encoded")
+		}
+		public.Data["cache-policy.json"] = string(data)
+		if len(runtime.Cache.CAPEM) > 0 {
+			public.Data["cache-ca.crt"] = string(runtime.Cache.CAPEM)
+		}
+	}
+	for i, ca := range runtime.RegistryCAs {
+		public.Data[fmt.Sprintf("registry-ca-%d.crt", i)] = string(ca.CAPEM)
 	}
 	return secret, public, nil
 }

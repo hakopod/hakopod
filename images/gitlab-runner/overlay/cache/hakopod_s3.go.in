@@ -1,0 +1,108 @@
+// Copyright (c) 2026 Hakopod contributors. MIT licensed; see LICENSE.upstream.
+package cache
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"path"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"gitlab.com/gitlab-org/gitlab-runner/cache/cacheconfig"
+)
+
+const hakopodCachePOSTHeader = "X-Hakopod-Cache-Post"
+
+type hakopodS3Adapter struct {
+	client         *minio.Client
+	bucket, object string
+	maximum        int64
+	expires        time.Duration
+}
+
+type hakopodSigningOnlyTransport struct{}
+
+func (hakopodSigningOnlyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("cache signing cannot discover network configuration")
+}
+
+var hakopodCachePrefix = regexp.MustCompile(`^hakopod/v1/[a-f0-9]{64}$`)
+
+func newHakopodS3(config *cacheconfig.Config, timeout time.Duration, object string) (Adapter, error) {
+	invalid := errors.New("managed cache requires explicit bounded S3 configuration")
+	if config == nil || config.S3 == nil || !config.Shared || !hakopodCachePrefix.MatchString(config.Path) || config.MaxUploadedArchiveSize < 1<<20 || config.MaxUploadedArchiveSize > 1<<30 {
+		return nil, invalid
+	}
+	c := config.S3
+	u, err := url.Parse("https://" + c.ServerAddress)
+	if err != nil || u.Host != c.ServerAddress || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || c.Insecure || c.AuthenticationType != cacheconfig.S3AuthTypeAccessKey || c.AccessKey == "" || c.SecretKey == "" || c.BucketName == "" || c.BucketLocation == "" || c.RoleARN != "" || c.UploadRoleARN != "" || !c.PathStyleEnabled() {
+		return nil, invalid
+	}
+	if len(object) > 1024 || path.Clean(object) != object || strings.ContainsAny(object, "\\%\x00\r\n\t") || !strings.HasPrefix(object, config.Path+"/project/") {
+		return nil, invalid
+	}
+	parts := strings.Split(strings.TrimPrefix(object, config.Path+"/project/"), "/")
+	if len(parts) < 2 || !regexp.MustCompile(`^[1-9][0-9]{0,15}$`).MatchString(parts[0]) {
+		return nil, invalid
+	}
+	client, err := minio.New(c.ServerAddress, &minio.Options{Creds: credentials.NewStaticV4(c.AccessKey, c.SecretKey, c.SessionToken), Secure: true, Region: c.BucketLocation, BucketLookup: minio.BucketLookupPath, Transport: hakopodSigningOnlyTransport{}})
+	if err != nil {
+		return nil, invalid
+	}
+	return &hakopodS3Adapter{client: client, bucket: c.BucketName, object: object, maximum: config.MaxUploadedArchiveSize, expires: min(max(timeout, time.Minute), 15*time.Minute)}, nil
+}
+
+func (a *hakopodS3Adapter) GetDownloadURL(ctx context.Context) PresignedURL {
+	u, err := a.client.Presign(ctx, http.MethodGet, a.bucket, a.object, a.expires, nil)
+	if err != nil {
+		return PresignedURL{}
+	}
+	return PresignedURL{URL: u}
+}
+
+func (a *hakopodS3Adapter) GetHeadURL(ctx context.Context) PresignedURL {
+	u, err := a.client.Presign(ctx, http.MethodHead, a.bucket, a.object, a.expires, nil)
+	if err != nil {
+		return PresignedURL{}
+	}
+	return PresignedURL{URL: u}
+}
+
+func (a *hakopodS3Adapter) GetUploadURL(ctx context.Context) PresignedURL {
+	policy := minio.NewPostPolicy()
+	for _, err := range []error{policy.SetBucket(a.bucket), policy.SetKey(a.object), policy.SetExpires(time.Now().UTC().Add(a.expires)), policy.SetContentLengthRange(1, a.maximum)} {
+		if err != nil {
+			return PresignedURL{}
+		}
+	}
+	u, fields, err := a.client.PresignedPostPolicy(ctx, policy)
+	if err != nil {
+		return PresignedURL{}
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil || len(encoded) > 16<<10 {
+		return PresignedURL{}
+	}
+	return PresignedURL{URL: u, Headers: http.Header{hakopodCachePOSTHeader: []string{base64.RawURLEncoding.EncodeToString(encoded)}}}
+}
+
+// Metadata and credential-exporting GoCloud transfers are intentionally absent.
+// Cache identity is the provider project and key; only signed object requests
+// leave this manager.
+func (*hakopodS3Adapter) WithMetadata(map[string]string) {}
+func (*hakopodS3Adapter) GetGoCloudURL(context.Context, bool) (GoCloudURL, error) {
+	return GoCloudURL{}, nil
+}
+
+func init() {
+	if err := Factories().Register("hakopod-s3", newHakopodS3); err != nil {
+		panic(err)
+	}
+}

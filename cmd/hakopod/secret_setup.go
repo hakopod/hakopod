@@ -42,13 +42,18 @@ func setupDeploymentSecrets(ctx context.Context, c *client, project, environment
 // without a real terminal or a provider account.
 func readDeploymentSecret(reader *bufio.Reader, output io.Writer, readPassword func() ([]byte, error), app spec.Application, name string) (map[string]any, error) {
 	providerCredential := false
+	cacheCredential := false
 	for _, service := range app.Services {
+		if service.Actions != nil && service.Actions.Cache != nil && service.Actions.Cache.Credential == name && name != "" {
+			cacheCredential = true
+		}
 		if service.Actions != nil && name != "" && (service.Actions.Credential == name || service.Actions.EffectiveJobsCredential() == name) {
 			providerCredential = true
-			break
 		}
 	}
-	if providerCredential {
+	if cacheCredential {
+		fmt.Fprintf(output, "Secret %s: enter S3 access_key, secret_key and optional session_token JSON [v], or cancel [q]: ", name)
+	} else if providerCredential {
 		fmt.Fprintf(output, "Secret %s: enter a provider-issued token [v], or cancel [q]: ", name)
 	} else {
 		fmt.Fprintf(output, "Secret %s: enter a value [v], generate a new random password [g], or cancel [q]: ", name)
@@ -59,6 +64,9 @@ func readDeploymentSecret(reader *bufio.Reader, output io.Writer, readPassword f
 	}
 	switch strings.TrimSpace(strings.ToLower(choice)) {
 	case "g":
+		if cacheCredential {
+			return nil, &exitError{2, "Cache credentials require S3-issued credentials. Random generation is not available; this secret was not saved."}
+		}
 		if providerCredential {
 			return nil, &exitError{2, "Runner credentials require a provider-issued token. Random generation is not available; this secret was not saved."}
 		}

@@ -41,9 +41,10 @@ type Server struct {
 	Backups         *backup.Service
 	ProcessLogs     *serverlogs.Buffer
 	// Overrides are only set by in-process tests, never by an API request.
-	actionsTestRuntime actionsRuntime
-	actionsClient      func(string) (runnerProvider, error)
-	actionsBudget      actions.RequestBudget
+	actionsTestRuntime      actionsRuntime
+	actionsClient           func(string) (runnerProvider, error)
+	actionsBudget           actions.RequestBudget
+	actionsNativeConfigured bool
 	// Native provider configuration is trusted in-process input and remains nil
 	// until paired runtime qualification. Public provider selection stays gated.
 	actionsGitLabClient     func(context.Context, cluster.Target, spec.Service, string) (gitlabRunnerProvider, error)

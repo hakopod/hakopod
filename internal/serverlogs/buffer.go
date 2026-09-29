@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/hakopod/hakopod/internal/logmask"
 )
 
 const capacity = 200
@@ -50,6 +52,7 @@ func (b *Buffer) Write(p []byte) (int, error) {
 			message = omitted
 		} else {
 			message = userinfo.ReplaceAllString(message, "[redacted]@")
+			message = logmask.New().Line(message)
 			if len(message) > maxEntry {
 				message = message[:maxEntry]
 				for !utf8.ValidString(message) {

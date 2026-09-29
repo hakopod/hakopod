@@ -1,0 +1,102 @@
+package cache
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"gitlab.com/gitlab-org/gitlab-runner/cache/cacheconfig"
+)
+
+func hakopodCacheConfigFixture() *cacheconfig.Config {
+	pathStyle := true
+	return &cacheconfig.Config{Type: "hakopod-s3", Path: "hakopod/v1/" + strings.Repeat("a", 64), Shared: true, MaxUploadedArchiveSize: 2 << 20, S3: &cacheconfig.CacheS3Config{ServerAddress: "cache.example.test", BucketName: "runner-cache", BucketLocation: "us-east-1", AccessKey: "synthetic-access-key", SecretKey: "synthetic-secret-key-never-real", AuthenticationType: cacheconfig.S3AuthTypeAccessKey, PathStyle: &pathStyle}}
+}
+
+func TestHakopodCachePOSTBindsKeyAndServerEnforcedSize(t *testing.T) {
+	config := hakopodCacheConfigFixture()
+	object := config.Path + "/project/123/cache-key"
+	adapter, err := newHakopodS3(config, time.Hour, object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload := adapter.GetUploadURL(context.Background())
+	if upload.URL == nil || upload.URL.Scheme != "https" || upload.URL.Host != config.S3.ServerAddress || strings.TrimSuffix(upload.URL.Path, "/") != "/runner-cache" {
+		t.Fatal("POST does not target exact bucket")
+	}
+	encoded, err := base64.RawURLEncoding.DecodeString(upload.Headers.Get(hakopodCachePOSTHeader))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]string
+	if json.Unmarshal(encoded, &fields) != nil || fields["key"] != object || fields["bucket"] != "runner-cache" || fields["x-amz-signature"] == "" {
+		t.Fatal("POST form does not bind the exact object")
+	}
+	policyJSON, err := base64.StdEncoding.DecodeString(fields["policy"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Expiration time.Time `json:"expiration"`
+		Conditions []any     `json:"conditions"`
+	}
+	if json.Unmarshal(policyJSON, &policy) != nil || time.Until(policy.Expiration) > 15*time.Minute || time.Until(policy.Expiration) < 14*time.Minute {
+		t.Fatal("POST expiration is not bounded")
+	}
+	found := false
+	for _, condition := range policy.Conditions {
+		if parts, ok := condition.([]any); ok && len(parts) == 3 && parts[0] == "content-length-range" {
+			found = parts[1] == float64(1) && parts[2] == float64(config.MaxUploadedArchiveSize)
+		}
+	}
+	if !found || strings.Contains(string(encoded), config.S3.SecretKey) {
+		t.Fatal("POST lacks its enforced bound or exposes the signing secret")
+	}
+	cloud, err := adapter.GetGoCloudURL(context.Background(), true)
+	if err != nil || cloud.URL != nil || len(cloud.Environment) != 0 {
+		t.Fatal("storage credentials escaped manager")
+	}
+	for _, request := range []struct {
+		method string
+		url    PresignedURL
+	}{{http.MethodGet, adapter.GetDownloadURL(context.Background())}, {http.MethodHead, adapter.GetHeadURL(context.Background())}} {
+		if request.url.URL == nil || request.url.URL.Path != "/runner-cache/"+object || request.url.URL.Query().Get("X-Amz-Signature") == "" {
+			t.Fatal("download signing failed without network access")
+		}
+	}
+}
+
+func TestHakopodCacheRejectsUnscopedOrCredentialExportingConfiguration(t *testing.T) {
+	for name, change := range map[string]func(*cacheconfig.Config){
+		"unshared":           func(c *cacheconfig.Config) { c.Shared = false },
+		"namespace":          func(c *cacheconfig.Config) { c.Path = "other" },
+		"small limit":        func(c *cacheconfig.Config) { c.MaxUploadedArchiveSize = 0 },
+		"large limit":        func(c *cacheconfig.Config) { c.MaxUploadedArchiveSize = (1 << 30) + 1 },
+		"insecure":           func(c *cacheconfig.Config) { c.S3.Insecure = true },
+		"iam":                func(c *cacheconfig.Config) { c.S3.AuthenticationType = cacheconfig.S3AuthTypeIAM },
+		"region discovery":   func(c *cacheconfig.Config) { c.S3.BucketLocation = "" },
+		"role export":        func(c *cacheconfig.Config) { c.S3.RoleARN = "arn:example" },
+		"upload role export": func(c *cacheconfig.Config) { c.S3.UploadRoleARN = "arn:example" },
+		"credentials":        func(c *cacheconfig.Config) { c.S3.SecretKey = "" },
+		"url user":           func(c *cacheconfig.Config) { c.S3.ServerAddress = "user@cache.example.test" },
+		"endpoint path":      func(c *cacheconfig.Config) { c.S3.ServerAddress = "cache.example.test/path" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := hakopodCacheConfigFixture()
+			change(c)
+			if _, err := newHakopodS3(c, time.Minute, c.Path+"/project/12/key"); err == nil {
+				t.Fatal("unsafe config accepted")
+			}
+		})
+	}
+	c := hakopodCacheConfigFixture()
+	for _, object := range []string{"other/project/12/key", c.Path + "/project/../key", c.Path + "/project/no-id/key", c.Path + "/project/12/%2e%2e/other", c.Path + "/project/12/key\\other"} {
+		if _, err := newHakopodS3(c, time.Minute, object); err == nil {
+			t.Fatal("object escaped its namespace")
+		}
+	}
+}

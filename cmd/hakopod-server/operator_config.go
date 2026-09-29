@@ -77,6 +77,9 @@ type operatorConfig struct {
 	ContainerDaemons struct {
 		File *string `toml:"file"`
 	} `toml:"container_daemons"`
+	ManagedActions struct {
+		File *string `toml:"file"`
+	} `toml:"managed_actions"`
 	Backups struct {
 		PGDumpPath      *string `toml:"pg_dump_path"`
 		StateDir        *string `toml:"state_dir"`
@@ -217,6 +220,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"smtp.password_file", "HAKOPOD_SMTP_PASSWORD_FILE", c.SMTP.PasswordFile, true, true, true},
 		{"aws.identities_file", "HAKOPOD_AWS_IDENTITIES_FILE", c.AWS.IdentitiesFile, true, true, false},
 		{"container_daemons.file", "HAKOPOD_CONTAINER_DAEMONS_FILE", c.ContainerDaemons.File, true, true, false},
+		{"managed_actions.file", "HAKOPOD_MANAGED_ACTIONS_FILE", c.ManagedActions.File, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
 		{"backups.state_dir", "HAKOPOD_BACKUP_STATE_DIR", c.Backups.StateDir, false, false, false},
 		{"backups.managed_postgres", "HAKOPOD_MANAGED_POSTGRES", boolSetting(c.Backups.ManagedPostgres), false, false, false},

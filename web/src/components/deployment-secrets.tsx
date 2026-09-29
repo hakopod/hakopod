@@ -46,7 +46,11 @@ export function DeploymentSecrets({
       ? [service.actions]
       : [],
   )
-  const providerCredential = runnerCredentials.length > 0 || jobsCredentials.length > 0
+  const cacheCredential = Object.values(plan.spec.services).some(
+    (service) => name && service.actions?.cache?.credential === name,
+  )
+  const providerCredential =
+    runnerCredentials.length > 0 || jobsCredentials.length > 0 || cacheCredential
   const githubRunners = runnerCredentials.filter((actions) => !actionsNeedTOML(actions))
   const githubJobs = jobsCredentials.filter((actions) => !actionsNeedTOML(actions))
   const nativeProviders = [
@@ -185,10 +189,18 @@ export function DeploymentSecrets({
                   jobs={githubJobs.length > 0}
                 />
               )}
+              {cacheCredential && (
+                <Note>
+                  Supply JSON with access_key, secret_key and optional session_token for the
+                  installation-approved cache store. The manager keeps these credentials; jobs
+                  receive scoped cache access.
+                </Note>
+              )}
               {nativeProviders.map((provider) => (
                 <Note key={provider}>
-                  Supply the credential issued by {provider} for this target. Managed execution is
-                  not available for this provider.
+                  {provider === 'GitLab'
+                    ? 'Supply a scoped GitLab token for the selected project or group.'
+                    : 'Supply a Bitbucket OAuth access token, or JSON with email and api_token. Hakopod generates runner registration credentials separately.'}
                 </Note>
               ))}
             </div>

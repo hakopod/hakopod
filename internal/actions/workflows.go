@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/hakopod/hakopod/internal/logmask"
 )
 
 // Observation contains only the job hook's allowlisted metadata. It is untrusted
@@ -151,20 +153,33 @@ type Output struct {
 // become workflow output. Callers establish pod/application ownership first.
 func ParseOutput(data []byte) Output {
 	out := Output{Lines: []LogLine{}, Truncated: len(data) >= 2<<20}
+	mask := logmask.New()
 	bytes := 0
 	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "HAKOPOD_WORKFLOW_V1 ") || len(line) > 128<<10 {
+		if !strings.HasPrefix(line, "HAKOPOD_WORKFLOW_V1 ") {
+			continue
+		}
+		if len(line) > 128<<10 {
+			mask.Invalidate()
+			out.Truncated = true
 			continue
 		}
 		var item struct {
-			Job       *Observation `json:"job"`
-			Line      int64        `json:"line"`
-			Text      string       `json:"text"`
-			Truncated bool         `json:"truncated"`
-			Finished  bool         `json:"finished"`
+			Job                 *Observation `json:"job"`
+			Line                int64        `json:"line"`
+			Text                string       `json:"text"`
+			Truncated           bool         `json:"truncated"`
+			Finished            bool         `json:"finished"`
+			RedactionIncomplete bool         `json:"redaction_incomplete"`
 		}
 		if json.Unmarshal([]byte(strings.TrimPrefix(line, "HAKOPOD_WORKFLOW_V1 ")), &item) != nil {
+			mask.Invalidate()
+			out.Truncated = true
 			continue
+		}
+		if item.RedactionIncomplete || item.Truncated || len(item.Text) > logmask.MaxLineBytes || item.Text != "" && (item.Line <= 0 || item.Line > 10000000) {
+			mask.Invalidate()
+			out.Truncated = true
 		}
 		out.Available = true
 		if item.Job != nil {
@@ -173,6 +188,8 @@ func ParseOutput(data []byte) Output {
 		out.Truncated = out.Truncated || item.Truncated
 		out.Finished = out.Finished || item.Finished
 		if item.Line > 0 && item.Line <= 10000000 && len(item.Text) <= 64<<10 {
+			// Learn masks before the retained window drops older records.
+			mask.Line(item.Text)
 			if len(out.Lines) > 0 && item.Line <= out.Lines[len(out.Lines)-1].Number {
 				continue
 			}
@@ -187,6 +204,9 @@ func ParseOutput(data []byte) Output {
 	}
 	if len(out.Lines) > 0 && out.Lines[0].Number > 1 {
 		out.Truncated = true
+	}
+	for i := range out.Lines {
+		out.Lines[i].Text = mask.Line(out.Lines[i].Text)
 	}
 	return out
 }
@@ -264,25 +284,6 @@ func (c *Client) JobLogs(ctx context.Context, repository string, id int64) ([]Lo
 	if err != nil {
 		return nil, false, errors.New("GitHub log download did not complete")
 	}
-	truncated := len(data) > 1<<20
-	if truncated {
-		data = data[:1<<20]
-	}
-	lines := []LogLine{}
-	encodedBytes := 512
-	for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if i >= 10000 {
-			truncated = true
-			break
-		}
-		item := LogLine{Number: int64(i + 1), Text: strings.TrimSuffix(line, "\r")}
-		encoded, _ := json.Marshal(item)
-		if encodedBytes+len(encoded) > 1536<<10 {
-			truncated = true
-			break
-		}
-		encodedBytes += len(encoded)
-		lines = append(lines, item)
-	}
+	lines, truncated := ParseLogText(data, 1<<20, true, c.token)
 	return lines, truncated, nil
 }

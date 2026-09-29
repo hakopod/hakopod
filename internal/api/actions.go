@@ -35,6 +35,9 @@ func (s *Server) actionRuntime() actionsRuntime {
 }
 
 func (s *Server) ConfigureActions() {
+	// Both server embeddings use this startup path. Installation bindings are
+	// immutable after startup; native admission requires exact execution proof.
+	s.actionsNativeConfigured = s.Cluster != nil
 	s.Cluster.ConfigureActions(func(ctx context.Context, t cluster.Target) error {
 		app := store.Application{ID: t.ApplicationID, Project: t.Project, Environment: t.Environment, Name: t.Spec.Name}
 		if err := s.Store.SyncActions(ctx, app, t.Spec, t.Revision); err != nil {
@@ -562,5 +565,30 @@ func (s *Server) actionsCapabilities(w http.ResponseWriter, r *http.Request) {
 	if runtime != nil {
 		message = "The Managed Actions sandbox is not ready in this environment."
 	}
-	write(w, 200, map[string]any{"licensed": err == nil, "runtime_ready": runtime == nil, "message": message, "runner_image": spec.ActionsRunnerImage, "resource_profiles": spec.Profiles})
+	write(w, 200, map[string]any{"licensed": err == nil, "runtime_ready": runtime == nil, "message": message, "runner_image": spec.ActionsRunnerImage, "resource_profiles": spec.Profiles, "providers": s.managedActionsProviderCapabilities(project, env)})
+}
+
+// Provider qualification and environment readiness are separate. A configured
+// native trust binding does not establish that its runtime has passed real jobs.
+func managedActionsProviderCapabilities() []actions.ProviderCapabilities {
+	return []actions.ProviderCapabilities{
+		{
+			Provider: actions.ProviderGitHub, Lifecycle: "ephemeral", Available: true, Image: spec.ActionsRunnerImage,
+			MinimumResources:  actions.ProviderMinimumResources{CPURequest: "200m", CPULimit: "1", MemoryRequest: "768Mi", MemoryLimit: "4Gi", WorkspaceGiB: 2},
+			Cache:             actions.ProviderCacheCapabilities{Persistent: true, Backend: "github", Reason: "Configure actions/cache or a tool's cache integration in your workflow."},
+			Build:             actions.ProviderBuildCapabilities{NativeArchitectures: []string{"amd64", "arm64"}, CrossArchitecture: true, Reason: "Cross-architecture Docker builds use BuildKit userspace emulation. Kernel QEMU registration is unavailable in the sandbox."},
+			Isolation:         actions.ProviderIsolationCapabilities{SingleJob: true, ManagerCredentials: true},
+			CancellationScope: actions.CancellationNone,
+		},
+		(&actions.GitLabClient{}).Capabilities(),
+		(&actions.BitbucketClient{}).Capabilities(),
+	}
+}
+
+func (s *Server) managedActionsProviderCapabilities(project, environment string) []actions.ProviderCapabilities {
+	capabilities := managedActionsProviderCapabilities()
+	if s.Cluster != nil {
+		capabilities[1] = s.Cluster.ManagedGitLabCapabilities(project, environment)
+	}
+	return capabilities
 }

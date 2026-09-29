@@ -3955,7 +3955,7 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
         };
-        /** @description GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider target fields preserve imported configuration; runtime availability is validated by the server. GitLab and Bitbucket execution is not yet available. */
+        /** @description GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment. */
         Actions: {
             repository?: string;
             organization?: string;
@@ -3969,14 +3969,14 @@ export interface components {
              * @enum {string}
              */
             provider?: "github" | "gitlab" | "bitbucket";
-            /** @description GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy. Execution remains unavailable. */
+            /** @description GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator. */
             gitlab?: {
                 url: string;
                 project_id?: number;
                 group_id?: number;
                 trust_policy?: string;
             };
-            /** @description Bitbucket workspace UUID and optional repository UUID. Execution remains unavailable. */
+            /** @description Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle. */
             bitbucket?: {
                 workspace: string;
                 repository?: string;
@@ -3985,6 +3985,10 @@ export interface components {
             workspace_size_gib?: number;
             /** @description Optional application secret for provider job details and logs. Defaults to credential when omitted or empty. */
             jobs_credential?: string;
+            /** @description Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration. */
+            cache?: {
+                credential: string;
+            };
         };
         ActionsPool: {
             application_id: string;
@@ -4011,6 +4015,60 @@ export interface components {
             updated_at: string;
             /** @description Opaque native provider runner identifier when present; retains UUIDs without numeric conversion. */
             provider_runner_id?: string;
+        };
+        /** @description Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed. */
+        ActionsProviderCapabilities: {
+            /** @enum {string} */
+            provider: "github" | "gitlab" | "bitbucket";
+            /** @enum {string} */
+            lifecycle: "ephemeral" | "dedicated";
+            available: boolean;
+            reason?: string;
+            image?: string;
+            bindings?: {
+                application: string;
+                service: string;
+                image: string;
+                architecture: string;
+                /** @description GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator. */
+                gitlab?: {
+                    url: string;
+                    project_id?: number;
+                    group_id?: number;
+                    trust_policy?: string;
+                };
+                /** @description Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle. */
+                bitbucket?: {
+                    workspace: string;
+                    repository?: string;
+                };
+                cache: boolean;
+                cross_architecture: boolean;
+            }[];
+            minimum_resources: {
+                cpu_request: string;
+                cpu_limit: string;
+                memory_request: string;
+                memory_limit: string;
+                workspace_gib: number;
+            };
+            cache: {
+                persistent: boolean;
+                backend?: string;
+                reason?: string;
+            };
+            build: {
+                native_architectures: string[];
+                cross_architecture: boolean;
+                reason?: string;
+            };
+            isolation: {
+                single_job: boolean;
+                manager_credentials_isolated: boolean;
+                reason?: string;
+            };
+            /** @enum {string} */
+            cancellation_scope: "none" | "job" | "pipeline";
         };
         ActionsObservation: {
             repository: string;
@@ -6952,6 +7010,7 @@ export interface operations {
                                 MemoryLimit?: string;
                             };
                         };
+                        providers: components["schemas"]["ActionsProviderCapabilities"][];
                     };
                 };
             };

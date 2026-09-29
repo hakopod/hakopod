@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { parentNavigation } from '../lib/navigation'
+import { parentNavigation, resourceApplicationID } from '../lib/navigation'
 import { canCreateEnvironment } from '../lib/scope'
 import type { Identity } from '../lib/types'
 import { SelectField } from './ui/select'
@@ -203,4 +203,55 @@ test('environment creation is available to project owners but never scoped viewe
   assert.equal(canCreateEnvironment({ ...identity, application: 'example' }, 'personal'), false)
   assert.equal(canCreateEnvironment({ ...identity, credential_type: 'machine' }, 'personal'), false)
   assert.equal(canCreateEnvironment(identity, ''), false)
+})
+
+test('runner setup and service navigation resolve the loaded application before browser preferences', () => {
+  assert.deepEqual(
+    parentNavigation('/templates/managed-actions', {
+      application: 'pool/in-narstri',
+      runner: 'runner',
+    }),
+    {
+      to: '/applications/pool%2Fin-narstri',
+      label: 'Back to service',
+      search: { tab: 'overview', service: 'runner' },
+    },
+  )
+  assert.deepEqual(
+    parentNavigation('/templates/managed-actions', { application: 'pool-in-narstri' }),
+    {
+      to: '/applications/pool-in-narstri',
+      label: 'Back to application',
+      search: { tab: 'overview' },
+    },
+  )
+  assert.equal(parentNavigation('/templates/managed-actions')?.to, '/templates')
+  assert.equal(
+    parentNavigation('/templates/postgres', { application: 'pool-in-narstri', runner: 'runner' })
+      ?.to,
+    '/templates',
+  )
+  assert.equal(
+    resourceApplicationID('/templates/managed-actions', {
+      application: 'pool-in-narstri',
+      runner: 'runner',
+    }),
+    'pool-in-narstri',
+  )
+  assert.equal(
+    resourceApplicationID('/templates', { application: 'pool-in-narstri' }),
+    'pool-in-narstri',
+  )
+  assert.equal(resourceApplicationID('/applications/pool-in-narstri', {}), 'pool-in-narstri')
+  assert.equal(
+    resourceApplicationID('/applications/pool-in-narstri/configure', { application: 'wrong' }),
+    'pool-in-narstri',
+  )
+  assert.equal(
+    resourceApplicationID('/builds/new', { application: 'pool-in-narstri' }),
+    'pool-in-narstri',
+  )
+  assert.equal(resourceApplicationID('/templates/managed-actions', { project: 'demo' }), undefined)
+  assert.equal(resourceApplicationID('/templates/managed-actions', { application: 123 }), undefined)
+  assert.equal(resourceApplicationID('/applications/new', {}), undefined)
 })

@@ -428,61 +428,103 @@ export function ServiceDetail({
                   Retries: {service.job.retries || 0}.
                 </p>
               )}
-              <dl className="service-definition-list">
-                <div>
-                  <dt>Node placement</dt>
-                  <dd className="break-all">{service.node_name || 'Automatic'}</dd>
+              {service.actions ? (
+                <div className="grid min-w-0 gap-3 px-4 pb-3">
+                  <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
+                    <div>
+                      <dt className="text-xs muted-text">Placement</dt>
+                      <dd className="mt-1 break-all">{service.node_name || 'Automatic'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs muted-text">Runners</dt>
+                      <dd className="mt-1">{runtimeReplicaSummary(health, false)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs muted-text">Observed</dt>
+                      <dd className="mt-1">{timestamp(health.observedAt)}</dd>
+                    </div>
+                  </dl>
+                  <details className="min-w-0 border-t border-[var(--hairline)]">
+                    <summary className="min-h-11 cursor-pointer py-3 text-sm">
+                      Image and health details
+                    </summary>
+                    <dl className="grid min-w-0 gap-3 pb-2 text-sm">
+                      <div>
+                        <dt className="text-xs muted-text">Container image</dt>
+                        <dd className="mt-1 break-all font-mono text-xs">
+                          {observedServiceImage(service, observed) || 'No runner image observed'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs muted-text">Readiness</dt>
+                        <dd className="mt-1">{readinessLabel(service)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs muted-text">Exposure</dt>
+                        <dd className="mt-1">No inbound port</dd>
+                      </div>
+                    </dl>
+                  </details>
                 </div>
-                {service.serverless && (
-                  <div>
-                    <dt>Serverless HTTP</dt>
-                    <dd>
-                      {service.serverless.min_replicas === 1
-                        ? 'Always warm'
-                        : `Sleep after ${service.serverless.idle_seconds || 300}s idle`}{' '}
-                      · {service.serverless.max_concurrency || 16} concurrent requests
-                    </dd>
-                  </div>
-                )}
-                <div>
-                  <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
-                  <dd>{runtimeReplicaSummary(health, Boolean(service.job))}</dd>
-                </div>
-                <div>
-                  <dt>
-                    {service.job?.schedule
-                      ? 'Schedule'
-                      : service.job
-                        ? 'Completion gate'
-                        : 'Readiness'}
-                  </dt>
-                  <dd>{readinessLabel(service)}</dd>
-                </div>
-                <div>
-                  <dt>Configured exposure</dt>
-                  <dd>
-                    {service.public || Object.keys(service.http || {}).length > 0
-                      ? service.public_tcp?.length
-                        ? 'Public HTTP and TCP'
-                        : 'Public HTTP'
-                      : service.public_tcp?.length
-                        ? 'Public TCP'
-                        : hasPorts
-                          ? 'Application private network'
-                          : 'No inbound port'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Container image</dt>
-                  <dd className="mono break-text">
-                    {observedServiceImage(service, observed) || 'No runner image observed'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Observed</dt>
-                  <dd>{timestamp(health.observedAt)}</dd>
-                </div>
-              </dl>
+              ) : (
+                <>
+                  <dl className="service-definition-list">
+                    <div>
+                      <dt>Node placement</dt>
+                      <dd className="break-all">{service.node_name || 'Automatic'}</dd>
+                    </div>
+                    {service.serverless && (
+                      <div>
+                        <dt>Serverless HTTP</dt>
+                        <dd>
+                          {service.serverless.min_replicas === 1
+                            ? 'Always warm'
+                            : `Sleep after ${service.serverless.idle_seconds || 300}s idle`}{' '}
+                          · {service.serverless.max_concurrency || 16} concurrent requests
+                        </dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
+                      <dd>{runtimeReplicaSummary(health, Boolean(service.job))}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {service.job?.schedule
+                          ? 'Schedule'
+                          : service.job
+                            ? 'Completion gate'
+                            : 'Readiness'}
+                      </dt>
+                      <dd>{readinessLabel(service)}</dd>
+                    </div>
+                    <div>
+                      <dt>Configured exposure</dt>
+                      <dd>
+                        {service.public || Object.keys(service.http || {}).length > 0
+                          ? service.public_tcp?.length
+                            ? 'Public HTTP and TCP'
+                            : 'Public HTTP'
+                          : service.public_tcp?.length
+                            ? 'Public TCP'
+                            : hasPorts
+                              ? 'Application private network'
+                              : 'No inbound port'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Container image</dt>
+                      <dd className="mono break-text">
+                        {observedServiceImage(service, observed) || 'No runner image observed'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Observed</dt>
+                      <dd>{timestamp(health.observedAt)}</dd>
+                    </div>
+                  </dl>
+                </>
+              )}
               <ApplicationAlarmLinks application={application} />
             </section>
             <section
@@ -493,6 +535,10 @@ export function ServiceDetail({
                 <div className="node-runtime-title">
                   <h2>Resource usage</h2>
                   <Badge>{freshness}</Badge>
+                  <HeadingHelp title="Resource sampling">
+                    Usage totals the sampled pods; each chart scales to its recorded values. Samples
+                    refresh every 15 seconds while this page is visible.
+                  </HeadingHelp>
                 </div>
                 <div className="node-runtime-controls">
                   <Button
@@ -530,43 +576,53 @@ export function ServiceDetail({
                   samples={samples}
                 />
               </div>
-              <dl className="node-runtime-freshness">
-                <div>
-                  <dt>Source sample</dt>
-                  <dd>
-                    {metrics?.sampled_at ? (
-                      <time dateTime={metrics.sampled_at}>
-                        {sampleTimestamp(metrics.sampled_at)}
-                      </time>
-                    ) : (
-                      'Unavailable'
-                    )}
-                    {sampleAge !== null && <span> · {Math.floor(sampleAge / 1000)}s old</span>}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Last checked</dt>
-                  <dd>
-                    {runtime.data?.observed_at ? (
-                      <time dateTime={runtime.data.observed_at}>
-                        {sampleTimestamp(runtime.data.observed_at)}
-                      </time>
-                    ) : (
-                      'Not checked'
-                    )}
-                  </dd>
-                </div>
-              </dl>
-              <p className="node-runtime-help">
-                Every 15s while visible · {samples.length} / {retainedMetricSamples} source samples.
+              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs muted-text">
+                <span>
+                  {sampleAge !== null
+                    ? `Sample ${Math.floor(sampleAge / 1000)}s old`
+                    : 'No source sample'}
+                </span>
                 {metrics && (
-                  <>
-                    {' '}
-                    {metrics.pods_sampled} / {metrics.pods_expected} pods sampled.
-                  </>
-                )}{' '}
-                Usage totals the sampled pods; each chart scales to its recorded values.
-              </p>
+                  <span>
+                    {metrics.pods_sampled} / {metrics.pods_expected} pods sampled
+                  </span>
+                )}
+                <details className="min-w-0">
+                  <summary className="min-h-11 cursor-pointer py-3">Sampling details</summary>
+                  <dl className="grid gap-2 pb-2">
+                    <div>
+                      <dt>Source sample</dt>
+                      <dd>
+                        {metrics?.sampled_at ? (
+                          <time dateTime={metrics.sampled_at}>
+                            {sampleTimestamp(metrics.sampled_at)}
+                          </time>
+                        ) : (
+                          'Unavailable'
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Last checked</dt>
+                      <dd>
+                        {runtime.data?.observed_at ? (
+                          <time dateTime={runtime.data.observed_at}>
+                            {sampleTimestamp(runtime.data.observed_at)}
+                          </time>
+                        ) : (
+                          'Not checked'
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Retained samples</dt>
+                      <dd>
+                        {samples.length} / {retainedMetricSamples}
+                      </dd>
+                    </div>
+                  </dl>
+                </details>
+              </div>
               {!available && (
                 <Note>
                   {metrics?.reason || 'The cluster has not returned a current resource sample.'}

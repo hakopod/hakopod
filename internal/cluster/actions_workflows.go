@@ -23,6 +23,10 @@ func (c *Client) ActionsWorkflowOutput(ctx context.Context, t Target, service, i
 	if pod.Labels["hakopod.io/service"] != service {
 		return actions.Output{}, fmt.Errorf("runner belongs to another service")
 	}
+	mask, err := c.podLogMasker(ctx, *pod, service)
+	if err != nil {
+		return actions.Output{}, err
+	}
 	stream, err := c.kube.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: service, LimitBytes: ptr(int64(2 << 20))}).Stream(ctx)
 	if err != nil {
 		return actions.Output{}, err
@@ -32,5 +36,9 @@ func (c *Client) ActionsWorkflowOutput(ctx context.Context, t Target, service, i
 	if err != nil {
 		return actions.Output{}, err
 	}
-	return actions.ParseOutput(data), nil
+	output := actions.ParseOutput(data)
+	for i := range output.Lines {
+		output.Lines[i].Text = mask.Line(output.Lines[i].Text)
+	}
+	return output, nil
 }

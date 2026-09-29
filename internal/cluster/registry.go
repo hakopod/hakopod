@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/spec"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -58,6 +59,18 @@ func (c *Client) ResolveScoped(ctx context.Context, application spec.Application
 				return spec.Application{}, fmt.Errorf("services.%s.architecture: no available node supports %s", name, svc.Architecture)
 			}
 			selectedArchitectures = []string{svc.Architecture}
+		}
+		if svc.Actions != nil && svc.Actions.Provider.Effective() == actions.ProviderGitLab {
+			// Installation qualification already binds the exact platform manifest
+			// and binaries. Keep its image reference and registry trust intact;
+			// ordinary workload registry credentials never belong on a runner.
+			if !svc.Suspended && svc.Replicas > 0 {
+				if _, err := c.ResolveGitLabActions(ctx, Target{Project: project, Environment: environment, Spec: app}, name, svc); err != nil {
+					return spec.Application{}, err
+				}
+			}
+			app.Services[name] = svc
+			continue
 		}
 		cacheKey := svc.Image + "\x00" + svc.RegistryCredential + "\x00" + strings.Join(selectedArchitectures, ",")
 		if value, ok := resolved[cacheKey]; ok {

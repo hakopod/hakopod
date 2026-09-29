@@ -7,12 +7,12 @@ import {
   reconcileWorkflowExpansion,
   workflowLogDownload,
   workflowLogPage,
+  workflowStepOutput,
 } from './actions-logs'
 
 const start = (id: string, time = 1760000000, title = id, collapsed?: boolean) =>
   `\x1b[0Ksection_start:${time}:${id}${collapsed === undefined ? '' : `[collapsed=${collapsed}]`}\r\x1b[0K${title}`
-const end = (id: string, time = 1760000003) =>
-  `\x1b[0Ksection_end:${time}:${id}\r\x1b[0K`
+const end = (id: string, time = 1760000003) => `\x1b[0Ksection_end:${time}:${id}\r\x1b[0K`
 const lines = (texts: string[]) => texts.map((text, index) => ({ number: index + 1, text }))
 const parse = (texts: string[]) => groupWorkflowLines(lines(texts))
 
@@ -31,7 +31,10 @@ test('GitLab sections retain native IDs, timestamps, durations and collapsed def
   assert.equal(group.durationSeconds, 3)
   assert.equal(group.unfinished, false)
   assert.equal(group.count, 1)
-  assert.deepEqual(parsed.rows.map((row) => row.number), [1, 2])
+  assert.deepEqual(
+    parsed.rows.map((row) => row.number),
+    [1, 2],
+  )
   assert.deepEqual(parsed.rows[1].parents, [1])
   assert.equal(logTimestamp(parsed.rows[0].text)?.timestamp, group.startedAt)
   assert.equal(reconcileWorkflowExpansion({}, parsed, false, false)[1].open, false)
@@ -66,6 +69,18 @@ test('GitLab section headers preserve an existing precise log timestamp', () => 
   assert.equal(parsed.rows[0].text, prefix + 'checkout')
   assert.equal(parsed.groups.get(1)?.startedAt, 1760000000000)
   assert.equal(parsed.groups.get(1)?.durationSeconds, 3)
+})
+
+test('GitLab sections survive server-side secret masking and ANSI removal', () => {
+  const parsed = parse([
+    'section_start:1760000000:checkout[collapsed=true]\rFetching source',
+    'Authorization: ***',
+    'section_end:1760000003:checkout\r',
+  ])
+  assert.equal(parsed.groups.get(1)?.title, 'Fetching source')
+  assert.equal(parsed.groups.get(1)?.durationSeconds, 3)
+  assert.equal(parsed.groups.get(1)?.unfinished, false)
+  assert.deepEqual(parsed.rows[1].parents, [1])
 })
 
 test('GitLab matches nested section IDs instead of closing the last section blindly', () => {
@@ -140,12 +155,18 @@ test('malformed GitLab markers stay literal and cannot consume ordinary output',
   ]
   const parsed = parse(text)
   assert.equal(parsed.groups.size, 0)
-  assert.deepEqual(parsed.rows.map((row) => row.text), text.map(cleanWorkflowLog))
+  assert.deepEqual(
+    parsed.rows.map((row) => row.text),
+    text.map(cleanWorkflowLog),
+  )
 })
 
 test('GitLab cannot close a section before its start and accepts a known zero duration', () => {
   const parsed = parse([start('clock'), end('clock', 1759999999), end('clock', 1760000000)])
-  assert.deepEqual(parsed.rows.map((row) => row.number), [1, 2])
+  assert.deepEqual(
+    parsed.rows.map((row) => row.number),
+    [1, 2],
+  )
   assert.deepEqual(parsed.rows[1].parents, [1])
   assert.equal(parsed.groups.get(1)?.durationSeconds, 0)
   assert.equal(parsed.groups.get(1)?.completedAt, 1760000000000)
@@ -190,7 +211,12 @@ test('GitHub grouping and mixed native sections preserve provider boundaries', (
   assert.equal(parsed.groups.get(2)?.provider, 'gitlab')
   assert.deepEqual(parsed.rows.find((row) => row.number === 5)?.parents, [1])
   assert.equal(reconcileWorkflowExpansion({}, parsed, false, false)[1].open, false)
-  const unmatched = parse([start('only-gitlab'), '##[endgroup]', 'still inside', end('only-gitlab')])
+  const unmatched = parse([
+    start('only-gitlab'),
+    '##[endgroup]',
+    'still inside',
+    end('only-gitlab'),
+  ])
   assert.deepEqual(unmatched.rows.find((row) => row.number === 3)?.parents, [1])
 })
 
@@ -228,4 +254,36 @@ test('GitLab expansion state keeps the existing retained-group bound', () => {
     Array.from({ length: 10001 }, (_, i) => [start(`section_${i}`), end(`section_${i}`)]).flat(),
   )
   assert.equal(Object.keys(reconcileWorkflowExpansion({}, parsed, false, false)).length, 10000)
+})
+
+test('step output assigns boundaries once and preserves all unassigned output', () => {
+  const output = lines([
+    '2026-09-30T00:00:00Z Before steps',
+    '2026-09-30T00:00:01Z First step',
+    '2026-09-30T00:00:02Z Second step boundary',
+    'Untimestamped provider output',
+    '2026-09-30T00:00:04Z After completed steps',
+  ])
+  const partition = workflowStepOutput(output, [
+    { number: 1, started_at: '2026-09-30T00:00:01Z', completed_at: '2026-09-30T00:00:02Z' },
+    { number: 2, started_at: '2026-09-30T00:00:02Z', completed_at: '2026-09-30T00:00:03Z' },
+    { number: 3, started_at: null },
+  ])
+  assert.deepEqual(
+    partition.byStep.get(1)?.map((line) => line.number),
+    [2],
+  )
+  assert.deepEqual(
+    partition.byStep.get(2)?.map((line) => line.number),
+    [3],
+  )
+  assert.deepEqual(partition.byStep.get(3), [])
+  assert.deepEqual(
+    partition.unmatched.map((line) => line.number),
+    [1, 4, 5],
+  )
+  assert.equal(
+    [...partition.byStep.values()].flat().length + partition.unmatched.length,
+    output.length,
+  )
 })

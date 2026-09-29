@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,8 +46,8 @@ func (s *Store) EnsureActionsNativeHistory(ctx context.Context, slot ActionsSlot
 	if slot.Config.Actions == nil || slot.Config.Actions.Provider.Effective() != actions.ProviderGitLab || !slot.ManagerLaunchAttempted || !actions.ValidProviderID(slot.ProviderRunnerID) {
 		return ActionsNativeHistory{}, ErrInput
 	}
-	_, err := s.Pool.Exec(ctx, `INSERT INTO actions_jobs(slot_id,application_id,service,runner_id,observation,provider_config,provider_runner_id,discovery_state)
- SELECT id,application_id,service,0,'{}',config->'actions',provider_runner_id,'pending' FROM actions_slots
+	_, err := s.Pool.Exec(ctx, `INSERT INTO actions_jobs(slot_id,application_id,service,runner_id,observation,provider_config,provider_runner_id,discovery_state,encrypted_provider_intent)
+ SELECT id,application_id,service,0,'{}',config->'actions',provider_runner_id,'pending',encrypted_provider_intent FROM actions_slots
  WHERE id=$1 AND application_id=$2 AND service=$3 AND config=$4 AND provider_runner_id=$5 AND manager_launch_attempted AND phase=$6 AND updated_at=$7
  ON CONFLICT(slot_id) DO NOTHING`, slot.ID, slot.ApplicationID, slot.Service, JSON(slot.Config), slot.ProviderRunnerID, slot.Phase, slot.UpdatedAt)
 	if err != nil {
@@ -61,7 +62,7 @@ func (s *Store) EnsureActionsNativeHistory(ctx context.Context, slot ActionsSlot
 	if err != nil {
 		return history, err
 	}
-	if history.Job.ProviderRunnerID != slot.ProviderRunnerID || !reflect.DeepEqual(history.Job.ProviderConfig, slot.Config.Actions) {
+	if history.Job.ProviderRunnerID != slot.ProviderRunnerID || !reflect.DeepEqual(history.Job.ProviderConfig, slot.Config.Actions) || !bytes.Equal(history.Job.EncryptedProviderIntent, slot.EncryptedProviderIntent) {
 		return ActionsNativeHistory{}, fmt.Errorf("%w: native history binding changed", ErrConflict)
 	}
 	return history, nil
@@ -70,8 +71,8 @@ func (s *Store) EnsureActionsNativeHistory(ctx context.Context, slot ActionsSlot
 func (s *Store) ActionsNativeHistory(ctx context.Context, app, service, slot string) (ActionsNativeHistory, error) {
 	h := ActionsNativeHistory{}
 	var config, job []byte
-	err := s.Pool.QueryRow(ctx, `SELECT slot_id,provider_runner_id,provider_config,native_job,discovery_state,created_at,updated_at,checked_at,cleanup_paused,discovery_finished,discovery_attempts,discovery_started_at,provider_history_version,provider_removed
- FROM actions_jobs WHERE application_id=$1 AND service=$2 AND slot_id=$3 AND provider_runner_id<>''`, app, service, slot).Scan(&h.Job.SlotID, &h.Job.ProviderRunnerID, &config, &job, &h.Job.DiscoveryState, &h.Job.CreatedAt, &h.Job.UpdatedAt, &h.Job.CheckedAt, &h.Paused, &h.Finished, &h.Attempts, &h.StartedAt, &h.Version, &h.Job.ProviderRemoved)
+	err := s.Pool.QueryRow(ctx, `SELECT slot_id,provider_runner_id,provider_config,native_job,discovery_state,created_at,updated_at,checked_at,cleanup_paused,discovery_finished,discovery_attempts,discovery_started_at,provider_history_version,provider_removed,encrypted_provider_intent
+ FROM actions_jobs WHERE application_id=$1 AND service=$2 AND slot_id=$3 AND provider_runner_id<>''`, app, service, slot).Scan(&h.Job.SlotID, &h.Job.ProviderRunnerID, &config, &job, &h.Job.DiscoveryState, &h.Job.CreatedAt, &h.Job.UpdatedAt, &h.Job.CheckedAt, &h.Paused, &h.Finished, &h.Attempts, &h.StartedAt, &h.Version, &h.Job.ProviderRemoved, &h.Job.EncryptedProviderIntent)
 	if err != nil {
 		return h, err
 	}

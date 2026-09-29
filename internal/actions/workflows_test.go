@@ -81,6 +81,46 @@ func TestWorkflowParserRejectsDiagnosticsAndBoundsOutput(t *testing.T) {
 		t.Fatal("malformed envelope accepted")
 	}
 }
+
+func TestWorkflowParserRetainsMaskCommandsOutsideTheOutputWindow(t *testing.T) {
+	var data strings.Builder
+	for i := 1; i <= 10002; i++ {
+		text := "ordinary output"
+		if i == 1 {
+			text = "::add-mask::private-window-value"
+		} else if i == 10002 {
+			text = "private-window-value"
+		}
+		encoded, _ := json.Marshal(text)
+		fmt.Fprintf(&data, "HAKOPOD_WORKFLOW_V1 {\"line\":%d,\"text\":%s}\n", i, encoded)
+	}
+	out := ParseOutput([]byte(data.String()))
+	if !out.Truncated || len(out.Lines) != 10000 || out.Lines[0].Number != 3 || out.Lines[len(out.Lines)-1].Text != "***" {
+		t.Fatal("output window lost a previously registered mask")
+	}
+}
+
+func TestWorkflowParserWithholdsOutputAfterIncompleteRedactionState(t *testing.T) {
+	for name, record := range map[string]string{
+		"oversized envelope": "HAKOPOD_WORKFLOW_V1 " + strings.Repeat("x", 128<<10),
+		"oversized text":     `HAKOPOD_WORKFLOW_V1 {"line":1,"text":"::add-mask::` + strings.Repeat("x", 64<<10) + `"}`,
+		"observer omission":  `HAKOPOD_WORKFLOW_V1 {"line":1,"text":"withheld","redaction_incomplete":true}`,
+		"malformed envelope": `HAKOPOD_WORKFLOW_V1 {"line":1,"text":"::add-mask::private`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := record + "\nHAKOPOD_WORKFLOW_V1 {\"line\":2,\"text\":\"unknown-private-value\"}\n"
+			out := ParseOutput([]byte(data))
+			if !out.Truncated || len(out.Lines) == 0 {
+				t.Fatal("incomplete redaction state was not represented")
+			}
+			for _, line := range out.Lines {
+				if strings.Contains(line.Text, "unknown-private-value") {
+					t.Fatal("skipped record could bypass dynamic mask state")
+				}
+			}
+		})
+	}
+}
 func TestWorkflowLogsRefuseCredentialRedirect(t *testing.T) {
 	for _, location := range []string{"https://evil.invalid/log", "http://test.blob.core.windows.net/log", "https://test.blob.core.windows.net.evil.invalid/log", "https://user@test.blob.core.windows.net/log", "https://test.blob.core.windows.net:8443/log"} {
 		called := 0
