@@ -169,7 +169,9 @@ else:
     before = state(namespace)
     restart_count = next(status.get('restartCount', 0) for status in before['status']['initContainerStatuses'] if status['name'] == 'docker')
     # Restart before any build is active; the runner retains its workspace.
-    kube(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'docker', '--', 'sh', '-c', 'kill -KILL 1'], check=False)
+    # dockerd installs a TERM handler. Linux protects namespace PID 1 from an
+    # unhandled KILL sent by another process in the same PID namespace.
+    kube(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'docker', '--', 'sh', '-c', 'kill -TERM 1'], check=False)
     wait_for(namespace, lambda pod: any(status['name'] == 'docker' and status.get('restartCount', 0) > restart_count
                                        and status.get('ready') for status in pod.get('status', {}).get('initContainerStatuses', [])), timeout=120)
     exec_runner(namespace, "import subprocess; subprocess.run(['docker', 'info'], check=True, stdout=subprocess.DEVNULL)")
