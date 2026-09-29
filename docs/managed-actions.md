@@ -29,21 +29,37 @@ The module is not an automatic Cloud or BYOD node migration.
 ## Create a pool
 
 1. Choose a project and environment, then open Managed Actions in the catalog.
-2. Choose an application name, GitHub organization (the default) or repository
-   (`owner/repository`), labels, replica
-   count, architecture and maximum runner lifetime.
-3. Organization pools use the GitHub default runner group unless you enter a
+   Existing pools use the same guided flow from **Configure pool**.
+2. In **GitHub**, name the pool and choose an organization (the default) or one
+   repository (`owner/repository`). Service names, credential references and
+   optional runner groups are under the advanced disclosure.
+3. In **Compute**, choose concurrent jobs, architecture and resources. Keep
+   automatic placement or select a prepared runner node to put CI work on
+   separate compute. A pinned pool waits if its node is unavailable; it never
+   silently moves to another node. Nodes outside your environment allocation
+   are not exposed. Resource cards show per-runner reservations and limits;
+   the pool total reflects the selected concurrency. Existing custom values
+   are preserved until you change them.
+4. In **Jobs**, set workflow labels, maximum lifetime and temporary disk. Copy
+   the displayed `runs-on` labels into your workflow. Caching is configured in
+   the workflow, not enabled automatically by pool creation.
+5. In **Review**, check the planned changes and capacity, save any missing
+   credential, then deploy. Returning to a step or a failed request preserves
+   the draft. The server checks the reviewed application revision before
+   accepting deployment.
+
+Organization pools use the GitHub default runner group unless you enter a
    runner group ID. Set which repositories can use the group in GitHub under
    **Organization Settings → Actions → Runner groups**. Hakopod does not change
    that access policy. A repository is not required for an organization pool.
-4. During review, save an application-scoped fine-grained GitHub token with
+During review, save an application-scoped fine-grained GitHub token with
    **Self-hosted runners: read and write** organization permission, or
    **Administration: read and write** for a repository pool. Both scopes also
    need **Actions: Read-only** under repository permissions for job steps and
    completed logs. Give the token access to every repository whose jobs the pool
    will run, including private repositories. Do not put the token itself in TOML
    or Git.
-5. Review the changes and deploy. The service page shows GitHub-observed runner
+The service page shows GitHub-observed runner
    state and the time of its last observation.
 
 The pool form and secret-entry review both include **How to create the GitHub

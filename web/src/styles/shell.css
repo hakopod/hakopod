@@ -15,6 +15,7 @@
 /* Page dividers reach the viewport; their content keeps the shared inset. */
 .hako-page-content .hako-page-heading,
 .hako-page-content .hako-settings-header,
+.hako-page-content .hako-page-steps,
 .hako-page-content > .tab-list,
 .hako-page-content > .ops-page > .tab-list,
 .hako-page-content > .ops-page > [dir] > .tab-list {

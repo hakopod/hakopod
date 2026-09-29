@@ -25,9 +25,8 @@ func (c *Client) ConfigureActions(reconcile func(context.Context, Target) error,
 	c.actionsObserve = observe
 }
 func (c *Client) ActionsAvailable(ctx context.Context) error {
-	r, err := c.kube.NodeV1().RuntimeClasses().Get(ctx, ActionsRuntime, metav1.GetOptions{})
-	if err != nil || r.Handler != ActionsRuntime || r.Labels[managedBy] != "hakopod" || r.Scheduling == nil || r.Scheduling.NodeSelector["hakopod.io/actions-runtime"] != "ready" {
-		return fmt.Errorf("Managed Actions sandbox is not installed; enable it in the installation's runtime setup")
+	if err := c.actionsRuntimeAvailable(ctx); err != nil {
+		return err
 	}
 	nodes, e := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/actions-runtime=ready", Limit: 500})
 	if e != nil {
@@ -40,6 +39,78 @@ func (c *Client) ActionsAvailable(ctx context.Context) error {
 	}
 	return fmt.Errorf("No ready node has the Managed Actions sandbox installed")
 }
+
+func (c *Client) actionsRuntimeAvailable(ctx context.Context) error {
+	r, err := c.kube.NodeV1().RuntimeClasses().Get(ctx, ActionsRuntime, metav1.GetOptions{})
+	if err != nil || r.Handler != ActionsRuntime || r.Labels[managedBy] != "hakopod" || r.Scheduling == nil || r.Scheduling.NodeSelector["hakopod.io/actions-runtime"] != "ready" {
+		return fmt.Errorf("Managed Actions sandbox is not installed; enable it in the installation's runtime setup")
+	}
+	return nil
+}
+
+type actionsPlacement struct {
+	nodeName string
+	policy   *WorkloadPolicy
+	selector map[string]string
+}
+
+// ActionsPoolAvailable checks the pool's effective placement before the
+// controller requests a single-job registration from GitHub.
+func (c *Client) ActionsPoolAvailable(ctx context.Context, t Target, s spec.Service) error {
+	_, err := c.actionsPoolPlacement(ctx, t, s)
+	return err
+}
+
+func (c *Client) actionsPoolPlacement(ctx context.Context, t Target, s spec.Service) (*actionsPlacement, error) {
+	if err := c.actionsRuntimeAvailable(ctx); err != nil {
+		return nil, err
+	}
+	policy, err := c.workloadPolicy(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	if c.options.DeploymentMode == DeploymentManagedCloud && policy == nil && c.options.DedicatedPublicTCPNode == "" && c.options.OperatorNodeLimit == 0 {
+		return nil, fmt.Errorf("Managed Actions compute is not allocated to this environment")
+	}
+	p := &actionsPlacement{nodeName: s.NodeName, policy: policy, selector: mergeActionsSelector(nil)}
+	if s.Architecture != "" {
+		p.selector["kubernetes.io/arch"] = s.Architecture
+	}
+	if policy != nil {
+		if p.nodeName != "" && p.nodeName != policy.NodeName {
+			return nil, fmt.Errorf("selected Managed Actions node conflicts with the node allocated by the runtime")
+		}
+		p.nodeName = policy.NodeName
+		if policy.Pool != "" {
+			p.selector["hakopod.com/pool"] = policy.Pool
+		}
+	}
+	selector := labels.SelectorFromSet(p.selector)
+	var candidates []corev1.Node
+	if p.nodeName != "" {
+		node, err := c.kube.CoreV1().Nodes().Get(ctx, p.nodeName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("No ready Managed Actions node matches this pool's placement")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("Managed Actions placement could not be checked")
+		}
+		candidates = []corev1.Node{*node}
+	} else {
+		nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: selector.String(), Limit: 500})
+		if err != nil {
+			return nil, fmt.Errorf("Managed Actions placement could not be checked")
+		}
+		candidates = nodes.Items
+	}
+	for _, n := range candidates {
+		if selector.Matches(labels.Set(n.Labels)) && actionsNodeUnavailable(n, policy) == "" {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("No ready Managed Actions node matches this pool's placement")
+}
+
 func actionsNodeReady(n corev1.Node) bool {
 	if n.Spec.Unschedulable {
 		return false
@@ -136,41 +207,21 @@ func (c *Client) SaveActionsConfig(ctx context.Context, t Target, service, id, c
 	return err
 }
 func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id string, s spec.Service) error {
-	if err := c.ActionsAvailable(ctx); err != nil {
+	placement, err := c.actionsPoolPlacement(ctx, t, s)
+	if err != nil {
 		return err
 	}
 	p := actionsPod(t, service, id, s)
-	policy, err := c.workloadPolicy(ctx, t)
-	if err != nil {
-		return err
-	}
-	selectedNode := s.NodeName
-	if policy != nil {
-		if selectedNode != "" && selectedNode != policy.NodeName {
-			return fmt.Errorf("selected Managed Actions node conflicts with the node allocated by the runtime")
-		}
-		selectedNode = policy.NodeName
-		copy := *policy
+	if placement.policy != nil {
+		copy := *placement.policy
 		copy.RuntimeClass = ActionsRuntime
 		copy.MemoryRequest = ""
 		applyWorkloadPolicy(&copy, &p.Spec)
-		pinActionsNode(&p.Spec, selectedNode)
+		// The trusted allocation names a Node object. Its hostname label
+		// need not match; exact name affinity enforces the allocation.
+		pinActionsNode(&p.Spec, placement.nodeName)
 	}
-	p.Spec.NodeSelector = mergeActionsSelector(p.Spec.NodeSelector)
-	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: labels.SelectorFromSet(p.Spec.NodeSelector).String(), Limit: 500})
-	if err != nil {
-		return fmt.Errorf("Managed Actions placement could not be checked")
-	}
-	ready := false
-	for _, n := range nodes.Items {
-		if selectedNode != "" && n.Name != selectedNode {
-			continue
-		}
-		ready = ready || actionsNodeReady(n)
-	}
-	if !ready {
-		return fmt.Errorf("No ready Managed Actions node matches this pool's placement")
-	}
+	p.Spec.NodeSelector = placement.selector
 	if err = beforeStep(ctx, t); err != nil {
 		return err
 	}

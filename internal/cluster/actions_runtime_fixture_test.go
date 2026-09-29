@@ -116,7 +116,15 @@ func TestActionsRuntimeImageObservationLive(t *testing.T) {
 			t.Fatalf("named development node is not an eligible runner target: %v %v", nodes, err)
 		}
 		service := target.Spec.Services["runner"]
+		service.NodeName = "k3d-hakopod-dev-server-0"
+		service.Architecture = nodes[0].Architecture
+		if err := c.ActionsPoolAvailable(ctx, target, service); err != nil {
+			t.Fatalf("selected development node failed pre-registration placement: %v", err)
+		}
 		service.NodeName = "hakopod-actions-deliberately-missing-fixture"
+		if err := c.ActionsPoolAvailable(ctx, target, service); err == nil || !strings.Contains(err.Error(), "No ready Managed Actions node matches") {
+			t.Fatalf("missing selected node passed pre-registration placement: %v", err)
+		}
 		if err := c.StartActionsPod(ctx, target, "runner", "missing-placement", service); err == nil || !strings.Contains(err.Error(), "No ready Managed Actions node matches") {
 			t.Fatalf("missing selected node did not fail before registration/pod creation: %v", err)
 		}

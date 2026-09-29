@@ -16,7 +16,7 @@ import (
 )
 
 type actionsRuntime interface {
-	ActionsAvailable(context.Context) error
+	ActionsPoolAvailable(context.Context, cluster.Target, spec.Service) error
 	ActionsCredential(context.Context, cluster.Target, string) (string, error)
 	ActionsPodPhase(context.Context, cluster.Target, string) (string, error)
 	DeleteActionsPod(context.Context, cluster.Target, string) (bool, error)
@@ -372,7 +372,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	if p.Config.Suspended {
 		return s.Store.ActionsMessage(ctx, p, "Paused. Busy jobs finish before their runners are removed.")
 	}
-	if err = s.actionRuntime().ActionsAvailable(ctx); err != nil {
+	if err = s.actionRuntime().ActionsPoolAvailable(ctx, t, p.Config); err != nil {
 		return err
 	}
 	// At most one provider registration per pool per pass. Draining and
@@ -390,7 +390,7 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 	if err := s.Store.RequireActions(ctx, p.Project, p.Environment); err != nil {
 		return err
 	}
-	if err := s.actionRuntime().ActionsAvailable(ctx); err != nil {
+	if err := s.actionRuntime().ActionsPoolAvailable(ctx, t, p.Config); err != nil {
 		return err
 	}
 	client, err := s.runnerClient(ctx, t, p.Config)
@@ -517,10 +517,12 @@ func (s *Server) actionsCapabilities(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	runtime := s.actionRuntime().ActionsAvailable(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	runtime := s.actionRuntime().ActionsPoolAvailable(ctx, cluster.Target{Project: project, Environment: env}, spec.Service{})
 	message := ""
 	if runtime != nil {
-		message = "The Managed Actions sandbox is not ready on this installation."
+		message = "The Managed Actions sandbox is not ready in this environment."
 	}
 	write(w, 200, map[string]any{"licensed": err == nil, "runtime_ready": runtime == nil, "message": message, "runner_image": spec.ActionsRunnerImage, "resource_profiles": spec.Profiles})
 }

@@ -1,10 +1,13 @@
 import { DeleteServiceDialog } from '../components/delete-service-dialog'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { DeploymentForm } from '../components/deploy-dialog'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
+import { ManagedActionsForm } from '../components/managed-actions-form'
+import { FormPage } from '../components/form-page'
+import { Button } from '../components/ui/button'
 
 export const Route = createFileRoute('/applications/$applicationId/configure')({
   validateSearch: (
@@ -32,11 +35,17 @@ function ConfigureApplication() {
   if (application.error || !application.data) return <ErrorState error={application.error} />
   if (!scope.can('deployments:write'))
     return (
-      <Empty
-        icon="lock"
-        title="Deployment access required"
-        description="Your project role does not allow configuration changes."
-      />
+      <FormPage
+        title="Configure application"
+        description="Deployment access is required to continue."
+        breadcrumbs={[]}
+      >
+        <Empty
+          icon="lock"
+          title="Deployment access required"
+          description="Your project role does not allow configuration changes."
+        />
+      </FormPage>
     )
   if (
     (service && !application.data.spec.services[service]) ||
@@ -57,6 +66,73 @@ function ConfigureApplication() {
           void navigate({ to: '/applications/$applicationId', params: { applicationId } })
         }
       />
+    )
+  const runners = Object.entries(application.data.spec.services).filter(
+    ([, value]) => value.actions,
+  )
+  const selectedRunner = service || (runners.length === 1 ? runners[0][0] : undefined)
+  if (mode !== 'toml' && selectedRunner && application.data.spec.services[selectedRunner]?.actions)
+    return (
+      <ManagedActionsForm
+        key={`${applicationId}:${selectedRunner}`}
+        application={application.data}
+        serviceName={selectedRunner}
+        onClose={() =>
+          void navigate({
+            to: '/applications/$applicationId',
+            params: { applicationId },
+            search: { service: selectedRunner },
+          })
+        }
+      />
+    )
+  if (
+    mode !== 'toml' &&
+    !service &&
+    runners.length === Object.keys(application.data.spec.services).length &&
+    runners.length > 0
+  )
+    return (
+      <FormPage
+        title="Configure runner pools"
+        description="Choose a runner pool to adjust its GitHub access, compute and job settings."
+        breadcrumbs={[]}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {runners.map(([name, value]) => (
+            <div
+              key={name}
+              className="grid min-w-0 gap-3 rounded border border-[var(--hairline)] p-3"
+            >
+              <h2 className="text-sm font-medium wrap-anywhere">{name}</h2>
+              <span className="text-xs muted-text wrap-anywhere">
+                {value.actions?.organization || value.actions?.repository} · {value.replicas} job{' '}
+                {value.replicas === 1 ? 'slot' : 'slots'}
+              </span>
+              <Button asChild>
+                <Link
+                  to="/applications/$applicationId/configure"
+                  params={{ applicationId }}
+                  search={{ service: name, mode: 'form' }}
+                >
+                  Configure pool
+                </Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4">
+          <Button asChild>
+            <Link
+              to="/applications/$applicationId/configure"
+              params={{ applicationId }}
+              search={{ mode: 'toml' }}
+            >
+              Edit all pools as TOML
+            </Link>
+          </Button>
+        </div>
+      </FormPage>
     )
   return (
     <DeploymentForm

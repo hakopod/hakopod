@@ -29,10 +29,9 @@ func (c *Client) ValidateDeliveryWithReport(ctx context.Context, t Target) (Pref
 func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
 	for _, svc := range t.Spec.Services {
 		if svc.Actions != nil && !svc.Suspended {
-			if err := c.ActionsAvailable(ctx); err != nil {
+			if err := c.ActionsPoolAvailable(ctx, t, svc); err != nil {
 				return err
 			}
-			break
 		}
 	}
 	if err := c.validateServerless(t); err != nil {
