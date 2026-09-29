@@ -50,6 +50,7 @@ type Options struct {
 	// ContainerDaemonBindings are installation-owned grants to a container
 	// daemon reached over the network with mutual TLS.
 	ContainerDaemonBindings []ContainerDaemonBinding
+	ManagedActions          *ManagedActionsInstallation
 	SupervisorURL           string
 	ProxyNamespace          string
 	ProxyConfigMap          string
@@ -72,8 +73,9 @@ type Options struct {
 }
 
 type Client struct {
-	actionsReconcile func(context.Context, Target) error
-	actionsObserve   func(context.Context, Target, string, spec.Service) (ServiceStatus, error)
+	managedActionsNetworks managedActionsNetworkCache
+	actionsReconcile       func(context.Context, Target) error
+	actionsObserve         func(context.Context, Target, string, spec.Service) (ServiceStatus, error)
 	// publicTCPAck is injected by unit tests; real clients always inspect HAProxy.
 	publicTCPAck func(context.Context, Target, []any, map[string]string) error
 	execConfig   *rest.Config
@@ -214,6 +216,17 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, err
 	}
 	options.ContainerDaemonBindings = append([]ContainerDaemonBinding(nil), options.ContainerDaemonBindings...)
+	if err := ValidateManagedActionsInstallation(options.ManagedActions); err != nil {
+		return nil, err
+	}
+	if options.ManagedActions != nil && (mode == DeploymentManagedCloud || options.WorkloadPolicy != nil) {
+		for _, binding := range options.ManagedActions.GitLab {
+			if len(binding.Runtime.PrivateDestinations) > 0 {
+				return nil, fmt.Errorf("managed actions private destinations require a self-hosted installation")
+			}
+		}
+	}
+	options.ManagedActions = cloneManagedActionsInstallation(options.ManagedActions)
 	for i := range options.PrivateEgressBindings {
 		b := &options.PrivateEgressBindings[i]
 		b.Services = append([]string(nil), b.Services...)

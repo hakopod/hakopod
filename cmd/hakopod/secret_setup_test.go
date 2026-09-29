@@ -64,6 +64,16 @@ func TestRunnerCredentialsNeverOfferOrAcceptGeneration(t *testing.T) {
 	}
 }
 
+func TestCacheCredentialsNeverOfferOrAcceptGeneration(t *testing.T) {
+	app := credentialApp("")
+	app.Services["cache-runner"] = spec.Service{Actions: &spec.Actions{Credential: "management", Cache: &spec.ActionsCache{Credential: "cache"}}}
+	var output bytes.Buffer
+	body, err := readDeploymentSecret(bufio.NewReader(strings.NewReader("g\n")), &output, func() ([]byte, error) { t.Fatal("generation must not read a credential"); return nil, nil }, app, "cache")
+	if err == nil || body != nil || strings.Contains(output.String(), "[g]") || !strings.Contains(output.String(), "access_key, secret_key") {
+		t.Fatal("cache prompt did not require real storage credentials")
+	}
+}
+
 func TestCredentialGenerationChecksEveryPoolAndKeepsOrdinarySecretsAvailable(t *testing.T) {
 	app := credentialApp("job-observation")
 	app.Services["second"] = spec.Service{Actions: &spec.Actions{Credential: "shared-token", JobsCredential: "second-jobs"}}

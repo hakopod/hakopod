@@ -300,6 +300,13 @@ func (c *Client) Logs(ctx context.Context, namespace, service string, tail int64
 		}
 		return pods.Items[i].CreationTimestamp.After(pods.Items[j].CreationTimestamp.Time)
 	})
+	if managedRunnerDiagnostics(pods.Items[0]) {
+		return nil, fmt.Errorf("runner diagnostics are private; use the verified workflow log endpoint")
+	}
+	mask, err := c.podLogMasker(ctx, pods.Items[0], "app")
+	if err != nil {
+		return nil, err
+	}
 	streamCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	core := c.kube.CoreV1()
 	if c.execConfig != nil {
@@ -314,9 +321,9 @@ func (c *Client) Logs(ctx context.Context, namespace, service string, tail int64
 	stream, err := core.Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "app", TailLines: &tail, Follow: follow, Timestamps: true, LimitBytes: ptr(int64(8 << 20))}).Stream(streamCtx)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, fmt.Errorf("container logs are currently unavailable")
 	}
-	return &logStream{Reader: io.LimitReader(stream, 8<<20), closer: stream, cancel: cancel}, nil
+	return &logStream{Reader: mask.TimestampedReader(io.LimitReader(stream, 8<<20)), closer: stream, cancel: cancel}, nil
 }
 
 func podReady(pod corev1.Pod) bool {

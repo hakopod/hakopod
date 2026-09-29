@@ -107,3 +107,31 @@ func TestHistoricalJobUsesOriginalProviderAndCredential(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowLogMaskSeedsUseOriginalScopedCredentials(t *testing.T) {
+	for _, missing := range []string{"", "old-read", "old-management", "old-cache"} {
+		runtime := &jobsCredentialRuntime{actionsFake: &actionsFake{}, unavailable: missing}
+		server := &Server{actionsTestRuntime: runtime}
+		pool := store.ActionsPool{ApplicationID: "application", Project: "project", Environment: "development", ApplicationName: "pool", Service: "runner", Config: spec.Service{Actions: &spec.Actions{Credential: "new-management"}}}
+		original := &spec.Actions{Credential: "old-management", JobsCredential: "old-read", Cache: &spec.ActionsCache{Credential: "old-cache"}}
+		seeds, err := server.actionsLogCredentials(context.Background(), pool, original)
+		if missing == "old-read" {
+			if err == nil || len(seeds) != 0 || !reflect.DeepEqual(runtime.refs, []string{"old-read"}) {
+				t.Fatal("missing read credential did not fail closed")
+			}
+			continue
+		}
+		want := 3
+		if missing != "" {
+			want--
+		}
+		if err != nil || len(seeds) != want || !reflect.DeepEqual(runtime.refs, []string{"old-read", "old-management", "old-cache"}) {
+			t.Fatal("scoped available credentials were not collected", err)
+		}
+		for _, target := range runtime.targets {
+			if target.ApplicationID != pool.ApplicationID || target.Project != pool.Project || target.Environment != pool.Environment || target.Spec.Name != pool.ApplicationName || target.Spec.Services[pool.Service].Actions != original {
+				t.Fatal("log redaction used a different scope or revision")
+			}
+		}
+	}
+}

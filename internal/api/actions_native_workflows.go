@@ -26,8 +26,8 @@ func gitlabWorkflowState(err error) (string, string) {
 	return "unavailable", "GitLab job access is temporarily unavailable. The last verified metadata remains visible."
 }
 
-func (s *Server) gitlabWorkflowClient(ctx context.Context, p store.ActionsPool) (gitlabWorkflowProvider, error) {
-	if actionsConfigProvider(p.Config) != actions.ProviderGitLab || s.actionsGitLabJobsClient == nil {
+func (s *Server) gitlabWorkflowClient(ctx context.Context, p store.ActionsPool, job store.ActionsJob) (gitlabWorkflowProvider, error) {
+	if actionsConfigProvider(p.Config) != actions.ProviderGitLab || (s.actionsGitLabJobsClient == nil && !s.actionsNativeConfigured) {
 		return nil, unsupportedActionsProvider(actions.ProviderGitLab)
 	}
 	if _, err := p.Config.Actions.ProviderTarget().Canonical(); err != nil {
@@ -42,7 +42,23 @@ func (s *Server) gitlabWorkflowClient(ctx context.Context, p store.ActionsPool) 
 	if err != nil {
 		return nil, err
 	}
-	client, err := s.actionsGitLabJobsClient(ctx, target, p.Config, token)
+	var client gitlabWorkflowProvider
+	if s.actionsGitLabJobsClient != nil {
+		client, err = s.actionsGitLabJobsClient(ctx, target, p.Config, token)
+	} else {
+		if len(job.EncryptedProviderIntent) == 0 {
+			history, e := s.Store.ActionsNativeHistory(ctx, p.ApplicationID, p.Service, job.SlotID)
+			if e != nil {
+				return nil, e
+			}
+			job = history.Job
+		}
+		original, e := s.gitlabHistoryRuntime(p, job)
+		if e != nil {
+			return nil, e
+		}
+		client, err = s.installationGitLabClient(ctx, target, p.Service, p.Config, token, original)
+	}
 	if err == nil && client == nil {
 		return nil, unsupportedActionsProvider(actions.ProviderGitLab)
 	}
@@ -125,7 +141,7 @@ func (s *Server) refreshNativeActionsJob(ctx context.Context, p store.ActionsPoo
 	if h.Finished && h.Job.NativeJob == nil {
 		return h.Job, nil
 	}
-	client, err := s.gitlabWorkflowClient(ctx, bound)
+	client, err := s.gitlabWorkflowClient(ctx, bound, h.Job)
 	if err != nil {
 		return item, err
 	}
@@ -133,7 +149,11 @@ func (s *Server) refreshNativeActionsJob(ctx context.Context, p store.ActionsPoo
 	if h.Job.NativeJob != nil {
 		job, err = nativeAssignedJob(ctx, client, bound, h.Job)
 	} else {
-		manager, e := s.gitlabRunnerClient(ctx, actionsTarget(bound), bound.Config)
+		original, e := s.gitlabHistoryRuntime(bound, h.Job)
+		if e != nil {
+			return item, e
+		}
+		manager, e := s.gitlabRunnerClient(ctx, actionsTarget(bound), bound.Service, bound.Config, original)
 		if e != nil {
 			return item, e
 		}
@@ -210,7 +230,7 @@ func (s *Server) prepareGitLabJobCleanup(ctx context.Context, t cluster.Target, 
 	if h.StartedAt == nil || time.Since(*h.StartedAt) < time.Minute {
 		step, cancel := context.WithTimeout(ctx, 8*time.Second)
 		p := store.ActionsPool{ApplicationID: t.ApplicationID, Project: t.Project, Environment: t.Environment, ApplicationName: t.Spec.Name, Service: slot.Service, Revision: t.Revision, Config: slot.Config}
-		reader, e := s.gitlabWorkflowClient(step, p)
+		reader, e := s.gitlabWorkflowClient(step, p, h.Job)
 		if e == nil {
 			job, e = discoverGitLabJob(step, p, h.Job, reader, client)
 		}
@@ -246,7 +266,7 @@ func (s *Server) nativeActionsJobLogs(ctx context.Context, p store.ActionsPool, 
 		respond(nil, false, "gitlab", state, message)
 		return
 	}
-	client, err := s.gitlabWorkflowClient(ctx, bound)
+	client, err := s.gitlabWorkflowClient(ctx, bound, selected)
 	if err != nil {
 		state, message := gitlabWorkflowState(err)
 		respond(nil, false, "gitlab", state, message)
@@ -302,7 +322,12 @@ func (s *Server) actionsJobCancel(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "unavailable", "This job has no verified active runner eligible for cancellation.")
 		return
 	}
-	client, err := s.gitlabRunnerClient(ctx, actionsTarget(bound), bound.Config)
+	original, err := s.gitlabHistoryRuntime(bound, h.Job)
+	if err != nil {
+		problem(w, 503, "unavailable", safeActionsError(err))
+		return
+	}
+	client, err := s.gitlabRunnerClient(ctx, actionsTarget(bound), bound.Service, bound.Config, original)
 	if err != nil {
 		problem(w, 503, "unavailable", safeActionsError(err))
 		return

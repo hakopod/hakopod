@@ -15,6 +15,9 @@ func LocalSecretNames(app Application) []string {
 			if service.Actions.JobsCredential != "" {
 				seen[service.Actions.JobsCredential] = true
 			}
+			if service.Actions.Cache != nil && service.Actions.Cache.Credential != "" {
+				seen[service.Actions.Cache.Credential] = true
+			}
 		}
 		for _, ref := range SecretReferences(service) {
 			if ref.Ref != "" {

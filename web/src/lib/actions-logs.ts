@@ -50,10 +50,11 @@ type Section = {
 
 function nativeSection(raw: string): Section | undefined {
   const text = logTimestamp(raw)?.text ?? raw
-  // GitLab's carriage return and erase-line marker are part of its protocol.
-  // Match them before cleanup; ordinary text that mentions a section stays text.
+  // GitLab separates section metadata from its title with a carriage return.
+  // The API removes ANSI controls while masking secrets, so the erase-line
+  // marker is optional. Match before cleanup removes the carriage return.
   const match = text.match(
-    /^(?:\x1b\[[0-?]*[ -/]*[@-~])*section_(start|end):([0-9]{1,13}):([A-Za-z0-9_.-]{1,255})(?:\[collapsed=(true|false)\])?\r\x1b\[0K([^\r\n]*)\r?$/,
+    /^(?:\x1b\[[0-?]*[ -/]*[@-~])*section_(start|end):([0-9]{1,13}):([A-Za-z0-9_.-]{1,255})(?:\[collapsed=(true|false)\])?\r(?:\x1b\[0K)?([^\r\n]*)\r?$/,
   )
   if (match) {
     const timestamp = Number(match[2]) * 1000
@@ -72,7 +73,12 @@ function nativeSection(raw: string): Section | undefined {
   const cleaned = cleanWorkflowLog(text)
   if (cleaned === '##[endgroup]') return { kind: 'end', provider: 'github' }
   if (cleaned.startsWith('##[group]'))
-    return { kind: 'start', provider: 'github', title: cleaned.slice(9) || 'Log group', collapsed: true }
+    return {
+      kind: 'start',
+      provider: 'github',
+      title: cleaned.slice(9) || 'Log group',
+      collapsed: true,
+    }
 }
 
 // Match native sections by provider and ID. Line numbers distinguish repeated
@@ -192,7 +198,11 @@ export function reconcileWorkflowExpansion(
         (failed && !wasFailed) || (group.attention && group.attentionLine !== old?.attentionLine)
           ? true
           : (old?.open ??
-            (failed || group.attention || group.unfinished || group.containsUnfinished || !group.collapsed)),
+            (failed ||
+              group.attention ||
+              group.unfinished ||
+              group.containsUnfinished ||
+              !group.collapsed)),
     }
   }
   return next
@@ -233,4 +243,35 @@ export function workflowLogPage(parsed: WorkflowGroups, search: string, windowEn
 
 export function workflowLogDownload(lines: WorkflowLine[]) {
   return lines.map((line) => line.rawText ?? line.text).join('\n')
+}
+
+// Provider step timestamps determine attribution. Keep every unmatched line in
+// full output rather than guessing which step produced an untimestamped line.
+export function workflowStepOutput(
+  lines: WorkflowLine[],
+  steps: { number: number; started_at?: string | null; completed_at?: string | null }[],
+) {
+  const byStep = new Map<number, WorkflowLine[]>(steps.map((step) => [step.number, []]))
+  const ranges = steps
+    .filter((step) => step.started_at && Number.isFinite(Date.parse(step.started_at)))
+    .map((step) => ({ ...step, start: Date.parse(step.started_at!) }))
+    .sort((a, b) => a.start - b.start)
+  const unmatched: WorkflowLine[] = []
+  for (const line of lines) {
+    const timestamp = logTimestamp(line.text)?.timestamp
+    let index = -1
+    if (timestamp !== undefined)
+      for (let current = ranges.length - 1; current >= 0; current--) {
+        if (timestamp >= ranges[current].start) {
+          index = current
+          break
+        }
+      }
+    const step = ranges[index]
+    const end = step?.completed_at ? Date.parse(step.completed_at) : undefined
+    if (step && timestamp !== undefined && (end === undefined || timestamp <= end))
+      byStep.get(step.number)!.push(line)
+    else unmatched.push(line)
+  }
+  return { byStep, unmatched }
 }

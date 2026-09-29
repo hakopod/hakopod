@@ -23,8 +23,9 @@ func (s *Store) SaveActionsProviderRegistration(ctx context.Context, slot Action
 		return errors.New("provider registration is invalid or exceeds its storage bound")
 	}
 	result, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET provider_runner_id=$4,encrypted_registration=$5,phase='starting',updated_at=now()
- WHERE id=$1 AND application_id=$2 AND service=$3 AND config=$6 AND phase='intent' AND provider_runner_id='' AND encrypted_registration IS NULL`,
-		slot.ID, slot.ApplicationID, slot.Service, runnerID, sealed, JSON(slot.Config))
+ WHERE id=$1 AND application_id=$2 AND service=$3 AND config=$6 AND phase='intent' AND provider_runner_id='' AND encrypted_registration IS NULL
+ AND encrypted_provider_intent IS NOT DISTINCT FROM $7`,
+		slot.ID, slot.ApplicationID, slot.Service, runnerID, sealed, JSON(slot.Config), slot.EncryptedProviderIntent)
 	if err != nil {
 		return err
 	}

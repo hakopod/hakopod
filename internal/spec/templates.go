@@ -401,6 +401,9 @@ func TemplateSecretNames(a Application) []string {
 			if s.Actions.JobsCredential != "" {
 				refs[s.Actions.JobsCredential] = true
 			}
+			if s.Actions.Cache != nil && s.Actions.Cache.Credential != "" {
+				refs[s.Actions.Cache.Credential] = true
+			}
 		}
 		for _, r := range SecretReferences(EffectiveService(a, s)) {
 			refs[r.Ref] = true

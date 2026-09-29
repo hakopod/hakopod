@@ -2,10 +2,10 @@ package spec
 
 import (
 	"fmt"
-	"github.com/hakopod/hakopod/internal/actions"
 	"regexp"
 	"strings"
 
+	"github.com/hakopod/hakopod/internal/actions"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -35,6 +35,13 @@ type Actions struct {
 	Labels           []string         `json:"labels" toml:"labels"`
 	TimeoutMinutes   int64            `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
 	WorkspaceSizeGiB int64            `json:"workspace_size_gib,omitempty" toml:"workspace_size_gib,omitempty"`
+	Cache            *ActionsCache    `json:"cache,omitempty" toml:"cache,omitempty"`
+}
+
+// Cache opts into installation-approved storage. Its credential is a local
+// secret reference; bucket, endpoint and limits remain installation-owned.
+type ActionsCache struct {
+	Credential string `json:"credential" toml:"credential"`
 }
 
 func (a Actions) Target() actions.Target {
@@ -81,33 +88,44 @@ func normalizeActions(s *Service) error {
 	if err != nil {
 		return fmt.Errorf("actions: %w", err)
 	}
-	// Provider types are a configuration contract, not runtime qualification.
-	// Keep this gate until each native executor and its lifecycle are verified.
-	if target.Provider != actions.ProviderGitHub {
-		return fmt.Errorf("actions.provider: %w", &actions.UnsupportedProviderError{Provider: target.Provider, Reason: "managed runner execution is not yet qualified for this provider"})
+	// Syntax is independent of installation qualification. The cluster validates
+	// the exact native binding during planning, acceptance and every new slot.
+	a.Provider, a.GitLab, a.Bitbucket = target.Provider, target.GitLab, target.Bitbucket
+	if target.Provider == actions.ProviderGitHub {
+		// Preserve the omitted default in existing immutable GitHub revisions.
+		a.Provider = ""
 	}
-	// The omitted default keeps existing GitHub revisions and pool comparisons
-	// unchanged when a client starts sending provider = "github" explicitly.
-	a.Provider = ""
+	if a.Cache != nil && (target.Provider != actions.ProviderGitLab || a.Cache.Credential == "" || !(SecretRef{Ref: a.Cache.Credential}).Valid()) {
+		return fmt.Errorf("actions.cache: select a cache secret for an installation-approved GitLab pool")
+	}
+	if target.Provider == actions.ProviderBitbucket && target.Bitbucket.Repository == "" {
+		return fmt.Errorf("actions.bitbucket.repository: select the repository assigned to this runner")
+	}
 	if !(SecretRef{Ref: a.Credential}).Valid() || a.Credential == "" {
 		return fmt.Errorf("actions.credential: select an application secret")
 	}
 	if a.JobsCredential != "" && !(SecretRef{Ref: a.JobsCredential}).Valid() {
 		return fmt.Errorf("actions.jobs_credential: select an application secret")
 	}
-	if len(a.Labels) == 0 {
-		a.Labels = []string{"hakopod"}
-	}
-	if len(a.Labels) > 8 {
-		return fmt.Errorf("actions.labels: at most eight labels")
-	}
-	seen := map[string]bool{}
-	for _, label := range a.Labels {
-		key := strings.ToLower(label)
-		if !actionsLabel.MatchString(label) || seen[key] {
-			return fmt.Errorf("actions.labels: use distinct letters, numbers, dots, underscores or hyphens")
+	if target.Provider == actions.ProviderBitbucket {
+		if err := normalizeBitbucketActionsLabels(s); err != nil {
+			return err
 		}
-		seen[key] = true
+	} else {
+		if len(a.Labels) == 0 {
+			a.Labels = []string{"hakopod"}
+		}
+		if len(a.Labels) > 8 {
+			return fmt.Errorf("actions.labels: at most eight labels")
+		}
+		seen := map[string]bool{}
+		for _, label := range a.Labels {
+			key := strings.ToLower(label)
+			if !actionsLabel.MatchString(label) || seen[key] {
+				return fmt.Errorf("actions.labels: use distinct letters, numbers, dots, underscores or hyphens")
+			}
+			seen[key] = true
+		}
 	}
 	if a.TimeoutMinutes == 0 {
 		a.TimeoutMinutes = 60
@@ -118,13 +136,20 @@ func normalizeActions(s *Service) error {
 	if a.WorkspaceSizeGiB < 0 || a.WorkspaceSizeGiB == 1 || a.WorkspaceSizeGiB > 16 {
 		return fmt.Errorf("actions.workspace_size_gib: choose 2–16 GiB of temporary workspace storage")
 	}
-	if s.Image == "" {
-		s.Image = ActionsRunnerImage
-	}
-	// Registry resolution removes the tag while preserving the approved
-	// repository and digest. Both forms must survive deployment validation.
-	if !IsActionsRunnerImage(s.Image) {
-		return fmt.Errorf("actions runners use the verified, digest-pinned runner image")
+	if target.Provider == actions.ProviderGitHub {
+		if s.Image == "" {
+			s.Image = ActionsRunnerImage
+		}
+		if !IsActionsRunnerImage(s.Image) {
+			return fmt.Errorf("actions runners use the verified, digest-pinned runner image")
+		}
+	} else {
+		if validateImage(s.Image) != nil || !strings.Contains(s.Image, "@sha256:") {
+			return fmt.Errorf("native actions runners require an installation-approved digest-pinned image")
+		}
+		if s.Architecture != "amd64" && s.Architecture != "arm64" {
+			return fmt.Errorf("native actions runners require an explicit amd64 or arm64 architecture")
+		}
 	}
 	if s.Size == "" {
 		s.Size = "compute"
@@ -140,6 +165,24 @@ func normalizeActions(s *Service) error {
 		return fmt.Errorf("actions pools manage their own probes and network access")
 	}
 	p := EffectiveResources(*s)
+	if target.Provider != actions.ProviderGitHub {
+		minimumCPU, minimumMemory, minimumLimit := "200m", "2Gi", "4Gi"
+		if target.Provider == actions.ProviderBitbucket {
+			minimumCPU, minimumMemory, minimumLimit = "1", "8Gi", "8Gi"
+			if ActionsWorkspaceGiB(a) < 4 {
+				return fmt.Errorf("Bitbucket runners require at least 4 GiB of temporary storage")
+			}
+		}
+		for _, bound := range []struct{ value, minimum, label string }{
+			{p.CPURequest, minimumCPU, "requested CPU"}, {p.CPULimit, "1", "CPU limit"},
+			{p.MemoryRequest, minimumMemory, "requested memory"}, {p.MemoryLimit, minimumLimit, "memory limit"},
+		} {
+			value, err := resource.ParseQuantity(bound.value)
+			if err != nil || value.Cmp(resource.MustParse(bound.minimum)) < 0 {
+				return fmt.Errorf("%s runners require at least %s %s", target.Provider, bound.minimum, bound.label)
+			}
+		}
+	}
 	request, e := resource.ParseQuantity(p.MemoryRequest)
 	if e != nil || request.Cmp(resource.MustParse("768Mi")) < 0 {
 		return fmt.Errorf("actions pools require at least 768Mi requested memory including sandbox overhead")

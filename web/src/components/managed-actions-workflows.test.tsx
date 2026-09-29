@@ -188,3 +188,87 @@ test('GitHub history retains its existing run selection and original repository 
   )
   assert.match(header, /View on GitHub/)
 })
+
+test('a failed step opens its own output without a second full-log panel', () => {
+  const item = nativeJob()
+  item.native_job = {
+    ...item.native_job!,
+    conclusion: 'failure',
+    steps: [
+      {
+        number: 1,
+        name: 'Checkout sources',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: '2026-09-29T06:45:00Z',
+        completed_at: '2026-09-29T06:45:20Z',
+      },
+      {
+        number: 2,
+        name: 'Build package',
+        status: 'completed',
+        conclusion: 'failure',
+        started_at: '2026-09-29T06:45:20Z',
+        completed_at: '2026-09-29T06:46:00Z',
+      },
+    ],
+  }
+  const html = renderJob(item, true, {
+    lines: [
+      { number: 1, text: '2026-09-29T06:45:01Z Checkout succeeded' },
+      { number: 2, text: '2026-09-29T06:45:21Z error: compiler failed' },
+      { number: 3, text: 'Provider housekeeping without a timestamp' },
+    ],
+  })
+  assert.equal((html.match(/scrollable log/g) || []).length, 1)
+  assert.match(html, /aria-expanded="true" aria-controls="workflow-step-fixture-slot-2"/)
+  assert.match(html, /error: compiler failed/)
+  assert.match(html, /whitespace-pre-wrap wrap-anywhere/)
+  assert.doesNotMatch(html, /min-w-full w-max/)
+  const stepsButton = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]
+    .map(([button]) => button)
+    .find((button) => /Steps/.test(button))
+  assert.match(stepsButton || '', /aria-pressed="true"/)
+  assert.match(stepsButton || '', /text-\[var\(--navigation-active\)\]/)
+  assert.doesNotMatch(
+    html,
+    /Checkout succeeded|Provider housekeeping without a timestamp|Full job log/,
+  )
+  assert.match(html, /1 line could not be matched to a step/)
+  assert.ok(renderedButton(html, 'All output'))
+})
+
+test('a running step is the initial output view and missing steps use a single fallback', () => {
+  const item = nativeJob()
+  item.native_job = {
+    ...item.native_job!,
+    status: 'in_progress',
+    conclusion: '',
+    completed_at: null,
+    steps: [
+      {
+        number: 1,
+        name: 'Build package',
+        status: 'in_progress',
+        conclusion: '',
+        started_at: '2026-09-29T06:45:00Z',
+        completed_at: null,
+      },
+    ],
+  }
+  const html = renderJob(item, true, {
+    state: 'live',
+    lines: [{ number: 1, text: '2026-09-29T06:45:21Z Building' }],
+  })
+  assert.match(html, /aria-expanded="true" aria-controls="workflow-step-fixture-slot-1"/)
+  assert.match(html, /Building/)
+  assert.equal((renderJob(nativeJob()).match(/scrollable log/g) || []).length, 1)
+})
+
+test('the fallback full-job output wraps long unbroken text by default', () => {
+  const message = 'registry.example.invalid/' + 'very-long-image-reference'.repeat(40)
+  const html = renderJob(nativeJob(), true, { lines: [{ number: 1, text: message }] })
+  assert.ok(html.includes(message), 'wrapping must not truncate or rewrite copied output')
+  assert.match(html, /whitespace-pre-wrap wrap-anywhere/)
+  assert.doesNotMatch(html, /min-w-full w-max/)
+})

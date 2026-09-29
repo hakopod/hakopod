@@ -31,6 +31,7 @@ import { ScopeContext, canAccess, canCreateEnvironment, resolveWorkspaceScope } 
 import { resolveProjectRouteScope, useProjects } from '../lib/projects'
 import { useTheme } from '../lib/appearance'
 import { useActiveSection } from '../lib/use-active-section'
+import { resourceApplicationID } from '../lib/navigation'
 import { Avatar } from './avatar'
 import { Logo, Icon } from './icons'
 import { Button } from './ui/button'
@@ -213,7 +214,6 @@ function Workspace({
   })
   const databasePath = /^\/databases\/([a-f0-9]{32})(?:\/|$)/.exec(location.pathname)?.[1]
   const database = useDatabase(databasePath)
-  const applicationPath = /^\/applications\/([^/]+)/.exec(location.pathname)?.[1]
   const buildPath = /^\/builds\/([^/]+)/.exec(location.pathname)?.[1]
   const buildId = buildPath && buildPath !== 'new' ? buildPath : undefined
   const build = useQuery({
@@ -225,12 +225,7 @@ function Workspace({
     staleTime: 5000,
     gcTime: 0,
   })
-  const applicationId =
-    applicationPath && !['new', 'import'].includes(applicationPath)
-      ? applicationPath
-      : buildPath === 'new' && typeof location.search.application === 'string'
-        ? location.search.application
-        : deployment.data
+  const applicationId = resourceApplicationID(location.pathname, location.search, deployment.data)
   const resource = useQuery({
     queryKey: ['application', applicationId],
     queryFn: ({ signal }) =>

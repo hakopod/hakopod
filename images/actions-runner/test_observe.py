@@ -56,4 +56,52 @@ class ObserverTest(unittest.TestCase):
                 collector.identity = '11111111-1111-1111-1111-111111111111'
                 with self.assertRaises(OSError): collector.tick()
 
+    def test_oversized_physical_record_never_emits_secret_fragments(self):
+        with tempfile.TemporaryDirectory() as root:
+            pages = Path(root) / '_diag/pages'
+            pages.mkdir(parents=True)
+            identity = '11111111-1111-1111-1111-111111111111'
+            page = pages / ('22222222-2222-2222-2222-222222222222_' + identity + '_1.log')
+            # This secret straddled the former observer's 16 KiB chunks.
+            page.write_bytes(b'x' * (observe.MAX_RECORD - 8) + b'fixture-private-')
+            records = []
+            with patch.object(observe, 'ROOT', root), patch.object(observe, 'STATE', root + '/state'):
+                collector = observe.Collector(records.append)
+                collector.identity = identity
+                collector.tick()
+                for _ in range(3):
+                    with page.open('ab') as stream:
+                        stream.write(b'y' * 65536)
+                    collector.tick()
+                    self.assertLessEqual(len(next(iter(collector.files.values()))[1]), observe.MAX_RECORD)
+                with page.open('ab') as stream:
+                    stream.write(b'value\nsafe next physical record\n')
+                collector.tick()
+                emitted = [r['text'] for r in records if 'text' in r]
+                self.assertEqual(emitted, ['[log line withheld: physical record exceeded 16 KiB]', 'safe next physical record'])
+                self.assertTrue(any(r.get('redaction_incomplete') for r in records))
+                self.assertNotIn('fixture', json.dumps(records))
+                for stream, _, _ in collector.files.values():
+                    stream.close()
+                os.close(collector.pages_fd)
+
+    def test_unlinked_incomplete_record_is_not_forwarded(self):
+        with tempfile.TemporaryDirectory() as root:
+            pages = Path(root) / '_diag/pages'
+            pages.mkdir(parents=True)
+            identity = '11111111-1111-1111-1111-111111111111'
+            page = pages / ('22222222-2222-2222-2222-222222222222_' + identity + '_1.log')
+            page.write_text('incomplete-private-prefix')
+            records = []
+            with patch.object(observe, 'ROOT', root), patch.object(observe, 'STATE', root + '/state'):
+                collector = observe.Collector(records.append)
+                collector.identity = identity
+                collector.tick()
+                self.assertEqual(records, [])
+                page.unlink()
+                collector.tick()
+                self.assertEqual([r['text'] for r in records if 'text' in r], ['[incomplete log line withheld]'])
+                self.assertTrue(records[0]['redaction_incomplete'])
+                os.close(collector.pages_fd)
+
 if __name__ == '__main__': unittest.main()

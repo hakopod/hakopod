@@ -43,6 +43,7 @@ type gitlabLifecycleFake struct {
 	deleteLost, podDeleting                  bool
 	policyDeleteFails, findFails             bool
 	afterRegister                            func()
+	beforeRegister                           func()
 	jobs                                     map[string]actions.ProviderJob
 	readFailure, reuseJobs                   bool
 	traceCalls, cancelCalls, managerLogReads int
@@ -53,6 +54,9 @@ func (f *gitlabLifecycleFake) Capabilities() actions.ProviderCapabilities {
 	return actions.ProviderCapabilities{Provider: actions.ProviderGitLab, Available: false}
 }
 func (f *gitlabLifecycleFake) Register(_ context.Context, target actions.ProviderTarget, name string, _ []string) (actions.ProviderRegistration, error) {
+	if f.beforeRegister != nil {
+		f.beforeRegister()
+	}
 	f.providerOps++
 	f.nextID++
 	id := fmt.Sprint(f.nextID)
@@ -237,6 +241,8 @@ func gitlabLifecycleHarness(t *testing.T, db *store.Store) (*Server, *gitlabLife
 		Architecture: "amd64", Status: "passed", RunnerVersion: "19.4.1", SourceCommit: "3c39fcebf73d01d464db3dee8a5267155273a6c5",
 		TransportSourceSHA256: strings.Repeat("d", 64), ManagerBinarySHA256: strings.Repeat("e", 64), HelperBinarySHA256: strings.Repeat("f", 64), VerificationReportSHA256: strings.Repeat("1", 64),
 	}, TransportPolicy: cluster.GitLabActionsTransportPolicy{SchemaVersion: 1, CoordinatorURL: "https://gitlab.com", ArtifactOrigins: []string{}}}
+	runtime.Images.ExecutionReportSHA256 = strings.Repeat("2", 64)
+	runtime.Images.Execution = &cluster.GitLabActionsExecutionQualification{Passed: true, Architecture: "amd64", Coordinators: []string{"https://gitlab.com"}, RunnerScopes: []string{"project"}, Checkout: true, Script: true, Artifacts: true, Services: true, JobIsolation: true, CredentialIsolation: true, Drain: true, Cleanup: true}
 	config := spec.Service{Image: runtime.Images.Manager, Architecture: "amd64", Replicas: 1, Size: "compute", Actions: &spec.Actions{Provider: actions.ProviderGitLab, GitLab: &actions.GitLabTarget{URL: "https://gitlab.com", ProjectID: 12}, Credential: "original-management", Labels: []string{"development"}, TimeoutMinutes: 15, WorkspaceSizeGiB: 8}}
 	app := store.Application{ID: store.NewID(), Project: "native-fixture", Environment: "development", Name: "native-fixture"}
 	app.Name = "native-" + app.ID[:12]
@@ -451,7 +457,18 @@ func TestGitLabLifecycleCleanupUsesOriginalScopeCredentialAndRevision(t *testing
 	changed.Credential = "replacement-management"
 	pool.Config.Actions, pool.Config.Suspended, pool.Revision = &changed, true, 2
 	s.actionsGitLabRuntime = nil
+	// Removing a binding does not erase its persisted original transport trust.
+	// That trust must still authenticate before any provider cleanup call.
+	originalKey := s.Auth.EncryptionKey
 	s.Auth.EncryptionKey = ""
+	before := f.providerOps
+	if err := s.reconcileActionsPool(context.Background(), actionsTarget(pool), pool); err == nil || !strings.Contains(err.Error(), "authentication encryption key") {
+		t.Fatal("missing original trust key did not block external cleanup", err)
+	}
+	if f.providerOps != before || len(f.runners) != 1 || len(f.pods) != 1 {
+		t.Fatal("unreadable original trust contacted the provider or removed the runner")
+	}
+	s.Auth.EncryptionKey = originalKey
 	gitlabCleaned(t, s, f, pool)
 	for _, credential := range f.credentials {
 		if credential != "original-management" {

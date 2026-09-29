@@ -70,8 +70,8 @@ func actionsSlotTarget(t cluster.Target, slot store.ActionsSlot) cluster.Target 
 	return t
 }
 
-func (s *Server) gitlabRunnerClient(ctx context.Context, t cluster.Target, config spec.Service) (gitlabRunnerProvider, error) {
-	if actionsConfigProvider(config) != actions.ProviderGitLab || s.actionsGitLabClient == nil {
+func (s *Server) gitlabRunnerClient(ctx context.Context, t cluster.Target, service string, config spec.Service, original *cluster.GitLabActionsRuntime) (gitlabRunnerProvider, error) {
+	if actionsConfigProvider(config) != actions.ProviderGitLab || (s.actionsGitLabClient == nil && !s.actionsNativeConfigured) {
 		return nil, unsupportedActionsProvider(actionsConfigProvider(config))
 	}
 	if _, err := config.Actions.ProviderTarget().Canonical(); err != nil {
@@ -84,22 +84,33 @@ func (s *Server) gitlabRunnerClient(ctx context.Context, t cluster.Target, confi
 	if err != nil {
 		return nil, err
 	}
-	client, err := s.actionsGitLabClient(ctx, t, config, token)
+	var client gitlabRunnerProvider
+	if s.actionsGitLabClient != nil {
+		client, err = s.actionsGitLabClient(ctx, t, config, token)
+	} else {
+		client, err = s.installationGitLabClient(ctx, t, service, config, token, original)
+	}
 	if err == nil && (client == nil || client.Capabilities().Provider != actions.ProviderGitLab) {
 		return nil, unsupportedActionsProvider(actions.ProviderGitLab)
 	}
 	return client, err
 }
 
-func (s *Server) gitlabRuntimeConfig(ctx context.Context, t cluster.Target, config spec.Service) (cluster.GitLabActionsRuntime, error) {
-	if s.actionsGitLabRuntime == nil || actionsConfigProvider(config) != actions.ProviderGitLab {
+func (s *Server) gitlabRuntimeConfig(ctx context.Context, t cluster.Target, service string, config spec.Service) (cluster.GitLabActionsRuntime, error) {
+	if (s.actionsGitLabRuntime == nil && !s.actionsNativeConfigured) || actionsConfigProvider(config) != actions.ProviderGitLab {
 		return cluster.GitLabActionsRuntime{}, unsupportedActionsProvider(actions.ProviderGitLab)
 	}
-	runtime, err := s.actionsGitLabRuntime(ctx, t, config)
+	var runtime cluster.GitLabActionsRuntime
+	var err error
+	if s.actionsGitLabRuntime != nil {
+		runtime, err = s.actionsGitLabRuntime(ctx, t, config)
+	} else {
+		runtime, err = s.Cluster.ResolveGitLabActions(ctx, t, service, config)
+	}
 	if err != nil {
 		return runtime, err
 	}
-	if err = cluster.ValidateGitLabActionsRuntime(runtime); err != nil {
+	if err = cluster.ValidateGitLabActionsExecution(runtime, config.Actions.Cache != nil); err != nil {
 		return runtime, err
 	}
 	target, err := config.Actions.ProviderTarget().Canonical()
@@ -136,6 +147,14 @@ func validateGitLabPrivate(slot store.ActionsSlot, native actions.GitLabManagerC
 	}
 	if native.ExpiresAt != nil && !native.ExpiresAt.After(time.Now()) {
 		return errors.New("GitLab private registration has expired")
+	}
+	if (slot.Config.Actions.Cache == nil) != (native.CacheCredentials == nil) {
+		return errors.New("GitLab private cache credentials do not match the original slot")
+	}
+	if native.CacheCredentials != nil {
+		if err := native.CacheCredentials.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -180,6 +199,12 @@ func (s *Server) launchSavedGitLabSlot(ctx context.Context, t cluster.Target, sl
 	if slot.Phase != "starting" || slot.ManagerLaunchAttempted {
 		return fmt.Errorf("%w: GitLab manager launch already attempted", store.ErrConflict)
 	}
+	if len(slot.EncryptedProviderIntent) > 0 {
+		original, err := s.openGitLabIntent(t, slot)
+		if err != nil || !reflect.DeepEqual(original, saved.Runtime) {
+			return errors.New("GitLab saved registration differs from its original trust intent")
+		}
+	}
 	runtime, ok := s.actionRuntime().(gitlabActionsRuntime)
 	if !ok {
 		return unsupportedActionsProvider(actions.ProviderGitLab)
@@ -222,10 +247,14 @@ func (s *Server) startGitLabActionsSlot(ctx context.Context, t cluster.Target, p
 	if err := s.Store.RequireActions(ctx, p.Project, p.Environment); err != nil {
 		return err
 	}
-	if s.actionsGitLabClient == nil {
+	if s.actionsGitLabClient == nil && !s.actionsNativeConfigured {
 		return unsupportedActionsProvider(actions.ProviderGitLab)
 	}
-	runtime, err := s.gitlabRuntimeConfig(ctx, t, p.Config)
+	runtime, err := s.gitlabRuntimeConfig(ctx, t, p.Service, p.Config)
+	if err != nil {
+		return err
+	}
+	cacheCredentials, err := s.gitlabCacheCredentials(ctx, t, p.Config, runtime)
 	if err != nil {
 		return err
 	}
@@ -240,14 +269,14 @@ func (s *Server) startGitLabActionsSlot(ctx context.Context, t cluster.Target, p
 	if err = s.actionRuntime().ActionsPoolAvailable(ctx, t, p.Config); err != nil {
 		return err
 	}
-	client, err := s.gitlabRunnerClient(ctx, t, p.Config)
+	client, err := s.gitlabRunnerClient(ctx, t, p.Service, p.Config, &runtime)
 	if err != nil {
 		return err
 	}
 	if err = actionsFence(ctx, t); err != nil {
 		return err
 	}
-	slot, err := s.Store.NewActionsSlot(ctx, p)
+	slot, err := s.Store.NewActionsSlotWithIntent(ctx, p, func(slot store.ActionsSlot) ([]byte, error) { return s.sealGitLabIntent(t, slot, runtime) })
 	if err != nil {
 		return err
 	}
@@ -269,10 +298,19 @@ func (s *Server) startGitLabActionsSlot(ctx context.Context, t cluster.Target, p
 	if err = decodeGitLabPrivate(registration.ManagerConfig, &native); err != nil {
 		return err
 	}
+	// Management credentials returned by GitLab never contain storage keys.
+	if native.CacheCredentials != nil {
+		return errors.New("GitLab returned unexpected private cache configuration")
+	}
+	native.CacheCredentials = cacheCredentials
 	if err = validateGitLabPrivate(slot, native); err != nil {
 		return err
 	}
 	saved := gitlabSlotRegistration{Version: 1, Registration: native, Runtime: runtime}
+	originalRuntime, err := s.openGitLabIntent(t, intent)
+	if err != nil || !reflect.DeepEqual(originalRuntime, runtime) {
+		return errors.New("GitLab registered runtime differs from its original intent")
+	}
 	encoded, err := json.Marshal(saved)
 	if err != nil {
 		return errors.New("GitLab private registration could not be encoded")
@@ -469,12 +507,45 @@ func (s *Server) reconcileGitLabActionsPool(ctx context.Context, t cluster.Targe
 		if err = actionsFence(ctx, target); err != nil {
 			return err
 		}
-		var client gitlabRunnerProvider
-		if !slot.ProviderCleanupConfirmed {
-			client, err = s.gitlabRunnerClient(ctx, target, slot.Config)
-			if err != nil {
-				return err
+		if slot.ProviderCleanupConfirmed {
+			// Durable provider-absence proof leaves only owned local resources.
+			// Their removal must not depend on deleted provider trust or keys.
+			gone, e := s.cleanupGitLabActionsSlot(ctx, target, slot, nil)
+			if e != nil {
+				return e
 			}
+			if gone {
+				remaining--
+			} else {
+				cleanupPending = true
+			}
+			continue
+		}
+		var client gitlabRunnerProvider
+		original, e := s.gitlabOriginalRuntime(target, slot)
+		if e != nil {
+			return e
+		}
+		if network, ok := s.actionRuntime().(interface {
+			RefreshGitLabActionsNetwork(context.Context, cluster.Target, string, string, cluster.GitLabActionsRuntime) error
+		}); ok && original != nil {
+			if e := network.RefreshGitLabActionsNetwork(ctx, target, slot.Service, slot.ID, *original); e != nil {
+				// Stop execution when fresh inventory makes a destination unsafe,
+				// including while final provider cleanup is temporarily unavailable.
+				if slot.Phase != "cleanup" {
+					if _, markErr := s.gitlabSlotStore().MarkActionsProviderCleanup(ctx, slot); markErr != nil {
+						return markErr
+					}
+				}
+				if _, stopErr := s.actionRuntime().DeleteActionsPod(ctx, target, slot.ID); stopErr != nil {
+					return stopErr
+				}
+				return e
+			}
+		}
+		client, err = s.gitlabRunnerClient(ctx, target, slot.Service, slot.Config, original)
+		if err != nil {
+			return err
 		}
 		phase, e := s.actionRuntime().ActionsPodPhase(ctx, target, slot.ID)
 		if e != nil {
@@ -489,11 +560,8 @@ func (s *Server) reconcileGitLabActionsPool(ctx context.Context, t cluster.Targe
 				// uses the original management credential, never the encrypted token.
 				retire = true
 			} else {
-				current, e := s.gitlabRuntimeConfig(ctx, target, slot.Config)
-				if e != nil {
-					return e
-				}
-				retire = !reflect.DeepEqual(current, saved.Runtime)
+				current, e := s.gitlabRuntimeConfig(ctx, target, slot.Service, slot.Config)
+				retire = e != nil || !reflect.DeepEqual(current, saved.Runtime)
 			}
 		}
 		if retire {

@@ -44,6 +44,10 @@ func gitlabActionsDevelopmentFixture(t *testing.T) (Target, spec.Service, action
 		},
 		TransportPolicy: GitLabActionsTransportPolicy{SchemaVersion: 1, CoordinatorURL: "https://gitlab.com", ArtifactOrigins: []string{}},
 	}
+	native.Images.ExecutionReportSHA256 = strings.Repeat("2", 64)
+	native.Images.Execution = &GitLabActionsExecutionQualification{Passed: true, Architecture: "amd64", Coordinators: []string{"https://gitlab.com"}, RunnerScopes: []string{"project"}, Checkout: true, Script: true, Artifacts: true, Services: true, JobIsolation: true, CredentialIsolation: true, Drain: true, Cleanup: true}
+	s.Image = native.Images.Manager
+	target.Spec.Services["runner"] = s
 	return target, s, registration, native
 }
 
@@ -269,8 +273,13 @@ func TestGitLabCandidateSaveStartIsImmutableOwnedAndIdempotent(t *testing.T) {
 	if secret.Immutable == nil || !*secret.Immutable || policy.Immutable == nil || !*policy.Immutable {
 		t.Fatal("native artifacts are mutable")
 	}
-	if _, err := spec.Normalize(target.Spec); err == nil {
-		t.Fatal("candidate accidentally enabled unqualified provider selection")
+	if _, err := spec.Normalize(target.Spec); err != nil {
+		t.Fatal("valid native provider configuration could not be normalized", err)
+	}
+	// Parsing a native provider spec does not approve its execution. The
+	// installation resolver must reject this unbound synthetic candidate.
+	if _, err := c.ResolveGitLabActions(ctx, target, "runner", s); err == nil {
+		t.Fatal("candidate artifacts accidentally enabled unqualified provider execution")
 	}
 }
 

@@ -52,12 +52,14 @@ func NewGitLabClient(target ProviderTarget, credential string, options GitLabCli
 	if err != nil {
 		return nil, err
 	}
+	policy.freshDenied = options.FreshDeniedNetworks
 	return &GitLabClient{target: target, credential: credential, http: newGitLabHTTP(policy, roots), budget: options.Budget, budgetKey: gitlabBudgetKey(target, credential), timeout: options.TimeoutMinutes * 60}, nil
 }
 
 func (c *GitLabClient) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
-		Provider: ProviderGitLab, Available: false, Reason: "GitLab native runner execution and cleanup are not yet qualified",
+		Provider: ProviderGitLab, Lifecycle: "ephemeral", Available: false, Reason: "GitLab native runner execution and cleanup are not yet qualified",
+		MinimumResources:  ProviderMinimumResources{CPURequest: "200m", CPULimit: "1", MemoryRequest: "2Gi", MemoryLimit: "4Gi", WorkspaceGiB: 2},
 		Cache:             ProviderCacheCapabilities{Reason: "Persistent cache requires configured and qualified storage"},
 		Build:             ProviderBuildCapabilities{NativeArchitectures: []string{}, Reason: "Native and cross-architecture builds are not yet qualified"},
 		Isolation:         ProviderIsolationCapabilities{Reason: "Native manager credential and single-job isolation require runtime qualification"},
@@ -89,13 +91,35 @@ func (c *GitLabClient) ownership(name string) string {
 // GitLabManagerConfig is the private, versioned registration envelope consumed
 // by the native runtime. Store it encrypted; never return it through an API.
 type GitLabManagerConfig struct {
-	SchemaVersion  int        `json:"schema_version"`
-	URL            string     `json:"url"`
-	RunnerID       string     `json:"runner_id"`
-	Name           string     `json:"name"`
-	Token          string     `json:"token"`
-	TimeoutSeconds int64      `json:"timeout_seconds"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	SchemaVersion    int                     `json:"schema_version"`
+	URL              string                  `json:"url"`
+	RunnerID         string                  `json:"runner_id"`
+	Name             string                  `json:"name"`
+	Token            string                  `json:"token"`
+	TimeoutSeconds   int64                   `json:"timeout_seconds"`
+	ExpiresAt        *time.Time              `json:"expires_at,omitempty"`
+	CacheCredentials *GitLabCacheCredentials `json:"cache_credentials,omitempty"`
+}
+
+// GitLabCacheCredentials are private manager material. The native adapter
+// signs bounded requests; neither these values nor a credentials file enters
+// the job-visible daemon or the public transport policy.
+type GitLabCacheCredentials struct {
+	AccessKey    string `json:"access_key"`
+	SecretKey    string `json:"secret_key"`
+	SessionToken string `json:"session_token,omitempty"`
+}
+
+func (c GitLabCacheCredentials) Validate() error {
+	for _, field := range []struct {
+		value            string
+		minimum, maximum int
+	}{{c.AccessKey, 3, 256}, {c.SecretKey, 16, 4096}, {c.SessionToken, 0, 8192}} {
+		if len(field.value) < field.minimum || len(field.value) > field.maximum || strings.IndexFunc(field.value, func(r rune) bool { return r <= ' ' || r >= 127 }) >= 0 {
+			return errors.New("GitLab cache requires bounded S3 credentials in its selected application secret")
+		}
+	}
+	return nil
 }
 
 func (c *GitLabClient) Register(ctx context.Context, target ProviderTarget, name string, labels []string) (ProviderRegistration, error) {
@@ -507,7 +531,8 @@ func (c *GitLabClient) boundJobLogs(ctx context.Context, target ProviderTarget, 
 		return nil, false, err
 	}
 	defer release()
-	if _, err = c.verifiedBoundJob(ctx, identity, historical); err != nil {
+	job, err := c.verifiedBoundJob(ctx, identity, historical)
+	if err != nil {
 		return nil, false, err
 	}
 	res, err := c.request(ctx, http.MethodGet, "/projects/"+identity.Repository+"/jobs/"+identity.JobID+"/trace", nil, nil)
@@ -522,23 +547,8 @@ func (c *GitLabClient) boundJobLogs(ctx context.Context, target ProviderTarget, 
 	if err != nil {
 		return nil, false, &GitLabError{Kind: "transport"}
 	}
-	truncated := len(data) > 1<<20
-	if truncated {
-		data = data[:1<<20]
-	}
-	lines := []LogLine{}
-	if len(data) > 0 {
-		for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-			if i >= 10000 {
-				truncated = true
-				break
-			}
-			// Preserve carriage returns and native section control bytes.
-			lines = append(lines, LogLine{Number: int64(i + 1), Text: line})
-		}
-	}
-	bounded, cut := BoundLogLines(lines, false)
-	return bounded, truncated || cut, nil
+	lines, truncated := ParseLogText(data, 1<<20, job != nil && job.Status == "completed", c.credential)
+	return lines, truncated, nil
 }
 
 func (c *GitLabClient) Cancel(ctx context.Context, target ProviderTarget, identity ProviderJobIdentity) (CancellationScope, error) {

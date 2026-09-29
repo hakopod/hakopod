@@ -245,6 +245,17 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not_found", "This job is no longer available in this pool.")
 		return
 	}
+	// The original read credential remains server-only. Failed secret lookup
+	// cannot fall back to returning an unredacted provider or runner response.
+	if selected.ProviderConfig == nil {
+		problem(w, 409, "unavailable", "This job's original log configuration is unavailable.")
+		return
+	}
+	logCredentials, err := s.actionsLogCredentials(ctx, p, selected.ProviderConfig)
+	if err != nil {
+		problem(w, 503, "logs_unavailable", "Log redaction credentials are unavailable. Retry after secret storage recovers.")
+		return
+	}
 	respond := func(lines []actions.LogLine, truncated bool, source, state, message string) {
 		principal, accessErr := s.Store.KeyPrincipal(ctx, who(r).KeyID)
 		if accessErr != nil || !principal.Allows("logs:read", p.Project, p.Environment, p.ApplicationName) {
@@ -254,6 +265,7 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 		if lines == nil {
 			lines = []actions.LogLine{}
 		}
+		lines = actions.MaskLogLines(lines, logCredentials...)
 		var bounded bool
 		lines, bounded = actions.BoundLogLines(lines, source == "runner")
 		truncated = truncated || bounded

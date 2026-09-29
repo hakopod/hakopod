@@ -35,6 +35,8 @@ export function actionsTargetLabel(actions: Actions) {
 
 export function actionsRemovalMessage(actions: Actions) {
   const provider = actionsProviderName(actions)
+  if (actionsProvider(actions) === 'bitbucket')
+    return 'Deleting this pool stops its dedicated runner. Active pipeline steps may be interrupted. Keep the credential until runner cleanup is confirmed.'
   const effect =
     actionsProvider(actions) === 'github'
       ? 'cancels running GitHub jobs and removes its runner registrations'

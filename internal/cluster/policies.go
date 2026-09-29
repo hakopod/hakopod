@@ -48,6 +48,11 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 			ObjectMeta: metav1.ObjectMeta{Name: "hakopod-service-" + name, Namespace: ns, Labels: labelsFor(t, name)},
 			Spec:       networkingv1.NetworkPolicySpec{PodSelector: selectorFor(t, name), PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}},
 		}
+		// GitLab slots use their original per-slot policy. Service rotation must
+		// never grant a draining GitLab manager the new service's network access.
+		// Other providers retain the ordinary service policy until they have
+		// their own qualified slot policy and lifecycle.
+		policy.Spec.PodSelector.MatchExpressions = []metav1.LabelSelectorRequirement{{Key: gitlabActionsProviderLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"gitlab"}}}
 		// DNS is scoped to kube-dns pods, never all kube-system addresses.
 		udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
 		dnsPort := intstr.FromInt32(53)
@@ -207,6 +212,9 @@ func (c *Client) applyPolicies(ctx context.Context, t Target) error {
 	}
 	sort.Slice(items.Items, func(i, j int) bool { return items.Items[i].Name < items.Items[j].Name })
 	for _, item := range items.Items {
+		if item.Labels[gitlabActionsProviderLabel] == "gitlab" && gitlabActionsSlotID.MatchString(item.Labels[gitlabActionsSlotLabel]) {
+			continue
+		}
 		if service := item.Labels[serviceKey]; service != "" {
 			if _, ok := t.Spec.Services[service]; !ok {
 				if err := beforeStep(ctx, t); err != nil {

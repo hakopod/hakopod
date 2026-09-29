@@ -112,6 +112,19 @@ export function parentNavigation(
     return parts[2] === 'connect'
       ? { to: `/networks/${parts[1]}`, label: 'Back to network' }
       : { to: '/networks', label: 'Back to networks' }
+  if (
+    parts[0] === 'templates' &&
+    parts[1] === 'managed-actions' &&
+    typeof search.application === 'string' &&
+    search.application
+  ) {
+    const runner = typeof search.runner === 'string' ? search.runner : ''
+    return {
+      to: `/applications/${encodeURIComponent(search.application)}`,
+      label: runner ? 'Back to service' : 'Back to application',
+      search: { tab: 'overview', ...(runner ? { service: runner } : {}) },
+    }
+  }
   if (parts[0] === 'templates' && parts[1])
     return {
       to: '/templates',
@@ -124,4 +137,22 @@ export function parentNavigation(
     }
   if (parts[0] === 'login' && parts[1]) return { to: '/', label: 'Back to workspace' }
   return null
+}
+
+// Resource editing routes share the loaded application's scope with the shell.
+// Until that query resolves, callers must not substitute a browser preference.
+export function resourceApplicationID(
+  pathname: string,
+  search: Record<string, unknown>,
+  deploymentApplication?: string,
+) {
+  const path = /^\/applications\/([^/]+)/.exec(pathname)?.[1]
+  if (path && !['new', 'import'].includes(path)) return path
+  if (
+    (pathname === '/builds/new' || /^\/templates(?:\/|$)/.test(pathname)) &&
+    typeof search.application === 'string' &&
+    search.application
+  )
+    return search.application
+  return deploymentApplication
 }

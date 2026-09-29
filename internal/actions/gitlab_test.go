@@ -244,7 +244,7 @@ func TestGitLabJobsVerifyIdentityBeforeTraceAndCancellation(t *testing.T) {
 			lines, _, logErr := c.JobLogs(context.Background(), c.target, gitlabIdentityFixture())
 			scope, cancelErr := c.Cancel(context.Background(), c.target, gitlabIdentityFixture())
 			if change == "none" {
-				if logErr != nil || cancelErr != nil || traceCalls != 1 || cancelCalls != 1 || scope != CancellationJob || len(lines) != 2 || !strings.Contains(lines[0].Text, "\r\x1b[0K") || lines[1].Text != "hello\r" {
+				if logErr != nil || cancelErr != nil || traceCalls != 1 || cancelCalls != 1 || scope != CancellationJob || len(lines) != 2 || (!strings.Contains(lines[0].Text, "\r") || strings.Contains(lines[0].Text, "\x1b")) || lines[1].Text != "hello" {
 					t.Fatal("native log controls or single-job cancellation changed", logErr, cancelErr)
 				}
 			} else if logErr == nil || cancelErr == nil || traceCalls != 0 || cancelCalls != 0 {

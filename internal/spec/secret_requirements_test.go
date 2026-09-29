@@ -32,3 +32,12 @@ func TestRunnerSecretsIncludeSeparateJobAccess(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerSecretsIncludeCacheWithoutExposingItsValue(t *testing.T) {
+	app := Application{Services: map[string]Service{"runner": {Actions: &Actions{Credential: "management", Cache: &ActionsCache{Credential: "cache"}}}}}
+	for _, discover := range []func(Application) []string{LocalSecretNames, TemplateSecretNames} {
+		if got := discover(app); !reflect.DeepEqual(got, []string{"cache", "management"}) {
+			t.Fatalf("cache credential requirement = %v", got)
+		}
+	}
+}

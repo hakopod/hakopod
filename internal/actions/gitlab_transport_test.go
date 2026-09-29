@@ -22,6 +22,19 @@ import (
 	"time"
 )
 
+func TestGitLabFreshInventoryDoesNotMutateSharedPolicyBacking(t *testing.T) {
+	backing := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("192.168.0.0/16")}
+	policy := gitlabTransportPolicy{host: "gitlab.com", port: "443", denied: backing[:1], freshDenied: func(context.Context) ([]string, error) { return []string{"172.16.0.0/12"}, nil }}
+	_, _ = policy.dial(context.Background(), "tcp", "gitlab.com:443", func(context.Context, string, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+	}, func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("synthetic unavailable transport")
+	})
+	if backing[1] != netip.MustParsePrefix("192.168.0.0/16") {
+		t.Fatal("dial overwrote shared policy capacity")
+	}
+}
+
 func gitlabTLSFixture(t *testing.T, handler http.Handler) (*httptest.Server, []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

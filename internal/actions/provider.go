@@ -238,13 +238,28 @@ type ProviderIsolationCapabilities struct {
 	Reason             string `json:"reason,omitempty"`
 }
 
+// ProviderBindingCapabilities identifies an exact installation-approved pool.
+// A provider can have different image and cache qualifications per architecture.
+type ProviderBindingCapabilities struct {
+	Application       string           `json:"application"`
+	Service           string           `json:"service"`
+	Image             string           `json:"image"`
+	Architecture      string           `json:"architecture"`
+	GitLab            *GitLabTarget    `json:"gitlab,omitempty"`
+	Bitbucket         *BitbucketTarget `json:"bitbucket,omitempty"`
+	Cache             bool             `json:"cache"`
+	CrossArchitecture bool             `json:"cross_architecture"`
+}
+
 // Capabilities report qualified implementation behavior. Available does not
 // imply a live node, available provider quota, or successful deployment.
 type ProviderCapabilities struct {
 	Provider          Provider                      `json:"provider"`
+	Lifecycle         string                        `json:"lifecycle"`
 	Available         bool                          `json:"available"`
 	Reason            string                        `json:"reason,omitempty"`
 	Image             string                        `json:"image,omitempty"`
+	Bindings          []ProviderBindingCapabilities `json:"bindings,omitempty"`
 	MinimumResources  ProviderMinimumResources      `json:"minimum_resources"`
 	Cache             ProviderCacheCapabilities     `json:"cache"`
 	Build             ProviderBuildCapabilities     `json:"build"`

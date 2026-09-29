@@ -19,7 +19,7 @@ type workflowRuntimeFixture struct {
 
 func (f *workflowRuntimeFixture) ActionsWorkflowOutput(context.Context, cluster.Target, string, string) (actions.Output, error) {
 	f.reads++
-	return actions.Output{Available: true, Lines: []actions.LogLine{{Number: 1, Text: "scoped workflow ***"}}}, nil
+	return actions.Output{Available: true, Lines: []actions.LogLine{{Number: 1, Text: "::add-mask::fixture-dynamic-value"}, {Number: 2, Text: "scoped workflow fixture-dynamic-value control-plane-fixture-only"}, {Number: 3, Text: "password=fixture-password"}}}, nil
 }
 func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 	db := actionsDatabase(t)
@@ -100,12 +100,34 @@ func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 		if out.Code != test.want {
 			t.Fatalf("got %d want %d: %s", out.Code, test.want, out.Body.String())
 		}
+		for _, secret := range []string{"fixture-dynamic-value", "control-plane-fixture-only", "fixture-password"} {
+			if strings.Contains(out.Body.String(), secret) {
+				t.Fatal("live workflow endpoint returned an unmasked secret")
+			}
+		}
 		if out.Code != 200 && strings.Contains(out.Body.String(), "scoped workflow") {
 			t.Fatal("log leaked")
 		}
 	}
 	if runtime.reads != 1 {
 		t.Fatal("unauthorized request reached runner", runtime.reads)
+	}
+	// Database fixtures exercise cache references independently of the provider
+	// normalizer: desired pools, active slots and current specs prevent deletion.
+	for _, query := range []struct{ add, remove string }{
+		{`UPDATE actions_pools SET config=jsonb_set(config,'{actions,cache}','{"credential":"cache-fixture"}') WHERE application_id=$1`, `UPDATE actions_pools SET config=config #- '{actions,cache}' WHERE application_id=$1`},
+		{`UPDATE actions_slots SET config=jsonb_set(config,'{actions,cache}','{"credential":"cache-fixture"}') WHERE application_id=$1`, `UPDATE actions_slots SET config=config #- '{actions,cache}' WHERE application_id=$1`},
+		{`UPDATE applications SET spec=jsonb_set(spec,'{services,runner,actions}','{"cache":{"credential":"cache-fixture"}}') WHERE id=$1`, `UPDATE applications SET spec=spec #- '{services,runner,actions}' WHERE id=$1`},
+	} {
+		if _, err = db.Pool.Exec(ctx, query.add, app.ID); err != nil {
+			t.Fatal(err)
+		}
+		if required, err := db.ActionsCredentialRequired(ctx, app.Project, app.Environment, app.Name, "cache-fixture"); err != nil || !required {
+			t.Fatal("a configured cache credential could be deleted", err)
+		}
+		if _, err = db.Pool.Exec(ctx, query.remove, app.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err = db.DeleteActionsSlot(ctx, slot.ID); err != nil {
 		t.Fatal(err)

@@ -1097,13 +1097,20 @@
                         },
                         "required": []
                       }
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActionsProviderCapabilities"
+                      }
                     }
                   },
                   "required": [
                     "licensed",
                     "runtime_ready",
                     "message",
-                    "runner_image"
+                    "runner_image",
+                    "providers"
                   ]
                 }
               }
@@ -16139,7 +16146,7 @@
             "required": [
               "url"
             ],
-            "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy. Execution remains unavailable."
+            "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
           },
           "bitbucket": {
             "type": "object",
@@ -16154,7 +16161,7 @@
             "required": [
               "workspace"
             ],
-            "description": "Bitbucket workspace UUID and optional repository UUID. Execution remains unavailable."
+            "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
           },
           "workspace_size_gib": {
             "type": "integer",
@@ -16165,13 +16172,25 @@
           "jobs_credential": {
             "type": "string",
             "description": "Optional application secret for provider job details and logs. Defaults to credential when omitted or empty."
+          },
+          "cache": {
+            "type": "object",
+            "properties": {
+              "credential": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "credential"
+            ],
+            "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
           }
         },
         "required": [
           "credential",
           "labels"
         ],
-        "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider target fields preserve imported configuration; runtime availability is validated by the server. GitLab and Bitbucket execution is not yet available."
+        "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment."
       },
       "ActionsPool": {
         "type": "object",
@@ -16261,6 +16280,211 @@
           "created_at",
           "updated_at"
         ]
+      },
+      "ActionsProviderCapabilities": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab",
+              "bitbucket"
+            ]
+          },
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "ephemeral",
+              "dedicated"
+            ]
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "application": {
+                  "type": "string"
+                },
+                "service": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "architecture": {
+                  "type": "string"
+                },
+                "gitlab": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "project_id": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "group_id": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "trust_policy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
+                },
+                "bitbucket": {
+                  "type": "object",
+                  "properties": {
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "repository": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspace"
+                  ],
+                  "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
+                },
+                "cache": {
+                  "type": "boolean"
+                },
+                "cross_architecture": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "application",
+                "service",
+                "image",
+                "architecture",
+                "cache",
+                "cross_architecture"
+              ]
+            }
+          },
+          "minimum_resources": {
+            "type": "object",
+            "properties": {
+              "cpu_request": {
+                "type": "string"
+              },
+              "cpu_limit": {
+                "type": "string"
+              },
+              "memory_request": {
+                "type": "string"
+              },
+              "memory_limit": {
+                "type": "string"
+              },
+              "workspace_gib": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "cpu_request",
+              "cpu_limit",
+              "memory_request",
+              "memory_limit",
+              "workspace_gib"
+            ]
+          },
+          "cache": {
+            "type": "object",
+            "properties": {
+              "persistent": {
+                "type": "boolean"
+              },
+              "backend": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "persistent"
+            ]
+          },
+          "build": {
+            "type": "object",
+            "properties": {
+              "native_architectures": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cross_architecture": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "native_architectures",
+              "cross_architecture"
+            ]
+          },
+          "isolation": {
+            "type": "object",
+            "properties": {
+              "single_job": {
+                "type": "boolean"
+              },
+              "manager_credentials_isolated": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "single_job",
+              "manager_credentials_isolated"
+            ]
+          },
+          "cancellation_scope": {
+            "type": "string",
+            "enum": [
+              "none",
+              "job",
+              "pipeline"
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "lifecycle",
+          "available",
+          "minimum_resources",
+          "cache",
+          "build",
+          "isolation",
+          "cancellation_scope"
+        ],
+        "description": "Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed."
       },
       "ActionsObservation": {
         "type": "object",

@@ -2,7 +2,6 @@ package spec
 
 import (
 	"encoding/json"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -34,29 +33,38 @@ func TestActionsExplicitGitHubPreservesExistingRevisionShape(t *testing.T) {
 	}
 }
 
-func TestActionsRejectProvidersUntilRuntimeQualification(t *testing.T) {
+func TestActionsNormalizeNativeSyntaxWithoutGrantingRuntimeQualification(t *testing.T) {
 	for _, provider := range []actions.Provider{actions.ProviderGitLab, actions.ProviderBitbucket} {
 		t.Run(string(provider), func(t *testing.T) {
 			app := actionsFixture()
-			config := app.Services["runner"].Actions
-			config.Repository = ""
-			config.Provider = provider
+			service := app.Services["runner"]
+			service.Image = "ghcr.io/hakopod/native-runner@sha256:" + strings.Repeat("a", 64)
+			service.Architecture = "amd64"
+			service.Resources = &Resources{CPURequest: "1", CPULimit: "2", MemoryRequest: "8Gi", MemoryLimit: "8Gi"}
+			config := service.Actions
+			config.Repository, config.Provider, config.WorkspaceSizeGiB = "", provider, 4
 			if provider == actions.ProviderGitLab {
 				config.GitLab = &GitLabTarget{ProjectID: 12}
 			} else {
-				config.Bitbucket = &BitbucketTarget{Workspace: "{12345678-abcd-4234-8234-123456789abc}"}
+				config.Bitbucket = &BitbucketTarget{Workspace: "{12345678-abcd-4234-8234-123456789abc}", Repository: "{aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee}"}
 			}
-			if err := config.ProviderTarget().Validate(); err != nil {
-				t.Fatal("valid future provider contract rejected", err)
+			app.Services["runner"] = service
+			normalized, err := Normalize(app)
+			if err != nil || normalized.Services["runner"].Actions.Provider != provider || normalized.Services["runner"].Image != service.Image {
+				t.Fatal("native syntax or pinned identity changed", err)
 			}
-			for _, suspended := range []bool{false, true} {
-				svc := app.Services["runner"]
-				svc.Suspended = suspended
-				app.Services["runner"] = svc
-				_, err := Normalize(app)
-				var unsupported *actions.UnsupportedProviderError
-				if !errors.As(err, &unsupported) || unsupported.Provider != provider || !strings.Contains(err.Error(), "not yet qualified") {
-					t.Fatalf("unqualified provider did not fail explicitly: %v", err)
+			for _, mutate := range []func(*Service){
+				func(s *Service) { s.Image = "ghcr.io/hakopod/native-runner:latest" },
+				func(s *Service) { s.Architecture = "" },
+				func(s *Service) {
+					s.Resources = &Resources{CPURequest: "100m", CPULimit: "1", MemoryRequest: "768Mi", MemoryLimit: "4Gi"}
+				},
+			} {
+				bad := service
+				mutate(&bad)
+				app.Services["runner"] = bad
+				if _, err := Normalize(app); err == nil {
+					t.Fatal("native syntax accepted missing image, architecture or resources")
 				}
 			}
 		})

@@ -1,0 +1,287 @@
+// Copyright (c) 2026 Hakopod contributors. MIT licensed; see LICENSE.upstream.
+package helpers
+
+import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"mime/multipart"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+const hakopodCachePOSTHeader = "X-Hakopod-Cache-Post"
+const hakopodCachePolicyPath = "/run/hakopod-provider/cache-policy.json"
+const hakopodCacheCAPath = "/run/hakopod-provider/cache-ca.crt"
+
+type hakopodCachePolicy struct {
+	SchemaVersion   int    `json:"schema_version"`
+	Origin          string `json:"origin"`
+	Bucket          string `json:"bucket"`
+	Prefix          string `json:"prefix"`
+	MaxArchiveBytes int64  `json:"max_archive_bytes"`
+}
+
+var hakopodCacheTransferError = errors.New("managed cache transfer failed; signed request details omitted")
+var hakopodCacheTemporaryError = errors.New("managed cache transfer temporarily unavailable; signed request details omitted")
+var hakopodCachePrefix = regexp.MustCompile(`^hakopod/v1/[a-f0-9]{64}$`)
+var hakopodCacheBucket = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
+
+func parseHakopodCachePolicy(reader io.Reader) (*hakopodCachePolicy, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, 4097))
+	if err != nil || len(data) > 4096 {
+		return nil, hakopodCacheTransferError
+	}
+	keys := json.NewDecoder(bytes.NewReader(data))
+	if token, err := keys.Token(); err != nil || token != json.Delim('{') {
+		return nil, hakopodCacheTransferError
+	}
+	seen := map[string]bool{}
+	for keys.More() {
+		token, err := keys.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[key] {
+			return nil, hakopodCacheTransferError
+		}
+		switch key {
+		case "schema_version", "origin", "bucket", "prefix", "max_archive_bytes":
+		default:
+			return nil, hakopodCacheTransferError
+		}
+		seen[key] = true
+		var raw json.RawMessage
+		if keys.Decode(&raw) != nil {
+			return nil, hakopodCacheTransferError
+		}
+	}
+	var p hakopodCachePolicy
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if len(seen) != 5 || decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF || p.SchemaVersion != 1 || !hakopodCacheBucket.MatchString(p.Bucket) || !hakopodCachePrefix.MatchString(p.Prefix) || p.MaxArchiveBytes < 1<<20 || p.MaxArchiveBytes > 1<<30 {
+		return nil, hakopodCacheTransferError
+	}
+	u, err := url.Parse(p.Origin)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" || u.RawQuery != "" || u.ForceQuery || u.Path != "" || u.RawPath != "" || strings.ToLower(u.Host) != u.Host || strings.ContainsAny(u.Host, "%\\ \r\n\t") {
+		return nil, hakopodCacheTransferError
+	}
+	return &p, nil
+}
+
+func loadHakopodCachePolicy() (*hakopodCachePolicy, error) {
+	file, err := os.Open(hakopodCachePolicyPath)
+	if err != nil {
+		return nil, hakopodCacheTransferError
+	}
+	defer file.Close()
+	return parseHakopodCachePolicy(file)
+}
+
+func (p *hakopodCachePolicy) objectAllowed(object string) bool {
+	if len(object) > 1024 || path.Clean(object) != object || strings.ContainsAny(object, "%\\\x00\r\n\t") || !strings.HasPrefix(object, p.Prefix+"/project/") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(object, p.Prefix+"/project/"), "/")
+	return len(parts) >= 2 && regexp.MustCompile(`^[1-9][0-9]{0,15}$`).MatchString(parts[0])
+}
+
+func (p *hakopodCachePolicy) requestAllowed(req *http.Request) bool {
+	u := req.URL
+	if u == nil || u.Scheme+"://"+u.Host != p.Origin || u.User != nil || u.Opaque != "" || u.Fragment != "" || u.RawPath != "" || len(u.RawQuery) > 16<<10 {
+		return false
+	}
+	switch req.Method {
+	case http.MethodPost:
+		return u.Path == "/"+p.Bucket || u.Path == "/"+p.Bucket+"/"
+	case http.MethodGet, http.MethodHead:
+		return strings.HasPrefix(u.Path, "/"+p.Bucket+"/") && p.objectAllowed(strings.TrimPrefix(u.Path, "/"+p.Bucket+"/"))
+	default:
+		return false
+	}
+}
+
+type hakopodCacheTransport struct {
+	base   http.RoundTripper
+	policy *hakopodCachePolicy
+}
+
+func (t hakopodCacheTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.policy == nil || !t.policy.requestAllowed(req) {
+		return nil, hakopodCacheTransferError
+	}
+	clean := req.Clone(req.Context())
+	clean.Header = http.Header{}
+	for _, name := range []string{"Content-Type", "Range"} {
+		if value := req.Header.Get(name); value != "" {
+			clean.Header.Set(name, value)
+		}
+	}
+	res, err := t.base.RoundTrip(clean)
+	if err != nil {
+		return nil, hakopodCacheTemporaryError
+	}
+	if res.StatusCode >= 300 && res.StatusCode <= 399 {
+		res.Body.Close()
+		return nil, hakopodCacheTransferError
+	}
+	if req.Method == http.MethodGet && res.StatusCode >= 200 && res.StatusCode < 300 {
+		if res.ContentLength < 0 || res.ContentLength > t.policy.MaxArchiveBytes {
+			res.Body.Close()
+			return nil, hakopodCacheTransferError
+		}
+		res.Body = &hakopodCacheBody{ReadCloser: res.Body, remaining: t.policy.MaxArchiveBytes}
+	}
+	return res, nil
+}
+
+type hakopodCacheBody struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (r *hakopodCacheBody) Read(data []byte) (int, error) {
+	if r.remaining == 0 {
+		var extra [1]byte
+		if n, err := r.ReadCloser.Read(extra[:]); n != 0 || err != io.EOF {
+			return 0, hakopodCacheTransferError
+		}
+		return 0, io.EOF
+	}
+	if int64(len(data)) > r.remaining {
+		data = data[:r.remaining]
+	}
+	n, err := r.ReadCloser.Read(data)
+	r.remaining -= int64(n)
+	return n, err
+}
+
+func newHakopodCacheTransport() http.RoundTripper {
+	p, err := loadHakopodCachePolicy()
+	if err != nil {
+		return hakopodCacheTransport{}
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		return hakopodCacheTransport{}
+	}
+	file, err := os.Open(hakopodCacheCAPath)
+	if err == nil {
+		data, readErr := io.ReadAll(io.LimitReader(file, (64<<10)+1))
+		file.Close()
+		if readErr != nil || len(data) > 64<<10 || !roots.AppendCertsFromPEM(data) {
+			return hakopodCacheTransport{}
+		}
+	} else if !os.IsNotExist(err) {
+		return hakopodCacheTransport{}
+	}
+	base := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext, TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 30 * time.Second, MaxConnsPerHost: 2, MaxIdleConns: 2, DisableCompression: true}
+	return hakopodCacheTransport{base: base, policy: p}
+}
+
+func (c *CacheClient) Do(req *http.Request) (*http.Response, error) {
+	res, err := c.Client.Do(req)
+	if err != nil {
+		if errors.Is(err, hakopodCacheTemporaryError) {
+			return nil, hakopodCacheTemporaryError
+		}
+		return nil, hakopodCacheTransferError
+	}
+	return res, nil
+}
+func (c *CacheClient) Get(raw string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, raw, nil)
+	if err != nil {
+		return nil, hakopodCacheTransferError
+	}
+	return c.Do(req)
+}
+func (c *CacheClient) Head(raw string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodHead, raw, nil)
+	if err != nil {
+		return nil, hakopodCacheTransferError
+	}
+	return c.Do(req)
+}
+
+func (c *CacheArchiverCommand) uploadHakopodCache(fi os.FileInfo, file io.ReadCloser) error {
+	p, err := loadHakopodCachePolicy()
+	if err != nil || fi.Size() < 1 || fi.Size() > p.MaxArchiveBytes || len(c.Headers) != 1 {
+		return hakopodCacheTransferError
+	}
+	name, encoded, ok := strings.Cut(c.Headers[0], ":")
+	if !ok || !strings.EqualFold(name, hakopodCachePOSTHeader) || len(encoded) > 24<<10 {
+		return hakopodCacheTransferError
+	}
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil || len(data) > 16<<10 {
+		return hakopodCacheTransferError
+	}
+	var fields map[string]string
+	if json.Unmarshal(data, &fields) != nil || len(fields) < 6 || len(fields) > 8 || fields["bucket"] != p.Bucket || !p.objectAllowed(fields["key"]) {
+		return hakopodCacheTransferError
+	}
+	var names []string
+	for key, value := range fields {
+		switch key {
+		case "bucket", "key", "policy", "x-amz-algorithm", "x-amz-credential", "x-amz-date", "x-amz-security-token", "x-amz-signature":
+		default:
+			return hakopodCacheTransferError
+		}
+		if value == "" || len(value) > 12<<10 || strings.ContainsAny(value, "\x00\r\n") {
+			return hakopodCacheTransferError
+		}
+		names = append(names, key)
+	}
+	sort.Strings(names)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	for _, name := range names {
+		if writer.WriteField(name, fields[name]) != nil {
+			return hakopodCacheTransferError
+		}
+	}
+	if _, err := writer.CreateFormFile("file", "cache.archive"); err != nil {
+		return hakopodCacheTransferError
+	}
+	head := append([]byte(nil), form.Bytes()...)
+	form.Reset()
+	if writer.Close() != nil {
+		return hakopodCacheTransferError
+	}
+	tail := append([]byte(nil), form.Bytes()...)
+	req, err := http.NewRequest(http.MethodPost, c.URL, io.MultiReader(bytes.NewReader(head), io.LimitReader(file, fi.Size()), bytes.NewReader(tail)))
+	if err != nil {
+		return hakopodCacheTransferError
+	}
+	req.ContentLength = int64(len(head)) + fi.Size() + int64(len(tail))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res, err := c.getClient().Do(req)
+	if err != nil {
+		if errors.Is(err, hakopodCacheTemporaryError) {
+			return retryableError{err: hakopodCacheTemporaryError}
+		}
+		return hakopodCacheTransferError
+	}
+	defer res.Body.Close()
+	return hakopodCacheUploadStatus(res.StatusCode)
+}
+
+func hakopodCacheUploadStatus(status int) error {
+	if status == http.StatusTooManyRequests || status >= 500 && status <= 599 {
+		return retryableError{err: hakopodCacheTemporaryError}
+	}
+	if status != http.StatusOK && status != http.StatusNoContent && status != http.StatusCreated {
+		return hakopodCacheTransferError
+	}
+	return nil
+}

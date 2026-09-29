@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ type GitLabClientOptions struct {
 	TrustPolicy    *GitLabTrustPolicy
 	Budget         *RequestBudget
 	TimeoutMinutes int64
+	// FreshDeniedNetworks adds bounded current installation addresses to each
+	// new connection. A failed inventory refresh denies the request.
+	FreshDeniedNetworks func(context.Context) ([]string, error)
 }
 
 // GitLabError retains only bounded public diagnostics. It never wraps a native
@@ -82,10 +86,20 @@ func (e *GitLabError) Unwrap() error {
 }
 
 type gitlabTransportPolicy struct {
-	host    string
-	port    string
-	allowed []netip.Prefix
-	denied  []netip.Prefix
+	host        string
+	port        string
+	allowed     []netip.Prefix
+	denied      []netip.Prefix
+	freshDenied func(context.Context) ([]string, error)
+}
+
+func ValidateGitLabTrustPolicy(target ProviderTarget, policy *GitLabTrustPolicy) error {
+	canonical, err := target.Canonical()
+	if err != nil || canonical.Provider != ProviderGitLab {
+		return errors.New("GitLab trust target is invalid")
+	}
+	_, _, err = gitlabPolicy(canonical, policy)
+	return err
 }
 
 var gitlabSpecialNetworks = []netip.Prefix{
@@ -176,6 +190,22 @@ func (p gitlabTransportPolicy) dial(ctx context.Context, network, address string
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || host != p.host || port != p.port {
 		return nil, &GitLabError{Kind: "scope"}
+	}
+	if p.freshDenied != nil {
+		// A policy value still shares slice capacity with other connections.
+		// Inventory belongs to this dial and must not mutate that shared backing.
+		p.denied = slices.Clone(p.denied)
+		denied, err := p.freshDenied(ctx)
+		if err != nil || len(denied) > 4096 {
+			return nil, &GitLabError{Kind: "scope"}
+		}
+		for _, raw := range denied {
+			prefix, err := netip.ParsePrefix(raw)
+			if err != nil || prefix != prefix.Masked() {
+				return nil, &GitLabError{Kind: "scope"}
+			}
+			p.denied = append(p.denied, prefix)
+		}
 	}
 	addresses, err := lookup(ctx, "ip", host)
 	if err != nil || len(addresses) < 1 || len(addresses) > 16 {

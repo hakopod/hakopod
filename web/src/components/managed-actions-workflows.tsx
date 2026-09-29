@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WorkflowLogLines } from './workflow-log-lines'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
@@ -10,6 +11,8 @@ import {
   CircleDashed,
   Clock3,
   ExternalLink,
+  Download,
+  SlidersHorizontal,
   LoaderCircle,
   XCircle,
 } from 'lucide-react'
@@ -20,12 +23,12 @@ import { workflowJobPresentation } from '../lib/actions-workflow'
 import {
   cleanWorkflowLog,
   jobDuration,
-  logTimestamp,
+  workflowStepOutput,
   groupWorkflowLines,
   workflowLogPage,
   workflowLogDownload,
 } from '../lib/actions-logs'
-import { useScope } from '../lib/scope'
+import { canAccess, useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -286,7 +289,7 @@ export function ManagedActionsWorkflows({
                 item={selected}
                 application={application}
                 service={service}
-                canReadLogs={scope.can('logs:read')}
+                canReadLogs={canAccess(scope.identity, application.project, 'logs:read')}
               />
             </div>
           </div>
@@ -332,7 +335,11 @@ export function WorkflowJob({
 }) {
   const view = workflowJobPresentation(item)
   const details = view.details
-  const [expanded, setExpanded] = useState<number | 'all'>('all')
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [mode, setMode] = useState<'steps' | 'all'>('steps')
+  const [followStep, setFollowStep] = useState(true)
+  // Keep the display choice across step switches, full output and live refreshes.
+  const [wrap, setWrap] = useState(true)
   const logs = useQuery({
     queryKey: ['actions-job-logs', application.id, service, item.slot_id],
     queryFn: ({ signal }) =>
@@ -352,32 +359,36 @@ export function WorkflowJob({
     retry: false,
   })
   const steps = details?.steps || []
-  const step =
-    typeof expanded === 'number' ? steps.find((value) => value.number === expanded) : undefined
   const lines = useMemo(
     () =>
-      (logs.data?.lines || [])
-        .map((line) => ({ ...line, rawText: line.text, text: cleanWorkflowLog(line.text) }))
-        .filter((line) => {
-          if (!step) return true
-          if (!step.started_at) return false
-          const timestamp = logTimestamp(line.text)?.timestamp
-          return (
-            timestamp !== undefined &&
-            timestamp >= Date.parse(step.started_at) &&
-            (!step.completed_at || timestamp <= Date.parse(step.completed_at))
-          )
-        }),
-    [logs.data?.lines, step],
+      (logs.data?.lines || []).map((line) => ({
+        ...line,
+        rawText: line.text,
+        text: cleanWorkflowLog(line.text),
+      })),
+    [logs.data?.lines],
   )
+  const output = useMemo(() => workflowStepOutput(lines, steps), [lines, steps])
+  const suggested =
+    steps.find((step) =>
+      ['failure', 'timed_out', 'action_required'].includes(step.conclusion || ''),
+    ) ||
+    steps.find((step) => step.status === 'in_progress') ||
+    [...steps].reverse().find((step) => step.started_at) ||
+    steps[0]
+  const active = followStep ? suggested?.number : expanded
   const status = view.status
+  const allOutput = mode === 'all' || steps.length === 0
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="font-semibold wrap-anywhere">{view.name}</h3>
-          <p className="text-xs muted-text break-all">Runner: hakopod-{item.slot_id}</p>
-          {view.jobID && <p className="text-xs muted-text break-all">Job: {view.jobID}</p>}
+          <details className="text-xs muted-text">
+            <summary className="min-h-11 cursor-pointer py-3">Job details</summary>
+            <p className="break-all">Runner: hakopod-{item.slot_id}</p>
+            {view.jobID && <p className="break-all">Job: {view.jobID}</p>}
+          </details>
         </div>
         <span className="flex items-center gap-2 text-sm">
           <StateIcon status={status} />
@@ -398,87 +409,143 @@ export function WorkflowJob({
           step.
         </Note>
       )}
-      {steps.length > 0 ? (
-        <div className="min-w-0 border border-border rounded-md overflow-hidden">
-          {steps.map((value) => {
-            const open = expanded === value.number
-            const state = value.conclusion || value.status
-            return (
-              <div key={value.number} className="border-b border-border last:border-b-0">
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  aria-controls={`workflow-step-${item.slot_id}-${value.number}`}
-                  className="flex w-full min-w-0 items-center gap-2 px-3 py-3 text-left text-sm focus-visible:outline-2 focus-visible:-outline-offset-2"
-                  onClick={() => setExpanded(open ? 'all' : value.number)}
-                >
-                  {open ? (
-                    <ChevronDown size={14} className="shrink-0" />
-                  ) : (
-                    <ChevronRight size={14} className="shrink-0" />
-                  )}
-                  <StateIcon status={state} />
-                  <span className="min-w-0 flex-1 wrap-anywhere">{value.name}</span>
-                  <span className="text-xs muted-text shrink-0">
-                    {jobDuration(value.started_at, value.completed_at)}
-                  </span>
-                  <span className="sr-only">{label(state)}</span>
-                </button>
-                <div id={`workflow-step-${item.slot_id}-${value.number}`} hidden={!open}>
-                  {open && (
-                    <LogViewer
-                      key={value.number}
-                      lines={lines}
-                      title={value.name}
-                      source={logs.data?.source || 'unknown'}
-                      failed={['failure', 'timed_out', 'action_required'].includes(
-                        step?.conclusion || status,
-                      )}
-                      loading={logs.isPending && canReadLogs}
-                      permitted={canReadLogs}
-                    />
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : view.native ? null : (
-        <p className="text-sm muted-text">
-          {details
-            ? 'GitHub has not reported steps yet.'
-            : 'Waiting for GitHub to confirm this job and its steps. The credential needs Actions read access.'}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2 items-center justify-between">
-        <Button size="sm" aria-pressed={expanded === 'all'} onClick={() => setExpanded('all')}>
-          Full job log
-        </Button>
-        {logs.data && (
-          <WorkflowLogStatus source={logs.data.source} observedAt={logs.data.observed_at} />
-        )}
-      </div>
       {canReadLogs && logs.error && (
         <ErrorState error={logs.error} retry={() => void logs.refetch()} />
       )}
       {logs.data?.message && logs.data.message !== view.discoveryMessage && (
-        <Note>{logs.data.message}</Note>
+        <p className="text-xs muted-text" role="status">
+          {logs.data.message}
+        </p>
       )}
       {logs.data?.truncated && (
         <Note>
           This log window is truncated. Open {view.providerName} for the complete retained log.
         </Note>
       )}
-      {expanded === 'all' && (
-        <LogViewer
-          lines={lines}
-          title="Full job log"
-          source={logs.data?.source || 'unknown'}
-          failed={['failure', 'timed_out', 'action_required'].includes(step?.conclusion || status)}
-          loading={logs.isPending && canReadLogs}
-          permitted={canReadLogs}
-        />
-      )}
+      <div
+        className="min-w-0 overflow-hidden rounded-lg border border-[var(--hairline)]"
+        aria-label="Job steps and output"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {steps.length > 0 ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-pressed={!allOutput}
+                  className={
+                    !allOutput
+                      ? 'text-[var(--navigation-active)]! bg-transparent! border-transparent! no-underline'
+                      : ''
+                  }
+                  onClick={() => setMode('steps')}
+                >
+                  Steps <span>{steps.length}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-pressed={allOutput}
+                  className={
+                    allOutput
+                      ? 'text-[var(--navigation-active)]! bg-transparent! border-transparent! no-underline'
+                      : ''
+                  }
+                  onClick={() => setMode('all')}
+                >
+                  All output
+                </Button>
+                {!allOutput && !followStep && (
+                  <Button size="sm" variant="ghost" onClick={() => setFollowStep(true)}>
+                    Follow current step
+                  </Button>
+                )}
+              </>
+            ) : (
+              <span className="text-sm font-medium">Job output</span>
+            )}
+          </div>
+          {logs.data && (
+            <WorkflowLogStatus source={logs.data.source} observedAt={logs.data.observed_at} />
+          )}
+        </div>
+        {allOutput ? (
+          <LogViewer
+            wrap={wrap}
+            onWrapChange={setWrap}
+            lines={lines}
+            title="Job"
+            source={logs.data?.source || 'unknown'}
+            failed={['failure', 'timed_out', 'action_required'].includes(status)}
+            loading={logs.isPending && canReadLogs}
+            permitted={canReadLogs}
+          />
+        ) : (
+          <>
+            {steps.map((value) => {
+              const open = active === value.number
+              const state = value.conclusion || value.status
+              return (
+                <div
+                  key={value.number}
+                  className="border-b border-[var(--hairline)] last:border-b-0"
+                >
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={`workflow-step-${item.slot_id}-${value.number}`}
+                    className="flex min-h-11 w-full min-w-0 items-center gap-2 px-3 py-3 text-left text-sm focus-visible:outline-2 focus-visible:-outline-offset-2"
+                    onClick={() => {
+                      setFollowStep(false)
+                      setExpanded(open ? null : value.number)
+                    }}
+                  >
+                    {open ? (
+                      <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={14} className="shrink-0" aria-hidden="true" />
+                    )}
+                    <StateIcon status={state} />
+                    <span className="min-w-0 flex-1 wrap-anywhere">{value.name}</span>
+                    <span className="text-xs muted-text shrink-0">
+                      {jobDuration(value.started_at, value.completed_at)}
+                    </span>
+                    <span className="sr-only">{label(state)}</span>
+                  </button>
+                  <div id={`workflow-step-${item.slot_id}-${value.number}`} hidden={!open}>
+                    {open && (
+                      <LogViewer
+                        key={value.number}
+                        wrap={wrap}
+                        onWrapChange={setWrap}
+                        lines={output.byStep.get(value.number) || []}
+                        title={value.name}
+                        source={logs.data?.source || 'unknown'}
+                        failed={['failure', 'timed_out', 'action_required'].includes(state)}
+                        loading={logs.isPending && canReadLogs}
+                        permitted={canReadLogs}
+                      />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            {output.unmatched.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-[var(--hairline)] px-3 py-2 text-xs muted-text">
+                <span>
+                  {output.unmatched.length}{' '}
+                  {output.unmatched.length === 1 ? 'line could' : 'lines could'} not be matched to a
+                  step.
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => setMode('all')}>
+                  View all output
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
       {canReadLogs && logs.data && !['live', 'complete'].includes(logs.data.state) && (
         <Button size="sm" disabled={logs.isFetching} onClick={() => void logs.refetch()}>
           Retry logs
@@ -506,6 +573,8 @@ export function WorkflowLogStatus({ source, observedAt }: { source: string; obse
 }
 
 function LogViewer({
+  wrap,
+  onWrapChange,
   lines,
   title,
   loading,
@@ -513,6 +582,8 @@ function LogViewer({
   failed,
   source,
 }: {
+  wrap: boolean
+  onWrapChange: (wrap: boolean) => void
   lines: Line[]
   title: string
   loading: boolean
@@ -521,7 +592,6 @@ function LogViewer({
   source: string
 }) {
   const [search, setSearch] = useState('')
-  const [wrap, setWrap] = useState(false)
   const [timestamps, setTimestamps] = useState(false)
   const [follow, setFollow] = useState(false)
   const [windowEnd, setWindowEnd] = useState<number | null>(null)
@@ -553,10 +623,10 @@ function LogViewer({
       </p>
     )
   return (
-    <section className="min-w-0 border border-border rounded-md" aria-label={`${title} output`}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-border p-2">
+    <section className="min-w-0" aria-label={`${title} output`}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-y border-[var(--hairline)] bg-[var(--surface-2)] px-3 py-2">
         <Input
-          className="min-w-0 flex-1 basis-44"
+          className="min-w-0 flex-1 basis-36"
           type="search"
           value={search}
           onChange={(event) => {
@@ -564,63 +634,44 @@ function LogViewer({
             setWindowEnd(null)
           }}
           aria-label={`Search ${title} log window`}
-          placeholder="Search this log window"
+          placeholder="Find in output"
         />
         <span className="text-xs muted-text" role="status">
-          {total} {search ? 'matching rows' : 'log rows'}
+          {total} {search ? (total === 1 ? 'match' : 'matches') : total === 1 ? 'line' : 'lines'}
         </span>
-        <Button size="sm" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
-          Wrap
-        </Button>
-        <Button size="sm" aria-pressed={timestamps} onClick={() => setTimestamps(!timestamps)}>
-          Time
-        </Button>
+        <Menu
+          trigger={
+            <Button size="sm" variant="ghost">
+              <SlidersHorizontal size={14} aria-hidden="true" />
+              Display
+            </Button>
+          }
+        >
+          <MenuItem onSelect={() => onWrapChange(!wrap)}>
+            {wrap ? 'Disable wrapping' : 'Wrap long lines'}
+          </MenuItem>
+          <MenuItem onSelect={() => setTimestamps(!timestamps)}>
+            {timestamps ? 'Hide timestamps' : 'Show timestamps'}
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              setWindowEnd(null)
+              setFollow(!follow)
+            }}
+          >
+            {follow ? 'Stop following output' : 'Follow new output'}
+          </MenuItem>
+        </Menu>
         <Button
           size="sm"
-          aria-pressed={follow}
-          onClick={() => {
-            setWindowEnd(null)
-            setFollow(!follow)
-          }}
+          variant="ghost"
+          disabled={!lines.length}
+          onClick={download}
+          aria-label={`Download ${title} log window`}
         >
-          Follow
-        </Button>
-        <Button size="sm" disabled={!lines.length} onClick={download}>
-          Download window
+          <Download size={15} aria-hidden="true" />
         </Button>
       </div>
-      {(start > 0 || end < total) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2 text-xs muted-text">
-          <span>
-            Showing rows {start + 1}–{end} of {total}. Search covers the entire loaded window.
-          </span>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={start === 0}
-              onClick={() => {
-                setWindowEnd(start)
-                setFollow(false)
-              }}
-            >
-              Earlier lines
-            </Button>
-            <Button
-              size="sm"
-              disabled={end === total}
-              onClick={() => {
-                setWindowEnd(Math.min(total, end + 1))
-                setFollow(false)
-              }}
-            >
-              Later lines
-            </Button>
-            <Button size="sm" disabled={end === total} onClick={() => setWindowEnd(null)}>
-              Latest lines
-            </Button>
-          </div>
-        </div>
-      )}
       <div
         ref={scroll}
         className="max-h-[520px] min-h-28 min-w-0 overflow-auto font-mono text-xs leading-6"
@@ -650,6 +701,42 @@ function LogViewer({
           searching={Boolean(search)}
         />
       </div>
+      {(start > 0 || end < total) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] px-3 py-2 text-xs muted-text">
+          <span>
+            {start + 1}–{end} of {total}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={start === 0}
+              onClick={() => {
+                setWindowEnd(start)
+                setFollow(false)
+              }}
+            >
+              Earlier
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={end === total}
+              onClick={() => {
+                setWindowEnd(Math.min(total, end + 1))
+                setFollow(false)
+              }}
+            >
+              Later
+            </Button>
+            {end < total && (
+              <Button size="sm" variant="ghost" onClick={() => setWindowEnd(null)}>
+                Latest
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   )
 }

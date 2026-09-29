@@ -1,0 +1,92 @@
+--- a/commands/helpers/cache_client.go
++++ b/commands/helpers/cache_client.go
+@@ -1,7 +1,6 @@
+ package helpers
+ 
+ import (
+-	"net"
+ 	"net/http"
+ 	"time"
+ 
+@@ -21,18 +20,9 @@
+ }
+ 
+ func (c *CacheClient) prepareTransport() {
+-	c.Transport = &http.Transport{
+-		Proxy: http.ProxyFromEnvironment,
+-		DialContext: (&net.Dialer{
+-			Timeout:   30 * time.Second,
+-			KeepAlive: 30 * time.Second,
+-		}).DialContext,
+-		IdleConnTimeout:       90 * time.Second,
+-		TLSHandshakeTimeout:   10 * time.Second,
+-		ExpectContinueTimeout: 10 * time.Second,
+-		ResponseHeaderTimeout: 30 * time.Second,
+-		DisableCompression:    true,
+-	}
++	c.Transport = newHakopodCacheTransport()
++	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
++	c.Timeout = min(max(c.Timeout, time.Minute), 5*time.Minute)
+ }
+ 
+ func NewCacheClient(timeout int) *CacheClient {
+--- a/commands/helpers/cache_archiver.go
++++ b/commands/helpers/cache_archiver.go
+@@ -1,7 +1,6 @@
+ package helpers
+ 
+ import (
+-	"bufio"
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
+@@ -117,28 +116,7 @@
+ }
+ 
+ func (c *CacheArchiverCommand) handlePresignedURL(fi os.FileInfo, file io.ReadCloser) error {
+-	logrus.Infoln("Uploading", filepath.Base(c.File), "to", url_helpers.RedactIfEnabled(url_helpers.CleanURL(c.URL), c.RedactURL))
+-
+-	// Use a buffered body so the HTTP client reads in larger chunks (improves S3 upload throughput).
+-	body := struct {
+-		io.Reader
+-		io.Closer
+-	}{bufio.NewReaderSize(file, c.TransferBufferSize), file}
+-	req, err := http.NewRequest(http.MethodPut, c.URL, body)
+-	if err != nil {
+-		return retryableError{err: err}
+-	}
+-
+-	c.setHeaders(req, fi)
+-	req.ContentLength = fi.Size()
+-
+-	resp, err := c.getClient().Do(req)
+-	if err != nil {
+-		return retryableError{err: err}
+-	}
+-	defer func() { _ = resp.Body.Close() }()
+-
+-	return retryOnServerError(resp)
++	return c.uploadHakopodCache(fi, file)
+ }
+ 
+ func (c *CacheArchiverCommand) handleGoCloudURL(file io.Reader) error {
+@@ -286,6 +264,8 @@
+ 
+ func (c *CacheArchiverCommand) Execute(*cli.Context) {
+ 	log.SetRunnerFormatter()
++	if c.GoCloudURL != "" { logrus.Fatalln("Managed cache does not export storage credentials to jobs") }
++	c.RedactURL, c.Concurrency, c.TransferBufferSize = true, 1, 1<<20
+ 
+ 	c.normalizeArgs()
+ 	c.tryRenameAlternateFile()
+--- a/commands/helpers/cache_extractor.go
++++ b/commands/helpers/cache_extractor.go
+@@ -619,6 +619,8 @@
+ 
+ func (c *CacheExtractorCommand) Execute(cliContext *cli.Context) {
+ 	log.SetRunnerFormatter()
++	if c.GoCloudURL != "" || c.AlternateGoCloudURL != "" { logrus.Fatalln("Managed cache does not export storage credentials to jobs") }
++	c.RedactURL, c.Concurrency, c.TransferBufferSize = true, 1, 1<<20
+ 
+ 	c.normalizeExtractorArgs()
+ 	if err := validateCacheTransferTuning(c.TransferBufferSize, c.ChunkSize, c.Concurrency); err != nil {

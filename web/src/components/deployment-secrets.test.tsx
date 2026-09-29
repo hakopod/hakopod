@@ -176,9 +176,8 @@ test('native provider secrets get their own guidance and cannot generate random 
       const html = render({ ...plan, missing_secrets: [name] })
       assert.match(
         html,
-        new RegExp(`credential issued by ${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}`),
+        new RegExp(provider === 'gitlab' ? 'scoped GitLab token' : 'Bitbucket OAuth access token'),
       )
-      assert.match(html, /Managed execution is[^<]*not available for this provider/)
       assert.doesNotMatch(html, /GitHub|Actions: Read-only|Self-hosted runners|Generate and save/)
     }
   }
@@ -197,6 +196,24 @@ test('shared references across providers retain distinct credential guidance', (
   }
   const html = render({ ...plan, missing_secrets: ['runner-management'] })
   assert.match(html, /How to create the GitHub token/)
-  assert.match(html, /credential issued by GitLab/)
+  assert.match(html, /scoped GitLab token/)
   assert.doesNotMatch(html, /Generate and save/)
+})
+
+test('GitLab shared-cache secrets require storage JSON and never offer random generation', () => {
+  const plan = runnerPlan()
+  plan.spec.services.runner.actions = {
+    provider: 'gitlab',
+    gitlab: { url: 'https://gitlab.com', project_id: 123 },
+    credential: 'gitlab-token',
+    labels: ['fixture'],
+    cache: { credential: 'gitlab-cache' },
+  }
+  const html = render({
+    ...plan,
+    required_secrets: ['gitlab-token', 'gitlab-cache'],
+    missing_secrets: ['gitlab-cache'],
+  })
+  assert.match(html, /access_key, secret_key and optional session_token/)
+  assert.doesNotMatch(html, /Generate and save|Generate a new password|GitHub|scoped GitLab token/)
 })

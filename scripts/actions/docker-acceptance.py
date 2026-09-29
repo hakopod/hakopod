@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Run product-built runner pods only in this CI job's disposable dev cluster."""
+"""Run product-built runner pods only in this CI job's disposable dev cluster.
+
+HAKOPOD_ACTIONS_EXPORT_BENCHMARK=1 selects the export-only diagnostic instead of
+the normal runtime/disk suite. It does not add a long benchmark to default runs.
+HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF=1 additionally selects its explicit
+forced-overlay diagnostic. Both modes retain the named-cluster and isolation
+checks. An owned VM wrapper can generate the same fake-client fixture with:
+
+  HAKOPOD_ACTIONS_EXPORT_BENCHMARK=1 HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR=<directory>
+  go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
+
+Apply only to the verified named development cluster. Capture actual outer CPU
+limits when using a worker different from this disposable CI server node.
+"""
 import json
 from datetime import datetime
 import os
@@ -14,6 +27,7 @@ KUBE = ['kubectl', '--kubeconfig', str(ROOT / '.local/kubeconfig'), '--context',
 NODE = 'k3d-hakopod-dev-server-0'
 PEER_NAMESPACE = 'hakopod-actions-acceptance-peer'
 STARTED = time.monotonic()
+EXPORT_BENCHMARK = os.environ.get('HAKOPOD_ACTIONS_EXPORT_BENCHMARK') == '1'
 DEADLINE = STARTED + 25 * 60
 REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platform.machine(),
           'scope': 'disposable single-node product runner pod acceptance',
@@ -29,6 +43,14 @@ REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platfor
 NAMESPACES = set()
 RUNTIME_CREATED = False
 OUTPUT_CREATED = False
+if EXPORT_BENCHMARK:
+    REPORT['scenario'] = 'opt-in-export-benchmark'
+    REPORT['limits'].update(workspace_gib=4, concurrent_build_requests=1, buildkit_max_parallelism=1)
+    REPORT['limits'].pop('disk_probe_max_written_mib')
+    REPORT['coverage_limits'] = [
+        'Two compression settings in one disposable product sandbox; no fleet or provider lifecycle qualification.',
+        'Pinned BuildKit v0.32.2 diagnostics do not qualify other versions or an overlay patch.',
+        'Resource peaks are sampled lower bounds; the pod and outer worker limits are reported separately.']
 
 
 def command(args, timeout=45, check=True, **kwargs):
@@ -107,14 +129,14 @@ def startup_timings(pod):
     return result
 
 
-def logs(namespace, scenario):
+def logs(namespace, scenario, prefix='HAKOPOD_ACCEPTANCE '):
     # kubectl and kubelet bound the read; artifacts only contain our fixtures.
     result = kube(['-n', namespace, 'logs', 'actions-runtime-fixture', '-c', 'runner', '--limit-bytes=4194304'], check=False)
     (OUTPUT / f'{scenario}.log').write_text(result.stdout + result.stderr)
     events = []
     for line in result.stdout.splitlines():
-        if line.startswith('HAKOPOD_ACCEPTANCE '):
-            events.append(json.loads(line[len('HAKOPOD_ACCEPTANCE '):]))
+        if line.startswith(prefix):
+            events.append(json.loads(line[len(prefix):]))
     return events
 
 
@@ -143,11 +165,12 @@ def image_observation(expected):
     (OUTPUT / f'image-{expected}.log').write_text(result.stdout + result.stderr)
 
 
-def delete_pod(namespace):
+def delete_pod(namespace, credential_config=True):
     uid = state(namespace)['metadata']['uid']
     workspace = f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner'
     kube(['-n', namespace, 'delete', 'pod', 'actions-runtime-fixture', '--wait=true', '--timeout=60s'], timeout=75)
-    kube(['-n', namespace, 'delete', 'secret', 'actions-runtime-fixture', '--wait=true'])
+    if credential_config:
+        kube(['-n', namespace, 'delete', 'secret', 'actions-runtime-fixture', '--wait=true'])
     started = time.monotonic()
     for _ in range(30):
         if command(['docker', 'exec', NODE, 'test', '!', '-e', workspace], check=False).returncode == 0:
@@ -213,6 +236,74 @@ else:
     exec_runner(namespace, "from pathlib import Path; Path('/home/runner/_work/acceptance/continue').touch()")
 
 
+def export_fixture(fixture):
+    items = fixture['items']
+    assert all(item['kind'] in {'Namespace', 'NetworkPolicy', 'ResourceQuota', 'Pod'} for item in items), 'export fixture must not include credentials or extra infrastructure'
+    assert all(item['metadata'].get('labels', {}).get('hakopod.io/development-fixture') == 'actions-export-benchmark' for item in items), 'unmarked export fixture object'
+    namespaces = [item for item in items if item['kind'] == 'Namespace']
+    pods = [item for item in items if item['kind'] == 'Pod']
+    assert len(namespaces) == len(pods) == 1, 'expected one private namespace and one runner pod'
+    namespace, pod = namespaces[0]['metadata']['name'], pods[0]
+    assert namespace.startswith('hp-') and pod['metadata']['namespace'] == namespace, 'unexpected product namespace'
+    assert pod['metadata']['name'] == 'actions-runtime-fixture', 'unexpected benchmark pod name'
+    assert all(item['metadata'].get('namespace', namespace) == namespace for item in items), 'fixture crosses namespace boundaries'
+    policies = {item['metadata']['name']: item['spec'] for item in items if item['kind'] == 'NetworkPolicy'}
+    deny = policies.get('hakopod-default-deny', {})
+    assert deny.get('podSelector') == {} and set(deny.get('policyTypes', [])) == {'Ingress', 'Egress'} and not deny.get('ingress') and not deny.get('egress'), 'product default-deny policy is missing'
+    assert 'hakopod-service-runner' in policies, 'product runner egress policy is missing'
+    config = pod['spec']
+    assert config.get('automountServiceAccountToken') is False and config.get('runtimeClassName') == 'hakopod-actions', 'sandbox or service-account boundary changed'
+    assert not any(config.get(key) for key in ['hostNetwork', 'hostPID', 'hostIPC']), 'host namespace requested'
+    volumes = config.get('volumes', [])
+    assert len(volumes) == 1 and set(volumes[0]) == {'name', 'emptyDir'} and volumes[0]['name'] == 'runner' and volumes[0]['emptyDir'].get('sizeLimit') == '4Gi', 'benchmark must only use its bounded 4 GiB workspace'
+    assert not config.get('imagePullSecrets'), 'benchmark must not receive registry credentials'
+    allowed_env = {'DOCKER_HOST', 'ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT', 'HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT'}
+    containers = config['initContainers'] + config['containers']
+    for container in containers:
+        assert '@sha256:' in container['image'], 'benchmark image is not pinned'
+        assert not container.get('envFrom') and not container.get('securityContext', {}).get('privileged'), 'unexpected credentials or privilege'
+        assert all(value['name'] in allowed_env and 'valueFrom' not in value for value in container.get('env', [])), 'unexpected environment injection'
+        assert all(mount['name'] == 'runner' for mount in container.get('volumeMounts', [])), 'unexpected credential or host mount'
+    runner_env = {value['name']: value.get('value') for value in config['containers'][0]['env']}
+    assert runner_env.get('DOCKER_HOST') == 'tcp://127.0.0.1:2375' and runner_env.get('HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT') == 'k3d-hakopod-dev', 'benchmark entry environment changed'
+    return namespace
+
+
+def run_export_benchmark(fixture):
+    namespace = export_fixture(fixture)
+    NAMESPACES.add(namespace)
+    started = time.monotonic()
+    apply(fixture)
+    pod = wait_for(namespace, lambda value: value.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=900)
+    events = logs(namespace, 'export-benchmark', prefix='HAKOPOD_EXPORT_BENCHMARK ')
+    REPORT['export_benchmark_events'] = events
+    REPORT['export_benchmark_pod'] = {
+        'namespace': namespace, 'name': pod['metadata']['name'], 'node': pod['spec'].get('nodeName'),
+        'overhead': pod['spec'].get('overhead', {}), 'startup_timings': startup_timings(pod),
+        'containers': [{'name': item['name'], 'resources': item['resources']} for item in pod['spec']['initContainers'] + pod['spec']['containers']]}
+    outer = command(['docker', 'inspect', NODE, '--format', '[{{json .HostConfig.NanoCpus}},{{json .HostConfig.CpuQuota}},{{json .HostConfig.CpuPeriod}},{{json .HostConfig.Memory}},{{json .HostConfig.CpusetCpus}}]']).stdout
+    limits = json.loads(outer)
+    assert len(limits) == 5, 'outer worker limits could not be observed'
+    REPORT['export_benchmark_outer_worker'] = dict(zip(['nano_cpus', 'cpu_quota', 'cpu_period', 'memory_bytes', 'cpuset_cpus'], limits))
+    report_prefix = 'HAKOPOD_EXPORT_REPORT '
+    saved = []
+    for line in (OUTPUT / 'export-benchmark.log').read_text().splitlines():
+        if line.startswith(report_prefix):
+            assert len(line) <= 1048576, 'benchmark JSON report exceeded its bound'
+            saved.append(json.loads(line[len(report_prefix):]))
+    assert len(saved) == 1, 'benchmark did not preserve exactly one JSON report'
+    REPORT['export_benchmark'] = saved[0]
+    (OUTPUT / 'export-benchmark-report.json').write_text(json.dumps(saved[0], indent=2) + '\n')
+    assert pod['spec'].get('nodeName') == NODE, 'benchmark did not run on the named development node'
+    assert pod['status']['phase'] == 'Succeeded' and saved[0].get('status') == 'passed', 'export benchmark failed; see retained JSON and log'
+    assert saved[0].get('context') == 'k3d-hakopod-dev' and saved[0].get('snapshotter') == 'overlayfs', 'benchmark used an unexpected context or snapshotter'
+    assert saved[0].get('force_overlay_diff') == (os.environ.get('HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF') == '1'), 'forced-diff diagnostic did not match the explicit selection'
+    assert any(event.get('phase') == 'complete' and event.get('status') == 'passed' for event in events), 'benchmark completion was not observed'
+    assert len(saved[0].get('variants', [])) == 2 and saved[0].get('comparison'), 'benchmark comparison is incomplete'
+    record('opt-in-export-benchmark', started, report='export-benchmark-report.json')
+    delete_pod(namespace, credential_config=False)
+
+
 def main():
     global RUNTIME_CREATED, OUTPUT_CREATED
     if os.environ.get('GITHUB_ACTIONS') != 'true':
@@ -221,9 +312,11 @@ def main():
     assert label == 'hakopod-dev', 'unexpected development container'
     OUTPUT.mkdir(parents=True, exist_ok=False)
     OUTPUT_CREATED = True
-    command(['go', 'test', '-p=1', './internal/cluster', '-run', '^TestActionsRuntimeAcceptanceFixtures$', '-count=1', '-timeout=60s'],
+    fixture_test = '^TestActionsExportBenchmarkFixture$' if EXPORT_BENCHMARK else '^TestActionsRuntimeAcceptanceFixtures$'
+    command(['go', 'test', '-p=1', './internal/cluster', '-run', fixture_test, '-count=1', '-timeout=60s'],
             env={**os.environ, 'HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR': str(OUTPUT)}, cwd=ROOT, timeout=240)
-    fixtures = {name: json.loads((OUTPUT / f'{name}.json').read_text()) for name in ['workload', 'disk', 'replacement']}
+    fixture_names = ['export-benchmark'] if EXPORT_BENCHMARK else ['workload', 'disk', 'replacement']
+    fixtures = {name: json.loads((OUTPUT / f'{name}.json').read_text()) for name in fixture_names}
     for fixture in fixtures.values():
         namespace = next(item['metadata']['name'] for item in fixture['items'] if item['kind'] == 'Namespace')
         assert not kube(['get', 'namespace', namespace, '--ignore-not-found', '-o', 'name']).stdout.strip(), 'fixture namespace already exists'
@@ -235,6 +328,10 @@ def main():
            'overhead': {'podFixed': {'cpu': '100m', 'memory': '512Mi'}}})
     RUNTIME_CREATED = True
     kube(['label', 'node', NODE, 'hakopod.io/actions-runtime=ready'])
+    if EXPORT_BENCHMARK:
+        run_export_benchmark(fixtures['export-benchmark'])
+        REPORT['status'] = 'passed'
+        return
     workload_ns = next(item['metadata']['namespace'] for item in fixtures['workload']['items'] if item['kind'] == 'Pod')
     disk_ns = next(item['metadata']['namespace'] for item in fixtures['disk']['items'] if item['kind'] == 'Pod')
     NAMESPACES.add(workload_ns)
@@ -277,39 +374,40 @@ def main():
     REPORT['status'] = 'passed'
 
 
-try:
-    main()
-except BaseException as error:
-    REPORT['status'] = 'failed'
-    REPORT['error'] = str(error)
-    raise
-finally:
-    if OUTPUT_CREATED:
-        for namespace in sorted(NAMESPACES):
-            # Cleanup has its own bounded budget after the workload deadline.
-            try:
-                diagnostics = subprocess.run(KUBE + ['-n', namespace, 'describe', 'pods'], text=True,
-                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
-                (OUTPUT / f'{namespace}-pods.txt').write_text(diagnostics.stdout[-65536:])
-                cleanup = subprocess.run(KUBE + ['delete', 'namespace', namespace, '--wait=true', '--timeout=60s'],
-                                         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=75)
-                if cleanup.returncode:
-                    raise RuntimeError(cleanup.stdout[-2048:])
-                verify = subprocess.run(KUBE + ['get', 'namespace', namespace, '--ignore-not-found', '-o', 'name'],
-                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-                if verify.returncode or verify.stdout.strip():
-                    raise RuntimeError('fixture namespace still exists after cleanup: ' + verify.stdout[-2048:])
-                REPORT.setdefault('deleted_namespaces', []).append(namespace)
-            except Exception as error:
-                REPORT['status'] = 'failed'
-                REPORT.setdefault('cleanup_errors', []).append(str(error))
-        if RUNTIME_CREATED:
-            try:
-                subprocess.run(KUBE + ['delete', 'runtimeclass', 'hakopod-actions', '--wait=true', '--timeout=15s'], check=True, timeout=20)
-            except Exception as error:
-                REPORT['status'] = 'failed'
-                REPORT.setdefault('cleanup_errors', []).append(str(error))
-        save_report()
-        print(json.dumps(REPORT), flush=True)
-        if REPORT['status'] != 'passed':
-            raise SystemExit(1)
+if __name__ == "__main__":
+    try:
+        main()
+    except BaseException as error:
+        REPORT['status'] = 'failed'
+        REPORT['error'] = str(error)
+        raise
+    finally:
+        if OUTPUT_CREATED:
+            for namespace in sorted(NAMESPACES):
+                # Cleanup has its own bounded budget after the workload deadline.
+                try:
+                    diagnostics = subprocess.run(KUBE + ['-n', namespace, 'describe', 'pods'], text=True,
+                                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+                    (OUTPUT / f'{namespace}-pods.txt').write_text(diagnostics.stdout[-65536:])
+                    cleanup = subprocess.run(KUBE + ['delete', 'namespace', namespace, '--wait=true', '--timeout=60s'],
+                                             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=75)
+                    if cleanup.returncode:
+                        raise RuntimeError(cleanup.stdout[-2048:])
+                    verify = subprocess.run(KUBE + ['get', 'namespace', namespace, '--ignore-not-found', '-o', 'name'],
+                                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                    if verify.returncode or verify.stdout.strip():
+                        raise RuntimeError('fixture namespace still exists after cleanup: ' + verify.stdout[-2048:])
+                    REPORT.setdefault('deleted_namespaces', []).append(namespace)
+                except Exception as error:
+                    REPORT['status'] = 'failed'
+                    REPORT.setdefault('cleanup_errors', []).append(str(error))
+            if RUNTIME_CREATED:
+                try:
+                    subprocess.run(KUBE + ['delete', 'runtimeclass', 'hakopod-actions', '--wait=true', '--timeout=15s'], check=True, timeout=20)
+                except Exception as error:
+                    REPORT['status'] = 'failed'
+                    REPORT.setdefault('cleanup_errors', []).append(str(error))
+            save_report()
+            print(json.dumps(REPORT), flush=True)
+            if REPORT['status'] != 'passed':
+                raise SystemExit(1)

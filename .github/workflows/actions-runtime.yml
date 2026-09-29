@@ -17,6 +17,11 @@ on:
   pull_request:
     paths: *runtime_paths
   workflow_dispatch:
+    inputs:
+      export_benchmark:
+        description: Compare image export speed and verify image contents
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -34,6 +39,7 @@ jobs:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
+      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ inputs.export_benchmark && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: git submodule update --init templates
@@ -44,7 +50,12 @@ jobs:
         with:
           version: v3.17.2
       - name: Compile the product fixture before runtime measurement
-        run: go test -p=1 ./internal/cluster -run '^TestActionsRuntimeAcceptanceFixtures$' -count=1
+        run: |
+          if [ "$HAKOPOD_ACTIONS_EXPORT_BENCHMARK" = '1' ]; then
+            go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
+          else
+            go test -p=1 ./internal/cluster -run '^TestActionsRuntimeAcceptanceFixtures$' -count=1
+          fi
       - name: Start disposable named development cluster
         run: scripts/local-up.sh
       - name: Install pinned isolated Docker runtime
@@ -61,6 +72,7 @@ jobs:
           name: actions-runtime-${{ matrix.runner }}
           path: |
             .local/actions-runtime-acceptance/report.json
+            .local/actions-runtime-acceptance/export-benchmark-report.json
             .local/actions-runtime-acceptance/*.log
             .local/actions-runtime-acceptance/*-pods.txt
           retention-days: 14
