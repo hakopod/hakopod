@@ -395,41 +395,59 @@ func TestActionsLostOrganizationRegistrationRecoversOriginalScope(t *testing.T) 
 }
 
 func TestActionsImageUpgradeDrainsBusyRunner(t *testing.T) {
-	s, f, p, _ := actionsHarness(t)
-	ctx := context.Background()
-	target := actionsTarget(p)
-	if err := s.reconcileActionsPool(ctx, target, p); err != nil {
-		t.Fatal(err)
-	}
-	slots, err := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
-	if err != nil || len(slots) != 1 {
-		t.Fatal(err)
-	}
-	old := slots[0].Config
-	old.Image = "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
-	if _, err = s.Store.Pool.Exec(ctx, `UPDATE actions_slots SET config=$2 WHERE id=$1`, slots[0].ID, store.JSON(old)); err != nil {
-		t.Fatal(err)
-	}
-	runner := f.runners[slots[0].RunnerID]
-	runner.Busy = true
-	f.runners[runner.ID] = runner
-	if err = s.reconcileActionsPool(ctx, target, p); err != nil {
-		t.Fatal(err)
-	}
-	if len(f.deleted) != 0 || f.next != 1 {
-		t.Fatal("image upgrade interrupted a busy job")
-	}
-	runner.Busy = false
-	f.runners[runner.ID] = runner
-	if err = s.reconcileActionsPool(ctx, target, p); err != nil {
-		t.Fatal(err)
-	}
-	if f.next != 2 || len(f.deleted) != 1 {
-		t.Fatal("idle old image was not replaced")
-	}
-	slots, err = s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
-	if err != nil || len(slots) != 1 || !spec.IsCurrentActionsRunnerImage(slots[0].Config.Image) {
-		t.Fatal("replacement did not record current image", err)
+	for name, image := range map[string]string{
+		"previous managed tag":    "ghcr.io/hakopod/actions-runner:2.337.0-hakopod-37ab7a0390da5202ab3ac7cb12983d6d08f146bf@sha256:63768a269f453a8e386588ae77b3ff9bdf911244c0276aad28b324d629be1489",
+		"previous managed digest": "ghcr.io/hakopod/actions-runner@sha256:63768a269f453a8e386588ae77b3ff9bdf911244c0276aad28b324d629be1489",
+		"upstream tag":            "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
+		"upstream digest":         "ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, f, p, _ := actionsHarness(t)
+			ctx := context.Background()
+			// An engine upgrade must not require editing the pool's saved image.
+			p.Config.Image = image
+			target := actionsTarget(p)
+			if err := s.reconcileActionsPool(ctx, target, p); err != nil {
+				t.Fatal(err)
+			}
+			slots, err := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
+			if err != nil || len(slots) != 1 {
+				t.Fatal(err)
+			}
+			if slots[0].Config.Image != spec.ActionsRunnerImage || !sameActionsConfig(slots[0].Config, p.Config) {
+				t.Fatal("saved image prevented promotion to the current runner")
+			}
+			// Recreate the persisted slot state from before the engine upgrade.
+			old := slots[0].Config
+			old.Image = image
+			if _, err = s.Store.Pool.Exec(ctx, `UPDATE actions_slots SET config=$2 WHERE id=$1`, slots[0].ID, store.JSON(old)); err != nil {
+				t.Fatal(err)
+			}
+			runner := f.runners[slots[0].RunnerID]
+			runner.Busy = true
+			f.runners[runner.ID] = runner
+			if err = s.reconcileActionsPool(ctx, target, p); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.deleted) != 0 || f.next != 1 || !f.pods[slots[0].ID] {
+				t.Fatal("image upgrade interrupted a busy job")
+			}
+			runner.Busy = false
+			f.runners[runner.ID] = runner
+			if err = s.reconcileActionsPool(ctx, target, p); err != nil {
+				t.Fatal(err)
+			}
+			if f.next != 2 || len(f.deleted) != 1 {
+				t.Fatal("idle old image was not replaced")
+			}
+			slots, err = s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
+			if err != nil || len(slots) != 1 || slots[0].Config.Image != spec.ActionsRunnerImage {
+				t.Fatal("replacement did not record current image", err)
+			}
+			if p.Config.Image != image {
+				t.Fatal("image promotion rewrote the saved pool configuration")
+			}
+		})
 	}
 }
 

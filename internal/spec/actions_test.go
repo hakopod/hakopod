@@ -76,7 +76,17 @@ func TestActionsRejectUnsafeWorkloadControls(t *testing.T) {
 }
 
 func TestActionsResolvedImageRemainsValid(t *testing.T) {
-	for _, image := range []string{ActionsRunnerImage, actionsRunnerResolvedImage} {
+	for index, image := range []string{
+		ActionsRunnerImage,
+		actionsRunnerResolvedImage,
+		previousActionsRunnerImage,
+		actionsRunnerRepository + "@" + previousActionsRunnerDigest,
+		"ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
+		"ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
+	} {
+		if IsCurrentActionsRunnerImage(image) != (index < 2) {
+			t.Fatalf("current-image classification would prevent a safe upgrade: %q", image)
+		}
 		app := actionsFixture()
 		svc := app.Services["runner"]
 		svc.Image = image
@@ -100,6 +110,9 @@ func TestActionsResolvedImageRemainsValid(t *testing.T) {
 		"example.invalid/actions/actions-runner@" + actionsRunnerDigest,
 		"ghcr.io/other/actions-runner@" + actionsRunnerDigest,
 		actionsRunnerRepository + ":unapproved@" + actionsRunnerDigest,
+		actionsRunnerRepository + ":unapproved@" + previousActionsRunnerDigest,
+		strings.SplitN(ActionsRunnerImage, "@", 2)[0] + "@" + previousActionsRunnerDigest,
+		strings.SplitN(previousActionsRunnerImage, "@", 2)[0] + "@" + actionsRunnerDigest,
 	} {
 		app := actionsFixture()
 		svc := app.Services["runner"]

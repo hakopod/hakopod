@@ -4,6 +4,7 @@ Hakopod 0.1.0-alpha.42 improves managed GitHub Actions runners and their dashboa
 - Workflow output uses collapsible groups and bordered log rows, with bounded paging, search, wrapping and permission-aware loading.
 - Runner pool setup follows guided steps with compact choices, cache guidance, scoped node selection and a review before creation or changes. Failed requests preserve entered values.
 - Scheduling uses durable PostgreSQL leases, bounded concurrency, shared GitHub request budgets and bounded runner inventories. Selected nodes are checked again before registration and pod creation.
+- New runner jobs use the verified multi-architecture image with GNU tar and zstd for compressed caches. Existing pool revisions stay valid; busy jobs drain before replacement.
 - Official GitHub Actions dependency caching is verified across fresh managed runners. Docker builds can use private registry caches; runner workspaces and Docker daemons remain isolated per job.
 
 Cross-architecture Docker builds use BuildKit userspace emulation inside the existing gVisor sandbox. The documented setup was tested on AMD64 and ARM64 hosts. Kernel binfmt registration, including ordinary `docker/setup-qemu-action` installation, remains unavailable in gVisor; use the BuildKit configuration in [Managed Actions](https://github.com/hakopod/hakopod/blob/main/docs/managed-actions.md). Native cross-compilation is also covered and can reduce build time.
@@ -22,4 +23,4 @@ Direct upgrades are supported from alpha.40 and alpha.41. Older installations ne
 
 Publication requires source tests, native package smoke checks and the complete fresh-install and upgrade matrix on AMD64 and ARM64. GitHub job execution, fresh-runner cache reuse, sandbox cross-builds and control-plane failure tests are recorded in [Managed Actions qualification](https://github.com/hakopod/hakopod/blob/main/docs/managed-actions-qualification.md). Independent UI reviews cover grouped logs and guided pool setup in both themes at desktop and mobile sizes. Those checks do not establish arbitrary fleet-scale readiness; the supported topology remains one active Managed Actions API/controller process per installation.
 
-The corresponding Cloud package is [Hakopod Cloud alpha.22](https://github.com/hakopod/hakopod-cloud/releases/tag/v0.1.0-alpha.22). Publishing these packages does not upgrade an existing server.
+Cloud alpha.22 contains the earlier GitHub runner and UI changes. The promoted compression image requires a Cloud package with this engine revision. Publishing these packages does not upgrade an existing server.

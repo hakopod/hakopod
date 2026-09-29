@@ -95,16 +95,24 @@ runner verified the cached files were initially absent, restored the exact cache
 and checked both the first runner's marker and the payload SHA-256. Both jobs
 concluded successfully and the disposable cluster was removed.
 
-The current pinned runner used GNU tar 1.35 and gzip. Saving took 1.209 seconds
+That run's previous runner pin used GNU tar 1.35 and gzip. Saving took 1.209 seconds
 and restoring took 0.906 seconds from each action's first log to its success
 message; each complete job took seven seconds. These are observations of this
 fixture, not general cache latency guarantees. The temporary registrations,
 JIT secret, exact test cache and local credential files were removed.
 
 This verifies GitHub dependency/output caching across fresh jobs. It does not
-verify BuildKit's separate `type=gha` layer exporter. The new image source adds
-explicit tar/zstd prerequisites and an archive smoke test; the live result above
-uses the existing gzip-capable engine pin, not an unpublished zstd image.
+verify BuildKit's separate `type=gha` layer exporter.
+
+Alpha.42 promotes the published runner image
+`ghcr.io/hakopod/actions-runner:2.337.0-hakopod-6d9a8152b7f5dafa1bfc5bbf1a24207710c746a7@sha256:1e05326c75ff1412c68e7e2aed6541fa2e3dd07a8ce6389c9246fc253d7eb3b2`.
+[Image run 36551887992](https://github.com/hakopod/hakopod/actions/runs/36551887992)
+built and smoke-tested both native architectures, including tar/zstd archive
+round trips, before publishing that manifest. Previous managed and upstream
+tagged or digest-only references remain valid in saved revisions. The controller
+lets busy runners finish, then starts replacement slots with the promoted pin.
+The earlier gzip cache run does not qualify this pin's live zstd cache path or
+sandbox runtime; those release checks must run against the promoted digest.
 
 ## Dashboard
 
