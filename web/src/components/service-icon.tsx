@@ -2,6 +2,7 @@ import { Icon } from './icons'
 
 const source: Record<string, string> = {
   github: 'github',
+  'managed-actions': 'github',
   gitlab: 'gitlab',
   google: 'google',
   postgresql: 'postgresql',
