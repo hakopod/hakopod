@@ -232,7 +232,7 @@ import '../lib/service-volume-removal.test'
 
 // Log text must not retain executable terminal hyperlinks or conceal payloads
 // when users copy/download the displayed window.
-import { cleanWorkflowLog, logTimestamp } from '../lib/actions-logs'
+import { cleanWorkflowLog, logTimestamp, groupWorkflowLines } from '../lib/actions-logs'
 test('workflow logs strip terminal controls and preserve literal markup', () => {
   assert.equal(
     cleanWorkflowLog('\u001b[31merror\u001b[0m <script>literal</script>'),
@@ -244,4 +244,36 @@ test('workflow logs strip terminal controls and preserve literal markup', () => 
   )
   assert.equal(logTimestamp('2026-09-29T00:00:00.000Z output')?.text, 'output')
   assert.equal(logTimestamp('not a timestamp'), null)
+})
+
+test('workflow groups preserve rows, nested failures and unfinished output', () => {
+  const lines = [
+    '##[group]Docker info',
+    'details',
+    '##[endgroup]',
+    '##[group]QEMU',
+    '##[group]Install',
+    'error: no such device',
+    '##[endgroup]',
+    '##[endgroup]',
+    '##[group]Live',
+    '<script>literal</script>',
+  ].map((text, number) => ({ number: number + 1, text: `2026-09-29T00:00:00.000Z ${text}` }))
+  const { rows, groups } = groupWorkflowLines(lines)
+  assert.equal(groups.get(1)?.attention, false)
+  assert.equal(groups.get(1)?.count, 1)
+  assert.equal(groups.get(4)?.attention, true)
+  assert.equal(groups.get(5)?.attention, true)
+  assert.equal(groups.get(9)?.attention, true)
+  assert.deepEqual(rows.find((line) => line.number === 6)?.parents, [4, 5])
+  assert.equal(rows.at(-1)?.text, lines.at(-1)?.text)
+  assert.equal(
+    rows.some((line) => line.text.endsWith('##[endgroup]')),
+    false,
+  )
+})
+test('workflow group window keeps unmatched delimiters and bounds nesting', () => {
+  assert.equal(groupWorkflowLines([{ number: 1, text: '##[endgroup]' }]).rows.length, 1)
+  const lines = Array.from({ length: 1000 }, (_, number) => ({ number, text: '##[group]Nested' }))
+  assert.ok(groupWorkflowLines(lines).rows.every((row) => row.parents.length <= 32))
 })

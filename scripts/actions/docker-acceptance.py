@@ -17,6 +17,7 @@ def command(args, **kwargs):
     return subprocess.check_output(kube + args, text=True, **kwargs)
 
 image = 'docker.io/library/docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0'
+buildkit = 'docker.io/moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3'
 busybox = 'docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 script = r'''
 set -eu
@@ -77,6 +78,21 @@ fi
 docker rm -f service
 docker network rm actions-job
 [ "$failed" = 0 ]
+# BuildKit invokes its bundled user-space QEMU directly. No binfmt_misc
+# registration, host mounts or additional sandbox capabilities are allowed.
+docker buildx create --name actions-multiarch --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE" --buildkitd-flags '--oci-worker-snapshotter=native' --use
+mkdir -p /workspace/multiarch
+cat > /workspace/multiarch/Dockerfile <<DOCKERFILE
+FROM $TEST_IMAGE AS test
+RUN uname -m > /architecture
+FROM scratch
+COPY --from=test /architecture /architecture
+DOCKERFILE
+docker buildx build --builder actions-multiarch --platform linux/amd64,linux/arm64 --output type=local,dest=/workspace/result /workspace/multiarch
+[ "$(cat /workspace/result/linux_amd64/architecture)" = x86_64 ]
+[ "$(cat /workspace/result/linux_arm64/architecture)" = aarch64 ]
+docker buildx rm actions-multiarch
+echo 'PASS: AMD64 and ARM64 RUN instructions using sandboxed BuildKit QEMU'
 echo 'PASS: container execution, shared workspace, service DNS, published service ports, Docker build'
 '''
 apply({'apiVersion': 'node.k8s.io/v1', 'kind': 'RuntimeClass', 'metadata': {'name': 'hakopod-actions'}, 'handler': 'hakopod-actions'})
@@ -86,7 +102,7 @@ try:
         'runtimeClassName': 'hakopod-actions', 'automountServiceAccountToken': False,
         'restartPolicy': 'Never', 'activeDeadlineSeconds': 900, 'terminationGracePeriodSeconds': 15,
         'containers': [{'name': 'test', 'image': image, 'command': ['sh', '-c', script],
-            'env': [{'name': 'TEST_IMAGE', 'value': busybox}],
+            'env': [{'name': 'TEST_IMAGE', 'value': busybox}, {'name': 'BUILDKIT_IMAGE', 'value': buildkit}],
             'resources': {'requests': {'cpu': '500m', 'memory': '1Gi'}, 'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '6Gi'}},
             'securityContext': {'privileged': False, 'runAsUser': 0, 'capabilities': {'drop': ['ALL'], 'add': ['AUDIT_WRITE','CHOWN','DAC_OVERRIDE','FOWNER','FSETID','KILL','MKNOD','NET_BIND_SERVICE','NET_ADMIN','NET_RAW','SETFCAP','SETGID','SETPCAP','SETUID','SYS_ADMIN','SYS_CHROOT','SYS_PTRACE']}},
             'volumeMounts': [{'name': 'docker', 'mountPath': '/var/lib/docker'}]}],

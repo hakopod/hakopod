@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { WorkflowLogLines } from './workflow-log-lines'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
@@ -472,7 +473,7 @@ function LogViewer({
 }) {
   const [search, setSearch] = useState('')
   const [wrap, setWrap] = useState(false)
-  const [timestamps, setTimestamps] = useState(true)
+  const [timestamps, setTimestamps] = useState(false)
   const [follow, setFollow] = useState(false)
   const [windowEnd, setWindowEnd] = useState<number | null>(null)
   const scroll = useRef<HTMLDivElement>(null)
@@ -577,7 +578,7 @@ function LogViewer({
       )}
       <div
         ref={scroll}
-        className="max-h-[520px] min-h-28 min-w-0 overflow-auto py-2 font-mono text-xs leading-6"
+        className="max-h-[520px] min-h-28 min-w-0 overflow-auto font-mono text-xs leading-6"
         tabIndex={0}
         aria-label={`${title} scrollable log`}
         onScroll={(event) => {
@@ -594,19 +595,12 @@ function LogViewer({
               : 'No output available in this window yet.'}
           </p>
         ) : (
-          visible.map((line) => (
-            <div
-              key={line.number}
-              className={`flex gap-3 px-3 ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre w-max min-w-full'}`}
-            >
-              <span className="muted-text shrink-0 w-10 text-right select-none" aria-hidden="true">
-                {line.number}
-              </span>
-              <span className="min-w-0">
-                {timestamps ? line.text : logTimestamp(line.text)?.text || line.text}
-              </span>
-            </div>
-          ))
+          <WorkflowLogLines
+            lines={visible}
+            wrap={wrap}
+            timestamps={timestamps}
+            searching={Boolean(search)}
+          />
         )}
       </div>
     </section>
