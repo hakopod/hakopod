@@ -8,7 +8,9 @@ export function cleanWorkflowLog(value: string) {
 }
 export function logTimestamp(text: string) {
   const match = text.match(/^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z) /)
-  return match ? { timestamp: Date.parse(match[1]), text: text.slice(match[0].length) } : null
+  if (!match) return null
+  const timestamp = Date.parse(match[1])
+  return Number.isFinite(timestamp) ? { timestamp, text: text.slice(match[0].length) } : null
 }
 export function jobDuration(start?: string | null, end?: string | null) {
   if (!start) return 'Not started'

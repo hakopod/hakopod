@@ -40,3 +40,20 @@ no application. The observer image also passes native AMD64 and ARM64 Python
 3.12 source builds of zxing-cpp 2.3.0. The development candidate was imported
 by digest; this check does not establish anonymous registry pull availability
 or a production rollout.
+
+## Grouped output
+
+Both full-job and individual-step output render GitHub `##[group]` and
+`##[endgroup]` markers as collapsible headers. Completed groups start collapsed;
+groups containing error or warning annotations and unfinished groups start open.
+Search scans the entire loaded window and reveals matching lines even when their
+group is collapsed. Downloads retain all loaded text and the original group
+markers. Timestamps are optional and initially hidden. Numbered output uses
+bordered grid rows; long lines scroll within the viewer or wrap on request.
+Parsing and rendering retain the existing 1,000-line page bound and cap group
+nesting at 32 levels. Output remains escaped text, including malformed markers.
+
+The service image observation comes from runner slot configurations instead of
+the saved application revision. Mixed images remain visible while busy old
+runners drain. An empty pool reports the engine's image for new slots; this is
+not evidence of a running pod.
