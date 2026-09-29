@@ -340,6 +340,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/actions/{service}/jobs/{slot}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelActionsJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/actions/{service}/hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getActionsProviderHold"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/actions/{service}/hold/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["releaseActionsProviderHold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alarms": {
         parameters: {
             query?: never;
@@ -3907,7 +3955,7 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
         };
-        /** @description Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub. */
+        /** @description GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment. */
         Actions: {
             repository?: string;
             organization?: string;
@@ -3916,8 +3964,31 @@ export interface components {
             credential: string;
             labels: string[];
             timeout_minutes?: number;
+            /**
+             * @description Defaults to github when omitted. Declaring a provider does not enable its managed runtime.
+             * @enum {string}
+             */
+            provider?: "github" | "gitlab" | "bitbucket";
+            /** @description GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator. */
+            gitlab?: {
+                url: string;
+                project_id?: number;
+                group_id?: number;
+                trust_policy?: string;
+            };
+            /** @description Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle. */
+            bitbucket?: {
+                workspace: string;
+                repository?: string;
+            };
             /** @description Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job. */
             workspace_size_gib?: number;
+            /** @description Optional application secret for provider job details and logs. Defaults to credential when omitted or empty. */
+            jobs_credential?: string;
+            /** @description Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration. */
+            cache?: {
+                credential: string;
+            };
         };
         ActionsPool: {
             application_id: string;
@@ -3942,6 +4013,62 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Opaque native provider runner identifier when present; retains UUIDs without numeric conversion. */
+            provider_runner_id?: string;
+        };
+        /** @description Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed. */
+        ActionsProviderCapabilities: {
+            /** @enum {string} */
+            provider: "github" | "gitlab" | "bitbucket";
+            /** @enum {string} */
+            lifecycle: "ephemeral" | "dedicated";
+            available: boolean;
+            reason?: string;
+            image?: string;
+            bindings?: {
+                application: string;
+                service: string;
+                image: string;
+                architecture: string;
+                /** @description GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator. */
+                gitlab?: {
+                    url: string;
+                    project_id?: number;
+                    group_id?: number;
+                    trust_policy?: string;
+                };
+                /** @description Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle. */
+                bitbucket?: {
+                    workspace: string;
+                    repository?: string;
+                };
+                cache: boolean;
+                cross_architecture: boolean;
+            }[];
+            minimum_resources: {
+                cpu_request: string;
+                cpu_limit: string;
+                memory_request: string;
+                memory_limit: string;
+                workspace_gib: number;
+            };
+            cache: {
+                persistent: boolean;
+                backend?: string;
+                reason?: string;
+            };
+            build: {
+                native_architectures: string[];
+                cross_architecture: boolean;
+                reason?: string;
+            };
+            isolation: {
+                single_job: boolean;
+                manager_credentials_isolated: boolean;
+                reason?: string;
+            };
+            /** @enum {string} */
+            cancellation_scope: "none" | "job" | "pipeline";
         };
         ActionsObservation: {
             repository: string;
@@ -3988,6 +4115,46 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @enum {string} */
+            provider?: "github" | "gitlab" | "bitbucket";
+            provider_runner_id?: string;
+            native_job?: components["schemas"]["ActionsProviderWorkflowJob"];
+            /** @enum {string} */
+            discovery_state?: "pending" | "observed" | "unavailable" | "reuse_detected";
+            can_cancel?: boolean;
+        };
+        /** @description Opaque provider identifiers bound to the original runner and target. Native identifiers are strings and must not be converted to JavaScript numbers. */
+        ActionsProviderJobIdentity: {
+            runner_id: string;
+            runner_name: string;
+            repository: string;
+            run_id: string;
+            job_id: string;
+            attempt?: number;
+        };
+        ActionsProviderWorkflowJob: {
+            identity: components["schemas"]["ActionsProviderJobIdentity"];
+            name: string;
+            status: string;
+            conclusion: string;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            steps: components["schemas"]["ActionsStep"][];
+            steps_truncated: boolean;
+        };
+        ActionsProviderHold: {
+            /** Format: uuid */
+            id: string;
+            reason: string;
+            /** Format: date-time */
+            observed_at: string;
+            slot_id: string;
+            /** @enum {string} */
+            provider: "gitlab";
+            instance_url: string;
+            jobs: components["schemas"]["ActionsProviderWorkflowJob"][];
         };
         Alarm: {
             id: string;
@@ -6843,6 +7010,7 @@ export interface operations {
                                 MemoryLimit?: string;
                             };
                         };
+                        providers: components["schemas"]["ActionsProviderCapabilities"][];
                     };
                 };
             };
@@ -6922,11 +7090,130 @@ export interface operations {
                             text: string;
                         }[];
                         truncated: boolean;
-                        source: string;
+                        /** @enum {string} */
+                        source: "github" | "gitlab" | "runner" | "none";
                         state: string;
                         message: string;
                         /** Format: date-time */
                         observed_at: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelActionsJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                        /** @enum {string} */
+                        scope: "job";
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getActionsProviderHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hold: components["schemas"]["ActionsProviderHold"] | null;
+                        active_slots: number;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    releaseActionsProviderHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    hold_id: string;
+                    /** @constant */
+                    acknowledge: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "released";
+                        /** Format: uuid */
+                        hold_id: string;
                     };
                 };
             };
