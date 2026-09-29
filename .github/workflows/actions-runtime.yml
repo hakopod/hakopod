@@ -23,12 +23,15 @@ jobs:
       GOMEMLIMIT: 512MiB
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git submodule update --init templates
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
       - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
         with:
           version: v3.17.2
+      - name: Compile the product fixture before runtime measurement
+        run: go test -p=1 ./internal/cluster -run '^TestActionsRuntimeAcceptanceFixtures$' -count=1
       - name: Start disposable named development cluster
         run: scripts/local-up.sh
       - name: Install pinned isolated Docker runtime

@@ -195,6 +195,41 @@ builder; its credentials are single-job registrations, never the repository
 administration token. Consult the release verification record for actual runs
 and architecture coverage.
 
+`actions-runtime.yml` runs a separate credential-free acceptance gate on both
+AMD64 and ARM64 GitHub-hosted machines. The harness exports the product's runner
+pod, namespace policies and quotas, then applies them only to a fresh named
+`k3d-hakopod-dev` cluster. It checks:
+
+- Compilation and execution of a Go checksum program on both target
+  architectures, including execution of the compiler through BuildKit's
+  user-space emulator.
+- A multi-architecture manifest pushed to an isolated registry inside the
+  sandbox, both platform images pulled back, and their programs executed again.
+- Two simultaneous BuildKit requests with two worker operations allowed at a
+  time, an intentionally failed build and successful reuse of its builder.
+- Service DNS, workspace bind mounts, published loopback ports, namespace
+  ingress and egress denial, and Kubernetes API denial with live reachability
+  controls.
+- Observation of the actual running runner image and removal of that observation
+  after its pod is deleted; Docker sidecar restart before a build starts.
+- A bounded 2.25 GiB write to a 2 GiB workspace, eviction within three minutes of
+  the write, and a new pod for the same slot with no previous workspace, images
+  or containers.
+
+The `actions-runtime-<host>` artifact contains `report.json`, bounded fixture
+logs and pod diagnostics. The report records phase times, manifest digest,
+configured limits, sampled CPU, memory and disk peaks, and cleanup outcomes.
+Peaks are lower bounds sampled between checks; they are not continuous resource
+profiles. A failed or missing gate is not successful runtime evidence.
+
+This gate establishes a bounded acceptance workload, not an enterprise fleet
+capacity claim: one active runner with a 2-core/4 GiB slot budget, an 8 GiB
+workspace and two concurrent build requests on a 6 GiB disposable node. The
+isolation probe adds a separate 64 MiB test pod briefly. Node loss, multi-node
+scheduling, long-running fleet churn and provider quota behavior need their own
+capacity and failure evidence. Do not extrapolate this workload's timings to a
+larger fleet or an application's compiler, dependency graph and registry.
+
 Before migrating an existing workflow, `TestManagedActionsCandidateJobLive` can
 run one disposable registration in `k3d-hakopod-dev`. It uses the product pod
 builder with a 4 GiB memory budget and 8 GiB workspace. Set
