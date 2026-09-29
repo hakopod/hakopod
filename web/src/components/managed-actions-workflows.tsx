@@ -16,7 +16,14 @@ import {
 import { client, unwrap } from '../lib/client'
 import type { Application } from '../lib/types'
 import type { components } from '../lib/api.generated'
-import { cleanWorkflowLog, jobDuration, logTimestamp } from '../lib/actions-logs'
+import {
+  cleanWorkflowLog,
+  jobDuration,
+  logTimestamp,
+  groupWorkflowLines,
+  workflowLogPage,
+  workflowLogDownload,
+} from '../lib/actions-logs'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -24,7 +31,7 @@ import { SelectField } from './ui/select'
 import { Empty, ErrorState, Loading, Note } from './shared'
 
 type Job = components['schemas']['ActionsJob']
-type Line = { number: number; text: string }
+type Line = { number: number; text: string; rawText?: string }
 const runKey = (job: Job) =>
   `${job.observation.repository}:${job.observation.run_id}:${job.observation.attempt}`
 function StateIcon({ status }: { status: string }) {
@@ -343,7 +350,7 @@ function WorkflowJob({
   const lines = useMemo(
     () =>
       (logs.data?.lines || [])
-        .map((line) => ({ ...line, text: cleanWorkflowLog(line.text) }))
+        .map((line) => ({ ...line, rawText: line.text, text: cleanWorkflowLog(line.text) }))
         .filter((line) => {
           if (!step) return true
           if (!step.started_at) return false
@@ -409,6 +416,10 @@ function WorkflowJob({
                       key={value.number}
                       lines={lines}
                       title={value.name}
+                      source={logs.data?.source || 'unknown'}
+                      failed={['failure', 'timed_out', 'action_required'].includes(
+                        step?.conclusion || status,
+                      )}
                       loading={logs.isPending && canReadLogs}
                       permitted={canReadLogs}
                     />
@@ -438,7 +449,9 @@ function WorkflowJob({
           {logs.data && ` · Checked ${new Date(logs.data.observed_at).toLocaleTimeString()}`}
         </span>
       </div>
-      {logs.error && <ErrorState error={logs.error} retry={() => void logs.refetch()} />}
+      {canReadLogs && logs.error && (
+        <ErrorState error={logs.error} retry={() => void logs.refetch()} />
+      )}
       {logs.data?.message && <Note>{logs.data.message}</Note>}
       {logs.data?.truncated && (
         <Note>This log window is truncated. Open GitHub for the complete retained log.</Note>
@@ -447,11 +460,13 @@ function WorkflowJob({
         <LogViewer
           lines={lines}
           title="Full job log"
+          source={logs.data?.source || 'unknown'}
+          failed={['failure', 'timed_out', 'action_required'].includes(step?.conclusion || status)}
           loading={logs.isPending && canReadLogs}
           permitted={canReadLogs}
         />
       )}
-      {logs.data && !['live', 'complete'].includes(logs.data.state) && (
+      {canReadLogs && logs.data && !['live', 'complete'].includes(logs.data.state) && (
         <Button size="sm" disabled={logs.isFetching} onClick={() => void logs.refetch()}>
           Retry logs
         </Button>
@@ -465,11 +480,15 @@ function LogViewer({
   title,
   loading,
   permitted,
+  failed,
+  source,
 }: {
   lines: Line[]
   title: string
   loading: boolean
   permitted: boolean
+  failed: boolean
+  source: string
 }) {
   const [search, setSearch] = useState('')
   const [wrap, setWrap] = useState(false)
@@ -477,22 +496,19 @@ function LogViewer({
   const [follow, setFollow] = useState(false)
   const [windowEnd, setWindowEnd] = useState<number | null>(null)
   const scroll = useRef<HTMLDivElement>(null)
-  const matches = useMemo(
-    () =>
-      search
-        ? lines.filter((line) => line.text.toLowerCase().includes(search.toLowerCase()))
-        : lines,
-    [lines, search],
-  )
-  const end = Math.min(windowEnd ?? matches.length, matches.length)
-  const start = Math.max(0, end - 1000)
-  const visible = matches.slice(start, end)
+  const parsed = useMemo(() => groupWorkflowLines(lines), [lines])
+  const {
+    rows: visible,
+    start,
+    end,
+    total,
+  } = useMemo(() => workflowLogPage(parsed, search, windowEnd), [parsed, search, windowEnd])
   useEffect(() => {
     if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
   }, [lines, follow])
   function download() {
     const url = URL.createObjectURL(
-      new Blob([lines.map((line) => line.text).join('\n')], { type: 'text/plain;charset=utf-8' }),
+      new Blob([workflowLogDownload(lines)], { type: 'text/plain;charset=utf-8' }),
     )
     const link = document.createElement('a')
     link.href = url
@@ -521,7 +537,7 @@ function LogViewer({
           placeholder="Search this log window"
         />
         <span className="text-xs muted-text" role="status">
-          {matches.length} {search ? 'matching lines' : 'lines'}
+          {total} {search ? 'matching rows' : 'log rows'}
         </span>
         <Button size="sm" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
           Wrap
@@ -543,11 +559,10 @@ function LogViewer({
           Download window
         </Button>
       </div>
-      {matches.length > 1000 && (
+      {(start > 0 || end < total) && (
         <div className="flex flex-wrap items-center justify-between gap-2 p-2 text-xs muted-text">
           <span>
-            Showing lines {start + 1}–{end} of {matches.length}. Search covers the entire loaded
-            window.
+            Showing rows {start + 1}–{end} of {total}. Search covers the entire loaded window.
           </span>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -562,15 +577,15 @@ function LogViewer({
             </Button>
             <Button
               size="sm"
-              disabled={end === matches.length}
+              disabled={end === total}
               onClick={() => {
-                setWindowEnd(Math.min(matches.length, end + 1000))
+                setWindowEnd(Math.min(total, end + 1))
                 setFollow(false)
               }}
             >
               Later lines
             </Button>
-            <Button size="sm" disabled={end === matches.length} onClick={() => setWindowEnd(null)}>
+            <Button size="sm" disabled={end === total} onClick={() => setWindowEnd(null)}>
               Latest lines
             </Button>
           </div>
@@ -594,14 +609,16 @@ function LogViewer({
               ? 'No matching lines in this window.'
               : 'No output available in this window yet.'}
           </p>
-        ) : (
-          <WorkflowLogLines
-            lines={visible}
-            wrap={wrap}
-            timestamps={timestamps}
-            searching={Boolean(search)}
-          />
-        )}
+        ) : null}
+        <WorkflowLogLines
+          parsed={parsed}
+          rows={visible}
+          failed={failed}
+          source={source}
+          wrap={wrap}
+          timestamps={timestamps}
+          searching={Boolean(search)}
+        />
       </div>
     </section>
   )

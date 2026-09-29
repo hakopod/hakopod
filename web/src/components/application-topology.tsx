@@ -1,3 +1,4 @@
+import { observedServiceImage } from '../lib/service-image'
 import { useDatabases, databaseHealth } from '../lib/databases'
 import { useScope, canAccess } from '../lib/scope'
 import { Button } from './ui/button'
@@ -228,8 +229,12 @@ export default function ApplicationTopology({ application: app }: { application:
               <div>
                 <dt>Image</dt>
                 <dd>
-                  <code>{observed?.image || service.image}</code>
-                  <Copy value={observed?.image || service.image} label="Copy image" />
+                  <code>
+                    {observedServiceImage(service, observed) || 'No runner image observed'}
+                  </code>
+                  {observedServiceImage(service, observed) && (
+                    <Copy value={observedServiceImage(service, observed)!} label="Copy image" />
+                  )}
                 </dd>
               </div>
               <div>

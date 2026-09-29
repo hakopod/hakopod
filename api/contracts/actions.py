@@ -1,3 +1,4 @@
+schemas['ServiceStatus']['properties']['images'] = array(S)
 schemas["Actions"] = obj({"repository": S, "organization": S, "runner_group_id": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "Organization runner group ID; omit or use zero for the GitHub default group."}, "credential": S, "labels": array(S), "timeout_minutes": I}, ["credential", "labels"])
 schemas["Actions"]["description"] = "Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub."
 schemas["Actions"]["properties"]["workspace_size_gib"] = {"type": "integer", "minimum": 2, "maximum": 16, "description": "Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job."}

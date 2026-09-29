@@ -17,6 +17,7 @@ import (
 
 	contract "github.com/hakopod/hakopod/api"
 
+	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/dnsprovider"
@@ -42,6 +43,7 @@ type Server struct {
 	// Overrides are only set by in-process tests, never by an API request.
 	actionsTestRuntime    actionsRuntime
 	actionsClient         func(string) (runnerProvider, error)
+	actionsBudget         actions.RequestBudget
 	maintenanceHTTP       *http.Client
 	githubHTTP            *http.Client
 	gitlabHTTP            *http.Client

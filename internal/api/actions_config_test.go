@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
-	"github.com/hakopod/hakopod/internal/store"
 )
 
 func TestActionsConfigMatchesApprovedResolvedImage(t *testing.T) {
@@ -35,19 +34,5 @@ func TestActionsConfigMatchesApprovedResolvedImage(t *testing.T) {
 				t.Fatal("different runner configuration was treated as unchanged")
 			}
 		})
-	}
-}
-
-func TestActionsSlotImages(t *testing.T) {
-	old := "ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
-	slot := func(image string) store.ActionsSlot { return store.ActionsSlot{Config: spec.Service{Image: image}} }
-	if got := actionsSlotImages(nil); got != spec.ActionsRunnerImage {
-		t.Fatalf("empty pool: %s", got)
-	}
-	if got := actionsSlotImages([]store.ActionsSlot{slot(spec.ActionsRunnerImage), slot(spec.ActionsRunnerImage)}); got != spec.ActionsRunnerImage {
-		t.Fatalf("replacement pool: %s", got)
-	}
-	if got := actionsSlotImages([]store.ActionsSlot{slot(spec.ActionsRunnerImage), slot(old)}); got != old+", "+spec.ActionsRunnerImage {
-		t.Fatalf("mixed draining pool: %s", got)
 	}
 }

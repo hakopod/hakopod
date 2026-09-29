@@ -68,9 +68,11 @@ type Registration struct {
 // Client intentionally has no configurable production host or redirects. A
 // repository name cannot route its scoped credential to a different origin.
 type Client struct {
-	token string
-	http  *http.Client
-	base  string
+	token        string
+	http         *http.Client
+	base         string
+	budget       *RequestBudget
+	registration *registrationReservation
 }
 
 func New(token string) (*Client, error) {
@@ -78,6 +80,15 @@ func New(token string) (*Client, error) {
 		return nil, errors.New("supply a GitHub runner-management credential")
 	}
 	return &Client{token: token, base: "https://api.github.com", http: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+}
+
+// NewWithBudget applies one credential budget across runner and workflow calls.
+func NewWithBudget(token string, budget *RequestBudget) (*Client, error) {
+	c, err := New(token)
+	if err == nil {
+		c.budget = budget
+	}
+	return c, err
 }
 
 // StatusError excludes provider response bodies, which may contain credentials.
@@ -104,13 +115,17 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("Content-Type", "application/json")
-	res, err := c.http.Do(req)
+	res, err := c.doAPI(req)
 	if err != nil {
+		var retry *RetryError
+		if errors.As(err, &retry) {
+			return err
+		}
 		return errors.New("GitHub runner request did not complete; reconcile its recorded runner name before retrying")
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return &StatusError{Status: res.StatusCode}
+		return c.retryError(res.StatusCode)
 	}
 	if out == nil {
 		return nil
@@ -232,29 +247,31 @@ func (c *Client) Find(ctx context.Context, target Target, name string) (*Runner,
 	if !labelPattern.MatchString(name) {
 		return nil, errors.New("invalid runner name")
 	}
-	for page := 1; page <= 10; page++ {
-		var list struct {
-			Runners []Runner `json:"runners"`
-			Total   int      `json:"total_count"`
-		}
-		err = c.request(ctx, http.MethodGet, fmt.Sprintf("%s?per_page=100&page=%d", base, page), nil, &list)
-		if err != nil {
-			return nil, err
-		}
-		if len(list.Runners) > 100 || list.Total > 1000 {
-			return nil, errors.New("runner inventory exceeds the supported bound")
-		}
-		for _, runner := range list.Runners {
-			if runner.Name == name {
-				if runner.ID <= 0 {
-					return nil, errors.New("invalid runner identity")
-				}
-				return &runner, nil
+	// Both organization and repository runner endpoints support exact-name
+	// filtering. The unique name is already durable in actions_slots, so retries
+	// after process restart need one bounded lookup regardless of fleet size.
+	var list struct {
+		Runners []Runner `json:"runners"`
+		Total   int      `json:"total_count"`
+	}
+	err = c.request(ctx, http.MethodGet, base+"?per_page=100&name="+url.QueryEscape(name), nil, &list)
+	if err != nil {
+		return nil, err
+	}
+	if len(list.Runners) > 100 {
+		return nil, errors.New("runner lookup response exceeds its bounds")
+	}
+	for _, runner := range list.Runners {
+		if runner.Name == name {
+			if runner.ID <= 0 {
+				return nil, errors.New("invalid runner identity")
 			}
-		}
-		if len(list.Runners) < 100 {
-			return nil, nil
+			return &runner, nil
 		}
 	}
-	return nil, errors.New("runner inventory could not be fully reconciled")
+	// Never treat a provider ignoring the name filter as proof of absence.
+	if list.Total > 0 || len(list.Runners) > 0 {
+		return nil, errors.New("GitHub did not complete the named runner lookup; cleanup will retry")
+	}
+	return nil, nil
 }

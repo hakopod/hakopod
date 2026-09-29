@@ -3675,6 +3675,7 @@ export interface components {
             url?: string;
             internal_address?: string;
             message?: string;
+            images?: string[];
             endpoints?: {
                 [key: string]: string;
             };

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/actions"
@@ -76,63 +75,20 @@ func actionsFence(ctx context.Context, t cluster.Target) error {
 }
 
 func (s *Server) RunActions(ctx context.Context) {
-	afterApp, afterService := "", ""
-	tick := time.NewTicker(10 * time.Second)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-		pools, err := s.Store.ActionsPoolsPage(ctx, "", afterApp, afterService)
-		if err != nil {
-			continue
-		}
-		if len(pools) < 200 {
-			afterApp, afterService = "", ""
-		} else {
-			last := pools[len(pools)-1]
-			afterApp, afterService = last.ApplicationID, last.Service
-		}
-		for _, p := range pools {
-			if ctx.Err() != nil {
-				return
-			}
-			step, cancel := context.WithTimeout(ctx, 45*time.Second)
-			claim, err := s.Store.ClaimActions(step, p.ApplicationID)
-			if err != nil || claim == nil {
-				cancel()
-				continue
-			}
-			// Refresh after acquiring the application lock; a deployment may have
-			// changed the pool since the inventory page was read.
-			current, readErr := s.Store.ActionsPools(step, p.ApplicationID)
-			err = readErr
-			if err == nil {
-				for _, fresh := range current {
-					if fresh.Service == p.Service {
-						p = fresh
-						t := actionsTarget(p)
-						t.BeforeStep = claim.Check
-						err = s.reconcileActionsPool(step, t, p)
-						break
-					}
-				}
-			}
-			if err != nil {
-				_ = s.Store.ActionsMessage(step, p, safeActionsError(err))
-			}
-			claim.Release()
-			cancel()
-		}
-	}
+	runActionsWorkers(ctx, s.Store, s.reconcileScheduledActions)
 }
 
 // Provider and Kubernetes errors may contain a request body. Persist only
 // bounded public diagnostics, never the single-job config or provider token.
 func safeActionsError(err error) string {
 	var status *actions.StatusError
+	if errors.As(err, &status) && (status.Status == 401 || status.Status == 403) {
+		return status.Error() + "; verify the selected scope, runner group and runner-management permission. Requests retry after the provider cooldown."
+	}
+	var retry *actions.RetryError
+	if errors.As(err, &retry) {
+		return retry.Error() + ". Runner cleanup and registration resume automatically."
+	}
 	if errors.As(err, &status) {
 		return status.Error() + "; verify the selected scope and runner group, and organization Self-hosted runners or repository Administration read/write permission"
 	}
@@ -154,7 +110,7 @@ func (s *Server) runnerClient(ctx context.Context, t cluster.Target, config spec
 	if s.actionsClient != nil {
 		return s.actionsClient(token)
 	}
-	return actions.New(token)
+	return actions.NewWithBudget(token, &s.actionsBudget)
 }
 func sameActionsConfig(a, b spec.Service) bool {
 	// Saved and resolved references can retain a prior approved image.
@@ -209,7 +165,16 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 	return true, s.Store.DeleteActionsSlot(ctx, v.ID)
 }
 
-func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p store.ActionsPool) error {
+func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p store.ActionsPool) (resultErr error) {
+	ctx, progress := actions.TrackRequests(ctx)
+	defer func() {
+		var retry *actions.RetryError
+		if errors.As(resultErr, &retry) {
+			copy := *retry
+			copy.Progress = progress()
+			resultErr = &copy
+		}
+	}()
 	if err := actionsFence(ctx, t); err != nil {
 		return err
 	}
@@ -217,6 +182,17 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	if err != nil {
 		return err
 	}
+	// A shared credential may run out of request budget partway through a pool.
+	// Poll its oldest observation first so later slots cannot starve on retries.
+	sort.SliceStable(slots, func(i, j int) bool {
+		a, b := slots[i], slots[j]
+		cleanupA := a.Phase == "intent" || a.Phase == "cleanup"
+		cleanupB := b.Phase == "intent" || b.Phase == "cleanup"
+		if cleanupA != cleanupB {
+			return cleanupA
+		}
+		return a.UpdatedAt.Before(b.UpdatedAt)
+	})
 	accessErr := s.Store.RequireActions(ctx, p.Project, p.Environment)
 	if accessErr != nil && !errors.Is(accessErr, store.ErrLicenseRequired) {
 		return accessErr
@@ -228,6 +204,15 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	}
 	remaining := len(slots)
 	retained := 0
+	// Fill genuinely empty capacity before spending its entire shared request
+	// budget polling online runners. Ambiguous registrations must recover first.
+	cleanupPending := len(slots) > 0 && (slots[0].Phase == "intent" || slots[0].Phase == "cleanup")
+	if remaining < desired && !cleanupPending {
+		if err = s.startActionsSlot(ctx, t, p); err != nil {
+			return err
+		}
+		return s.Store.ActionsMessage(ctx, p, "")
+	}
 	for _, v := range slots {
 		if err := actionsFence(ctx, t); err != nil {
 			return err
@@ -341,45 +326,61 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	// At most one provider registration per pool per pass. Draining and
 	// cleanup-pending slots continue to count against the replica budget.
 	if remaining < desired {
-		if err = s.Store.RequireActions(ctx, p.Project, p.Environment); err != nil {
-			return err
-		}
-		client, err := s.runnerClient(ctx, t, p.Config)
-		if err != nil {
-			return err
-		}
-		if err = actionsFence(ctx, t); err != nil {
-			return err
-		}
-		v, err := s.Store.NewActionsSlot(ctx, p)
-		if err != nil {
-			return err
-		}
-		if err = actionsFence(ctx, t); err != nil {
-			return err
-		}
-		registered, err := client.Register(ctx, p.Config.Actions.Target(), "hakopod-"+v.ID, p.Config.Actions.Labels)
-		if err != nil {
-			return err
-		}
-		if err = actionsFence(ctx, t); err != nil {
-			return err
-		}
-		if err = s.Store.UpdateActionsSlot(ctx, v.ID, registered.Runner.ID, "starting"); err != nil {
-			return err
-		}
-		if err = s.actionRuntime().SaveActionsConfig(ctx, t, p.Service, v.ID, registered.EncodedConfig); err != nil {
-			return err
-		}
-		if err = s.actionRuntime().StartActionsPod(ctx, t, p.Service, v.ID, p.Config); err != nil {
+		if err = s.startActionsSlot(ctx, t, p); err != nil {
 			return err
 		}
 	}
 	return s.Store.ActionsMessage(ctx, p, "")
 }
 
+func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store.ActionsPool) error {
+	if err := s.Store.RequireActions(ctx, p.Project, p.Environment); err != nil {
+		return err
+	}
+	if err := s.actionRuntime().ActionsAvailable(ctx); err != nil {
+		return err
+	}
+	client, err := s.runnerClient(ctx, t, p.Config)
+	if err != nil {
+		return err
+	}
+	if reserving, ok := client.(interface {
+		PrepareRegistration(context.Context, actions.Target) (func(), error)
+	}); ok {
+		release, err := reserving.PrepareRegistration(ctx, p.Config.Actions.Target())
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
+	if err = actionsFence(ctx, t); err != nil {
+		return err
+	}
+	v, err := s.Store.NewActionsSlot(ctx, p)
+	if err != nil {
+		return err
+	}
+	if err = actionsFence(ctx, t); err != nil {
+		return err
+	}
+	registered, err := client.Register(ctx, p.Config.Actions.Target(), "hakopod-"+v.ID, p.Config.Actions.Labels)
+	if err != nil {
+		return err
+	}
+	if err = actionsFence(ctx, t); err != nil {
+		return err
+	}
+	if err = s.Store.UpdateActionsSlot(ctx, v.ID, registered.Runner.ID, "starting"); err != nil {
+		return err
+	}
+	if err = s.actionRuntime().SaveActionsConfig(ctx, t, p.Service, v.ID, registered.EncodedConfig); err != nil {
+		return err
+	}
+	return s.actionRuntime().StartActionsPod(ctx, t, p.Service, v.ID, p.Config)
+}
+
 func (s *Server) observeActions(ctx context.Context, t cluster.Target, name string, config spec.Service) (cluster.ServiceStatus, error) {
-	result := cluster.ServiceStatus{Name: name, Status: "deploying", Desired: config.Replicas, Image: spec.ActionsRunnerImage}
+	result := cluster.ServiceStatus{Name: name, Status: "deploying", Desired: config.Replicas}
 	if config.Suspended {
 		result.Desired = 0
 	}
@@ -398,7 +399,17 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 		if e != nil {
 			return result, e
 		}
-		result.Image = actionsSlotImages(slots)
+		observer, ok := s.actionRuntime().(actionsImageRuntime)
+		if !ok {
+			return result, fmt.Errorf("runner image observation is unavailable")
+		}
+		result.Images, e = observer.ActionsPodImages(ctx, t, name)
+		if e != nil {
+			return result, e
+		}
+		if len(result.Images) == 1 {
+			result.Image = result.Images[0]
+		}
 		for _, v := range slots {
 			if sameActionsConfig(v.Config, config) && (v.Phase == "online" || v.Phase == "busy") && time.Since(v.UpdatedAt) < 2*time.Minute {
 				result.Ready++
@@ -417,24 +428,8 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 	return result, nil
 }
 
-// Slot configurations record the image selected when each runner was created.
-// Preserve both images during a drain instead of claiming every runner upgraded.
-func actionsSlotImages(slots []store.ActionsSlot) string {
-	images := map[string]bool{}
-	for _, slot := range slots {
-		if slot.Config.Image != "" {
-			images[slot.Config.Image] = true
-		}
-	}
-	if len(images) == 0 {
-		return spec.ActionsRunnerImage
-	}
-	values := make([]string, 0, len(images))
-	for image := range images {
-		values = append(values, image)
-	}
-	sort.Strings(values)
-	return strings.Join(values, ", ")
+type actionsImageRuntime interface {
+	ActionsPodImages(context.Context, cluster.Target, string) ([]string, error)
 }
 
 func (s *Server) actionsStatus(w http.ResponseWriter, r *http.Request) {
