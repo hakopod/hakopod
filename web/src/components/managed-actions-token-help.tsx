@@ -1,9 +1,11 @@
 export function ManagedActionsTokenHelp({
   organization,
   repository,
+  jobs = true,
 }: {
   organization: boolean
   repository: boolean
+  jobs?: boolean
 }) {
   return (
     <div className="grid min-w-0 gap-2 text-sm">
@@ -19,10 +21,12 @@ export function ManagedActionsTokenHelp({
             Repository permissions → <strong>Administration: Read and write</strong>
           </li>
         )}
-        <li>
-          Repository permissions → <strong>Actions: Read-only</strong> for job steps and completed
-          logs.
-        </li>
+        {jobs && (
+          <li>
+            Repository permissions → <strong>Actions: Read-only</strong> for job steps and completed
+            logs.
+          </li>
+        )}
       </ul>
       <details>
         <summary className="min-h-11 cursor-pointer py-3">How to create the GitHub token</summary>

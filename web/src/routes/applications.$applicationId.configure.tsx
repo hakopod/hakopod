@@ -8,6 +8,7 @@ import { useScope, useResourceScope } from '../lib/scope'
 import { ManagedActionsForm } from '../components/managed-actions-form'
 import { FormPage } from '../components/form-page'
 import { Button } from '../components/ui/button'
+import { actionsTargetLabel } from '../lib/actions-provider'
 
 export const Route = createFileRoute('/applications/$applicationId/configure')({
   validateSearch: (
@@ -95,7 +96,7 @@ function ConfigureApplication() {
     return (
       <FormPage
         title="Configure runner pools"
-        description="Choose a runner pool to adjust its GitHub access, compute and job settings."
+        description="Choose a runner pool to review its access, compute and job settings."
         breadcrumbs={[]}
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -106,7 +107,7 @@ function ConfigureApplication() {
             >
               <h2 className="text-sm font-medium wrap-anywhere">{name}</h2>
               <span className="text-xs muted-text wrap-anywhere">
-                {value.actions?.organization || value.actions?.repository} · {value.replicas} job{' '}
+                {actionsTargetLabel(value.actions!)} · {value.replicas} job{' '}
                 {value.replicas === 1 ? 'slot' : 'slots'}
               </span>
               <Button asChild>

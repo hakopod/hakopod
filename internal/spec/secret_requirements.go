@@ -12,6 +12,9 @@ func LocalSecretNames(app Application) []string {
 	for _, service := range RuntimeEnvironment(app).Services {
 		if service.Actions != nil {
 			seen[service.Actions.Credential] = true
+			if service.Actions.JobsCredential != "" {
+				seen[service.Actions.JobsCredential] = true
+			}
 		}
 		for _, ref := range SecretReferences(service) {
 			if ref.Ref != "" {

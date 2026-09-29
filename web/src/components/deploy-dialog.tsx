@@ -21,6 +21,7 @@ import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
+import { actionsNeedTOML, actionsProviderName } from '../lib/actions-provider'
 import { FormPage, FormHint } from './form-page'
 import { ComputeNotice } from './compute-notice'
 import { hostedComputeIssues } from '../lib/compute-limits'
@@ -63,6 +64,13 @@ export function DeploymentForm({
   if (applicationSnapshot.current?.id !== incomingApplication?.id)
     applicationSnapshot.current = incomingApplication
   const application = applicationSnapshot.current
+  const nativeActions = Object.entries(application?.spec.services || {})
+    .filter(([name]) => !serviceName || serviceName === name)
+    .map(([, service]) => service.actions)
+    .find((actions) => actions && actionsNeedTOML(actions))
+  const tomlOnlyReason = nativeActions
+    ? `${actionsProviderName(nativeActions)} runner settings are preserved in TOML. Managed execution is not available for this provider.`
+    : undefined
   const features = useEditionFeatures()
   const scope = useScope()
   const canBuildFromGit =
@@ -80,9 +88,11 @@ export function DeploymentForm({
   })
   const [spec, setSpec] = useState<Spec>(newSpec)
   const [runtime, setRuntime] = useState<Record<string, RuntimeDraft>>({})
-  const [toml, setToml] = useState('')
+  const [toml, setToml] = useState(() => (application ? specToTOML(application.spec) : ''))
   const [envFiles, setEnvFiles] = useState<EnvironmentFile[]>([])
-  const [mode, setMode] = useState<'form' | 'toml' | 'compose'>('form')
+  const [mode, setMode] = useState<'form' | 'toml' | 'compose'>(
+    tomlOnlyReason ? 'toml' : initialMode,
+  )
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [error, setError] = useState('')
@@ -117,9 +127,9 @@ export function DeploymentForm({
       setComposeDraft(null)
       setError('')
       setToml(application ? specToTOML(initial) : '')
-      setMode(initialMode)
+      setMode(tomlOnlyReason ? 'toml' : initialMode)
     }
-  }, [application?.id, initialMode, serviceName, removeService, addedService])
+  }, [application?.id, initialMode, serviceName, removeService, addedService, tomlOnlyReason])
   const limitIssues = features.hostedCompute
     ? hostedComputeIssues(spec, features.hostedFree, features.hostedStorageGiB)
     : []
@@ -167,7 +177,7 @@ export function DeploymentForm({
   })
 
   async function changeMode(next: 'form' | 'toml' | 'compose') {
-    if (busy || mode === next) return
+    if (busy || mode === next || (tomlOnlyReason && next !== 'toml')) return
     setError('')
     setPlan(null)
     setBusy(true)
@@ -324,6 +334,7 @@ export function DeploymentForm({
       </div>
       <div className="form-body deploy-body">
         <ComputeNotice creatingApplication={!application} />
+        {tomlOnlyReason && <Note>{tomlOnlyReason}</Note>}
         {serviceName && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
@@ -417,49 +428,51 @@ export function DeploymentForm({
           </>
         ) : (
           <fieldset disabled={busy} className="m-0 min-w-0 border-0 p-0">
-            <div
-              className="segmented-control deployment-methods"
-              data-method-count={canBuildFromGit ? (serviceName ? 4 : 5) : serviceName ? 2 : 3}
-            >
-              <button
-                disabled={busy}
-                className={mode === 'form' ? 'selected' : ''}
-                onClick={() => void changeMode('form')}
+            {!tomlOnlyReason && (
+              <div
+                className="segmented-control deployment-methods"
+                data-method-count={canBuildFromGit ? (serviceName ? 4 : 5) : serviceName ? 2 : 3}
               >
-                <Icon name="box" size={15} />
-                Container images
-              </button>
-              <button
-                disabled={busy}
-                className={mode === 'toml' ? 'selected' : ''}
-                onClick={() => void changeMode('toml')}
-              >
-                <Icon name="code" size={15} />
-                Import TOML
-              </button>
-              {!serviceName && (
                 <button
                   disabled={busy}
-                  className={mode === 'compose' ? 'selected' : ''}
-                  onClick={() => void changeMode('compose')}
+                  className={mode === 'form' ? 'selected' : ''}
+                  onClick={() => void changeMode('form')}
+                >
+                  <Icon name="box" size={15} />
+                  Container images
+                </button>
+                <button
+                  disabled={busy}
+                  className={mode === 'toml' ? 'selected' : ''}
+                  onClick={() => void changeMode('toml')}
                 >
                   <Icon name="code" size={15} />
-                  Import Compose
+                  Import TOML
                 </button>
-              )}
-              {canBuildFromGit && (
-                <>
-                  <button onClick={() => void navigate({ to: '/builds/new' })}>
-                    <ServiceIcon name="github" size={15} />
-                    Build from Git
-                  </button>
-                  <button onClick={() => void navigate({ to: '/applications/import' })}>
+                {!serviceName && (
+                  <button
+                    disabled={busy}
+                    className={mode === 'compose' ? 'selected' : ''}
+                    onClick={() => void changeMode('compose')}
+                  >
                     <Icon name="code" size={15} />
-                    Import Git configuration
+                    Import Compose
                   </button>
-                </>
-              )}
-            </div>
+                )}
+                {canBuildFromGit && (
+                  <>
+                    <button onClick={() => void navigate({ to: '/builds/new' })}>
+                      <ServiceIcon name="github" size={15} />
+                      Build from Git
+                    </button>
+                    <button onClick={() => void navigate({ to: '/applications/import' })}>
+                      <Icon name="code" size={15} />
+                      Import Git configuration
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {mode === 'compose' ? (
               <ComposeImport
                 onBusyChange={setBusy}
@@ -514,9 +527,9 @@ export function DeploymentForm({
                   maxLength={262144}
                 />
                 <p className="field-help">
-                  Configure networks, private ports, peer access, mounts and filesystem permissions
-                  here alongside images, health checks and secret references. Switching to the form
-                  validates and keeps these settings.
+                  {tomlOnlyReason
+                    ? 'Review the saved provider, target, image and secret references here.'
+                    : 'Configure networks, private ports, peer access, mounts and filesystem permissions here alongside images, health checks and secret references. Switching to the form validates and keeps these settings.'}
                 </p>
                 <p className="field-help">
                   Use env_file = ".env" above the service tables to share a file across services, or
@@ -886,7 +899,9 @@ export function DeploymentForm({
           <Icon name="lock" size={13} />
           {plan
             ? 'Only reviewed changes will be submitted'
-            : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
+            : tomlOnlyReason
+              ? 'Review validates the configuration before deployment'
+              : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
         </span>
         <div className="deploy-footer-actions">
           <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>

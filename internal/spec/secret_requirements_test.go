@@ -13,3 +13,22 @@ func TestLocalSecretNamesCoversEffectiveRuntime(t *testing.T) {
 		t.Fatalf("references = %v", got)
 	}
 }
+
+func TestRunnerSecretsIncludeSeparateJobAccess(t *testing.T) {
+	for _, jobs := range []string{"", "runner-management", "workflow-read"} {
+		t.Run(jobs, func(t *testing.T) {
+			app := Application{Services: map[string]Service{
+				"runner": {Actions: &Actions{Repository: "team/repo", Credential: "runner-management", JobsCredential: jobs}},
+			}}
+			want := []string{"runner-management"}
+			if jobs == "workflow-read" {
+				want = append(want, jobs)
+			}
+			for name, discover := range map[string]func(Application) []string{"runtime": LocalSecretNames, "template": TemplateSecretNames} {
+				if got := discover(app); !reflect.DeepEqual(got, want) {
+					t.Errorf("%s references = %v, want %v", name, got, want)
+				}
+			}
+		})
+	}
+}

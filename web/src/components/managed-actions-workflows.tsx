@@ -16,6 +16,7 @@ import {
 import { client, unwrap } from '../lib/client'
 import type { Application } from '../lib/types'
 import type { components } from '../lib/api.generated'
+import { workflowJobPresentation } from '../lib/actions-workflow'
 import {
   cleanWorkflowLog,
   jobDuration,
@@ -29,11 +30,13 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Empty, ErrorState, Loading, Note } from './shared'
+import { ManagedActionsJobCancel } from './managed-actions-cancel'
+import { ManagedActionsHold } from './managed-actions-hold'
 
 type Job = components['schemas']['ActionsJob']
 type Line = { number: number; text: string; rawText?: string }
-const runKey = (job: Job) =>
-  `${job.observation.repository}:${job.observation.run_id}:${job.observation.attempt}`
+type PresentedJob = Job & { display: ReturnType<typeof workflowJobPresentation> }
+const runKey = (job: PresentedJob) => job.display.runKey
 function StateIcon({ status }: { status: string }) {
   const Icon =
     status === 'success'
@@ -97,7 +100,11 @@ export function ManagedActionsWorkflows({
   const slots = pool?.slots || []
   const countsKnown = Boolean(pool) && !pools.isError
   const fresh = slots.filter((slot) => Date.now() - Date.parse(slot.updated_at) < 120000)
-  const all = jobs.data?.items || []
+  const all = useMemo(
+    () =>
+      (jobs.data?.items || []).map((item) => ({ ...item, display: workflowJobPresentation(item) })),
+    [jobs.data?.items],
+  )
   const runner = search.runner || ''
   const filtered = runner ? all.filter((job) => job.slot_id === runner) : all
   const runs = [...new Map(filtered.map((job) => [runKey(job), job])).values()]
@@ -158,12 +165,13 @@ export function ManagedActionsWorkflows({
         </Note>
       )}
       {pool?.pool.message && <Note>{pool.pool.message}</Note>}
+      {pool && <ManagedActionsHold application={application} service={service} />}
       {pool?.pool.removed && (
         <Note>This pool is being removed. Runner registration cleanup is still in progress.</Note>
       )}
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,280px)_auto] items-end">
         <SelectField
-          label="Workflow run"
+          label="Run"
           disabled={jobs.isPending || Boolean(jobs.error && !jobs.data)}
           value={run}
           onValueChange={(value) => select({ run: value, job: undefined })}
@@ -171,16 +179,16 @@ export function ManagedActionsWorkflows({
             runs.length
               ? runs.map((item) => ({
                   value: runKey(item),
-                  label: `${item.observation.workflow} #${item.observation.run_number} · Attempt ${item.observation.attempt} · ${item.observation.repository}`,
+                  label: item.display.option,
                 }))
               : [
                   {
                     value: '',
                     label: jobs.isPending
-                      ? 'Loading workflow runs…'
+                      ? 'Loading runs…'
                       : jobs.error
-                        ? 'Workflow runs unavailable'
-                        : 'No workflow runs yet',
+                        ? 'Runs unavailable'
+                        : 'No runs yet',
                   },
                 ]
           }
@@ -210,7 +218,7 @@ export function ManagedActionsWorkflows({
       {jobs.data?.message && <Note>{jobs.data.message}</Note>}
       {jobs.data?.truncated && (
         <Note>
-          Older job details exceed this history window. Open GitHub for the full workflow history.
+          Older job details exceed this history window. Open the provider for the full history.
         </Note>
       )}
       {jobs.error && <ErrorState error={jobs.error} retry={() => void jobs.refetch()} />}
@@ -219,12 +227,12 @@ export function ManagedActionsWorkflows({
       ) : jobs.error && !jobs.data ? null : !all.length ? (
         <Empty
           title="No jobs recorded yet"
-          description="Jobs appear when a runner using the current Hakopod image starts a workflow. Queued jobs have not been assigned to a runner, so GitHub remains the source for queue status."
+          description="Jobs appear after a managed runner receives a workflow or pipeline. Provider queues may include jobs not yet assigned to this pool."
         />
       ) : !header || !selected ? (
         <Empty
           title="This selection is unavailable"
-          description="The job may have aged out of the recent history or belong to another runner. Choose a workflow run or reset the filters."
+          description="The job may have aged out of the recent history or belong to another runner. Choose a run or reset the filters."
           action={
             <Button onClick={() => select({ runner: undefined, run: undefined, job: undefined })}>
               Show recent runs
@@ -233,35 +241,15 @@ export function ManagedActionsWorkflows({
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold wrap-anywhere">
-                {header.observation.workflow}{' '}
-                <span className="muted-text">#{header.observation.run_number}</span>
-              </h2>
-              <p className="text-sm muted-text wrap-anywhere">
-                {header.observation.repository} · {header.observation.branch} ·{' '}
-                {header.observation.sha.slice(0, 7)} · Attempt {header.observation.attempt}
-              </p>
-            </div>
-            <Button size="sm" asChild>
-              <a
-                href={`https://github.com/${header.observation.repository}/actions/runs/${header.observation.run_id}/attempts/${header.observation.attempt}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                View on GitHub <ExternalLink size={14} />
-              </a>
-            </Button>
-          </div>
+          <WorkflowRunHeader item={header} />
           <div className="grid grid-cols-1 min-w-0 gap-4 md:grid-cols-[250px_minmax(0,1fr)]">
-            <nav className="hidden md:block min-w-0" aria-label="Jobs in this workflow run">
+            <nav className="hidden md:block min-w-0" aria-label="Jobs in this run">
               <h3 className="text-xs muted-text uppercase tracking-wide mb-2">
                 Jobs · {runJobs.length}
               </h3>
               <ul className="grid gap-1">
                 {runJobs.map((item) => {
-                  const status = item.job?.conclusion || item.job?.status || 'waiting'
+                  const status = item.display.status
                   return (
                     <li key={item.slot_id}>
                       <button
@@ -272,9 +260,7 @@ export function ManagedActionsWorkflows({
                       >
                         <StateIcon status={status} />
                         <span className="min-w-0">
-                          <span className="block text-sm wrap-anywhere">
-                            {item.job?.name || item.observation.job_key}
-                          </span>
+                          <span className="block text-sm wrap-anywhere">{item.display.name}</span>
                           <span className="text-xs">{label(status)}</span>
                         </span>
                       </button>
@@ -291,7 +277,7 @@ export function ManagedActionsWorkflows({
                   onValueChange={(job) => select({ run, job })}
                   options={runJobs.map((item) => ({
                     value: item.slot_id,
-                    label: item.job?.name || item.observation.job_key,
+                    label: item.display.name,
                   }))}
                 />
               </div>
@@ -308,13 +294,32 @@ export function ManagedActionsWorkflows({
       )}
       <p className="text-xs muted-text">
         Showing up to 100 jobs from the last 30 days. Jobs are shown only for runners in this pool.
-        Queue status is available on GitHub.
+        Queue status is available from the provider.
       </p>
     </section>
   )
 }
 
-function WorkflowJob({
+export function WorkflowRunHeader({ item }: { item: Job }) {
+  const view = workflowJobPresentation(item)
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold wrap-anywhere">{view.title}</h2>
+        <p className="text-sm muted-text wrap-anywhere">{view.context}</p>
+      </div>
+      {view.href && (
+        <Button size="sm" asChild>
+          <a href={view.href} target="_blank" rel="noreferrer">
+            View on {view.providerName} <ExternalLink size={14} />
+          </a>
+        </Button>
+      )}
+    </div>
+  )
+}
+
+export function WorkflowJob({
   item,
   application,
   service,
@@ -325,6 +330,8 @@ function WorkflowJob({
   service: string
   canReadLogs: boolean
 }) {
+  const view = workflowJobPresentation(item)
+  const details = view.details
   const [expanded, setExpanded] = useState<number | 'all'>('all')
   const logs = useQuery({
     queryKey: ['actions-job-logs', application.id, service, item.slot_id],
@@ -344,7 +351,7 @@ function WorkflowJob({
     gcTime: 0,
     retry: false,
   })
-  const steps = item.job?.steps || []
+  const steps = details?.steps || []
   const step =
     typeof expanded === 'number' ? steps.find((value) => value.number === expanded) : undefined
   const lines = useMemo(
@@ -363,26 +370,33 @@ function WorkflowJob({
         }),
     [logs.data?.lines, step],
   )
-  const status = item.job?.conclusion || item.job?.status || 'waiting'
+  const status = view.status
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="font-semibold wrap-anywhere">
-            {item.job?.name || item.observation.job_key}
-          </h3>
+          <h3 className="font-semibold wrap-anywhere">{view.name}</h3>
           <p className="text-xs muted-text break-all">Runner: hakopod-{item.slot_id}</p>
+          {view.jobID && <p className="text-xs muted-text break-all">Job: {view.jobID}</p>}
         </div>
         <span className="flex items-center gap-2 text-sm">
           <StateIcon status={status} />
-          {label(status)} · {jobDuration(item.job?.started_at, item.job?.completed_at)}
+          {label(status)}
+          {details?.started_at && ` · ${jobDuration(details.started_at, details.completed_at)}`}
         </span>
       </div>
-      {Date.now() - Date.parse(item.updated_at) > 120000 && item.job?.status !== 'completed' && (
-        <Note>Job status is out of date. Refresh to check GitHub again.</Note>
-      )}
-      {item.job?.steps_truncated && (
-        <Note>Some step details exceed this window. Open the job on GitHub to see every step.</Note>
+      <ManagedActionsJobCancel application={application} service={service} item={item} />
+      {view.discoveryMessage && <Note>{view.discoveryMessage}</Note>}
+      {details &&
+        Date.now() - Date.parse(item.updated_at) > 120000 &&
+        details.status !== 'completed' && (
+          <Note>Job status is out of date. Refresh to check {view.providerName} again.</Note>
+        )}
+      {details?.steps_truncated && (
+        <Note>
+          Some step details exceed this window. Open the job on {view.providerName} to see every
+          step.
+        </Note>
       )}
       {steps.length > 0 ? (
         <div className="min-w-0 border border-border rounded-md overflow-hidden">
@@ -429,9 +443,9 @@ function WorkflowJob({
             )
           })}
         </div>
-      ) : (
+      ) : view.native ? null : (
         <p className="text-sm muted-text">
-          {item.job
+          {details
             ? 'GitHub has not reported steps yet.'
             : 'Waiting for GitHub to confirm this job and its steps. The credential needs Actions read access.'}
         </p>
@@ -440,21 +454,20 @@ function WorkflowJob({
         <Button size="sm" aria-pressed={expanded === 'all'} onClick={() => setExpanded('all')}>
           Full job log
         </Button>
-        <span className="text-xs muted-text">
-          {logs.data?.source === 'runner'
-            ? 'Live runner output'
-            : logs.data?.source === 'github'
-              ? 'GitHub logs'
-              : ''}
-          {logs.data && ` · Checked ${new Date(logs.data.observed_at).toLocaleTimeString()}`}
-        </span>
+        {logs.data && (
+          <WorkflowLogStatus source={logs.data.source} observedAt={logs.data.observed_at} />
+        )}
       </div>
       {canReadLogs && logs.error && (
         <ErrorState error={logs.error} retry={() => void logs.refetch()} />
       )}
-      {logs.data?.message && <Note>{logs.data.message}</Note>}
+      {logs.data?.message && logs.data.message !== view.discoveryMessage && (
+        <Note>{logs.data.message}</Note>
+      )}
       {logs.data?.truncated && (
-        <Note>This log window is truncated. Open GitHub for the complete retained log.</Note>
+        <Note>
+          This log window is truncated. Open {view.providerName} for the complete retained log.
+        </Note>
       )}
       {expanded === 'all' && (
         <LogViewer
@@ -472,6 +485,23 @@ function WorkflowJob({
         </Button>
       )}
     </>
+  )
+}
+
+export function WorkflowLogStatus({ source, observedAt }: { source: string; observedAt: string }) {
+  const sourceLabel =
+    source === 'runner'
+      ? 'Live runner output'
+      : source === 'github'
+        ? 'GitHub logs'
+        : source === 'gitlab'
+          ? 'GitLab logs'
+          : ''
+  return (
+    <span className="text-xs muted-text">
+      {sourceLabel && `${sourceLabel} · `}
+      Checked {new Date(observedAt).toLocaleTimeString()}
+    </span>
   )
 }
 

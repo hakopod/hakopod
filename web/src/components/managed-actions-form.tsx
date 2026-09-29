@@ -14,7 +14,8 @@ import { FormPage, FormSection } from './form-page'
 import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { DeploymentSecrets } from './deployment-secrets'
 import { ManagedActionsTokenHelp } from './managed-actions-token-help'
-import { DiffTable } from './deploy-dialog'
+import { DeploymentForm, DiffTable } from './deploy-dialog'
+import { actionsNeedTOML } from '../lib/actions-provider'
 import { serviceResources } from '../lib/service-resources'
 import { runnerReservationLabel, type RunnerResources } from '../lib/runner-resources'
 import {
@@ -27,15 +28,34 @@ import {
   runnerResourcePresets,
 } from './managed-actions-setup'
 
-export function ManagedActionsForm({
-  application: currentApplication,
-  serviceName,
-  onClose,
-}: {
+type ManagedActionsFormProps = {
   application?: Application
   serviceName?: string
   onClose: () => void
-}) {
+}
+
+export function ManagedActionsForm(props: ManagedActionsFormProps) {
+  const [application] = useState(props.application)
+  const actions = props.serviceName
+    ? application?.spec.services[props.serviceName]?.actions
+    : undefined
+  if (actions && actionsNeedTOML(actions))
+    return (
+      <DeploymentForm
+        application={application}
+        serviceName={props.serviceName}
+        initialMode="toml"
+        onClose={props.onClose}
+      />
+    )
+  return <GitHubActionsForm {...props} />
+}
+
+function GitHubActionsForm({
+  application: currentApplication,
+  serviceName,
+  onClose,
+}: ManagedActionsFormProps) {
   // A background refetch must not silently advance the revision behind a draft.
   const [application] = useState(currentApplication)
   const scope = useScope()
@@ -57,6 +77,7 @@ export function ManagedActionsForm({
   const [credential, setCredential] = useState(
     original?.actions?.credential || 'github-runner-token',
   )
+  const [jobsCredential, setJobsCredential] = useState(original?.actions?.jobs_credential || '')
   const [labels, setLabels] = useState(original?.actions?.labels.join(', ') || 'hakopod')
   const [replicas, setReplicas] = useState(String(original?.replicas ?? 1))
   const [architecture, setArchitecture] = useState(original?.architecture || '')
@@ -178,10 +199,13 @@ export function ManagedActionsForm({
         architecture: architecture ? (architecture as 'amd64' | 'arm64') : undefined,
         node_name: nodeName || undefined,
         actions: {
-          ...(runnerScope === 'organization'
-            ? { organization, runner_group_id: runnerGroup ? Number(runnerGroup) : undefined }
-            : { repository }),
+          ...original?.actions,
+          organization: runnerScope === 'organization' ? organization : undefined,
+          repository: runnerScope === 'repository' ? repository : undefined,
+          runner_group_id:
+            runnerScope === 'organization' && runnerGroup ? Number(runnerGroup) : undefined,
           credential,
+          jobs_credential: jobsCredential || undefined,
           labels: workflowLabels,
           timeout_minutes: Number(timeout),
           workspace_size_gib: Number(workspaceSize),
@@ -377,9 +401,17 @@ export function ManagedActionsForm({
                         </dd>
                       </div>
                       <div>
-                        <dt className="muted-text">Credential reference</dt>
+                        <dt className="muted-text">Runner credential</dt>
                         <dd className="wrap-anywhere">
                           <code>{credential}</code>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="muted-text">Job logs credential</dt>
+                        <dd className="wrap-anywhere">
+                          <code>{jobsCredential || credential}</code>
+                          {(!jobsCredential || jobsCredential === credential) &&
+                            ' · Same as runner'}
                         </dd>
                       </div>
                       <div>
@@ -533,7 +565,14 @@ export function ManagedActionsForm({
                             <ManagedActionsTokenHelp
                               organization={runnerScope === 'organization'}
                               repository={runnerScope === 'repository'}
+                              jobs={!jobsCredential || jobsCredential === credential}
                             />
+                            {jobsCredential && jobsCredential !== credential && (
+                              <p className="field-help">
+                                Job details and logs use <code>{jobsCredential}</code> with
+                                repository Actions: Read-only access.
+                              </p>
+                            )}
                             <p className="field-help">
                               Save the token securely during the review step.
                             </p>
@@ -541,7 +580,7 @@ export function ManagedActionsForm({
                         </div>
                         <details className="rounded border border-[var(--hairline)]">
                           <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-medium">
-                            Service, runner group and credential name
+                            Service, runner group and credentials
                           </summary>
                           <div className="grid gap-3 px-3 pb-3 sm:grid-cols-2">
                             <label className="grid gap-2 text-sm">
@@ -556,7 +595,7 @@ export function ManagedActionsForm({
                               />
                             </label>
                             <label className="grid gap-2 text-sm">
-                              Application secret name
+                              Runner credential
                               <Input
                                 required
                                 value={credential}
@@ -565,7 +604,24 @@ export function ManagedActionsForm({
                                 onChange={(event) => setCredential(event.target.value)}
                               />
                               <span className="field-help">
-                                A reference to your token, not the token itself.
+                                The application secret name for your GitHub runner management token.
+                              </span>
+                            </label>
+                            <label className="grid gap-2 text-sm">
+                              Job logs credential (optional)
+                              <Input
+                                id="runner-jobs-credential"
+                                value={jobsCredential}
+                                maxLength={40}
+                                pattern={'[a-z]([a-z0-9\\-]{0,38}[a-z0-9])?'}
+                                placeholder="Use runner credential"
+                                disabled={busy}
+                                aria-describedby="runner-jobs-credential-help"
+                                onChange={(event) => setJobsCredential(event.target.value)}
+                              />
+                              <span id="runner-jobs-credential-help" className="field-help">
+                                Application secret name for a GitHub token with Actions: Read-only.
+                                Leave blank to use the runner credential.
                               </span>
                             </label>
                             {runnerScope === 'organization' && (

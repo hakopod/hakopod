@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { client, unwrap } from '../lib/client'
 import type { Application } from '../lib/types'
 import { canAccess, useScope } from '../lib/scope'
+import { actionsProvider, actionsProviderName, actionsTargetLabel } from '../lib/actions-provider'
 import { Button } from './ui/button'
 import { Empty, ErrorState, Loading, Note } from './shared'
 
@@ -45,11 +46,14 @@ export function ManagedActionsStatus({
     )
   }
   const removing = item?.pool.removed || !application.spec.services[service]
+  const actions = item?.pool.config.actions || application.spec.services[service]?.actions
+  const provider = actions ? actionsProvider(actions) : undefined
+  const providerName = actions ? actionsProviderName(actions) : 'Provider'
 
   return (
     <section className="panel mb-4">
       <div className="panel-heading flex-wrap">
-        <h2>GitHub runners</h2>
+        <h2>{actions ? `${providerName} runners` : 'Managed runners'}</h2>
         {!removing && (
           <Button size="sm" asChild>
             <Link
@@ -86,9 +90,11 @@ export function ManagedActionsStatus({
         ) : (
           <>
             <p className="text-sm min-w-0 wrap-anywhere">
-              {item.pool.config.actions?.organization
-                ? `Organization: ${item.pool.config.actions.organization} · Group: ${item.pool.config.actions.runner_group_id || 'GitHub default'}`
-                : `Repository: ${item.pool.config.actions?.repository}`}{' '}
+              {provider !== 'github'
+                ? `Target: ${actions ? actionsTargetLabel(actions) : 'Unavailable'}`
+                : item.pool.config.actions?.organization
+                  ? `Organization: ${item.pool.config.actions.organization} · Group: ${item.pool.config.actions.runner_group_id || 'GitHub default'}`
+                  : `Repository: ${item.pool.config.actions?.repository}`}{' '}
               · {removing ? 'Removal pending' : `${item.pool.config.replicas} configured job slots`}
             </p>
             {item.pool.message && <Note>{item.pool.message}</Note>}
@@ -108,12 +114,12 @@ export function ManagedActionsStatus({
                         {stale
                           ? 'Observation out of date'
                           : slot.phase === 'busy'
-                            ? 'Running a GitHub job'
+                            ? `Running a ${providerName} job`
                             : slot.phase === 'online'
-                              ? 'Online in GitHub'
+                              ? `Online in ${providerName}`
                               : slot.phase === 'cleanup'
                                 ? 'Removing registration'
-                                : 'Registering with GitHub'}
+                                : `Registering with ${providerName}`}
                       </span>
                       <time className="muted-text" dateTime={slot.updated_at}>
                         Checked {new Date(slot.updated_at).toLocaleTimeString()}
@@ -125,19 +131,22 @@ export function ManagedActionsStatus({
             )}
             {removing ? (
               <p className="text-sm muted-text">
-                GitHub registrations are being removed. Keep this application's credential until
-                cleanup finishes; the application can then be deleted.
+                {providerName} registrations are being removed. Keep this application's credential
+                until cleanup finishes; the application can then be deleted.
               </p>
-            ) : (
+            ) : provider === 'github' || provider === 'gitlab' ? (
               <p className="text-sm muted-text">
-                Use these labels in your workflow:{' '}
+                {provider === 'gitlab'
+                  ? 'Use these tags in your pipeline:'
+                  : 'Use these labels in your workflow:'}{' '}
                 <code className="break-all">
-                  runs-on: [{item.pool.config.actions?.labels.join(', ')}]
+                  {provider === 'gitlab' ? 'tags' : 'runs-on'}: [
+                  {item.pool.config.actions?.labels.join(', ')}]
                 </code>
                 . Each runner handles one job, then receives a fresh workspace. This pool does not
                 change Hakopod's application build provider.
               </p>
-            )}
+            ) : null}
           </>
         )}
       </div>

@@ -7,6 +7,7 @@ import { client, unwrap } from '../lib/client'
 import { canAccess, useScope } from '../lib/scope'
 import { APIError, message } from '../lib/api'
 import { withoutService, serviceVolumeRemoval } from '../lib/remove-service'
+import { actionsRemovalMessage } from '../lib/actions-provider'
 import { Dialog } from './ui/dialog'
 import { Button } from './ui/button'
 import { Icon } from './icons'
@@ -106,8 +107,7 @@ export function DeleteServiceDialog({
       <div className="grid gap-4 p-4">
         {snapshot.spec.services[service]?.actions && (
           <p className="text-sm">
-            Deleting this pool cancels running GitHub jobs and removes its runner registrations.
-            Cleanup continues automatically if GitHub is temporarily unavailable.
+            {actionsRemovalMessage(snapshot.spec.services[service].actions!)}
           </p>
         )}
         {!plan && (

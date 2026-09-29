@@ -84,7 +84,7 @@ func (s *Server) deleteWorkloadSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if required {
-		problem(w, 409, "conflict", "Remove the runner pool and wait for GitHub registration cleanup before deleting its credential.")
+		problem(w, 409, "conflict", "This credential is used by a runner pool, pending runner cleanup, or job history retained for up to 30 days. Update the pool and wait for those references to expire before deleting it.")
 		return
 	}
 	if err := s.Cluster.DeleteWorkloadSecret(r.Context(), p, e, a, name); err != nil {

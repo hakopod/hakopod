@@ -1258,7 +1258,13 @@
                       "type": "boolean"
                     },
                     "source": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "github",
+                        "gitlab",
+                        "runner",
+                        "none"
+                      ]
                     },
                     "state": {
                       "type": "string"
@@ -1290,6 +1296,223 @@
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/actions/{service}/jobs/{slot}/cancel": {
+      "post": {
+        "operationId": "cancelActionsJob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "job"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "scope"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/actions/{service}/hold": {
+      "get": {
+        "operationId": "getActionsProviderHold",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hold": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ActionsProviderHold"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "active_slots": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "hold",
+                    "active_slots"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/actions/{service}/hold/release": {
+      "post": {
+        "operationId": "releaseActionsProviderHold",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "released"
+                      ]
+                    },
+                    "hold_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "hold_id"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hold_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "acknowledge": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "hold_id",
+                  "acknowledge"
+                ]
               }
             }
           }
@@ -15884,18 +16107,71 @@
           "timeout_minutes": {
             "type": "integer"
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab",
+              "bitbucket"
+            ],
+            "description": "Defaults to github when omitted. Declaring a provider does not enable its managed runtime."
+          },
+          "gitlab": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "project_id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "group_id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "trust_policy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy. Execution remains unavailable."
+          },
+          "bitbucket": {
+            "type": "object",
+            "properties": {
+              "workspace": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace"
+            ],
+            "description": "Bitbucket workspace UUID and optional repository UUID. Execution remains unavailable."
+          },
           "workspace_size_gib": {
             "type": "integer",
             "minimum": 2,
             "maximum": 16,
             "description": "Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job."
+          },
+          "jobs_credential": {
+            "type": "string",
+            "description": "Optional application secret for provider job details and logs. Defaults to credential when omitted or empty."
           }
         },
         "required": [
           "credential",
           "labels"
         ],
-        "description": "Set exactly one of organization or repository. Existing repository configurations remain valid. Runner groups apply only to organization pools; repository access is managed by the group policy in GitHub."
+        "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider target fields preserve imported configuration; runtime availability is validated by the server. GitLab and Bitbucket execution is not yet available."
       },
       "ActionsPool": {
         "type": "object",
@@ -15970,6 +16246,10 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "provider_runner_id": {
+            "type": "string",
+            "description": "Opaque native provider runner identifier when present; retains UUIDs without numeric conversion."
           }
         },
         "required": [
@@ -16154,6 +16434,32 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab",
+              "bitbucket"
+            ]
+          },
+          "provider_runner_id": {
+            "type": "string"
+          },
+          "native_job": {
+            "$ref": "#/components/schemas/ActionsProviderWorkflowJob"
+          },
+          "discovery_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "observed",
+              "unavailable",
+              "reuse_detected"
+            ]
+          },
+          "can_cancel": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -16163,6 +16469,130 @@
           "job",
           "created_at",
           "updated_at"
+        ]
+      },
+      "ActionsProviderJobIdentity": {
+        "type": "object",
+        "properties": {
+          "runner_id": {
+            "type": "string"
+          },
+          "runner_name": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runner_id",
+          "runner_name",
+          "repository",
+          "run_id",
+          "job_id"
+        ],
+        "description": "Opaque provider identifiers bound to the original runner and target. Native identifiers are strings and must not be converted to JavaScript numbers."
+      },
+      "ActionsProviderWorkflowJob": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "$ref": "#/components/schemas/ActionsProviderJobIdentity"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionsStep"
+            }
+          },
+          "steps_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identity",
+          "name",
+          "status",
+          "conclusion",
+          "steps",
+          "steps_truncated"
+        ]
+      },
+      "ActionsProviderHold": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "slot_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "gitlab"
+            ]
+          },
+          "instance_url": {
+            "type": "string"
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionsProviderWorkflowJob"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "observed_at",
+          "slot_id",
+          "provider",
+          "instance_url",
+          "jobs"
         ]
       },
       "Alarm": {
