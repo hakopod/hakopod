@@ -18,20 +18,38 @@ const (
 	previousActionsRunnerImage  = actionsRunnerRepository + ":2.337.0-hakopod-37ab7a0390da5202ab3ac7cb12983d6d08f146bf@" + previousActionsRunnerDigest
 )
 
-// Actions describes an organization or repository pool of single-job runners. Credential
-// is a control-plane secret reference, never a job environment variable.
+type GitLabTarget = actions.GitLabTarget
+type BitbucketTarget = actions.BitbucketTarget
+
+// Actions describes a provider runner pool. Credentials name application secrets
+// used by the control plane, never job environment variables.
 type Actions struct {
-	Repository       string   `json:"repository,omitempty" toml:"repository,omitempty"`
-	Organization     string   `json:"organization,omitempty" toml:"organization,omitempty"`
-	RunnerGroupID    int64    `json:"runner_group_id,omitempty" toml:"runner_group_id,omitempty"`
-	Credential       string   `json:"credential" toml:"credential"`
-	Labels           []string `json:"labels" toml:"labels"`
-	TimeoutMinutes   int64    `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
-	WorkspaceSizeGiB int64    `json:"workspace_size_gib,omitempty" toml:"workspace_size_gib,omitempty"`
+	Provider         actions.Provider `json:"provider,omitempty" toml:"provider,omitempty"`
+	Repository       string           `json:"repository,omitempty" toml:"repository,omitempty"`
+	Organization     string           `json:"organization,omitempty" toml:"organization,omitempty"`
+	RunnerGroupID    int64            `json:"runner_group_id,omitempty" toml:"runner_group_id,omitempty"`
+	GitLab           *GitLabTarget    `json:"gitlab,omitempty" toml:"gitlab,omitempty"`
+	Bitbucket        *BitbucketTarget `json:"bitbucket,omitempty" toml:"bitbucket,omitempty"`
+	Credential       string           `json:"credential" toml:"credential"`
+	JobsCredential   string           `json:"jobs_credential,omitempty" toml:"jobs_credential,omitempty"`
+	Labels           []string         `json:"labels" toml:"labels"`
+	TimeoutMinutes   int64            `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
+	WorkspaceSizeGiB int64            `json:"workspace_size_gib,omitempty" toml:"workspace_size_gib,omitempty"`
 }
 
 func (a Actions) Target() actions.Target {
 	return actions.Target{Repository: a.Repository, Organization: a.Organization, RunnerGroupID: a.RunnerGroupID}
+}
+
+func (a Actions) ProviderTarget() actions.ProviderTarget {
+	return actions.ProviderTarget{Provider: a.Provider, GitHub: a.Target(), GitLab: a.GitLab, Bitbucket: a.Bitbucket}
+}
+
+func (a Actions) EffectiveJobsCredential() string {
+	if a.JobsCredential != "" {
+		return a.JobsCredential
+	}
+	return a.Credential
 }
 
 var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
@@ -59,11 +77,23 @@ func normalizeActions(s *Service) error {
 		return nil
 	}
 	a := s.Actions
-	if !a.Target().Valid() {
-		return fmt.Errorf("actions: select either a GitHub.com organization or owner/repository; a nonnegative runner_group_id is optional for organizations only")
+	target, err := a.ProviderTarget().Canonical()
+	if err != nil {
+		return fmt.Errorf("actions: %w", err)
 	}
+	// Provider types are a configuration contract, not runtime qualification.
+	// Keep this gate until each native executor and its lifecycle are verified.
+	if target.Provider != actions.ProviderGitHub {
+		return fmt.Errorf("actions.provider: %w", &actions.UnsupportedProviderError{Provider: target.Provider, Reason: "managed runner execution is not yet qualified for this provider"})
+	}
+	// The omitted default keeps existing GitHub revisions and pool comparisons
+	// unchanged when a client starts sending provider = "github" explicitly.
+	a.Provider = ""
 	if !(SecretRef{Ref: a.Credential}).Valid() || a.Credential == "" {
 		return fmt.Errorf("actions.credential: select an application secret")
+	}
+	if a.JobsCredential != "" && !(SecretRef{Ref: a.JobsCredential}).Valid() {
+		return fmt.Errorf("actions.jobs_credential: select an application secret")
 	}
 	if len(a.Labels) == 0 {
 		a.Labels = []string{"hakopod"}

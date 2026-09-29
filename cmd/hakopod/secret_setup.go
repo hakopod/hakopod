@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -21,29 +22,11 @@ func setupDeploymentSecrets(ctx context.Context, c *client, project, environment
 	}
 	reader := bufio.NewReader(os.Stdin)
 	for _, name := range missing {
-		fmt.Fprintf(os.Stderr, "Secret %s: enter a value [v], generate a new random password [g], or cancel [q]: ", name)
-		choice, err := reader.ReadString('\n')
+		body, err := readDeploymentSecret(reader, os.Stderr, func() ([]byte, error) {
+			return term.ReadPassword(int(os.Stdin.Fd()))
+		}, app, name)
 		if err != nil {
 			return err
-		}
-		body := map[string]any{}
-		switch strings.TrimSpace(strings.ToLower(choice)) {
-		case "g":
-			fmt.Fprintln(os.Stderr, "Generating 32 random bytes as URL-safe Base64. This cannot create provider API tokens or certificates.")
-			body["generate"] = true
-		case "v", "":
-			fmt.Fprint(os.Stderr, "Value (hidden): ")
-			value, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			if err != nil {
-				return fmt.Errorf("secret input cancelled")
-			}
-			body["value"] = string(value)
-			for i := range value {
-				value[i] = 0
-			}
-		default:
-			return &exitError{2, "Secret setup cancelled. No deployment was submitted."}
 		}
 		query := url.Values{"project": {project}, "environment": {environment}, "application": {app.Name}}
 		err = c.request(ctx, "POST", "/secrets/"+url.PathEscape(name)+"?"+query.Encode(), body, "", nil)
@@ -53,4 +36,47 @@ func setupDeploymentSecrets(ctx context.Context, c *client, project, environment
 		}
 	}
 	return nil
+}
+
+// Separate terminal input from transport so credential handling is exercised
+// without a real terminal or a provider account.
+func readDeploymentSecret(reader *bufio.Reader, output io.Writer, readPassword func() ([]byte, error), app spec.Application, name string) (map[string]any, error) {
+	providerCredential := false
+	for _, service := range app.Services {
+		if service.Actions != nil && name != "" && (service.Actions.Credential == name || service.Actions.EffectiveJobsCredential() == name) {
+			providerCredential = true
+			break
+		}
+	}
+	if providerCredential {
+		fmt.Fprintf(output, "Secret %s: enter a provider-issued token [v], or cancel [q]: ", name)
+	} else {
+		fmt.Fprintf(output, "Secret %s: enter a value [v], generate a new random password [g], or cancel [q]: ", name)
+	}
+	choice, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	switch strings.TrimSpace(strings.ToLower(choice)) {
+	case "g":
+		if providerCredential {
+			return nil, &exitError{2, "Runner credentials require a provider-issued token. Random generation is not available; this secret was not saved."}
+		}
+		fmt.Fprintln(output, "Generating 32 random bytes as URL-safe Base64. This cannot create provider API tokens or certificates.")
+		return map[string]any{"generate": true}, nil
+	case "v", "":
+		fmt.Fprint(output, "Value (hidden): ")
+		value, err := readPassword()
+		fmt.Fprintln(output)
+		if err != nil {
+			return nil, fmt.Errorf("secret input cancelled")
+		}
+		body := map[string]any{"value": string(value)}
+		for i := range value {
+			value[i] = 0
+		}
+		return body, nil
+	default:
+		return nil, &exitError{2, "Secret setup cancelled. No deployment was submitted."}
+	}
 }

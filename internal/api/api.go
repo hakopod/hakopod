@@ -41,26 +41,32 @@ type Server struct {
 	Backups         *backup.Service
 	ProcessLogs     *serverlogs.Buffer
 	// Overrides are only set by in-process tests, never by an API request.
-	actionsTestRuntime    actionsRuntime
-	actionsClient         func(string) (runnerProvider, error)
-	actionsBudget         actions.RequestBudget
-	maintenanceHTTP       *http.Client
-	githubHTTP            *http.Client
-	gitlabHTTP            *http.Client
-	gitlabAPIURL          string
-	gitlabTestCredentials func(context.Context) (map[string][]byte, error)
-	githubAPIURL          string
-	githubTestCredentials func(context.Context) (map[string][]byte, error)
-	domainLookupTXT       func(context.Context, string) ([]string, error)
-	dnsClient             func(dnsprovider.Provider, dnsprovider.Credentials) (dnsprovider.Client, error)
-	mu                    sync.Mutex
-	buckets               map[string]bucket
-	concurrent            chan struct{}
-	streams               chan struct{}
-	terminalMu            sync.Mutex
-	terminals             map[string]*terminalSession
-	mcpMu                 sync.Mutex
-	mcpSessions           map[string]*mcpSession
+	actionsTestRuntime actionsRuntime
+	actionsClient      func(string) (runnerProvider, error)
+	actionsBudget      actions.RequestBudget
+	// Native provider configuration is trusted in-process input and remains nil
+	// until paired runtime qualification. Public provider selection stays gated.
+	actionsGitLabClient     func(context.Context, cluster.Target, spec.Service, string) (gitlabRunnerProvider, error)
+	actionsGitLabRuntime    func(context.Context, cluster.Target, spec.Service) (cluster.GitLabActionsRuntime, error)
+	actionsGitLabTestStore  gitlabActionsSlotStore
+	actionsGitLabJobsClient func(context.Context, cluster.Target, spec.Service, string) (gitlabWorkflowProvider, error)
+	maintenanceHTTP         *http.Client
+	githubHTTP              *http.Client
+	gitlabHTTP              *http.Client
+	gitlabAPIURL            string
+	gitlabTestCredentials   func(context.Context) (map[string][]byte, error)
+	githubAPIURL            string
+	githubTestCredentials   func(context.Context) (map[string][]byte, error)
+	domainLookupTXT         func(context.Context, string) ([]string, error)
+	dnsClient               func(dnsprovider.Provider, dnsprovider.Credentials) (dnsprovider.Client, error)
+	mu                      sync.Mutex
+	buckets                 map[string]bucket
+	concurrent              chan struct{}
+	streams                 chan struct{}
+	terminalMu              sync.Mutex
+	terminals               map[string]*terminalSession
+	mcpMu                   sync.Mutex
+	mcpSessions             map[string]*mcpSession
 }
 type bucket struct {
 	at     time.Time
@@ -138,6 +144,9 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("GET /api/v1/applications/{id}/actions", s.actionsStatus)
 	routes.HandleFunc("GET /api/v1/applications/{id}/actions/{service}/jobs", s.actionsJobs)
 	routes.HandleFunc("GET /api/v1/applications/{id}/actions/{service}/jobs/{slot}/logs", s.actionsJobLogs)
+	routes.HandleFunc("POST /api/v1/applications/{id}/actions/{service}/jobs/{slot}/cancel", s.actionsJobCancel)
+	routes.HandleFunc("GET /api/v1/applications/{id}/actions/{service}/hold", s.actionsProviderHold)
+	routes.HandleFunc("POST /api/v1/applications/{id}/actions/{service}/hold/release", s.actionsProviderHoldRelease)
 	routes.HandleFunc("GET /api/v1/actions/capabilities", s.actionsCapabilities)
 	routes.HandleFunc("GET /api/v1/applications/{id}/provenance", s.applicationProvenance)
 	s.registerPreviewRoutes(routes)

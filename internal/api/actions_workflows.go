@@ -17,6 +17,9 @@ type actionsOutputRuntime interface {
 }
 
 func (s *Server) observeActionsJob(ctx context.Context, t cluster.Target, v store.ActionsSlot) {
+	if actionsConfigProvider(v.Config) != actions.ProviderGitHub {
+		return
+	}
 	runtime, ok := s.actionRuntime().(actionsOutputRuntime)
 	if !ok || v.RunnerID == 0 {
 		return
@@ -45,6 +48,27 @@ func (s *Server) authorizedActionsPool(w http.ResponseWriter, r *http.Request, p
 	return store.ActionsPool{}, false
 }
 func workflowState(err error) (string, string) {
+	var reuse *actions.RunnerReuseError
+	if errors.As(err, &reuse) {
+		return "unavailable", reuse.Error()
+	}
+	var native *actions.GitLabError
+	if errors.As(err, &native) {
+		if native.Status == 401 || native.Status == 403 {
+			return "permission_denied", "GitLab could not authorize job access. Check the selected read credential and project permissions."
+		}
+		if !native.RetryAt.IsZero() || native.Status == 429 {
+			return "rate_limited", native.Error()
+		}
+		if native.Status == 404 || native.Status == 410 {
+			return "unavailable", "GitLab has not made this job available, or its original read credential cannot access it."
+		}
+		return "disconnected", native.Error()
+	}
+	var unsupported *actions.UnsupportedProviderError
+	if errors.As(err, &unsupported) {
+		return "unavailable", "Job access is not configured for this provider."
+	}
 	var status *actions.StatusError
 	if errors.As(err, &status) && (status.Status == 401 || status.Status == 403) {
 		return "permission_denied", "GitHub could not authorize this request. Check Actions read permission and repository access; a provider cooldown may also apply."
@@ -66,7 +90,21 @@ func workflowState(err error) (string, string) {
 	return "disconnected", "GitHub is temporarily unavailable. The last observation is shown."
 }
 func (s *Server) workflowClient(ctx context.Context, p store.ActionsPool) (*actions.Client, error) {
-	return s.actionsProvider(ctx, actionsTarget(p), p.Config.Actions.Credential)
+	if actionsConfigProvider(p.Config) != actions.ProviderGitHub {
+		return nil, unsupportedActionsProvider(actionsConfigProvider(p.Config))
+	}
+	return s.actionsProvider(ctx, actionsTarget(p), p.Config.Actions.EffectiveJobsCredential())
+}
+
+// History follows the slot's original target and credential reference even after
+// the pool is edited. Never infer missing historical scope from current settings.
+func workflowJobPool(p store.ActionsPool, job store.ActionsJob) (store.ActionsPool, bool) {
+	config := job.ProviderConfig
+	if config == nil || config.Provider.Effective() != actions.ProviderGitHub || config.EffectiveJobsCredential() == "" || !job.Observation.Valid(config.Target()) {
+		return store.ActionsPool{}, false
+	}
+	p.Config.Actions = config
+	return p, true
 }
 func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.authorizedActionsPool(w, r, "deployments:read")
@@ -81,7 +119,6 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, message := "ready", ""
-	var client *actions.Client
 	checked := 0
 	order := make([]int, len(jobs))
 	for i := range jobs {
@@ -90,7 +127,40 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(order, func(i, j int) bool { return jobs[order[i]].CheckedAt.Before(jobs[order[j]].CheckedAt) })
 	for _, i := range order {
 		item := &jobs[i]
-		if !item.Observation.Valid(p.Config.Actions.Target()) {
+		if item.Provider == actions.ProviderGitLab {
+			if item.DiscoveryState == "reuse_detected" {
+				state, message = "unavailable", (&actions.RunnerReuseError{}).Error()
+				continue
+			}
+			if item.DiscoveryState == "unavailable" && item.NativeJob == nil {
+				state, message = "unavailable", "Some job assignments could not be verified before runner cleanup."
+				continue
+			}
+			if (item.NativeJob != nil && item.NativeJob.Status == "completed") || time.Since(item.CheckedAt) < 15*time.Second {
+				continue
+			}
+			if checked >= 5 {
+				break
+			}
+			claimed, e := s.Store.ClaimActionsJobRefresh(ctx, p.ApplicationID, p.Service, item.SlotID)
+			if e != nil {
+				authFailure(w, e)
+				return
+			}
+			if !claimed {
+				continue
+			}
+			checked++
+			refreshed, e := s.refreshNativeActionsJob(ctx, p, *item)
+			if e != nil {
+				state, message = gitlabWorkflowState(e)
+				break
+			}
+			*item = refreshed
+			continue
+		}
+		jobPool, bound := workflowJobPool(p, *item)
+		if !bound {
 			continue
 		}
 		if item.Job != nil && (item.Job.Status == "completed" || time.Since(item.CheckedAt) < 15*time.Second) {
@@ -108,12 +178,10 @@ func (s *Server) actionsJobs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		checked++
-		if client == nil {
-			client, err = s.workflowClient(ctx, p)
-			if err != nil {
-				state, message = workflowState(err)
-				break
-			}
+		client, err := s.workflowClient(ctx, jobPool)
+		if err != nil {
+			state, message = workflowState(err)
+			break
 		}
 		var job *actions.Job
 		if item.Job != nil && item.Job.ID > 0 {
@@ -173,7 +241,7 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if selected == nil || !selected.Observation.Valid(p.Config.Actions.Target()) {
+	if selected == nil {
 		problem(w, 404, "not_found", "This job is no longer available in this pool.")
 		return
 	}
@@ -192,6 +260,15 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		write(w, 200, map[string]any{"lines": lines, "truncated": truncated, "source": source, "state": state, "message": message, "observed_at": time.Now().UTC()})
 	}
+	if selected.Provider == actions.ProviderGitLab {
+		s.nativeActionsJobLogs(ctx, p, *selected, respond)
+		return
+	}
+	jobPool, bound := workflowJobPool(p, *selected)
+	if !bound {
+		problem(w, 409, "unavailable", "This job's original provider settings are unavailable. Its saved metadata remains visible.")
+		return
+	}
 	// Live output is scoped to a recorded runner pod, never a caller-supplied pod
 	// name or a different job on the same GitHub repository.
 	slots, err := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
@@ -204,14 +281,14 @@ func (s *Server) actionsJobLogs(w http.ResponseWriter, r *http.Request) {
 			if slot.ID != selected.SlotID {
 				continue
 			}
-			output, e := runtime.ActionsWorkflowOutput(ctx, actionsTarget(p), p.Service, slot.ID)
+			output, e := runtime.ActionsWorkflowOutput(ctx, actionsTarget(jobPool), p.Service, slot.ID)
 			if e == nil && output.Available && (selected.Job == nil || selected.Job.Status != "completed") {
 				respond(output.Lines, output.Truncated, "runner", "live", "Live output can lag briefly while the runner flushes its log.")
 				return
 			}
 		}
 	}
-	client, err := s.workflowClient(ctx, p)
+	client, err := s.workflowClient(ctx, jobPool)
 	if err != nil {
 		state, message := workflowState(err)
 		respond(nil, false, "github", state, message)

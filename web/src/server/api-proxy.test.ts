@@ -22,6 +22,98 @@ function request(
   })
 }
 
+test('native runner cancellation and hold recovery forward exact scoped requests with session and origin protection', async (t) => {
+  const entries = [
+    {
+      path: 'applications/app-a/actions/runner-a/jobs/slot-a/cancel',
+      method: 'POST',
+      body: undefined,
+      status: 202,
+    },
+    {
+      path: 'applications/app-a/actions/runner-a/hold',
+      method: 'GET',
+      body: undefined,
+      status: 200,
+    },
+    {
+      path: 'applications/app-a/actions/runner-a/hold/release',
+      method: 'POST',
+      body: { hold_id: '22222222-2222-4222-8222-222222222222', acknowledge: true },
+      status: 200,
+    },
+  ]
+  for (const entry of entries) {
+    const mocked = t.mock.method(
+      globalThis,
+      'fetch',
+      async (url: unknown, init: RequestInit = {}) => {
+        assert.equal(new URL(String(url)).pathname, `/api/v1/${entry.path}`)
+        assert.equal(init.method, entry.method)
+        assert.equal(
+          init.body,
+          entry.method === 'GET' ? undefined : entry.body ? JSON.stringify(entry.body) : '',
+        )
+        const headers = new Headers(init.headers)
+        assert.equal(headers.get('Authorization'), `Bearer ${token}`)
+        assert.equal(headers.has('Cookie'), false)
+        assert.equal(init.redirect, 'error')
+        assert.ok(init.signal)
+        return Response.json({ accepted: true }, { status: entry.status })
+      },
+    )
+    const input = request(entry.path, entry.method, entry.body)
+    input.headers.set('Authorization', 'Bearer synthetic-untrusted-browser-header')
+    const response = await proxy({ request: input, params: { _splat: entry.path } })
+    assert.equal(response.status, entry.status)
+    assert.equal(response.headers.get('Cache-Control'), 'no-store')
+    assert.deepEqual(await response.json(), { accepted: true })
+    assert.equal(
+      (
+        await proxy({
+          request: request(entry.path, entry.method, entry.body, false),
+          params: { _splat: entry.path },
+        })
+      ).status,
+      401,
+    )
+    if (entry.method === 'POST')
+      assert.equal(
+        (
+          await proxy({
+            request: request(
+              entry.path,
+              entry.method,
+              entry.body,
+              true,
+              'https://untrusted.invalid',
+            ),
+            params: { _splat: entry.path },
+          })
+        ).status,
+        403,
+      )
+    const wrongMethod = entry.method === 'POST' ? 'GET' : 'POST'
+    const denied = await proxy({
+      request: request(entry.path, wrongMethod),
+      params: { _splat: entry.path },
+    })
+    assert.equal(denied.status, 405)
+    assert.equal(denied.headers.get('Allow'), entry.method)
+    assert.equal(
+      (
+        await proxy({
+          request: request(entry.path + '/extra'),
+          params: { _splat: entry.path + '/extra' },
+        })
+      ).status,
+      404,
+    )
+    assert.equal(mocked.mock.callCount(), 1)
+    mocked.mock.restore()
+  }
+})
+
 test('preview and framework requests preserve scoped paths and mutation protections', async (t) => {
   const cases: { path: string; method: string; body?: object; query?: string }[] = [
     {

@@ -35,7 +35,7 @@ func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := store.Application{ID: dep.ApplicationID, Project: "demo", Environment: "development", Name: normal.Name}
-	config, err := spec.Normalize(spec.Application{Name: normal.Name, Services: map[string]spec.Service{"runner": {Actions: &spec.Actions{Repository: "team/repo", Credential: "token"}}}})
+	config, err := spec.Normalize(spec.Application{Name: normal.Name, Services: map[string]spec.Service{"runner": {Actions: &spec.Actions{Repository: "team/repo", Credential: "token", JobsCredential: "original-jobs"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +59,17 @@ func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 	// A second hook cannot replace an already recorded job identity.
 	forged := observation
 	forged.RunID = 99
-	if err = db.RecordActionsJob(ctx, slot, forged); err != nil {
+	changed := slot
+	changed.Config.Actions = &spec.Actions{Repository: "team/repo", Credential: "changed-token", JobsCredential: "changed-jobs"}
+	if err = db.RecordActionsJob(ctx, changed, forged); err != nil {
 		t.Fatal(err)
 	}
 	jobs, _ := db.ActionsJobs(ctx, app.ID, "runner")
 	if len(jobs) != 1 || jobs[0].Observation.RunID != 9 {
 		t.Fatal("history identity changed", jobs)
+	}
+	if jobs[0].ProviderConfig == nil || jobs[0].ProviderConfig.Repository != "team/repo" || jobs[0].ProviderConfig.EffectiveJobsCredential() != "original-jobs" {
+		t.Fatal("history provider settings changed")
 	}
 	// Metadata can survive registration cleanup; it is isolated to this pool.
 	if other, _ := db.ActionsJobs(ctx, app.ID, "other"); len(other) != 0 {
@@ -108,10 +113,40 @@ func TestWorkflowHistoryAndLogsScope(t *testing.T) {
 	if jobs, _ = db.ActionsJobs(ctx, app.ID, "runner"); len(jobs) != 1 {
 		t.Fatal("cleanup removed history")
 	}
+	// A removed pool still exposes retained history and protects its read reference.
+	if err = db.SyncActions(ctx, app, normal, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.DeleteRetiredActionsPool(ctx, pools[0]); err != nil {
+		t.Fatal(err)
+	}
+	if retained, err := db.ActionsPool(ctx, app.ID, "runner"); err != nil || retained == nil || !retained.Removed {
+		t.Fatal("removed pool lost retained history", err)
+	}
+	for _, check := range []struct {
+		name string
+		want bool
+	}{
+		{"original-jobs", true}, {"token", false}, {"changed-jobs", false},
+	} {
+		got, err := db.ActionsCredentialRequired(ctx, app.Project, app.Environment, app.Name, check.name)
+		if err != nil || got != check.want {
+			t.Fatalf("credential %s retained=%v want=%v: %v", check.name, got, check.want, err)
+		}
+	}
 	if _, err = db.Pool.Exec(ctx, `UPDATE actions_jobs SET created_at=now()-interval '31 days' WHERE slot_id=$1`, slot.ID); err != nil {
 		t.Fatal(err)
 	}
 	if jobs, _ = db.ActionsJobs(ctx, app.ID, "runner"); len(jobs) != 0 {
 		t.Fatal("expired metadata visible")
+	}
+	if err = db.DeleteRetiredActionsPool(ctx, pools[0]); err != nil {
+		t.Fatal(err)
+	}
+	if retained, err := db.ActionsPool(ctx, app.ID, "runner"); err != nil || retained != nil {
+		t.Fatal("expired pool was not retired", err)
+	}
+	if required, err := db.ActionsCredentialRequired(ctx, app.Project, app.Environment, app.Name, "original-jobs"); err != nil || required {
+		t.Fatal("expired history retained its read credential", err)
 	}
 }

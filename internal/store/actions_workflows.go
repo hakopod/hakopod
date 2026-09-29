@@ -4,24 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/hakopod/hakopod/internal/actions"
+	"github.com/hakopod/hakopod/internal/spec"
 	"time"
 )
 
 type ActionsJob struct {
-	CheckedAt   time.Time           `json:"-"`
-	SlotID      string              `json:"slot_id"`
-	RunnerID    int64               `json:"runner_id"`
-	Observation actions.Observation `json:"observation"`
-	Job         *actions.Job        `json:"job"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	Provider         actions.Provider     `json:"provider,omitempty"`
+	ProviderRunnerID string               `json:"provider_runner_id,omitempty"`
+	NativeJob        *actions.ProviderJob `json:"native_job,omitempty"`
+	DiscoveryState   string               `json:"discovery_state,omitempty"`
+	ProviderRemoved  bool                 `json:"-"`
+	CanCancel        bool                 `json:"can_cancel,omitempty"`
+	ProviderConfig   *spec.Actions        `json:"-"`
+	CheckedAt        time.Time            `json:"-"`
+	SlotID           string               `json:"slot_id"`
+	RunnerID         int64                `json:"runner_id"`
+	Observation      actions.Observation  `json:"observation"`
+	Job              *actions.Job         `json:"job"`
+	CreatedAt        time.Time            `json:"created_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
 }
 
 func (s *Store) RecordActionsJob(ctx context.Context, slot ActionsSlot, o actions.Observation) error {
 	if slot.Config.Actions == nil || !o.Valid(slot.Config.Actions.Target()) {
 		return nil
 	}
-	_, err := s.Pool.Exec(ctx, `INSERT INTO actions_jobs(slot_id,application_id,service,runner_id,observation) VALUES($1,$2,$3,$4,$5) ON CONFLICT(slot_id) DO NOTHING`, slot.ID, slot.ApplicationID, slot.Service, slot.RunnerID, JSON(o))
+	_, err := s.Pool.Exec(ctx, `INSERT INTO actions_jobs(slot_id,application_id,service,runner_id,observation,provider_config) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(slot_id) DO NOTHING`, slot.ID, slot.ApplicationID, slot.Service, slot.RunnerID, JSON(o), JSON(slot.Config.Actions))
 	if err != nil {
 		return err
 	}
@@ -30,7 +38,7 @@ func (s *Store) RecordActionsJob(ctx context.Context, slot ActionsSlot, o action
 	return err
 }
 func (s *Store) ActionsJobs(ctx context.Context, app, service string) ([]ActionsJob, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT slot_id,runner_id,observation,provider_job,created_at,updated_at,checked_at FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at>=now()-interval '30 days' ORDER BY created_at DESC,slot_id LIMIT 100`, app, service)
+	rows, err := s.Pool.Query(ctx, `SELECT slot_id,runner_id,observation,provider_job,created_at,updated_at,checked_at,provider_config,provider_runner_id,native_job,discovery_state,provider_removed FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at>=now()-interval '30 days' ORDER BY created_at DESC,slot_id LIMIT 100`, app, service)
 	if err != nil {
 		return nil, err
 	}
@@ -38,18 +46,32 @@ func (s *Store) ActionsJobs(ctx context.Context, app, service string) ([]Actions
 	out := []ActionsJob{}
 	for rows.Next() {
 		var item ActionsJob
-		var observation, job []byte
-		if err = rows.Scan(&item.SlotID, &item.RunnerID, &observation, &job, &item.CreatedAt, &item.UpdatedAt, &item.CheckedAt); err != nil {
+		var observation, job, config, native []byte
+		if err = rows.Scan(&item.SlotID, &item.RunnerID, &observation, &job, &item.CreatedAt, &item.UpdatedAt, &item.CheckedAt, &config, &item.ProviderRunnerID, &native, &item.DiscoveryState, &item.ProviderRemoved); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal(observation, &item.Observation); err != nil {
 			return nil, err
+		}
+		if len(config) > 0 {
+			if err = json.Unmarshal(config, &item.ProviderConfig); err != nil {
+				return nil, err
+			}
 		}
 		if len(job) > 0 {
 			if err = json.Unmarshal(job, &item.Job); err != nil {
 				return nil, err
 			}
 		}
+		if item.ProviderRunnerID != "" && item.ProviderConfig != nil {
+			item.Provider = item.ProviderConfig.Provider.Effective()
+		}
+		if len(native) > 0 {
+			if err = json.Unmarshal(native, &item.NativeJob); err != nil {
+				return nil, err
+			}
+		}
+		item.CanCancel = item.Provider == actions.ProviderGitLab && !item.ProviderRemoved && item.NativeJob != nil && item.NativeJob.Status != "completed"
 		out = append(out, item)
 	}
 	return out, rows.Err()

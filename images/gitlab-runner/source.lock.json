@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "repository": "https://gitlab.com/gitlab-org/gitlab-runner.git",
+  "tag": "v19.4.1",
+  "tag_object": "14fa3f2c76d3a99d37ff876c3eae6bd4329ec73c",
+  "commit": "3c39fcebf73d01d464db3dee8a5267155273a6c5",
+  "version": "19.4.1",
+  "license": "MIT"
+}

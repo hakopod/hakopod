@@ -1,0 +1,293 @@
+// Copyright (c) 2026 Hakopod contributors. MIT licensed; see LICENSE.upstream.
+package network
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+)
+
+const hakopodTransportPolicyPath = "/run/hakopod-provider/transport-policy.json"
+const hakopodArtifactRedirectLimit = 5
+
+func (n *client) hakopodCoordinatorRequest(u *url.URL) bool {
+	if u == nil || u.User != nil || u.Opaque != "" || u.Fragment != "" || u.RawPath != "" ||
+		!strings.EqualFold(u.Scheme, n.url.Scheme) || !strings.EqualFold(u.Host, n.url.Host) ||
+		strings.ContainsAny(u.Path, "\\%\x00\r\n\t") {
+		return false
+	}
+	for _, segment := range strings.Split(u.Path, "/") {
+		if segment == "." || segment == ".." { return false }
+	}
+	normalized := path.Clean(u.Path)
+	if normalized != strings.TrimSuffix(u.Path, "/") { return false }
+	prefix := strings.TrimSuffix(n.url.Path, "/")
+	return normalized == prefix || strings.HasPrefix(normalized, prefix+"/")
+}
+
+type hakopodTransportPolicy struct {
+	SchemaVersion   int      `json:"schema_version"`
+	CoordinatorURL  string   `json:"coordinator_url"`
+	ArtifactOrigins []string `json:"artifact_origins"`
+}
+
+func hakopodOrigin(u *url.URL) (string, error) {
+	if u == nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || u.Opaque != "" || u.Fragment != "" {
+		return "", errors.New("artifact origin must be an explicit HTTPS origin")
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.ContainsAny(host, "\\%\r\n\t ") || strings.HasSuffix(host, ".") {
+		return "", errors.New("artifact origin has an ambiguous hostname")
+	}
+	for _, r := range host {
+		if r > 127 {
+			return "", errors.New("artifact origin must use its canonical ASCII hostname")
+		}
+	}
+	if net.ParseIP(host) == nil {
+		if len(host) > 253 {
+			return "", errors.New("artifact hostname is too long")
+		}
+		for _, label := range strings.Split(host, ".") {
+			if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+				return "", errors.New("artifact origin has an invalid DNS name")
+			}
+			for _, r := range label {
+				if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+					return "", errors.New("artifact origin has an invalid DNS name")
+				}
+			}
+		}
+	}
+	port := u.Port()
+	if port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 || strconv.Itoa(number) != port {
+			return "", errors.New("artifact origin has an invalid port")
+		}
+	}
+	if port == "443" {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return "https://" + host, nil
+}
+
+func hakopodCanonicalBase(raw string) (string, error) {
+	if len(raw) > 2048 {
+		return "", errors.New("coordinator URL exceeds its size limit")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", errors.New("invalid coordinator URL")
+	}
+	origin, err := hakopodOrigin(u)
+	if err != nil || u.RawQuery != "" || u.ForceQuery || u.RawPath != "" || strings.ContainsAny(u.Path, "\\%\x00\r\n\t") {
+		return "", errors.New("coordinator URL must be canonical HTTPS without query or fragment")
+	}
+	prefix := strings.TrimSuffix(u.Path, "/")
+	if prefix != "" && (path.Clean(prefix) != prefix || !strings.HasPrefix(prefix, "/")) {
+		return "", errors.New("coordinator URL contains ambiguous path segments")
+	}
+	if prefix == "/ci" || strings.HasSuffix(prefix, "/ci") {
+		return "", errors.New("this native runner does not support a coordinator prefix ending in ci")
+	}
+	return origin + prefix, nil
+}
+
+func readHakopodTransportPolicy(reader io.Reader, coordinator string) (*hakopodTransportPolicy, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, 32769))
+	if err != nil || len(data) > 32768 {
+		return nil, errors.New("transport policy exceeds its size limit")
+	}
+	var policy hakopodTransportPolicy
+	keys := json.NewDecoder(strings.NewReader(string(data)))
+	if token, err := keys.Token(); err != nil || token != json.Delim('{') {
+		return nil, errors.New("transport policy must be a JSON object")
+	}
+	seenKeys := make(map[string]bool)
+	for keys.More() {
+		token, err := keys.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seenKeys[key] {
+			return nil, errors.New("transport policy contains duplicate or invalid fields")
+		}
+		if key != "schema_version" && key != "coordinator_url" && key != "artifact_origins" {
+			return nil, errors.New("transport policy field names must match the versioned schema exactly")
+		}
+		seenKeys[key] = true
+		var value json.RawMessage
+		if err := keys.Decode(&value); err != nil {
+			return nil, errors.New("invalid transport policy value")
+		}
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&policy); err != nil {
+		return nil, errors.New("invalid transport policy")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("transport policy must contain one JSON object")
+	}
+	if len(seenKeys) != 3 || policy.SchemaVersion != 1 || policy.ArtifactOrigins == nil || len(policy.ArtifactOrigins) > 16 {
+		return nil, errors.New("unsupported or oversized transport policy")
+	}
+	expected, err := hakopodCanonicalBase(coordinator)
+	if err != nil {
+		return nil, err
+	}
+	actual, err := hakopodCanonicalBase(policy.CoordinatorURL)
+	if err != nil || actual != expected {
+		return nil, errors.New("transport policy belongs to another coordinator")
+	}
+	seen := make(map[string]bool)
+	for i, raw := range policy.ArtifactOrigins {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return nil, errors.New("invalid artifact origin in transport policy")
+		}
+		origin, err := hakopodOrigin(u)
+		if err != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || origin != raw || seen[origin] {
+			return nil, errors.New("artifact origins must be distinct canonical HTTPS origins without paths")
+		}
+		seen[origin] = true
+		policy.ArtifactOrigins[i] = origin
+	}
+	return &policy, nil
+}
+
+func loadHakopodTransportPolicy(coordinator string) (*hakopodTransportPolicy, error) {
+	file, err := os.Open(hakopodTransportPolicyPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.New("cannot read immutable transport policy")
+	}
+	defer file.Close()
+	return readHakopodTransportPolicy(file, coordinator)
+}
+
+func (n *client) hakopodArtifactURL(raw string) (*url.URL, error) {
+	if len(raw) > 8192 {
+		return nil, errors.New("artifact destination exceeds its size limit")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, errors.New("invalid artifact destination")
+	}
+	origin, err := hakopodOrigin(u)
+	if err != nil {
+		return nil, errors.New("artifact redirect requires an approved HTTPS origin")
+	}
+	if n.hakopodPolicy != nil {
+		for _, allowed := range n.hakopodPolicy.ArtifactOrigins {
+			if origin == allowed {
+				return u, nil
+			}
+		}
+	}
+	return nil, errors.New("artifact redirect origin is not approved")
+}
+
+// Credential-bearing coordinator requests never follow redirects. Only this
+// explicit artifact GET path may use approved storage origins. Each request is
+// constructed anew; coordinator headers, cookies, bodies and TLS client identity
+// are not copied. Native cache clients use a separate presigned-URL protocol.
+func (n *client) doHakopodArtifactGET(ctx context.Context, raw string, headers http.Header) (*http.Response, error) {
+	n.ensureTLSConfig()
+	n.ensureTransportMaxAge()
+	transport, ok := n.Transport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("artifact transport is unavailable")
+	}
+	storageTransport := transport.Clone()
+	storageTransport.Proxy = nil
+	if storageTransport.TLSClientConfig != nil {
+		storageTransport.TLSClientConfig = storageTransport.TLSClientConfig.Clone()
+		storageTransport.TLSClientConfig.Certificates = nil
+		storageTransport.TLSClientConfig.GetClientCertificate = nil
+		storageTransport.TLSClientConfig.NameToCertificate = nil
+		storageTransport.TLSClientConfig.ServerName = ""
+		storageTransport.TLSClientConfig.InsecureSkipVerify = false
+	}
+	defer storageTransport.CloseIdleConnections()
+	storage := &http.Client{Transport: storageTransport, Timeout: n.Timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for redirects := 0; ; redirects++ {
+		u, err := n.hakopodArtifactURL(raw)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, errors.New("invalid artifact GET request")
+		}
+		if value := headers.Get("Range"); value != "" {
+			req.Header.Set("Range", value)
+		}
+		resp, err := storage.Do(req)
+		if err != nil {
+			return nil, errors.New("approved artifact storage request failed")
+		}
+		if resp.StatusCode < 300 || resp.StatusCode > 399 {
+			if resp.StatusCode >= 400 {
+				_, _ = io.CopyN(io.Discard, resp.Body, 65536)
+				_ = resp.Body.Close()
+				resp.Body = io.NopCloser(strings.NewReader(""))
+				resp.ContentLength = 0
+				resp.Header.Set("Content-Type", "text/plain")
+			}
+			return resp, nil
+		}
+		location := resp.Header.Get("Location")
+		_, _ = io.CopyN(io.Discard, resp.Body, 65536)
+		_ = resp.Body.Close()
+		if redirects >= hakopodArtifactRedirectLimit-1 || !hakopodRedirectStatus(resp.StatusCode) || location == "" || len(location) > 8192 {
+			return nil, errors.New("artifact storage redirect was rejected")
+		}
+		next, err := url.Parse(location)
+		if err != nil {
+			return nil, errors.New("invalid artifact storage redirect")
+		}
+		raw = u.ResolveReference(next).String()
+	}
+}
+
+func hakopodRedirectStatus(status int) bool {
+	return status == 301 || status == 302 || status == 303 || status == 307 || status == 308
+}
+
+func (n *GitLabClient) doHakopodArtifactDownload(ctx context.Context, credentials requestCredentials, uri string, headers http.Header) (*http.Response, error) {
+	cli, err := n.getClient(credentials)
+	if err != nil {
+		return nil, err
+	}
+	response, err := cli.do(ctx, uri, http.MethodGet, nil, "", headers)
+	if err != nil || response == nil || !hakopodRedirectStatus(response.StatusCode) {
+		return response, err
+	}
+	location := response.Header.Get("Location")
+	_, _ = io.CopyN(io.Discard, response.Body, 65536)
+	_ = response.Body.Close()
+	if location == "" || len(location) > 8192 {
+		return nil, errors.New("artifact redirect has no bounded destination")
+	}
+	destination, err := url.Parse(location)
+	if err != nil {
+		return nil, errors.New("artifact redirect has an invalid destination")
+	}
+	return cli.doHakopodArtifactGET(ctx, response.Request.URL.ResolveReference(destination).String(), nil)
+}

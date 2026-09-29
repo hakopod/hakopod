@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 )
@@ -24,14 +25,19 @@ type ActionsPool struct {
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
 type ActionsSlot struct {
-	ID            string       `json:"id"`
-	ApplicationID string       `json:"application_id"`
-	Service       string       `json:"service"`
-	Config        spec.Service `json:"-"`
-	RunnerID      int64        `json:"runner_id"`
-	Phase         string       `json:"phase"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
+	ManagerLaunchAttempted   bool         `json:"-"`
+	ProviderCleanupRunnerID  string       `json:"-"`
+	ProviderCleanupConfirmed bool         `json:"-"`
+	ProviderRunnerID         string       `json:"provider_runner_id,omitempty"`
+	EncryptedRegistration    []byte       `json:"-"`
+	ID                       string       `json:"id"`
+	ApplicationID            string       `json:"application_id"`
+	Service                  string       `json:"service"`
+	Config                   spec.Service `json:"-"`
+	RunnerID                 int64        `json:"runner_id"`
+	Phase                    string       `json:"phase"`
+	CreatedAt                time.Time    `json:"created_at"`
+	UpdatedAt                time.Time    `json:"updated_at"`
 }
 
 func (s *Store) RequireActions(ctx context.Context, project, env string) error {
@@ -103,7 +109,7 @@ func scanActionsPools(rows pgx.Rows) ([]ActionsPool, error) {
 	return out, rows.Err()
 }
 func (s *Store) ActionsSlots(ctx context.Context, app, service string) ([]ActionsSlot, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id,application_id,service,config,runner_id,phase,created_at,updated_at FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
+	rows, err := s.Pool.Query(ctx, `SELECT id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +118,7 @@ func (s *Store) ActionsSlots(ctx context.Context, app, service string) ([]Action
 	for rows.Next() {
 		var v ActionsSlot
 		var data []byte
-		if err = rows.Scan(&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err = rows.Scan(&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal(data, &v.Config); err != nil {
@@ -148,7 +154,20 @@ func (s *Store) SyncActions(ctx context.Context, app Application, next spec.Appl
 }
 func (s *Store) NewActionsSlot(ctx context.Context, p ActionsPool) (ActionsSlot, error) {
 	v := ActionsSlot{ID: NewID(), ApplicationID: p.ApplicationID, Service: p.Service, Config: p.Config, Phase: "intent"}
-	v.Config.Image = spec.ActionsRunnerImage
+	if v.Config.Actions != nil && v.Config.Actions.Provider.Effective() == actions.ProviderGitHub {
+		v.Config.Image = spec.ActionsRunnerImage
+	}
+	if v.Config.Actions != nil && v.Config.Actions.Provider.Effective() != actions.ProviderGitHub {
+		// A durable pool hold and a new launch serialize through the pool row.
+		// Cleanup remains eligible after a hold; replenishment does not.
+		err := s.Pool.QueryRow(ctx, `WITH eligible_pool AS (
+ SELECT 1 FROM actions_pools WHERE application_id=$2 AND service=$3 AND provider_hold_reason='' FOR UPDATE
+)
+ INSERT INTO actions_slots(id,application_id,service,config) SELECT $1,$2,$3,$4
+ WHERE EXISTS(SELECT 1 FROM eligible_pool) AND (SELECT count(*) FROM actions_slots WHERE application_id=$2 AND service=$3)<10
+ RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config)).Scan(&v.CreatedAt, &v.UpdatedAt)
+		return v, err
+	}
 	err := s.Pool.QueryRow(ctx, `INSERT INTO actions_slots(id,application_id,service,config) SELECT $1,$2,$3,$4 WHERE (SELECT count(*) FROM actions_slots WHERE application_id=$2 AND service=$3)<10 RETURNING created_at,updated_at`, v.ID, v.ApplicationID, v.Service, JSON(v.Config)).Scan(&v.CreatedAt, &v.UpdatedAt)
 	return v, err
 }
@@ -178,7 +197,12 @@ func (s *Store) ActionsMessage(ctx context.Context, p ActionsPool, message strin
 	return err
 }
 func (s *Store) DeleteRetiredActionsPool(ctx context.Context, p ActionsPool) error {
-	_, err := s.Pool.Exec(ctx, `DELETE FROM actions_pools WHERE application_id=$1 AND service=$2 AND removed AND NOT EXISTS(SELECT 1 FROM actions_slots WHERE application_id=$1 AND service=$2)`, p.ApplicationID, p.Service)
+	_, err := s.Pool.Exec(ctx, `WITH expired AS (
+ DELETE FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at<now()-interval '30 days'
+)
+ DELETE FROM actions_pools WHERE application_id=$1 AND service=$2 AND removed AND provider_hold_reason=''
+ AND NOT EXISTS(SELECT 1 FROM actions_slots WHERE application_id=$1 AND service=$2)
+ AND NOT EXISTS(SELECT 1 FROM actions_jobs WHERE application_id=$1 AND service=$2 AND created_at>=now()-interval '30 days')`, p.ApplicationID, p.Service)
 	return err
 }
 
@@ -216,10 +240,24 @@ func (s *Store) requireActionsTx(ctx context.Context, tx pgx.Tx, project, env st
 	return s.requireFeaturesTx(ctx, tx, "managed_actions")
 }
 
-// Keep the provider credential until both desired pools and old registrations
-// have stopped referencing it. Removing a service must not strand cleanup.
+// Keep credentials while desired pools, active slots or retained job history need
+// them. Job history retains only its effective read credential, not extra access.
 func (s *Store) ActionsCredentialRequired(ctx context.Context, project, environment, application, name string) (bool, error) {
 	var required bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM actions_pools p WHERE p.project=$1 AND p.environment=$2 AND p.application_name=$3 AND ((NOT p.removed AND p.config->'actions'->>'credential'=$4) OR EXISTS(SELECT 1 FROM actions_slots v WHERE v.application_id=p.application_id AND v.service=p.service AND v.config->'actions'->>'credential'=$4))) OR EXISTS(SELECT 1 FROM applications a CROSS JOIN LATERAL jsonb_each(a.spec->'services') AS svc WHERE a.project=$1 AND a.environment=$2 AND a.name=$3 AND svc.value->'actions'->>'credential'=$4)`, project, environment, application, name).Scan(&required)
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(
+ SELECT 1 FROM actions_pools p WHERE p.project=$1 AND p.environment=$2 AND p.application_name=$3
+ AND ((NOT p.removed AND $4 IN (p.config->'actions'->>'credential',p.config->'actions'->>'jobs_credential'))
+ OR EXISTS(SELECT 1 FROM actions_slots v WHERE v.application_id=p.application_id AND v.service=p.service
+ AND $4 IN (v.config->'actions'->>'credential',v.config->'actions'->>'jobs_credential')))
+) OR EXISTS(
+ SELECT 1 FROM applications a CROSS JOIN LATERAL jsonb_each(a.spec->'services') AS svc
+ WHERE a.project=$1 AND a.environment=$2 AND a.name=$3
+ AND $4 IN (svc.value->'actions'->>'credential',svc.value->'actions'->>'jobs_credential')
+) OR EXISTS(
+ SELECT 1 FROM actions_jobs j JOIN applications a ON a.id=j.application_id
+ WHERE a.project=$1 AND a.environment=$2 AND a.name=$3 AND j.created_at>=now()-interval '30 days'
+ AND (COALESCE(NULLIF(j.provider_config->>'jobs_credential',''),j.provider_config->>'credential')=$4
+ OR (j.provider_runner_id<>'' AND j.native_job IS NOT NULL AND j.native_job->>'status'<>'completed' AND j.provider_config->>'credential'=$4))
+)`, project, environment, application, name).Scan(&required)
 	return required, err
 }

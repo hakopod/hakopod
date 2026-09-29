@@ -65,6 +65,16 @@ type runnerProvider interface {
 	Delete(context.Context, actions.Target, int64) error
 }
 
+// Preserve provider-specific diagnostics while replacing only the scheduler's
+// retry metadata with this reconciliation pass's observed request progress.
+type actionsReconcileRetry struct {
+	err   error
+	retry *actions.RetryError
+}
+
+func (e *actionsReconcileRetry) Error() string   { return e.err.Error() }
+func (e *actionsReconcileRetry) Unwrap() []error { return []error{e.retry, e.err} }
+
 func actionsFence(ctx context.Context, t cluster.Target) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -82,6 +92,18 @@ func (s *Server) RunActions(ctx context.Context) {
 // Provider and Kubernetes errors may contain a request body. Persist only
 // bounded public diagnostics, never the single-job config or provider token.
 func safeActionsError(err error) string {
+	var reuse *actions.RunnerReuseError
+	if errors.As(err, &reuse) {
+		return reuse.Error()
+	}
+	var unsupported *actions.UnsupportedProviderError
+	if errors.As(err, &unsupported) {
+		return "The selected managed runner provider is not qualified or configured. Existing runners are preserved for cleanup."
+	}
+	var gitlab *actions.GitLabError
+	if errors.As(err, &gitlab) {
+		return gitlab.Error() + ". Runner reconciliation will retry automatically."
+	}
 	var status *actions.StatusError
 	if errors.As(err, &status) && (status.Status == 401 || status.Status == 403) {
 		return status.Error() + "; verify the selected scope, runner group and runner-management permission. Requests retry after the provider cooldown."
@@ -93,7 +115,7 @@ func safeActionsError(err error) string {
 	if errors.As(err, &status) {
 		return status.Error() + "; verify the selected scope and runner group, and organization Self-hosted runners or repository Administration read/write permission"
 	}
-	return "Runner reconciliation is waiting for GitHub, its scoped credential, or the sandbox. Cleanup will retry automatically."
+	return "Runner reconciliation is waiting for its provider, scoped credential, or sandbox. Cleanup will retry automatically."
 }
 func actionsNotFound(err error) bool {
 	if errors.Is(err, actions.ErrRunnerAbsent) {
@@ -106,6 +128,9 @@ func actionsNotFound(err error) bool {
 func (s *Server) runnerClient(ctx context.Context, t cluster.Target, config spec.Service) (runnerProvider, error) {
 	if config.Actions == nil {
 		return nil, fmt.Errorf("runner configuration is missing")
+	}
+	if actionsConfigProvider(config) != actions.ProviderGitHub {
+		return nil, unsupportedActionsProvider(actionsConfigProvider(config))
 	}
 	token, err := s.actionRuntime().ActionsCredential(ctx, t, config.Actions.Credential)
 	if err != nil {
@@ -225,15 +250,27 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if errors.As(resultErr, &retry) {
 			copy := *retry
 			copy.Progress = progress()
-			resultErr = &copy
+			resultErr = &actionsReconcileRetry{err: resultErr, retry: &copy}
 		}
 	}()
+	switch actionsConfigProvider(p.Config) {
+	case actions.ProviderGitLab:
+		return s.reconcileGitLabActionsPool(ctx, t, p)
+	case actions.ProviderGitHub:
+	default:
+		return unsupportedActionsProvider(actionsConfigProvider(p.Config))
+	}
 	if err := actionsFence(ctx, t); err != nil {
 		return err
 	}
 	slots, err := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
 	if err != nil {
 		return err
+	}
+	for _, slot := range slots {
+		if actionsConfigProvider(slot.Config) != actions.ProviderGitHub {
+			return unsupportedActionsProvider(actionsConfigProvider(slot.Config))
+		}
 	}
 	// A shared credential may run out of request budget partway through a pool.
 	// Poll its oldest observation first so later slots cannot starve on retries.

@@ -1,0 +1,224 @@
+--- a/network/client.go
++++ b/network/client.go
+@@ -60,6 +60,7 @@
+ 	connectionMaxAge  time.Duration
+ 	requester         requester
+ 	httpClientOptions HttpClientOptions
++	hakopodPolicy *hakopodTransportPolicy
+ }
+ 
+ type ResponseTLSData struct {
+@@ -198,7 +199,7 @@
+ 
+ 	// create transport
+ 	transport := &http.Transport{
+-		Proxy: http.ProxyFromEnvironment,
++		Proxy: nil,
+ 		Dial: func(network, addr string) (net.Conn, error) {
+ 			logrus.Debugln("Dialing:", network, addr, "...")
+ 			return dialer.Dial(network, addr)
+@@ -233,6 +234,10 @@
+ 	url, err := n.url.Parse(uri)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("parse URL %s: %w", uri, err)
++	}
++
++	if !n.hakopodCoordinatorRequest(url) {
++		return nil, errors.New("coordinator request escaped its configured API prefix")
+ 	}
+ 
+ 	var body io.ReadCloser
+@@ -572,7 +577,11 @@
+ 		return nil, errors.New("only http or https scheme supported")
+ 	}
+ 
++	policy, err := loadHakopodTransportPolicy(requestCredentials.GetURL())
++	if err != nil { return nil, err }
+ 	c := &client{
++		Client: http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
++		hakopodPolicy: policy,
+ 		url:      url,
+ 		caFile:   requestCredentials.GetTLSCAFile(),
+ 		certFile: requestCredentials.GetTLSCertFile(),
+--- a/commands/verify.go
++++ b/commands/verify.go
+@@ -52,7 +52,11 @@
+ 		for _, runner := range cfg.Runners {
+ 			if !hasSelector || runner.Name == c.Name || runner.RunnerCredentials.SameAs(selector) {
+ 				verified++
+-				if response, err := c.network.VerifyRunner(context.Background(), *runner, runner.SystemID); response == nil && err == nil {
++				response, err := c.network.VerifyRunner(context.Background(), *runner, runner.SystemID)
++				if err != nil {
++					return errors.New("runner verification failed; configure the canonical coordinator URL")
++				}
++				if response == nil {
+ 					unverified++
+ 					continue
+ 				}
+--- a/commands/helpers/artifacts_uploader.go
++++ b/commands/helpers/artifacts_uploader.go
+@@ -5,7 +5,6 @@
+ 	"errors"
+ 	"fmt"
+ 	"io"
+-	"net/url"
+ 	"os"
+ 	"path/filepath"
+ 	"time"
+@@ -181,21 +180,7 @@
+ }
+ 
+ func (c *ArtifactsUploaderCommand) handleRedirect(location string) error {
+-	newURL, err := url.Parse(location)
+-	if err != nil {
+-		return retryableError{err: fmt.Errorf("parsing new location URL: %w", err)}
+-	}
+-
+-	newURL.RawQuery = ""
+-	newURL.Path = ""
+-
+-	c.JobCredentials.URL = newURL.String()
+-
+-	logrus.WithField("location", location).
+-		WithField("new-url", c.JobCredentials.URL).
+-		Info("Upload request redirected")
+-
+-	return retryableError{err: fmt.Errorf("request redirected")}
++	return fmt.Errorf("artifact upload coordinator redirect denied; configure the canonical coordinator URL")
+ }
+ 
+ func (c *ArtifactsUploaderCommand) shouldRetry(tries int, err error) bool {
+--- a/network/gitlab.go
++++ b/network/gitlab.go
+@@ -25,7 +25,6 @@
+ 	"gitlab.com/gitlab-org/gitlab-runner/helpers"
+ 	"gitlab.com/gitlab-org/gitlab-runner/helpers/featureflags"
+ 	"gitlab.com/gitlab-org/gitlab-runner/helpers/transfer"
+-	url_helpers "gitlab.com/gitlab-org/gitlab-runner/helpers/url"
+ )
+ 
+ const (
+@@ -1126,32 +1125,7 @@
+ }
+ 
+ func logResponseDetails(logger *logrus.Entry, res *http.Response, withBody bool) {
+-	if res == nil {
+-		return
+-	}
+-
+-	fields := logrus.Fields{"body": "<nil>"}
+-
+-	for k, vs := range res.Header {
+-		fields["header["+k+"]"] = vs
+-	}
+-
+-	if withBody && res.Body != nil {
+-		body := bufio.NewReader(res.Body)
+-		res.Body = struct {
+-			io.Reader
+-			io.Closer
+-		}{body, res.Body}
+-
+-		// We ignore the error here, and let other body consumers handle it, if it persists.
+-		b, _ := body.Peek(responseBodyPeekMax)
+-		if res.ContentLength > int64(len(b)) {
+-			b = append(b, "..."...)
+-		}
+-		fields["body"] = string(b)
+-	}
+-
+-	logger.WithFields(fields).Warn("received response")
++	if res != nil { logger.WithField("status", res.StatusCode).Warn("received response; headers and body omitted") }
+ }
+ 
+ func closeWithLogging(log logrus.FieldLogger, c io.Closer, name string) {
+@@ -1172,7 +1146,7 @@
+ 	case http.StatusCreated:
+ 		log.Println(messagePrefix, statusText)
+ 		return common.UploadSucceeded, ""
+-	case http.StatusTemporaryRedirect:
++	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+ 		return handleUploadRedirectionState(resp, log, messagePrefix, statusText)
+ 	case http.StatusForbidden:
+ 		log.WithField("status", resp.StatusCode).Errorln(messagePrefix, statusText)
+@@ -1195,13 +1169,8 @@
+ 	messagePrefix string,
+ 	statusText string,
+ ) (common.UploadState, string) {
+-	location := resp.Header.Get("Location")
+-	if location == "" {
+-		log.WithField("status", resp.StatusCode).Errorln(messagePrefix, statusText, "empty location")
+-		return common.UploadFailed, ""
+-	}
+-
+-	return common.UploadRedirected, location
++	log.WithField("status", resp.StatusCode).Errorln("Artifact upload coordinator redirect denied; configure its canonical URL")
++	return common.UploadRedirected, ""
+ }
+ 
+ // tryArtifactParallelDownload attempts parallel range GETs to locationURL (e.g. S3 after 302).
+@@ -1228,7 +1197,7 @@
+ 	}
+ 	fetchChunk := func(offset, length int64) (io.ReadCloser, error) {
+ 		rangeHeaders := http.Header{"Range": []string{fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)}}
+-		resp, err := cli.do(ctx, locationURL, http.MethodGet, nil, "", rangeHeaders)
++		resp, err := cli.doHakopodArtifactGET(ctx, locationURL, rangeHeaders)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -1245,8 +1214,7 @@
+ 		return false
+ 	}
+ 
+-	cleanedURL := url_helpers.CleanURL(locationURL)
+-	log.WithField("url", cleanedURL).Infoln("Artifact download: parallel,", artifactParallelConcurrency, "streams,", artifactParallelChunkSize/(1024*1024), "MiB chunk size")
++	log.Infoln("Artifact download: parallel,", artifactParallelConcurrency, "streams,", artifactParallelChunkSize/(1024*1024), "MiB chunk size")
+ 
+ 	err = transfer.ParallelRangeDownload(contentLength, chunkSize, artifactParallelConcurrency, destAt, fetchChunk)
+ 	if err != nil {
+@@ -1332,10 +1300,17 @@
+ 			defer closeResponseBody(res, true)
+ 			return n.downloadArtifactFile(log, artifactsFile, res)
+ 		}
+-		if res.StatusCode == http.StatusFound || res.StatusCode == http.StatusTemporaryRedirect {
++		if hakopodRedirectStatus(res.StatusCode) {
+ 			// 302 Found and 307 Temporary Redirect both supply Location (e.g. to object storage).
+ 			location := res.Header.Get("Location")
++			destination, locationErr := res.Location()
+ 			closeResponseBody(res, true)
++			if locationErr != nil || len(location) > 8192 { return common.DownloadFailed }
++			location = destination.String()
++			if _, err := cli.hakopodArtifactURL(location); err != nil {
++				log.Errorln("Artifact redirect origin is not approved")
++				return common.DownloadFailed
++			}
+ 			if location != "" {
+ 				if locURL, err := url.Parse(location); err == nil && locURL.Host != "" {
+ 					log.Infoln("Direct download from", locURL.Host)
+@@ -1344,7 +1319,7 @@
+ 				if featureflags.IsOn(parallelFF, os.Getenv(featureflags.UseParallelArtifactTransfer)) {
+ 					// Use GET with Range: bytes=0-0 to probe Range support and get size from Content-Range
+ 					probeHeaders := http.Header{"Range": []string{"bytes=0-0"}}
+-					probeResp, probeErr := cli.do(ctx, location, http.MethodGet, nil, "", probeHeaders)
++					probeResp, probeErr := cli.doHakopodArtifactGET(ctx, location, probeHeaders)
+ 					if probeErr != nil || probeResp == nil {
+ 						log.Infoln("Artifact download: cannot probe size (Range request failed), using single download stream")
+ 						goto fallback
+@@ -1372,7 +1347,7 @@
+ 		fallback:
+ 			// Fall back to normal GET (follow redirect) and stream.
+ 			headers2, _ := addCorrelationID(JobTokenHeader(config.Token))
+-			res2, err := n.doRaw(ctx, &config, http.MethodGet, uri, nil, "", headers2)
++			res2, err := n.doHakopodArtifactDownload(ctx, &config, uri, headers2)
+ 			if err != nil {
+ 				log.WithError(err).Errorln("Downloading artifacts from coordinator...", "error")
+ 				return common.DownloadFailed
+@@ -1406,7 +1381,7 @@
+ 	}
+ 	uri := fmt.Sprintf("jobs/%d/artifacts?%s", config.ID, query.Encode())
+ 	headers, correlationID := addCorrelationID(JobTokenHeader(config.Token))
+-	res, err := n.doRaw(ctx, &config, http.MethodGet, uri, nil, "", headers)
++	res, err := n.doHakopodArtifactDownload(ctx, &config, uri, headers)
+ 	log = log.WithField(correlationIDLogField, getCorrelationID(res, correlationID))
+ 	if res != nil {
+ 		log = log.WithField(fields.HTTPStatusCode, res.StatusCode)

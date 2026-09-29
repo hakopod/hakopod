@@ -8,6 +8,7 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Note, RequestError } from './shared'
 import { ManagedActionsTokenHelp } from './managed-actions-token-help'
+import { actionsNeedTOML, actionsProviderName } from '../lib/actions-provider'
 
 // Shared by raw TOML, Compose, source imports and built-image review. Values
 // stay in this form only, never in TOML, query caches or deployment history.
@@ -38,7 +39,21 @@ export function DeploymentSecrets({
   const runnerCredentials = Object.values(plan.spec.services).flatMap((service) =>
     name && service.actions && service.actions.credential === name ? [service.actions] : [],
   )
-  const providerCredential = runnerCredentials.length > 0
+  const jobsCredentials = Object.values(plan.spec.services).flatMap((service) =>
+    name &&
+    service.actions &&
+    (service.actions.jobs_credential || service.actions.credential) === name
+      ? [service.actions]
+      : [],
+  )
+  const providerCredential = runnerCredentials.length > 0 || jobsCredentials.length > 0
+  const githubRunners = runnerCredentials.filter((actions) => !actionsNeedTOML(actions))
+  const githubJobs = jobsCredentials.filter((actions) => !actionsNeedTOML(actions))
+  const nativeProviders = [
+    ...new Set(
+      [...runnerCredentials, ...jobsCredentials].filter(actionsNeedTOML).map(actionsProviderName),
+    ),
+  ]
   useEffect(() => {
     setValue('')
     setError('')
@@ -162,10 +177,21 @@ export function DeploymentSecrets({
             </Button>
           </div>
           {providerCredential ? (
-            <ManagedActionsTokenHelp
-              organization={runnerCredentials.some((actions) => Boolean(actions.organization))}
-              repository={runnerCredentials.some((actions) => Boolean(actions.repository))}
-            />
+            <div className="grid min-w-0 gap-3">
+              {(githubRunners.length > 0 || githubJobs.length > 0) && (
+                <ManagedActionsTokenHelp
+                  organization={githubRunners.some((actions) => Boolean(actions.organization))}
+                  repository={githubRunners.some((actions) => Boolean(actions.repository))}
+                  jobs={githubJobs.length > 0}
+                />
+              )}
+              {nativeProviders.map((provider) => (
+                <Note key={provider}>
+                  Supply the credential issued by {provider} for this target. Managed execution is
+                  not available for this provider.
+                </Note>
+              ))}
+            </div>
           ) : (
             <details>
               <summary className="min-h-11 cursor-pointer py-3">

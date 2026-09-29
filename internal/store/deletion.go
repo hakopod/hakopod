@@ -50,7 +50,8 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 		return fmt.Errorf("%w: remove all services through a reviewed deployment before deleting this application", ErrConflict)
 	}
 	var actionsPending bool
-	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM actions_pools WHERE application_id=$1)", id).Scan(&actionsPending); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM actions_pools WHERE application_id=$1 AND NOT removed)
+ OR EXISTS(SELECT 1 FROM actions_slots WHERE application_id=$1)`, id).Scan(&actionsPending); err != nil {
 		return err
 	}
 	if actionsPending {
@@ -87,6 +88,12 @@ func (s *Store) DeleteEmptyApplication(ctx context.Context, p Principal, id stri
 	}
 	if busy {
 		return fmt.Errorf("%w: stop active builds, source imports and backup schedules before deletion", ErrConflict)
+	}
+	// Retained job metadata does not represent pending provider cleanup. The
+	// application and runtime locks protect the completed slot check above.
+	if _, err = tx.Exec(ctx, `DELETE FROM actions_pools WHERE application_id=$1 AND removed
+ AND NOT EXISTS(SELECT 1 FROM actions_slots WHERE application_id=$1)`, id); err != nil {
+		return err
 	}
 	if err = deleteApplicationMetadata(ctx, tx, a); err != nil {
 		return err

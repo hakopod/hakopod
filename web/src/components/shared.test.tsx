@@ -15,6 +15,10 @@ import './installation-settings.test'
 import './git-connections.test'
 import './git-app-setup.test'
 import './deployment-secrets.test'
+import './managed-actions-form.test'
+import './managed-actions-workflows.test'
+import './managed-actions-cancel.test'
+import './managed-actions-hold.test'
 import './runtime-notice.test'
 import '../lib/runtime-health.test'
 import '../lib/lifecycle.test'
@@ -229,6 +233,7 @@ test('resource review combines explicit values with the selected size defaults',
 })
 
 import '../lib/service-volume-removal.test'
+import '../lib/actions-logs.test'
 
 // Log text must not retain executable terminal hyperlinks or conceal payloads
 // when users copy/download the displayed window.

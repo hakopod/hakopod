@@ -12,7 +12,8 @@ export const allowed = [
   /^database-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,
   /^applications\/[A-Za-z0-9_-]+\/actions$/,
-  /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/jobs(?:\/[A-Za-z0-9_-]+\/logs)?$/,
+  /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/jobs(?:\/[A-Za-z0-9_-]+\/(?:logs|cancel))?$/,
+  /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/hold(?:\/release)?$/,
   /^storage\/retained(?:\/[a-f0-9]{32})?$/,
   /^roles(?:\/[A-Za-z0-9_:-]+)?$/,
   /^organization\/security$/,
@@ -107,6 +108,19 @@ export async function proxy({
       return oauth(request, path)
     if (!allowed.some((pattern) => pattern.test(path)))
       return Response.json({ error: { message: 'Unknown API endpoint.' } }, { status: 404 })
+    const actionsMethod =
+      /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/(?:jobs\/[A-Za-z0-9_-]+\/cancel|hold\/release)$/.test(
+        path,
+      )
+        ? 'POST'
+        : /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/hold$/.test(path)
+          ? 'GET'
+          : undefined
+    if (actionsMethod && request.method !== actionsMethod)
+      return Response.json(
+        { error: { message: 'Unsupported method for this runner action.' } },
+        { status: 405, headers: { ...privateHeaders, Allow: actionsMethod } },
+      )
     const token = sessionToken(request)
     const publicPath =
       (path === 'auth/status' && request.method === 'GET') ||

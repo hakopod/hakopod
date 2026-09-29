@@ -398,6 +398,9 @@ func TemplateSecretNames(a Application) []string {
 	for _, s := range a.Services {
 		if s.Actions != nil {
 			refs[s.Actions.Credential] = true
+			if s.Actions.JobsCredential != "" {
+				refs[s.Actions.JobsCredential] = true
+			}
 		}
 		for _, r := range SecretReferences(EffectiveService(a, s)) {
 			refs[r.Ref] = true

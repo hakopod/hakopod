@@ -1,0 +1,180 @@
+// Synthetic local protocol tests, not provider job acceptance.
+package network
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"gitlab.com/gitlab-org/gitlab-runner/common"
+)
+
+func TestHakopodCoordinatorRedirects(t *testing.T) {
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var sourceCount, sinkCount int
+			sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { sinkCount++; w.WriteHeader(200) }))
+			defer sink.Close()
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sourceCount++
+				body, _ := io.ReadAll(r.Body)
+				if r.Header.Get("RUNNER-TOKEN") != "synthetic-token" || string(body) != "synthetic-token" {
+					t.Error("positive source receipt failed")
+				}
+				w.Header().Set("Location", sink.URL+"/outside")
+				w.WriteHeader(status)
+			}))
+			defer source.Close()
+			client, err := newClient(&common.RunnerCredentials{URL: source.URL + "/gitlab"}, NewAPIRequestsCollector())
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := client.do(context.Background(), "runners/verify", "POST", common.BytesProvider{Data: []byte("synthetic-token")}, "text/plain", http.Header{"Runner-Token": []string{"synthetic-token"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != status || sourceCount != 1 || sinkCount != 0 {
+				t.Fatal("coordinator redirect was followed")
+			}
+		})
+	}
+}
+
+func TestHakopodCoordinatorPrefix(t *testing.T) {
+	u, _ := url.Parse("https://coordinator.example/gitlab/api/v4/")
+	c := &client{url: u}
+	for _, raw := range []string{
+		"https://other.example/gitlab/api/v4/jobs",
+		"https://coordinator.example/outside/jobs",
+		"http://coordinator.example/gitlab/api/v4/jobs",
+		"https://coordinator.example:444/gitlab/api/v4/jobs",
+		"https://coordinator.example/gitlab/api/v40/jobs",
+		"https://coordinator.example/gitlab/api/v4/../../other",
+		"https://coordinator.example/gitlab/api/v4/%2e%2e/%2e%2e/other",
+		"https://coordinator.example/gitlab/api/v4/%252e%252e/other",
+		"https://coordinator.example/gitlab/api/v4/jobs%2f..%2f..%2fother",
+		"https://coordinator.example/gitlab/api/v4/jobs%5c..%5cother",
+		"https://coordinator.example/gitlab/api/v4//jobs",
+	} {
+		destination, _ := url.Parse(raw)
+		if c.hakopodCoordinatorRequest(destination) {
+			t.Error("accepted escaped coordinator destination")
+		}
+	}
+	for _, raw := range []string{"https://coordinator.example/gitlab/api/v4/jobs/1", "https://coordinator.example/gitlab/api/v4/jobs/1/trace"} {
+		destination, _ := url.Parse(raw)
+		if !c.hakopodCoordinatorRequest(destination) { t.Error("valid coordinator path rejected") }
+	}
+}
+
+func TestHakopodPolicyValidation(t *testing.T) {
+	valid := `{"schema_version":1,"coordinator_url":"https://coordinator.example/gitlab","artifact_origins":["https://storage.example"]}`
+	if _, err := readHakopodTransportPolicy(strings.NewReader(valid), "https://coordinator.example/gitlab/"); err != nil {
+		t.Fatal(err)
+	}
+	invalid := []string{
+		`{"schema_version":1,"coordinator_url":"https://coordinator.example/gitlab"}`,
+		`{"schema_version":1,"coordinator_url":"https://coordinator.example/gitlab","artifact_origins":null}`,
+		strings.Replace(valid, `"schema_version":1`, `"schema_version":2`, 1),
+		strings.Replace(valid, `"schema_version":1`, `"schema_version":1,"schema_version":1`, 1),
+		strings.Replace(valid, `"schema_version":1`, `"unexpected":true,"schema_version":1`, 1),
+		strings.Replace(valid, `"artifact_origins"`, `"ARTIFACT_ORIGINS"`, 1),
+		strings.Replace(valid, `"artifact_origins"`, `"ARTIFACT_ORIGINS":[],"artifact_origins"`, 1),
+		strings.Replace(valid, `"schema_version":1`, `"schema_version":1,"SCHEMA_VERSION":1`, 1),
+		strings.Replace(valid, "https://storage.example", "http://storage.example", 1),
+		strings.Replace(valid, "https://storage.example", "https://storage.example/path", 1),
+		strings.Replace(valid, "https://storage.example", "https://user@storage.example", 1),
+		strings.Replace(valid, "https://storage.example", "https://storage.example?token=synthetic", 1),
+		strings.Replace(valid, "https://storage.example", "https://storage.example:443", 1),
+		strings.Replace(valid, "/gitlab", "/other", 1),
+		valid + valid,
+	}
+	for i, input := range invalid {
+		if _, err := readHakopodTransportPolicy(strings.NewReader(input), "https://coordinator.example/gitlab"); err == nil {
+			t.Errorf("invalid policy %d accepted", i)
+		}
+	}
+}
+
+func TestHakopodArtifactGETFreshRequest(t *testing.T) {
+	var count int
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		for _, header := range []string{"Authorization", "PRIVATE-TOKEN", "JOB-TOKEN", "RUNNER-TOKEN", "Cookie", "Referer"} {
+			if r.Header.Get(header) != "" {
+				t.Error("coordinator credential header reached storage")
+			}
+		}
+		body, _ := io.ReadAll(r.Body)
+		if len(body) != 0 || r.Method != "GET" || r.Header.Get("Range") != "bytes=0-0" {
+			t.Error("fresh storage GET contract failed")
+		}
+		if len(r.TLS.PeerCertificates) != 0 {
+			t.Error("coordinator TLS client identity reached storage")
+		}
+		_, _ = w.Write([]byte("artifact"))
+	}))
+	server.TLS = &tls.Config{ClientAuth: tls.RequestClientCert, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
+	defer server.Close()
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig.Certificates = server.TLS.Certificates
+	jar, _ := cookiejar.New(nil)
+	u, _ := url.Parse(server.URL)
+	jar.SetCookies(u, []*http.Cookie{{Name: "coordinator", Value: "synthetic"}})
+	c := &client{Client: http.Client{Transport: transport, Jar: jar, Timeout: 3 * time.Second}, hakopodPolicy: &hakopodTransportPolicy{ArtifactOrigins: []string{server.URL}}}
+	headers := http.Header{"Range": []string{"bytes=0-0"}, "Authorization": []string{"synthetic"}, "Private-Token": []string{"synthetic"}, "Job-Token": []string{"synthetic"}, "Runner-Token": []string{"synthetic"}, "Cookie": []string{"synthetic"}, "Referer": []string{"synthetic"}}
+	response, err := c.doHakopodArtifactGET(context.Background(), server.URL+"/signed?signature=synthetic", headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data, _ := io.ReadAll(response.Body)
+	if string(data) != "artifact" || count != 1 {
+		t.Fatal("approved storage positive control failed")
+	}
+	c.hakopodPolicy = nil
+	if _, err := c.doHakopodArtifactGET(context.Background(), server.URL, nil); err == nil || count != 1 {
+		t.Fatal("missing policy did not deny storage")
+	}
+}
+
+func TestHakopodArtifactRedirectBoundaries(t *testing.T) {
+	for _, target := range []string{"https://unapproved.example/object", "http://downgrade.example/object", "loop"} {
+		t.Run(target, func(t *testing.T) {
+			count := 0
+			var endpoint string
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				count++
+				location := target
+				if target == "loop" {
+					location = endpoint
+				}
+				w.Header().Set("Location", location)
+				w.WriteHeader(307)
+			}))
+			defer server.Close()
+			endpoint = server.URL
+			c := &client{Client: *server.Client(), hakopodPolicy: &hakopodTransportPolicy{ArtifactOrigins: []string{server.URL}}}
+			c.Timeout = 3 * time.Second
+			if _, err := c.doHakopodArtifactGET(context.Background(), endpoint, nil); err == nil {
+				t.Fatal("unsafe storage redirect accepted")
+			}
+			if target == "loop" && count != hakopodArtifactRedirectLimit {
+				t.Fatal("storage loop was not bounded")
+			}
+			if target != "loop" && count != 1 {
+				t.Fatal("unapproved storage hop was followed")
+			}
+		})
+	}
+}
