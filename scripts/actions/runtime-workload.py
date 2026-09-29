@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Credential-free workload injected into the real managed-runner pod by CI."""
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -21,13 +22,39 @@ ROOT.mkdir(parents=True, exist_ok=True)
 PREFIX = 'HAKOPOD_ACCEPTANCE '
 
 
-def run(args, timeout=180, check=True, **kwargs):
+def run(args, timeout=180, check=True, build_metrics=None, **kwargs):
     # Large tool output stays on the bounded workspace. Emit only the last 16 KiB
     # on failure; no runner/provider credentials are accepted by this fixture.
     with tempfile.TemporaryFile(dir=ROOT) as output:
         process = subprocess.run(args, stdout=output, stderr=subprocess.STDOUT,
                                  timeout=timeout, **kwargs)
         size = output.tell()
+        if build_metrics is not None:
+            output.seek(0)
+            vertices = {}
+            for raw in output:
+                try:
+                    event = json.loads(raw)
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                for update in event.get('vertexes', []):
+                    if isinstance(update, dict) and update.get('digest'):
+                        vertices.setdefault(update['digest'], {}).update(update)
+            for vertex in vertices.values():
+                name = vertex.get('name', '')
+                if 'RUN go build' not in name:
+                    continue
+                for arch in ['amd64', 'arm64']:
+                    if f'linux/{arch}' not in name:
+                        continue
+                    observed = {'architecture': arch, 'cached': bool(vertex.get('cached')),
+                                'emulated': arch != {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine())}
+                    if vertex.get('started') and vertex.get('completed'):
+                        observed['duration_seconds'] = round((datetime.fromisoformat(vertex['completed'].replace('Z', '+00:00')) -
+                                                              datetime.fromisoformat(vertex['started'].replace('Z', '+00:00'))).total_seconds(), 3)
+                    build_metrics.append(observed)
         output.seek(max(0, size - 16384))
         result = output.read().decode('utf-8', errors='replace')
         if check and process.returncode != 0:
@@ -98,6 +125,7 @@ def containers():
 
 
 def compilation():
+    timings = {}
     source = ROOT / 'source'
     source.mkdir()
     # The compiler itself and the resulting binary run on each target architecture
@@ -129,15 +157,29 @@ CMD ["/app"]
 [registry."127.0.0.1:15000"]
   http = true
 ''')
+    started = time.monotonic()
     run(['docker', 'run', '-d', '--name', 'registry', '-p', '127.0.0.1:15000:5000',
          '-e', 'REGISTRY_STORAGE_DELETE_ENABLED=true', REGISTRY])
     wait_http('http://127.0.0.1:15000/v2/')
     run(['docker', 'buildx', 'create', '--name', 'actions-multiarch', '--driver', 'docker-container',
          '--driver-opt', f'image={BUILDKIT}', '--driver-opt', 'network=host',
          '--buildkitd-config', str(config), '--use'])
+    run(['docker', 'buildx', 'inspect', 'actions-multiarch', '--bootstrap'])
+    timings['registry_and_builder_startup_seconds'] = round(time.monotonic() - started, 3)
     reference = '127.0.0.1:15000/acceptance/compiled:proof'
-    run(['docker', 'buildx', 'build', '--builder', 'actions-multiarch', '--platform', 'linux/amd64,linux/arm64',
-         '--provenance=false', '--push', '-t', reference, str(source)], timeout=840)
+    build_command = ['docker', 'buildx', 'build', '--builder', 'actions-multiarch', '--platform', 'linux/amd64,linux/arm64',
+                     '--progress=rawjson', '--provenance=false', '--push', '-t', reference, str(source)]
+    cold_metrics = []
+    started = time.monotonic()
+    run(build_command, timeout=840, build_metrics=cold_metrics)
+    timings['cold_multiarch_build_and_push_seconds'] = round(time.monotonic() - started, 3)
+    timings['cold_compiler_vertices'] = cold_metrics
+    assert {vertex['architecture'] for vertex in cold_metrics if 'duration_seconds' in vertex} == {'amd64', 'arm64'}, 'missing compiler timings from BuildKit'
+    warm_metrics = []
+    started = time.monotonic()
+    run(build_command, timeout=180, build_metrics=warm_metrics)
+    timings['warm_multiarch_build_and_push_seconds'] = round(time.monotonic() - started, 3)
+    timings['warm_compiler_vertices'] = warm_metrics
     # Read the actual registry manifest, not build output text.
     request = urllib.request.Request('http://127.0.0.1:15000/v2/acceptance/compiled/manifests/proof',
                                      headers={'Accept': 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json'})
@@ -163,6 +205,33 @@ COPY --from=verify /run /run
     for _ in range(100):
         expected = hashlib.sha256(expected).digest()
 
+    # Go supports native cross-compilation. This is a separate fast workflow
+    # path: keep the compiler native and emulate only the final target program.
+    # Base images are warm here; compare compiler work, not cold download time.
+    fast = ROOT / 'native-cross-compile'
+    fast.mkdir()
+    (fast / 'main.go').write_text((source / 'main.go').read_text())
+    (fast / 'Dockerfile').write_text(f'''FROM --platform=$BUILDPLATFORM {GOLANG} AS compile
+ARG TARGETARCH
+ENV GOMAXPROCS=2 CGO_ENABLED=0
+WORKDIR /src
+COPY main.go .
+RUN GOARCH="$TARGETARCH" go build -p=1 -trimpath -o /app main.go
+FROM {BUSYBOX} AS verify
+COPY --from=compile /app /app
+RUN /app > /actual
+FROM scratch
+COPY --from=verify /actual /actual
+''')
+    started = time.monotonic()
+    fast_result = ROOT / 'native-cross-compiled-result'
+    run(['docker', 'buildx', 'build', '--builder', 'actions-multiarch', '--platform', 'linux/amd64,linux/arm64',
+         '--output', f'type=local,dest={fast_result}', str(fast)], timeout=240)
+    timings['native_cross_compile_and_target_execution_seconds'] = round(time.monotonic() - started, 3)
+    timings['native_cross_compile_base_images_already_cached'] = True
+    for arch in arches:
+        assert (fast_result / f'linux_{arch}' / 'actual').read_text().strip() == f'{arch} {expected.hex()}'
+
     def verify_push_pull(number):
         started = time.monotonic()
         destination = ROOT / f'verified-{number}'
@@ -173,8 +242,10 @@ COPY --from=verify /run /run
             assert (destination / f'linux_{arch}' / 'run').read_text().strip() == str(number)
         return {'request': number, 'duration_seconds': round(time.monotonic() - started, 3)}
 
+    started = time.monotonic()
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(verify_push_pull, [1, 2]))
+    timings['two_concurrent_readback_builds_seconds'] = round(time.monotonic() - started, 3)
     # A failed build must return promptly and leave the same builder usable.
     failure = ROOT / 'failed'
     failure.mkdir()
@@ -182,11 +253,18 @@ COPY --from=verify /run /run
     status, _ = run(['docker', 'buildx', 'build', '--builder', 'actions-multiarch', str(failure)], timeout=90, check=False)
     assert status != 0, 'intentionally failing build succeeded'
     verify_push_pull(3)
-    run(['docker', 'buildx', 'rm', 'actions-multiarch'])
+    result = {'platforms': arches, 'manifest_digest': digest, 'parallel_build_requests': results,
+              'buildkit_max_parallelism': 2, 'failed_build_recovered': True,
+              'native_and_emulated_compiler': True, 'timings': timings}
+    print(PREFIX + json.dumps({'phase': 'build-results-verified', 'status': 'passed', 'details': result}), flush=True)
+    started = time.monotonic()
+    # Deleting thousands of cached compiler files through the nested Docker API
+    # can exceed Buildx's request deadline. Stop the builder promptly and leave
+    # its private state for the ephemeral pod's whole-workspace cleanup.
+    run(['docker', 'buildx', 'rm', '--keep-state', 'actions-multiarch'])
     run(['docker', 'rm', '-f', 'registry'])
-    return {'platforms': arches, 'manifest_digest': digest, 'parallel_build_requests': results,
-            'buildkit_max_parallelism': 2, 'failed_build_recovered': True,
-            'native_and_emulated_compiler': True}
+    timings['ephemeral_builder_stop_seconds'] = round(time.monotonic() - started, 3)
+    return result
 
 
 def disk():
