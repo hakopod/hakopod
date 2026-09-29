@@ -428,3 +428,20 @@ func TestActionsImageUpgradeDrainsBusyRunner(t *testing.T) {
 		t.Fatal("replacement did not record current image", err)
 	}
 }
+
+func TestActionsObservationUsesSlotImageInsteadOfSavedRevision(t *testing.T) {
+	s, _, p, _ := actionsHarness(t)
+	ctx := context.Background()
+	p.Config.Image = "ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
+	target := actionsTarget(p)
+	if err := s.reconcileActionsPool(ctx, target, p); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := s.observeActions(ctx, target, p.Service, p.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Image != spec.ActionsRunnerImage {
+		t.Fatalf("overview retained saved image: %s", observed.Image)
+	}
+}

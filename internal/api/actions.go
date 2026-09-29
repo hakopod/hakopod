@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/actions"
@@ -377,7 +379,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 }
 
 func (s *Server) observeActions(ctx context.Context, t cluster.Target, name string, config spec.Service) (cluster.ServiceStatus, error) {
-	result := cluster.ServiceStatus{Name: name, Status: "deploying", Desired: config.Replicas, Image: config.Image}
+	result := cluster.ServiceStatus{Name: name, Status: "deploying", Desired: config.Replicas, Image: spec.ActionsRunnerImage}
 	if config.Suspended {
 		result.Desired = 0
 	}
@@ -396,6 +398,7 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 		if e != nil {
 			return result, e
 		}
+		result.Image = actionsSlotImages(slots)
 		for _, v := range slots {
 			if sameActionsConfig(v.Config, config) && (v.Phase == "online" || v.Phase == "busy") && time.Since(v.UpdatedAt) < 2*time.Minute {
 				result.Ready++
@@ -412,6 +415,26 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 		result.Status = "missing"
 	}
 	return result, nil
+}
+
+// Slot configurations record the image selected when each runner was created.
+// Preserve both images during a drain instead of claiming every runner upgraded.
+func actionsSlotImages(slots []store.ActionsSlot) string {
+	images := map[string]bool{}
+	for _, slot := range slots {
+		if slot.Config.Image != "" {
+			images[slot.Config.Image] = true
+		}
+	}
+	if len(images) == 0 {
+		return spec.ActionsRunnerImage
+	}
+	values := make([]string, 0, len(images))
+	for image := range images {
+		values = append(values, image)
+	}
+	sort.Strings(values)
+	return strings.Join(values, ", ")
 }
 
 func (s *Server) actionsStatus(w http.ResponseWriter, r *http.Request) {
