@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run product-built runner pods only in this CI job's disposable dev cluster."""
 import json
+from datetime import datetime
 import os
 from pathlib import Path
 import platform
@@ -86,6 +87,26 @@ def state(namespace, name='actions-runtime-fixture'):
     return json.loads(kube(['-n', namespace, 'get', 'pod', name, '-o', 'json']).stdout)
 
 
+def startup_timings(pod):
+    status = pod.get('status', {})
+    initialized = {item['name']: item.get('state', {}) for item in status.get('initContainerStatuses', [])}
+    prepare = initialized.get('prepare', {}).get('terminated', {})
+    daemon = initialized.get('docker', {}).get('running', {})
+    runner = next((item.get('state', {}).get('running', {}) for item in status.get('containerStatuses', []) if item['name'] == 'runner'), {})
+    pairs = {
+        'create_to_prepare_start_seconds': (pod['metadata'].get('creationTimestamp'), prepare.get('startedAt')),
+        'prepare_copy_seconds': (prepare.get('startedAt'), prepare.get('finishedAt')),
+        'prepare_finished_to_daemon_start_seconds': (prepare.get('finishedAt'), daemon.get('startedAt')),
+        'daemon_start_to_runner_start_seconds': (daemon.get('startedAt'), runner.get('startedAt')),
+    }
+    result = {}
+    for name, (start, end) in pairs.items():
+        if start and end:
+            result[name] = round((datetime.fromisoformat(end.replace('Z', '+00:00')) -
+                                  datetime.fromisoformat(start.replace('Z', '+00:00'))).total_seconds(), 3)
+    return result
+
+
 def logs(namespace, scenario):
     # kubectl and kubelet bound the read; artifacts only contain our fixtures.
     result = kube(['-n', namespace, 'logs', 'actions-runtime-fixture', '-c', 'runner', '--limit-bytes=4194304'], check=False)
@@ -123,12 +144,25 @@ def image_observation(expected):
 
 
 def delete_pod(namespace):
+    uid = state(namespace)['metadata']['uid']
+    workspace = f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner'
     kube(['-n', namespace, 'delete', 'pod', 'actions-runtime-fixture', '--wait=true', '--timeout=60s'], timeout=75)
     kube(['-n', namespace, 'delete', 'secret', 'actions-runtime-fixture', '--wait=true'])
+    started = time.monotonic()
+    for _ in range(30):
+        if command(['docker', 'exec', NODE, 'test', '!', '-e', workspace], check=False).returncode == 0:
+            record('private-workspace-removed', started, pod_uid=uid)
+            return
+        time.sleep(2)
+    raise RuntimeError('the deleted pod still has a private workspace on the disposable node')
 
 
 def boundary_checks(namespace):
     started = time.monotonic()
+    uid = state(namespace)['metadata']['uid']
+    # Establish the actual volume location while the runner is alive; kubelet
+    # can already remove a completed/evicted pod's volume before API deletion.
+    command(['docker', 'exec', NODE, 'test', '-d', f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner'])
     apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': PEER_NAMESPACE,
            'labels': {'app.kubernetes.io/managed-by': 'hakopod-actions-development-fixture'}}})
     NAMESPACES.add(PEER_NAMESPACE)
@@ -206,11 +240,11 @@ def main():
     NAMESPACES.add(workload_ns)
     started = time.monotonic()
     apply(fixtures['workload'])
-    wait_for(workload_ns, lambda pod: any(event['phase'] == 'sandbox-boundary' for event in logs(workload_ns, 'workload')), timeout=360)
-    record('runner-startup', started)
+    startup = wait_for(workload_ns, lambda pod: any(event['phase'] == 'sandbox-boundary' for event in logs(workload_ns, 'workload')), timeout=360)
+    record('runner-and-docker-ready', started, includes_pinned_image_pulls=True, pod_timings=startup_timings(startup))
     boundary_checks(workload_ns)
     started = time.monotonic()
-    pod = wait_for(workload_ns, lambda pod: pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=1020)
+    pod = wait_for(workload_ns, lambda pod: pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=1200)
     REPORT['workload_events'] = logs(workload_ns, 'workload')
     assert pod['status']['phase'] == 'Succeeded', pod['status']
     assert any(event['phase'] == 'complete' for event in REPORT['workload_events']), 'missing workload completion'
@@ -260,6 +294,11 @@ finally:
                                          text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=75)
                 if cleanup.returncode:
                     raise RuntimeError(cleanup.stdout[-2048:])
+                verify = subprocess.run(KUBE + ['get', 'namespace', namespace, '--ignore-not-found', '-o', 'name'],
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                if verify.returncode or verify.stdout.strip():
+                    raise RuntimeError('fixture namespace still exists after cleanup: ' + verify.stdout[-2048:])
+                REPORT.setdefault('deleted_namespaces', []).append(namespace)
             except Exception as error:
                 REPORT['status'] = 'failed'
                 REPORT.setdefault('cleanup_errors', []).append(str(error))

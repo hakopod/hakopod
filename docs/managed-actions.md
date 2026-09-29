@@ -153,6 +153,8 @@ steps:
   - uses: docker/setup-buildx-action@v3
     with:
       driver: docker-container
+      # The single-job pod removes its whole private workspace on exit.
+      cleanup: false
       driver-opts: |
         image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
       buildkitd-flags: --oci-worker-snapshotter=native
@@ -169,6 +171,40 @@ Both emulation and the native snapshotter consume the same per-job CPU, memory
 and workspace limits. Emulated compilation may be substantially slower than a
 native build. Native pools for each architecture remain an alternative for large
 builds.
+
+For languages with a native cross-compiler, keep compilation on the runner's
+architecture and use emulation only for target execution. For example, a Go
+build can use `FROM --platform=$BUILDPLATFORM golang:...` in its compile stage,
+declare `ARG TARGETARCH`, and run `CGO_ENABLED=0 GOARCH="$TARGETARCH" go build`.
+Use your verified digest-pinned compiler image. This avoids emulating the Go
+compiler; CGO and architecture-specific system dependencies need a matching
+cross-toolchain or a native pool. The runtime gate measures this route
+separately from the fully emulated compiler route and executes both resulting
+programs on their target architectures.
+
+Local BuildKit cache disappears when an ephemeral runner is removed. To reuse
+cache across jobs, add a private, repository-scoped registry cache to the
+`docker/build-push-action` configuration after registry authentication:
+
+```yaml
+cache-from: type=registry,ref=ghcr.io/your-team/your-app:buildcache
+cache-to: type=registry,ref=ghcr.io/your-team/your-app:buildcache,mode=max
+```
+
+Give unrelated repositories or trust boundaries separate cache references and
+appropriate registry permissions. Registry cache is configured by the workflow;
+Hakopod does not share private runner workspaces or Docker daemons between jobs.
+The same-builder warm-cache result in the runtime report does not measure remote
+cache download time or prove a cache hit in a subsequent GitHub job.
+
+Use `cleanup: false` on `docker/setup-buildx-action` for these ephemeral runners.
+Buildx's default cleanup deletes the compiler cache file by file through the
+nested Docker API; the larger runtime acceptance build exceeded that API
+request deadline on both host architectures. The pod owns its private Docker
+daemon and workspace, so pod removal already reclaims them after the job. For
+manual builders, `docker buildx rm --keep-state <builder>` stops the builder
+without traversing its cache; retained state lasts only until the pod is removed.
+Do not use this cleanup advice for a persistent shared runner.
 
 ## Updates and removal
 
@@ -219,6 +255,10 @@ pod, namespace policies and quotas, then applies them only to a fresh named
 The `actions-runtime-<host>` artifact contains `report.json`, bounded fixture
 logs and pod diagnostics. The report records phase times, manifest digest,
 configured limits, sampled CPU, memory and disk peaks, and cleanup outcomes.
+Startup is split using Kubernetes container timestamps, including the runner
+file-copy step. Build timing separates builder startup, cold compilation and
+push, native versus emulated compiler vertices, a warm-cache repeat and the
+native cross-compiler route. The latter reuses already-downloaded base images.
 Peaks are lower bounds sampled between checks; they are not continuous resource
 profiles. A failed or missing gate is not successful runtime evidence.
 
@@ -229,6 +269,14 @@ isolation probe adds a separate 64 MiB test pod briefly. Node loss, multi-node
 scheduling, long-running fleet churn and provider quota behavior need their own
 capacity and failure evidence. Do not extrapolate this workload's timings to a
 larger fleet or an application's compiler, dependency graph and registry.
+
+The slot budget includes the sandbox and is split between its containers. In
+this 2-core fixture, the runner container has a 475m CPU limit and the Docker
+sidecar has 1425m, with 100m reserved for the sandbox. A shell compilation and a
+BuildKit compilation therefore have different CPU ceilings. The pod's declared
+2-core total is not a 2-core limit for each container. Startup timings on these
+fresh CI nodes also include cold image pulls; a node with cached pinned images
+has a different startup workload.
 
 Before migrating an existing workflow, `TestManagedActionsCandidateJobLive` can
 run one disposable registration in `k3d-hakopod-dev`. It uses the product pod

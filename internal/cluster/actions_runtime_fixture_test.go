@@ -41,7 +41,7 @@ func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
 		target.Project = "actions-development-fixture"
 		s := target.Spec.Services["runner"]
 		s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
-		s.Actions.TimeoutMinutes = 20
+		s.Actions.TimeoutMinutes = 24
 		s.Actions.WorkspaceSizeGiB = 8
 		if name != "workload" {
 			s.Actions.WorkspaceSizeGiB = 2
