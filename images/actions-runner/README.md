@@ -3,6 +3,8 @@
 This image extends the pinned GitHub Actions runner with `make`, GCC/G++, CMake,
 Ninja, pkg-config, Python development headers and GitHub CLI. PostgreSQL client
 tools and the libpq and ZBar libraries support database and barcode checks.
+GNU tar and zstd support compressed GitHub Actions dependency caches; the image
+smoke check verifies an archive round trip as the unprivileged runner.
 Jobs still run as
 UID 1001 inside the existing Managed Actions sandbox. Package installation runs
 only while building the image; jobs do not receive sudo or host access.

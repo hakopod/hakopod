@@ -68,6 +68,13 @@ under contention. Capacity failures report the requested and available CPU and
 memory and the shortage. Cloud allowances still apply. Editing an existing pool
 preserves its resource overrides and inherited defaults until you change them.
 
+Automatic node placement lets Kubernetes choose an eligible sandbox node.
+Selecting a node keeps the pool on that exact node and preserves architecture,
+resource, scheduling-taint and trusted Cloud allocation checks. The picker marks
+nodes without a ready Managed Actions sandbox unavailable. A missing or
+unavailable selected node never falls back to a different node; choose another
+eligible node or restore the selected node before deploying.
+
 Use your configured label in a workflow:
 
 ```yaml
@@ -128,6 +135,63 @@ more disk or a different runtime must use another runner type.
 The GitHub runner-management token stays in control-plane secret storage. A pod
 gets only its one-job JIT registration. Configuring this pool does not replace
 Hakopod's application build provider.
+
+## Reusing dependencies across jobs
+
+Each job starts with a clean workspace. Use GitHub's `actions/cache` or the
+cache option in an official setup action to download dependencies saved by a
+previous job. GitHub stores the cache; runner workspaces and Docker daemons
+remain private to one job. No extra Hakopod secret or persistent volume is
+needed. Existing pools use the same workflow configuration after an upgrade.
+
+For example, cache npm's downloaded packages using the lockfile as the key:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-node@v4
+    with:
+      node-version: '22'
+  - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+    with:
+      path: ~/.npm
+      key: ${{ runner.os }}-${{ runner.arch }}-npm-${{ hashFiles('**/package-lock.json') }}
+      restore-keys: |
+        ${{ runner.os }}-${{ runner.arch }}-npm-
+  - run: npm ci
+```
+
+Choose the Node version required by your project; a cache does not install the
+toolchain. `actions/setup-node` with `cache: npm` is an
+alternative to a separate cache step. For other languages, cache the package
+manager's download directory and include the dependency lockfile, operating
+system and architecture in the key. Compiled dependencies also need a matching
+compiler or runtime version. Run the package manager after restoration so a
+fallback cache cannot replace lockfile validation.
+
+GitHub enforces repository and branch access for these caches. The default
+branch's cache may be restored from other branches, and pull requests can read
+caches available to their base branch. Cache dependency downloads and build
+outputs, never tokens, credentials or private files that a repository's pull
+request authors should not read. Caches are an optimization: GitHub can evict
+them, and a missing cache must leave the workflow able to install dependencies.
+
+Runner 2.337.0 supports the current cache service and `actions/cache@v5`.
+The cache action uses tar and selects zstd when present, otherwise gzip. Runner
+image source includes and smoke-tests tar and zstd; an existing engine pin may
+still use gzip until that image is published and promoted. Compression is part
+of GitHub's cache version, so the first job after that change can miss an older
+gzip cache and populate a new one. A job container must
+provide its own compatible archive tools. Installation firewalls must allow
+GitHub Actions cache traffic, including `results-receiver.actions.githubusercontent.com`
+and `*.blob.core.windows.net`, over HTTPS. The managed namespace's public egress
+rule already permits this traffic without granting private-network access.
+
+The cache mode in `actions-live.yml` saves a bounded fixture in one real managed
+job, restores it in a different single-job runner, and checks an exact cache hit
+and SHA-256. Its run-specific key can be removed after acceptance. A successful
+archive smoke check alone does not verify GitHub upload, download or cross-job
+reuse; consult the release verification record for the completed cache run.
 
 ## Building images for another architecture
 
@@ -252,6 +316,13 @@ pod, namespace policies and quotas, then applies them only to a fresh named
   the write, and a new pod for the same slot with no previous workspace, images
   or containers.
 
+The gate runs on relevant pull requests, changes to `main`, and manual
+dispatches. It tests the image digest pinned by that engine revision. Changes to
+runner-image source are built and smoke-tested by `actions-runner-image.yml`;
+promoting that image also requires updating the engine's digest pin and passing
+this runtime gate. A pass against the previous pin does not qualify an
+unpublished candidate image.
+
 The `actions-runtime-<host>` artifact contains `report.json`, bounded fixture
 logs and pod diagnostics. The report records phase times, manifest digest,
 configured limits, sampled CPU, memory and disk peaks, and cleanup outcomes.
@@ -277,6 +348,32 @@ BuildKit compilation therefore have different CPU ceilings. The pod's declared
 2-core total is not a 2-core limit for each container. Startup timings on these
 fresh CI nodes also include cold image pulls; a node with cached pinned images
 has a different startup workload.
+
+The [September 29 runtime run](https://github.com/hakopod/hakopod/actions/runs/36538906615)
+passed both host architectures at engine commit `d2f055b`. These are single-run
+observations from the bounded fixture above, using its isolated local registry:
+
+| Measurement | AMD64 host | ARM64 host |
+| --- | ---: | ---: |
+| Runner and Docker checkpoint, including cold image pulls | 33.36 s | 28.40 s |
+| Runner file copy | 7 s | 5 s |
+| Cold two-architecture build and push | 563.21 s | 378.90 s |
+| Native compiler instruction | 77.98 s | 62.81 s |
+| Emulated compiler instruction | 299.64 s | 227.85 s |
+| Identical build and push using the same builder cache | 0.44 s | 0.42 s |
+| Native cross-compilation and both target executions, base images cached | 80.58 s | 57.69 s |
+| Two simultaneous readback builds on one runner | 3.09 s | 1.97 s |
+| Stop builder while retaining state until pod deletion | 0.69 s | 0.55 s |
+| Sampled runner working-set memory peak | 1.09 GiB | 1.07 GiB |
+| Sampled ephemeral-storage peak | 6.34 GiB | 5.62 GiB |
+
+The two host types use different CI hardware. These timings do not establish
+architecture speed rankings or a production latency promise. The native
+cross-compiler path avoids emulating the compiler, while the sub-second warm
+result requires an existing builder cache. Neither measurement is a GitHub job
+queue time or a restore from an external cache. Both hosts also passed actual
+workspace eviction, replacement with a fresh workspace, physical volume
+removal, namespace deletion and removal of the deleted runner's observed image.
 
 Before migrating an existing workflow, `TestManagedActionsCandidateJobLive` can
 run one disposable registration in `k3d-hakopod-dev`. It uses the product pod
