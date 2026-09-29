@@ -1,8 +1,8 @@
 name: Managed Actions Docker runtime
 on:
   push:
-    branches: ['codex/managed-actions-runtime']
-    paths: ['scripts/actions/**', '.github/workflows/actions-runtime.yml']
+    branches: ['main', 'codex/managed-actions-logs', 'codex/managed-actions-runtime']
+    paths: ['scripts/actions/**', 'internal/cluster/actions*', 'internal/spec/actions*', '.github/workflows/actions-runtime.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,8 +19,13 @@ jobs:
     timeout-minutes: 35
     env:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
       - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
         with:
           version: v3.17.2
@@ -33,3 +38,18 @@ jobs:
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
       - name: Verify Docker workloads inside gVisor
         run: python3 scripts/actions/docker-acceptance.py
+      - name: Preserve bounded runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: actions-runtime-${{ matrix.runner }}
+          path: |
+            .local/actions-runtime-acceptance/report.json
+            .local/actions-runtime-acceptance/*.log
+            .local/actions-runtime-acceptance/*-pods.txt
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+      - name: Stop disposable development resources
+        if: always()
+        run: scripts/local-down.sh
