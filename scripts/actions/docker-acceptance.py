@@ -235,6 +235,8 @@ def main():
     assert replacement['status']['phase'] == 'Succeeded', replacement['status']
     assert replacement['metadata']['uid'] != old_uid
     record('replacement-after-disk-eviction', started, previous_uid=old_uid, replacement_uid=replacement['metadata']['uid'])
+    workload_samples = REPORT['samples'].get(f'{workload_ns}/actions-runtime-fixture', {})
+    assert workload_samples.get('count', 0) > 0 and workload_samples.get('memory_working_set_bytes') is not None, 'kubelet did not provide runner resource measurements'
     REPORT['status'] = 'passed'
 
 
@@ -260,7 +262,11 @@ finally:
                 REPORT['status'] = 'failed'
                 REPORT.setdefault('cleanup_errors', []).append(str(error))
         if RUNTIME_CREATED:
-            subprocess.run(KUBE + ['delete', 'runtimeclass', 'hakopod-actions', '--wait=true', '--timeout=15s'], check=False, timeout=20)
+            try:
+                subprocess.run(KUBE + ['delete', 'runtimeclass', 'hakopod-actions', '--wait=true', '--timeout=15s'], check=True, timeout=20)
+            except Exception as error:
+                REPORT['status'] = 'failed'
+                REPORT.setdefault('cleanup_errors', []).append(str(error))
         save_report()
         print(json.dumps(REPORT), flush=True)
         if REPORT['status'] != 'passed':

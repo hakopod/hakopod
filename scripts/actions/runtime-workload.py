@@ -226,7 +226,7 @@ else:
         phase('sandbox-boundary', boundary)
         # The harness tests network isolation, image observation and sidecar
         # recovery while the workload waits at a deterministic checkpoint.
-        for _ in range(180):
+        for _ in range(300):
             if (ROOT / 'continue').exists():
                 break
             time.sleep(1)
