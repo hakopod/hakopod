@@ -1,13 +1,26 @@
 name: Managed Actions Docker runtime
 on:
   push:
-    branches: ['main', 'codex/managed-actions-logs', 'codex/managed-actions-runtime']
-    paths: ['scripts/actions/**', 'internal/cluster/actions*', 'internal/spec/actions*', '.github/workflows/actions-runtime.yml']
+    branches: ['main']
+    paths: &runtime_paths
+      - 'scripts/actions/**'
+      - 'internal/cluster/**'
+      - 'internal/spec/**'
+      - 'images/actions-runner/**'
+      - 'installer/actions_runtime.py'
+      - 'scripts/local-*.sh'
+      - 'deploy/local/**'
+      - 'deploy/charts/hakopod-platform/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/actions-runtime.yml'
+  pull_request:
+    paths: *runtime_paths
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: actions-runtime-${{ github.ref }}
+  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   runtime:

@@ -109,6 +109,9 @@ func (f *actionsFake) Delete(_ context.Context, target actions.Target, id int64)
 	return nil
 }
 func (f *actionsFake) ActionsAvailable(context.Context) error { return nil }
+func (f *actionsFake) ActionsPoolAvailable(context.Context, cluster.Target, spec.Service) error {
+	return nil
+}
 func (f *actionsFake) ActionsCredential(context.Context, cluster.Target, string) (string, error) {
 	return "control-plane-fixture-only", nil
 }

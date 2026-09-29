@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,7 +11,9 @@ import (
 	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func TestActionsPlacementDiscoveryRespectsRuntimeAndAllocation(t *testing.T) {
@@ -126,5 +129,70 @@ func TestActionsPlacementPreservesSchedulingTaints(t *testing.T) {
 	}
 	if reason := actionsNodeUnavailable(*node, &WorkloadPolicy{NodeName: "allocated", Pool: "private"}); reason != "" {
 		t.Fatal("trusted pool toleration was discarded", reason)
+	}
+}
+
+func TestActionsAllocatedPlacementDoesNotScanOtherNodes(t *testing.T) {
+	ctx := context.Background()
+	node := placementNode("allocated")
+	node.Labels["kubernetes.io/hostname"] = "independent-hostname"
+	node.Labels["hakopod.io/actions-runtime"] = "ready"
+	node.Labels["hakopod.com/pool"] = "private"
+	node.Spec.Taints = []corev1.Taint{{Key: "hakopod.com/pool", Value: "private", Effect: corev1.TaintEffectNoSchedule}}
+	runtimeClass := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: ActionsRuntime, Labels: map[string]string{managedBy: "hakopod"}}, Handler: ActionsRuntime,
+		Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{"hakopod.io/actions-runtime": "ready"}}}
+	kube := fake.NewClientset(node, runtimeClass)
+	kube.PrependReactor("list", "nodes", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("unrelated cluster inventory must not be scanned")
+	})
+	unallocated := &Client{kube: kube, options: Options{DeploymentMode: DeploymentManagedCloud}}
+	if err := unallocated.ActionsPoolAvailable(ctx, Target{}, spec.Service{}); err == nil || !strings.Contains(err.Error(), "not allocated") {
+		t.Fatal("unallocated Cloud scope inherited another environment's sandbox", err)
+	}
+	c := &Client{kube: kube, options: Options{WorkloadPolicy: func(context.Context, string, string, spec.Application) (WorkloadPolicy, error) {
+		return WorkloadPolicy{NodeName: "allocated", Pool: "private"}, nil
+	}}}
+	target := runnerTarget(t)
+	svc := target.Spec.Services["runner"]
+	svc.Architecture = "amd64"
+	target.Spec.Services["runner"] = svc
+	nodes, err := c.PlacementNodesForRuntime(ctx, target, "actions")
+	if err != nil || len(nodes) != 1 || nodes[0].Name != "allocated" || !nodes[0].Available {
+		t.Fatal("allocated discovery depends on unrelated nodes", nodes, err)
+	}
+	if err := c.validateDeliveryPolicy(ctx, target); err != nil {
+		t.Fatal("allocated admission depends on unrelated nodes", err)
+	}
+	if err := c.SaveActionsConfig(ctx, target, "runner", "allocated", "unused-development-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StartActionsPod(ctx, target, "runner", "allocated", svc); err != nil {
+		t.Fatal("trusted node with a different hostname was rejected", err)
+	}
+	pod, err := kube.CoreV1().Pods(Namespace(target.ApplicationID)).Get(ctx, "actions-allocated", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[0].MatchFields
+	if pod.Spec.NodeName != "" || pod.Spec.NodeSelector["kubernetes.io/hostname"] != "" || pod.Spec.NodeSelector["hakopod.com/pool"] != "private" || pod.Spec.NodeSelector["kubernetes.io/arch"] != "amd64" || fields[0].Values[0] != "allocated" || len(pod.Spec.Tolerations) != 1 {
+		t.Fatal("trusted exact-node scheduling constraints were lost", pod.Spec)
+	}
+	mismatch := svc
+	mismatch.Architecture = "arm64"
+	if err := c.ActionsPoolAvailable(ctx, target, mismatch); err == nil {
+		t.Fatal("architecture mismatch passed the pre-registration check")
+	}
+	node.Spec.Taints = append(node.Spec.Taints, corev1.Taint{Key: "maintenance", Effect: corev1.TaintEffectNoSchedule})
+	if _, err := kube.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ActionsPoolAvailable(ctx, target, svc); err == nil {
+		t.Fatal("new scheduling taint passed the pre-registration check")
+	}
+	if err := c.StartActionsPod(ctx, target, "runner", "newly-tainted", svc); err == nil || !strings.Contains(err.Error(), "No ready Managed Actions node matches") {
+		t.Fatal("runner start ignored a new scheduling taint", err)
+	}
+	if _, err := kube.CoreV1().Pods(Namespace(target.ApplicationID)).Get(ctx, "actions-newly-tainted", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatal("tainted placement created a pod", err)
 	}
 }

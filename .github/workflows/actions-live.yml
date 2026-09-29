@@ -228,7 +228,7 @@ jobs:
           set -eu
           test ! -e .hakopod-cache-fixture
           tar --version | head -1
-          if command -v zstd; then zstd --version; else echo 'Cache archive uses gzip'; fi
+          if command -v zstd; then zstd --version; else gzip --version | head -1; echo 'Cache archive uses gzip'; fi
           mkdir .hakopod-cache-fixture
           dd if=/dev/urandom of=.hakopod-cache-fixture/payload bs=1048576 count=8 status=none
           printf '%s\n' "$FIXTURE_RUNNER" > .hakopod-cache-fixture/source-runner

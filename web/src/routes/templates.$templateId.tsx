@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import TemplateForm from '../components/template-form'
 import { ManagedActionsForm } from '../components/managed-actions-form'
+import { FormPage } from '../components/form-page'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
@@ -39,11 +40,17 @@ function ConfigureTemplate() {
     )
   if (template.deployable && !scope.can('deployments:write'))
     return (
-      <Empty
-        icon="lock"
-        title="Deployment access required"
-        description="Choose a project where you can create applications."
-      />
+      <FormPage
+        title={templateId === 'managed-actions' ? 'Runner pool setup' : 'Configure application'}
+        description="Deployment access is required to continue."
+        breadcrumbs={[]}
+      >
+        <Empty
+          icon="lock"
+          title="Deployment access required"
+          description="Choose a project where you can create applications."
+        />
+      </FormPage>
     )
   if (templateId === 'managed-actions')
     return (

@@ -65,15 +65,30 @@ func (c *Client) PlacementNodesForRuntime(ctx context.Context, t Target, runtime
 	if c.options.DeploymentMode == DeploymentManagedCloud && p == nil && c.options.DedicatedPublicTCPNode == "" && c.options.OperatorNodeLimit == 0 {
 		return []PlacementNode{}, nil
 	}
-	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 201})
-	if err != nil {
-		return nil, err
-	}
-	if nodes.Continue != "" || len(nodes.Items) > 200 {
-		return nil, fmt.Errorf("node inventory exceeds 200 nodes")
+	var items []corev1.Node
+	if p != nil {
+		// A single trusted allocation must not depend on the size or first
+		// page of the surrounding cluster inventory.
+		node, err := c.kube.CoreV1().Nodes().Get(ctx, p.NodeName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return []PlacementNode{}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		items = []corev1.Node{*node}
+	} else {
+		nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 201})
+		if err != nil {
+			return nil, err
+		}
+		if nodes.Continue != "" || len(nodes.Items) > 200 {
+			return nil, fmt.Errorf("node inventory exceeds 200 nodes")
+		}
+		items = nodes.Items
 	}
 	out := []PlacementNode{}
-	for _, n := range nodes.Items {
+	for _, n := range items {
 		if p != nil && (p.NodeName != n.Name || p.Pool != "" && n.Labels["hakopod.com/pool"] != p.Pool) {
 			continue
 		}

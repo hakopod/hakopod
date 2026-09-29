@@ -42,6 +42,11 @@ customer installation or an arbitrary fleet size.
   is limited to 1,000 rows per page with at most 32 ancestor levels. Downloads
   preserve the loaded raw text. Permission revocation removes output and stops
   retries and polling.
+- Node discovery, pool readiness and pod creation honor the environment's
+  trusted allocation and any selected node. Allocated nodes use exact object
+  lookups, independent of global inventory pages. Admission and registration
+  check runtime readiness, architecture and scheduling taints; pod creation
+  rechecks them and pins the exact node without bypassing the scheduler.
 
 ## Control-plane qualification
 
@@ -81,6 +86,26 @@ passed on 2026-09-29 using the product pod builder in `k3d-hakopod-dev`:
   and the local protected registration files were removed after verification.
   The CI observer used a read-only GitHub job token.
 
+## Cache reuse across fresh runners
+
+[Run 36541317231](https://github.com/hakopod/hakopod/actions/runs/36541317231)
+passed at `8a84906` on 2026-09-29. One managed runner saved an 8 MiB payload
+through the pinned official `actions/cache/save` action. A different managed
+runner verified the cached files were initially absent, restored the exact cache key,
+and checked both the first runner's marker and the payload SHA-256. Both jobs
+concluded successfully and the disposable cluster was removed.
+
+The current pinned runner used GNU tar 1.35 and gzip. Saving took 1.209 seconds
+and restoring took 0.906 seconds from each action's first log to its success
+message; each complete job took seven seconds. These are observations of this
+fixture, not general cache latency guarantees. The temporary registrations,
+JIT secret, exact test cache and local credential files were removed.
+
+This verifies GitHub dependency/output caching across fresh jobs. It does not
+verify BuildKit's separate `type=gha` layer exporter. The new image source adds
+explicit tar/zstd prerequisites and an archive smoke test; the live result above
+uses the existing gzip-capable engine pin, not an unpublished zstd image.
+
 ## Dashboard
 
 The independent [UI review](actions-log-groups-ui-review.md) covers 22 rendered
@@ -89,6 +114,15 @@ service and topology image consumers, role revocation, polling, paging, search,
 downloads and long lines. Dark and Paper themes were reviewed at desktop and
 mobile widths, including 320px. These are explicitly marked artificial UI
 fixtures; live provider behavior is covered separately above.
+
+The independent [guided setup review](managed-actions-setup-ui-review.md)
+covers creation, existing pools, multiple-pool selection and all four setup
+steps in both themes at desktop and 390/320px mobile widths. Its 60 passing
+case records include keyboard and touch controls, actual element bounds,
+unavailable nodes, architecture mismatch, failed credential and deployment
+requests, permission revocation and revision conflicts. The reviewed plan,
+revision and idempotency key remain bound to deployment retries. Representative
+final screenshots were inspected after all reported findings were resolved.
 
 ## Runtime and performance interpretation
 

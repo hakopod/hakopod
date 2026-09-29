@@ -17,9 +17,18 @@ import { ManagedActionsTokenHelp } from './managed-actions-token-help'
 import { DiffTable } from './deploy-dialog'
 import { serviceResources } from '../lib/service-resources'
 import { runnerReservationLabel, type RunnerResources } from '../lib/runner-resources'
+import {
+  RunnerFact,
+  RunnerLabelChips,
+  RunnerPlacement,
+  RunnerResourceFields,
+  RunnerSteps,
+  RunnerWorkflowGuide,
+  runnerResourcePresets,
+} from './managed-actions-setup'
 
 export function ManagedActionsForm({
-  application,
+  application: currentApplication,
   serviceName,
   onClose,
 }: {
@@ -27,6 +36,8 @@ export function ManagedActionsForm({
   serviceName?: string
   onClose: () => void
 }) {
+  // A background refetch must not silently advance the revision behind a draft.
+  const [application] = useState(currentApplication)
   const scope = useScope()
   const navigate = useNavigate()
   const cache = useQueryClient()
@@ -49,6 +60,10 @@ export function ManagedActionsForm({
   const [labels, setLabels] = useState(original?.actions?.labels.join(', ') || 'hakopod')
   const [replicas, setReplicas] = useState(String(original?.replicas ?? 1))
   const [architecture, setArchitecture] = useState(original?.architecture || '')
+  const [nodeName, setNodeName] = useState(original?.node_name || '')
+  const [step, setStep] = useState(0)
+  const [visited, setVisited] = useState(0)
+  const [resourcePreset, setResourcePreset] = useState(original ? 'saved' : 'defaults')
   const [timeout, setTimeout] = useState(String(original?.actions?.timeout_minutes || 60))
   const [workspaceSize, setWorkspaceSize] = useState(
     String(original?.actions?.workspace_size_gib || 2),
@@ -61,7 +76,6 @@ export function ManagedActionsForm({
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const capacityError = /\b(?:CPU|memory) short by\b/.test(error)
   const [plan, setPlan] = useState<Plan | null>(null)
   const key = useRef('')
   const capabilities = useQuery({
@@ -88,24 +102,70 @@ export function ManagedActionsForm({
   }
   const reservationLabel = runnerReservationLabel(effectiveResources, Number(replicas))
   const canWrite = canAccess(scope.identity, project, 'deployments:write')
+  const nodes = useQuery({
+    queryKey: ['placement-nodes', project, environment, name, 'actions'],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/placement/nodes', {
+          signal,
+          params: { query: { project, environment, application: name, runtime: 'actions' } },
+        }),
+      ),
+    enabled: !!project && !!environment && !!name && canWrite && step >= 1,
+    staleTime: 30_000,
+  })
+  const selectedNode = nodes.data?.items.find((node) => node.name === nodeName)
+  const invalidNode = Boolean(
+    nodeName &&
+    nodes.data &&
+    (!selectedNode ||
+      !selectedNode.available ||
+      (architecture && architecture !== selectedNode.architecture)),
+  )
+  const workflowLabels = [
+    ...new Set(
+      labels
+        .split(',')
+        .map((label) => label.trim())
+        .filter(Boolean),
+    ),
+  ]
   const ready =
     canWrite && !!capabilities.data?.licensed && !!capabilities.data?.runtime_ready && !!effective
   const reviewFocus = useRef<HTMLDivElement>(null)
   const nameFocus = useRef<HTMLInputElement>(null)
-  const wasReview = useRef(false)
+  const stepFocus = useRef<HTMLDivElement>(null)
+  const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
     if (plan) reviewFocus.current?.focus()
-    else if (wasReview.current) nameFocus.current?.focus()
-    wasReview.current = !!plan
-  }, [!!plan])
+    else stepFocus.current?.focus()
+  }, [step, !!plan])
   const wrongApplication =
     application && Object.values(application.spec.services).some((service) => !service.actions)
+  function move(next: number) {
+    if (busy || next === step) return
+    if (next > step && !form.current?.reportValidity()) return
+    setPlan(null)
+    setError('')
+    setStep(next)
+    setVisited((current) => Math.max(current, next))
+  }
+  async function advance(event: FormEvent) {
+    event.preventDefault()
+    if (step === 1 && invalidNode) {
+      setError('Choose an eligible node for this architecture, or use Automatic placement.')
+      return
+    }
+    if (step < 2) move(step + 1)
+    else await review(event)
+  }
   async function review(event: FormEvent) {
     event.preventDefault()
     if (busy || !ready) return
     setBusy(true)
     setError('')
     try {
+      if (workflowLabels.length === 0) throw new Error('Add at least one workflow label.')
       if (application?.spec.services[runnerName] && !original)
         throw new Error('Choose a service name that is not already used.')
       const service: Service = {
@@ -116,12 +176,13 @@ export function ManagedActionsForm({
         resources: Object.keys(resources).length ? resources : undefined,
         replicas: Number(replicas),
         architecture: architecture ? (architecture as 'amd64' | 'arm64') : undefined,
+        node_name: nodeName || undefined,
         actions: {
           ...(runnerScope === 'organization'
             ? { organization, runner_group_id: runnerGroup ? Number(runnerGroup) : undefined }
             : { repository }),
           credential,
-          labels: labels.split(',').map((label) => label.trim()),
+          labels: workflowLabels,
           timeout_minutes: Number(timeout),
           workspace_size_gib: Number(workspaceSize),
         },
@@ -148,6 +209,8 @@ export function ManagedActionsForm({
           'The application changed. Reload its latest revision before reviewing again.',
         )
       setPlan(result)
+      setStep(3)
+      setVisited(3)
       key.current = crypto.randomUUID()
     } catch (err) {
       setError(message(err))
@@ -183,9 +246,9 @@ export function ManagedActionsForm({
   if (!project || !environment)
     return (
       <FormPage
-        title="Managed Actions"
-        description="Manage organization or repository GitHub runner pools."
-        breadcrumbs={[{ label: 'Catalog', to: '/templates' }]}
+        title="Create runner pool"
+        description="Run GitHub Actions in isolated workspaces."
+        breadcrumbs={[]}
       >
         <Empty
           title="Choose a project"
@@ -196,28 +259,28 @@ export function ManagedActionsForm({
   if (serviceName && !original?.actions)
     return (
       <FormPage
-        title="Managed Actions"
-        description="Manage organization or repository GitHub runner pools."
-        breadcrumbs={[{ label: 'Catalog', to: '/templates' }]}
+        title="Configure runner pool"
+        description="Configure an existing Managed Actions service."
+        breadcrumbs={[]}
       >
         <Empty
           title="Runner pool not found"
-          description="Return to the application and select an existing Managed Actions service."
+          description="Return to the application and choose an existing runner pool."
         />
       </FormPage>
     )
   return (
     <FormPage
-      title={original ? 'Configure runner pool' : 'Managed Actions'}
-      description="Run GitHub Actions in isolated, single-job workspaces. Each replica is one concurrent job slot."
-      breadcrumbs={[{ label: 'Catalog', to: '/templates' }, { label: 'Managed Actions' }]}
+      title={original ? 'Configure runner pool' : 'Create runner pool'}
+      description="Connect GitHub, choose compute and review your pool. Each runner handles one job in an isolated workspace."
+      breadcrumbs={[]}
     >
       {capabilities.isPending ? (
         <Loading />
       ) : capabilities.error ? (
         <ErrorState error={capabilities.error} retry={() => void capabilities.refetch()} />
       ) : (
-        <>
+        <div className="grid min-w-0 gap-4">
           {!canWrite && (
             <Note>You need deployment write access to create or update runner pools.</Note>
           )}
@@ -236,397 +299,504 @@ export function ManagedActionsForm({
           )}
           {!capabilities.data.runtime_ready && (
             <Note>
-              {capabilities.data.message}
+              {capabilities.data.message || 'The Managed Actions sandbox is not ready.'}{' '}
               {!dashboardEdition.cloud && scope.identity.admin ? (
-                <>
-                  <p className="mt-2">
-                    From this release’s verified installer kit, enable the sandbox during a
-                    maintenance window. This restarts K3s.
-                  </p>
-                  <p className="break-all mt-2">
-                    <code>sudo python3 ./installer/modules.py managed-actions</code>
-                  </p>
-                </>
+                <p className="mt-2 text-sm">
+                  From the verified installer kit, run{' '}
+                  <code className="break-all">
+                    sudo python3 ./installer/modules.py managed-actions
+                  </code>{' '}
+                  during a maintenance window. This restarts K3s.
+                </p>
               ) : (
-                <p className="mt-2">
-                  Ask your installation operator to enable the Managed Actions sandbox.
+                <p className="mt-2 text-sm">
+                  Ask your installation operator to prepare a runner node.
                 </p>
               )}
+            </Note>
+          )}
+          {currentApplication && currentApplication.revision !== application?.revision && (
+            <Note>
+              The application changed while you were editing. Your draft is preserved. Review will
+              check its original revision before allowing deployment.
             </Note>
           )}
           {wrongApplication ? (
             <Note>
-              Runner pools need a dedicated application. Keep your existing services here and create
-              a separate Managed Actions application.
+              Runner pools need a dedicated application. Create a separate Managed Actions
+              application for these jobs.
             </Note>
-          ) : plan ? (
-            <>
-              <div
-                className="min-w-0 wrap-anywhere"
-                ref={reviewFocus}
-                tabIndex={-1}
-                aria-label="Review runner pool"
-              >
-                <FormSection title="Review runner pool">
-                  <dl className="grid grid-cols-1 gap-2 text-sm min-w-0 wrap-anywhere">
-                    <div>
-                      {runnerScope === 'organization' ? 'Organization' : 'Repository'}:{' '}
-                      <strong>{runnerScope === 'organization' ? organization : repository}</strong>
-                    </div>
-                    {runnerScope === 'organization' && (
-                      <div>
-                        Runner group: <strong>{runnerGroup || 'GitHub default group'}</strong>
-                      </div>
-                    )}
-                    <div>
-                      Application:{' '}
-                      <strong>
-                        {project} / {environment} / {name}
-                      </strong>
-                    </div>
-                    <div>
-                      Concurrent jobs: <strong>{replicas}</strong>
-                    </div>
-                    <div>
-                      Labels: <strong>{labels}</strong>
-                    </div>
-                    <div>
-                      Architecture: <strong>{architecture || 'Automatic'}</strong>
-                    </div>
-                    <div>
-                      Per slot reservation:{' '}
-                      <strong>
-                        {effectiveResources.cpu_request} CPU / {effectiveResources.memory_request}{' '}
-                        memory
-                      </strong>
-                    </div>
-                    <div>
-                      Per slot limit:{' '}
-                      <strong>
-                        {effectiveResources.cpu_limit} CPU / {effectiveResources.memory_limit}{' '}
-                        memory
-                      </strong>
-                    </div>
-                    <div>{reservationLabel} Sandbox overhead is included.</div>
-                    <div>
-                      Temporary workspace: <strong>{workspaceSize} GiB per slot</strong>
-                    </div>
-                    <div>
-                      Credential reference: <code>{credential}</code>
-                    </div>
-                  </dl>
-                  <Note>
-                    Each slot includes the runner, Docker and temporary storage in its resource
-                    budget. Jobs have a {timeout}-minute maximum lifetime. Scaling and updates drain
-                    busy runners. Removing the service cancels running work.
-                  </Note>
-                  <DiffTable changes={plan.changes} />
-                  <DeploymentSecrets
-                    plan={plan}
-                    project={project}
-                    environment={environment}
-                    busy={busy}
-                    onBusy={setBusy}
-                    onChange={(missing) =>
-                      setPlan((current) =>
-                        current ? { ...current, missing_secrets: missing } : current,
-                      )
-                    }
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button disabled={busy} onClick={() => setPlan(null)}>
-                      Back to configuration
-                    </Button>
-                    <Button
-                      variant="primary"
-                      disabled={busy || !!plan.missing_secrets?.length || !ready}
-                      onClick={() => void deploy()}
-                    >
-                      {busy ? 'Submitting…' : 'Deploy runner pool'}
-                    </Button>
-                  </div>
-                </FormSection>
-              </div>
-            </>
           ) : (
-            <form onSubmit={(event) => void review(event)} className="grid gap-4">
-              <FormSection title="Application">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="grid gap-2">
-                    Application name
-                    <Input
-                      ref={nameFocus}
-                      required
-                      readOnly={!!application}
-                      disabled={busy}
-                      value={name}
-                      pattern={'[a-z][a-z0-9\\-]{0,39}'}
-                      maxLength={40}
-                      onChange={(event) => setName(event.target.value)}
-                    />
-                  </label>
-                  <label className="grid gap-2">
-                    Service name
-                    <Input
-                      required
-                      disabled={!!original || busy}
-                      value={runnerName}
-                      pattern={'[a-z][a-z0-9\\-]{0,39}'}
-                      maxLength={40}
-                      onChange={(event) => setRunnerName(event.target.value)}
-                    />
-                  </label>
-                </div>
-              </FormSection>
-              <FormSection title="GitHub access">
-                <div className="grid gap-2">
-                  <span>Runner scope</span>
-                  <SelectField
-                    label="Runner scope"
-                    value={runnerScope}
-                    onValueChange={setRunnerScope}
-                    disabled={busy}
-                    options={[
-                      { value: 'organization', label: 'Organization' },
-                      { value: 'repository', label: 'Repository' },
-                    ]}
-                  />
-                </div>
-                {runnerScope === 'organization' ? (
-                  <>
-                    <label className="grid gap-2">
-                      Organization
-                      <Input
-                        required
-                        value={organization}
-                        placeholder="your-team"
-                        maxLength={39}
-                        disabled={busy}
-                        onChange={(event) => setOrganization(event.target.value)}
-                        aria-describedby="actions-organization-help"
-                      />
-                      <span id="actions-organization-help" className="text-sm muted-text">
-                        Share this pool across repositories allowed by your GitHub runner group.
-                      </span>
-                    </label>
-                    <label className="grid gap-2">
-                      Runner group ID (optional)
-                      <Input
-                        type="number"
-                        min={1}
-                        max={9007199254740991}
-                        step={1}
-                        value={runnerGroup}
-                        placeholder="GitHub default group"
-                        disabled={busy}
-                        onChange={(event) => setRunnerGroup(event.target.value)}
-                        aria-describedby="actions-group-help"
-                      />
-                      <span id="actions-group-help" className="text-sm muted-text">
-                        Leave blank to use GitHub’s default group. For another group, copy its
-                        numeric ID from the group’s URL in your organization’s Settings → Actions →
-                        Runner groups. Manage repository access there.
-                      </span>
-                    </label>
-                  </>
-                ) : (
-                  <label className="grid gap-2">
-                    Repository
-                    <Input
-                      required
-                      value={repository}
-                      placeholder="your-team/your-repository"
-                      maxLength={201}
-                      disabled={busy}
-                      onChange={(event) => setRepository(event.target.value)}
-                    />
-                  </label>
-                )}
-                <label className="grid gap-2">
-                  Application secret name
-                  <Input
-                    required
-                    value={credential}
-                    maxLength={40}
-                    disabled={busy}
-                    onChange={(event) => setCredential(event.target.value)}
-                  />
-                </label>
-                <ManagedActionsTokenHelp
-                  organization={runnerScope === 'organization'}
-                  repository={runnerScope === 'repository'}
-                />
-                <p className="text-sm muted-text">
-                  You’ll save the token as this application secret during review.
-                </p>
-              </FormSection>
-              <FormSection title="Runner pool">
-                <label className="grid gap-2">
-                  Labels
-                  <Input
-                    required
-                    value={labels}
-                    maxLength={520}
-                    disabled={busy}
-                    onChange={(event) => setLabels(event.target.value)}
-                  />
-                  <span className="text-sm muted-text">
-                    Comma-separated labels for your workflow's runs-on setting.
-                  </span>
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <span>Concurrent jobs</span>
-                    <SelectField
-                      label="Concurrent jobs"
-                      value={replicas}
-                      onValueChange={setReplicas}
-                      disabled={busy}
-                      options={Array.from(
-                        { length: dashboardEdition.cloud ? 3 : 10 },
-                        (_, index) => ({
-                          value: String(index + 1),
-                          label: String(index + 1),
-                        }),
-                      )}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <span>Architecture</span>
-                    <SelectField
-                      label="Architecture"
-                      value={architecture}
-                      onValueChange={setArchitecture}
-                      disabled={busy}
-                      options={[
-                        { value: '', label: 'Automatic' },
-                        { value: 'amd64', label: 'Linux AMD64' },
-                        { value: 'arm64', label: 'Linux ARM64' },
-                      ]}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <span>Maximum lifetime</span>
-                    <SelectField
-                      label="Maximum lifetime"
-                      value={timeout}
-                      onValueChange={setTimeout}
-                      disabled={busy}
-                      options={[...new Set([Number(timeout), 30, 60, 120, 360])]
-                        .sort((a, b) => a - b)
-                        .map((value) => ({ value: String(value), label: `${value} minutes` }))}
-                    />
-                  </div>
-                </div>
-              </FormSection>
-              <FormSection title="Resources per runner">
-                <p id="runner-resources-help" className="text-sm muted-text">
-                  Reservations set aside capacity for each concurrent job. Limits cap usage; spare
-                  CPU can be shared up to that limit. Includes Docker and sandbox overhead. CPU:
-                  1000m = 1 core. Memory: 1024Mi = 1Gi.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {(
-                    [
-                      [
-                        'cpu_request',
-                        'Reserved CPU',
-                        'At least 200m per slot.',
-                        '^(?:[0-9]+(?:\\.[0-9]{1,3})?|[0-9]+m)$',
-                      ],
-                      [
-                        'cpu_limit',
-                        'CPU limit',
-                        'Must be at least the CPU reservation.',
-                        '^(?:[0-9]+(?:\\.[0-9]{1,3})?|[0-9]+m)$',
-                      ],
-                      [
-                        'memory_request',
-                        'Reserved memory',
-                        'At least 768Mi per slot.',
-                        '^[0-9]+(?:Ki|Mi|Gi|Ti|k|M|G|T)?$',
-                      ],
-                      [
-                        'memory_limit',
-                        'Memory limit',
-                        'At least 4Gi and at least the memory reservation.',
-                        '^[0-9]+(?:Ki|Mi|Gi|Ti|k|M|G|T)?$',
-                      ],
-                    ] as const
-                  ).map(([key, label, help, pattern]) => (
-                    <label className="grid gap-2" key={key}>
-                      {label}
-                      <Input
-                        required
-                        aria-label={label}
-                        aria-describedby={`runner-resources-help runner-${key}-help`}
-                        value={effectiveResources[key] ?? ''}
-                        disabled={busy || !effective}
-                        maxLength={32}
-                        pattern={pattern}
-                        onChange={(event) =>
-                          setResources((current) => ({ ...current, [key]: event.target.value }))
-                        }
-                      />
-                      <span id={`runner-${key}-help`} className="text-sm muted-text">
-                        {help}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-sm" role="status">
-                  {reservationLabel}
-                </p>
-                <label className="grid gap-2">
-                  Temporary workspace (GiB)
-                  <Input
-                    type="number"
-                    min={2}
-                    max={16}
-                    step={1}
-                    required
-                    value={workspaceSize}
-                    disabled={busy}
-                    aria-describedby="runner-workspace-help"
-                    onChange={(event) => setWorkspaceSize(event.target.value)}
-                  />
-                  <span id="runner-workspace-help" className="text-sm muted-text">
-                    2–16 GiB per slot, shared by source, tools, Docker images and build files.
-                    Reserved on the runner node and deleted after each job.
-                  </span>
-                </label>
-                <p className="text-sm muted-text">
-                  Lower CPU reservations let more jobs share the machine; simultaneous builds may
-                  run slower. Available capacity and Cloud allowances still apply. Review checks
-                  current reservations.
-                </p>
-                {capabilities.data && !effective && (
-                  <Note>
-                    Resource defaults are unavailable. Refresh after updating this installation.
-                  </Note>
-                )}
-              </FormSection>
-              {capacityError && (
-                <p
-                  role="alert"
-                  className="field-help error min-w-0 whitespace-normal wrap-anywhere"
-                >
-                  {error}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" disabled={busy || !ready}>
-                  {busy ? 'Checking…' : 'Review runner pool'}
-                </Button>
+            <>
+              <RunnerSteps step={step} visited={visited} busy={busy} onStep={move} />
+              <div
+                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs muted-text"
+                aria-label="Pool scope"
+              >
+                <span>
+                  {project} / {environment}
+                </span>
+                <span>{name || 'New pool'}</span>
+                <span>
+                  {replicas} {replicas === '1' ? 'job at a time' : 'jobs at a time'}
+                </span>
               </div>
-            </form>
+              {plan ? (
+                <div
+                  ref={reviewFocus}
+                  tabIndex={-1}
+                  aria-label="Review runner pool"
+                  className="grid min-w-0 gap-4 focus-visible:outline-2"
+                >
+                  <FormSection title="Review runner pool">
+                    <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <RunnerFact
+                        label={
+                          runnerScope === 'organization'
+                            ? 'GitHub organization'
+                            : 'GitHub repository'
+                        }
+                      >
+                        {runnerScope === 'organization' ? organization : repository}
+                      </RunnerFact>
+                      <RunnerFact label="Runner compute">
+                        {replicas} × {architecture || 'Automatic architecture'}
+                      </RunnerFact>
+                      <RunnerFact label="Placement">
+                        {nodeName || 'Any eligible runner node'}
+                      </RunnerFact>
+                      <RunnerFact label="Workspace & lifetime">
+                        {workspaceSize} GiB · {timeout} minutes
+                      </RunnerFact>
+                    </div>
+                    <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="muted-text">Application / service</dt>
+                        <dd className="wrap-anywhere">
+                          {name} / {runnerName}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="muted-text">Credential reference</dt>
+                        <dd className="wrap-anywhere">
+                          <code>{credential}</code>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="muted-text">Reserved per runner</dt>
+                        <dd>
+                          {effectiveResources.cpu_request} CPU · {effectiveResources.memory_request}{' '}
+                          memory
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="muted-text">Limit per runner</dt>
+                        <dd>
+                          {effectiveResources.cpu_limit} CPU · {effectiveResources.memory_limit}{' '}
+                          memory
+                        </dd>
+                      </div>
+                      {runnerScope === 'organization' && (
+                        <div>
+                          <dt className="muted-text">Runner group</dt>
+                          <dd>{runnerGroup || 'GitHub default group'}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    <RunnerLabelChips labels={workflowLabels} />
+                    <p className="text-sm" role="status">
+                      {reservationLabel}
+                    </p>
+                    {nodeName && (
+                      <p className="field-help">
+                        The pool waits if {nodeName} is unavailable. It will not move to a different
+                        node.
+                      </p>
+                    )}
+                    <Note>
+                      Updates drain busy runners. Each job gets a fresh workspace; workflow caches
+                      are restored separately. Removing the service cancels running jobs.
+                    </Note>
+                    <DiffTable changes={plan.changes} />
+                    <DeploymentSecrets
+                      plan={plan}
+                      project={project}
+                      environment={environment}
+                      busy={busy}
+                      onBusy={setBusy}
+                      onChange={(missing) =>
+                        setPlan((current) =>
+                          current ? { ...current, missing_secrets: missing } : current,
+                        )
+                      }
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
+                      <Button disabled={busy} onClick={() => move(2)}>
+                        Back to jobs
+                      </Button>
+                      <Button
+                        variant="primary"
+                        disabled={busy || !!plan.missing_secrets?.length || !ready}
+                        onClick={() => void deploy()}
+                      >
+                        {busy ? 'Submitting…' : 'Deploy runner pool'}
+                      </Button>
+                    </div>
+                  </FormSection>
+                </div>
+              ) : (
+                <form
+                  ref={form}
+                  onSubmit={(event) => void advance(event)}
+                  className="grid min-w-0 gap-4"
+                  onInvalidCapture={(event) => {
+                    const details = (event.target as HTMLElement).closest('details')
+                    if (details) details.open = true
+                  }}
+                >
+                  <div
+                    ref={stepFocus}
+                    tabIndex={-1}
+                    aria-label={`${['GitHub connection', 'Runner compute', 'Job settings'][step]} step`}
+                    className="min-w-0 focus-visible:outline-2"
+                  >
+                    {step === 0 && (
+                      <FormSection title="Connect your GitHub jobs">
+                        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                          <div className="grid content-start gap-3">
+                            <label className="grid gap-2 text-sm">
+                              Pool name
+                              <Input
+                                ref={nameFocus}
+                                required
+                                readOnly={!!application}
+                                disabled={busy}
+                                value={name}
+                                pattern={'[a-z][a-z0-9\\-]{0,39}'}
+                                maxLength={40}
+                                placeholder="team-runners"
+                                onChange={(event) => setName(event.target.value)}
+                              />
+                              <span className="field-help">
+                                The application that holds this runner pool.
+                              </span>
+                            </label>
+                            <div className="grid gap-2 text-sm">
+                              <span>Share runners with</span>
+                              <SelectField
+                                label="Runner scope"
+                                value={runnerScope}
+                                onValueChange={setRunnerScope}
+                                disabled={busy}
+                                options={[
+                                  { value: 'organization', label: 'An organization' },
+                                  { value: 'repository', label: 'One repository' },
+                                ]}
+                              />
+                            </div>
+                            {runnerScope === 'organization' ? (
+                              <label className="grid gap-2 text-sm">
+                                GitHub organization
+                                <Input
+                                  required
+                                  value={organization}
+                                  placeholder="your-team"
+                                  maxLength={39}
+                                  disabled={busy}
+                                  onChange={(event) => setOrganization(event.target.value)}
+                                  aria-describedby="actions-scope-help"
+                                />
+                                <span id="actions-scope-help" className="field-help">
+                                  Repositories allowed by your GitHub runner group can use this
+                                  pool.
+                                </span>
+                              </label>
+                            ) : (
+                              <label className="grid gap-2 text-sm">
+                                GitHub repository
+                                <Input
+                                  required
+                                  value={repository}
+                                  placeholder="your-team/your-repository"
+                                  maxLength={201}
+                                  disabled={busy}
+                                  onChange={(event) => setRepository(event.target.value)}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          <div className="grid content-start gap-3">
+                            <RunnerFact label="GitHub access">
+                              Hakopod keeps your token private. Runners receive a single-job
+                              registration.
+                            </RunnerFact>
+                            <ManagedActionsTokenHelp
+                              organization={runnerScope === 'organization'}
+                              repository={runnerScope === 'repository'}
+                            />
+                            <p className="field-help">
+                              Save the token securely during the review step.
+                            </p>
+                          </div>
+                        </div>
+                        <details className="rounded border border-[var(--hairline)]">
+                          <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-medium">
+                            Service, runner group and credential name
+                          </summary>
+                          <div className="grid gap-3 px-3 pb-3 sm:grid-cols-2">
+                            <label className="grid gap-2 text-sm">
+                              Service name
+                              <Input
+                                required
+                                disabled={!!original || busy}
+                                value={runnerName}
+                                pattern={'[a-z][a-z0-9\\-]{0,39}'}
+                                maxLength={40}
+                                onChange={(event) => setRunnerName(event.target.value)}
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm">
+                              Application secret name
+                              <Input
+                                required
+                                value={credential}
+                                maxLength={40}
+                                disabled={busy}
+                                onChange={(event) => setCredential(event.target.value)}
+                              />
+                              <span className="field-help">
+                                A reference to your token, not the token itself.
+                              </span>
+                            </label>
+                            {runnerScope === 'organization' && (
+                              <label className="grid gap-2 text-sm">
+                                Runner group ID (optional)
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={9007199254740991}
+                                  step={1}
+                                  value={runnerGroup}
+                                  placeholder="GitHub default group"
+                                  disabled={busy}
+                                  onChange={(event) => setRunnerGroup(event.target.value)}
+                                />
+                                <span className="field-help">
+                                  Leave blank for the default group. Find another group's ID in its
+                                  GitHub settings URL.
+                                </span>
+                              </label>
+                            )}
+                          </div>
+                        </details>
+                      </FormSection>
+                    )}
+                    {step === 1 && (
+                      <FormSection title="Choose where jobs run">
+                        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                          <div className="grid content-start gap-3">
+                            <div className="grid gap-2 text-sm">
+                              <span>Concurrent jobs</span>
+                              <SelectField
+                                label="Concurrent jobs"
+                                value={replicas}
+                                onValueChange={setReplicas}
+                                disabled={busy}
+                                options={[
+                                  ...new Set([
+                                    Number(replicas),
+                                    ...Array.from(
+                                      { length: dashboardEdition.cloud ? 3 : 10 },
+                                      (_, index) => index + 1,
+                                    ),
+                                  ]),
+                                ]
+                                  .sort((a, b) => a - b)
+                                  .map((value) => ({
+                                    value: String(value),
+                                    label: `${value} ${value === 1 ? 'job' : 'jobs'} at a time`,
+                                  }))}
+                              />
+                            </div>
+                            <div className="grid gap-2 text-sm">
+                              <span>Architecture</span>
+                              <SelectField
+                                label="Architecture"
+                                value={architecture}
+                                onValueChange={setArchitecture}
+                                disabled={busy}
+                                options={[
+                                  { value: '', label: 'Automatic' },
+                                  { value: 'amd64', label: 'Linux AMD64' },
+                                  { value: 'arm64', label: 'Linux ARM64' },
+                                ]}
+                              />
+                            </div>
+                            <RunnerPlacement
+                              value={nodeName}
+                              architecture={architecture}
+                              nodes={nodes.data?.items}
+                              loading={nodes.isPending}
+                              failed={!!nodes.error}
+                              refreshing={nodes.isFetching}
+                              disabled={busy}
+                              onChange={setNodeName}
+                              onRetry={() => void nodes.refetch()}
+                            />
+                          </div>
+                          <div className="grid content-start gap-3">
+                            <div className="grid gap-2 text-sm">
+                              <span>Resources per runner</span>
+                              <SelectField
+                                label="Resource profile"
+                                value={resourcePreset}
+                                disabled={busy}
+                                onValueChange={(value) => {
+                                  setResourcePreset(value)
+                                  if (value === 'saved') setResources(original?.resources || {})
+                                  else if (value === 'defaults')
+                                    setResources(
+                                      !original && dashboardEdition.cloud
+                                        ? {
+                                            cpu_request: '500m',
+                                            cpu_limit: '2500m',
+                                            memory_request: '1Gi',
+                                            memory_limit: '4Gi',
+                                          }
+                                        : {},
+                                    )
+                                  else if (runnerResourcePresets[value])
+                                    setResources({ ...runnerResourcePresets[value] })
+                                }}
+                                options={[
+                                  ...(original
+                                    ? [{ value: 'saved', label: 'Keep current settings' }]
+                                    : []),
+                                  { value: 'defaults', label: 'Installation defaults' },
+                                  { value: 'balanced', label: 'Balanced · up to 2 CPU / 4 GiB' },
+                                  { value: 'builds', label: 'Larger builds · up to 4 CPU / 8 GiB' },
+                                  { value: 'custom', label: 'Custom settings' },
+                                ]}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <RunnerFact label="Reserved per runner">
+                                {effectiveResources.cpu_request} CPU
+                                <br />
+                                {effectiveResources.memory_request} memory
+                              </RunnerFact>
+                              <RunnerFact label="Limit per runner">
+                                {effectiveResources.cpu_limit} CPU
+                                <br />
+                                {effectiveResources.memory_limit} memory
+                              </RunnerFact>
+                            </div>
+                            <p className="field-help" role="status">
+                              {reservationLabel}
+                            </p>
+                            <RunnerResourceFields
+                              effective={effectiveResources}
+                              expanded={resourcePreset === 'custom'}
+                              disabled={busy || !effective}
+                              onChange={(key, value) => {
+                                setResourcePreset('custom')
+                                setResources((current) => ({ ...current, [key]: value }))
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <p className="field-help">
+                          More CPU reservation reduces competition with other jobs. Review checks
+                          available capacity on your selected nodes and any plan allowances.
+                        </p>
+                      </FormSection>
+                    )}
+                    {step === 2 && (
+                      <FormSection title="Set up your workflows">
+                        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                          <div className="grid content-start gap-3">
+                            <label className="grid gap-2 text-sm">
+                              Workflow labels
+                              <Input
+                                required
+                                value={labels}
+                                maxLength={520}
+                                disabled={busy}
+                                onChange={(event) => setLabels(event.target.value)}
+                              />
+                              <span className="field-help">
+                                Separate labels with commas. Use the exact labels shown in your
+                                workflow.
+                              </span>
+                            </label>
+                            <div className="grid gap-2 text-sm">
+                              <span>Maximum runner lifetime</span>
+                              <SelectField
+                                label="Maximum lifetime"
+                                value={timeout}
+                                onValueChange={setTimeout}
+                                disabled={busy}
+                                options={[...new Set([Number(timeout), 30, 60, 120, 360])]
+                                  .sort((a, b) => a - b)
+                                  .map((value) => ({
+                                    value: String(value),
+                                    label: `${value} minutes`,
+                                  }))}
+                              />
+                              <span className="field-help">
+                                Includes startup, waiting for a job and execution.
+                              </span>
+                            </div>
+                            <label className="grid gap-2 text-sm">
+                              Temporary workspace (GiB)
+                              <Input
+                                type="number"
+                                min={2}
+                                max={16}
+                                step={1}
+                                required
+                                value={workspaceSize}
+                                disabled={busy}
+                                onChange={(event) => setWorkspaceSize(event.target.value)}
+                              />
+                              <span className="field-help">
+                                2–16 GiB per runner, shared by source, tools and Docker images.
+                                Start with 8 GiB for container builds; this disk is reserved and
+                                deleted after each job.
+                              </span>
+                            </label>
+                          </div>
+                          <RunnerWorkflowGuide labels={workflowLabels} />
+                        </div>
+                      </FormSection>
+                    )}
+                  </div>
+                  {error && <RequestError error={error} />}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
+                    <Button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => (step ? move(step - 1) : onClose())}
+                    >
+                      {step ? 'Back' : 'Cancel'}
+                    </Button>
+                    <Button type="submit" variant="primary" disabled={busy || !ready}>
+                      {busy
+                        ? 'Checking capacity…'
+                        : step === 0
+                          ? 'Continue to compute'
+                          : step === 1
+                            ? 'Continue to jobs'
+                            : 'Review runner pool'}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </>
           )}
-        </>
+        </div>
       )}
-      {error && (!capacityError || plan) && <RequestError error={error} />}
+      {error && plan && <RequestError error={error} />}
     </FormPage>
   )
 }
