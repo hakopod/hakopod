@@ -15535,6 +15535,8 @@ export interface operations {
                 project: string;
                 environment: string;
                 application?: string;
+                /** @description Include Managed Actions sandbox readiness when determining whether a node is available. Omit for ordinary workload placement. */
+                runtime?: "actions";
             };
             header?: never;
             path?: never;

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -11,6 +12,47 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
+
+func TestPlacementRuntimeQueryAndScope(t *testing.T) {
+	server := &Server{Cluster: templateSecretKube(t, "arm64")}
+	principal := store.Principal{ID: "placement-runtime", Admin: true, Project: "demo", Environment: "development", Application: "app", Permissions: []string{"deployments:write"}}
+	for _, test := range []struct {
+		name, query string
+		status      int
+		available   bool
+	}{
+		{"ordinary", "project=demo&environment=development&application=app", 200, true},
+		{"actions", "project=demo&environment=development&application=app&runtime=actions", 200, false},
+		{"unknown", "project=demo&environment=development&application=app&runtime=privileged", 400, false},
+		{"repeated", "project=demo&environment=development&application=app&runtime=actions&runtime=actions", 400, false},
+		{"project-scope", "project=private&environment=development&application=app&runtime=actions", 403, false},
+		{"application-scope", "project=demo&environment=development&application=other&runtime=actions", 403, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest("GET", "/api/v1/placement/nodes?"+test.query, nil)
+			request = request.WithContext(context.WithValue(request.Context(), principalKey{}, principal))
+			response := httptest.NewRecorder()
+			server.placementNodes(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status %d: %s", response.Code, response.Body.String())
+			}
+			if test.status == 200 {
+				var body struct {
+					Items []cluster.PlacementNode `json:"items"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || len(body.Items) != 1 || body.Items[0].Architecture != "arm64" || body.Items[0].Available != test.available {
+					t.Fatal(body, err)
+				}
+				if !test.available && !strings.Contains(body.Items[0].Reason, "sandbox") {
+					t.Fatal("missing runtime reason", body.Items[0])
+				}
+			}
+			if test.status == 400 && !strings.Contains(response.Body.String(), "invalid_runtime") {
+				t.Fatal("wrong runtime validation error", response.Body.String())
+			}
+		})
+	}
+}
 
 func TestPlacementEndpointPermissions(t *testing.T) {
 	db := notificationTestDB(t)
