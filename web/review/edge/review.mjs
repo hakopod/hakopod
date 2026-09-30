@@ -99,6 +99,55 @@ async function capture(page, id, options = {}) {
   return data
 }
 
+async function recoveryControls(page, id, names) {
+  // Measure the natural error state before focus or Playwright can scroll it.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await capture(page, id, { viewport: true })
+  const viewport = page.viewportSize()
+  const state = await page.evaluate(() => {
+    const rect = (element) => {
+      const box = element.getBoundingClientRect()
+      return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom }
+    }
+    return {
+      scroll: { x: scrollX, y: scrollY },
+      notifications: [...document.querySelectorAll('.hako-toast-viewport')].map((element) => ({
+        box: rect(element), footerSpace: element.style.getPropertyValue('--toast-footer-space'),
+      })),
+      toasts: [...document.querySelectorAll('[data-error-toast]')].map(rect),
+    }
+  })
+  state.viewport = viewport
+  state.actions = []
+  for (const name of [...names, 'Dismiss notification']) {
+    const action = await page.getByRole('button', { name, exact: true }).evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const points = [
+        { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+        { x: box.x + 4, y: box.y + 4 },
+        { x: box.right - 4, y: box.bottom - 4 },
+      ].map((point) => {
+        const hit = document.elementFromPoint(point.x, point.y)
+        return { ...point, uncovered: hit === element || element.contains(hit), hit: hit ? { tag: hit.tagName, className: hit.className, text: hit.textContent?.trim().slice(0, 120) } : null }
+      })
+      return { box: { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom }, points, disabled: element.disabled }
+    })
+    state.actions.push({ name, ...action })
+  }
+  await writeFile(`${output}/diagnostics/${id}-actions.json`, `${JSON.stringify(state, null, 2)}\n`)
+  assert(state.notifications.length > 0 && state.toasts.length > 0, 'Expected the persistent error notification')
+  for (const box of [...state.notifications.map((entry) => entry.box), ...state.toasts]) {
+    assert(box.width > 0 && box.height > 0 && box.x >= -1 && box.right <= viewport.width + 1 && box.y >= -1 && box.bottom <= viewport.height + 1, 'Error notification is clipped or hidden')
+  }
+  for (const action of state.actions) {
+    const box = action.box
+    assert(!action.disabled, `Recovery action is disabled: ${action.name}`)
+    assert(box.width > 0 && box.height > 0 && box.x >= -1 && box.right <= viewport.width + 1 && box.y >= -1 && box.bottom <= viewport.height + 1, `Recovery action is outside the viewport: ${action.name}`)
+    assert(action.points.every((point) => point.uncovered), `Recovery action is covered: ${action.name}`)
+  }
+  return state
+}
+
 async function runCase(name, theme, viewport, run) {
   const id = `${name}-${theme}-${viewport.width}`
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: viewport.width < 640, isMobile: viewport.width < 640 })
@@ -281,8 +330,23 @@ try {
         await page.getByRole('button', { name: 'Apply configuration', exact: true }).click()
         await page.getByText('Synthetic fixture: the change could not be saved; your draft was not applied.', { exact: true }).waitFor()
         assert.equal(await patchCount(page), 1)
+        const recoveryNames = ['Back to editor', 'Apply configuration']
+        const failedSave = await recoveryControls(page, `${id}-failed-save-viewport`, recoveryNames)
         await capture(page, `${id}-failed-save`)
-        await page.getByRole('button', { name: 'Back to editor', exact: true }).click()
+        let scrollRecovery
+        if (size.width < 640) {
+          await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }))
+          const offscreen = await recoveryControls(page, `${id}-error-footer-offscreen`, [])
+          const footerTop = await page.locator('form .form-footer').evaluate((element) => element.getBoundingClientRect().top)
+          assert(footerTop >= size.height, 'Scroll check did not move the static mobile footer out of view')
+          assert(offscreen.notifications.every((entry) => parseFloat(entry.footerSpace) === 0), 'Offscreen footer still reserves notification space')
+          await page.evaluate(({ x, y }) => window.scrollTo({ top: y, left: x, behavior: 'instant' }), failedSave.scroll)
+          const restored = await recoveryControls(page, `${id}-error-footer-restored`, recoveryNames)
+          scrollRecovery = { offscreen, restored }
+        }
+        const back = page.getByRole('button', { name: 'Back to editor', exact: true })
+        if (size.width < 640) await back.tap()
+        else { await back.focus(); await page.keyboard.press('Enter') }
         await settled(page, page.getByRole('form', { name: 'Hakopod Edge configuration', exact: true }))
         assert.equal(await page.getByRole('spinbutton', { name: /^Requests per second/ }).first().inputValue(), '21')
         assert.equal(await labels(page, 'Allowed country codes').first().inputValue(), 'US, DE')
@@ -294,8 +358,14 @@ try {
         await page.getByRole('button', { name: 'Compare latest settings', exact: true }).waitFor()
         assert.equal(await patchCount(page), 2)
         assert(await page.getByRole('button', { name: 'Apply configuration', exact: true }).isDisabled())
+        const compare = page.getByRole('button', { name: 'Compare latest settings', exact: true })
+        const naturalCompare = await compare.boundingBox()
+        const revealComparison = naturalCompare.y < 0 || naturalCompare.y + naturalCompare.height > size.height
+        if (revealComparison) await compare.evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }))
+        const conflictRecovery = await recoveryControls(page, `${id}-conflict-viewport`, ['Compare latest settings'])
         await capture(page, `${id}-conflict`)
-        await page.getByRole('button', { name: 'Compare latest settings', exact: true }).click()
+        if (size.width < 640) await compare.tap()
+        else { await compare.focus(); await page.keyboard.press('Enter') }
         await settled(page, page.getByRole('form', { name: 'Hakopod Edge configuration', exact: true }))
         assert.equal(JSON.parse(await labels(page, 'Controller settings').inputValue())['timeout-client'], '45s')
         assert.equal(JSON.parse(await labels(page, 'Controller settings').inputValue())['timeout-server'], '55s')
@@ -322,7 +392,7 @@ try {
         const unchanged = await page.evaluate(() => window.__edgeFixture.status.observed.edge.rules[0].id)
         assert.equal(unchanged, 'private-api', 'Synthetic acceptance must not invent runtime success')
         await capture(page, `${id}-queued`)
-        return { keyboard, reviewFocus, patches: 3, reorder: true, draftPreserved: true, conflictCompared: true, noRuntimeSuccess: true }
+        return { keyboard, reviewFocus, failedSave, scrollRecovery, conflictRecovery: { ...conflictRecovery, naturalCompare, revealComparison }, patches: 3, reorder: true, draftPreserved: true, conflictCompared: true, noRuntimeSuccess: true }
       })
     }
     for (const viewport of viewports.slice(0, 2)) {

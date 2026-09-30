@@ -111,6 +111,55 @@ async function capture(page, id, options = {}) {
   return data
 }
 
+async function recoveryControls(page, id, names) {
+  // Measure the natural error state before focus or Playwright can scroll it.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await capture(page, id, { viewport: true })
+  const viewport = page.viewportSize()
+  const state = await page.evaluate(() => {
+    const rect = (element) => {
+      const box = element.getBoundingClientRect()
+      return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom }
+    }
+    return {
+      scroll: { x: scrollX, y: scrollY },
+      notifications: [...document.querySelectorAll('.hako-toast-viewport')].map((element) => ({
+        box: rect(element), footerSpace: element.style.getPropertyValue('--toast-footer-space'),
+      })),
+      toasts: [...document.querySelectorAll('[data-error-toast]')].map(rect),
+    }
+  })
+  state.viewport = viewport
+  state.actions = []
+  for (const name of [...names, 'Dismiss notification']) {
+    const action = await page.getByRole('button', { name, exact: true }).evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const points = [
+        { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+        { x: box.x + 4, y: box.y + 4 },
+        { x: box.right - 4, y: box.bottom - 4 },
+      ].map((point) => {
+        const hit = document.elementFromPoint(point.x, point.y)
+        return { ...point, uncovered: hit === element || element.contains(hit), hit: hit ? { tag: hit.tagName, className: hit.className, text: hit.textContent?.trim().slice(0, 120) } : null }
+      })
+      return { box: { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom }, points, disabled: element.disabled }
+    })
+    state.actions.push({ name, ...action })
+  }
+  await writeFile(`${output}/diagnostics/${id}-actions.json`, `${JSON.stringify(state, null, 2)}\n`)
+  assert(state.notifications.length > 0 && state.toasts.length > 0, 'Expected the persistent error notification')
+  for (const box of [...state.notifications.map((entry) => entry.box), ...state.toasts]) {
+    assert(box.width > 0 && box.height > 0 && box.x >= -1 && box.right <= viewport.width + 1 && box.y >= -1 && box.bottom <= viewport.height + 1, 'Error notification is clipped or hidden')
+  }
+  for (const action of state.actions) {
+    const box = action.box
+    assert(!action.disabled, `Recovery action is disabled: ${action.name}`)
+    assert(box.width > 0 && box.height > 0 && box.x >= -1 && box.right <= viewport.width + 1 && box.y >= -1 && box.bottom <= viewport.height + 1, `Recovery action is outside the viewport: ${action.name}`)
+    assert(action.points.every((point) => point.uncovered), `Recovery action is covered: ${action.name}`)
+  }
+  return state
+}
+
 async function runCase(name, theme, viewport, run) {
   const id = `${name}-${theme}-${viewport.width}`
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: viewport.width < 640, isMobile: viewport.width < 640 })
@@ -247,7 +296,7 @@ try {
         await page.getByRole('button', { name: 'Create reviewed issuer', exact: true }).click()
         await page.getByText(issuerFailure, { exact: true }).waitFor()
         assert.equal(await page.evaluate(() => window.__tlsFixture.creates.length), 1)
-        await capture(page, `${id}-create-failed`)
+        const createFailure = await recoveryControls(page, `${id}-create-failed`, ['Back', 'Create reviewed issuer'])
         await page.getByRole('button', { name: 'Back', exact: true }).click()
         assert.equal(await page.getByRole('textbox', { name: 'Issuer name', exact: true }).inputValue(), 'review-issuer')
         assert.equal(await page.getByRole('textbox', { name: 'ACME contact email', exact: true }).inputValue(), 'tls-review@example.invalid')
@@ -274,7 +323,7 @@ try {
         await capture(page, `${id}-tls-review`)
         await page.getByRole('button', { name: 'Deploy TLS change', exact: true }).click()
         await page.getByText(tlsFailure, { exact: true }).waitFor()
-        await capture(page, `${id}-tls-failed`)
+        const deploymentFailure = await recoveryControls(page, `${id}-tls-failed`, ['Back to configuration', 'Deploy TLS change'])
         await page.getByRole('button', { name: 'Back to configuration', exact: true }).click()
         assert((await page.getByRole('combobox', { name: 'Issuer', exact: true }).textContent()).includes(newLabel))
         await page.getByRole('button', { name: 'Review TLS change', exact: true }).click()
@@ -293,7 +342,7 @@ try {
         assert(record.submission.key, 'TLS submission omitted idempotency key')
         assert.equal(record.ready, false, 'Fixture invented certificate readiness')
         assert(!record.requests.some((request) => request.path === '/api/tls/issuers'), 'Service used installation issuer endpoint')
-        return { focus, draftPreserved: true, createdIssuerSelected: true, uploadRetained: true, noRuntimeSuccess: true }
+        return { focus, createFailure, deploymentFailure, draftPreserved: true, createdIssuerSelected: true, uploadRetained: true, noRuntimeSuccess: true }
       })
       await runCase('default-attach', theme, viewport, async (page, id) => {
         await openService(page)
@@ -319,11 +368,12 @@ try {
         await capture(page, `${id}-review`)
         await page.getByRole('button', { name: 'Deploy TLS change', exact: true }).click()
         await page.getByText(tlsFailure, { exact: true }).waitFor()
+        const uploadFailure = await recoveryControls(page, `${id}-failed`, ['Back to configuration', 'Deploy TLS change'])
         await page.getByRole('button', { name: 'Back to configuration', exact: true }).click()
         await page.getByText(`Selected: ${certificateName}`, { exact: true }).waitFor()
         const record = await acceptTLS(page)
         assert.deepEqual(record.body, { expected_revision: 7, certificate_pem: pem, private_key_pem: key })
-        return { source: 'upload', filesPreserved: true, noPrivateBytesInReview: true }
+        return { source: 'upload', uploadFailure, filesPreserved: true, noPrivateBytesInReview: true }
       })
       await runCase('application-networking', theme, viewport, async (page, id, size) => {
         await page.goto(`${appURL}?tab=networking`)
@@ -407,9 +457,10 @@ try {
       await page.evaluate(() => { window.__tlsFixture.createMode = 'forbidden' })
       await page.getByRole('button', { name: 'Create reviewed issuer', exact: true }).click()
       await page.getByText('Synthetic fixture: creating this certificate issuer was denied.', { exact: true }).waitFor()
-      await capture(page, id)
+      const deniedCreate = await recoveryControls(page, id, ['Back', 'Create reviewed issuer'])
       await page.getByRole('button', { name: 'Back', exact: true }).click()
       assert.equal(await page.getByRole('textbox', { name: 'Issuer name', exact: true }).inputValue(), 'review-issuer')
+      return { deniedCreate, draftPreserved: true }
     })
     await runCase('operator-create', theme, sizes[0], async (page, id) => {
       await page.goto(`${base}/infrastructure?tab=tls&fixture=operator`)
