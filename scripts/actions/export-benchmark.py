@@ -54,6 +54,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -72,6 +73,7 @@ MAX_FIXTURE_BYTES = 2 * 1024 * MIB
 MAX_TAR_BYTES = 128 * MIB
 PREFIX = 'HAKOPOD_EXPORT_BENCHMARK '
 CONTEXT = 'k3d-hakopod-dev'
+INTEGRATION_DIRECTORY = Path('/home/runner/_work/buildkit-integration')
 
 
 def buildkit_selection(image=BUILDKIT):
@@ -100,6 +102,32 @@ def builder_image_identity(selection, container, image, version, architecture):
             'Builder overlay namespace differs from the selected image')
     return {'image': selection['reference'], 'image_id': image_id, 'version': version.strip(),
             'architecture': architecture, 'managed_userxattr': selection['kind'] == 'candidate'}
+
+
+def wait_for_integration(selection, helper_sha256, architecture):
+    require(selection['kind'] == 'candidate' and re.fullmatch(r'[a-f0-9]{64}', helper_sha256 or ''),
+            'Native tests require a candidate and an exact helper checksum')
+    root = INTEGRATION_DIRECTORY
+    require(root.parent.resolve(strict=True) == root.parent, 'Integration workspace parent contains a symlink')
+    root.mkdir(mode=0o700, exist_ok=False)
+    deadline = time.monotonic() + 120
+    while not (root / 'ready').exists():
+        require(time.monotonic() < deadline, 'Native test artifact staging timed out')
+        time.sleep(0.25)
+    require(root.resolve(strict=True) == root and not root.is_symlink(), 'Integration workspace changed')
+    values = {}
+    for name, maximum in [('ready', 16), ('buildkit-integration.py', 128 * 1024)]:
+        fd = os.open(root / name, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, 'rb') as source:
+            require(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'Integration helper is not a regular file')
+            values[name] = source.read(maximum + 1)
+        require(0 < len(values[name]) <= maximum, 'Integration helper exceeds its bound')
+    require(values['ready'] == b'ready\n' and hashlib.sha256(values['buildkit-integration.py']).hexdigest() == helper_sha256,
+            'Native test helper identity mismatch')
+    module = {'__name__': 'managed_buildkit_integration'}
+    exec(compile(values['buildkit-integration.py'], 'buildkit-integration.py', 'exec'), module)
+    bundle = module['load_bundle'](root, selection['reference'], architecture, staged=True)
+    return {'module': module, 'bundle': bundle, 'helper_bytes': len(values['buildkit-integration.py']), 'helper_sha256': helper_sha256}
 
 
 def benchmark_environment(source, private_home):
@@ -276,8 +304,9 @@ def verify_files(rootfs, expected, context):
 
 
 class Benchmark:
-    def __init__(self, force, buildkit_image=BUILDKIT):
+    def __init__(self, force, buildkit_image=BUILDKIT, integration=None):
         self.buildkit = buildkit_selection(buildkit_image)
+        self.integration = integration
         self.started = time.monotonic()
         self.deadline = self.started + 520
         self.force = force
@@ -306,6 +335,10 @@ class Benchmark:
                                            'Extended attributes are not checked; this benchmark cannot qualify an overlay-diff patch.',
                                            'Sequential single-sandbox measurements are not fleet-scale evidence.'],
                        'phases': [], 'variants': [], 'fixture_storage_samples': []}
+        if integration:
+            self.report['integration_artifacts'] = {'source': integration['bundle']['source'],
+                'files': integration['bundle']['files'], 'helper_sha256': integration['helper_sha256'],
+                'staging_limit_seconds': 120}
 
     def run(self, args, timeout=120, maximum=8 * MIB, progress=False, archive=False):
         remaining = min(timeout, self.deadline - time.monotonic())
@@ -582,9 +615,12 @@ COPY marker.txt /fixture/marker.txt
             value = self.run(['run', '--rm', '--network', 'none', '--read-only', '-v', f'{volume}:/state:ro', BUSYBOX, 'du', '-sk', '/state'])
             volumes[volume] = int(value.split()[0]) * 1024
         pulled = sum(int(self.run(['image', 'inspect', '--format', '{{.Size}}', image])) for image in sorted(self.images))
-        total += sum(volumes.values()) + pulled
+        staged = self.integration['bundle']['total_bytes'] + self.integration['helper_bytes'] if self.integration else 0
+        total += sum(volumes.values()) + pulled + staged
         sample = {'estimated_fixture_bytes': total, 'owned_volume_bytes': volumes, 'pulled_image_size_sum': pulled,
                   'temporary_output_reserve_bytes': MAX_TAR_BYTES}
+        if self.integration:
+            sample['staged_integration_bytes'] = staged
         self.report['fixture_storage_samples'].append(sample)
         require(total < MAX_FIXTURE_BYTES, 'Fixture storage estimate exceeded its 2 GiB bound')
         return sample
@@ -598,6 +634,8 @@ COPY marker.txt /fixture/marker.txt
             result = {'name': variant, 'builder': builder, 'status': 'running'}
             self.report['variants'].append(result)
             try:
+                if self.integration and variant == 'gzip-default':
+                    self.phase('candidate-kernel-integration', lambda: self.integration['module']['run_kernel_tests'](self, builder, self.integration['bundle']))
                 for temperature in ['cold', 'warm']:
                     key = variant + '-' + temperature
                     measured = self.phase(key + '-build-and-push', lambda: self.build(builder['name'], variant, temperature))
@@ -652,9 +690,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--force-overlay-diff', action='store_true', help='Diagnostic builder env only; unsupported paths fail without fallback')
     parser.add_argument('--buildkit-image', default=BUILDKIT, help='Exact stock pin or digest-pinned ghcr.io/hakopod/buildkit:v0.32.2-hakopod-<revision> candidate')
+    parser.add_argument('--integration-tests', action='store_true', help='Wait for explicitly staged native candidate test artifacts')
+    parser.add_argument('--integration-helper-sha256', default='')
     args = parser.parse_args()
     require(os.environ.get('HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT') == CONTEXT, 'Run only through the named development-cluster harness')
-    benchmark = Benchmark(args.force_overlay_diff, args.buildkit_image)
+    selected = buildkit_selection(args.buildkit_image)
+    architecture = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}.get(platform.machine())
+    require(args.integration_tests or not args.integration_helper_sha256, 'Native helper checksum requires the explicit test option')
+    integration = wait_for_integration(selected, args.integration_helper_sha256, architecture) if args.integration_tests else None
+    benchmark = Benchmark(args.force_overlay_diff, args.buildkit_image, integration)
     failure = None
     def deadline(_signal, _frame):
         raise TimeoutError('Export benchmark wall-clock deadline exceeded')

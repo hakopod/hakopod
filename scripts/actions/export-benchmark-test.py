@@ -11,8 +11,10 @@ import io
 import json
 from pathlib import Path
 import tarfile
+import tempfile
 import unittest
 import urllib.request
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('export_benchmark', Path(__file__).with_name('export-benchmark.py'))
 benchmark = importlib.util.module_from_spec(spec)
@@ -84,6 +86,25 @@ class ExportProofTests(unittest.TestCase):
                     benchmark.builder_image_identity(selected, observed, metadata, version, 'amd64')
             with self.assertRaises(RuntimeError):
                 benchmark.builder_image_identity(selected, container, image, version.replace('v0.32.2', 'v0.32.20'), 'amd64')
+
+    def test_native_artifact_wait_is_candidate_only_and_bounded(self):
+        with self.assertRaisesRegex(RuntimeError, 'candidate'):
+            benchmark.wait_for_integration(benchmark.buildkit_selection(), 'c' * 64, 'amd64')
+        candidate = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64
+        with tempfile.TemporaryDirectory() as temp, patch.object(benchmark, 'INTEGRATION_DIRECTORY', Path(temp) / 'staged'), \
+                patch.object(benchmark.time, 'monotonic', side_effect=[0, 121]), self.assertRaisesRegex(RuntimeError, 'timed out'):
+            benchmark.wait_for_integration(benchmark.buildkit_selection(candidate), 'c' * 64, 'amd64')
+
+    def test_staged_helper_is_not_executed_without_matching_checksum(self):
+        candidate = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'staged'
+            def staged(_seconds):
+                (root / 'buildkit-integration.py').write_text("raise AssertionError('unverified helper executed')")
+                (root / 'ready').write_bytes(b'ready\n')
+            with patch.object(benchmark, 'INTEGRATION_DIRECTORY', root), patch.object(benchmark.time, 'sleep', side_effect=staged), \
+                    self.assertRaisesRegex(RuntimeError, 'helper identity'):
+                benchmark.wait_for_integration(benchmark.buildkit_selection(candidate), 'c' * 64, 'amd64')
 
     def test_child_environment_does_not_inherit_credentials_or_proxy_settings(self):
         result = benchmark.benchmark_environment({'PATH': '/usr/bin', 'HOME': '/home/runner', 'LANG': 'C',
@@ -181,6 +202,7 @@ class ExportProofTests(unittest.TestCase):
 
     def test_registry_failure_keeps_partial_measurement_without_comparison(self):
         runner = benchmark.Benchmark.__new__(benchmark.Benchmark)
+        runner.integration = None
         runner.report = {'phases': [], 'variants': []}
         runner.boundary = runner.fixture = runner.registry = lambda: {}
         runner.builder = lambda variant: {'name': 'fixture-' + variant}
