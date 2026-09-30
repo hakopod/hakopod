@@ -28,7 +28,7 @@ import (
 
 const actionsExportStockBuildkit = "docker.io/moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8"
 
-func actionsExportBenchmarkArguments(force bool, image string) (string, error) {
+func actionsExportBenchmarkArguments(force bool, image, integrationSHA string) (string, error) {
 	args := []string{"export-benchmark.py"}
 	if force {
 		args = append(args, "--force-overlay-diff")
@@ -40,6 +40,12 @@ func actionsExportBenchmarkArguments(force bool, image string) (string, error) {
 		}
 		args = append(args, "--buildkit-image", image)
 	}
+	if integrationSHA != "" {
+		if !strings.HasPrefix(image, "ghcr.io/hakopod/buildkit:") || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(integrationSHA) {
+			return "", fmt.Errorf("native tests require a pinned candidate and exact helper checksum")
+		}
+		args = append(args, "--integration-tests", "--integration-helper-sha256", integrationSHA)
+	}
 	data, err := json.Marshal(args)
 	return string(data), err
 }
@@ -48,7 +54,7 @@ func TestActionsExportBenchmarkArguments(t *testing.T) {
 	candidate := "ghcr.io/hakopod/buildkit:v0.32.2-hakopod-" + strings.Repeat("a", 40) + "@sha256:" + strings.Repeat("b", 64)
 	for _, image := range []string{"", actionsExportStockBuildkit, candidate} {
 		for _, force := range []bool{false, true} {
-			encoded, err := actionsExportBenchmarkArguments(force, image)
+			encoded, err := actionsExportBenchmarkArguments(force, image, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,9 +83,22 @@ func TestActionsExportBenchmarkArguments(t *testing.T) {
 		strings.Replace(candidate, strings.Repeat("b", 64), strings.Repeat("B", 64), 1),
 		"docker.io/moby/buildkit:v0.32.2@sha256:" + strings.Repeat("b", 64),
 	} {
-		if _, err := actionsExportBenchmarkArguments(false, image); err == nil {
+		if _, err := actionsExportBenchmarkArguments(false, image, ""); err == nil {
 			t.Fatalf("unapproved BuildKit image was accepted: %q", image)
 		}
+	}
+	checksum := strings.Repeat("c", 64)
+	encoded, err := actionsExportBenchmarkArguments(false, candidate, checksum)
+	if err != nil || !strings.Contains(encoded, `"--integration-tests","--integration-helper-sha256","`+checksum+`"`) {
+		t.Fatalf("native test selection was not preserved: %v", err)
+	}
+	for _, image := range []string{"", actionsExportStockBuildkit} {
+		if _, err := actionsExportBenchmarkArguments(false, image, checksum); err == nil {
+			t.Fatal("native tests accepted a stock image")
+		}
+	}
+	if _, err := actionsExportBenchmarkArguments(false, candidate, "not-a-checksum"); err == nil {
+		t.Fatal("native tests accepted an invalid helper checksum")
 	}
 }
 
@@ -89,7 +108,15 @@ func TestActionsExportBenchmarkArguments(t *testing.T) {
 // go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
 // This uses a fake Kubernetes client and never reads a provider credential.
 func TestActionsExportBenchmarkFixture(t *testing.T) {
-	arguments, err := actionsExportBenchmarkArguments(os.Getenv("HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF") == "1", os.Getenv("HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE"))
+	helperSHA := ""
+	if os.Getenv("HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS") == "1" {
+		helper, err := os.ReadFile("../../scripts/actions/buildkit-integration.py")
+		if err != nil || len(helper) == 0 || len(helper) > 128*1024 {
+			t.Fatalf("native test helper exceeds its source bound: %v", err)
+		}
+		helperSHA = fmt.Sprintf("%x", sha256.Sum256(helper))
+	}
+	arguments, err := actionsExportBenchmarkArguments(os.Getenv("HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF") == "1", os.Getenv("HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE"), helperSHA)
 	if err != nil {
 		t.Fatal(err)
 	}

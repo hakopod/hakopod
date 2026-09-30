@@ -55,6 +55,61 @@ def export_buildkit_selection(image=''):
     return module.buildkit_selection(image)
 
 
+def export_integration_bundle(directory, image, architecture, run_id=None):
+    path = ROOT / 'scripts/actions/buildkit-integration.py'
+    spec = importlib.util.spec_from_file_location('native_buildkit_integration', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    helper = module.file_evidence(path, 128 * 1024)
+    bundle = module.load_bundle(directory, image, architecture, run_id)
+    return {'module': module, 'bundle': bundle, 'helper': helper, 'helper_path': str(path), 'image': image,
+            'architecture': architecture, 'run_id': run_id}
+
+
+def stage_export_integration(call, namespace, integration):
+    """Copy only verified artifacts into the already-running private workspace."""
+    started = time.monotonic()
+    module, bundle = integration['module'], integration['bundle']
+    ready = f'''from pathlib import Path
+import time
+root = Path({module.DESTINATION!r})
+deadline = time.monotonic() + 10
+while not root.is_dir():
+    assert time.monotonic() < deadline, 'native test workspace was not created'
+    time.sleep(0.1)
+assert root.resolve(strict=True) == root and not (root / 'ready').exists()
+'''
+    call(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'runner', '--', 'python3', '-c', ready], timeout=15)
+    for name in (*module.FILES, 'buildkit-integration.py'):
+        remaining = 110 - (time.monotonic() - started)
+        assert remaining > 0, 'native test artifact staging exceeded its bound'
+        path = integration['helper_path'] if name == 'buildkit-integration.py' else str(Path(bundle['directory']) / name)
+        call(['cp', path, f'{namespace}/actions-runtime-fixture:{module.DESTINATION}/{name}', '-c', 'runner'], timeout=min(35, remaining))
+    code = f'''import hashlib, os
+from pathlib import Path
+root = Path({module.DESTINATION!r})
+assert root.resolve(strict=True) == root
+fd = os.open(root / 'buildkit-integration.py', os.O_RDONLY | os.O_NOFOLLOW)
+with os.fdopen(fd, 'rb') as source:
+    data = source.read(131073)
+assert len(data) <= 131072 and hashlib.sha256(data).hexdigest() == {integration['helper']['sha256']!r}
+module = {{'__name__': 'native_buildkit_staging'}}
+exec(compile(data, 'buildkit-integration.py', 'exec'), module)
+module['load_bundle'](root, {integration['image']!r}, {integration['architecture']!r}, {integration['run_id']!r}, staged=True, ready=False)
+fd = os.open(root / 'ready.pending', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, 'wb') as output:
+    output.write(b'ready\\n')
+    output.flush()
+    os.fsync(output.fileno())
+os.rename(root / 'ready.pending', root / 'ready')
+'''
+    remaining = 110 - (time.monotonic() - started)
+    assert remaining > 0, 'native test artifact staging exceeded its bound'
+    call(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'runner', '--', 'python3', '-c', code], timeout=min(30, remaining))
+    return {'source': bundle['source'], 'files': bundle['files'], 'helper': integration['helper'],
+            'duration_seconds': round(time.monotonic() - started, 3)}
+
+
 if EXPORT_BENCHMARK:
     REPORT['scenario'] = 'opt-in-export-benchmark'
     REPORT['limits'].update(workspace_gib=4, concurrent_build_requests=1, buildkit_max_parallelism=1)
@@ -281,13 +336,17 @@ def export_fixture(fixture):
     return namespace
 
 
-def run_export_benchmark(fixture):
+def run_export_benchmark(fixture, integration=None):
     selected = export_buildkit_selection(os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE', ''))
     REPORT['export_buildkit_selection'] = selected
     namespace = export_fixture(fixture)
     NAMESPACES.add(namespace)
     started = time.monotonic()
     apply(fixture)
+    if integration:
+        wait_for(namespace, lambda value: any(item['name'] == 'runner' and item.get('state', {}).get('running')
+            for item in value.get('status', {}).get('containerStatuses', [])), timeout=360)
+        REPORT['native_test_staging'] = stage_export_integration(kube, namespace, integration)
     pod = wait_for(namespace, lambda value: value.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=900)
     events = logs(namespace, 'export-benchmark', prefix='HAKOPOD_EXPORT_BENCHMARK ')
     REPORT['export_benchmark_events'] = events
@@ -315,6 +374,8 @@ def run_export_benchmark(fixture):
     assert saved[0].get('force_overlay_diff') == (os.environ.get('HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF') == '1'), 'forced-diff diagnostic did not match the explicit selection'
     assert any(event.get('phase') == 'complete' and event.get('status') == 'passed' for event in events), 'benchmark completion was not observed'
     assert len(saved[0].get('variants', [])) == 2 and saved[0].get('comparison'), 'benchmark comparison is incomplete'
+    if integration:
+        assert saved[0].get('kernel_integration', {}).get('status') == 'passed', 'native kernel verification did not pass'
     record('opt-in-export-benchmark', started, report='export-benchmark-report.json')
     delete_pod(namespace, credential_config=False)
 
@@ -326,6 +387,12 @@ def main():
     if os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'):
         assert EXPORT_BENCHMARK, 'select the export benchmark when selecting a BuildKit image'
         export_buildkit_selection(os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'])
+    integration = None
+    if os.environ.get('HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS') == '1':
+        assert EXPORT_BENCHMARK, 'native tests require the explicit export benchmark'
+        architecture = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine())
+        integration = export_integration_bundle(os.environ['HAKOPOD_ACTIONS_EXPORT_TESTS_DIR'],
+            os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'], architecture, os.environ.get('HAKOPOD_ACTIONS_EXPORT_TEST_RUN') or None)
     label = command(['docker', 'inspect', '--format', '{{index .Config.Labels "k3d.cluster"}}', NODE]).stdout.strip()
     assert label == 'hakopod-dev', 'unexpected development container'
     OUTPUT.mkdir(parents=True, exist_ok=False)
@@ -347,7 +414,7 @@ def main():
     RUNTIME_CREATED = True
     kube(['label', 'node', NODE, 'hakopod.io/actions-runtime=ready'])
     if EXPORT_BENCHMARK:
-        run_export_benchmark(fixtures['export-benchmark'])
+        run_export_benchmark(fixtures['export-benchmark'], integration)
         REPORT['status'] = 'passed'
         return
     workload_ns = next(item['metadata']['namespace'] for item in fixtures['workload']['items'] if item['kind'] == 'Pod')

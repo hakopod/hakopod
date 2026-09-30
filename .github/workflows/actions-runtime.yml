@@ -38,6 +38,10 @@ on:
         description: Diagnose the optimized overlay path without fallback (enables export benchmark)
         type: boolean
         default: false
+      export_buildkit_test_run:
+        description: Optional candidate build run ID supplying matching native kernel test artifacts
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -54,22 +58,50 @@ jobs:
       packages: write
   runtime:
     if: ${{ !inputs.buildkit_candidate }}
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
-      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff) && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff || inputs.export_buildkit_test_run != '') && '1' || '0' }}
       HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE: ${{ inputs.export_buildkit_image }}
       HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF: ${{ inputs.export_force_overlay_diff && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS: ${{ inputs.export_buildkit_test_run != '' && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_TEST_RUN: ${{ inputs.export_buildkit_test_run }}
+      HAKOPOD_ACTIONS_EXPORT_TESTS_DIR: ${{ github.workspace }}/.local/buildkit-tests/${{ matrix.arch }}
+      ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: git submodule update --init templates
+      - name: Download explicitly selected native test artifacts
+        if: inputs.export_buildkit_test_run != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: buildkit-tests-${{ matrix.arch }}
+          path: .local/buildkit-test-download
+          run-id: ${{ inputs.export_buildkit_test_run }}
+          github-token: ${{ github.token }}
+      - name: Verify native test source, architecture and checksums
+        if: inputs.export_buildkit_test_run != ''
+        run: |
+          mkdir -p .local/buildkit-tests
+          python3 scripts/actions/buildkit-integration.py \
+            --archive ".local/buildkit-test-download/buildkit-tests-${ARCH}.tar.gz" \
+            --destination "$HAKOPOD_ACTIONS_EXPORT_TESTS_DIR" \
+            --image "$HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE" \
+            --architecture "$ARCH" --run-id "$HAKOPOD_ACTIONS_EXPORT_TEST_RUN"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
