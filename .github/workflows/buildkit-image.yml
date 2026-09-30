@@ -133,11 +133,21 @@ jobs:
           tar -czf "buildkit-tests-${ARCH}.tar.gz" -C "buildkit-tests/${ARCH}" \
             overlay.test buildkitd.test source.json
           test "$(stat -c '%s' "buildkit-tests-${ARCH}.tar.gz")" -le 536870912
+      - name: Verify one runtime layer and preserved upstream files and configuration
+        run: |
+          docker pull --platform "linux/${ARCH}" \
+            docker.io/moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+          python3 images/buildkit/verify-runtime.py \
+            --candidate "${IMAGE_REPOSITORY}:${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ARCH}" \
+            --architecture "$ARCH" --revision "$GITHUB_SHA" \
+            --output "buildkit-${ARCH}-runtime-identity.json"
       - name: Retain candidate source identity
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: buildkit-source-${{ matrix.arch }}
-          path: buildkit-${{ matrix.arch }}-source.json
+          path: |
+            buildkit-${{ matrix.arch }}-source.json
+            buildkit-${{ matrix.arch }}-runtime-identity.json
           if-no-files-found: error
           overwrite: true
           retention-days: 14
