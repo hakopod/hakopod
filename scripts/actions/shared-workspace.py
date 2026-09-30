@@ -58,8 +58,14 @@ def storage_driver(environment):
     return environment.get(DRIVER_FLAG, 'vfs')
 
 
-def annotations(workspace_gib):
-    require(type(workspace_gib) is int and workspace_gib in (2, 4, 8), 'Unexpected development workspace size')
+def workspace_profile(profile):
+    require(profile in ('runtime', 'representative-16'), 'Unknown development shared workspace profile')
+    return ('actions-representative', (16,)) if profile == 'representative-16' else ('actions-runtime-fixture', (2, 4, 8))
+
+
+def annotations(workspace_gib, profile='runtime'):
+    _, sizes = workspace_profile(profile)
+    require(type(workspace_gib) is int and workspace_gib in sizes, 'Unexpected development workspace size')
     return dict(zip(KEYS, ['bind', 'pod', f'rw,rprivate,mode=0770,uid=1001,gid=1001,size={workspace_gib + 1}g']))
 
 
@@ -96,11 +102,12 @@ def verify_runtime_profile(text):
     return expected['runsc_config']
 
 
-def pod_identity(pod, driver='vfs'):
+def pod_identity(pod, driver='vfs', profile='runtime'):
+    name, allowed_sizes = workspace_profile(profile)
     metadata, spec = pod.get('metadata', {}), pod.get('spec', {})
     uid, namespace = metadata.get('uid', ''), metadata.get('namespace', '')
     require(re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', uid) is not None and
-            re.fullmatch(r'hp-[a-z0-9-]{1,59}', namespace) is not None and metadata.get('name') == 'actions-runtime-fixture',
+            re.fullmatch(r'hp-[a-z0-9-]{1,59}', namespace) is not None and metadata.get('name') == name,
             'Shared workspace requires an owned development Pod identity')
     require(spec.get('nodeName') == NODE and spec.get('runtimeClassName') == 'hakopod-actions',
             'Shared workspace escaped the named development node or runtime')
@@ -116,19 +123,38 @@ def pod_identity(pod, driver='vfs'):
     volumes = [volume for volume in spec.get('volumes', []) if volume.get('name') == 'runner']
     require(len(volumes) == 1 and set(volumes[0]) == {'name', 'emptyDir'}, 'Shared workspace must remain an EmptyDir')
     volume = volumes[0]['emptyDir']
-    sizes = {'2Gi': 2, '4Gi': 4, '8Gi': 8}
+    sizes = {f'{size}Gi': size for size in allowed_sizes}
     require(volume.get('medium', '') == '' and volume.get('sizeLimit') in sizes, 'Shared workspace disk limit changed')
     size = sizes[volume['sizeLimit']]
     actual = {key: value for key, value in metadata.get('annotations', {}).items() if key.startswith('dev.gvisor.')}
-    require(actual == annotations(size), 'Shared workspace Pod has unexpected runtime annotations')
+    require(actual == annotations(size, profile), 'Shared workspace Pod has unexpected runtime annotations')
     containers = spec.get('containers', [])
     require(len(containers) == 1 and containers[0].get('name') == 'runner' and
             containers[0].get('resources', {}).get('limits', {}).get('ephemeral-storage') == f'{size + 1}Gi',
             'Shared workspace runner storage limit changed')
+    if profile == 'representative-16':
+        require(driver == 'overlay2' and metadata.get('labels', {}).get('hakopod.io/development-fixture') == 'actions-representative-build' and
+                spec.get('nodeSelector') == {'kubernetes.io/arch': 'arm64', 'hakopod.io/actions-runtime': 'ready'},
+                'Representative shared workspace requires its exact development label, ARM64 node, and overlay2')
+        # These are the product's original 2 CPU / 6 GiB slot splits; the
+        # RuntimeClass reserves the remaining 100m CPU and 512 MiB memory.
+        expected = {'prepare': ('1900m', '5632Mi', '16Gi', '17Gi'),
+                    'docker': ('1425m', '4224Mi', '256Mi', '2Gi'),
+                    'runner': ('475m', '1408Mi', '16Gi', '17Gi')}
+        observed = [*spec.get('initContainers', []), *containers]
+        require(len(observed) == 3 and [item.get('name') for item in observed] == list(expected) and len(spec.get('volumes', [])) == 1,
+                'Representative shared workspace changed its product container or volume inventory')
+        for item in observed:
+            cpu, memory, storage_request, storage_limit = expected[item['name']]
+            resources = {'requests': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': storage_request},
+                         'limits': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': storage_limit}}
+            require(item.get('resources') == resources, 'Representative shared workspace changed its original resource budget')
+        require(spec.get('overhead') == {'cpu': '100m', 'memory': '512Mi'},
+                'Representative shared workspace runtime overhead differs from the original resource budget')
     statuses = [status for status in pod.get('status', {}).get('containerStatuses', []) if status.get('name') == 'runner']
     require(len(statuses) == 1 and re.fullmatch(r'containerd://[a-f0-9]{64}', statuses[0].get('containerID', '')),
             'Shared workspace runner container identity is missing')
-    return {'uid': uid, 'namespace': namespace, 'workspace_gib': size, 'storage_driver': driver,
+    return {'uid': uid, 'namespace': namespace, 'name': name, 'profile': profile, 'workspace_gib': size, 'storage_driver': driver,
             'source': f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner',
             'container_id': statuses[0]['containerID'].removeprefix('containerd://')}
 
@@ -223,7 +249,7 @@ def verify_sandbox(value, identity, sandbox_id, observation=None):
     require(len(items) == 1 and items[0].get('id') == sandbox_id and items[0].get('state') == 'SANDBOX_READY' and
             items[0].get('metadata', {}).get('uid') == identity['uid'] and
             items[0].get('metadata', {}).get('namespace') == identity['namespace'] and
-            items[0].get('metadata', {}).get('name') == 'actions-runtime-fixture',
+            items[0].get('metadata', {}).get('name') == identity['name'],
             'Filestore sandbox does not belong to the observed development Pod')
 
 
@@ -263,12 +289,12 @@ def volume_accounting(stats, identity, observation=None):
     inventory = stats.get('pods', [])
     require(all(isinstance(pod, dict) and isinstance(pod.get('podRef', {}), dict) for pod in inventory), 'Kubelet Pod reference is malformed')
     pods = [pod for pod in inventory if pod.get('podRef', {}).get('uid') == identity['uid'] and
-            pod.get('podRef', {}).get('namespace') == identity['namespace'] and pod.get('podRef', {}).get('name') == 'actions-runtime-fixture']
+            pod.get('podRef', {}).get('namespace') == identity['namespace'] and pod.get('podRef', {}).get('name') == identity['name']]
     if observation is not None:
         observation.update(summary_pod_count=len(inventory), matched_pod_count=len(pods),
             same_name_pod_uids=[str(pod.get('podRef', {}).get('uid', ''))[:64] for pod in inventory
                 if pod.get('podRef', {}).get('namespace') == identity['namespace'] and
-                pod.get('podRef', {}).get('name') == 'actions-runtime-fixture'][:4])
+                pod.get('podRef', {}).get('name') == identity['name']][:4])
     require(len(pods) <= 1, 'Kubelet returned duplicate workspace observations')
     listed = pods[0].get('volume', []) if pods else []
     if observation is not None:
@@ -357,11 +383,13 @@ print(json.dumps({'runner_inode': (root / 'runner').stat().st_ino, 'capability_i
 
 class Observer:
     """Bounded host checks; callers supply their named-cluster command wrappers."""
-    def __init__(self, command, kube, node, report, driver='vfs'):
+    def __init__(self, command, kube, node, report, driver='vfs', profile='runtime'):
+        workspace_profile(profile)
         require(node == NODE, 'Shared workspace observer requires the named development node')
         require(driver in ('vfs', 'overlay2'), 'Unexpected development Docker storage driver')
+        require(profile != 'representative-16' or driver == 'overlay2', 'Representative shared workspace requires overlay2')
         self.command, self.kube, self.node, self.report = command, kube, node, report
-        self.driver = driver
+        self.driver, self.profile = driver, profile
         self.identities = {}
         self.removed_uids = set()
         self.disk_monitor = None
@@ -373,7 +401,7 @@ class Observer:
         return min(60, remaining)
 
     def runner(self, identity, code):
-        result = self.kube(['-n', identity['namespace'], 'exec', 'actions-runtime-fixture', '-c', 'runner', '--',
+        result = self.kube(['-n', identity['namespace'], 'exec', identity['name'], '-c', 'runner', '--',
             'python3', '-c', code], timeout=self._timeout())
         return result.stdout
 
@@ -533,7 +561,7 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         raise RuntimeError('Kubelet runner volume usage did not match physical filestore allocation')
 
     def daemon_sharing(self, identity, inodes):
-        output = self.kube(['-n', identity['namespace'], 'exec', 'actions-runtime-fixture', '-c', 'docker', '--', 'sh', '-c',
+        output = self.kube(['-n', identity['namespace'], 'exec', identity['name'], '-c', 'docker', '--', 'sh', '-c',
             'test "$(cat /home/runner/.hakopod-shared-prepare)" = shared-workspace-v1 && '
             'test "$(cat /home/runner/.hakopod-shared-proof/runner)" = runner-to-docker && '
             'stat -c "%i" /home/runner/.hakopod-shared-proof/runner /home/runner/.hakopod-shared-proof/capability'],
@@ -542,12 +570,14 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
                 'Docker sidecar does not share the runner workspace inodes')
 
     def prepare(self, pod, restart, full=True, disk=False):
+        require(self.profile != 'representative-16' or full is True and disk is False,
+                'Representative shared workspace requires the full accounting and restart checks')
         self.deadline = time.monotonic() + (FULL_PREPARE_SECONDS if full else 210)
-        identity = pod_identity(pod, self.driver)
+        identity = pod_identity(pod, self.driver, self.profile)
         require(identity['uid'] not in self.identities and len(self.identities) < 3, 'Repeated or excessive shared workspace Pods')
         inspected = bounded_json(self.host(['/bin/crictl', 'inspect', '-o', 'json', identity['container_id']]))
         identity['sandbox_id'] = verify_container_source(inspected, identity)
-        sandboxes = bounded_json(self.host(['/bin/crictl', 'pods', '--name', 'actions-runtime-fixture', '--namespace', identity['namespace'], '-o', 'json']))
+        sandboxes = bounded_json(self.host(['/bin/crictl', 'pods', '--name', identity['name'], '--namespace', identity['namespace'], '-o', 'json']))
         selection = {}
         self.report.setdefault('sandbox_selections', []).append(selection)
         verify_sandbox(sandboxes, identity, identity['sandbox_id'], selection)
@@ -556,6 +586,8 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         evidence = {'identity': identity, 'mount': mount, 'status': 'running', 'full_probe': full}
         self.report.setdefault('pods', []).append(evidence)
         evidence['docker'] = verify_docker(bounded_json(self.runner(identity, DOCKER_PROBE)), self.driver, empty=True)
+        require(self.profile != 'representative-16' or evidence['docker']['architecture'] == 'arm64',
+                'Representative shared workspace requires a native ARM64 runner and daemon')
         if not full:
             # Disk and replacement Pods retain their original five-minute
             # deadline and empty-daemon assertions. They never pull probe images.

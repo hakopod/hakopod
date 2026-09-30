@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -13,6 +14,29 @@ import (
 // This experiment changes only development fixtures, never actionsPod or the
 // installed runtime. The shim discovers the source from the owned Pod UID.
 func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag, driver string) error {
+	return actionsSharedWorkspaceProfile(pod, workspaceGiB, flag, driver, "runtime")
+}
+
+// The representative profile keeps the customer's original resource budget.
+// It is separate from the runtime suite, whose disk-eviction fixture stays 2 GiB.
+func actionsRepresentativeSharedWorkspaceFixture(pod *corev1.Pod, selection string) error {
+	switch selection {
+	case "", "baseline-vfs":
+		return nil
+	case "shared-overlay2-16":
+		return actionsSharedWorkspaceProfile(pod, 16, "1", "overlay2", "representative-16")
+	default:
+		return fmt.Errorf("representative storage must be baseline-vfs or shared-overlay2-16")
+	}
+}
+
+func actionsSharedWorkspaceProfile(pod *corev1.Pod, workspaceGiB int64, flag, driver, profile string) error {
+	if profile != "runtime" && profile != "representative-16" {
+		return fmt.Errorf("unknown development shared workspace profile")
+	}
+	if profile == "representative-16" && (flag != "1" || driver != "overlay2") {
+		return fmt.Errorf("representative shared workspace requires explicit overlay2 selection")
+	}
 	if flag != "" && flag != "0" && flag != "1" {
 		return fmt.Errorf("shared workspace flag must be 0 or 1")
 	}
@@ -28,8 +52,21 @@ func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag, dr
 	if flag != "1" {
 		return nil
 	}
-	if workspaceGiB != 2 && workspaceGiB != 4 && workspaceGiB != 8 {
-		return fmt.Errorf("shared workspace is limited to the existing development fixture sizes")
+	if profile == "runtime" {
+		if workspaceGiB != 2 && workspaceGiB != 4 && workspaceGiB != 8 {
+			return fmt.Errorf("shared workspace is limited to the existing development fixture sizes")
+		}
+	} else {
+		if workspaceGiB != 16 || driver != "overlay2" || pod.Name != "actions-representative" || pod.Labels["hakopod.io/development-fixture"] != "actions-representative-build" || !reflect.DeepEqual(pod.Spec.NodeSelector, map[string]string{"kubernetes.io/arch": "arm64"}) {
+			return fmt.Errorf("representative shared workspace requires its exact development identity and 16 GiB overlay2 profile")
+		}
+		budget := spec.Service{Resources: &spec.Resources{CPURequest: "2", CPULimit: "2", MemoryRequest: "6Gi", MemoryLimit: "6Gi"}, Actions: &spec.Actions{WorkspaceSizeGiB: 16}}
+		if len(pod.Spec.InitContainers) != 2 || len(pod.Spec.Containers) != 1 || len(pod.Spec.Volumes) != 1 ||
+			!reflect.DeepEqual(pod.Spec.InitContainers[0].Resources, actionsResources(budget, 4)) ||
+			!reflect.DeepEqual(pod.Spec.InitContainers[1].Resources, actionsResources(budget, 3)) ||
+			!reflect.DeepEqual(pod.Spec.Containers[0].Resources, actionsResources(budget, 1)) {
+			return fmt.Errorf("representative shared workspace changed its 2 CPU, 6 GiB memory, or 16 GiB workspace budget")
+		}
 	}
 	placement := corev1.PodSpec{}
 	pinActionsNode(&placement, "k3d-hakopod-dev-server-0")
@@ -185,5 +222,58 @@ func TestActionsSharedWorkspaceOverlayDriverOnlyChangesFreshFixtureCommand(t *te
 		if err := actionsSharedWorkspaceFixture(pod, 4, "1", "overlay2"); err == nil || !reflect.DeepEqual(pod, before) {
 			t.Fatal("modified daemon image or command was accepted")
 		}
+	}
+}
+
+func TestActionsRepresentativeSharedWorkspaceRejectsOtherProfilesAndBudgets(t *testing.T) {
+	target := runnerTarget(t)
+	s := target.Spec.Services["runner"]
+	s.NodeName, s.Architecture = "k3d-hakopod-dev-server-0", "arm64"
+	s.Resources = &spec.Resources{CPURequest: "2", CPULimit: "2", MemoryRequest: "6Gi", MemoryLimit: "6Gi"}
+	s.Actions.WorkspaceSizeGiB = 16
+	original := actionsPod(target, "runner", "representative", s)
+	original.Labels["hakopod.io/development-fixture"] = "actions-representative-build"
+	original.Spec.Volumes = original.Spec.Volumes[:1]
+	original.Spec.Containers[0].Command = []string{"python3", "-u", "-c", "print('private fixture')"}
+	for _, selection := range []string{"vfs", "overlay2", "1", "representative-16", "shared-overlay2-16\n"} {
+		pod := original.DeepCopy()
+		if err := actionsRepresentativeSharedWorkspaceFixture(pod, selection); err == nil || !reflect.DeepEqual(pod, original) {
+			t.Fatalf("invalid representative storage selection was accepted or partially applied: %q", selection)
+		}
+	}
+	for _, mutate := range []func(*corev1.Pod){
+		func(p *corev1.Pod) { p.Name = "actions-runtime-fixture" },
+		func(p *corev1.Pod) { delete(p.Labels, "hakopod.io/development-fixture") },
+		func(p *corev1.Pod) { p.Spec.NodeSelector["kubernetes.io/arch"] = "amd64" },
+		func(p *corev1.Pod) { p.Spec.Volumes[0].EmptyDir.SizeLimit = ptr(resource.MustParse("8Gi")) },
+		func(p *corev1.Pod) { p.Spec.Volumes[0].EmptyDir.Medium = corev1.StorageMediumMemory },
+		func(p *corev1.Pod) {
+			p.Spec.InitContainers[0].Resources.Limits[corev1.ResourceCPU] = resource.MustParse("3")
+		},
+		func(p *corev1.Pod) {
+			p.Spec.InitContainers[1].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("4Gi")
+		},
+		func(p *corev1.Pod) {
+			p.Spec.Containers[0].Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse("18Gi")
+		},
+		func(p *corev1.Pod) { p.Spec.Affinity = nil },
+		func(p *corev1.Pod) {
+			p.Annotations = map[string]string{"dev.gvisor.spec.mount.runner.source": "/other"}
+		},
+	} {
+		pod := original.DeepCopy()
+		mutate(pod)
+		before := pod.DeepCopy()
+		if err := actionsRepresentativeSharedWorkspaceFixture(pod, "shared-overlay2-16"); err == nil || !reflect.DeepEqual(pod, before) {
+			t.Fatal("unsafe representative profile was accepted or partially applied")
+		}
+	}
+	for _, size := range []int64{2, 4, 8, 17} {
+		if err := actionsSharedWorkspaceProfile(original.DeepCopy(), size, "1", "overlay2", "representative-16"); err == nil {
+			t.Fatal("representative shared workspace accepted another size")
+		}
+	}
+	if err := actionsSharedWorkspaceFixture(original.DeepCopy(), 16, "1", "overlay2"); err == nil {
+		t.Fatal("runtime fixture inherited the representative 16 GiB allowance")
 	}
 }
