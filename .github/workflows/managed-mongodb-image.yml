@@ -96,7 +96,7 @@ jobs:
           else:
               # Pinned crane renders one parsed Registry diagnostic in this form.
               # Generic 404s, token errors, retries and mixed errors cannot authorize a push.
-              missing = re.fullmatch(r'Error: GET ' + re.escape(manifest_url) +
+              missing = re.fullmatch(r'Error: fetching manifest ' + re.escape(image) + r': GET ' + re.escape(manifest_url) +
                   r': (MANIFEST_UNKNOWN|NAME_UNKNOWN): [^\r\n]+', manifest.stderr.strip())
               if manifest.stdout.strip() or missing is None:
                   codes = sorted(set(re.findall(r'\b(?:DENIED|UNAUTHORIZED|MANIFEST_UNKNOWN|NAME_UNKNOWN|TOOMANYREQUESTS)\b', manifest.stderr)))
