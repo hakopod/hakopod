@@ -1,0 +1,3 @@
+# Unified diff context includes a leading space before Go tabs and blank lines.
+# The candidate workflow checks gofmt after applying this exact patch.
+images/buildkit/userxattr.patch -whitespace
