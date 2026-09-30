@@ -28,11 +28,14 @@ type actionFixture struct {
 	token    string
 }
 
-// These tests execute the shipped JavaScript action against the real Go handlers
-// and an isolated PostgreSQL database. Resolved images are explicit development
-// fixtures; wait=false proves durable acceptance, not Kubernetes rollout success.
+// These tests execute the standalone hakopod/deploy action against the real Go
+// handlers and an isolated PostgreSQL database. CI supplies a pinned checkout;
+// local runs must set HAKOPOD_DEPLOY_ACTION_PATH to an absolute checkout path.
+// Resolved images are explicit development fixtures; wait=false proves durable
+// acceptance, not Kubernetes rollout success.
 func newActionFixture(t *testing.T) actionFixture {
 	t.Helper()
+	githubActionRuntime(t)
 	db, _ := database(t)
 	ctx := context.Background()
 	raw, err := db.Bootstrap(ctx, "github-action-development-fixture")
@@ -128,16 +131,38 @@ type actionResult struct {
 	Outputs       map[string]string `json:"outputs"`
 }
 
-func runActionFixture(t *testing.T, serverURL, token, applicationID string, services any, sharedEnv any) (actionResult, error) {
+func githubActionRuntime(t *testing.T) (string, string) {
 	t.Helper()
+	actionPath, configured := os.LookupEnv("HAKOPOD_DEPLOY_ACTION_PATH")
+	if !configured {
+		t.Skip("set HAKOPOD_DEPLOY_ACTION_PATH to an absolute hakopod/deploy checkout path for GitHub action acceptance; tests never fetch action code")
+	}
+	if !filepath.IsAbs(actionPath) {
+		t.Fatal("HAKOPOD_DEPLOY_ACTION_PATH must be an absolute hakopod/deploy checkout path")
+	}
+	info, err := os.Stat(actionPath)
+	if err != nil || !info.IsDir() {
+		t.Fatal("HAKOPOD_DEPLOY_ACTION_PATH must name an existing hakopod/deploy checkout directory")
+	}
+	info, err = os.Stat(filepath.Join(actionPath, "deploy.mjs"))
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatal("HAKOPOD_DEPLOY_ACTION_PATH must contain the standalone action's deploy.mjs file")
+	}
 	node := os.Getenv("HAKOPOD_ACTION_NODE")
 	if node == "" {
 		node = "node"
 	}
-	if _, err := exec.LookPath(node); err != nil {
-		t.Skip("requires Node 24 or HAKOPOD_ACTION_NODE for GitHub action acceptance")
+	node, err = exec.LookPath(node)
+	if err != nil {
+		t.Fatal("the configured GitHub action acceptance run requires Node 24 or HAKOPOD_ACTION_NODE")
 	}
-	script, err := filepath.Abs("../../actions/deploy/testdata/api.mjs")
+	return filepath.Clean(actionPath), node
+}
+
+func runActionFixture(t *testing.T, serverURL, token, applicationID string, services any, sharedEnv any) (actionResult, error) {
+	t.Helper()
+	actionPath, node := githubActionRuntime(t)
+	script, err := filepath.Abs("testdata/github-deploy-action.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,11 +170,12 @@ func runActionFixture(t *testing.T, serverURL, token, applicationID string, serv
 	defer cancel()
 	command := exec.CommandContext(ctx, node, script)
 	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "INPUT_") {
+		if !strings.HasPrefix(value, "INPUT_") && !strings.HasPrefix(value, "HAKOPOD_DEPLOY_ACTION_PATH=") {
 			command.Env = append(command.Env, value)
 		}
 	}
 	command.Env = append(command.Env,
+		"HAKOPOD_DEPLOY_ACTION_PATH="+actionPath,
 		"INPUT_API-URL="+serverURL, "INPUT_API-TOKEN="+token,
 		"INPUT_APPLICATION-ID="+applicationID, "INPUT_SERVICES="+string(store.JSON(services)),
 		"INPUT_ENV="+string(store.JSON(sharedEnv)), "INPUT_WAIT=false", "INPUT_TIMEOUT=20",
