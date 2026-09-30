@@ -221,6 +221,10 @@ class AccountingTests(unittest.TestCase):
         self.assertIsNone(shared.volume_accounting(value, identity, observation))
         self.assertEqual(observation['matched_pod_count'], 1)
         self.assertFalse(observation['volume_field_present'])
+        observation = {}
+        self.assertIsNone(shared.volume_accounting({'pods': [{}]}, identity, observation))
+        self.assertEqual(observation['matched_pod_count'], 0)
+        self.assertEqual(observation['same_name_pod_uids'], [])
 
     def test_invalid_summary_retains_selection_evidence_without_accepting_bad_usage(self):
         identity = shared.pod_identity(pod())
@@ -247,8 +251,8 @@ class AccountingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'did not match physical'):
                 observer.accounted(shared.pod_identity(pod()), 'before')
         attempt = observer.report['accounting_attempts'][0]
-        self.assertEqual((attempt['phase'], attempt['status'], sample.call_count), ('before', 'unmatched', 32))
-        self.assertEqual(len(attempt['samples']), 32)
+        self.assertEqual((attempt['phase'], attempt['status'], sample.call_count), ('before', 'unmatched', 48))
+        self.assertEqual(len(attempt['samples']), 48)
         for sample in attempt['samples']:
             self.assertEqual(sample['logical_bytes'], shared.GIB)
             self.assertEqual(sample['allocated_bytes'], 64 * shared.MIB)
@@ -295,6 +299,47 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(attempt['status'], 'matched')
         self.assertEqual(attempt['tolerance_bytes'], shared.MIB)
         self.assertEqual([sample['kubelet_used_bytes'] for sample in attempt['samples']], [0, 64 * shared.MIB + 4096])
+
+    def test_late_kubelet_refresh_beyond_85_seconds_still_requires_exact_physical_growth(self):
+        observer = shared.Observer(None, None, shared.NODE, {})
+        observer.deadline = 350
+        clock = [0]
+        before = {'device': 20, 'inode': 30, 'logical_bytes': shared.GIB, 'allocated_bytes': 64 * shared.MIB,
+                  'kubelet_used_bytes': 64 * shared.MIB + 4096}
+        physical = {**before, 'allocated_bytes': 80 * shared.MIB}
+        def sample(identity, observation):
+            fresh = clock[0] >= 108
+            used = (80 if fresh else 64) * shared.MIB + 4096
+            observation['kubelet'] = {'runner_volume': {'time': 'fresh' if fresh else 'prior-scan', 'usedBytes': used}}
+            return {**physical, 'kubelet_used_bytes': used}
+        with patch.object(shared.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(shared.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
+                patch.object(observer, 'sample', side_effect=sample):
+            result = observer.accounted(shared.pod_identity(pod()), 'after')
+        self.assertEqual(clock[0], 108)
+        self.assertEqual(shared.verify_growth(before, result)['kubelet_growth_bytes'], 16 * shared.MIB)
+        attempt = observer.report['accounting_attempts'][0]
+        self.assertEqual((attempt['status'], attempt['timeout_seconds'], attempt['maximum_samples']), ('matched', 135, 48))
+        self.assertEqual(attempt['samples'][-1]['elapsed_seconds'], 108)
+        self.assertTrue(all(sample['kubelet']['runner_volume']['time'] == 'prior-scan' for sample in attempt['samples'][:-1]))
+        self.assertEqual(attempt['samples'][-1]['kubelet']['runner_volume']['time'], 'fresh')
+
+    def test_accounting_wait_is_bounded_by_scan_window_and_remaining_preparation_budget(self):
+        for budget, finish in ((350, 135), (17, 18)):
+            observer = shared.Observer(None, None, shared.NODE, {})
+            observer.deadline = budget
+            clock = [0]
+            with self.subTest(budget=budget), \
+                    patch.object(shared.time, 'monotonic', side_effect=lambda: clock[0]), \
+                    patch.object(shared.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)), \
+                    patch.object(observer, 'sample', return_value={'allocated_bytes': 64 * shared.MIB, 'kubelet_used_bytes': 0}):
+                with self.assertRaisesRegex(RuntimeError, 'did not match physical'):
+                    observer.accounted(shared.pod_identity(pod()), 'after')
+            attempt = observer.report['accounting_attempts'][0]
+            self.assertEqual(clock[0], finish)
+            self.assertEqual(attempt['status'], 'unmatched')
+            self.assertLessEqual(len(attempt['samples']), 48)
+            self.assertTrue(all(sample['elapsed_seconds'] < min(budget, 135) for sample in attempt['samples']))
 
     def test_physical_blocks_are_measured_instead_of_sparse_logical_size(self):
         value = shared.verify_filestore('ext4|ef53\nregular file|1|20|30|67108864|4096\n')
@@ -413,10 +458,12 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]) as host, \
                 patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(docker()), '']) as runner, \
                 patch.object(observer, 'sample', return_value={'allocated_bytes': 100}), \
+                patch.object(shared.time, 'monotonic', return_value=0), \
                 patch('subprocess.run', side_effect=AssertionError('test launched a process')):
             evidence = observer.prepare(pod(), lambda **kwargs: self.fail('minimal probe restarted the daemon'), full=False)
         self.assertEqual(evidence['status'], 'passed')
         self.assertFalse(evidence['full_probe'])
+        self.assertEqual(observer.deadline, 210)
         self.assertEqual(runner.call_count, 3)
         self.assertEqual(host.call_args_list[0].args[0][:2], ['/bin/crictl', 'inspect'])
         self.assertEqual(host.call_args_list[1].args[0][:2], ['/bin/crictl', 'pods'])
@@ -434,6 +481,7 @@ class LifecycleTests(unittest.TestCase):
                     patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]), \
                     patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(docker()), json.dumps(inodes), '', json.dumps(later), json.dumps(docker()), '']), \
                     patch.object(observer, 'accounted', side_effect=[before, after]), \
+                    patch.object(shared.time, 'monotonic', return_value=0), \
                     patch.object(observer, 'sample', return_value=after):
                 if changed:
                     with self.assertRaisesRegex(RuntimeError, 'changed after'):
@@ -443,6 +491,7 @@ class LifecycleTests(unittest.TestCase):
                     self.assertEqual(evidence['status'], 'passed')
                     self.assertTrue(evidence['docker_archive_metadata'])
                     self.assertEqual(evidence['shared_inodes'], inodes)
+                    self.assertEqual(observer.deadline, 350)
 
     def test_full_probe_rejects_a_different_valid_daemon_identity_after_restart(self):
         inodes = {'runner_inode': 10, 'capability_inode': 11}
