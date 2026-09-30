@@ -13,6 +13,7 @@ import tomllib
 import threading
 
 FLAG = 'HAKOPOD_ACTIONS_SHARED_WORKSPACE'
+DRIVER_FLAG = 'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER'
 PREFIX = 'dev.gvisor.spec.mount.runner.'
 KEYS = [PREFIX + name for name in ('type', 'share', 'options')]
 RUNTIME_TABLE = '[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.hakopod-actions]'
@@ -22,6 +23,7 @@ MIB = 1024 ** 2
 PROBE_BYTES = 16 * MIB
 CAPABILITY = '0100000200040000000000000000000000000000'
 BUSYBOX = 'docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
+DAEMON_IMAGE = 'docker.io/library/docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0'
 
 
 def require(condition, message):
@@ -32,10 +34,23 @@ def require(condition, message):
 def enabled(environment):
     flag = environment.get(FLAG, '0')
     require(flag in ('0', '1'), 'Shared workspace flag must be 0 or 1')
+    driver = environment.get(DRIVER_FLAG, 'vfs')
+    require(driver in ('vfs', 'overlay2'), 'Development Docker storage driver must be vfs or overlay2')
+    require(driver != 'overlay2' or flag == '1', 'Development Docker overlay2 requires the shared workspace')
+    mode = environment.get('HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE')
+    if mode is not None:
+        modes = {'disabled': ('0', 'vfs'), 'vfs': ('1', 'vfs'), 'overlay2': ('1', 'overlay2')}
+        require(mode in modes and (flag, driver) == modes[mode],
+                'Shared workspace mode must be disabled, vfs, or overlay2 and match its derived selection')
     require(not (flag == '1' and any(environment.get(key) == '1' for key in
         ('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE', 'HAKOPOD_ACTIONS_PUBLISH_CANDIDATE'))),
         'Shared workspace experiments cannot build or publish candidate images')
     return flag == '1'
+
+
+def storage_driver(environment):
+    enabled(environment)
+    return environment.get(DRIVER_FLAG, 'vfs')
 
 
 def annotations(workspace_gib):
@@ -76,7 +91,7 @@ def verify_runtime_profile(text):
     return expected['runsc_config']
 
 
-def pod_identity(pod):
+def pod_identity(pod, driver='vfs'):
     metadata, spec = pod.get('metadata', {}), pod.get('spec', {})
     uid, namespace = metadata.get('uid', ''), metadata.get('namespace', '')
     require(re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', uid) is not None and
@@ -84,6 +99,15 @@ def pod_identity(pod):
             'Shared workspace requires an owned development Pod identity')
     require(spec.get('nodeName') == NODE and spec.get('runtimeClassName') == 'hakopod-actions',
             'Shared workspace escaped the named development node or runtime')
+    require(driver in ('vfs', 'overlay2'), 'Unexpected development Docker storage driver')
+    daemons = [item for item in spec.get('initContainers', []) if item.get('name') == 'docker']
+    require(len(daemons) == 1 and daemons[0].get('image') == DAEMON_IMAGE,
+            'Shared workspace Docker daemon image differs from its pinned product image')
+    command = daemons[0].get('command', [])
+    require(len(command) == 3 and command[:2] == ['sh', '-c'] and
+            re.findall(r'--storage-driver=([^\s]+)', command[2]) == [driver] and
+            '--feature=containerd-snapshotter=false' in command[2],
+            'Shared workspace Docker command differs from the selected classic storage driver')
     volumes = [volume for volume in spec.get('volumes', []) if volume.get('name') == 'runner']
     require(len(volumes) == 1 and set(volumes[0]) == {'name', 'emptyDir'}, 'Shared workspace must remain an EmptyDir')
     volume = volumes[0]['emptyDir']
@@ -99,7 +123,7 @@ def pod_identity(pod):
     statuses = [status for status in pod.get('status', {}).get('containerStatuses', []) if status.get('name') == 'runner']
     require(len(statuses) == 1 and re.fullmatch(r'containerd://[a-f0-9]{64}', statuses[0].get('containerID', '')),
             'Shared workspace runner container identity is missing')
-    return {'uid': uid, 'namespace': namespace, 'workspace_gib': size,
+    return {'uid': uid, 'namespace': namespace, 'workspace_gib': size, 'storage_driver': driver,
             'source': f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner',
             'container_id': statuses[0]['containerID'].removeprefix('containerd://')}
 
@@ -107,6 +131,43 @@ def pod_identity(pod):
 def bounded_json(text, limit=262144):
     require(isinstance(text, str) and 0 < len(text) <= limit, 'Shared workspace observation exceeded its bound')
     return json.loads(text)
+
+
+def verify_docker(value, driver, empty=False):
+    info, version = value.get('info', {}), value.get('version', {})
+    require(driver in ('vfs', 'overlay2') and info.get('Driver') == driver and
+            info.get('DockerRootDir') == '/home/runner/.docker-data',
+            'Docker did not use the selected driver and private workspace data root')
+    require(version.get('Version') == '29.8.1' and version.get('GitCommit') == '464cd50' and
+            version.get('Os') == 'linux' and version.get('Arch') in ('amd64', 'arm64'),
+            'Docker daemon version or source differs from the pinned image')
+    require(version['Arch'] == {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(value.get('machine')),
+            'Docker daemon architecture differs from its runner')
+    if empty:
+        require(info.get('Images') == 0 and info.get('Containers') == 0,
+                'Storage experiments require a fresh daemon with no images or containers')
+    pairs = info.get('DriverStatus') or []
+    require(isinstance(pairs, list) and len(pairs) <= 16 and
+            all(isinstance(pair, list) and len(pair) == 2 and all(isinstance(item, str) for item in pair) for pair in pairs),
+            'Unexpected Docker storage driver status')
+    status = dict(pairs)
+    require(len(status) == len(pairs), 'Repeated Docker storage driver status')
+    if driver == 'overlay2':
+        require(status.get('Backing Filesystem') == 'tmpfs' and status.get('Supports d_type') == 'true' and
+                status.get('Native Overlay Diff') == 'true',
+                'Docker overlay2 requires internal tmpfs, directory types, and native overlay diff')
+    return {'driver': driver, 'data_root': info['DockerRootDir'], 'version': version['Version'],
+            'source_commit': version['GitCommit'], 'architecture': version['Arch'], 'driver_status': status,
+            'fresh_daemon_verified': empty}
+
+
+DOCKER_PROBE = """import json, platform, subprocess
+def read(arguments):
+    result = subprocess.run(['docker', *arguments], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+    assert len(result.stdout) <= 131072
+    return json.loads(result.stdout)
+print(json.dumps({'machine': platform.machine(), 'info': read(['info', '--format', '{{json .}}']), 'version': read(['version', '--format', '{{json .Server}}'])}))
+"""
 
 
 def verify_mount(value, identity):
@@ -246,9 +307,11 @@ print(json.dumps({'runner_inode': (root / 'runner').stat().st_ino, 'capability_i
 
 class Observer:
     """Bounded host checks; callers supply their named-cluster command wrappers."""
-    def __init__(self, command, kube, node, report):
+    def __init__(self, command, kube, node, report, driver='vfs'):
         require(node == NODE, 'Shared workspace observer requires the named development node')
+        require(driver in ('vfs', 'overlay2'), 'Unexpected development Docker storage driver')
         self.command, self.kube, self.node, self.report = command, kube, node, report
+        self.driver = driver
         self.identities = {}
         self.removed_uids = set()
         self.disk_monitor = None
@@ -405,16 +468,17 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
 
     def prepare(self, pod, restart, full=True, disk=False):
         self.deadline = time.monotonic() + 210
-        identity = pod_identity(pod)
+        identity = pod_identity(pod, self.driver)
         require(identity['uid'] not in self.identities and len(self.identities) < 3, 'Repeated or excessive shared workspace Pods')
-        inspected = bounded_json(self.host(['k3s', 'crictl', 'inspect', '-o', 'json', identity['container_id']]))
+        inspected = bounded_json(self.host(['/bin/crictl', 'inspect', '-o', 'json', identity['container_id']]))
         identity['sandbox_id'] = verify_container_source(inspected, identity)
-        sandboxes = bounded_json(self.host(['k3s', 'crictl', 'pods', '--name', 'actions-runtime-fixture', '--namespace', identity['namespace'], '-o', 'json']))
+        sandboxes = bounded_json(self.host(['/bin/crictl', 'pods', '--name', 'actions-runtime-fixture', '--namespace', identity['namespace'], '-o', 'json']))
         verify_sandbox(sandboxes, identity, identity['sandbox_id'])
         mount = verify_mount(bounded_json(self.runner(identity, MOUNT_PROBE)), identity)
         self.identities[identity['uid']] = identity
         evidence = {'identity': identity, 'mount': mount, 'status': 'running', 'full_probe': full}
         self.report.setdefault('pods', []).append(evidence)
+        evidence['docker'] = verify_docker(bounded_json(self.runner(identity, DOCKER_PROBE)), self.driver, empty=True)
         if not full:
             # Disk and replacement Pods retain their original five-minute
             # deadline and empty-daemon assertions. They never pull probe images.
@@ -442,6 +506,9 @@ with pathlib.Path('/home/runner/.hakopod-shared-proof/allocation').open('xb') as
         require(bounded_json(self.runner(identity, constants + VERIFY_PROBE), 1024) == inodes,
                 'Workspace files or metadata changed after the Docker sidecar restart')
         self.daemon_sharing(identity, inodes)
+        evidence['docker_after_restart'] = verify_docker(bounded_json(self.runner(identity, DOCKER_PROBE)), self.driver)
+        require(evidence['docker_after_restart'] == {**evidence['docker'], 'fresh_daemon_verified': False},
+                'Docker daemon identity or storage driver changed after restart')
         restarted = self.sample(identity)
         require((restarted['device'], restarted['inode']) == (before['device'], before['inode']),
                 'Docker sidecar restart replaced the shared disk filestore')

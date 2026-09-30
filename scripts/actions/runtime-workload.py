@@ -64,6 +64,14 @@ def runtime_selection_from_environment(environment):
     candidate_build = environment.get('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE') == '1'
     shared = environment.get('HAKOPOD_ACTIONS_SHARED_WORKSPACE', '0')
     require(shared in ('0', '1'), 'Shared workspace flag must be 0 or 1')
+    storage_driver = environment.get('HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER', 'vfs')
+    require(storage_driver in ('vfs', 'overlay2'), 'Development Docker storage driver must be vfs or overlay2')
+    require(storage_driver != 'overlay2' or shared == '1', 'Development Docker overlay2 requires the shared workspace')
+    mode = environment.get('HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE')
+    if mode is not None:
+        modes = {'disabled': ('0', 'vfs'), 'vfs': ('1', 'vfs'), 'overlay2': ('1', 'overlay2')}
+        require(mode in modes and (shared, storage_driver) == modes[mode],
+                'Shared workspace mode must be disabled, vfs, or overlay2 and match its derived selection')
     require(not (shared == '1' and (candidate_build or environment.get('HAKOPOD_ACTIONS_PUBLISH_CANDIDATE') == '1')),
             'Shared workspace experiments must run separately from candidate builds and publication')
     export = environment.get('HAKOPOD_ACTIONS_EXPORT_BENCHMARK') == '1'

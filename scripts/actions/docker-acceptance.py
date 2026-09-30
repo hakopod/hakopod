@@ -671,7 +671,8 @@ def main():
         REPORT['shared_workspace'] = {'scope': 'development-only disk-backed shared filesystem experiment',
             'coverage_limits': ['Docker archive capability checks are not BuildKit import/export or registry-cache qualification.',
                                 'Disk eviction and replacement are checked only by the full runtime scenario.']}
-        SHARED_WORKSPACE = shared.Observer(command, kube, NODE, REPORT['shared_workspace'])
+        REPORT['shared_workspace']['docker_storage_driver'] = shared.storage_driver(os.environ)
+        SHARED_WORKSPACE = shared.Observer(command, kube, NODE, REPORT['shared_workspace'], driver=shared.storage_driver(os.environ))
     OUTPUT.mkdir(parents=True, exist_ok=False)
     OUTPUT_CREATED = True
     if SHARED_WORKSPACE:
