@@ -5,10 +5,9 @@ application. Supply an API URL, a scoped machine token, the application ID and a
 JSON array of service names. You can also update images, environment variables
 and existing secret bindings for those services.
 
-This action is a source preview. The `@main` examples work after this change is
-merged into `hakopod/hakopod`. There is no versioned action release yet. For
-production workflows, replace `@main` with a full, reviewed commit SHA containing
-the action.
+Release distribution: [hakopod/deploy](https://github.com/hakopod/deploy). The
+`@v1` examples follow compatible releases in that major version. For production
+workflows, pin a full, reviewed release commit SHA for immutable action code.
 
 ## Add a deployment step
 
@@ -21,7 +20,7 @@ existing application ID.
 ```yaml
 - name: Deploy API and worker
   id: deploy
-  uses: hakopod/hakopod/actions/deploy@main
+  uses: hakopod/deploy@v1
   with:
     api-url: ${{ vars.HAKOPOD_API_URL }}
     api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
@@ -94,7 +93,7 @@ binding to a plain value.
 
 ```yaml
 - name: Deploy selected service configuration
-  uses: hakopod/hakopod/actions/deploy@main
+  uses: hakopod/deploy@v1
   with:
     api-url: ${{ vars.HAKOPOD_API_URL }}
     api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
@@ -136,7 +135,7 @@ After a `docker/build-push-action` step named `build`, use its digest output:
 ```yaml
 - name: Deploy the published image
   id: deploy
-  uses: hakopod/hakopod/actions/deploy@main
+  uses: hakopod/deploy@v1
   with:
     api-url: ${{ vars.HAKOPOD_API_URL }}
     api-token: ${{ secrets.HAKOPOD_API_TOKEN }}

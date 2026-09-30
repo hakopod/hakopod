@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: "24"
       - run: node --test actions/deploy/test/*.test.mjs
+      - run: node --test scripts/test-export-deploy-action.mjs
   sdk:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

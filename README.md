@@ -102,7 +102,7 @@ applications, with selected services, image digests and optional environment
 changes:
 
 ```yaml
-- uses: hakopod/hakopod/actions/deploy@main
+- uses: hakopod/deploy@v1
   with:
     api-url: ${{ vars.HAKOPOD_API_URL }}
     api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
@@ -110,8 +110,8 @@ changes:
     services: '["api", "worker"]'
 ```
 
-The action is a source preview; `@main` becomes available when this change is
-merged. Pin a full reviewed commit SHA in production workflows. It keeps saved
+The action's release distribution is [hakopod/deploy](https://github.com/hakopod/deploy).
+Pin a full reviewed release commit SHA in production workflows. It keeps saved
 images unless you provide a digest-pinned `image`, and waits for deployment
 success by default.
 
