@@ -1,0 +1,7 @@
+FROM quay.io/mongodb/mongodb-kubernetes:1.13.0@sha256:0184a96e324f8fb6c53bedb8f859762166fe7e996d00214efe3ec51a502b3db3
+
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
+      io.hakopod.mongodb.operator-upstream="75fa89bca8c1395a1beb0f244723f255f67f8719" \
+      io.hakopod.mongodb.patch="tls-member-scaling-v1"
+
+COPY --chmod=0755 bin/mongodb-kubernetes-operator /usr/local/bin/mongodb-kubernetes-operator
