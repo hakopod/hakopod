@@ -91,7 +91,7 @@ async function capture(page, id, options = {}) {
   if (!options.error) assert.deepEqual(data.errors, [], 'Unexpected rendered error state')
   if (!options.noHeading) assert.equal(data.h1.length, 1, 'Expected exactly one page heading')
   const screenshot = `screenshots/${id}.png`
-  await page.screenshot({ path: `${output}/${screenshot}`, fullPage: true })
+  await page.screenshot({ path: `${output}/${screenshot}`, fullPage: !options.viewport })
   screenshots.push({ id, screenshot, ...data })
   return data
 }
@@ -163,6 +163,52 @@ async function helpCheck(page, id, touch) {
   await tooltip.waitFor({ state: 'hidden' })
 }
 
+async function keyboardFields(page, id) {
+  await page.getByRole('form', { name: 'Hakopod Edge configuration', exact: true }).focus()
+  const fields = []
+  let reachedSubmit = false
+  for (let index = 0; index < 80; index += 1) {
+    await page.keyboard.press('Tab')
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const focus = await page.evaluate(() => {
+      const element = document.activeElement
+      const form = element?.closest('form')
+      if (!form) return { outside: true }
+      if (element.matches('button[type=submit]')) return { submit: true }
+      if (!element.matches('input,textarea,[role=combobox]')) return {}
+      const box = element.getBoundingClientRect()
+      const x = box.x + box.width / 2
+      const y = box.y + box.height / 2
+      const hit = document.elementFromPoint(x, y)
+      const style = getComputedStyle(element)
+      return {
+        label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim().slice(0, 100),
+        tag: element.tagName,
+        box: { x: box.x, y: box.y, width: box.width, height: box.height, bottom: box.bottom },
+        visible: x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight && (hit === element || element.contains(hit)),
+        outline: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+      }
+    })
+    assert(!focus.outside, 'Keyboard focus left the editor before its submit action')
+    if (focus.submit) {
+      reachedSubmit = true
+      break
+    }
+    if (!focus.tag) continue
+    fields.push(focus)
+    assert(focus.visible, `Focused field is covered or outside the viewport: ${focus.label}`)
+    assert(focus.outline !== 'none' && parseFloat(focus.outlineWidth) >= 1, `Focused field has no visible outline: ${focus.label}`)
+    if (focus.tag === 'TEXTAREA' && fields.filter((field) => field.tag === 'TEXTAREA').length === 1) {
+      await capture(page, `${id}-keyboard-focus`, { viewport: true })
+    }
+    if (focus.label?.startsWith('Controller settings')) await capture(page, `${id}-controller-focus`, { viewport: true })
+  }
+  assert(reachedSubmit, 'Keyboard review did not reach the submit action')
+  assert(fields.length >= 14, 'Keyboard review did not reach the editable fields')
+  return fields
+}
+
 try {
   for (const theme of ['dark', 'light']) {
     for (const viewport of viewports) {
@@ -190,6 +236,7 @@ try {
         await page.goto(`${base}/settings/edge`)
         await settled(page, page.getByRole('form', { name: 'Hakopod Edge configuration', exact: true }))
         await capture(page, `${id}-initial`)
+        const keyboard = await keyboardFields(page, id)
         assert.equal(await page.getByRole('dialog').count(), 0, 'Editor belongs on its nested page')
         assert.deepEqual(await labels(page, 'Rule ID').evaluateAll((elements) => elements.map((element) => element.value)), ['private-api', 'public-site'])
         await page.getByRole('button', { name: 'Move rule public-site earlier', exact: true }).click()
@@ -214,6 +261,7 @@ try {
         const reviewFocus = await page.getByRole('form', { name: 'Hakopod Edge review', exact: true }).evaluate((element) => ({ focused: document.activeElement === element, outline: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth }))
         assert(reviewFocus.focused, 'Review did not receive keyboard focus')
         await capture(page, `${id}-review`)
+        await capture(page, `${id}-review-viewport`, { viewport: true })
         await page.getByRole('button', { name: 'Apply configuration', exact: true }).click()
         await page.getByText('Synthetic fixture: the change could not be saved; your draft was not applied.', { exact: true }).waitFor()
         assert.equal(await patchCount(page), 1)
@@ -258,7 +306,7 @@ try {
         const unchanged = await page.evaluate(() => window.__edgeFixture.status.observed.edge.rules[0].id)
         assert.equal(unchanged, 'private-api', 'Synthetic acceptance must not invent runtime success')
         await capture(page, `${id}-queued`)
-        return { reviewFocus, patches: 3, reorder: true, draftPreserved: true, conflictCompared: true, noRuntimeSuccess: true }
+        return { keyboard, reviewFocus, patches: 3, reorder: true, draftPreserved: true, conflictCompared: true, noRuntimeSuccess: true }
       })
     }
     for (const viewport of viewports.slice(0, 2)) {
@@ -269,13 +317,17 @@ try {
           assert.equal(await page.getByRole('form').count(), 0)
           assert.equal(await page.getByRole('button', { name: 'Apply configuration', exact: true }).count(), 0)
           assert.equal(await page.evaluate(() => window.__edgeFixture.requests.filter((request) => request.path === '/api/settings/haproxy').length), 0, 'Denied view queried installation policy')
-          await capture(page, id, { noHeading: true })
+          await capture(page, id)
         })
       }
     }
     for (const scenario of ['empty', 'queued', 'drift', 'error', 'loading']) {
       await runCase(scenario, theme, viewports[1], async (page, id) => {
         await page.goto(`${base}/settings?tab=edge&fixture=${scenario}`)
+        if (scenario === 'loading') {
+          await page.waitForFunction(() => typeof window.__edgeFixture?.releaseRead === 'function')
+          await page.getByRole('heading', { name: 'Hakopod Edge', exact: true }).waitFor()
+        }
         const expected = scenario === 'loading'
           ? page.locator('main .hako-loading-stack')
           : scenario === 'error'

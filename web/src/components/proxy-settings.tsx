@@ -23,6 +23,15 @@ import { HeadingHelp, ErrorState, Loading, Note, Status, RequestError } from './
 const queryKey = ['haproxy-settings']
 const managedDescription = 'Installation traffic settings are managed by the Cloud service.'
 
+function renderEdgeDenied({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="grid min-w-0 gap-2 py-3">
+      <h2 className="m-0 text-base font-medium">{title}</h2>
+      <p className="m-0 text-sm text-muted-foreground">{description}</p>
+    </div>
+  )
+}
+
 function useProxySettings() {
   return useQuery({
     queryKey,
@@ -37,7 +46,7 @@ function useProxySettings() {
 
 export default function ProxySettings() {
   return (
-    <InstallationAccess managedDescription={managedDescription}>
+    <InstallationAccess managedDescription={managedDescription} renderDenied={renderEdgeDenied}>
       <ProxyOverview />
     </InstallationAccess>
   )
@@ -136,9 +145,15 @@ function ProxyOverview() {
 
 export function ProxyEditor() {
   return (
-    <InstallationAccess managedDescription={managedDescription}>
-      <ProxyEditorLoader />
-    </InstallationAccess>
+    <FormPage
+      title="Configure Hakopod Edge"
+      description="Review HTTP traffic rules and HAProxy controller settings before applying an installation change."
+      breadcrumbs={[]}
+    >
+      <InstallationAccess managedDescription={managedDescription} renderDenied={renderEdgeDenied}>
+        <ProxyEditorLoader />
+      </InstallationAccess>
+    </FormPage>
   )
 }
 
@@ -251,178 +266,169 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
   }
 
   return (
-    <FormPage
-      title="Configure Hakopod Edge"
-      description="Review HTTP traffic rules and HAProxy controller settings before applying an installation change."
-      breadcrumbs={[]}
+    <form
+      ref={formRef}
+      tabIndex={-1}
+      aria-label={review ? 'Hakopod Edge review' : 'Hakopod Edge configuration'}
+      className="grid min-w-0 gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (busy || submitted) return
+        if (review) {
+          void save()
+          return
+        }
+        try {
+          setReview(prepare())
+          setError('')
+        } catch (cause) {
+          setError(message(cause))
+        }
+      }}
     >
-      <form
-        ref={formRef}
-        tabIndex={-1}
-        aria-label={review ? 'Hakopod Edge review' : 'Hakopod Edge configuration'}
-        className="grid min-w-0 gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (busy || submitted) return
-          if (review) {
-            void save()
-            return
-          }
-          try {
-            setReview(prepare())
-            setError('')
-          } catch (cause) {
-            setError(message(cause))
-          }
-        }}
-      >
-        {queued && (
-          <Note>A configuration change is queued. Your draft is kept while it finishes.</Note>
-        )}
-        {submitted && (
-          <Note>
-            Your change was accepted and is queued for HAProxy. Return to Settings to follow its
-            status.
-          </Note>
-        )}
-        {compared && (
-          <Note>
-            The latest configuration is loaded for comparison. Your edits are kept. Review the whole
-            traffic policy before applying; it replaces the current policy.
-          </Note>
-        )}
-        {review ? (
-          <>
-            <FormSection title="Review traffic protection">
-              {review.edge ? (
-                <>
+      {queued && (
+        <Note>A configuration change is queued. Your draft is kept while it finishes.</Note>
+      )}
+      {submitted && (
+        <Note>
+          Your change was accepted and is queued for HAProxy. Return to Settings to follow its
+          status.
+        </Note>
+      )}
+      {compared && (
+        <Note>
+          The latest configuration is loaded for comparison. Your edits are kept. Review the whole
+          traffic policy before applying; it replaces the current policy.
+        </Note>
+      )}
+      {review ? (
+        <>
+          <FormSection title="Review traffic protection">
+            {review.edge ? (
+              <>
+                <Note>
+                  The proposed policy replaces all current traffic rules. The first matching rule
+                  wins; later rules do not add restrictions.
+                </Note>
+                {review.edge.enabled && review.edge.rules.length > 0 && (
                   <Note>
-                    The proposed policy replaces all current traffic rules. The first matching rule
-                    wins; later rules do not add restrictions.
+                    Listed hosts will reject ambiguous paths, including dot segments, repeated
+                    slashes and encoded separators. Use canonical URLs. Certificate-challenge token
+                    paths remain available.
                   </Note>
-                  {review.edge.enabled && review.edge.rules.length > 0 && (
-                    <Note>
-                      Listed hosts will reject ambiguous paths, including dot segments, repeated
-                      slashes and encoded separators. Use canonical URLs. Certificate-challenge
-                      token paths remain available.
-                    </Note>
-                  )}
-                  {review.edge.enabled && review.edge.client_ip_source === 'trusted_proxy' && (
-                    <Note>
-                      Protected routes will reject direct or untrusted connections and missing
-                      client headers. Country rules require a valid country header from your trusted
-                      proxy.
-                    </Note>
-                  )}
-                  {!review.edge.enabled && snapshot.observed.edge.enabled && (
-                    <Note>
-                      Applying this change disables traffic protection. Rules are retained but will
-                      not restrict traffic.
-                    </Note>
-                  )}
-                  <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-                    <section
-                      className="grid min-w-0 content-start gap-4"
-                      aria-labelledby="edge-review-before"
-                    >
-                      <h3 id="edge-review-before" className="m-0 text-sm font-medium">
-                        Current policy
-                      </h3>
-                      <EdgePolicySummary policy={snapshot.observed.edge} />
-                    </section>
-                    <section
-                      className="grid min-w-0 content-start gap-4"
-                      aria-labelledby="edge-review-after"
-                    >
-                      <h3 id="edge-review-after" className="m-0 text-sm font-medium">
-                        Proposed policy
-                      </h3>
-                      <EdgePolicySummary policy={review.edge} />
-                    </section>
-                  </div>
-                </>
-              ) : (
-                <p className="m-0 text-sm text-muted-foreground">
-                  Traffic protection is unchanged.
-                </p>
-              )}
-            </FormSection>
-            <FormSection title="Review HAProxy settings">
-              {Object.keys(review.settings).length ? (
-                Object.entries(review.settings).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="grid min-w-0 gap-2 border-b border-border pb-3 last:border-0 last:pb-0"
+                )}
+                {review.edge.enabled && review.edge.client_ip_source === 'trusted_proxy' && (
+                  <Note>
+                    Protected routes will reject direct or untrusted connections and missing client
+                    headers. Country rules require a valid country header from your trusted proxy.
+                  </Note>
+                )}
+                {!review.edge.enabled && snapshot.observed.edge.enabled && (
+                  <Note>
+                    Applying this change disables traffic protection. Rules are retained but will
+                    not restrict traffic.
+                  </Note>
+                )}
+                <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+                  <section
+                    className="grid min-w-0 content-start gap-4"
+                    aria-labelledby="edge-review-before"
                   >
-                    <strong className="text-sm font-medium">
-                      <code>{key}</code>
-                    </strong>
-                    <InstallationReviewRows
-                      rows={[
-                        ['Current', snapshot.observed.settings[key] || 'Controller default'],
-                        ['Proposed', value || 'Reset to controller default'],
-                      ]}
-                    />
-                  </div>
-                ))
-              ) : (
-                <p className="m-0 text-sm text-muted-foreground">
-                  Controller settings are unchanged.
-                </p>
-              )}
-              <p className="field-help">
-                Reviewing revision {snapshot.revision}, Kubernetes resource version{' '}
-                {snapshot.observed.resource_version}. Applying can reload HAProxy.
+                    <h3 id="edge-review-before" className="m-0 text-sm font-medium">
+                      Current policy
+                    </h3>
+                    <EdgePolicySummary policy={snapshot.observed.edge} />
+                  </section>
+                  <section
+                    className="grid min-w-0 content-start gap-4"
+                    aria-labelledby="edge-review-after"
+                  >
+                    <h3 id="edge-review-after" className="m-0 text-sm font-medium">
+                      Proposed policy
+                    </h3>
+                    <EdgePolicySummary policy={review.edge} />
+                  </section>
+                </div>
+              </>
+            ) : (
+              <p className="m-0 text-sm text-muted-foreground">Traffic protection is unchanged.</p>
+            )}
+          </FormSection>
+          <FormSection title="Review HAProxy settings">
+            {Object.keys(review.settings).length ? (
+              Object.entries(review.settings).map(([key, value]) => (
+                <div
+                  key={key}
+                  className="grid min-w-0 gap-2 border-b border-border pb-3 last:border-0 last:pb-0"
+                >
+                  <strong className="text-sm font-medium">
+                    <code>{key}</code>
+                  </strong>
+                  <InstallationReviewRows
+                    rows={[
+                      ['Current', snapshot.observed.settings[key] || 'Controller default'],
+                      ['Proposed', value || 'Reset to controller default'],
+                    ]}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="m-0 text-sm text-muted-foreground">
+                Controller settings are unchanged.
               </p>
-            </FormSection>
-            {!changed && <Note>No configuration changes to apply.</Note>}
-          </>
-        ) : (
-          <fieldset disabled={busy || submitted} className="m-0 grid min-w-0 gap-4 border-0 p-0">
-            <EdgePolicyFields draft={draft} onChange={setDraft} />
-            <ControllerFields snapshot={snapshot} text={text} onChange={setText} />
-          </fieldset>
-        )}
-        {error && <RequestError error={error} />}
-        {conflict && (
-          <Note>
-            <p className="m-0">
-              Configuration changed after review. Your draft is kept. Compare with the latest
-              settings before applying again.
+            )}
+            <p className="field-help">
+              Reviewing revision {snapshot.revision}, Kubernetes resource version{' '}
+              {snapshot.observed.resource_version}. Applying can reload HAProxy.
             </p>
-            <Button
-              type="button"
-              size="sm"
-              className="mt-3"
-              disabled={busy}
-              onClick={() => void compareLatest()}
-            >
-              {busy ? 'Loading comparison…' : 'Compare latest settings'}
-            </Button>
-          </Note>
-        )}
-        <div className="form-footer">
+          </FormSection>
+          {!changed && <Note>No configuration changes to apply.</Note>}
+        </>
+      ) : (
+        <fieldset disabled={busy || submitted} className="m-0 grid min-w-0 gap-4 border-0 p-0">
+          <EdgePolicyFields draft={draft} onChange={setDraft} />
+          <ControllerFields snapshot={snapshot} text={text} onChange={setText} />
+        </fieldset>
+      )}
+      {error && <RequestError error={error} />}
+      {conflict && (
+        <Note>
+          <p className="m-0">
+            Configuration changed after review. Your draft is kept. Compare with the latest settings
+            before applying again.
+          </p>
           <Button
             type="button"
+            size="sm"
+            className="mt-3"
             disabled={busy}
-            onClick={() =>
-              review && !submitted
-                ? setReview(null)
-                : void navigate({ to: '/settings', search: { tab: 'edge' } })
-            }
+            onClick={() => void compareLatest()}
           >
-            {submitted ? 'Return to Settings' : review ? 'Back to editor' : 'Cancel'}
+            {busy ? 'Loading comparison…' : 'Compare latest settings'}
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || submitted || Boolean(review && (!changed || conflict || queued))}
-          >
-            {busy ? 'Saving…' : review ? 'Apply configuration' : 'Review changes'}
-          </Button>
-        </div>
-      </form>
-    </FormPage>
+        </Note>
+      )}
+      <div className="form-footer">
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            review && !submitted
+              ? setReview(null)
+              : void navigate({ to: '/settings', search: { tab: 'edge' } })
+          }
+        >
+          {submitted ? 'Return to Settings' : review ? 'Back to editor' : 'Cancel'}
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={busy || submitted || Boolean(review && (!changed || conflict || queued))}
+        >
+          {busy ? 'Saving…' : review ? 'Apply configuration' : 'Review changes'}
+        </Button>
+      </div>
+    </form>
   )
 }
 

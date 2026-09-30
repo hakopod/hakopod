@@ -192,61 +192,68 @@ http.server.ThreadingHTTPServer(('0.0.0.0', 8080), Fixture).serve_forever()
 	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil, MaxIdleConns: 1, MaxIdleConnsPerHost: 1}}
 	defer client.CloseIdleConnections()
 	host := c.hostname(target, "api")
-	request := func(path string, headers http.Header, want int) []byte {
-		t.Helper()
-		req, e := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:18080"+path, nil)
+	probe := func(probeCtx context.Context, path string, headers http.Header) (int, []byte, error) {
+		req, e := http.NewRequestWithContext(probeCtx, http.MethodGet, "http://127.0.0.1:18080"+path, nil)
 		if e != nil {
-			t.Fatal(e)
+			return 0, nil, e
 		}
 		req.Host = host
 		req.Header = headers.Clone()
 		response, e := client.Do(req)
 		if e != nil {
-			t.Fatal(e)
+			return 0, nil, e
 		}
 		defer response.Body.Close()
 		body, e := io.ReadAll(io.LimitReader(response.Body, 4097))
 		if e != nil || len(body) > 4096 {
-			t.Fatal("fixture response exceeded its bound", e)
+			return response.StatusCode, nil, fmt.Errorf("invalid or oversized fixture response: %v", e)
 		}
-		if want != 0 && response.StatusCode != want {
-			t.Fatalf("%s: HTTP %d, wanted %d", path, response.StatusCode, want)
+		return response.StatusCode, body, nil
+	}
+	request := func(path string, headers http.Header, want int) []byte {
+		t.Helper()
+		status, body, e := probe(ctx, path, headers)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if want != 0 && status != want {
+			t.Fatalf("%s: HTTP %d, wanted %d", path, status, want)
 		}
 		if want == 0 {
-			return []byte(fmt.Sprint(response.StatusCode))
+			return []byte(fmt.Sprint(status))
 		}
 		return body
 	}
-	// Wait for routing to the real fixture, separately from worker readiness.
-	for attempt := 0; attempt < 40; attempt++ {
-		if string(request("/public", nil, 0)) == "200" {
-			break
-		}
-		if attempt == 39 {
-			t.Fatal("development edge fixture never became routable")
-		}
-		if err = sleepContext(ctx, 500*time.Millisecond); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var received struct {
+	type fixtureResponse struct {
+		Fixture string `json:"fixture"`
 		Backend string `json:"backend"`
 		Path    string `json:"path"`
 	}
-	for attempt := 0; attempt < 40; attempt++ {
-		if err = json.Unmarshal(request("/private", nil, http.StatusOK), &received); err != nil {
-			t.Fatal("invalid prefix-routing fixture response", err)
-		}
-		if received.Backend == "private" {
-			break
-		}
-		if attempt == 39 {
-			t.Fatal("development private prefix never reached its separate backend")
-		}
-		if err = sleepContext(ctx, 500*time.Millisecond); err != nil {
-			t.Fatal(err)
+	// Workload readiness precedes controller routing updates. Probe new
+	// connections until each prefix reaches its own real development backend;
+	// an old keep-alive connection can still belong to the preceding worker.
+	waitForRoute := func(path, backend string) {
+		t.Helper()
+		readyCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+		defer stop()
+		for {
+			client.CloseIdleConnections()
+			status, body, probeErr := probe(readyCtx, path, nil)
+			var observed fixtureResponse
+			if probeErr == nil && status == http.StatusOK {
+				probeErr = json.Unmarshal(body, &observed)
+				if probeErr == nil && observed.Fixture == "hakopod-edge-development" && observed.Backend == backend && observed.Path == path {
+					return
+				}
+			}
+			if e := sleepContext(readyCtx, 500*time.Millisecond); e != nil {
+				t.Fatalf("development route %s did not reach backend %s: last HTTP %d, fixture %q, backend %q, path %q, error %v", path, backend, status, observed.Fixture, observed.Backend, observed.Path, probeErr)
+			}
 		}
 	}
+	waitForRoute("/public", "public")
+	waitForRoute("/private", "private")
+	var received fixtureResponse
 	connection := EdgePolicy{Enabled: true, Rules: []EdgeRule{{ID: "private", Host: host, PathPrefix: "/private", DenyCIDRs: []string{"0.0.0.0/0", "::/0"}}, {ID: "rate", Host: host, PathPrefix: "/rate", RequestsPerSecond: 2}}}
 	apply(connection)
 	request("/private", http.Header{"X-Forwarded-For": {"192.0.2.1"}, "Cf-Connecting-Ip": {"192.0.2.1"}}, http.StatusForbidden)
