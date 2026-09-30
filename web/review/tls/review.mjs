@@ -140,7 +140,7 @@ async function runCase(name, theme, viewport, run) {
   }
 }
 
-async function choose(page, label, option, touch) {
+async function choose(page, label, option, touch, screenshotID) {
   const trigger = page.getByRole('combobox', { name: label, exact: true })
   if (touch) await trigger.tap()
   else {
@@ -151,6 +151,7 @@ async function choose(page, label, option, touch) {
   await item.waitFor()
   const box = await item.boundingBox()
   assert(box && box.x >= 0 && box.x + box.width <= page.viewportSize().width, 'Select option is clipped horizontally')
+  if (screenshotID) await capture(page, screenshotID)
   if (touch) await item.tap()
   else await item.click()
   await page.getByRole('listbox').waitFor({ state: 'hidden' })
@@ -226,7 +227,7 @@ try {
         await managed(page, size.width < 640)
         assert((await page.getByRole('combobox', { name: 'Issuer', exact: true }).textContent()).includes(defaultLabel), 'Cloud did not select the configured default')
         await capture(page, `${id}-default`)
-        await choose(page, 'Issuer', applicationLabel, size.width < 640)
+        await choose(page, 'Issuer', applicationLabel, size.width < 640, `${id}-issuer-options`)
         await choose(page, 'Certificate method', 'Upload PEM certificate and private key', size.width < 640)
         await uploadFiles(page)
         await choose(page, 'Certificate method', 'Use a managed ACME issuer', size.width < 640)
@@ -330,6 +331,7 @@ try {
         else { await details.focus(); await page.keyboard.press('Enter') }
         await page.getByText('developer@example.invalid', { exact: true }).waitFor()
         await capture(page, `${id}-details`)
+        await capture(page, `${id}-details-viewport`, { viewport: true })
         await prepareIssuer(page, 'application-page-issuer')
         await page.getByRole('checkbox', { name: 'Use production certificate issuance', exact: true }).check()
         await page.getByRole('button', { name: 'Review issuer', exact: true }).click()

@@ -706,7 +706,7 @@ export function ServiceDetail({
         </Tabs.Content>
         <Tabs.Content value="network" className="tab-content service-network-content">
           <section className="panel service-summary-panel">
-            <div className="panel-heading">
+            <div className="panel-heading flex-wrap">
               <h2>Service networking</h2>
               {scope.can('deployments:write') && (
                 <Button size="sm" variant="ghost" onClick={() => edit('toml')}>
