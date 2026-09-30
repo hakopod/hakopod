@@ -72,7 +72,7 @@ _shared_root = pathlib.Path('/home/runner')
 if (_shared_root / '.hakopod-shared-prepare').read_text() != 'shared-workspace-v1\n':
     raise RuntimeError('Prepare workspace was not shared with the runner')
 (_shared_root / '.hakopod-shared-ready').touch(exist_ok=False)
-for _shared_attempt in range(240):
+for _shared_attempt in range(380):
     if (_shared_root / '.hakopod-shared-continue').exists():
         break
     time.sleep(1)

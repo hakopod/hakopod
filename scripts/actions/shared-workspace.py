@@ -21,6 +21,11 @@ NODE = 'k3d-hakopod-dev-server-0'
 GIB = 1024 ** 3
 MIB = 1024 ** 2
 PROBE_BYTES = 16 * MIB
+# Kubelet's 60-second volume scan uses 1.0 sliding jitter, so a refresh can
+# arrive after 120 seconds. Both accounting phases need that complete window.
+ACCOUNTING_WAIT_SECONDS = 135
+ACCOUNTING_MAX_SAMPLES = 48
+FULL_PREPARE_SECONDS = 350
 CAPABILITY = '0100000200040000000000000000000000000000'
 BUSYBOX = 'docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0'
 DAEMON_IMAGE = 'docker.io/library/docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0'
@@ -253,9 +258,9 @@ def volume_accounting(stats, identity, observation=None):
             pod.get('podRef', {}).get('namespace') == identity['namespace'] and pod.get('podRef', {}).get('name') == 'actions-runtime-fixture']
     if observation is not None:
         observation.update(summary_pod_count=len(inventory), matched_pod_count=len(pods),
-            same_name_pod_uids=[str(pod['podRef'].get('uid', ''))[:64] for pod in inventory
-                if pod['podRef'].get('namespace') == identity['namespace'] and
-                pod['podRef'].get('name') == 'actions-runtime-fixture'][:4])
+            same_name_pod_uids=[str(pod.get('podRef', {}).get('uid', ''))[:64] for pod in inventory
+                if pod.get('podRef', {}).get('namespace') == identity['namespace'] and
+                pod.get('podRef', {}).get('name') == 'actions-runtime-fixture'][:4])
     require(len(pods) <= 1, 'Kubelet returned duplicate workspace observations')
     listed = pods[0].get('volume', []) if pods else []
     if observation is not None:
@@ -356,7 +361,7 @@ class Observer:
 
     def _timeout(self):
         remaining = self.deadline - time.monotonic()
-        require(remaining > 0, 'Shared workspace checks exceeded their 210-second bound')
+        require(remaining > 0, 'Shared workspace checks exceeded their bounded deadline')
         return min(60, remaining)
 
     def runner(self, identity, code):
@@ -493,11 +498,12 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         attempts = self.report.setdefault('accounting_attempts', [])
         require(len(attempts) < 6, 'Excessive workspace accounting attempts')
         started = time.monotonic()
-        end = min(self.deadline, started + 85)
+        end = min(self.deadline, started + ACCOUNTING_WAIT_SECONDS)
         attempt = {'uid': identity['uid'], 'phase': phase, 'tolerance_bytes': MIB,
-                   'maximum_samples': 32, 'samples': [], 'status': 'running'}
+                   'timeout_seconds': ACCOUNTING_WAIT_SECONDS, 'maximum_samples': ACCOUNTING_MAX_SAMPLES,
+                   'samples': [], 'status': 'running'}
         attempts.append(attempt)
-        for index in range(32):
+        for index in range(ACCOUNTING_MAX_SAMPLES):
             if time.monotonic() >= end:
                 break
             observation = {'index': index, 'elapsed_seconds': round(time.monotonic() - started, 3)}
@@ -528,7 +534,7 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
                 'Docker sidecar does not share the runner workspace inodes')
 
     def prepare(self, pod, restart, full=True, disk=False):
-        self.deadline = time.monotonic() + 210
+        self.deadline = time.monotonic() + (FULL_PREPARE_SECONDS if full else 210)
         identity = pod_identity(pod, self.driver)
         require(identity['uid'] not in self.identities and len(self.identities) < 3, 'Repeated or excessive shared workspace Pods')
         inspected = bounded_json(self.host(['/bin/crictl', 'inspect', '-o', 'json', identity['container_id']]))
