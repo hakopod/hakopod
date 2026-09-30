@@ -24,7 +24,6 @@ jobs:
       ARCHIVE_RELEASE: ${{ inputs.archive_release }}
       IMAGE: ghcr.io/hakopod/managed-mongodb-operator:1.13.0-hakopod.1
       IMAGE_DIGEST: sha256:7ba576ba3115f007fcfc22c38b530ad05c211705a6a958124ec41ea80239a85c
-      DOCKER_CONFIG: ${{ runner.temp }}/mongodb-registry-auth
     steps:
       - name: Download and check the accepted artifact and publisher
         working-directory: ${{ runner.temp }}
@@ -32,6 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          export DOCKER_CONFIG="$RUNNER_TEMP/mongodb-registry-auth"
           [[ "$ARCHIVE_RELEASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]
           mkdir -m 700 mongodb-image mongodb-publisher "$DOCKER_CONFIG"
           gh release download "$ARCHIVE_RELEASE" --repo "$GITHUB_REPOSITORY" --pattern mongodb-controller-v1.oci.tar --dir mongodb-image
@@ -72,6 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          export DOCKER_CONFIG="$RUNNER_TEMP/mongodb-registry-auth"
           printf '%s' "$GH_TOKEN" | mongodb-publisher/crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           python3 - <<'PY'
           import os, re, subprocess
@@ -101,4 +102,4 @@ jobs:
       - name: Remove temporary registry authentication
         if: always()
         shell: bash
-        run: rm -rf -- "$DOCKER_CONFIG"
+        run: rm -rf -- "$RUNNER_TEMP/mongodb-registry-auth"
