@@ -1,0 +1,1369 @@
+diff --git a/cache/blobs_linux.go b/cache/blobs_linux.go
+--- a/cache/blobs_linux.go
++++ b/cache/blobs_linux.go
+@@ -27,6 +27,7 @@
+ // an error.
+ func (sr *immutableRef) tryComputeOverlayBlob(ctx context.Context, lower, upper []mount.Mount, mediaType string, ref string, compressorFunc compression.Compressor) (_ ocispecs.Descriptor, ok bool, err error) {
+ 	// Get upperdir location if mounts are overlayfs that can be processed by this differ.
++	diffOpts := overlay.DiffOptions{UserXAttr: sr.cm.OverlayFSUserXAttr}
+ 	upperdir, err := overlay.GetUpperdir(lower, upper)
+ 	if err != nil {
+ 		// This is not an overlayfs snapshot. This is not an error so don't return error here
+@@ -74,7 +75,7 @@
+ 		}
+ 		// Close ensure compressorFunc does some finalization works.
+ 		defer compressed.Close()
+-		if err := overlay.WriteUpperdir(ctx, io.MultiWriter(compressed, dgstr.Hash()), upperdir, lower); err != nil {
++		if err := overlay.WriteUpperdir(ctx, io.MultiWriter(compressed, dgstr.Hash()), upperdir, lower, diffOpts); err != nil {
+ 			return emptyDesc, false, errors.Wrap(err, "failed to write compressed diff")
+ 		}
+ 		if err := compressed.Close(); err != nil {
+@@ -84,7 +85,7 @@
+ 			labelspkg.LabelUncompressed: dgstr.Digest().String(),
+ 		}
+ 	} else {
+-		if err = overlay.WriteUpperdir(ctx, bufW, upperdir, lower); err != nil {
++		if err = overlay.WriteUpperdir(ctx, bufW, upperdir, lower, diffOpts); err != nil {
+ 			return emptyDesc, false, errors.Wrap(err, "failed to write diff")
+ 		}
+ 	}
+diff --git a/cache/manager.go b/cache/manager.go
+--- a/cache/manager.go
++++ b/cache/manager.go
+@@ -45,16 +45,17 @@
+ const maxPruneBatch = 10 // maximum number of refs to prune while holding the manager lock
+ 
+ type ManagerOpt struct {
+-	Snapshotter     snapshot.Snapshotter
+-	ContentStore    content.Store
+-	LeaseManager    leases.Manager
+-	PruneRefChecker ExternalRefCheckerFunc
+-	GarbageCollect  func(ctx context.Context) (gc.Stats, error)
+-	Applier         diff.Applier
+-	Differ          diff.Comparer
+-	MetadataStore   *metadata.Store
+-	Root            string
+-	MountPoolRoot   string
++	Snapshotter        snapshot.Snapshotter
++	OverlayFSUserXAttr bool
++	ContentStore       content.Store
++	LeaseManager       leases.Manager
++	PruneRefChecker    ExternalRefCheckerFunc
++	GarbageCollect     func(ctx context.Context) (gc.Stats, error)
++	Applier            diff.Applier
++	Differ             diff.Comparer
++	MetadataStore      *metadata.Store
++	Root               string
++	MountPoolRoot      string
+ }
+ 
+ type Accessor interface {
+@@ -88,16 +89,17 @@
+ }
+ 
+ type cacheManager struct {
+-	records         map[string]*cacheRecord
+-	mu              sync.Mutex
+-	Snapshotter     snapshot.MergeSnapshotter
+-	ContentStore    content.Store
+-	LeaseManager    leases.Manager
+-	PruneRefChecker ExternalRefCheckerFunc
+-	GarbageCollect  func(ctx context.Context) (gc.Stats, error)
+-	Applier         diff.Applier
+-	Differ          diff.Comparer
+-	MetadataStore   *metadata.Store
++	records            map[string]*cacheRecord
++	mu                 sync.Mutex
++	Snapshotter        snapshot.MergeSnapshotter
++	OverlayFSUserXAttr bool
++	ContentStore       content.Store
++	LeaseManager       leases.Manager
++	PruneRefChecker    ExternalRefCheckerFunc
++	GarbageCollect     func(ctx context.Context) (gc.Stats, error)
++	Applier            diff.Applier
++	Differ             diff.Comparer
++	MetadataStore      *metadata.Store
+ 
+ 	root string
+ 
+@@ -109,16 +111,17 @@
+ 
+ func NewManager(opt ManagerOpt) (Manager, error) {
+ 	cm := &cacheManager{
+-		Snapshotter:     snapshot.NewMergeSnapshotter(context.TODO(), opt.Snapshotter, opt.LeaseManager),
+-		ContentStore:    opt.ContentStore,
+-		LeaseManager:    opt.LeaseManager,
+-		PruneRefChecker: opt.PruneRefChecker,
+-		GarbageCollect:  opt.GarbageCollect,
+-		Applier:         opt.Applier,
+-		Differ:          opt.Differ,
+-		MetadataStore:   opt.MetadataStore,
+-		root:            opt.Root,
+-		records:         make(map[string]*cacheRecord),
++		Snapshotter:        snapshot.NewMergeSnapshotter(context.TODO(), opt.Snapshotter, opt.LeaseManager, snapshot.MergeSnapshotterOpt{UserXAttr: opt.OverlayFSUserXAttr}),
++		OverlayFSUserXAttr: opt.OverlayFSUserXAttr,
++		ContentStore:       opt.ContentStore,
++		LeaseManager:       opt.LeaseManager,
++		PruneRefChecker:    opt.PruneRefChecker,
++		GarbageCollect:     opt.GarbageCollect,
++		Applier:            opt.Applier,
++		Differ:             opt.Differ,
++		MetadataStore:      opt.MetadataStore,
++		root:               opt.Root,
++		records:            make(map[string]*cacheRecord),
+ 	}
+ 
+ 	if err := cm.init(context.TODO()); err != nil {
+diff --git a/cmd/buildkitd/config/config.go b/cmd/buildkitd/config/config.go
+--- a/cmd/buildkitd/config/config.go
++++ b/cmd/buildkitd/config/config.go
+@@ -124,12 +124,14 @@
+ }
+ 
+ type OCIConfig struct {
+-	Enabled          *bool             `toml:"enabled"`
+-	Labels           map[string]string `toml:"labels"`
+-	Platforms        []string          `toml:"platforms,omitempty"`
+-	Snapshotter      string            `toml:"snapshotter"`
+-	Rootless         bool              `toml:"rootless"`
+-	NoProcessSandbox bool              `toml:"noProcessSandbox"`
++	Enabled     *bool             `toml:"enabled"`
++	Labels      map[string]string `toml:"labels"`
++	Platforms   []string          `toml:"platforms,omitempty"`
++	Snapshotter string            `toml:"snapshotter"`
++	// OverlayFSUserXAttr is an explicit compatibility mode for managed overlay workers.
++	OverlayFSUserXAttr bool `toml:"overlayfs-userxattr"`
++	Rootless           bool `toml:"rootless"`
++	NoProcessSandbox   bool `toml:"noProcessSandbox"`
+ 	GCConfig
+ 	NetworkConfig
+ 	// UserRemapUnsupported is unsupported key for testing. The feature is
+diff --git a/cmd/buildkitd/main_oci_userxattr_test.go b/cmd/buildkitd/main_oci_userxattr_test.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/buildkitd/main_oci_userxattr_test.go
+@@ -0,0 +1,73 @@
++//go:build linux
++
++package main
++
++import (
++	"context"
++	"os"
++	"testing"
++
++	"github.com/moby/buildkit/cmd/buildkitd/config"
++	"github.com/stretchr/testify/require"
++	"github.com/urfave/cli/v3"
++)
++
++func TestManagedUserXAttrFlagIsExplicit(t *testing.T) {
++	t.Setenv("HAKOPOD_BUILDKIT_USERXATTR", "")
++	cfg := config.Config{}
++	require.NoError(t, runManagedUserXAttrFlags(nil, &cfg))
++	require.False(t, cfg.Workers.OCI.OverlayFSUserXAttr)
++	t.Setenv("HAKOPOD_BUILDKIT_USERXATTR", "true")
++	require.NoError(t, runManagedUserXAttrFlags(nil, &cfg))
++	require.True(t, cfg.Workers.OCI.OverlayFSUserXAttr)
++	require.NoError(t, runManagedUserXAttrFlags([]string{"--oci-worker-overlayfs-userxattr=false"}, &cfg))
++	require.False(t, cfg.Workers.OCI.OverlayFSUserXAttr)
++	t.Setenv("HAKOPOD_BUILDKIT_USERXATTR", "invalid")
++	require.Error(t, runManagedUserXAttrFlags(nil, &cfg))
++}
++
++func runManagedUserXAttrFlags(args []string, cfg *config.Config) error {
++	cmd := &cli.Command{
++		Name:  "buildkitd",
++		Flags: []cli.Flag{managedOverlayUserXAttrFlag(false)},
++		Action: func(_ context.Context, cmd *cli.Command) error {
++			return applyOCIFlags(cmd, cfg)
++		},
++	}
++	return cmd.Run(context.Background(), append([]string{"buildkitd"}, args...))
++}
++
++func TestManagedUserXAttrRejectsOtherSnapshotters(t *testing.T) {
++	for _, name := range []string{"native", "fuse-overlayfs", "stargz"} {
++		_, err := snapshotterFactory(t.TempDir(), config.OCIConfig{Snapshotter: name, OverlayFSUserXAttr: true}, nil, nil)
++		require.ErrorContains(t, err, "requires the overlayfs snapshotter")
++	}
++	_, err := snapshotterFactory(t.TempDir(), config.OCIConfig{Snapshotter: "overlayfs", ProxySnapshotterPath: "/missing", OverlayFSUserXAttr: true}, nil, nil)
++	require.ErrorContains(t, err, "proxy snapshotters")
++}
++
++func TestManagedSnapshotterPropagatesUserXAttrToReadOnlyMounts(t *testing.T) {
++	if os.Getenv("HAKOPOD_BUILDKIT_TEST_OVERLAY") != "1" {
++		t.Skip("requires an explicitly selected managed overlay test sandbox")
++	}
++	root := t.TempDir()
++	factory, err := snapshotterFactory(root, config.OCIConfig{Snapshotter: "overlayfs", OverlayFSUserXAttr: true}, nil, nil)
++	require.NoError(t, err)
++	sn, err := factory.New(root)
++	require.NoError(t, err)
++	t.Cleanup(func() { require.NoError(t, sn.Close()) })
++	ctx := context.Background()
++	_, err = sn.Prepare(ctx, "base", "")
++	require.NoError(t, err)
++	require.NoError(t, sn.Commit(ctx, "base-committed", "base"))
++	active, err := sn.Prepare(ctx, "child", "base-committed")
++	require.NoError(t, err)
++	require.Len(t, active, 1)
++	require.Contains(t, active[0].Options, "userxattr")
++	require.NoError(t, sn.Commit(ctx, "child-committed", "child"))
++	view, err := sn.View(ctx, "read-only", "child-committed")
++	require.NoError(t, err)
++	require.Len(t, view, 1)
++	require.Equal(t, "overlay", view[0].Type)
++	require.Contains(t, view[0].Options, "userxattr")
++}
+diff --git a/cmd/buildkitd/main_oci_worker.go b/cmd/buildkitd/main_oci_worker.go
+--- a/cmd/buildkitd/main_oci_worker.go
++++ b/cmd/buildkitd/main_oci_worker.go
+@@ -36,6 +36,7 @@
+ 	"github.com/moby/buildkit/util/disk"
+ 	"github.com/moby/buildkit/util/network/cniprovider"
+ 	"github.com/moby/buildkit/util/network/netproviders"
++	overlaydiff "github.com/moby/buildkit/util/overlay"
+ 	"github.com/moby/buildkit/util/resolver"
+ 	"github.com/moby/buildkit/worker"
+ 	"github.com/moby/buildkit/worker/base"
+@@ -80,6 +81,7 @@
+ 			Usage: "name of snapshotter (overlayfs, native, etc.)",
+ 			Value: defaultConf.Workers.OCI.Snapshotter,
+ 		},
++		managedOverlayUserXAttrFlag(defaultConf.Workers.OCI.OverlayFSUserXAttr),
+ 		&cli.StringFlag{
+ 			Name:  "oci-worker-proxy-snapshotter-path",
+ 			Usage: "address of proxy snapshotter socket (do not include 'unix://' prefix)",
+@@ -178,6 +180,15 @@
+ 	// TODO: allow multiple oci runtimes
+ }
+ 
++func managedOverlayUserXAttrFlag(value bool) *cli.BoolFlag {
++	return &cli.BoolFlag{
++		Name:    "oci-worker-overlayfs-userxattr",
++		Usage:   "use verified user overlay attributes on a fresh managed OCI snapshot volume",
++		Value:   value,
++		Sources: cli.EnvVars("HAKOPOD_BUILDKIT_USERXATTR"),
++	}
++}
++
+ func applyOCIFlags(c *cli.Command, cfg *config.Config) error {
+ 	if cfg.Workers.OCI.Snapshotter == "" {
+ 		cfg.Workers.OCI.Snapshotter = "auto"
+@@ -201,6 +212,9 @@
+ 	maps.Copy(cfg.Workers.OCI.Labels, labels)
+ 	if c.IsSet("oci-worker-snapshotter") {
+ 		cfg.Workers.OCI.Snapshotter = c.String("oci-worker-snapshotter")
++	}
++	if c.IsSet("oci-worker-overlayfs-userxattr") {
++		cfg.Workers.OCI.OverlayFSUserXAttr = c.Bool("oci-worker-overlayfs-userxattr")
+ 	}
+ 
+ 	if c.IsSet("rootless") || c.Bool("rootless") {
+@@ -333,6 +347,10 @@
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	opt.OverlayFSUserXAttr = cfg.OverlayFSUserXAttr
++	if cfg.OverlayFSUserXAttr {
++		opt.Applier = overlaydiff.NewUserXAttrApplier(opt.Applier)
++	}
+ 	opt.GCPolicy = getGCPolicy(cfg.GCConfig, common.config.Root)
+ 	opt.BuildkitVersion = getBuildkitVersion()
+ 	opt.RegistryHosts = hosts
+@@ -357,6 +375,9 @@
+ 		address = cfg.ProxySnapshotterPath
+ 	)
+ 	if address != "" {
++		if cfg.OverlayFSUserXAttr {
++			return runc.SnapshotterFactory{}, errors.New("overlayfs-userxattr does not support proxy snapshotters")
++		}
+ 		snFactory := runc.SnapshotterFactory{
+ 			Name: name,
+ 		}
+@@ -402,6 +423,9 @@
+ 		bklog.L.Infof("auto snapshotter: using %s", name)
+ 	}
+ 
++	if cfg.OverlayFSUserXAttr && name != "overlayfs" {
++		return runc.SnapshotterFactory{}, errors.New("overlayfs-userxattr requires the overlayfs snapshotter")
++	}
+ 	snFactory := runc.SnapshotterFactory{
+ 		Name: name,
+ 	}
+@@ -410,7 +434,14 @@
+ 		snFactory.New = native.NewSnapshotter
+ 	case "overlayfs": // not "overlay", for consistency with containerd snapshotter plugin ID.
+ 		snFactory.New = func(root string) (ctdsnapshot.Snapshotter, error) {
+-			return overlay.NewSnapshotter(root, overlay.AsynchronousRemove)
++			if err := overlaydiff.PrepareUserXAttr(context.Background(), root, cfg.OverlayFSUserXAttr); err != nil {
++				return nil, err
++			}
++			opts := []overlay.Opt{overlay.AsynchronousRemove}
++			if cfg.OverlayFSUserXAttr {
++				opts = append(opts, overlay.WithMountOptions([]string{"userxattr"}))
++			}
++			return overlay.NewSnapshotter(root, opts...)
+ 		}
+ 	case "fuse-overlayfs":
+ 		snFactory.New = func(root string) (ctdsnapshot.Snapshotter, error) {
+diff --git a/snapshot/diffapply_linux.go b/snapshot/diffapply_linux.go
+--- a/snapshot/diffapply_linux.go
++++ b/snapshot/diffapply_linux.go
+@@ -79,7 +79,7 @@
+ 				return snapshots.Usage{}, errors.Wrapf(err, "failed to mount empty upper snapshot view %s", diff.Upper)
+ 			}
+ 		}
+-		d, err := differFor(lowerMntable, upperMntable)
++		d, err := differFor(lowerMntable, upperMntable, overlay.DiffOptions{UserXAttr: sn.overlayUserXAttr})
+ 		if err != nil {
+ 			return snapshots.Usage{}, errors.Wrapf(err, "failed to create differ")
+ 		}
+@@ -510,16 +510,20 @@
+ 	upperBindSource  string
+ 	upperOverlayDirs []string // ordered lowest -> highest
+ 
+-	upperdir string
++	upperdir       string
++	overlayOptions overlay.DiffOptions
+ 
+ 	visited map[string]struct{} // set of parent subPaths that have been visited
+ 	inodes  map[inode]string    // map of inode -> subPath
+ }
+ 
+-func differFor(lowerMntable, upperMntable Mountable) (_ *differ, rerr error) {
++func differFor(lowerMntable, upperMntable Mountable, opts ...overlay.DiffOptions) (_ *differ, rerr error) {
+ 	d := &differ{
+ 		visited: make(map[string]struct{}),
+ 		inodes:  make(map[inode]string),
++	}
++	for _, opt := range opts {
++		d.overlayOptions = opt
+ 	}
+ 	defer func() {
+ 		if rerr != nil {
+@@ -732,7 +736,7 @@
+ 		}
+ 
+ 		return handle(ctx, c)
+-	}, d.upperdir, d.upperRoot, d.lowerRoot)
++	}, d.upperdir, d.upperRoot, d.lowerRoot, d.overlayOptions)
+ }
+ 
+ func (d *differ) checkParent(ctx context.Context, subPath string, handle func(context.Context, *change) error) error {
+diff --git a/snapshot/merge.go b/snapshot/merge.go
+--- a/snapshot/merge.go
++++ b/snapshot/merge.go
+@@ -50,6 +50,11 @@
+ 	Merge(ctx context.Context, key string, diffs []Diff, opts ...snapshots.Opt) error
+ }
+ 
++// MergeSnapshotterOpt carries an explicit namespace selected and verified by the worker.
++type MergeSnapshotterOpt struct {
++	UserXAttr bool
++}
++
+ type mergeSnapshotter struct {
+ 	Snapshotter
+ 	lm leases.Manager
+@@ -63,16 +68,23 @@
+ 	// Whether we should use the "user.*" namespace when writing overlay xattrs. If false,
+ 	// "trusted.*" is used instead.
+ 	userxattr bool
+-}
+-
+-func NewMergeSnapshotter(ctx context.Context, sn Snapshotter, lm leases.Manager) MergeSnapshotter {
++
++	// Explicit mode also controls metadata reads in the overlay differ.
++	overlayUserXAttr bool
++}
++
++func NewMergeSnapshotter(ctx context.Context, sn Snapshotter, lm leases.Manager, opts ...MergeSnapshotterOpt) MergeSnapshotter {
+ 	name := sn.Name()
+ 	_, tryCrossSnapshotLink := hardlinkMergeSnapshotters[name]
+ 	_, overlayBased := overlayBasedSnapshotters[name]
+ 
+ 	skipBaseLayers := overlayBased // default to skipping base layer for overlay-based snapshotters
+-	var userxattr bool
+-	if overlayBased && userns.RunningInUserNS() {
++	var explicitUserXAttr bool
++	for _, opt := range opts {
++		explicitUserXAttr = opt.UserXAttr && name == "overlayfs"
++	}
++	userxattr := explicitUserXAttr
++	if !explicitUserXAttr && overlayBased && userns.RunningInUserNS() {
+ 		// When using an overlay-based snapshotter, if we are running rootless on a pre-5.11
+ 		// kernel, we will not have userxattr. This results in opaque xattrs not being visible
+ 		// to us and thus breaking the overlay-optimized differ.
+@@ -97,6 +109,7 @@
+ 		tryCrossSnapshotLink: tryCrossSnapshotLink,
+ 		skipBaseLayers:       skipBaseLayers,
+ 		userxattr:            userxattr,
++		overlayUserXAttr:     explicitUserXAttr,
+ 	}
+ }
+ 
+diff --git a/snapshot/merge_userxattr_test.go b/snapshot/merge_userxattr_test.go
+new file mode 100644
+--- /dev/null
++++ b/snapshot/merge_userxattr_test.go
+@@ -0,0 +1,34 @@
++package snapshot
++
++import (
++	"context"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++type namedUserXAttrSnapshotter struct {
++	Snapshotter
++	name string
++}
++
++func (s namedUserXAttrSnapshotter) Name() string { return s.name }
++
++func TestMergeRoutesExplicitUserXAttrWithoutUserNamespaceDetection(t *testing.T) {
++	// Embedded nil operations make an unexpected capability probe fail this test.
++	sn := namedUserXAttrSnapshotter{name: "overlayfs"}
++	merged := NewMergeSnapshotter(context.Background(), sn, nil, MergeSnapshotterOpt{UserXAttr: true}).(*mergeSnapshotter)
++	require.True(t, merged.userxattr)
++	require.True(t, merged.overlayUserXAttr)
++	require.True(t, merged.tryCrossSnapshotLink)
++	require.True(t, merged.skipBaseLayers)
++}
++
++func TestMergeDoesNotApplyOverlayModeToOtherSnapshotters(t *testing.T) {
++	sn := namedUserXAttrSnapshotter{name: "native"}
++	merged := NewMergeSnapshotter(context.Background(), sn, nil, MergeSnapshotterOpt{UserXAttr: true}).(*mergeSnapshotter)
++	require.False(t, merged.userxattr)
++	require.False(t, merged.overlayUserXAttr)
++	require.True(t, merged.tryCrossSnapshotLink)
++	require.False(t, merged.skipBaseLayers)
++}
+diff --git a/util/overlay/applier_linux.go b/util/overlay/applier_linux.go
+new file mode 100644
+--- /dev/null
++++ b/util/overlay/applier_linux.go
+@@ -0,0 +1,51 @@
++//go:build linux
++
++package overlay
++
++import (
++	"context"
++	"fmt"
++	"slices"
++
++	"github.com/containerd/containerd/v2/core/diff"
++	"github.com/containerd/containerd/v2/core/mount"
++	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
++)
++
++// NewUserXAttrApplier applies layers through the selected overlay mount so that
++// whiteouts use its metadata namespace. The upstream raw-upper shortcut writes
++// trusted.overlay.opaque and must not be used for an explicit userxattr worker.
++func NewUserXAttrApplier(applier diff.Applier) diff.Applier {
++	return &userXAttrApplier{applier: applier, withTempMount: mount.WithTempMount}
++}
++
++type userXAttrApplier struct {
++	applier       diff.Applier
++	withTempMount func(context.Context, []mount.Mount, func(string) error) error
++}
++
++func (a *userXAttrApplier) Apply(ctx context.Context, desc ocispec.Descriptor, mounts []mount.Mount, opts ...diff.ApplyOpt) (ocispec.Descriptor, error) {
++	if err := ctx.Err(); err != nil {
++		return ocispec.Descriptor{}, err
++	}
++	if len(mounts) != 1 || mounts[0].Type != "overlay" {
++		return a.applier.Apply(ctx, desc, mounts, opts...)
++	}
++	if !slices.Contains(mounts[0].Options, "userxattr") {
++		return ocispec.Descriptor{}, fmt.Errorf("userxattr layer import requires an overlay mount with userxattr")
++	}
++	var applied ocispec.Descriptor
++	err := a.withTempMount(ctx, mounts, func(root string) error {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
++		var err error
++		// A bind of the merged view avoids the upstream overlay shortcut while
++		// preserving its processors, progress, checksum and syncfs handling.
++		applied, err = a.applier.Apply(ctx, desc, []mount.Mount{{
++			Type: "bind", Source: root, Options: []string{"rbind", "rw"},
++		}}, opts...)
++		return err
++	})
++	return applied, err
++}
+diff --git a/util/overlay/overlay.go b/util/overlay/overlay.go
+--- a/util/overlay/overlay.go
++++ b/util/overlay/overlay.go
+@@ -1,6 +1,20 @@
+ package overlay
+ 
+ import "github.com/containerd/containerd/v2/core/mount"
++
++// DiffOptions selects an explicitly verified overlay metadata namespace.
++// The zero value retains the upstream differ behavior.
++type DiffOptions struct {
++	UserXAttr bool
++}
++
++func diffOptions(opts []DiffOptions) DiffOptions {
++	var result DiffOptions
++	for _, opt := range opts {
++		result = opt
++	}
++	return result
++}
+ 
+ // IsOverlayMountType returns true if the mount type is overlay-based
+ func IsOverlayMountType(mnt mount.Mount) bool {
+diff --git a/util/overlay/overlay_linux.go b/util/overlay/overlay_linux.go
+--- a/util/overlay/overlay_linux.go
++++ b/util/overlay/overlay_linux.go
+@@ -110,23 +110,18 @@
+ 
+ // WriteUpperdir writes a layer tar archive into the specified writer, based on
+ // the diff information stored in the upperdir.
+-func WriteUpperdir(ctx context.Context, w io.Writer, upperdir string, lower []mount.Mount) error {
++func WriteUpperdir(ctx context.Context, w io.Writer, upperdir string, lower []mount.Mount, options ...DiffOptions) error {
++	opts := diffOptions(options)
+ 	emptyLower, err := os.MkdirTemp("", "buildkit") // empty directory used for the lower of diff view
+ 	if err != nil {
+ 		return errors.Wrapf(err, "failed to create temp dir")
+ 	}
+ 	defer os.Remove(emptyLower)
+-	upperView := []mount.Mount{
+-		{
+-			Type:    "overlay",
+-			Source:  "overlay",
+-			Options: []string{fmt.Sprintf("lowerdir=%s", strings.Join([]string{upperdir, emptyLower}, ":"))},
+-		},
+-	}
++	upperView := []mount.Mount{upperViewMount(upperdir, emptyLower, opts)}
+ 	return mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
+ 		return mount.WithTempMount(ctx, upperView, func(upperViewRoot string) error {
+ 			cw := archive.NewChangeWriter(&cancellableWriter{ctx, w}, upperViewRoot)
+-			if err := Changes(ctx, cw.HandleChange, upperdir, upperViewRoot, lowerRoot); err != nil {
++			if err := Changes(ctx, cw.HandleChange, upperdir, upperViewRoot, lowerRoot, opts); err != nil {
+ 				if err2 := cw.Close(); err2 != nil {
+ 					return errors.Wrapf(err, "failed to record upperdir changes (close error: %v)", err2)
+ 				}
+@@ -137,6 +132,14 @@
+ 	})
+ }
+ 
++func upperViewMount(upperdir, emptyLower string, opts DiffOptions) mount.Mount {
++	options := []string{fmt.Sprintf("lowerdir=%s", strings.Join([]string{upperdir, emptyLower}, ":"))}
++	if opts.UserXAttr {
++		options = append(options, "userxattr")
++	}
++	return mount.Mount{Type: "overlay", Source: "overlay", Options: options}
++}
++
+ type cancellableWriter struct {
+ 	ctx context.Context
+ 	w   io.Writer
+@@ -153,7 +156,8 @@
+ // "upperdir" for computing the diff. "upperdirView" is overlayfs mounted view of
+ // the upperdir that doesn't contain whiteouts. This is used for computing
+ // changes under opaque directories.
+-func Changes(ctx context.Context, changeFn fs.ChangeFunc, upperdir, upperdirView, base string) error {
++func Changes(ctx context.Context, changeFn fs.ChangeFunc, upperdir, upperdirView, base string, options ...DiffOptions) error {
++	opts := diffOptions(options)
+ 	return filepath.Walk(upperdir, func(path string, f os.FileInfo, err error) error {
+ 		if err != nil {
+ 			return err
+@@ -177,7 +181,7 @@
+ 		}
+ 
+ 		// Check redirect
+-		if redirect, err := checkRedirect(upperdir, path, f); err != nil {
++		if redirect, err := checkRedirect(upperdir, path, f, opts); err != nil {
+ 			return err
+ 		} else if redirect {
+ 			// Return error when redirect_dir is enabled which can result to a wrong diff.
+@@ -224,7 +228,7 @@
+ 		}
+ 
+ 		if f != nil {
+-			if isOpaque, err := checkOpaque(upperdir, path, base, f); err != nil {
++			if isOpaque, err := checkOpaque(upperdir, path, base, f, opts); err != nil {
+ 				return err
+ 			} else if isOpaque {
+ 				// This is an opaque directory. Start a new walking differ to get adds/deletes of
+@@ -268,38 +272,51 @@
+ 	return false, false, nil
+ }
+ 
+-// checkOpaque checks if the specified file is an opaque directory
+-func checkOpaque(upperdir string, path string, base string, f os.FileInfo) (isOpaque bool, _ error) {
+-	if f.IsDir() {
+-		for _, oKey := range []string{"trusted.overlay.opaque", "user.overlay.opaque"} {
+-			opaque, err := sysx.LGetxattr(filepath.Join(upperdir, path), oKey)
+-			if err != nil && !errors.Is(err, unix.ENODATA) {
+-				return false, errors.Wrapf(err, "failed to retrieve %s attr", oKey)
+-			} else if len(opaque) == 1 && opaque[0] == 'y' {
+-				// This is an opaque whiteout directory.
+-				if _, err := os.Lstat(filepath.Join(base, path)); err != nil {
+-					if !os.IsNotExist(err) {
+-						return false, errors.Wrapf(err, "failed to lstat")
+-					}
+-					// This file doesn't exist even in the base dir. We don't need treat this as an opaque.
+-					return false, nil
+-				}
++// checkOpaque checks if the specified file is an opaque directory.
++func checkOpaque(upperdir string, path string, base string, f os.FileInfo, opts DiffOptions) (bool, error) {
++	if !f.IsDir() {
++		return false, nil
++	}
++	opaque, err := hasOverlayFlag(filepath.Join(upperdir, path), "opaque", opts, sysx.LGetxattr)
++	if err != nil || !opaque {
++		return false, err
++	}
++	if _, err := os.Lstat(filepath.Join(base, path)); err != nil {
++		if !os.IsNotExist(err) {
++			return false, errors.Wrap(err, "failed to lstat")
++		}
++		return false, nil
++	}
++	return true, nil
++}
++
++// checkRedirect checks if the specified path enables redirect_dir.
++func checkRedirect(upperdir string, path string, f os.FileInfo, opts DiffOptions) (bool, error) {
++	if !f.IsDir() {
++		return false, nil
++	}
++	return hasOverlayFlag(filepath.Join(upperdir, path), "redirect", opts, sysx.LGetxattr)
++}
++
++func hasOverlayFlag(path, name string, opts DiffOptions, getXattr func(string, string) ([]byte, error)) (bool, error) {
++	keys := []string{"trusted.overlay." + name}
++	if opts.UserXAttr {
++		keys = []string{"user.overlay." + name}
++	} else if name == "opaque" {
++		keys = append(keys, "user.overlay.opaque")
++	}
++	for _, key := range keys {
++		value, err := getXattr(path, key)
++		if err != nil && !errors.Is(err, unix.ENODATA) {
++			return false, errors.Wrapf(err, "failed to retrieve %s attr", key)
++		}
++		if name == "opaque" {
++			if len(value) == 1 && value[0] == 'y' {
+ 				return true, nil
+ 			}
+-		}
+-	}
+-	return false, nil
+-}
+-
+-// checkRedirect checks if the specified path enables redirect_dir.
+-func checkRedirect(upperdir string, path string, f os.FileInfo) (bool, error) {
+-	if f.IsDir() {
+-		rKey := "trusted.overlay.redirect"
+-		redirect, err := sysx.LGetxattr(filepath.Join(upperdir, path), rKey)
+-		if err != nil && !errors.Is(err, unix.ENODATA) {
+-			return false, errors.Wrapf(err, "failed to retrieve %s attr", rKey)
+-		}
+-		return len(redirect) > 0, nil
++		} else if len(value) > 0 {
++			return true, nil
++		}
+ 	}
+ 	return false, nil
+ }
+diff --git a/util/overlay/userxattr_linux.go b/util/overlay/userxattr_linux.go
+new file mode 100644
+--- /dev/null
++++ b/util/overlay/userxattr_linux.go
+@@ -0,0 +1,202 @@
++//go:build linux
++
++package overlay
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"path/filepath"
++	"syscall"
++	"time"
++
++	"github.com/containerd/containerd/v2/core/mount"
++	"github.com/containerd/continuity/sysx"
++	"github.com/pkg/errors"
++	"golang.org/x/sys/unix"
++)
++
++const userXAttrMarker = ".buildkit-overlay-userxattr-v1"
++const userXAttrMarkerValue = "userxattr-v1\n"
++
++// PrepareUserXAttr verifies the requested mode before a snapshot store is opened.
++// Existing unmarked stores must be replaced, never reinterpreted in another namespace.
++func PrepareUserXAttr(ctx context.Context, root string, enabled bool) error {
++	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
++	defer cancel()
++	return prepareUserXAttr(ctx, root, enabled, probeUserXAttr)
++}
++
++func prepareUserXAttr(ctx context.Context, root string, enabled bool, probe func(context.Context, string) error) error {
++	marker := filepath.Join(root, userXAttrMarker)
++	info, err := os.Lstat(marker)
++	marked := err == nil
++	if err != nil && !os.IsNotExist(err) {
++		return errors.Wrap(err, "inspect overlay namespace marker")
++	}
++	if marked {
++		if !enabled {
++			return errors.New("snapshot volume uses userxattr; use the same mode or a new builder volume")
++		}
++		if !info.Mode().IsRegular() || info.Size() != int64(len(userXAttrMarkerValue)) {
++			return errors.New("invalid overlay namespace marker; use a new builder volume")
++		}
++		value, err := os.ReadFile(marker)
++		if err != nil {
++			return errors.Wrap(err, "read overlay namespace marker")
++		}
++		if string(value) != userXAttrMarkerValue {
++			return errors.New("unknown overlay namespace marker; use a new builder volume")
++		}
++	} else if !enabled {
++		return nil
++	} else {
++		if err := os.MkdirAll(root, 0700); err != nil {
++			return err
++		}
++		entries, err := os.ReadDir(root)
++		if err != nil {
++			return err
++		}
++		if len(entries) != 0 {
++			return errors.New("cannot enable userxattr on an existing unmarked snapshot store; use a new builder volume")
++		}
++	}
++	if err := ctx.Err(); err != nil {
++		return err
++	}
++	if err := probe(ctx, root); err != nil {
++		return errors.Wrap(err, "overlay userxattr semantic probe failed")
++	}
++	if err := ctx.Err(); err != nil {
++		return err
++	}
++	if marked {
++		return nil
++	}
++	file, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
++	if err != nil {
++		return errors.Wrap(err, "create overlay namespace marker")
++	}
++	if _, err := file.WriteString(userXAttrMarkerValue); err != nil {
++		file.Close()
++		return err
++	}
++	if err := file.Sync(); err != nil {
++		file.Close()
++		return err
++	}
++	if err := file.Close(); err != nil {
++		return err
++	}
++	dir, err := os.Open(root)
++	if err != nil {
++		return err
++	}
++	defer dir.Close()
++	if err := dir.Sync(); err != nil {
++		return err
++	}
++	return ctx.Err()
++}
++
++// probeUserXAttr checks the actual snapshot filesystem, not kernel version or UID mappings.
++// Mount targets are allocated outside the probe tree by WithTempMount, so raw-tree cleanup
++// cannot walk a mount whose unmount failed.
++func probeUserXAttr(ctx context.Context, root string) (rerr error) {
++	tmp, err := os.MkdirTemp(root, ".userxattr-probe-")
++	if err != nil {
++		return err
++	}
++	defer func() {
++		if err := os.RemoveAll(tmp); err != nil && rerr == nil {
++			rerr = errors.Wrap(err, "remove overlay probe files")
++		}
++	}()
++	lower, upper, work, empty := filepath.Join(tmp, "lower"), filepath.Join(tmp, "upper"), filepath.Join(tmp, "work"), filepath.Join(tmp, "empty")
++	for _, dir := range []string{lower, upper, work, empty, filepath.Join(lower, "opaque")} {
++		if err := os.Mkdir(dir, 0700); err != nil {
++			return err
++		}
++	}
++	for _, name := range []string{"opaque/old", "deleted", "kept"} {
++		if err := os.WriteFile(filepath.Join(lower, name), []byte("lower"), 0600); err != nil {
++			return err
++		}
++	}
++	rw := []mount.Mount{{Type: "overlay", Source: "overlay", Options: []string{
++		fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work), "userxattr",
++	}}}
++	if err := mount.WithTempMount(ctx, rw, func(view string) error {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
++		if err := os.Remove(filepath.Join(view, "deleted")); err != nil {
++			return err
++		}
++		if err := os.RemoveAll(filepath.Join(view, "opaque")); err != nil {
++			return err
++		}
++		if err := os.Mkdir(filepath.Join(view, "opaque"), 0700); err != nil {
++			return err
++		}
++		return os.WriteFile(filepath.Join(view, "opaque/new"), []byte("upper"), 0600)
++	}); err != nil {
++		return err
++	}
++	opaque, err := sysx.LGetxattr(filepath.Join(upper, "opaque"), "user.overlay.opaque")
++	if err != nil {
++		return err
++	}
++	if string(opaque) != "y" {
++		return errors.New("overlay did not write a user namespace opaque directory")
++	}
++	whiteout, err := os.Lstat(filepath.Join(upper, "deleted"))
++	if err != nil {
++		return err
++	}
++	stat, ok := whiteout.Sys().(*syscall.Stat_t)
++	if !ok || whiteout.Mode()&os.ModeCharDevice == 0 || stat.Rdev != 0 {
++		return errors.New("overlay did not create the expected whiteout device")
++	}
++	for _, name := range []string{"opaque/old", "deleted", "kept"} {
++		value, err := os.ReadFile(filepath.Join(lower, name))
++		if err != nil || string(value) != "lower" {
++			return errors.New("overlay changed its immutable lower snapshot")
++		}
++	}
++	for _, bottom := range []string{lower, empty} {
++		view := upperViewMount(upper, bottom, DiffOptions{UserXAttr: true})
++		view.Options = append(view.Options, "ro")
++		if err := mount.WithTempMount(ctx, []mount.Mount{view}, func(view string) error {
++			if err := ctx.Err(); err != nil {
++				return err
++			}
++			for _, name := range []string{"opaque/old", "deleted"} {
++				if _, err := os.Lstat(filepath.Join(view, name)); !os.IsNotExist(err) {
++					return errors.New("read-only overlay exposed a deleted lower entry")
++				}
++			}
++			value, err := os.ReadFile(filepath.Join(view, "opaque/new"))
++			if err != nil || string(value) != "upper" {
++				return errors.New("read-only overlay lost replacement directory contents")
++			}
++			if bottom == lower {
++				value, err = os.ReadFile(filepath.Join(view, "kept"))
++				if err != nil || string(value) != "lower" {
++					return errors.New("read-only overlay lost an unchanged lower file")
++				}
++			}
++			// Reading the merged view must not expose the selected overlay metadata.
++			if _, err := sysx.LGetxattr(filepath.Join(view, "opaque"), "user.overlay.opaque"); err == nil {
++				return errors.New("overlay exposed its internal opaque attribute")
++			} else if !errors.Is(err, unix.ENODATA) && !errors.Is(err, unix.EOPNOTSUPP) {
++				return err
++			}
++			return nil
++		}); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/util/overlay/userxattr_linux_test.go b/util/overlay/userxattr_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/util/overlay/userxattr_linux_test.go
+@@ -0,0 +1,391 @@
++//go:build linux
++
++package overlay
++
++import (
++	"archive/tar"
++	"bytes"
++	"compress/gzip"
++	"context"
++	"fmt"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/containerd/containerd/v2/core/content"
++	"github.com/containerd/containerd/v2/core/diff"
++	"github.com/containerd/containerd/v2/core/diff/apply"
++	"github.com/containerd/containerd/v2/core/mount"
++	"github.com/containerd/containerd/v2/plugins/content/local"
++	snapoverlay "github.com/containerd/containerd/v2/plugins/snapshots/overlay"
++	"github.com/moby/buildkit/util/winlayers"
++	digest "github.com/opencontainers/go-digest"
++	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
++	"github.com/stretchr/testify/require"
++	"golang.org/x/sys/unix"
++)
++
++func TestOverlayFlagNamespaceAndErrors(t *testing.T) {
++	for _, name := range []string{"opaque", "redirect"} {
++		t.Run(name, func(t *testing.T) {
++			var keys []string
++			present, err := hasOverlayFlag("/fixture", name, DiffOptions{UserXAttr: true}, func(path, key string) ([]byte, error) {
++				require.Equal(t, "/fixture", path)
++				keys = append(keys, key)
++				return []byte("y"), nil
++			})
++			require.NoError(t, err)
++			require.True(t, present)
++			require.Equal(t, []string{"user.overlay." + name}, keys)
++			for _, failure := range []error{unix.EOPNOTSUPP, unix.EPERM, unix.EACCES, unix.EIO, unix.ENOENT} {
++				present, err = hasOverlayFlag("/fixture", name, DiffOptions{UserXAttr: true}, func(_, _ string) ([]byte, error) {
++					return nil, failure
++				})
++				require.False(t, present)
++				require.ErrorIs(t, err, failure)
++			}
++			present, err = hasOverlayFlag("/fixture", name, DiffOptions{UserXAttr: true}, func(_, _ string) ([]byte, error) {
++				return nil, unix.ENODATA
++			})
++			require.NoError(t, err)
++			require.False(t, present)
++		})
++	}
++}
++
++func TestLegacyOverlayFlagBehaviorIsUnchanged(t *testing.T) {
++	var keys []string
++	present, err := hasOverlayFlag("/fixture", "opaque", DiffOptions{}, func(_, key string) ([]byte, error) {
++		keys = append(keys, key)
++		if key == "trusted.overlay.opaque" {
++			return nil, unix.ENODATA
++		}
++		return []byte("y"), nil
++	})
++	require.NoError(t, err)
++	require.True(t, present)
++	require.Equal(t, []string{"trusted.overlay.opaque", "user.overlay.opaque"}, keys)
++	for _, name := range []string{"opaque", "redirect"} {
++		keys = nil
++		present, err = hasOverlayFlag("/fixture", name, DiffOptions{}, func(_, key string) ([]byte, error) {
++			keys = append(keys, key)
++			return nil, unix.EOPNOTSUPP
++		})
++		require.False(t, present)
++		require.ErrorIs(t, err, unix.EOPNOTSUPP)
++		require.Equal(t, []string{"trusted.overlay." + name}, keys)
++	}
++}
++
++func TestUpperViewPropagatesExplicitUserXAttr(t *testing.T) {
++	legacy := upperViewMount("/upper", "/empty", DiffOptions{})
++	require.Equal(t, []string{"lowerdir=/upper:/empty"}, legacy.Options)
++	managed := upperViewMount("/upper", "/empty", DiffOptions{UserXAttr: true})
++	require.Equal(t, []string{"lowerdir=/upper:/empty", "userxattr"}, managed.Options)
++}
++
++func TestUserXAttrVolumeModeIsImmutable(t *testing.T) {
++	root := t.TempDir()
++	calls := 0
++	probe := func(context.Context, string) error {
++		calls++
++		return nil
++	}
++	require.NoError(t, prepareUserXAttr(context.Background(), root, false, probe))
++	require.Zero(t, calls)
++	require.NoError(t, prepareUserXAttr(context.Background(), root, true, probe))
++	require.Equal(t, 1, calls)
++	value, err := os.ReadFile(filepath.Join(root, userXAttrMarker))
++	require.NoError(t, err)
++	require.Equal(t, userXAttrMarkerValue, string(value))
++	require.NoError(t, os.WriteFile(filepath.Join(root, "metadata.db"), []byte("existing state"), 0600))
++	require.NoError(t, prepareUserXAttr(context.Background(), root, true, probe))
++	require.Equal(t, 2, calls)
++	require.ErrorContains(t, prepareUserXAttr(context.Background(), root, false, probe), "same mode")
++	require.Equal(t, 2, calls)
++	value, err = os.ReadFile(filepath.Join(root, "metadata.db"))
++	require.NoError(t, err)
++	require.Equal(t, "existing state", string(value))
++}
++
++func TestUserXAttrRefusesUnmarkedOrInvalidState(t *testing.T) {
++	for _, state := range []string{"existing", "invalid", "symlink"} {
++		t.Run(state, func(t *testing.T) {
++			root := t.TempDir()
++			marker := filepath.Join(root, userXAttrMarker)
++			switch state {
++			case "existing":
++				require.NoError(t, os.WriteFile(filepath.Join(root, "metadata.db"), []byte("state"), 0600))
++			case "invalid":
++				require.NoError(t, os.WriteFile(marker, []byte("other-mode\n"), 0600))
++			case "symlink":
++				require.NoError(t, os.Symlink("missing", marker))
++			}
++			called := false
++			err := prepareUserXAttr(context.Background(), root, true, func(context.Context, string) error {
++				called = true
++				return nil
++			})
++			require.Error(t, err)
++			require.False(t, called)
++		})
++	}
++}
++
++func TestUserXAttrProbeFailureAndCancellationDoNotMarkVolume(t *testing.T) {
++	root := t.TempDir()
++	err := prepareUserXAttr(context.Background(), root, true, func(context.Context, string) error { return unix.EOPNOTSUPP })
++	require.ErrorIs(t, err, unix.EOPNOTSUPP)
++	_, err = os.Stat(filepath.Join(root, userXAttrMarker))
++	require.True(t, os.IsNotExist(err))
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	called := false
++	err = prepareUserXAttr(ctx, root, true, func(context.Context, string) error {
++		called = true
++		return nil
++	})
++	require.ErrorIs(t, err, context.Canceled)
++	require.False(t, called)
++}
++
++func TestManagedUserXAttrSemanticProbe(t *testing.T) {
++	if os.Getenv("HAKOPOD_BUILDKIT_TEST_OVERLAY") != "1" {
++		t.Skip("requires an explicitly selected managed overlay test sandbox")
++	}
++	require.NoError(t, PrepareUserXAttr(context.Background(), t.TempDir(), true))
++}
++
++type userXAttrApplyFunc func(context.Context, ocispec.Descriptor, []mount.Mount, ...diff.ApplyOpt) (ocispec.Descriptor, error)
++
++func (f userXAttrApplyFunc) Apply(ctx context.Context, desc ocispec.Descriptor, mounts []mount.Mount, opts ...diff.ApplyOpt) (ocispec.Descriptor, error) {
++	return f(ctx, desc, mounts, opts...)
++}
++
++func TestUserXAttrApplierRoutesThroughMountedView(t *testing.T) {
++	ctx := context.Background()
++	desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digest.FromString("compressed")}
++	expected := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayer, Digest: digest.FromString("uncompressed")}
++	mounts := []mount.Mount{{Type: "overlay", Source: "overlay", Options: []string{"lowerdir=/lower", "upperdir=/upper", "workdir=/work", "userxattr"}}}
++	mounted := false
++	applyCalls, optionCalls := 0, 0
++	option := func(gotCtx context.Context, gotDesc ocispec.Descriptor, cfg *diff.ApplyConfig) error {
++		require.Equal(t, ctx, gotCtx)
++		require.Equal(t, desc, gotDesc)
++		optionCalls++
++		cfg.SyncFs = true
++		return nil
++	}
++	applier := &userXAttrApplier{
++		applier: userXAttrApplyFunc(func(gotCtx context.Context, gotDesc ocispec.Descriptor, gotMounts []mount.Mount, opts ...diff.ApplyOpt) (ocispec.Descriptor, error) {
++			require.True(t, mounted)
++			require.Equal(t, ctx, gotCtx)
++			require.Equal(t, desc, gotDesc)
++			require.Equal(t, []mount.Mount{{Type: "bind", Source: "/merged", Options: []string{"rbind", "rw"}}}, gotMounts)
++			require.Len(t, opts, 1)
++			var cfg diff.ApplyConfig
++			require.NoError(t, opts[0](gotCtx, gotDesc, &cfg))
++			require.True(t, cfg.SyncFs)
++			applyCalls++
++			return expected, nil
++		}),
++		withTempMount: func(gotCtx context.Context, gotMounts []mount.Mount, fn func(string) error) error {
++			require.Equal(t, ctx, gotCtx)
++			require.Equal(t, mounts, gotMounts)
++			mounted = true
++			defer func() { mounted = false }()
++			return fn("/merged")
++		},
++	}
++	got, err := applier.Apply(ctx, desc, mounts, option)
++	require.NoError(t, err)
++	require.Equal(t, expected, got)
++	require.Equal(t, 1, applyCalls)
++	require.Equal(t, 1, optionCalls)
++	require.False(t, mounted)
++}
++
++func TestUserXAttrApplierPreservesBindAndErrors(t *testing.T) {
++	desc := ocispec.Descriptor{Digest: digest.FromString("result")}
++	for _, failure := range []error{nil, unix.EIO, context.Canceled} {
++		calls := 0
++		mounts := []mount.Mount{{Type: "bind", Source: "/bottom", Options: []string{"rbind", "rw"}}}
++		applier := &userXAttrApplier{
++			applier: userXAttrApplyFunc(func(_ context.Context, gotDesc ocispec.Descriptor, gotMounts []mount.Mount, opts ...diff.ApplyOpt) (ocispec.Descriptor, error) {
++				require.Equal(t, desc, gotDesc)
++				require.Equal(t, mounts, gotMounts)
++				require.Len(t, opts, 1)
++				calls++
++				return desc, failure
++			}),
++			withTempMount: func(context.Context, []mount.Mount, func(string) error) error {
++				t.Fatal("bottom layer must retain the upstream bind path")
++				return nil
++			},
++		}
++		got, err := applier.Apply(context.Background(), desc, mounts, diff.WithSyncFs(true))
++		require.ErrorIs(t, err, failure)
++		require.Equal(t, desc, got)
++		require.Equal(t, 1, calls)
++	}
++	for _, phase := range []string{"mount", "apply", "unmount"} {
++		t.Run(phase, func(t *testing.T) {
++			calls := 0
++			applier := &userXAttrApplier{
++				applier: userXAttrApplyFunc(func(context.Context, ocispec.Descriptor, []mount.Mount, ...diff.ApplyOpt) (ocispec.Descriptor, error) {
++					calls++
++					if phase == "apply" {
++						return ocispec.Descriptor{}, unix.EIO
++					}
++					return desc, nil
++				}),
++				withTempMount: func(_ context.Context, _ []mount.Mount, fn func(string) error) error {
++					if phase == "mount" {
++						return unix.EIO
++					}
++					if err := fn("/merged"); err != nil {
++						return err
++					}
++					return unix.EIO
++				},
++			}
++			_, err := applier.Apply(context.Background(), desc, []mount.Mount{{Type: "overlay", Options: []string{"userxattr"}}})
++			require.ErrorIs(t, err, unix.EIO)
++			if phase == "mount" {
++				require.Zero(t, calls)
++			} else {
++				require.Equal(t, 1, calls)
++			}
++		})
++	}
++}
++
++func TestUserXAttrApplierRejectsNamespaceMismatchAndCancellation(t *testing.T) {
++	// Nil dependencies ensure these failures happen before mounting or applying.
++	applier := &userXAttrApplier{}
++	_, err := applier.Apply(context.Background(), ocispec.Descriptor{}, []mount.Mount{{Type: "overlay"}})
++	require.ErrorContains(t, err, "requires an overlay mount with userxattr")
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	_, err = applier.Apply(ctx, ocispec.Descriptor{}, []mount.Mount{{Type: "overlay", Options: []string{"userxattr"}}})
++	require.ErrorIs(t, err, context.Canceled)
++	ctx, cancel = context.WithCancel(context.Background())
++	applier.withTempMount = func(_ context.Context, _ []mount.Mount, fn func(string) error) error {
++		cancel()
++		return fn("/merged")
++	}
++	_, err = applier.Apply(ctx, ocispec.Descriptor{}, []mount.Mount{{Type: "overlay", Options: []string{"userxattr"}}})
++	require.ErrorIs(t, err, context.Canceled)
++}
++
++func TestManagedUserXAttrLayerImport(t *testing.T) {
++	if os.Getenv("HAKOPOD_BUILDKIT_TEST_OVERLAY") != "1" {
++		t.Skip("requires an explicitly selected managed overlay test sandbox")
++	}
++	for _, compressed := range []bool{false, true} {
++		t.Run(fmt.Sprintf("gzip=%t", compressed), func(t *testing.T) {
++			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
++			defer cancel()
++			root := t.TempDir()
++			snapshotRoot := filepath.Join(root, "snapshots")
++			require.NoError(t, PrepareUserXAttr(ctx, snapshotRoot, true))
++			sn, err := snapoverlay.NewSnapshotter(snapshotRoot, snapoverlay.WithMountOptions([]string{"userxattr"}))
++			require.NoError(t, err)
++			t.Cleanup(func() { require.NoError(t, sn.Close()) })
++			store, err := local.NewStore(filepath.Join(root, "content"))
++			require.NoError(t, err)
++			applier := NewUserXAttrApplier(winlayers.NewFileSystemApplierWithWindows(store, apply.NewFileSystemApplier(store)))
++			applyLayer := func(ref string, mounts []mount.Mount, entries []userXAttrTarEntry) {
++				uncompressed := userXAttrLayerTar(t, entries)
++				blob := uncompressed
++				mediaType := ocispec.MediaTypeImageLayer
++				if compressed {
++					var buf bytes.Buffer
++					gz := gzip.NewWriter(&buf)
++					_, err := gz.Write(uncompressed)
++					require.NoError(t, err)
++					require.NoError(t, gz.Close())
++					blob, mediaType = buf.Bytes(), ocispec.MediaTypeImageLayerGzip
++				}
++				desc := ocispec.Descriptor{MediaType: mediaType, Digest: digest.FromBytes(blob), Size: int64(len(blob))}
++				require.NoError(t, content.WriteBlob(ctx, store, ref, bytes.NewReader(blob), desc))
++				var progress int64
++				got, err := applier.Apply(ctx, desc, mounts, diff.WithSyncFs(true), diff.WithProgress(func(d ocispec.Descriptor, n int64) {
++					require.Equal(t, desc, d)
++					progress = n
++				}))
++				require.NoError(t, err)
++				require.Equal(t, digest.FromBytes(uncompressed), got.Digest)
++				require.Equal(t, int64(len(uncompressed)), got.Size)
++				require.Equal(t, ocispec.MediaTypeImageLayer, got.MediaType)
++				require.Equal(t, int64(len(blob)), progress)
++			}
++			base, err := sn.Prepare(ctx, "base-active", "")
++			require.NoError(t, err)
++			applyLayer("base", base, []userXAttrTarEntry{
++				{"opaque/", ""}, {"opaque/old-one", "old one"}, {"opaque/old-two", "old two"},
++				{"deleted", "delete me"}, {"kept", "unchanged"},
++			})
++			require.NoError(t, sn.Commit(ctx, "base", "base-active"))
++			child, err := sn.Prepare(ctx, "child-active", "base")
++			require.NoError(t, err)
++			require.Len(t, child, 1)
++			require.Equal(t, "overlay", child[0].Type)
++			require.Contains(t, child[0].Options, "userxattr")
++			applyLayer("child", child, []userXAttrTarEntry{
++				{"opaque/", ""}, {"opaque/new-before", "keep before marker"},
++				{"opaque/.wh..wh..opq", ""}, {"opaque/new-after", "keep after marker"}, {".wh.deleted", ""},
++			})
++			require.NoError(t, sn.Commit(ctx, "child", "child-active"))
++			for name, expected := range map[string]map[string]string{
++				"base":  {"opaque/old-one": "old one", "opaque/old-two": "old two", "deleted": "delete me", "kept": "unchanged"},
++				"child": {"opaque/new-before": "keep before marker", "opaque/new-after": "keep after marker", "kept": "unchanged"},
++			} {
++				view, err := sn.View(ctx, "view-"+name, name)
++				require.NoError(t, err)
++				require.NoError(t, mount.WithTempMount(ctx, view, func(root string) error {
++					actual := map[string]string{}
++					err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
++						if err != nil || info.IsDir() {
++							return err
++						}
++						require.True(t, info.Mode().IsRegular(), "unexpected entry: %s", path)
++						rel, err := filepath.Rel(root, path)
++						if err != nil {
++							return err
++						}
++						value, err := os.ReadFile(path)
++						actual[rel] = string(value)
++						return err
++					})
++					require.NoError(t, err)
++					require.Equal(t, expected, actual)
++					return nil
++				}))
++			}
++		})
++	}
++}
++
++type userXAttrTarEntry struct {
++	name string
++	body string
++}
++
++func userXAttrLayerTar(t *testing.T, entries []userXAttrTarEntry) []byte {
++	t.Helper()
++	var buf bytes.Buffer
++	tw := tar.NewWriter(&buf)
++	for _, entry := range entries {
++		hdr := &tar.Header{Name: entry.name, Mode: 0644, Size: int64(len(entry.body)), Typeflag: tar.TypeReg}
++		if entry.name[len(entry.name)-1] == '/' {
++			hdr.Typeflag, hdr.Mode = tar.TypeDir, 0755
++		}
++		require.NoError(t, tw.WriteHeader(hdr))
++		_, err := tw.Write([]byte(entry.body))
++		require.NoError(t, err)
++	}
++	require.NoError(t, tw.Close())
++	return buf.Bytes()
++}
+diff --git a/worker/base/worker.go b/worker/base/worker.go
+--- a/worker/base/worker.go
++++ b/worker/base/worker.go
+@@ -68,29 +68,30 @@
+ // WorkerOpt is specific to a worker.
+ // See also CommonOpt.
+ type WorkerOpt struct {
+-	ID               string
+-	Root             string
+-	Labels           map[string]string
+-	Platforms        []ocispecs.Platform
+-	GCPolicy         []client.PruneInfo
+-	BuildkitVersion  client.BuildkitVersion
+-	NetworkProviders map[pb.NetMode]network.Provider
+-	ProxyProvider    network.ProxyProvider
+-	Executor         executor.Executor
+-	Snapshotter      snapshot.Snapshotter
+-	ContentStore     *containerdsnapshot.Store
+-	Applier          diff.Applier
+-	Differ           diff.Comparer
+-	ImageStore       images.Store // optional
+-	RegistryHosts    docker.RegistryHosts
+-	IdentityMapping  *user.IdentityMapping
+-	LeaseManager     *leaseutil.Manager
+-	GarbageCollect   func(context.Context) (gc.Stats, error)
+-	ParallelismSem   *semaphore.Weighted
+-	MetadataStore    *metadata.Store
+-	MountPoolRoot    string
+-	ResourceMonitor  *resources.Monitor
+-	CDIManager       *cdidevices.Manager
++	ID                 string
++	Root               string
++	Labels             map[string]string
++	Platforms          []ocispecs.Platform
++	GCPolicy           []client.PruneInfo
++	BuildkitVersion    client.BuildkitVersion
++	NetworkProviders   map[pb.NetMode]network.Provider
++	ProxyProvider      network.ProxyProvider
++	Executor           executor.Executor
++	Snapshotter        snapshot.Snapshotter
++	OverlayFSUserXAttr bool
++	ContentStore       *containerdsnapshot.Store
++	Applier            diff.Applier
++	Differ             diff.Comparer
++	ImageStore         images.Store // optional
++	RegistryHosts      docker.RegistryHosts
++	IdentityMapping    *user.IdentityMapping
++	LeaseManager       *leaseutil.Manager
++	GarbageCollect     func(context.Context) (gc.Stats, error)
++	ParallelismSem     *semaphore.Weighted
++	MetadataStore      *metadata.Store
++	MountPoolRoot      string
++	ResourceMonitor    *resources.Monitor
++	CDIManager         *cdidevices.Manager
+ }
+ 
+ // Worker is a local worker instance with dedicated snapshotter, cache, and so on.
+@@ -115,16 +116,17 @@
+ 	})
+ 
+ 	cm, err := cache.NewManager(cache.ManagerOpt{
+-		Snapshotter:     opt.Snapshotter,
+-		PruneRefChecker: imageRefChecker,
+-		Applier:         opt.Applier,
+-		GarbageCollect:  opt.GarbageCollect,
+-		LeaseManager:    opt.LeaseManager,
+-		ContentStore:    opt.ContentStore,
+-		Differ:          opt.Differ,
+-		MetadataStore:   opt.MetadataStore,
+-		Root:            opt.Root,
+-		MountPoolRoot:   opt.MountPoolRoot,
++		Snapshotter:        opt.Snapshotter,
++		OverlayFSUserXAttr: opt.OverlayFSUserXAttr,
++		PruneRefChecker:    imageRefChecker,
++		Applier:            opt.Applier,
++		GarbageCollect:     opt.GarbageCollect,
++		LeaseManager:       opt.LeaseManager,
++		ContentStore:       opt.ContentStore,
++		Differ:             opt.Differ,
++		MetadataStore:      opt.MetadataStore,
++		Root:               opt.Root,
++		MountPoolRoot:      opt.MountPoolRoot,
+ 	})
+ 	if err != nil {
+ 		return nil, err
