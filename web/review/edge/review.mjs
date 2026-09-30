@@ -180,12 +180,19 @@ async function keyboardFields(page, id) {
       const x = box.x + box.width / 2
       const y = box.y + box.height / 2
       const hit = document.elementFromPoint(x, y)
+      const points = [[x, y], [box.x + 4, box.y + 4], [box.right - 4, box.bottom - 4]]
+      const uncovered = points.every(([pointX, pointY]) => {
+        const found = document.elementFromPoint(pointX, pointY)
+        return found === element || element.contains(found)
+      })
       const style = getComputedStyle(element)
       return {
         label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim().slice(0, 100),
         tag: element.tagName,
         box: { x: box.x, y: box.y, width: box.width, height: box.height, bottom: box.bottom },
-        visible: x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight && (hit === element || element.contains(hit)),
+        visible: box.x >= 0 && box.right <= innerWidth && box.y >= 0 && box.bottom <= innerHeight && uncovered,
+        viewport: { width: innerWidth, height: innerHeight },
+        hit: hit ? { tag: hit.tagName, className: hit.className, text: hit.textContent?.trim().slice(0, 120) } : null,
         outline: style.outlineStyle,
         outlineWidth: style.outlineWidth,
       }
@@ -197,6 +204,10 @@ async function keyboardFields(page, id) {
     }
     if (!focus.tag) continue
     fields.push(focus)
+    if (!focus.visible) {
+      await page.screenshot({ path: `${output}/diagnostics/${id}-focus.png`, fullPage: false })
+      await writeFile(`${output}/diagnostics/${id}-focus.json`, `${JSON.stringify(fields, null, 2)}\n`)
+    }
     assert(focus.visible, `Focused field is covered or outside the viewport: ${focus.label}`)
     assert(focus.outline !== 'none' && parseFloat(focus.outlineWidth) >= 1, `Focused field has no visible outline: ${focus.label}`)
     if (focus.tag === 'TEXTAREA' && fields.filter((field) => field.tag === 'TEXTAREA').length === 1) {
