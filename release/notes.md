@@ -1,26 +1,25 @@
-Hakopod 0.1.0-alpha.42 improves managed GitHub Actions runners and their dashboard.
+Hakopod 0.1.0-alpha.43 improves managed GitHub Actions runner logs, placement and workspace qualification.
 
-- Service details and topology show images observed on running runner pods, including mixed images while older jobs drain. Missing observations remain explicit.
-- Workflow output uses collapsible groups and bordered log rows, with bounded paging, search, wrapping and permission-aware loading.
-- Runner pool setup follows guided steps with compact choices, cache guidance, scoped node selection and a review before creation or changes. Failed requests preserve entered values.
-- Scheduling uses durable PostgreSQL leases, bounded concurrency, shared GitHub request budgets and bounded runner inventories. Selected nodes are checked again before registration and pod creation.
-- New runner jobs use the verified multi-architecture image with GNU tar and zstd for compressed caches. Existing pool revisions stay valid; busy jobs drain before replacement.
-- Official GitHub Actions dependency caching is verified across fresh managed runners. Docker builds can use private registry caches; runner workspaces and Docker daemons remain isolated per job.
+- Integrated workflow logs are wrapped by default and preserve GitHub secret masking. The runner observer withholds incomplete physical records and records larger than 16 KiB instead of forwarding fragments that could expose masked values. Live output stays withheld when redaction is incomplete; completed logs remain available from GitHub.
+- Runner pool setup guides placement through approved nodes, architectures and resource limits while preserving the selected scope and entered values on failure.
+- VFS remains the default workspace profile. Operators may explicitly select `shared-overlay2-v1` only after the named runtime passes its bounded qualification probe; this release never enables the profile automatically.
+- The pinned BuildKit candidate is an explicit opt-in for qualified workloads. It does not change the global BuildKit default.
+- Existing GitHub cache acceptance from alpha.42 remains valid.
 
-Cross-architecture Docker builds use BuildKit userspace emulation inside the existing gVisor sandbox. The documented setup was tested on AMD64 and ARM64 hosts. Kernel binfmt registration, including ordinary `docker/setup-qemu-action` installation, remains unavailable in gVisor; use the BuildKit configuration in [Managed Actions](https://github.com/hakopod/hakopod/blob/main/docs/managed-actions.md). Native cross-compilation is also covered and can reduce build time.
+A real ARM64 representative workload passed the shared-overlay2 qualification. Its measured phases were 503.061 seconds for the cold build, 5.338 seconds with the fresh registry cache and 113.304 seconds for the cold export. The resulting image contents, database migrations and an HTTP 200 health response were verified. Startup outside the inner workload still used Docker, and this acceptance did not verify a GitHub cache token or fleet-scale operation.
 
-GitLab and Bitbucket runner support is deferred and is not included in this release.
+GitLab and Bitbucket runner support remains disabled and is not included in this release.
 
 ## Installation and upgrade
 
 ```sh
 curl --fail --location --proto '=https' --tlsv1.2 \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.42/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.42
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.43/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.43
 ```
 
-Direct upgrades are supported from alpha.40 and alpha.41. Older installations need supported intermediate releases. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.41 and alpha.42. Older installations need supported intermediate releases. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
 
-Publication requires source tests, native package smoke checks and the complete fresh-install and upgrade matrix on AMD64 and ARM64. GitHub job execution, fresh-runner cache reuse, sandbox cross-builds and control-plane failure tests are recorded in [Managed Actions qualification](https://github.com/hakopod/hakopod/blob/main/docs/managed-actions-qualification.md). Independent UI reviews cover grouped logs and guided pool setup in both themes at desktop and mobile sizes. Those checks do not establish arbitrary fleet-scale readiness; the supported topology remains one active Managed Actions API/controller process per installation.
+Publication requires source tests, native package smoke checks and the complete fresh-install and upgrade matrix on AMD64 and ARM64. The measured runner checks do not establish arbitrary fleet-scale readiness; the supported topology remains one active Managed Actions API/controller process per installation.
 
-Cloud alpha.22 contains the earlier GitHub runner and UI changes. The promoted compression image requires a Cloud package with this engine revision. Publishing these packages does not upgrade an existing server.
+Cloud alpha.24 is pending separate two-node acceptance and publication. This public engine release does not deploy or upgrade a Cloud installation.
