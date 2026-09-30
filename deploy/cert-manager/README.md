@@ -23,10 +23,15 @@ For another cluster, supply its actual kubeconfig and context. The script refuse
 to adopt an existing certificate installation owned by another Helm release.
 CRDs are preserved on uninstall to protect stored certificate resources.
 
-Create a ClusterIssuer from TLS settings or `POST /api/v1/tls/issuers`. The API
+Administrators create a ClusterIssuer from Infrastructure TLS settings or
+`POST /api/v1/tls/issuers`. Deployers create an application-owned Issuer from
+application Networking or `POST /api/v1/applications/{id}/tls/issuers`. The API
 defaults to Let's Encrypt staging; set `production: true` explicitly for trusted
 certificates. Service attachment creates a deployment revision and cert-manager
 Ingress annotation. Issuer account credentials remain in Kubernetes Secrets.
+Cloud customers can discover the configured default and select their own
+application issuers. See [certificate issuer configuration](../../docs/certificates.md)
+for scope rules, retries and the `issuer_kind` TOML field.
 
 HTTP-01 needs public DNS pointing at HAProxy and inbound public TCP port 80.
 Local loopback domains and development ports cannot complete public issuance.

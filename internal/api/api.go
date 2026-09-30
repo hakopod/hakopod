@@ -306,7 +306,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationPath(r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) && !s.cloudOperator(p) {
+		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationRequest(r.Method, r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) && !s.cloudOperator(p) {
 			failure(w, store.ErrForbidden)
 			return
 		}

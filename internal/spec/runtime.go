@@ -9,6 +9,7 @@ import (
 type TLSConfig struct {
 	Certificate string `json:"certificate,omitempty" toml:"certificate"`
 	Issuer      string `json:"issuer,omitempty" toml:"issuer"`
+	IssuerKind  string `json:"issuer_kind,omitempty" toml:"issuer_kind"`
 }
 
 var runtimeName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -22,6 +23,9 @@ func validateRuntimeService(service Service) error {
 		return errors.New("registry_credential: use a managed credential name of at most 63 lowercase letters, digits or hyphens")
 	}
 	if tls := service.TLS; tls != nil {
+		if tls.IssuerKind != "" && (tls.Issuer == "" || (tls.IssuerKind != "Issuer" && tls.IssuerKind != "ClusterIssuer")) {
+			return errors.New("tls: issuer_kind requires issuer and must be Issuer or ClusterIssuer")
+		}
 		if !service.Public {
 			return errors.New("tls: requires a public service")
 		}

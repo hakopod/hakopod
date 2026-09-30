@@ -1,15 +1,48 @@
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application } from '../lib/types'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
-import { useScope } from '../lib/scope'
+import { canAccess, useScope } from '../lib/scope'
+import { dashboardEdition } from '../lib/dashboard-edition'
+import { useAuthStatus, useInstallationAccess } from '../lib/installation-settings'
+import type { components } from '../lib/api.generated'
+import {
+  findTLSIssuer,
+  preferredTLSIssuer,
+  preferredTLSMethod,
+  tlsIssuerKey,
+  tlsIssuerScope,
+  tlsIssuersQueryKey,
+  type TLSIssuer,
+  type TLSIssuers,
+  type TLSMethod,
+} from '../lib/tls-issuers'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { HeadingHelp, Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
+
+function useTLSIssuers(applicationID?: string) {
+  return useQuery({
+    queryKey: tlsIssuersQueryKey(applicationID),
+    queryFn: ({ signal }) =>
+      applicationID === undefined
+        ? unwrap(client.GET('/tls/issuers', { signal }))
+        : unwrap(
+            client.GET('/applications/{id}/tls/issuers', {
+              signal,
+              params: { path: { id: applicationID } },
+            }),
+          ),
+    gcTime: 0,
+    retry: false,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  })
+}
 
 export function ServiceTLS({
   application,
@@ -44,11 +77,12 @@ export function ServiceTLS({
             </HeadingHelp>
           </div>
         </div>
-        {application.spec.services[service].public && scope.can('deployments:write') && (
-          <Button onClick={() => setEdit(true)}>
-            {tls.data?.enabled ? 'Replace certificate' : 'Configure TLS'}
-          </Button>
-        )}
+        {application.spec.services[service].public &&
+          canAccess(scope.identity, application.project, 'deployments:write') && (
+            <Button onClick={() => setEdit(true)}>
+              {tls.data?.enabled ? 'Replace certificate' : 'Configure TLS'}
+            </Button>
+          )}
       </div>
       {tls.isPending ? (
         <Loading rows={2} />
@@ -73,7 +107,10 @@ export function ServiceTLS({
               {tls.data.issuer && (
                 <div>
                   <dt>Issuer</dt>
-                  <dd>{tls.data.issuer}</dd>
+                  <dd>
+                    {tls.data.issuer}
+                    {tls.data.issuer_kind === 'Issuer' && ' · Application issuer'}
+                  </dd>
                 </div>
               )}
               {tls.data.expires_at && (
@@ -95,9 +132,11 @@ export function ServiceTLS({
       )}
       {edit && (
         <TLSForm
+          key={`${application.id}:${service}`}
           application={application}
           service={service}
           hostname={tls.data?.hostname || ''}
+          current={tls.data}
           onClose={() => setEdit(false)}
         />
       )}
@@ -109,17 +148,23 @@ function TLSForm({
   application,
   service,
   hostname,
+  current,
   onClose,
 }: {
   application: Application
   service: string
   hostname: string
+  current?: components['schemas']['TLSStatus']
   onClose: () => void
 }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
-  const [mode, setMode] = useState<'upload' | 'issuer'>('upload')
-  const [issuer, setIssuer] = useState('')
+  const scope = useScope()
+  const auth = useAuthStatus()
+  const issuers = useTLSIssuers(application.id)
+  const [method, setMode] = useState<TLSMethod>()
+  const [issuer, setIssuer] = useState<string>()
+  const [creatingIssuer, setCreatingIssuer] = useState(false)
   const [certificate, setCertificate] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [certificateName, setCertificateName] = useState('')
@@ -128,14 +173,34 @@ function TLSForm({
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const issuers = useQuery({
-    queryKey: ['tls-issuers'],
-    queryFn: ({ signal }) => unwrap(client.GET('/tls/issuers', { signal })),
-    enabled: mode === 'issuer',
-    gcTime: 0,
-  })
+  const canDeploy = canAccess(scope.identity, application.project, 'deployments:write')
+  const configured =
+    application.spec.services[service].tls ||
+    (current?.enabled
+      ? {
+          issuer: current.issuer,
+          issuer_kind: current.issuer_kind,
+          certificate: current.source === 'uploaded' ? current.secret_name || 'uploaded' : '',
+        }
+      : undefined)
+  const cloud = dashboardEdition.cloud || auth.data?.deployment_mode === 'managed-cloud'
+  const mode = preferredTLSMethod(method, configured, cloud)
+  const items = issuers.data?.items || []
+  const issuerValue = preferredTLSIssuer(items, issuer, configured)
+  const selectedIssuer = findTLSIssuer(items, issuerValue)
+  const issuerAvailable = Boolean(
+    !issuers.error && !issuers.isPending && issuers.data?.installed && selectedIssuer,
+  )
+  const canSubmit =
+    canDeploy && (mode === 'upload' ? Boolean(certificate && privateKey) : issuerAvailable)
+
+  useEffect(() => {
+    if (issuer === undefined && issuerValue) setIssuer(issuerValue)
+  }, [issuer, issuerValue])
+
   async function file(input: File | undefined, secret: boolean) {
     if (!input) return
+    setMode('upload')
     setError('')
     if (input.size > 65536) {
       setError('Choose a PEM file no larger than 64 KiB.')
@@ -154,6 +219,20 @@ function TLSForm({
       setError('This file could not be read.')
     }
   }
+  if (creatingIssuer) {
+    return (
+      <IssuerForm
+        application={application}
+        onClose={() => setCreatingIssuer(false)}
+        onSaved={(created) => {
+          setIssuer(tlsIssuerKey(created))
+          setMode('issuer')
+          setCreatingIssuer(false)
+        }}
+      />
+    )
+  }
+
   return (
     <Dialog
       open
@@ -183,10 +262,16 @@ function TLSForm({
                 <dt>Method</dt>
                 <dd>
                   {mode === 'issuer'
-                    ? `Managed issuer: ${issuer}`
+                    ? `Managed issuer: ${selectedIssuer?.name || 'Unavailable'}`
                     : `Uploaded chain: ${certificateName}`}
                 </dd>
               </div>
+              {mode === 'issuer' && selectedIssuer && (
+                <div>
+                  <dt>Issuer scope</dt>
+                  <dd>{tlsIssuerScope(selectedIssuer)}</dd>
+                </div>
+              )}
               {mode === 'upload' && (
                 <div>
                   <dt>Private key file</dt>
@@ -194,10 +279,12 @@ function TLSForm({
                 </div>
               )}
             </dl>
-            <Note>
-              The backend validates certificate material before accepting a deployment. Private key
-              bytes never appear in configuration exports or history.
-            </Note>
+            {mode === 'upload' && (
+              <Note>
+                Certificate material is validated before deployment. Private key bytes never appear
+                in configuration exports or history.
+              </Note>
+            )}
           </>
         ) : (
           <>
@@ -206,7 +293,7 @@ function TLSForm({
               <SelectField
                 label="Certificate method"
                 value={mode}
-                onValueChange={(value) => setMode(value as 'upload' | 'issuer')}
+                onValueChange={(value) => setMode(value as TLSMethod)}
                 options={[
                   {
                     value: 'upload',
@@ -228,6 +315,9 @@ function TLSForm({
                     accept=".pem,.crt,.cer"
                     onChange={(e) => void file(e.target.files?.[0], false)}
                   />
+                  {certificateName && (
+                    <span className="field-help">Selected: {certificateName}</span>
+                  )}
                 </label>
                 <label>
                   Private key (.pem or .key)
@@ -236,50 +326,102 @@ function TLSForm({
                     accept=".pem,.key"
                     onChange={(e) => void file(e.target.files?.[0], true)}
                   />
+                  {keyName && <span className="field-help">Selected: {keyName}</span>}
                 </label>
                 <p className="field-help">
                   Use an unencrypted PEM key. Files are held only while this dialog is open.
                 </p>
               </>
-            ) : issuers.isPending ? (
-              <Loading rows={2} />
-            ) : issuers.error ? (
-              <ErrorState error={issuers.error} />
-            ) : !issuers.data?.installed ? (
-              <Note>
-                {issuers.data?.message ||
-                  'Install cert-manager before configuring managed certificates.'}
-              </Note>
             ) : (
               <>
                 <label>
                   Issuer
                   <SelectField
                     label="Issuer"
-                    value={issuer}
-                    onValueChange={(value) => setIssuer(value)}
+                    value={issuerValue}
+                    onValueChange={setIssuer}
+                    disabled={
+                      issuers.isPending || Boolean(issuers.error) || !issuers.data?.installed
+                    }
                     options={[
                       {
                         value: '',
                         label: 'Choose an issuer',
                       },
-                      ...(issuers.data.items.map((item) => ({
-                        value: item.name,
-                        label: item.name + ' · ' + (item.ready ? 'ready' : 'not ready'),
-                      })) ?? []),
+                      ...(issuerValue && !selectedIssuer
+                        ? [
+                            {
+                              value: issuerValue,
+                              label: 'Selected issuer unavailable',
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                      ...items.map((item) => ({
+                        value: tlsIssuerKey(item),
+                        label: `${item.name} · ${tlsIssuerScope(item)} · ${item.ready ? 'ready' : 'not ready'}`,
+                      })),
                     ]}
                   />
                 </label>
-                {!issuers.data.items.length && (
-                  <Note>An administrator must create a certificate issuer in Infrastructure.</Note>
+                {canDeploy && (
+                  <div>
+                    <Button
+                      disabled={
+                        issuers.isPending || Boolean(issuers.error) || !issuers.data?.installed
+                      }
+                      onClick={() => setCreatingIssuer(true)}
+                    >
+                      Create application issuer
+                    </Button>
+                  </div>
                 )}
-                <Note>
-                  Staging issuers are useful for validation; browsers do not trust staging
-                  certificates.
-                </Note>
               </>
             )}
           </>
+        )}
+        {mode === 'issuer' &&
+          (issuers.isPending ? (
+            <Loading rows={2} />
+          ) : issuers.error ? (
+            <ErrorState
+              title="Certificate issuers unavailable"
+              error={issuers.error}
+              retry={() => void issuers.refetch()}
+            />
+          ) : !issuers.data?.installed ? (
+            <Note>
+              {issuers.data?.message || 'Managed certificate issuance is unavailable.'} You can
+              upload a certificate and private key instead.
+            </Note>
+          ) : (
+            <>
+              {issuers.data.message && <Note>{issuers.data.message}</Note>}
+              {!items.length && (
+                <Note>
+                  {canDeploy
+                    ? 'Create an application issuer to use managed certificates, or upload a certificate and private key.'
+                    : 'No certificate issuers are available. You need deployment permission to create an application issuer.'}
+                </Note>
+              )}
+              {issuerValue && !selectedIssuer && (
+                <Note>
+                  The selected issuer is unavailable. Choose another issuer before deploying.
+                </Note>
+              )}
+              {selectedIssuer && !selectedIssuer.ready && (
+                <Note>
+                  {selectedIssuer.name} is not ready. Certificates cannot be issued until the issuer
+                  becomes ready.
+                </Note>
+              )}
+              {selectedIssuer?.server.includes('acme-staging') && (
+                <Note>Staging certificates are not trusted by browsers.</Note>
+              )}
+            </>
+          ))}
+        {!canDeploy && (
+          <Note>You need deployment permission to change this service’s certificate.</Note>
         )}
         {error && <RequestError error={error} />}
       </div>
@@ -289,14 +431,16 @@ function TLSForm({
         </Button>
         <Button
           variant="primary"
-          disabled={busy || (mode === 'upload' ? !certificate || !privateKey : !issuer)}
+          disabled={busy || !canSubmit}
           onClick={async () => {
+            if (busy || !canSubmit) return
             if (!review) {
+              setMode(mode)
+              setIssuer(issuerValue)
               setReview(true)
               setKey(crypto.randomUUID())
               return
             }
-            if (busy) return
             setBusy(true)
             setError('')
             try {
@@ -309,7 +453,7 @@ function TLSForm({
                   body: {
                     expected_revision: application.revision,
                     ...(mode === 'issuer'
-                      ? { issuer }
+                      ? { issuer: selectedIssuer!.name, issuer_kind: selectedIssuer!.kind }
                       : { certificate_pem: certificate, private_key_pem: privateKey }),
                   },
                 }),
@@ -336,16 +480,14 @@ function TLSForm({
   )
 }
 
-export default function IssuerSettings() {
+export default function IssuerSettings({ application }: { application?: Application }) {
   const scope = useScope()
+  const access = useInstallationAccess()
   const [create, setCreate] = useState(false)
-  const issuers = useQuery({
-    queryKey: ['tls-issuers'],
-    queryFn: ({ signal }) => unwrap(client.GET('/tls/issuers', { signal })),
-    gcTime: 0,
-    refetchInterval: 30000,
-    refetchIntervalInBackground: false,
-  })
+  const issuers = useTLSIssuers(application?.id)
+  const canCreate = application
+    ? canAccess(scope.identity, application.project, 'deployments:write')
+    : access.allowed
   return (
     <>
       <div className="section-toolbar">
@@ -353,65 +495,111 @@ export default function IssuerSettings() {
           <div className="hako-section-heading-title">
             <h2>Certificate issuers</h2>
             <HeadingHelp title="Certificate issuers">
-              Managed ACME issuance through the installed cert-manager controller.
+              {application
+                ? 'Use the configured default or create an issuer for this application. Select an issuer from a public service’s Networking tab.'
+                : 'Managed ACME issuance through the installed cert-manager controller.'}
             </HeadingHelp>
           </div>
         </div>
-        {scope.identity.admin && (
+        {canCreate && (
           <Button
             variant="primary"
-            disabled={!issuers.data?.installed}
+            disabled={issuers.isPending || Boolean(issuers.error) || !issuers.data?.installed}
             onClick={() => setCreate(true)}
           >
-            Create issuer
+            {application ? 'Create application issuer' : 'Create issuer'}
           </Button>
         )}
       </div>
       {issuers.isPending ? (
         <Loading />
       ) : issuers.error ? (
-        <ErrorState error={issuers.error} />
+        <ErrorState
+          title="Certificate issuers unavailable"
+          error={issuers.error}
+          retry={() => void issuers.refetch()}
+        />
       ) : !issuers.data?.installed ? (
         <Empty
           icon="lock"
-          title="cert-manager is not installed"
+          title="Managed certificates unavailable"
           description={
             issuers.data?.message ||
-            'Install and configure cert-manager to use managed certificate issuers. PEM uploads remain available per public service.'
+            'Managed issuance needs a certificate controller. You can upload a PEM certificate and private key on each public service.'
           }
         />
-      ) : !issuers.data.items.length ? (
-        <Empty
-          icon="lock"
-          title="No issuers configured"
-          description="Create a staging issuer to validate DNS and HTTP challenge routing."
-        />
       ) : (
-        <div className="panel settings-session-list">
-          {issuers.data.items.map((issuer) => (
-            <div className="settings-list-row" key={issuer.name}>
-              <div>
-                <strong>{issuer.name}</strong>
-                <small>
-                  {issuer.email} · {issuer.server}
-                </small>
-                {issuer.conditions.map((condition) => (
-                  <p className="field-help" key={condition.type}>
-                    {condition.type}: {condition.status} · {condition.message || condition.reason}
-                  </p>
-                ))}
-              </div>
-              <Status value={issuer.ready ? 'ready' : 'not ready'} />
+        <>
+          {issuers.data.message && <Note>{issuers.data.message}</Note>}
+          {!issuers.data.items.length ? (
+            <Empty
+              icon="lock"
+              title="No issuers configured"
+              description={
+                canCreate
+                  ? 'Create a staging issuer to validate DNS and HTTP challenge routing.'
+                  : application
+                    ? 'You need deployment permission to create an application issuer.'
+                    : 'An installation operator can create a shared issuer.'
+              }
+            />
+          ) : (
+            <div className="divide-y divide-border">
+              {issuers.data.items.map((issuer) => (
+                <div
+                  className="flex min-w-0 items-start justify-between gap-3 py-3"
+                  key={tlsIssuerKey(issuer)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <strong className="text-sm [overflow-wrap:anywhere]">{issuer.name}</strong>
+                      <span className="text-xs text-muted-foreground">
+                        {tlsIssuerScope(issuer)}
+                      </span>
+                    </div>
+                    {(issuer.email || issuer.server || issuer.conditions.length > 0) && (
+                      <details className="mt-2 text-xs text-muted-foreground">
+                        <summary className="w-fit cursor-pointer">Issuer details</summary>
+                        <dl className="service-definition-list mt-2">
+                          {issuer.email && (
+                            <div>
+                              <dt>Contact email</dt>
+                              <dd>{issuer.email}</dd>
+                            </div>
+                          )}
+                          {issuer.server && (
+                            <div>
+                              <dt>ACME server</dt>
+                              <dd>{issuer.server}</dd>
+                            </div>
+                          )}
+                        </dl>
+                        {issuer.conditions.map((condition, index) => (
+                          <p
+                            className="field-help [overflow-wrap:anywhere]"
+                            key={`${condition.type}:${index}`}
+                          >
+                            {condition.type}: {condition.status} ·{' '}
+                            {condition.message || condition.reason}
+                          </p>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                  <Status value={issuer.ready ? 'ready' : 'not ready'} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
       {create && (
         <IssuerForm
+          key={application?.id || 'installation'}
+          application={application}
           onClose={() => setCreate(false)}
           onSaved={() => {
             setCreate(false)
-            void issuers.refetch()
           }}
         />
       )}
@@ -419,26 +607,46 @@ export default function IssuerSettings() {
   )
 }
 
-function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function IssuerForm({
+  application,
+  onClose,
+  onSaved,
+}: {
+  application?: Application
+  onClose: () => void
+  onSaved: (issuer: TLSIssuer) => void
+}) {
+  const cache = useQueryClient()
+  const scope = useScope()
+  const access = useInstallationAccess()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [production, setProduction] = useState(false)
   const [review, setReview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const canCreate = application
+    ? canAccess(scope.identity, application.project, 'deployments:write')
+    : access.allowed
   return (
     <Dialog
       open
       onOpenChange={(open) => {
         if (!busy && !open) onClose()
       }}
-      title={review ? 'Review certificate issuer' : 'Create certificate issuer'}
+      title={
+        review
+          ? 'Review certificate issuer'
+          : application
+            ? 'Create application issuer'
+            : 'Create certificate issuer'
+      }
       description="Start with staging to verify domain challenge routing."
     >
       <form
         onSubmit={async (e) => {
           e.preventDefault()
-          if (busy) return
+          if (busy || !canCreate) return
           if (!review) {
             setReview(true)
             return
@@ -446,8 +654,29 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           setBusy(true)
           setError('')
           try {
-            await unwrap(client.POST('/tls/issuers', { body: { name, email, production } }))
-            onSaved()
+            const body = { name, email, production }
+            const created = await unwrap(
+              application
+                ? client.POST('/applications/{id}/tls/issuers', {
+                    params: { path: { id: application.id } },
+                    body,
+                  })
+                : client.POST('/tls/issuers', { body }),
+            )
+            const queryKey = tlsIssuersQueryKey(application?.id)
+            await cache.cancelQueries({ queryKey, exact: true })
+            cache.setQueryData<TLSIssuers>(queryKey, (previous) => ({
+              ...previous,
+              installed: true,
+              items: [
+                ...(previous?.items || []).filter(
+                  (item) => tlsIssuerKey(item) !== tlsIssuerKey(created),
+                ),
+                created,
+              ],
+            }))
+            void cache.invalidateQueries({ queryKey, exact: true })
+            onSaved(created)
           } catch (err) {
             setError(message(err))
           } finally {
@@ -458,6 +687,14 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         <div className="dialog-body auth-form">
           {review ? (
             <dl className="service-definition-list">
+              <div>
+                <dt>Scope</dt>
+                <dd>
+                  {application
+                    ? `${application.project} / ${application.environment} / ${application.spec.name}`
+                    : 'Installation'}
+                </dd>
+              </div>
               <div>
                 <dt>Issuer</dt>
                 <dd>{name}</dd>
@@ -478,7 +715,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  pattern="[a-z][a-z0-9-]*"
+                  pattern="[a-z]([a-z0-9-]*[a-z0-9])?"
                   maxLength={63}
                   required
                 />
@@ -508,6 +745,13 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
               ? 'This creates a production ACME issuer. Use valid public DNS and working HTTP challenge routing.'
               : 'Staging certificates validate the flow but are not trusted by browsers.'}
           </Note>
+          {!canCreate && (
+            <Note>
+              {application
+                ? 'You need deployment permission to create an application issuer.'
+                : 'Only an installation operator can create a shared issuer.'}
+            </Note>
+          )}
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
@@ -518,7 +762,7 @@ function IssuerForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           >
             {review ? 'Back' : 'Cancel'}
           </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={busy || !canCreate}>
             {busy ? 'Creating…' : review ? 'Create reviewed issuer' : 'Review issuer'}
           </Button>
         </div>

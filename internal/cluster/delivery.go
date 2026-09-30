@@ -30,6 +30,13 @@ func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
 	if err := c.validateActionsDelivery(ctx, t); err != nil {
 		return err
 	}
+	for _, svc := range t.Spec.Services {
+		if svc.TLS != nil && svc.TLS.Issuer != "" {
+			if err := c.ValidateTLSIssuer(ctx, t, svc.TLS.Issuer, svc.TLS.IssuerKind); err != nil {
+				return err
+			}
+		}
+	}
 	if err := c.validateServerless(t); err != nil {
 		return err
 	}

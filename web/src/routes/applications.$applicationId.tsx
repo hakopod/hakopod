@@ -52,6 +52,7 @@ const PodTerminal = lazy(() => import('../components/pod-terminal'))
 const ApplicationTopology = lazy(() => import('../components/application-topology'))
 const ApplicationSecrets = lazy(() => import('../components/application-secrets'))
 const ApplicationSource = lazy(() => import('../components/application-source'))
+const IssuerSettings = lazy(() => import('../components/tls-settings'))
 
 export const Route = createFileRoute('/applications/$applicationId')({
   validateSearch: (
@@ -647,6 +648,9 @@ function ApplicationDetail() {
               to another network with egress can still reach the internet through that network.
             </Note>
           )}
+          <Suspense fallback={<Loading rows={2} />}>
+            <IssuerSettings key={app.id} application={app} />
+          </Suspense>
         </Tabs.Content>
         <Tabs.Content value="configuration" className="tab-content">
           <div className="section-toolbar">

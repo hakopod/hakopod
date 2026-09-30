@@ -2830,6 +2830,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/tls/issuers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApplicationTLSIssuers"];
+        put?: never;
+        post: operations["createApplicationTLSIssuer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tls/issuers": {
         parameters: {
             query?: never;
@@ -5599,9 +5615,12 @@ export interface components {
             status: string;
             error: string;
         };
+        /** @enum {string} */
+        TLSIssuerKind: "ClusterIssuer" | "Issuer";
         TLSConfig: {
             certificate?: string;
             issuer?: string;
+            issuer_kind?: components["schemas"]["TLSIssuerKind"];
         };
         RuntimeMetrics: {
             available: boolean;
@@ -5702,6 +5721,7 @@ export interface components {
             source: string;
             secret_name?: string;
             issuer?: string;
+            issuer_kind?: components["schemas"]["TLSIssuerKind"];
             /** Format: date-time */
             not_before?: string;
             /** Format: date-time */
@@ -5710,6 +5730,8 @@ export interface components {
         };
         TLSIssuer: {
             name: string;
+            kind: components["schemas"]["TLSIssuerKind"];
+            default: boolean;
             email: string;
             server: string;
             ready: boolean;
@@ -13915,6 +13937,7 @@ export interface operations {
                     certificate_pem?: string;
                     private_key_pem?: string;
                     issuer?: string;
+                    issuer_kind?: components["schemas"]["TLSIssuerKind"];
                 };
             };
         };
@@ -13926,6 +13949,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listApplicationTLSIssuers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TLSIssuers"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createApplicationTLSIssuer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    email: string;
+                    production?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TLSIssuer"];
                 };
             };
             /** @description Error */
