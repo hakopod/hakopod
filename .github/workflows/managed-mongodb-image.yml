@@ -81,9 +81,15 @@ jobs:
           registry, repository = image.split('/', 1)
           repository, tag = repository.rsplit(':', 1)
           manifest_url = 'https://' + registry + '/v2/' + repository + '/manifests/' + tag
+          immutable = registry + '/' + repository + '@' + digest
+          # Establish the package using an immutable manifest reference. An
+          # initial pull-only lookup cannot establish permission for a package
+          # that does not exist yet. This write cannot replace a version tag.
+          subprocess.run([publisher, 'push', 'mongodb-image/layout', immutable], check=True, timeout=300)
+          assert subprocess.check_output([publisher, 'digest', immutable], text=True, timeout=60).strip() == digest
           manifest = subprocess.run([publisher, 'manifest', image], capture_output=True, text=True, timeout=60)
           if len(manifest.stdout) > 256 * 1024 or len(manifest.stderr) > 64 * 1024:
-              raise RuntimeError('Registry lookup exceeded its bound; no image will be published')
+              raise RuntimeError('Registry lookup exceeded its bound; version tag unchanged')
           if manifest.returncode == 0:
               current = subprocess.check_output([publisher, 'digest', image], text=True, timeout=60).strip()
               assert current == digest, 'Refusing to replace a different published tag'
@@ -93,9 +99,10 @@ jobs:
               missing = re.fullmatch(r'Error: GET ' + re.escape(manifest_url) +
                   r': (MANIFEST_UNKNOWN|NAME_UNKNOWN): [^\r\n]+', manifest.stderr.strip())
               if manifest.stdout.strip() or missing is None:
-                  raise RuntimeError('Registry lookup did not confirm a missing tag; no image will be published')
-          subprocess.run([publisher, 'push', 'mongodb-image/layout', image], check=True, timeout=300)
-          for reference in (image, image + '@' + digest):
+                  codes = sorted(set(re.findall(r'\b(?:DENIED|UNAUTHORIZED|MANIFEST_UNKNOWN|NAME_UNKNOWN|TOOMANYREQUESTS)\b', manifest.stderr)))
+                  raise RuntimeError('Registry lookup did not confirm a missing tag; version tag unchanged; codes=' + ','.join(codes))
+              subprocess.run([publisher, 'tag', immutable, tag], check=True, timeout=60)
+          for reference in (image, immutable):
               assert subprocess.check_output([publisher, 'digest', reference], text=True, timeout=60).strip() == digest
           PY
           printf 'Published the qualified MongoDB controller: `%s@%s`. No source rebuild was performed. Anonymous pull verification is required after package visibility is public.\n' "$IMAGE" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
