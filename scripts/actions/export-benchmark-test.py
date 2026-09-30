@@ -10,6 +10,7 @@ import copy
 import io
 import json
 from pathlib import Path
+import stat
 import tarfile
 import tempfile
 import unittest
@@ -105,6 +106,31 @@ class ExportProofTests(unittest.TestCase):
             with patch.object(benchmark, 'INTEGRATION_DIRECTORY', root), patch.object(benchmark.time, 'sleep', side_effect=staged), \
                     self.assertRaisesRegex(RuntimeError, 'helper identity'):
                 benchmark.wait_for_integration(benchmark.buildkit_selection(candidate), 'c' * 64, 'amd64')
+
+    def test_native_artifact_wait_initializes_a_fresh_private_workspace(self):
+        selected = benchmark.buildkit_selection('ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64)
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp) / '_work'
+            root = workspace / 'buildkit-integration'
+            with patch.object(benchmark, 'INTEGRATION_DIRECTORY', root), \
+                    patch.object(benchmark.time, 'monotonic', side_effect=[0, 121]), \
+                    self.assertRaisesRegex(RuntimeError, 'timed out'):
+                benchmark.wait_for_integration(selected, 'c' * 64, 'amd64')
+            self.assertTrue(root.is_dir())
+            self.assertEqual(stat.S_IMODE(workspace.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(root.stat().st_mode), 0o700)
+
+    def test_native_artifact_wait_rejects_a_symlinked_workspace_before_staging(self):
+        selected = benchmark.buildkit_selection('ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64)
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / 'outside'
+            target.mkdir()
+            workspace = Path(temp) / '_work'
+            workspace.symlink_to(target, target_is_directory=True)
+            with patch.object(benchmark, 'INTEGRATION_DIRECTORY', workspace / 'buildkit-integration'), \
+                    self.assertRaisesRegex(RuntimeError, 'symlink'):
+                benchmark.wait_for_integration(selected, 'c' * 64, 'amd64')
+            self.assertEqual(list(target.iterdir()), [])
 
     def test_child_environment_does_not_inherit_credentials_or_proxy_settings(self):
         result = benchmark.benchmark_environment({'PATH': '/usr/bin', 'HOME': '/home/runner', 'LANG': 'C',
