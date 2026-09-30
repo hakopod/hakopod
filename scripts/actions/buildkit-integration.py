@@ -23,9 +23,17 @@ DESTINATION = '/home/runner/_work/buildkit-integration'
 UPSTREAM = '991535e0973488b6a429096d21fa13f81f2d89d8'
 FILES = ('overlay.test', 'buildkitd.test', 'source.json')
 SUITES = {
-    'overlay.test': ('TestManagedUserXAttrSemanticProbe', 'TestManagedUserXAttrLayerImport'),
+    'overlay.test': ('TestManagedUserXAttrSemanticProbe', 'TestManagedUserXAttrLayerImport', 'TestManagedUserXAttrMetadataImport'),
     'buildkitd.test': ('TestManagedSnapshotterPropagatesUserXAttrToReadOnlyMounts',),
 }
+METADATA_CHECKPOINTS = (
+    'plain-volume', 'base-import/metadata-base', 'base-readonly/metadata-base',
+    'layer-import/metadata-base', 'layer-import/metadata-layer',
+    'layer-readonly/metadata-base', 'layer-readonly/metadata-layer',
+    'fsutil-copy/metadata-base', 'fsutil-copy/metadata-layer',
+    'before-copy-up/metadata-base', 'after-copy-up/metadata-base',
+    'before-copy-up/metadata-layer', 'after-copy-up/metadata-layer',
+)
 
 
 def require(value, message):
@@ -159,6 +167,25 @@ def unpack_bundle(archive, destination, image, architecture, run_id):
     return load_bundle(destination, image, architecture, run_id)
 
 
+def metadata_diagnostics(output, complete=False, first_failure=False):
+    records = []
+    prefix = 'HAKOPOD_BUILDKIT_METADATA_FIRST_FAILURE ' if first_failure else 'HAKOPOD_BUILDKIT_METADATA '
+    for raw in re.findall(r'^' + prefix + r'(.+)$', output, re.M):
+        require(len(raw) < 4096, 'Native metadata diagnostic exceeds its bound')
+        record = json.loads(raw)
+        require(isinstance(record, dict) and record.get('checkpoint') in METADATA_CHECKPOINTS
+                and record.get('status') in ('passed', 'failed'), 'Unexpected native metadata diagnostic')
+        require(record['checkpoint'] not in [item['checkpoint'] for item in records], 'Repeated native metadata checkpoint')
+        records.append(record)
+        require(len(records) <= len(METADATA_CHECKPOINTS), 'Native metadata checkpoint count exceeds its bound')
+    if first_failure:
+        require(len(records) <= 1 and all(item['status'] == 'failed' for item in records), 'Unexpected first native metadata failure')
+    if complete:
+        require(tuple(item['checkpoint'] for item in records) == METADATA_CHECKPOINTS, 'Native metadata checkpoints are incomplete')
+        require(all(item['status'] == 'passed' for item in records), 'Native metadata checkpoint failed')
+    return records
+
+
 def run_kernel_tests(benchmark, builder, bundle):
     container = 'buildx_buildkit_' + builder['name'] + '0'
     observed = benchmark.run(['exec', container, 'sha256sum', '/usr/bin/buildkitd'], maximum=4096).split()
@@ -175,18 +202,36 @@ def run_kernel_tests(benchmark, builder, bundle):
             actual = benchmark.run(['exec', container, 'sha256sum', root + '/' + name], maximum=4096).split()
             require(len(actual) == 2 and actual[0] == bundle['files'][name]['sha256'], 'Copied native test checksum mismatch')
             started = time.monotonic()
-            output = benchmark.run(['exec', '-e', 'HAKOPOD_BUILDKIT_TEST_OVERLAY=1', '-e', 'TMPDIR=' + root + '/tmp',
-                container, root + '/' + name, '-test.v', '-test.run=^(' + '|'.join(tests) + ')$', '-test.timeout=60s'],
-                timeout=70, maximum=MIB)
+            entry = {'binary': name, 'tests': list(tests), 'status': 'running'}
+            result['tests'].append(entry)
+            try:
+                output = benchmark.run(['exec', '-e', 'HAKOPOD_BUILDKIT_TEST_OVERLAY=1', '-e', 'TMPDIR=' + root + '/tmp',
+                    container, root + '/' + name, '-test.v', '-test.run=^(' + '|'.join(tests) + ')$', '-test.timeout=60s'],
+                    timeout=70, maximum=MIB)
+            except Exception as error:
+                entry.update(status='failed', duration_seconds=round(time.monotonic() - started, 3))
+                # The command retains a bounded output tail even on failure.
+                # Preserve its structured checkpoints without replacing the
+                # original native test error when a tail record is incomplete.
+                for key, first_failure in (('metadata_diagnostics', False), ('metadata_first_failure', True)):
+                    try:
+                        entry[key] = metadata_diagnostics(str(error), first_failure=first_failure)
+                    except (ValueError, RuntimeError) as parse_error:
+                        entry[key + '_error'] = type(parse_error).__name__
+                raise
+            if name == 'overlay.test':
+                entry['metadata_diagnostics'] = metadata_diagnostics(output, complete=True)
             require(not re.search(r'^\s*--- (SKIP|FAIL):', output, re.M), 'Native kernel test was skipped or failed')
             require(all(re.search(r'^--- PASS: ' + re.escape(test) + r' \(', output, re.M) for test in tests),
                     'Native kernel test did not report every required pass')
-            result['tests'].append({'binary': name, 'tests': list(tests), 'status': 'passed',
-                                    'duration_seconds': round(time.monotonic() - started, 3)})
+            entry.update(status='passed', duration_seconds=round(time.monotonic() - started, 3))
         result['status'] = 'passed'
     finally:
         if result['status'] == 'running':
             result['status'] = 'failed'
+        for entry in result['tests']:
+            if entry['status'] == 'running':
+                entry['status'] = 'failed'
     return result
 
 
