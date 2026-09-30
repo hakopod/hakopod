@@ -2,7 +2,13 @@ import type { ReactNode } from 'react'
 import { useInstallationAccess } from '../lib/installation-settings'
 import { Empty, ErrorState, Loading } from './shared'
 
-export function InstallationAccess({ children }: { children: ReactNode }) {
+export function InstallationAccess({
+  children,
+  managedDescription = 'Installation email and sign-in settings are managed by the Cloud service.',
+}: {
+  children: ReactNode
+  managedDescription?: string
+}) {
   const access = useInstallationAccess()
   if (!access.admin)
     return (
@@ -15,11 +21,6 @@ export function InstallationAccess({ children }: { children: ReactNode }) {
   if (access.status.error)
     return <ErrorState error={access.status.error} retry={() => void access.status.refetch()} />
   if (!access.allowed)
-    return (
-      <Empty
-        title="Managed by Hakopod Cloud"
-        description="Installation email and sign-in settings are managed by the Cloud service."
-      />
-    )
+    return <Empty title="Managed by Hakopod Cloud" description={managedDescription} />
   return children
 }

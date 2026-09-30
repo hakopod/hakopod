@@ -10,6 +10,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,6 +29,7 @@ type ProxyConfiguration struct {
 	Settings        map[string]string `json:"settings"`
 	Fields          []ProxyField      `json:"fields"`
 	AppliedRevision string            `json:"applied_revision"`
+	Edge            EdgePolicy        `json:"edge"`
 }
 
 func ProxyFields() []ProxyField {
@@ -173,6 +175,10 @@ func (c *Client) ProxyConfiguration(ctx context.Context) (ProxyConfiguration, er
 	if !bodyLimitBlockMatches(cm) {
 		return ProxyConfiguration{}, fmt.Errorf("%w: the Content-Length guard differs from its saved setting; ask the operator to restore the owned snippet", ErrProxyConflict)
 	}
+	edge, err := readEdgePolicy(cm)
+	if err != nil {
+		return ProxyConfiguration{}, err
+	}
 	values := map[string]string{}
 	for _, field := range ProxyFields() {
 		if field.Name == "max-content-length" {
@@ -189,18 +195,52 @@ func (c *Client) ProxyConfiguration(ctx context.Context) (ProxyConfiguration, er
 	if c.CloudMode() {
 		fields = slices.DeleteFunc(fields, func(f ProxyField) bool { return f.Name == "max-content-length" })
 	}
-	return ProxyConfiguration{Namespace: cm.Namespace, Name: cm.Name, ResourceVersion: cm.ResourceVersion, Settings: values, Fields: fields, AppliedRevision: cm.Annotations["hakopod.io/proxy-revision"]}, nil
+	return ProxyConfiguration{Namespace: cm.Namespace, Name: cm.Name, ResourceVersion: cm.ResourceVersion, Settings: values, Fields: fields, AppliedRevision: cm.Annotations["hakopod.io/proxy-revision"], Edge: edge}, nil
 }
 func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]string, expected string, revision int64) (string, error) {
+	return c.ApplyProxyConfigurationWithEdge(ctx, values, nil, expected, revision)
+}
+
+func (c *Client) ApplyProxyConfigurationWithEdge(ctx context.Context, values map[string]string, edge *EdgePolicy, expected string, revision int64) (string, error) {
 	if _, ok := values["max-content-length"]; ok && c.CloudMode() {
 		return "", ErrProxySelfHosted
 	}
-	if err := ValidateProxySettings(values); err != nil {
-		return "", err
+	if len(values) == 0 && edge == nil {
+		return "", fmt.Errorf("provide controller settings or an edge policy")
+	}
+	if len(values) > 0 {
+		if err := ValidateProxySettings(values); err != nil {
+			return "", err
+		}
+	}
+	if edge != nil {
+		normalized, err := NormalizeEdgePolicy(*edge)
+		if err != nil {
+			return "", err
+		}
+		edge = &normalized
 	}
 	cm, err := c.proxyConfigMap(ctx)
 	if err != nil {
 		return "", err
+	}
+	currentEdge, err := readEdgePolicy(cm)
+	if err != nil {
+		return "", err
+	}
+	// Controller-only edits retain an existing edge policy, but must still prove
+	// that it is compatible and active. Otherwise a later maxconn edit could
+	// conceal a previously failed edge reload behind an applied status.
+	if edge == nil && cm.Annotations[edgePolicyAnnotation] != "" {
+		edge = &currentEdge
+	}
+	if !bodyLimitBlockMatches(cm) {
+		return "", fmt.Errorf("%w: owned body-size snippet changed", ErrProxyConflict)
+	}
+	if edge != nil {
+		if err := edgeCompatibleConfiguration(cm, *edge, currentEdge); err != nil {
+			return "", err
+		}
 	}
 	revisionValue := strconv.FormatInt(revision, 10)
 	matches := true
@@ -211,11 +251,22 @@ func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]
 			matches = matches && cm.Data[k] == v
 		}
 	}
+	if edge != nil {
+		matches = matches && cm.Annotations[edgePolicyAnnotation] != "" && edgePolicyHash(currentEdge) == edgePolicyHash(*edge)
+	}
 	if cm.Annotations["hakopod.io/proxy-revision"] == revisionValue && matches {
+		if edge != nil {
+			return cm.ResourceVersion, c.waitEdgeApplied(ctx, cm, *edge)
+		}
 		return cm.ResourceVersion, nil
 	}
 	if expected == "" || cm.ResourceVersion != expected {
 		return "", ErrProxyConflict
+	}
+	if edge != nil {
+		if err := c.edgePreflight(ctx, *edge); err != nil {
+			return "", err
+		}
 	}
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -236,10 +287,21 @@ func (c *Client) ApplyProxyConfiguration(ctx context.Context, values map[string]
 			cm.Data[k] = v
 		}
 	}
+	if edge != nil {
+		if err := setEdgePolicy(cm, *edge); err != nil {
+			return "", err
+		}
+	}
 	cm.Annotations["hakopod.io/proxy-revision"] = revisionValue
 	changed, err := c.kube.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {
+		if apierrors.IsConflict(err) {
+			return "", ErrProxyConflict
+		}
 		return "", err
+	}
+	if edge != nil {
+		return changed.ResourceVersion, c.waitEdgeApplied(ctx, changed, *edge)
 	}
 	return changed.ResourceVersion, nil
 }

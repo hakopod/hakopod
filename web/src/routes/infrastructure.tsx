@@ -131,7 +131,7 @@ function Infrastructure() {
           )}
           {scope.identity.admin && (
             <Tabs.Trigger className="tab-trigger" value="proxy">
-              HAProxy
+              Hakopod Edge
             </Tabs.Trigger>
           )}
           {owner && (

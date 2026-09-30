@@ -5428,6 +5428,44 @@ export interface components {
             description: string;
             example: string;
         };
+        EdgeRule: {
+            /** @description Unique stable rule identifier. */
+            id: string;
+            /** @description Exact DNS hostname. Wildcards, ports and schemes are rejected. */
+            host: string;
+            /**
+             * @description Case-sensitive prefix of the canonical request path; queries are excluded.
+             * @default /
+             */
+            path_prefix: string;
+            /** @description IPv4 or IPv6 CIDRs. Addresses are normalized to network prefixes; invalid values are rejected. */
+            allow_cidrs?: string[];
+            /** @description IPv4 or IPv6 CIDRs. Addresses are normalized to network prefixes; invalid values are rejected. */
+            deny_cidrs?: string[];
+            /** @description ISO 3166-1 alpha-2 country codes. Requires a country header from an explicitly trusted proxy. */
+            allow_countries?: string[];
+            /** @description ISO 3166-1 alpha-2 country codes. Requires a country header from an explicitly trusted proxy. */
+            deny_countries?: string[];
+            /** @description Per-client one-second HAProxy request rate. Zero disables limiting. Counters are local to each listener/process, not a global quota. */
+            requests_per_second?: number;
+        };
+        /** @description Hakopod Edge traffic protection. Replaces the whole policy when supplied. Disabled policies retain validated rules. Trusted proxy mode rejects protected requests with untrusted peers or unavailable client identity; country rules reject unavailable geography. No GeoIP database is installed. */
+        EdgePolicy: {
+            enabled: boolean;
+            /**
+             * @default connection
+             * @enum {string}
+             */
+            client_ip_source: "connection" | "trusted_proxy";
+            /** @description Peer networks allowed to assert client identity. Required in trusted_proxy mode; a /0 trust range is rejected. */
+            trusted_proxy_cidrs?: string[];
+            /** @enum {string} */
+            client_ip_header?: "" | "CF-Connecting-IP" | "X-Real-IP";
+            /** @enum {string} */
+            country_header?: "" | "CF-IPCountry" | "CloudFront-Viewer-Country";
+            /** @description Ordered rules. The first matching host/path rule wins; rules do not inherit or combine. Deny lists take precedence. At most 512 CIDRs across the policy. */
+            rules: components["schemas"]["EdgeRule"][];
+        };
         ProxyConfiguration: {
             namespace: string;
             name: string;
@@ -5435,6 +5473,7 @@ export interface components {
             settings: {
                 [key: string]: string;
             };
+            edge: components["schemas"]["EdgePolicy"];
             fields: components["schemas"]["ProxyField"][];
             applied_revision?: string;
         };
@@ -5442,6 +5481,7 @@ export interface components {
             settings?: {
                 [key: string]: string;
             };
+            edge?: components["schemas"]["EdgePolicy"];
             status: string;
             error: string;
             applied_version?: string;
@@ -5455,7 +5495,7 @@ export interface components {
             change: components["schemas"]["ProxyChange"];
             drift: boolean;
         };
-        /** @description Changed HAProxy Technologies Kubernetes Ingress ConfigMap fields. Read the observed field catalog for supported names, types and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected. */
+        /** @description Changed HAProxy controller fields. Read the observed catalog for supported names and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected. */
         ProxySettingsPatch: {
             [key: string]: string;
         };
@@ -13281,7 +13321,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    settings: components["schemas"]["ProxySettingsPatch"];
+                    settings?: components["schemas"]["ProxySettingsPatch"];
+                    edge?: components["schemas"]["EdgePolicy"];
                     expected_revision: number;
                     expected_resource_version: string;
                 };

@@ -44,6 +44,7 @@ import { Route as NetworksNetworkNameRouteImport } from './routes/networks.$netw
 import { Route as NetworksNewRouteImport } from './routes/networks.new'
 import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
 import { Route as SettingsDnsProvidersRouteImport } from './routes/settings.dns-providers'
+import { Route as SettingsEdgeRouteImport } from './routes/settings.edge'
 import { Route as SettingsHostAccessRouteImport } from './routes/settings.host-access'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
@@ -259,6 +260,11 @@ const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
 const SettingsDnsProvidersRoute = SettingsDnsProvidersRouteImport.update({
   id: '/dns-providers',
   path: '/dns-providers',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsEdgeRoute = SettingsEdgeRouteImport.update({
+  id: '/edge',
+  path: '/edge',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsHostAccessRoute = SettingsHostAccessRouteImport.update({
@@ -525,6 +531,7 @@ export interface FileRoutesByFullPath {
   '/networks/new': typeof NetworksNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
+  '/settings/edge': typeof SettingsEdgeRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -602,6 +609,7 @@ export interface FileRoutesByTo {
   '/networks/new': typeof NetworksNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
+  '/settings/edge': typeof SettingsEdgeRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -680,6 +688,7 @@ export interface FileRoutesById {
   '/networks/new': typeof NetworksNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
+  '/settings/edge': typeof SettingsEdgeRoute
   '/settings/host-access': typeof SettingsHostAccessRoute
   '/settings/integrations': typeof SettingsIntegrationsRouteWithChildren
   '/settings/profile': typeof SettingsProfileRoute
@@ -759,6 +768,7 @@ export interface FileRouteTypes {
     | '/networks/new'
     | '/projects/$project'
     | '/settings/dns-providers'
+    | '/settings/edge'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -836,6 +846,7 @@ export interface FileRouteTypes {
     | '/networks/new'
     | '/projects/$project'
     | '/settings/dns-providers'
+    | '/settings/edge'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -913,6 +924,7 @@ export interface FileRouteTypes {
     | '/networks/new'
     | '/projects/$project'
     | '/settings/dns-providers'
+    | '/settings/edge'
     | '/settings/host-access'
     | '/settings/integrations'
     | '/settings/profile'
@@ -1227,6 +1239,13 @@ declare module '@tanstack/react-router' {
       path: '/dns-providers'
       fullPath: '/settings/dns-providers'
       preLoaderRoute: typeof SettingsDnsProvidersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/edge': {
+      id: '/settings/edge'
+      path: '/edge'
+      fullPath: '/settings/edge'
+      preLoaderRoute: typeof SettingsEdgeRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/host-access': {
@@ -1689,6 +1708,7 @@ const SettingsSecretProvidersRouteWithChildren =
 
 interface SettingsRouteChildren {
   SettingsDnsProvidersRoute: typeof SettingsDnsProvidersRouteWithChildren
+  SettingsEdgeRoute: typeof SettingsEdgeRoute
   SettingsHostAccessRoute: typeof SettingsHostAccessRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRouteWithChildren
   SettingsProfileRoute: typeof SettingsProfileRoute
@@ -1706,6 +1726,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsDnsProvidersRoute: SettingsDnsProvidersRouteWithChildren,
+  SettingsEdgeRoute: SettingsEdgeRoute,
   SettingsHostAccessRoute: SettingsHostAccessRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRouteWithChildren,
   SettingsProfileRoute: SettingsProfileRoute,
@@ -1802,12 +1823,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

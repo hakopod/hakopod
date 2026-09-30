@@ -68,6 +68,11 @@ test('required empty selection and disabled fields retain form semantics', () =>
 test('parent navigation uses route context without relying on browser history', () => {
   assert.equal(parentNavigation('/'), null)
   assert.equal(parentNavigation('/networks'), null)
+  assert.deepEqual(parentNavigation('/settings/edge'), {
+    to: '/settings',
+    label: 'Back to settings',
+    search: { tab: 'edge' },
+  })
   assert.deepEqual(parentNavigation('/applications/example', { service: 'worker', tab: 'logs' }), {
     to: '/applications/example',
     label: 'Back to application',

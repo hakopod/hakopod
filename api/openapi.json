@@ -10367,18 +10367,24 @@
                   "settings": {
                     "$ref": "#/components/schemas/ProxySettingsPatch"
                   },
+                  "edge": {
+                    "$ref": "#/components/schemas/EdgePolicy"
+                  },
                   "expected_revision": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0
                   },
                   "expected_resource_version": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
-                  "settings",
                   "expected_revision",
                   "expected_resource_version"
-                ]
+                ],
+                "description": "Provide a nonempty settings patch, an edge policy, or both. Edge replaces the whole policy; omission preserves it. Both changes share one reviewed durable revision.",
+                "additionalProperties": false
               }
             }
           }
@@ -21568,6 +21574,134 @@
           "example"
         ]
       },
+      "EdgeRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Unique stable rule identifier."
+          },
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "description": "Exact DNS hostname. Wildcards, ports and schemes are rejected."
+          },
+          "path_prefix": {
+            "type": "string",
+            "maxLength": 128,
+            "default": "/",
+            "description": "Case-sensitive prefix of the canonical request path; queries are excluded."
+          },
+          "allow_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "maxItems": 64,
+            "description": "IPv4 or IPv6 CIDRs. Addresses are normalized to network prefixes; invalid values are rejected."
+          },
+          "deny_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "maxItems": 64,
+            "description": "IPv4 or IPv6 CIDRs. Addresses are normalized to network prefixes; invalid values are rejected."
+          },
+          "allow_countries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2
+            },
+            "maxItems": 64,
+            "description": "ISO 3166-1 alpha-2 country codes. Requires a country header from an explicitly trusted proxy."
+          },
+          "deny_countries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2
+            },
+            "maxItems": 64,
+            "description": "ISO 3166-1 alpha-2 country codes. Requires a country header from an explicitly trusted proxy."
+          },
+          "requests_per_second": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Per-client one-second HAProxy request rate. Zero disables limiting. Counters are local to each listener/process, not a global quota."
+          }
+        },
+        "required": [
+          "id",
+          "host"
+        ],
+        "additionalProperties": false
+      },
+      "EdgePolicy": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_ip_source": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "trusted_proxy"
+            ],
+            "default": "connection"
+          },
+          "trusted_proxy_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "maxItems": 32,
+            "description": "Peer networks allowed to assert client identity. Required in trusted_proxy mode; a /0 trust range is rejected."
+          },
+          "client_ip_header": {
+            "type": "string",
+            "enum": [
+              "",
+              "CF-Connecting-IP",
+              "X-Real-IP"
+            ]
+          },
+          "country_header": {
+            "type": "string",
+            "enum": [
+              "",
+              "CF-IPCountry",
+              "CloudFront-Viewer-Country"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EdgeRule"
+            },
+            "maxItems": 32,
+            "description": "Ordered rules. The first matching host/path rule wins; rules do not inherit or combine. Deny lists take precedence. At most 512 CIDRs across the policy."
+          }
+        },
+        "required": [
+          "enabled",
+          "client_ip_source",
+          "rules"
+        ],
+        "additionalProperties": false,
+        "description": "Hakopod Edge traffic protection. Replaces the whole policy when supplied. Disabled policies retain validated rules. Trusted proxy mode rejects protected requests with untrusted peers or unavailable client identity; country rules reject unavailable geography. No GeoIP database is installed."
+      },
       "ProxyConfiguration": {
         "type": "object",
         "properties": {
@@ -21586,6 +21720,9 @@
               "type": "string"
             }
           },
+          "edge": {
+            "$ref": "#/components/schemas/EdgePolicy"
+          },
           "fields": {
             "type": "array",
             "items": {
@@ -21601,6 +21738,7 @@
           "name",
           "resource_version",
           "settings",
+          "edge",
           "fields"
         ]
       },
@@ -21612,6 +21750,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "edge": {
+            "$ref": "#/components/schemas/EdgePolicy"
           },
           "status": {
             "type": "string"
@@ -21664,9 +21805,8 @@
           "type": "string",
           "maxLength": 32
         },
-        "minProperties": 1,
-        "maxProperties": 20,
-        "description": "Changed HAProxy Technologies Kubernetes Ingress ConfigMap fields. Read the observed field catalog for supported names, types and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected."
+        "maxProperties": 21,
+        "description": "Changed HAProxy controller fields. Read the observed catalog for supported names and bounds. All values are strings; an empty string resets a field, and omitted fields remain unchanged. Arbitrary directives are rejected."
       },
       "Readiness": {
         "type": "object",
