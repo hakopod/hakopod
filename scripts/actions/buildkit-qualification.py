@@ -12,9 +12,12 @@ a valid Linux file capability, a user xattr, hardlinks, permissions and whiteout
 COPY --link must import and merge that filesystem correctly. A separate fresh
 builder imports the first builder's registry cache, proves COPY and RUN cache
 hits, then changes a metadata file's mode. Its new layer must contain the exact
-xattrs, proving snapshot materialization and copy-up rather than blob reuse.
+capability, proving snapshot materialization and copy-up rather than blob reuse.
 
-OCI xattrs are verified byte-for-byte. Docker pullback additionally checks actual
+The seed's two attributes and each generated layer's capability are verified
+byte-for-byte. Pinned containerd emits only security.capability into new OCI
+layers; native filesystem checkpoints separately require both attributes.
+Docker pullback additionally checks actual
 content, permissions and hardlink inodes. It does not inspect Docker's private
 storage or claim to verify getxattr after Docker unpack; the native integration
 suite must cover that separately. Both builders and the registry remain inside
@@ -55,6 +58,8 @@ MAX_JSON = MIB
 MAX_MEMBERS = 4096
 CAPABILITY = struct.pack('<IIIII', 0x02000001, 1 << 10, 0, 0, 0)
 XATTRS = {'security.capability': CAPABILITY, 'user.hakopod-proof': b'metadata-roundtrip-v1'}
+# containerd v2 archive.ChangeWriter emits only this attribute in new layers.
+EXPORTED_XATTRS = {'security.capability': CAPABILITY}
 SEED_FILE = b'#!/bin/sh\nprintf "metadata proof\\n"\n'
 HARD_FILE = b'hardlink proof\n'
 NEW_FILE = b'opaque replacement\n'
@@ -128,7 +133,8 @@ def file_entry(content, mode=0o644, attrs=None):
 def expected_files(restored=False, built=True):
     directory = {'type': 'directory', 'mode': 0o755, 'uid': 0, 'gid': 0, 'xattrs': {}}
     result = {'fixture': dict(directory), 'fixture/opaque': dict(directory),
-              'fixture/metadata': file_entry(SEED_FILE, 0o750 if restored else 0o751, XATTRS),
+              'fixture/metadata': file_entry(SEED_FILE, 0o750 if restored else 0o751,
+                                             EXPORTED_XATTRS if built else XATTRS),
               'fixture/hard-source': file_entry(HARD_FILE, 0o640),
               'fixture/hard-link': file_entry(HARD_FILE, 0o640),
               'fixture/symlink': {'type': 'symlink', 'mode': 0o777, 'uid': 0, 'gid': 0,
@@ -240,7 +246,8 @@ class Qualification(benchmark.Benchmark):
         self.report.update(scope='Disposable managed sandbox metadata and registry-cache qualification',
                            scenario='buildkit-metadata-and-registry-cache', metadata_cache_checks_passed=False,
                            coverage_limits=[
-                               'OCI import, COPY --link, cache restoration and copy-up xattrs are checked byte-for-byte.',
+                               'Seed attributes and capabilities after COPY --link, cache restoration and copy-up are checked byte-for-byte.',
+                               'Pinned containerd does not re-export arbitrary user attributes; native filesystem checks cover their preservation.',
                                'Docker pullback checks content, mode and inodes, not getxattr after Docker unpack.',
                                'One native architecture per run; no provider credential, fleet load or speed claim.'])
         self.report['limits'].update(workload_seconds=420, fixture_payload_bytes=MAX_PAYLOAD,
@@ -373,11 +380,12 @@ RUN printf 'original cache step\\n' > /fixture/run-proof
         benchmark.verify_files(rootfs, expected, 'Qualification OCI rootfs')
         if copied_up:
             require(parsed[-1]['entries'].get('fixture/metadata') == expected['fixture/metadata'],
-                    'Final restore layer did not re-export exact capability and user xattr after copy-up')
+                    'Final restore layer did not re-export the exact capability after copy-up')
             require(parsed[-1]['entries'].get('fixture/restore-proof') == expected['fixture/restore-proof'],
                     'Final restore layer did not execute its new step')
         return {'manifest_digest': reference, 'layer_digests': [item['digest'] for item in manifest['layers']],
                 'fixture_entries': len(expected), 'content_modes_links_xattrs': True,
+                'verified_xattr_names': sorted(expected['fixture/metadata']['xattrs']),
                 'restored_copy_up_layer_verified': copied_up}
 
     def pullback_image(self, tag, checked):

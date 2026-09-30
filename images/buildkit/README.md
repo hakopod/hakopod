@@ -49,3 +49,17 @@ opacity, capability, hardlink, merge, cache-reuse and cancellation tests in the
 managed sandbox. Compare cold and warm export timings under matching resource
 limits. Keep the normal fallback behavior; forced-overlay mode is a diagnostic,
 not a production default.
+
+Metadata qualification requires exact Linux file capabilities in newly generated
+OCI layers, including after a fresh builder restores cache and copies up a file.
+The seed also contains a user attribute; native filesystem checkpoints require
+both attributes throughout import, read-only views, copy and copy-up. Pinned
+containerd's `archive.ChangeWriter` emits only `security.capability` into new
+layers. Arbitrary user attribute re-export is an upstream limitation and is not
+claimed by this candidate.
+
+The pinned gVisor runtime rejects security attribute writes on host-backed gofer
+volumes. Imports there can silently lose capabilities through containerd's
+unsupported-attribute handling. The development qualification must resolve this
+storage limitation and prove disk accounting, sharing, restart and cleanup
+before the candidate or a workspace change becomes a production default.

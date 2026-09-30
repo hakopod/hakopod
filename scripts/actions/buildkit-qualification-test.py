@@ -26,6 +26,7 @@ class QualificationTests(unittest.TestCase):
         qualification.benchmark.verify_files(rootfs, qualification.expected_files(built=False), 'seed test')
         metadata = rootfs['fixture/metadata']
         self.assertEqual(bytes.fromhex(metadata['xattrs']['security.capability']), qualification.CAPABILITY)
+        self.assertEqual(bytes.fromhex(metadata['xattrs']['user.hakopod-proof']), qualification.XATTRS['user.hakopod-proof'])
         self.assertEqual(len(qualification.CAPABILITY), 20)
         self.assertEqual(rootfs['fixture/hard-link']['type'], 'hardlink')
         self.assertNotIn('fixture/deleted', rootfs)
@@ -89,10 +90,10 @@ class QualificationTests(unittest.TestCase):
         cold = [{**value, 'cached': False} for value in steps[:2] + steps[4:]]
         self.assertFalse(qualification.check_cache_records(cold, False, reference)['copy_link_cached'])
 
-    def test_new_layer_must_carry_restored_xattrs_not_just_reference_old_blobs(self):
+    def test_new_layer_must_carry_restored_capability_not_just_reference_old_blobs(self):
         expected = qualification.expected_files(restored=True)
         raw = qualification.tar_layer([
-            ('fixture/metadata', 'file', 0o750, qualification.SEED_FILE, qualification.XATTRS),
+            ('fixture/metadata', 'file', 0o750, qualification.SEED_FILE, qualification.EXPORTED_XATTRS),
             ('fixture/restore-proof', 'file', 0o644, qualification.RESTORED_FILE, {}),
         ])
         layer = qualification.read_metadata_layer(gzip.compress(raw, mtime=0))
@@ -101,6 +102,16 @@ class QualificationTests(unittest.TestCase):
         changed['fixture/metadata']['xattrs'].pop('security.capability')
         with self.assertRaisesRegex(RuntimeError, 'filesystem mismatch'):
             qualification.benchmark.verify_files(changed, expected, 'missing imported capability')
+
+    def test_new_layers_match_upstream_export_scope_without_weakening_seed_checks(self):
+        for restored in (False, True):
+            self.assertEqual(qualification.expected_files(restored=restored)['fixture/metadata']['xattrs'],
+                             {'security.capability': qualification.CAPABILITY.hex()})
+        expected = qualification.expected_files(built=False)
+        changed = copy.deepcopy(expected)
+        changed['fixture/metadata']['xattrs'].pop('user.hakopod-proof')
+        with self.assertRaisesRegex(RuntimeError, 'filesystem mismatch'):
+            qualification.benchmark.verify_files(changed, expected, 'missing seed user attribute')
 
 
 if __name__ == '__main__':
