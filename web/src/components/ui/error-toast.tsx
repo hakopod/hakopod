@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { toastPosition } from '../../lib/toast-position'
 import { Toast } from './toast'
 
 // Portals stay inside their originating dialog so modal focus and screen-reader
@@ -32,17 +33,80 @@ function attach(target: HTMLElement, dismiss: () => void) {
     element.setAttribute('aria-label', 'Notifications')
     element.setAttribute('role', 'region')
     target.append(element)
-    // Reserve the actual action-bar height, including wrapped mobile footers.
-    const footers = [...target.querySelectorAll<HTMLElement>('.form-footer, .dialog-footer')]
-    const measure = () =>
-      element.style.setProperty(
-        '--toast-footer-space',
-        `${Math.max(0, ...footers.map((footer) => footer.getBoundingClientRect().height))}px`,
+    const footers = new Set<HTMLElement>()
+    const visualViewport = window.visualViewport
+    let frame: number | null = null
+    const schedule = () => {
+      if (frame !== null) return
+      frame = requestAnimationFrame(() => {
+        frame = null
+        measure()
+      })
+    }
+    const observer = new ResizeObserver(schedule)
+    const measure = () => {
+      const current = new Set(
+        [...target.querySelectorAll<HTMLElement>('.form-footer, .dialog-footer')].filter(
+          (footer) =>
+            (footer.closest('[role="dialog"], [role="alertdialog"]') || document.body) === target,
+        ),
       )
-    const observer = new ResizeObserver(measure)
-    footers.forEach((footer) => observer.observe(footer))
+      for (const footer of footers) {
+        if (!current.has(footer)) {
+          observer.unobserve(footer)
+          footers.delete(footer)
+        }
+      }
+      for (const footer of current) {
+        if (!footers.has(footer)) {
+          footers.add(footer)
+          observer.observe(footer)
+        }
+      }
+      const bounds = element.getBoundingClientRect()
+      const containerTop =
+        target === document.body ? 0 : target.getBoundingClientRect().top + target.clientTop
+      const containerBottom =
+        target === document.body
+          ? document.documentElement.clientHeight
+          : containerTop + target.clientHeight
+      const visibleTop = visualViewport?.offsetTop ?? 0
+      const visibleLeft = visualViewport?.offsetLeft ?? 0
+      // A mobile form footer can sit well above the page bottom. Reserve its
+      // actual position only while it intersects the toast's visible area.
+      const position = toastPosition(
+        { top: containerTop, bottom: containerBottom, left: bounds.left, right: bounds.right },
+        {
+          top: visibleTop,
+          bottom: visibleTop + (visualViewport?.height ?? window.innerHeight),
+          left: visibleLeft,
+          right: visibleLeft + (visualViewport?.width ?? window.innerWidth),
+        },
+        [...current]
+          .filter((footer) => !['hidden', 'collapse'].includes(getComputedStyle(footer).visibility))
+          .map((footer) => footer.getBoundingClientRect()),
+      )
+      element.style.setProperty('--toast-footer-space', `${position.footerSpace}px`)
+      element.style.setProperty('--toast-max-height', `${position.maxHeight}px`)
+    }
+    observer.observe(target)
+    window.addEventListener('scroll', schedule, { capture: true, passive: true })
+    window.addEventListener('resize', schedule)
+    visualViewport?.addEventListener('scroll', schedule)
+    visualViewport?.addEventListener('resize', schedule)
     measure()
-    viewport = { element, entries: new Map(), stopObserving: () => observer.disconnect() }
+    viewport = {
+      element,
+      entries: new Map(),
+      stopObserving: () => {
+        observer.disconnect()
+        window.removeEventListener('scroll', schedule, true)
+        window.removeEventListener('resize', schedule)
+        visualViewport?.removeEventListener('scroll', schedule)
+        visualViewport?.removeEventListener('resize', schedule)
+        if (frame !== null) cancelAnimationFrame(frame)
+      },
+    }
     viewports.set(target, viewport)
   }
   const key = Symbol()
