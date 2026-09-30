@@ -99,7 +99,7 @@ export function ServiceTLS({
                 }
               />
             </div>
-            <dl className="service-definition-list">
+            <dl className="service-definition-list [overflow-wrap:anywhere]">
               <div>
                 <dt>Source</dt>
                 <dd>{tls.data.source || 'None'}</dd>
@@ -245,7 +245,7 @@ function TLSForm({
       <div className="dialog-body auth-form">
         {review ? (
           <>
-            <dl className="service-definition-list">
+            <dl className="service-definition-list [overflow-wrap:anywhere]">
               <div>
                 <dt>Scope</dt>
                 <dd>
@@ -560,7 +560,7 @@ export default function IssuerSettings({ application }: { application?: Applicat
                     {(issuer.email || issuer.server || issuer.conditions.length > 0) && (
                       <details className="mt-2 text-xs text-muted-foreground">
                         <summary className="w-fit cursor-pointer">Issuer details</summary>
-                        <dl className="service-definition-list mt-2">
+                        <dl className="service-definition-list mt-2 [overflow-wrap:anywhere]">
                           {issuer.email && (
                             <div>
                               <dt>Contact email</dt>
@@ -686,7 +686,7 @@ function IssuerForm({
       >
         <div className="dialog-body auth-form">
           {review ? (
-            <dl className="service-definition-list">
+            <dl className="service-definition-list [overflow-wrap:anywhere]">
               <div>
                 <dt>Scope</dt>
                 <dd>

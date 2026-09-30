@@ -39,6 +39,7 @@ async function settled(page, expected, options = {}) {
 }
 
 async function capture(page, id, options = {}) {
+  const viewport = page.viewportSize()
   const data = await page.evaluate(() => {
     const rect = (element) => {
       const box = element.getBoundingClientRect()
@@ -80,24 +81,26 @@ async function capture(page, id, options = {}) {
       blocked: [...window.__tlsFixture.blocked],
     }
   })
+  data.requestedViewport = viewport
   assert(data.fixture, 'Review must use explicit synthetic data')
   assert.deepEqual(data.blocked, [], 'Unexpected API or external request')
-  assert(data.documentWidth <= data.width + 1, `Document overflows by ${data.documentWidth - data.width}px`)
-  assert.deepEqual(data.main.padding, [data.width < 640 ? '16px' : '24px', data.width < 640 ? '16px' : '24px'])
+  assert(data.documentWidth <= viewport.width + 1, `Document exceeds the requested viewport by ${data.documentWidth - viewport.width}px`)
+  assert(Math.abs(data.width - viewport.width) <= 1, `Layout viewport changed from ${viewport.width}px to ${data.width}px`)
+  assert.deepEqual(data.main.padding, [viewport.width < 640 ? '16px' : '24px', viewport.width < 640 ? '16px' : '24px'])
   assert.equal(data.h1.length, 1, 'Expected one page heading behind the dialog')
   assert(data.dialogs.length <= 1, 'Issuer creation must not stack two modal dialogs')
   for (const dialog of data.dialogs) {
-    assert(dialog.box.x >= -1 && dialog.box.right <= data.width + 1, 'Dialog is clipped horizontally')
-    assert(dialog.box.y >= -1 && dialog.box.bottom <= data.height + 1, 'Dialog is clipped vertically')
+    assert(dialog.box.x >= -1 && dialog.box.right <= viewport.width + 1, 'Dialog is clipped horizontally')
+    assert(dialog.box.y >= -1 && dialog.box.bottom <= viewport.height + 1, 'Dialog is clipped vertically')
   }
   // Inactive tabs may sit outside an intentionally scrollable strip. The strip
   // and selected tab must remain visible; ordinary controls have no exemption.
   for (const control of data.controls) {
-    if (!control.scrollableInactiveTab) assert(control.box.x >= -1 && control.box.right <= data.width + 1, `Control is clipped horizontally: ${control.label}`)
+    if (!control.scrollableInactiveTab) assert(control.box.x >= -1 && control.box.right <= viewport.width + 1, `Control is clipped horizontally: ${control.label}`)
   }
-  for (const tabList of data.tabLists) assert(tabList.x >= -1 && tabList.right <= data.width + 1, 'Tab strip is clipped horizontally')
+  for (const tabList of data.tabLists) assert(tabList.x >= -1 && tabList.right <= viewport.width + 1, 'Tab strip is clipped horizontally')
   for (const active of data.active) {
-    assert(active.box.x >= -1 && active.box.right <= data.width + 1, `Active tab is outside the viewport: ${active.label}`)
+    assert(active.box.x >= -1 && active.box.right <= viewport.width + 1, `Active tab is outside the viewport: ${active.label}`)
     assert.equal(active.background, 'rgba(0, 0, 0, 0)', 'Active tab has a selected background')
   }
   assert.equal(data.visibleBrackets.length, 0, 'Self-hosted review contains decorative corner brackets')
@@ -183,6 +186,7 @@ async function uploadFiles(page) {
 }
 
 async function fieldFocus(page, label) {
+  const viewport = page.viewportSize()
   const field = page.getByRole('textbox', { name: label, exact: true })
   await field.focus()
   await page.keyboard.press('Tab')
@@ -195,7 +199,8 @@ async function fieldFocus(page, label) {
     return { focused: document.activeElement === element, x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: innerWidth, height: innerHeight, hit: hit === element || element.contains(hit), outline: style.outlineStyle, outlineWidth: style.outlineWidth }
   })
   assert(state.focused && state.hit, `Keyboard focus is covered or lost: ${label}`)
-  assert(state.x >= 0 && state.right <= state.width && state.y >= 0 && state.bottom <= state.height, `Focused field is outside the viewport: ${label}`)
+  assert(Math.abs(state.width - viewport.width) <= 1, 'Layout viewport changed during keyboard review')
+  assert(state.x >= 0 && state.right <= viewport.width && state.y >= 0 && state.bottom <= viewport.height, `Focused field is outside the viewport: ${label}`)
   assert(state.outline !== 'none' && parseFloat(state.outlineWidth) >= 1, `Focused field has no outline: ${label}`)
   return state
 }

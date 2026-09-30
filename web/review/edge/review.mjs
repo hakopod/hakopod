@@ -27,6 +27,7 @@ async function settled(page, expected, options = {}) {
 }
 
 async function capture(page, id, options = {}) {
+  const viewport = page.viewportSize()
   const data = await page.evaluate(() => {
     const rect = (element) => {
       const box = element.getBoundingClientRect()
@@ -69,21 +70,23 @@ async function capture(page, id, options = {}) {
       form: main.querySelector('form')?.getAttribute('aria-label'),
     }
   })
+  data.requestedViewport = viewport
   assert(data.fixture, 'The page must use the explicit synthetic fixture')
   assert.deepEqual(data.blockedRequests, [], 'Unexpected API or external request')
-  assert(data.documentWidth <= data.width + 1, `Document overflows by ${data.documentWidth - data.width}px`)
-  assert.deepEqual(data.main.padding, [data.width < 640 ? '16px' : '24px', data.width < 640 ? '16px' : '24px'], 'Shared page inset is incorrect')
+  assert(data.documentWidth <= viewport.width + 1, `Document exceeds the requested viewport by ${data.documentWidth - viewport.width}px`)
+  assert(Math.abs(data.width - viewport.width) <= 1, `Layout viewport changed from ${viewport.width}px to ${data.width}px`)
+  assert.deepEqual(data.main.padding, [viewport.width < 640 ? '16px' : '24px', viewport.width < 640 ? '16px' : '24px'], 'Shared page inset is incorrect')
   for (const wrapper of data.wrappers) {
     assert.deepEqual(wrapper.padding, ['0px', '0px'], `${wrapper.className} adds a duplicate horizontal inset`)
-    assert(wrapper.box.x >= -1 && wrapper.box.right <= data.width + 1, `${wrapper.className} extends outside the viewport`)
+    assert(wrapper.box.x >= -1 && wrapper.box.right <= viewport.width + 1, `${wrapper.className} extends outside the viewport`)
   }
-  for (const control of data.controls) assert(control.box.x >= -1 && control.box.right <= data.width + 1, `Control is clipped: ${control.label}`)
+  for (const control of data.controls) assert(control.box.x >= -1 && control.box.right <= viewport.width + 1, `Control is clipped: ${control.label}`)
   for (const heading of data.headings) {
-    assert(Math.abs(heading.box.x) <= 1 && Math.abs(heading.box.right - data.width) <= 1, 'Page divider does not span the viewport')
+    assert(Math.abs(heading.box.x) <= 1 && Math.abs(heading.box.right - viewport.width) <= 1, 'Page divider does not span the viewport')
     assert.equal(heading.top, heading.bottom, 'Page-heading vertical padding is not balanced')
   }
   for (const active of data.active) {
-    assert(active.box.x >= -1 && active.box.right <= data.width + 1, `Selected navigation is off-screen: ${active.label}`)
+    assert(active.box.x >= -1 && active.box.right <= viewport.width + 1, `Selected navigation is off-screen: ${active.label}`)
     assert.equal(active.background, 'rgba(0, 0, 0, 0)', 'Selected navigation has a background fill')
   }
   assert.equal(data.visibleBrackets.length, 0, 'Self-hosted UI contains visible decorative corner brackets')
@@ -170,7 +173,7 @@ async function keyboardFields(page, id) {
   for (let index = 0; index < 80; index += 1) {
     await page.keyboard.press('Tab')
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    const focus = await page.evaluate(() => {
+    const focus = await page.evaluate((requestedViewport) => {
       const element = document.activeElement
       const form = element?.closest('form')
       if (!form) return { outside: true }
@@ -190,13 +193,14 @@ async function keyboardFields(page, id) {
         label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim().slice(0, 100),
         tag: element.tagName,
         box: { x: box.x, y: box.y, width: box.width, height: box.height, bottom: box.bottom },
-        visible: box.x >= 0 && box.right <= innerWidth && box.y >= 0 && box.bottom <= innerHeight && uncovered,
+        visible: box.x >= 0 && box.right <= requestedViewport.width && box.y >= 0 && box.bottom <= requestedViewport.height && uncovered,
         viewport: { width: innerWidth, height: innerHeight },
+        requestedViewport,
         hit: hit ? { tag: hit.tagName, className: hit.className, text: hit.textContent?.trim().slice(0, 120) } : null,
         outline: style.outlineStyle,
         outlineWidth: style.outlineWidth,
       }
-    })
+    }, page.viewportSize())
     assert(!focus.outside, 'Keyboard focus left the editor before its submit action')
     if (focus.submit) {
       reachedSubmit = true
@@ -204,6 +208,7 @@ async function keyboardFields(page, id) {
     }
     if (!focus.tag) continue
     fields.push(focus)
+    assert(Math.abs(focus.viewport.width - focus.requestedViewport.width) <= 1, 'Layout viewport changed during keyboard review')
     if (!focus.visible) {
       await page.screenshot({ path: `${output}/diagnostics/${id}-focus.png`, fullPage: false })
       await writeFile(`${output}/diagnostics/${id}-focus.json`, `${JSON.stringify(fields, null, 2)}\n`)
