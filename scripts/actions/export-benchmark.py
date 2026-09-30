@@ -108,6 +108,11 @@ def wait_for_integration(selection, helper_sha256, architecture):
     require(selection['kind'] == 'candidate' and re.fullmatch(r'[a-f0-9]{64}', helper_sha256 or ''),
             'Native tests require a candidate and an exact helper checksum')
     root = INTEGRATION_DIRECTORY
+    # A fresh runner image has no checkout directory yet. Create it inside the
+    # already-mounted private home before waiting for host-staged artifacts.
+    require(root.parent.parent.resolve(strict=True) == root.parent.parent,
+            'Integration home contains a symlink')
+    root.parent.mkdir(mode=0o700, exist_ok=True)
     require(root.parent.resolve(strict=True) == root.parent, 'Integration workspace parent contains a symlink')
     root.mkdir(mode=0o700, exist_ok=False)
     deadline = time.monotonic() + 120
