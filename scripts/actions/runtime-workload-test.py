@@ -18,6 +18,16 @@ CANDIDATE = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' 
 
 
 class RuntimeSelectionTests(unittest.TestCase):
+    def test_shared_workspace_is_explicit_and_cannot_build_or_publish_images(self):
+        for flag in ('0', '1'):
+            self.assertEqual(workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE': flag}), workload.runtime_buildkit_selection())
+        for flag in ('true', '', 'yes', ' 1'):
+            with self.subTest(flag=flag), self.assertRaisesRegex(RuntimeError, 'Shared workspace flag'):
+                workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE': flag})
+        for key in ('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE', 'HAKOPOD_ACTIONS_PUBLISH_CANDIDATE'):
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'Shared workspace experiments'):
+                workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE': '1', key: '1'})
+
     def test_default_remains_stock_033_native_and_candidate_is_explicit_overlay(self):
         stock = workload.runtime_buildkit_selection()
         self.assertEqual(stock['reference'], workload.BUILDKIT)

@@ -62,6 +62,10 @@ def runtime_selection_from_environment(environment):
     force = environment.get('HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF', '0')
     require(force in ('0', '1'), 'Runtime forced-overlay flag must be 0 or 1')
     candidate_build = environment.get('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE') == '1'
+    shared = environment.get('HAKOPOD_ACTIONS_SHARED_WORKSPACE', '0')
+    require(shared in ('0', '1'), 'Shared workspace flag must be 0 or 1')
+    require(not (shared == '1' and (candidate_build or environment.get('HAKOPOD_ACTIONS_PUBLISH_CANDIDATE') == '1')),
+            'Shared workspace experiments must run separately from candidate builds and publication')
     export = environment.get('HAKOPOD_ACTIONS_EXPORT_BENCHMARK') == '1'
     qualification = environment.get('HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION') == '1'
     kernel = environment.get('HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS') == '1' or bool(environment.get('HAKOPOD_ACTIONS_EXPORT_TEST_RUN'))

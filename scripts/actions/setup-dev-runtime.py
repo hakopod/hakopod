@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install a pinned runner sandbox only in this CI job's disposable k3d cluster."""
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
@@ -9,6 +10,11 @@ import urllib.request
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "installer"))
 from actions_runtime import runtime_section, runtime_profile, unpack_runtime
+
+shared_spec = importlib.util.spec_from_file_location('dev_shared_workspace', Path(__file__).with_name('shared-workspace.py'))
+shared = importlib.util.module_from_spec(shared_spec)
+shared_spec.loader.exec_module(shared)
+shared_workspace = shared.enabled(os.environ)
 
 if os.environ.get('GITHUB_ACTIONS') != 'true':
     raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
@@ -40,7 +46,7 @@ with tempfile.TemporaryDirectory() as tmp:
     config = root / 'runsc-actions.toml'
     config.write_text(runtime_profile(runtime_root))
     template = root / 'config-v3.toml.tmpl'
-    template.write_text('{{ template "base" . }}\n' + runtime_section(runtime_root))
+    template.write_text('{{ template "base" . }}\n' + shared.runtime_section(runtime_section(runtime_root), shared_workspace))
     subprocess.run(['docker', 'exec', node, 'test', '!', '-e', str(runtime_root / 'runsc-actions.toml')], check=True)
     subprocess.run(['docker', 'cp', str(config), f'{node}:{runtime_root}/runsc-actions.toml'], check=True)
     subprocess.run(['docker', 'cp', str(template), f'{node}:/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl'], check=True)
