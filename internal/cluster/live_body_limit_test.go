@@ -46,14 +46,7 @@ func TestLiveContentLengthGuard(t *testing.T) {
 	app.Services["api"] = svc
 	target := Target{ApplicationID: fmt.Sprintf("body-limit-fixture-%d", time.Now().UnixNano()), Project: "body-limit-test", Environment: "test", OperationID: "initial", Revision: 1, Spec: app}
 	t.Cleanup(func() {
-		cleanup, done := context.WithTimeout(context.Background(), 20*time.Second)
-		defer done()
-		ns, e := c.kube.CoreV1().Namespaces().Get(cleanup, Namespace(target.ApplicationID), metav1.GetOptions{})
-		if e == nil && owned(ns, target) == nil {
-			if e = c.kube.CoreV1().Namespaces().Delete(cleanup, ns.Name, deleteOptions(ns)); e != nil {
-				t.Error(e)
-			}
-		}
+		deleteLiveProxyFixture(t, c, path, target)
 	})
 	if _, err = c.Deploy(ctx, target, nil); err != nil {
 		t.Fatal(err)

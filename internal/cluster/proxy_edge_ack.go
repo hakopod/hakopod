@@ -41,6 +41,9 @@ func (c *Client) waitEdgeApplied(ctx context.Context, wanted *corev1.ConfigMap, 
 			if err == nil && (edgePolicyHash(observed) != edgePolicyHash(policy) || current.Annotations["hakopod.io/proxy-revision"] != wanted.Annotations["hakopod.io/proxy-revision"]) {
 				return ErrProxyConflict
 			}
+			if err == nil {
+				err = edgeCompatibleConfiguration(current, policy, observed)
+			}
 		}
 		if err == nil {
 			err = c.edgeRuntimeApplied(wait, policy)
@@ -69,8 +72,16 @@ func (c *Client) edgePreflight(ctx context.Context, policy EdgePolicy) error {
 	if c.execConfig == nil || c.restClient() == nil {
 		return fmt.Errorf("%w: access to the owned ingress runtime is required", ErrEdgeUnsupported)
 	}
-	_, err := c.edgeIngressPods(ctx, policy)
-	return err
+	pods, err := c.edgeIngressPods(ctx, policy)
+	if err != nil {
+		return err
+	}
+	for _, pod := range pods {
+		if err := c.edgeCheckGeneratedPolicy(ctx, pod, policy); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Client) edgeRuntimeApplied(ctx context.Context, policy EdgePolicy) error {
@@ -79,6 +90,9 @@ func (c *Client) edgeRuntimeApplied(ctx context.Context, policy EdgePolicy) erro
 		return err
 	}
 	for _, pod := range pods {
+		if err := c.edgeCheckGeneratedPolicy(ctx, pod, policy); err != nil {
+			return err
+		}
 		state, err := c.readEdgeRuntime(ctx, pod)
 		if err != nil {
 			return err
@@ -193,6 +207,46 @@ type edgeRuntime struct {
 	active    []string
 }
 
+const edgeGeneratedCompatibilityAWK = `
+BEGIN { incompatible=0; front=0; owned=0 }
+/^(global|defaults|frontend|backend|listen|peers|resolvers|userlist|ring)([ \t]|$)/ {
+  front=($1=="frontend" && ($2=="http" || $2=="https")); owned=0
+  if ($1=="frontend" && $2=="ssl") incompatible=1
+}
+{ line=$0; sub(/^[ \t]+/, "", line) }
+front && line=="# BEGIN hakopod edge" { owned=1; next }
+front && line=="# END hakopod edge" { owned=0; next }
+front && !owned && line !~ /^#/ {
+  n=split(line, f, /[ \t]+/)
+  if (f[1]=="stick-table" || line ~ /track-sc2/ || line ~ /hakopod_edge_/) incompatible=1
+  if (f[1]=="http-request") {
+    if (f[2] ~ /^(allow|return|use-service|cache-use|tarpit|silent-drop|reject|set-src|set-src-port|set-path|set-pathq|replace-path|replace-pathq|set-uri|replace-uri|normalize-uri)$/ || f[2] ~ /^lua\./) incompatible=1
+    if (f[2]=="strict-mode" && f[3]=="off") incompatible=1
+    if (f[2] ~ /^(set-header|add-header|del-header|replace-header|replace-value)$/ && (tolower(f[3])=="host" || (client_header!="" && tolower(f[3])==tolower(client_header)) || (country_header!="" && tolower(f[3])==tolower(country_header)))) incompatible=1
+  }
+  if (f[1]=="tcp-request" && f[2]=="connection" && line ~ /(set-src|expect-proxy|expect-netscaler-cip)/) incompatible=1
+}
+END { if (incompatible) print "INCOMPATIBLE"; else print "COMPATIBLE" }
+`
+
+func (c *Client) edgeCheckGeneratedPolicy(ctx context.Context, pod corev1.Pod, policy EdgePolicy) error {
+	if !policy.Enabled || len(policy.Rules) == 0 {
+		return nil
+	}
+	// Controller annotations can inject frontend actions or TLS passthrough.
+	// Inspect real generated sections before applying or acknowledging a policy,
+	// without returning their values or any operator credentials.
+	script := "set -eu\nawk -v client_header=\"$1\" -v country_header=\"$2\" '" + edgeGeneratedCompatibilityAWK + "' /etc/haproxy/haproxy.cfg\n"
+	output, err := c.edgeCommand(ctx, pod, []string{"sh", "-c", script, "hakopod-edge-preflight", policy.ClientIPHeader, policy.CountryHeader}, 1024)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(output) != "COMPATIBLE" {
+		return fmt.Errorf("%w: an existing generated frontend action bypasses or conflicts with edge policy", ErrEdgeUnsupported)
+	}
+	return nil
+}
+
 func (c *Client) readEdgeRuntime(ctx context.Context, pod corev1.Pod) (edgeRuntime, error) {
 	// Return only the owned rule block, its one process variable, and the names
 	// of active standard HTTP listeners. Never emit certificates or request logs.
@@ -211,19 +265,26 @@ printf 'ACTIVE\n'
 printf 'show stat\n' | socat -t 2 - UNIX-CONNECT:/var/run/haproxy-runtime-api.sock | awk -F, '($1=="http" || $1=="https") && $2=="FRONTEND" && $18=="OPEN" {print $1}'
 printf 'END\n'
 `
-	command := []string{"sh", "-c", script, "hakopod-edge-probe"}
-	request := c.restClient().Post().Resource("pods").Namespace(pod.Namespace).Name(pod.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{Container: "kubernetes-ingress-controller", Command: command, Stdout: true, Stderr: true}, scheme.ParameterCodec)
-	executor, err := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, request.URL())
+	output, err := c.edgeCommand(ctx, pod, []string{"sh", "-c", script, "hakopod-edge-probe"}, 512<<10)
 	if err != nil {
 		return edgeRuntime{}, err
 	}
-	output := &tcpBoundedWriter{limit: 512 << 10}
+	return parseEdgeRuntime(output)
+}
+
+func (c *Client) edgeCommand(ctx context.Context, pod corev1.Pod, command []string, limit int) (string, error) {
+	request := c.restClient().Post().Resource("pods").Namespace(pod.Namespace).Name(pod.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{Container: "kubernetes-ingress-controller", Command: command, Stdout: true, Stderr: true}, scheme.ParameterCodec)
+	executor, err := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, request.URL())
+	if err != nil {
+		return "", err
+	}
+	output := &tcpBoundedWriter{limit: limit}
 	probe, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	if err = executor.StreamWithContext(probe, remotecommand.StreamOptions{Stdout: output, Stderr: io.Discard}); err != nil {
-		return edgeRuntime{}, fmt.Errorf("inspect ingress edge runtime: %w", err)
+		return "", fmt.Errorf("inspect ingress edge runtime: %w", err)
 	}
-	return parseEdgeRuntime(output.String())
+	return output.String(), nil
 }
 
 func parseEdgeRuntime(value string) (edgeRuntime, error) {

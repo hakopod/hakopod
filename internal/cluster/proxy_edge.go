@@ -47,6 +47,7 @@ const (
 	edgeBlockStart       = "# BEGIN hakopod edge"
 	edgeBlockEnd         = "# END hakopod edge"
 	edgeRuntimeVariable  = "proc.hakopod_edge_revision"
+	edgeACMETokenPattern = `^/\.well-known/acme-challenge/[A-Za-z0-9_-]{1,256}$`
 	edgeMaximumRules     = 32
 	edgeMaximumList      = 64
 	edgeMaximumCIDRs     = 512
@@ -246,7 +247,9 @@ func edgeFrontendBlock(policy EdgePolicy) string {
 	if !policy.Enabled || len(policy.Rules) == 0 {
 		return edgeOwnedBlock("# Traffic protection is disabled.")
 	}
-	lines := []string{"acl hakopod_edge_acme path_beg /.well-known/acme-challenge/"}
+	// Exempt only a canonical HTTP-01 token, never the whole path prefix: a
+	// prefix exemption would allow /acme-challenge/../../private to bypass policy.
+	lines := []string{"acl hakopod_edge_acme path -m reg '" + edgeACMETokenPattern + "'"}
 	hosts := []string{}
 	rate := false
 	for _, rule := range policy.Rules {
@@ -256,19 +259,21 @@ func edgeFrontendBlock(policy EdgePolicy) string {
 		rate = rate || rule.RequestsPerSecond > 0
 	}
 	lines = append(lines, edgeACL("hakopod_edge_host", "req.hdr(host),field(1,:),lower -m str", hosts)...)
-	// Keep query bytes unchanged while the URI normalizers examine the path.
-	// Reject nested encoding and encoded separators before decoding unreserved
-	// path bytes, otherwise upstream decoders could disagree on the selected rule.
-	lines = append(lines, "http-request set-var(txn.hakopod_edge_normalize) bool(true) if hakopod_edge_host !hakopod_edge_acme")
+	// The controller saves routing paths before running frontend snippets. Reject
+	// paths that normalizers would change so policy and backend selection agree.
+	// Keep query bytes unchanged, and check every covered host before ACME bypass.
+	lines = append(lines, "http-request set-var(txn.hakopod_edge_normalize) bool(true) if hakopod_edge_host")
 	guard := "{ var(txn.hakopod_edge_normalize) -m found }"
 	lines = append(lines,
-		`http-request deny deny_status 400 if `+guard+` { path -m reg -i '(%2f|%5c|%25|%00|\\)' }`,
+		`http-request deny deny_status 400 if `+guard+` { path -m reg -i '(%2f|%5c|%25|%00|%3b|;|\\)' }`,
+		"http-request set-var(txn.hakopod_edge_original_path) path if "+guard,
 		"http-request set-var(txn.hakopod_edge_query) query if "+guard+" { url -m sub ? }",
-		`http-request set-query "" if `+guard+" { var(txn.hakopod_edge_query) -m found }",
+		"http-request set-query %[query,regsub(.,,g)] if "+guard+" { var(txn.hakopod_edge_query) -m found }",
 		"http-request normalize-uri percent-decode-unreserved strict if "+guard,
 		"http-request normalize-uri path-merge-slashes if "+guard,
 		"http-request normalize-uri path-strip-dot if "+guard,
 		"http-request normalize-uri path-strip-dotdot full if "+guard,
+		"http-request deny deny_status 400 if "+guard+" !{ path,strcmp(txn.hakopod_edge_original_path) eq 0 }",
 		"http-request set-query %[var(txn.hakopod_edge_query)] if "+guard+" { var(txn.hakopod_edge_query) -m found }",
 	)
 	for i, rule := range policy.Rules {
@@ -425,9 +430,15 @@ func edgeCompatibleConfiguration(cm *corev1.ConfigMap, policy, old EdgePolicy) e
 	if !policy.Enabled || len(policy.Rules) == 0 {
 		return nil
 	}
-	for _, key := range []string{"src-ip-header", "proxy-protocol", "cr-frontend-http", "cr-frontend-https"} {
+	for _, key := range []string{"src-ip-header", "proxy-protocol", "cr-frontend-http", "cr-frontend-https", "cr-frontend-ssl"} {
 		if cm.Data[key] != "" {
 			return fmt.Errorf("%w: operator setting %s requires separate review before enabling edge policy", ErrEdgeUnsupported, key)
+		}
+	}
+	if value := strings.TrimSpace(cm.Data["ssl-passthrough"]); value != "" {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil || enabled {
+			return fmt.Errorf("%w: SSL passthrough bypasses HTTP edge policy", ErrEdgeUnsupported)
 		}
 	}
 	oldBlocks := map[string]string{}
@@ -446,8 +457,19 @@ func edgeCompatibleConfiguration(cm *corev1.ConfigMap, policy, old EdgePolicy) e
 			}
 			if key == "frontend-config-snippet" {
 				fields := strings.Fields(line)
-				if len(fields) >= 2 && fields[0] == "http-request" && slices.Contains([]string{"allow", "return", "redirect", "use-service", "tarpit", "silent-drop", "reject"}, fields[1]) {
-					return fmt.Errorf("%w: an operator frontend action can finish requests before edge policy runs", ErrEdgeUnsupported)
+				if len(fields) >= 2 && fields[0] == "http-request" {
+					if slices.Contains([]string{"allow", "return", "redirect", "use-service", "cache-use", "tarpit", "silent-drop", "reject"}, fields[1]) || strings.HasPrefix(fields[1], "lua.") {
+						return fmt.Errorf("%w: an operator frontend action can finish requests before edge policy runs", ErrEdgeUnsupported)
+					}
+					if slices.Contains([]string{"set-path", "set-pathq", "replace-path", "replace-pathq", "set-uri", "replace-uri", "normalize-uri"}, fields[1]) {
+						return fmt.Errorf("%w: an operator frontend action can change the path before edge policy runs", ErrEdgeUnsupported)
+					}
+					if len(fields) >= 3 && slices.Contains([]string{"set-header", "add-header", "del-header", "replace-header", "replace-value"}, fields[1]) && (strings.EqualFold(fields[2], "host") || policy.ClientIPHeader != "" && strings.EqualFold(fields[2], policy.ClientIPHeader) || policy.CountryHeader != "" && strings.EqualFold(fields[2], policy.CountryHeader)) {
+						return fmt.Errorf("%w: an operator frontend action can change headers used by edge policy", ErrEdgeUnsupported)
+					}
+					if len(fields) >= 3 && fields[1] == "strict-mode" && fields[2] == "off" {
+						return fmt.Errorf("%w: edge policy requires strict HTTP action failures", ErrEdgeUnsupported)
+					}
 				}
 				if strings.Contains(line, "set-src") || strings.Contains(line, "accept-proxy") || strings.Contains(line, "expect-proxy") || strings.Contains(line, "expect-netscaler-cip") {
 					return fmt.Errorf("%w: an operator frontend action can replace the original peer address", ErrEdgeUnsupported)
