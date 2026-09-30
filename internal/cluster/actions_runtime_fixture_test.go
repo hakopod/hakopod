@@ -192,22 +192,21 @@ func actionsBuildkitQualificationArguments(force bool, image string) (string, er
 	return string(data), err
 }
 
-func actionsBuildkitQualificationWrapper(arguments string, sources map[string][]byte) (string, error) {
+func actionsFixtureSources(names []string, sources map[string][]byte) (string, error) {
 	type sourceFile struct {
 		Name       string `json:"name"`
 		Size       int    `json:"size"`
 		SHA256     string `json:"sha256"`
 		GzipBase64 string `json:"gzip_base64"`
 	}
-	names := []string{"export-benchmark.py", "buildkit-qualification.py"}
 	if len(sources) != len(names) {
-		return "", fmt.Errorf("qualification requires exactly its two reviewed source files")
+		return "", fmt.Errorf("fixture requires exactly its reviewed source files")
 	}
 	files := make([]sourceFile, 0, len(names))
 	for _, name := range names {
 		data := sources[name]
 		if len(data) == 0 || len(data) > 128*1024 {
-			return "", fmt.Errorf("qualification source %s exceeds its 128 KiB bound", name)
+			return "", fmt.Errorf("fixture source %s exceeds its 128 KiB bound", name)
 		}
 		var compressed bytes.Buffer
 		writer := gzip.NewWriter(&compressed)
@@ -221,6 +220,11 @@ func actionsBuildkitQualificationWrapper(arguments string, sources map[string][]
 			GzipBase64: base64.StdEncoding.EncodeToString(compressed.Bytes())})
 	}
 	encoded, err := json.Marshal(files)
+	return string(encoded), err
+}
+
+func actionsBuildkitQualificationWrapper(arguments string, sources map[string][]byte) (string, error) {
+	encoded, err := actionsFixtureSources([]string{"export-benchmark.py", "buildkit-qualification.py"}, sources)
 	if err != nil {
 		return "", err
 	}
@@ -446,15 +450,129 @@ func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper st
 	}
 }
 
+func actionsRuntimeSelectionEnvironment(environment map[string]string) ([]corev1.EnvVar, error) {
+	image := environment["HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE"]
+	force := environment["HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF"]
+	if force != "" && force != "0" && force != "1" {
+		return nil, fmt.Errorf("runtime forced-overlay flag must be 0 or 1")
+	}
+	if image == "" && force == "1" {
+		return nil, fmt.Errorf("runtime forced-overlay mode requires an explicit candidate")
+	}
+	if image != "" {
+		if !regexp.MustCompile(`^ghcr\.io/hakopod/buildkit:v0\.32\.2-hakopod-[a-f0-9]{40}@sha256:[a-f0-9]{64}$`).MatchString(image) {
+			return nil, fmt.Errorf("runtime image must be a digest-pinned Hakopod v0.32.2 candidate")
+		}
+		for _, name := range []string{"HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE", "HAKOPOD_ACTIONS_PUBLISH_CANDIDATE", "HAKOPOD_ACTIONS_EXPORT_BENCHMARK", "HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION", "HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF", "HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS"} {
+			if environment[name] == "1" {
+				return nil, fmt.Errorf("runtime candidate must run separately from candidate builds and export-only diagnostics")
+			}
+		}
+		if environment["HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE"] != "" || environment["HAKOPOD_ACTIONS_EXPORT_TEST_RUN"] != "" {
+			return nil, fmt.Errorf("runtime candidate cannot use export-only image or artifact inputs")
+		}
+	}
+	if force == "" {
+		force = "0"
+	}
+	return []corev1.EnvVar{{Name: "HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE", Value: image}, {Name: "HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF", Value: force}}, nil
+}
+
+func actionsRuntimeWorkloadWrapper(sources map[string][]byte) (string, error) {
+	encoded, err := actionsFixtureSources([]string{"export-benchmark.py", "runtime-workload.py"}, sources)
+	if err != nil {
+		return "", err
+	}
+	wrapper := fmt.Sprintf(`import base64, gzip, hashlib, io, sys
+sys.dont_write_bytecode = True
+sys.argv = ['runtime-workload.py']
+files = %s
+if [item['name'] for item in files] != ['export-benchmark.py', 'runtime-workload.py']:
+    raise RuntimeError('Runtime source inventory changed')
+verified = []
+for item in files:
+    with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(item['gzip_base64'], validate=True))) as source:
+        data = source.read(131073)
+    if not 0 < len(data) <= 131072 or len(data) != item['size'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+        raise RuntimeError('Runtime source identity mismatch')
+    verified.append(data)
+helpers = {'__name__': 'runtime_buildkit_helpers'}
+exec(compile(verified[0], 'export-benchmark.py', 'exec'), helpers)
+exec(compile(verified[1], 'runtime-workload.py', 'exec'), {'__name__': '__main__', '_BENCHMARK_HELPERS': helpers})
+`, encoded)
+	if len(wrapper) >= 120*1024 {
+		return "", fmt.Errorf("runtime command exceeds its 120 KiB bound")
+	}
+	return wrapper, nil
+}
+
+func TestActionsRuntimeSelectionEnvironment(t *testing.T) {
+	candidate := "ghcr.io/hakopod/buildkit:v0.32.2-hakopod-" + strings.Repeat("a", 40) + "@sha256:" + strings.Repeat("b", 64)
+	for _, image := range []string{"", candidate} {
+		for _, force := range []string{"", "0", "1"} {
+			env, err := actionsRuntimeSelectionEnvironment(map[string]string{"HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE": image, "HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF": force})
+			if image == "" && force == "1" {
+				if err == nil {
+					t.Fatal("forced runtime accepted an implicit candidate")
+				}
+				continue
+			}
+			if err != nil || len(env) != 2 || env[0].Value != image || (env[1].Value == "1") != (force == "1") {
+				t.Fatalf("runtime selection changed during transport: %v %v", env, err)
+			}
+		}
+	}
+	for _, image := range []string{actionsExportStockBuildkit, strings.Split(candidate, "@")[0], candidate + "\n", candidate + ",network=host", strings.Replace(candidate, "v0.32.2", "v0.33.0", 1)} {
+		if _, err := actionsRuntimeSelectionEnvironment(map[string]string{"HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE": image}); err == nil {
+			t.Fatal("runtime accepted an invalid candidate")
+		}
+	}
+	for _, name := range []string{"HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE", "HAKOPOD_ACTIONS_PUBLISH_CANDIDATE", "HAKOPOD_ACTIONS_EXPORT_BENCHMARK", "HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION", "HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF", "HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS", "HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE", "HAKOPOD_ACTIONS_EXPORT_TEST_RUN"} {
+		if _, err := actionsRuntimeSelectionEnvironment(map[string]string{"HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE": candidate, name: "1"}); err == nil {
+			t.Fatalf("runtime accepted an overlapping scenario: %s", name)
+		}
+	}
+	if _, err := actionsRuntimeSelectionEnvironment(map[string]string{"HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF": "true"}); err == nil {
+		t.Fatal("runtime accepted an invalid force flag")
+	}
+}
+
+func TestActionsRuntimeWorkloadSourceBounds(t *testing.T) {
+	valid := map[string][]byte{"export-benchmark.py": []byte("# helper\n"), "runtime-workload.py": []byte("# workload\n")}
+	if _, err := actionsRuntimeWorkloadWrapper(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, sources := range []map[string][]byte{{}, {"export-benchmark.py": valid["export-benchmark.py"]}, {"export-benchmark.py": valid["export-benchmark.py"], "runtime-workload.py": nil}, {"export-benchmark.py": valid["export-benchmark.py"], "runtime-workload.py": bytes.Repeat([]byte("x"), 128*1024+1)}} {
+		if _, err := actionsRuntimeWorkloadWrapper(sources); err == nil {
+			t.Fatal("runtime accepted missing or oversized source")
+		}
+	}
+}
+
 // TestActionsRuntimeAcceptanceFixtures exports the product pod and namespace
 // policy without contacting a cluster or accepting a GitHub credential. The CI
 // harness applies these development fixtures only to a disposable named cluster.
 func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
+	environment := map[string]string{}
+	for _, name := range []string{"HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE", "HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF", "HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE", "HAKOPOD_ACTIONS_PUBLISH_CANDIDATE", "HAKOPOD_ACTIONS_EXPORT_BENCHMARK", "HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION", "HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF", "HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS", "HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE", "HAKOPOD_ACTIONS_EXPORT_TEST_RUN"} {
+		environment[name] = os.Getenv(name)
+	}
+	selectionEnv, err := actionsRuntimeSelectionEnvironment(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
 	directory := os.Getenv("HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR")
 	if directory == "" {
 		t.Skip("only used by the disposable runtime acceptance harness")
 	}
-	workload, err := os.ReadFile("../../scripts/actions/runtime-workload.py")
+	sources := map[string][]byte{}
+	for _, name := range []string{"export-benchmark.py", "runtime-workload.py"} {
+		sources[name], err = os.ReadFile(filepath.Join("../../scripts/actions", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	workload, err := actionsRuntimeWorkloadWrapper(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,8 +616,13 @@ func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
 		}
 		pod := actionsPod(target, "runner", slot, s)
 		pod.APIVersion, pod.Kind = "v1", "Pod"
-		pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", string(workload)}
+		pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", workload}
 		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "ACCEPTANCE_SCENARIO", Value: name})
+		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, selectionEnv...)
+		podJSON, err := json.Marshal(pod)
+		if err != nil || len(podJSON) > 65536 {
+			t.Fatalf("runtime Pod exceeds its 64 KiB bound: %v", err)
+		}
 		items = append(items, pod)
 		data, err := json.MarshalIndent(map[string]any{"apiVersion": "v1", "kind": "List", "items": items}, "", "  ")
 		if err != nil {
@@ -508,6 +631,64 @@ func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(directory, name+".json"), data, 0600); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestActionsRuntimeFixturesRetainFullSuite(t *testing.T) {
+	candidate := "ghcr.io/hakopod/buildkit:v0.32.2-hakopod-" + strings.Repeat("a", 40) + "@sha256:" + strings.Repeat("b", 64)
+	for _, selection := range []struct{ name, image, force string }{{"stock", "", "0"}, {"candidate", candidate, "0"}, {"forced-candidate", candidate, "1"}} {
+		t.Run(selection.name, func(t *testing.T) {
+			directory := t.TempDir()
+			t.Setenv("HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR", directory)
+			t.Setenv("HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE", selection.image)
+			t.Setenv("HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF", selection.force)
+			for _, name := range []string{"HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE", "HAKOPOD_ACTIONS_PUBLISH_CANDIDATE", "HAKOPOD_ACTIONS_EXPORT_BENCHMARK", "HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION", "HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF", "HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS", "HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE", "HAKOPOD_ACTIONS_EXPORT_TEST_RUN"} {
+				t.Setenv(name, "")
+			}
+			TestActionsRuntimeAcceptanceFixtures(t)
+			for _, scenario := range []string{"workload", "disk", "replacement"} {
+				data, err := os.ReadFile(filepath.Join(directory, scenario+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var fixture struct{ Items []json.RawMessage }
+				if err := json.Unmarshal(data, &fixture); err != nil {
+					t.Fatal(err)
+				}
+				pods := 0
+				for _, item := range fixture.Items {
+					var pod corev1.Pod
+					if err := json.Unmarshal(item, &pod); err != nil || pod.Kind != "Pod" {
+						continue
+					}
+					pods++
+					workspace, deadline := "8Gi", int64(24*60)
+					if scenario != "workload" {
+						workspace, deadline = "2Gi", int64(5*60)
+					}
+					if pod.Spec.ActiveDeadlineSeconds == nil || *pod.Spec.ActiveDeadlineSeconds != deadline || len(pod.Spec.Volumes) != 2 || pod.Spec.Volumes[0].EmptyDir == nil || pod.Spec.Volumes[0].EmptyDir.SizeLimit == nil || pod.Spec.Volumes[0].EmptyDir.SizeLimit.Cmp(resource.MustParse(workspace)) != 0 {
+						t.Fatal("full runtime fixture lost its existing workspace or deadline")
+					}
+					if pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != ActionsRuntime || pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken || pod.Spec.NodeName != "" || pod.Spec.HostNetwork || pod.Spec.HostPID || pod.Spec.HostIPC {
+						t.Fatal("full runtime fixture lost its product sandbox")
+					}
+					runner := pod.Spec.Containers[0]
+					if len(runner.Command) != 4 || runner.Command[0] != "python3" || !strings.Contains(runner.Command[3], "_BENCHMARK_HELPERS") {
+						t.Fatal("runtime workload lost its verified shared helper transport")
+					}
+					env := map[string]string{}
+					for _, value := range runner.Env {
+						env[value.Name] = value.Value
+					}
+					if env["ACCEPTANCE_SCENARIO"] != scenario || env["HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE"] != selection.image || env["HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF"] != selection.force {
+						t.Fatal("runtime selection was not retained in all three fixture scenarios")
+					}
+				}
+				if pods != 1 {
+					t.Fatal("runtime scenario must have exactly one product runner Pod")
+				}
+			}
+		})
 	}
 }
 
