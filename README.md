@@ -97,6 +97,24 @@ For CI, create a named project/environment-scoped key through the dashboard or
 The `bootstrap` command remains an explicit machine-credential recovery/development
 tool. Dashboard sign-in uses human accounts.
 
+The [GitHub deployment action](actions/deploy/README.md) adds a step for existing
+applications, with selected services, image digests and optional environment
+changes:
+
+```yaml
+- uses: hakopod/hakopod/actions/deploy@main
+  with:
+    api-url: ${{ vars.HAKOPOD_API_URL }}
+    api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
+    application-id: ${{ vars.HAKOPOD_APPLICATION_ID }}
+    services: '["api", "worker"]'
+```
+
+The action is a source preview; `@main` becomes available when this change is
+merged. Pin a full reviewed commit SHA in production workflows. It keeps saved
+images unless you provide a digest-pinned `image`, and waits for deployment
+success by default.
+
 ## Build release artifacts
 
 Developers can build the server, dashboard and installer kit locally:
