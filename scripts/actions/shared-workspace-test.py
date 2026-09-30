@@ -193,6 +193,30 @@ class IdentityTests(unittest.TestCase):
             with self.subTest(mutation=mutate), self.assertRaises(RuntimeError):
                 shared.verify_sandbox(value, identity, SANDBOX)
 
+    def test_replacement_selects_exact_running_sandbox_among_retained_records(self):
+        identity = shared.pod_identity(pod())
+        current = sandbox()['items'][0]
+        previous = copy.deepcopy(current)
+        previous.update(id='a' * 64, state='SANDBOX_NOTREADY')
+        previous['metadata']['uid'] = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+        for items in ([previous, current], [current, previous]):
+            observation = {}
+            shared.verify_sandbox({'items': items}, identity, SANDBOX, observation)
+            self.assertEqual(observation, {'pod_uid': UID, 'sandbox_id': SANDBOX,
+                                          'inventory_count': 2, 'selected_count': 1})
+        for invalid in ([previous], [current, current], [None], [previous] * 129):
+            with self.subTest(invalid=invalid), self.assertRaises(RuntimeError):
+                shared.verify_sandbox({'items': invalid}, identity, SANDBOX)
+        for field, value in (('uid', previous['metadata']['uid']), ('namespace', 'hp-other'), ('name', 'other')):
+            changed = copy.deepcopy(current)
+            changed['metadata'][field] = value
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                shared.verify_sandbox({'items': [previous, changed]}, identity, SANDBOX)
+        stopped = copy.deepcopy(current)
+        stopped['state'] = 'SANDBOX_NOTREADY'
+        with self.assertRaises(RuntimeError):
+            shared.verify_sandbox({'items': [previous, stopped]}, identity, SANDBOX)
+
 
 class AccountingTests(unittest.TestCase):
     def test_summary_diagnostics_preserve_real_volume_time_values_and_missing_identity(self):
