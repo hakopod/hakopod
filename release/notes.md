@@ -1,4 +1,4 @@
-Hakopod 0.1.0-alpha.43 improves managed GitHub Actions runner logs, placement and workspace qualification.
+Hakopod 0.1.0-alpha.44 improves managed GitHub Actions runner logs, placement and workspace qualification.
 
 - Integrated workflow logs are wrapped by default and preserve GitHub secret masking. The runner observer withholds incomplete physical records and records larger than 16 KiB instead of forwarding fragments that could expose masked values. Live output stays withheld when redaction is incomplete; completed logs remain available from GitHub.
 - Runner pool setup guides placement through approved nodes, architectures and resource limits while preserving the selected scope and entered values on failure.
@@ -14,8 +14,8 @@ GitLab and Bitbucket runner support remains disabled and is not included in this
 
 ```sh
 curl --fail --location --proto '=https' --tlsv1.2 \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.43/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.43
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.44/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.44
 ```
 
 Direct upgrades are supported from alpha.41 and alpha.42. Older installations need supported intermediate releases. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.

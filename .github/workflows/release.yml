@@ -14,7 +14,7 @@ jobs:
     env:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
-      NODE_OPTIONS: --max-old-space-size=512
+      NODE_OPTIONS: --max-old-space-size=1536
       HAKOPOD_TEST_DATABASE_URL: postgres://hakopod_release:ephemeral-release-only@127.0.0.1:5432/postgres?sslmode=disable
     services:
       postgres:
