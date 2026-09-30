@@ -84,6 +84,7 @@ jobs:
           python3 -B scripts/actions/export-benchmark-test.py
           python3 -B scripts/actions/docker-acceptance-test.py
           python3 -B scripts/actions/runtime-workload-test.py
+          python3 -B scripts/actions/shared-workspace-test.py
           python3 -B scripts/actions/buildkit-integration-test.py
           python3 -B scripts/actions/buildkit-qualification-test.py
           sh -n scripts/installer.sh

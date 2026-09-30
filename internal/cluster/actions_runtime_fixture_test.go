@@ -392,6 +392,9 @@ func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper st
 		t.Fatal("export benchmark command exceeds its 120 KiB bound")
 	}
 	pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", wrapper}
+	if err := actionsSharedWorkspaceFixture(pod, s.Actions.WorkspaceSizeGiB, os.Getenv("HAKOPOD_ACTIONS_SHARED_WORKSPACE")); err != nil {
+		t.Fatal(err)
+	}
 	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT", Value: "k3d-hakopod-dev"})
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != ActionsRuntime || pod.Spec.HostNetwork || pod.Spec.HostPID || pod.Spec.HostIPC {
 		t.Fatal("export benchmark lost the product sandbox boundary")
@@ -617,6 +620,9 @@ func TestActionsRuntimeAcceptanceFixtures(t *testing.T) {
 		pod := actionsPod(target, "runner", slot, s)
 		pod.APIVersion, pod.Kind = "v1", "Pod"
 		pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", workload}
+		if err := actionsSharedWorkspaceFixture(pod, s.Actions.WorkspaceSizeGiB, os.Getenv("HAKOPOD_ACTIONS_SHARED_WORKSPACE")); err != nil {
+			t.Fatal(err)
+		}
 		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "ACCEPTANCE_SCENARIO", Value: name})
 		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, selectionEnv...)
 		podJSON, err := json.Marshal(pod)

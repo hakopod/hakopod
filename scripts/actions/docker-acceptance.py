@@ -54,6 +54,7 @@ REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platfor
 NAMESPACES = set()
 RUNTIME_CREATED = False
 OUTPUT_CREATED = False
+SHARED_WORKSPACE = None
 LOG_LIMIT = 4 * 1024 * 1024
 
 
@@ -205,6 +206,13 @@ def runtime_helpers():
     return module
 
 
+def shared_workspace_helpers():
+    spec = importlib.util.spec_from_file_location('dev_shared_workspace', ROOT / 'scripts/actions/shared-workspace.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def verify_runtime_report(events, selected, architecture):
     helpers = runtime_helpers()
     assert architecture in ('amd64', 'arm64'), 'unsupported runtime architecture'
@@ -347,6 +355,8 @@ def sample():
         REPORT['resource_sample_error'] = response.stderr[-512:]
         return
     stats = json.loads(response.stdout)
+    if SHARED_WORKSPACE:
+        SHARED_WORKSPACE.usage(stats)
     for pod in stats.get('pods', []):
         ref = pod.get('podRef', {})
         if ref.get('namespace') not in NAMESPACES:
@@ -405,6 +415,8 @@ def wait_for(namespace, predicate, timeout=300, capture=None):
         if capture:
             capture.observe(pod)
         if predicate(pod):
+            if SHARED_WORKSPACE:
+                sample()
             return pod
         if pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'):
             raise RuntimeError(f'runner exited before expected checkpoint: {pod.get("status", {})}')
@@ -434,10 +446,37 @@ def delete_pod(namespace, credential_config=True):
     started = time.monotonic()
     for _ in range(30):
         if command(['docker', 'exec', NODE, 'test', '!', '-e', workspace], check=False).returncode == 0:
+            if SHARED_WORKSPACE:
+                SHARED_WORKSPACE.removed(uid)
             record('private-workspace-removed', started, pod_uid=uid)
             return
         time.sleep(2)
     raise RuntimeError('the deleted pod still has a private workspace on the disposable node')
+
+
+def restart_docker(namespace, timeout=120, capture=None):
+    before = state(namespace)
+    restart_count = next(status.get('restartCount', 0) for status in before['status']['initContainerStatuses'] if status['name'] == 'docker')
+    # dockerd installs a TERM handler. Linux protects namespace PID 1 from an
+    # unhandled KILL sent by another process in the same PID namespace.
+    kube(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'docker', '--', 'sh', '-c', 'kill -TERM 1'], check=False)
+    wait_for(namespace, lambda pod: any(status['name'] == 'docker' and status.get('restartCount', 0) > restart_count
+        and status.get('ready') for status in pod.get('status', {}).get('initContainerStatuses', [])), timeout=timeout, capture=capture)
+    exec_runner(namespace, "import subprocess; subprocess.run(['docker', 'info'], check=True, stdout=subprocess.DEVNULL)")
+
+
+def prepare_shared_workspace(namespace, capture=None, full=True, disk=False):
+    if not SHARED_WORKSPACE:
+        return
+    def ready(pod):
+        running = any(item['name'] == 'runner' and item.get('state', {}).get('running')
+            for item in pod.get('status', {}).get('containerStatuses', []))
+        return running and kube(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'runner', '--',
+            'test', '-f', '/home/runner/.hakopod-shared-ready'], check=False, timeout=10).returncode == 0
+    pod = wait_for(namespace, ready, timeout=360, capture=capture)
+    started = time.monotonic()
+    SHARED_WORKSPACE.prepare(pod, lambda timeout: restart_docker(namespace, timeout=timeout, capture=capture), full=full, disk=disk)
+    record('development-shared-disk-workspace', started, pod_uid=pod['metadata']['uid'])
 
 
 def boundary_checks(namespace):
@@ -483,15 +522,8 @@ else:
     image_observation('running')
     record('running-image-observation', started)
     started = time.monotonic()
-    before = state(namespace)
-    restart_count = next(status.get('restartCount', 0) for status in before['status']['initContainerStatuses'] if status['name'] == 'docker')
     # Restart before any build is active; the runner retains its workspace.
-    # dockerd installs a TERM handler. Linux protects namespace PID 1 from an
-    # unhandled KILL sent by another process in the same PID namespace.
-    kube(['-n', namespace, 'exec', 'actions-runtime-fixture', '-c', 'docker', '--', 'sh', '-c', 'kill -TERM 1'], check=False)
-    wait_for(namespace, lambda pod: any(status['name'] == 'docker' and status.get('restartCount', 0) > restart_count
-                                       and status.get('ready') for status in pod.get('status', {}).get('initContainerStatuses', [])), timeout=120)
-    exec_runner(namespace, "import subprocess; subprocess.run(['docker', 'info'], check=True, stdout=subprocess.DEVNULL)")
+    restart_docker(namespace)
     record('docker-sidecar-restart', started)
     exec_runner(namespace, "from pathlib import Path; Path('/home/runner/_work/acceptance/continue').touch()")
 
@@ -560,6 +592,7 @@ def run_export_benchmark(fixture, integration=None, qualification=False):
     capture = BoundedLogCapture(namespace, scenario)
     failure = None
     try:
+        prepare_shared_workspace(namespace, capture)
         if integration:
             wait_for(namespace, lambda value: any(item['name'] == 'runner' and item.get('state', {}).get('running')
                 for item in value.get('status', {}).get('containerStatuses', [])), timeout=360, capture=capture)
@@ -617,7 +650,7 @@ def run_export_benchmark(fixture, integration=None, qualification=False):
 
 
 def main():
-    global RUNTIME_CREATED, OUTPUT_CREATED
+    global RUNTIME_CREATED, OUTPUT_CREATED, SHARED_WORKSPACE
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
     runtime_selection = runtime_helpers().runtime_selection_from_environment(os.environ)
@@ -633,8 +666,16 @@ def main():
             os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'], architecture, os.environ.get('HAKOPOD_ACTIONS_EXPORT_TEST_RUN') or None)
     label = command(['docker', 'inspect', '--format', '{{index .Config.Labels "k3d.cluster"}}', NODE]).stdout.strip()
     assert label == 'hakopod-dev', 'unexpected development container'
+    shared = shared_workspace_helpers()
+    if shared.enabled(os.environ):
+        REPORT['shared_workspace'] = {'scope': 'development-only disk-backed shared filesystem experiment',
+            'coverage_limits': ['Docker archive capability checks are not BuildKit import/export or registry-cache qualification.',
+                                'Disk eviction and replacement are checked only by the full runtime scenario.']}
+        SHARED_WORKSPACE = shared.Observer(command, kube, NODE, REPORT['shared_workspace'])
     OUTPUT.mkdir(parents=True, exist_ok=False)
     OUTPUT_CREATED = True
+    if SHARED_WORKSPACE:
+        SHARED_WORKSPACE.verify_config()
     fixture_test = ('^TestActionsBuildkitQualificationFixture$' if BUILDKIT_QUALIFICATION else
                     '^TestActionsExportBenchmarkFixture$' if EXPORT_BENCHMARK else '^TestActionsRuntimeAcceptanceFixtures$')
     command(['go', 'test', '-p=1', './internal/cluster', '-run', fixture_test, '-count=1', '-timeout=60s'],
@@ -663,6 +704,7 @@ def main():
     NAMESPACES.add(workload_ns)
     started = time.monotonic()
     apply(fixtures['workload'])
+    prepare_shared_workspace(workload_ns)
     startup = wait_for(workload_ns, lambda pod: any(event['phase'] == 'sandbox-boundary' for event in logs(workload_ns, 'workload')), timeout=360)
     assert startup['spec'].get('nodeName') == NODE, 'runner did not use the explicitly selected node'
     record('runner-and-docker-ready', started, includes_pinned_image_pulls=True, pod_timings=startup_timings(startup))
@@ -683,20 +725,27 @@ def main():
     started = time.monotonic()
     NAMESPACES.add(disk_ns)
     apply(fixtures['disk'])
+    prepare_shared_workspace(disk_ns, full=False, disk=True)
     disk_pod = wait_for(disk_ns, lambda pod: pod.get('status', {}).get('phase') == 'Failed', timeout=300)
     REPORT['disk_events'] = logs(disk_ns, 'disk')
     status = disk_pod['status']
     assert status.get('reason') == 'Evicted' and ('emptydir' in status.get('message', '').lower() or 'ephemeral-storage' in status.get('message', '').lower()), status
+    if SHARED_WORKSPACE:
+        SHARED_WORKSPACE.verify_eviction(disk_pod['metadata']['uid'], status)
     record('bounded-workspace-eviction', started, reason=status['reason'], message=status.get('message'))
     old_uid = disk_pod['metadata']['uid']
     delete_pod(disk_ns)
     started = time.monotonic()
     apply(fixtures['replacement'])
+    prepare_shared_workspace(disk_ns, full=False)
     replacement = wait_for(disk_ns, lambda pod: pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=240)
     REPORT['replacement_events'] = logs(disk_ns, 'replacement')
     assert replacement['status']['phase'] == 'Succeeded', replacement['status']
     assert replacement['metadata']['uid'] != old_uid
     record('replacement-after-disk-eviction', started, previous_uid=old_uid, replacement_uid=replacement['metadata']['uid'])
+    if SHARED_WORKSPACE:
+        delete_pod(disk_ns)
+        REPORT['shared_workspace']['eviction_and_clean_replacement_verified'] = True
     workload_samples = REPORT['samples'].get(f'{workload_ns}/actions-runtime-fixture', {})
     assert workload_samples.get('count', 0) > 0 and workload_samples.get('memory_working_set_bytes') is not None, 'kubelet did not provide runner resource measurements'
     REPORT['status'] = 'passed'
@@ -711,6 +760,12 @@ if __name__ == "__main__":
         raise
     finally:
         if OUTPUT_CREATED:
+            if SHARED_WORKSPACE:
+                try:
+                    SHARED_WORKSPACE.close()
+                except Exception as error:
+                    REPORT['status'] = 'failed'
+                    REPORT.setdefault('cleanup_errors', []).append(str(error))
             for namespace in sorted(NAMESPACES):
                 # Cleanup has its own bounded budget after the workload deadline.
                 try:
@@ -725,6 +780,12 @@ if __name__ == "__main__":
                                             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
                     if verify.returncode or verify.stdout.strip():
                         raise RuntimeError('fixture namespace still exists after cleanup: ' + verify.stdout[-2048:])
+                    if SHARED_WORKSPACE:
+                        def cleanup_workspace(args, **kwargs):
+                            return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+                        for uid, identity in SHARED_WORKSPACE.identities.items():
+                            if identity['namespace'] == namespace and uid not in SHARED_WORKSPACE.removed_uids:
+                                SHARED_WORKSPACE.removed(uid, command=cleanup_workspace)
                     REPORT.setdefault('deleted_namespaces', []).append(namespace)
                 except Exception as error:
                     REPORT['status'] = 'failed'
