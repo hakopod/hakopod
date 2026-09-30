@@ -1367,3 +1367,223 @@ diff --git a/worker/base/worker.go b/worker/base/worker.go
  	})
  	if err != nil {
  		return nil, err
+diff --git a/util/overlay/userxattr_metadata_linux_test.go b/util/overlay/userxattr_metadata_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/util/overlay/userxattr_metadata_linux_test.go
+@@ -0,0 +1,215 @@
++//go:build linux
++
++package overlay
++
++import (
++	"archive/tar"
++	"bytes"
++	"compress/gzip"
++	"context"
++	"encoding/binary"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"os"
++	"path/filepath"
++	"slices"
++	"testing"
++	"time"
++
++	"github.com/containerd/containerd/v2/core/content"
++	"github.com/containerd/containerd/v2/core/diff/apply"
++	"github.com/containerd/containerd/v2/core/mount"
++	"github.com/containerd/containerd/v2/plugins/content/local"
++	snapoverlay "github.com/containerd/containerd/v2/plugins/snapshots/overlay"
++	"github.com/containerd/continuity/sysx"
++	"github.com/moby/buildkit/util/winlayers"
++	digest "github.com/opencontainers/go-digest"
++	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
++	"github.com/stretchr/testify/require"
++	fsutilcopy "github.com/tonistiigi/fsutil/copy"
++	"golang.org/x/sys/unix"
++)
++
++type managedMetadataError struct {
++	Errno   int    `json:"errno"`
++	Message string `json:"message"`
++}
++
++func managedMetadataErr(err error) managedMetadataError {
++	if err == nil {
++		return managedMetadataError{}
++	}
++	var errno unix.Errno
++	_ = errors.As(err, &errno)
++	message := err.Error()
++	if len(message) > 160 {
++		message = message[:160]
++	}
++	return managedMetadataError{Errno: int(errno), Message: message}
++}
++
++func TestManagedUserXAttrMetadataImport(t *testing.T) {
++	if os.Getenv("HAKOPOD_BUILDKIT_TEST_OVERLAY") != "1" {
++		t.Skip("requires an explicitly selected managed overlay test sandbox")
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
++	defer cancel()
++	root := t.TempDir()
++	// Linux v2 effective CAP_NET_BIND_SERVICE on an inert fixture file. No
++	// fixture is executed and no capability is written outside this test volume.
++	capability := make([]byte, 20)
++	binary.LittleEndian.PutUint32(capability, 0x02000001)
++	binary.LittleEndian.PutUint32(capability[4:], 1<<10)
++	attrs := map[string][]byte{"security.capability": capability, "user.hakopod-proof": []byte("metadata-roundtrip-v1")}
++	keys := []string{"security.capability", "user.hakopod-proof"}
++	var firstFailure []byte
++	defer func() {
++		if firstFailure != nil {
++			// Repeat the first loss at the end so a bounded command-output tail
++			// cannot replace it with only later failures from the same cause.
++			fmt.Printf("HAKOPOD_BUILDKIT_METADATA_FIRST_FAILURE %s\n", firstFailure)
++		}
++	}()
++	check := func(checkpoint, path string, mode os.FileMode, operations map[string]managedMetadataError) {
++		t.Run(checkpoint, func(t *testing.T) {
++			type attribute struct {
++				Value     string               `json:"value_hex"`
++				Expected  string               `json:"expected_hex"`
++				Listed    bool                 `json:"listed"`
++				ReadError managedMetadataError `json:"read_error"`
++			}
++			names, listErr := sysx.LListxattr(path)
++			slices.Sort(names)
++			completeNames := len(names) <= 16
++			if len(names) > 16 {
++				names = names[:16]
++			}
++			for index, name := range names {
++				if len(name) > 128 {
++					names[index], completeNames = name[:128], false
++				}
++			}
++			observed := map[string]attribute{}
++			valid := listErr == nil && completeNames
++			for _, operation := range operations {
++				valid = valid && operation.Message == ""
++			}
++			for _, key := range keys {
++				value, err := sysx.LGetxattr(path, key)
++				valid = valid && err == nil && bytes.Equal(value, attrs[key]) && slices.Contains(names, key)
++				if len(value) > 64 {
++					value = value[:64]
++				}
++				observed[key] = attribute{Value: hex.EncodeToString(value), Expected: hex.EncodeToString(attrs[key]), Listed: slices.Contains(names, key), ReadError: managedMetadataErr(err)}
++			}
++			info, statErr := os.Stat(path)
++			var actualMode os.FileMode
++			if statErr == nil {
++				actualMode = info.Mode().Perm()
++			}
++			valid = valid && statErr == nil && actualMode == mode
++			status := "passed"
++			if !valid {
++				status = "failed"
++			}
++			data, err := json.Marshal(map[string]any{"checkpoint": checkpoint, "status": status, "attributes": observed,
++				"listed_names": names, "list_error": managedMetadataErr(listErr), "operations": operations,
++				"mode": fmt.Sprintf("%03o", actualMode), "expected_mode": fmt.Sprintf("%03o", mode), "stat_error": managedMetadataErr(statErr)})
++			require.NoError(t, err)
++			require.Less(t, len(data), 4096)
++			fmt.Printf("HAKOPOD_BUILDKIT_METADATA %s\n", data)
++			if !valid {
++				if firstFailure == nil {
++					firstFailure = data
++				}
++				t.Errorf("metadata differs at %s; see bounded attribute and syscall evidence", checkpoint)
++			}
++		})
++	}
++
++	plain := filepath.Join(root, "plain-metadata")
++	require.NoError(t, os.WriteFile(plain, []byte("inert metadata fixture\n"), 0751))
++	setResults := map[string]managedMetadataError{}
++	for _, key := range keys {
++		setResults["set:"+key] = managedMetadataErr(sysx.LSetxattr(plain, key, attrs[key], 0))
++	}
++	// A failed plain-volume syscall must not stop the importer observations.
++	// These subtests identify whether loss predates the candidate overlay path.
++	check("plain-volume", plain, 0751, setResults)
++
++	snapshotRoot := filepath.Join(root, "snapshots")
++	require.NoError(t, PrepareUserXAttr(ctx, snapshotRoot, true))
++	sn, err := snapoverlay.NewSnapshotter(snapshotRoot, snapoverlay.WithMountOptions([]string{"userxattr"}))
++	require.NoError(t, err)
++	t.Cleanup(func() { require.NoError(t, sn.Close()) })
++	store, err := local.NewStore(filepath.Join(root, "content"))
++	require.NoError(t, err)
++	applier := NewUserXAttrApplier(winlayers.NewFileSystemApplierWithWindows(store, apply.NewFileSystemApplier(store)))
++	applyLayer := func(name string, mounts []mount.Mount) {
++		var raw, compressed bytes.Buffer
++		body := []byte("inert metadata fixture\n")
++		tw := tar.NewWriter(&raw)
++		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0751, Size: int64(len(body)), Typeflag: tar.TypeReg, Format: tar.FormatPAX,
++			PAXRecords: map[string]string{"SCHILY.xattr.security.capability": string(capability), "SCHILY.xattr.user.hakopod-proof": string(attrs["user.hakopod-proof"])}}))
++		_, err := tw.Write(body)
++		require.NoError(t, err)
++		require.NoError(t, tw.Close())
++		gz := gzip.NewWriter(&compressed)
++		_, err = gz.Write(raw.Bytes())
++		require.NoError(t, err)
++		require.NoError(t, gz.Close())
++		require.Less(t, raw.Len(), 64*1024)
++		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digest.FromBytes(compressed.Bytes()), Size: int64(compressed.Len())}
++		require.NoError(t, content.WriteBlob(ctx, store, name, bytes.NewReader(compressed.Bytes()), desc))
++		applied, err := applier.Apply(ctx, desc, mounts)
++		require.NoError(t, err)
++		require.Equal(t, digest.FromBytes(raw.Bytes()), applied.Digest)
++	}
++	inspect := func(checkpoint string, mounts []mount.Mount, names []string) {
++		require.NoError(t, mount.WithTempMount(ctx, mounts, func(view string) error {
++			for _, name := range names {
++				check(checkpoint+"/"+name, filepath.Join(view, name), 0751, nil)
++			}
++			return nil
++		}))
++	}
++	base, err := sn.Prepare(ctx, "metadata-base-active", "")
++	require.NoError(t, err)
++	applyLayer("metadata-base", base)
++	inspect("base-import", base, []string{"metadata-base"})
++	require.NoError(t, sn.Commit(ctx, "metadata-base", "metadata-base-active"))
++	baseView, err := sn.View(ctx, "metadata-base-view", "metadata-base")
++	require.NoError(t, err)
++	inspect("base-readonly", baseView, []string{"metadata-base"})
++
++	layer, err := sn.Prepare(ctx, "metadata-layer-active", "metadata-base")
++	require.NoError(t, err)
++	applyLayer("metadata-layer", layer)
++	inspect("layer-import", layer, []string{"metadata-base", "metadata-layer"})
++	require.NoError(t, sn.Commit(ctx, "metadata-layer", "metadata-layer-active"))
++	view, err := sn.View(ctx, "metadata-layer-view", "metadata-layer")
++	require.NoError(t, err)
++	inspect("layer-readonly", view, []string{"metadata-base", "metadata-layer"})
++	copyRoot := filepath.Join(root, "copy")
++	require.NoError(t, os.Mkdir(copyRoot, 0700))
++	require.NoError(t, mount.WithTempMount(ctx, view, func(source string) error {
++		for _, name := range []string{"metadata-base", "metadata-layer"} {
++			err := fsutilcopy.Copy(ctx, source, name, copyRoot, name)
++			check("fsutil-copy/"+name, filepath.Join(copyRoot, name), 0751, map[string]managedMetadataError{"copy": managedMetadataErr(err)})
++		}
++		return nil
++	}))
++	copyUp, err := sn.Prepare(ctx, "metadata-copy-up", "metadata-layer")
++	require.NoError(t, err)
++	require.NoError(t, mount.WithTempMount(ctx, copyUp, func(view string) error {
++		for _, name := range []string{"metadata-base", "metadata-layer"} {
++			path := filepath.Join(view, name)
++			check("before-copy-up/"+name, path, 0751, nil)
++			err := os.Chmod(path, 0750)
++			check("after-copy-up/"+name, path, 0750, map[string]managedMetadataError{"chmod": managedMetadataErr(err)})
++		}
++		return nil
++	}))
++}

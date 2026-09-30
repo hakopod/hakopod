@@ -124,7 +124,7 @@ class ArtifactTests(unittest.TestCase):
 
 
 class KernelInvocationTests(unittest.TestCase):
-    def run_fixture(self, skipped=False, daemon_mismatch=False):
+    def run_fixture(self, skipped=False, daemon_mismatch=False, native_failure=False, missing_metadata=False, malformed_metadata=False):
         class Benchmark:
             report = {}
             calls = []
@@ -134,7 +134,20 @@ class KernelInvocationTests(unittest.TestCase):
                     return ('0' * 64 if daemon_mismatch and args[-1] == '/usr/bin/buildkitd' else 'c' * 64) + '  ' + args[-1]
                 if '-test.v' in args:
                     tests = integration.SUITES[Path(args[-4]).name]
-                    return '\n'.join(('--- SKIP: ' if skipped else '--- PASS: ') + name + ' (0.01s)' for name in tests)
+                    records = []
+                    if Path(args[-4]).name == 'overlay.test':
+                        checkpoints = integration.METADATA_CHECKPOINTS[1:] if missing_metadata else integration.METADATA_CHECKPOINTS
+                        records = [{'checkpoint': value, 'status': 'passed'} for value in checkpoints]
+                        if native_failure:
+                            records[0].update(status='failed', operations={'set:security.capability': {'errno': 95, 'message': 'operation not supported'}})
+                    output = '\n'.join('HAKOPOD_BUILDKIT_METADATA ' + json.dumps(value) for value in records) + '\n'
+                    output += '\n'.join(('--- SKIP: ' if skipped else '--- PASS: ') + name + ' (0.01s)' for name in tests)
+                    if native_failure:
+                        if malformed_metadata:
+                            output += '\nHAKOPOD_BUILDKIT_METADATA {'
+                        output += '\nHAKOPOD_BUILDKIT_METADATA_FIRST_FAILURE ' + json.dumps(records[0])
+                        raise RuntimeError('native test command failed:\n' + output)
+                    return output
                 return ''
         benchmark = Benchmark()
         bundle = {'directory': '/private/staged', 'source': {'sha256': {'buildkitd': 'c' * 64}},
@@ -146,6 +159,8 @@ class KernelInvocationTests(unittest.TestCase):
         result = integration.run_kernel_tests(benchmark, {'name': 'fixture'}, bundle)
         self.assertEqual(result['status'], 'passed')
         self.assertEqual(len(result['tests']), 2)
+        self.assertEqual(len(result['tests'][0]['metadata_diagnostics']), len(integration.METADATA_CHECKPOINTS))
+        self.assertIn('TestManagedUserXAttrMetadataImport', result['tests'][0]['tests'])
         for call in [v for v in benchmark.calls if '-test.v' in v]:
             self.assertIn('HAKOPOD_BUILDKIT_TEST_OVERLAY=1', call)
             self.assertIn('TMPDIR=/var/lib/buildkit/hakopod-integration/tmp', call)
@@ -157,6 +172,43 @@ class KernelInvocationTests(unittest.TestCase):
             benchmark, bundle = self.run_fixture(**options)
             with self.subTest(options=options), self.assertRaises(RuntimeError):
                 integration.run_kernel_tests(benchmark, {'name': 'fixture'}, bundle)
+
+    def test_native_failure_retains_first_loss_and_later_metadata_checkpoints(self):
+        benchmark, bundle = self.run_fixture(native_failure=True)
+        with self.assertRaisesRegex(RuntimeError, 'native test command failed'):
+            integration.run_kernel_tests(benchmark, {'name': 'fixture'}, bundle)
+        result = benchmark.report['kernel_integration']
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['tests'][0]['status'], 'failed')
+        records = result['tests'][0]['metadata_diagnostics']
+        self.assertEqual(len(records), len(integration.METADATA_CHECKPOINTS))
+        self.assertEqual(records[0]['checkpoint'], 'plain-volume')
+        self.assertEqual(records[0]['operations']['set:security.capability']['errno'], 95)
+        self.assertEqual(records[-1]['checkpoint'], 'after-copy-up/metadata-layer')
+        self.assertEqual(result['tests'][0]['metadata_first_failure'], [records[0]])
+        tail = 'HAKOPOD_BUILDKIT_METADATA_FIRST_FAILURE ' + json.dumps(records[0])
+        self.assertEqual(integration.metadata_diagnostics(tail, first_failure=True), [records[0]])
+
+    def test_missing_first_metadata_checkpoint_cannot_pass_from_a_truncated_tail(self):
+        benchmark, bundle = self.run_fixture(missing_metadata=True)
+        with self.assertRaisesRegex(RuntimeError, 'checkpoints are incomplete'):
+            integration.run_kernel_tests(benchmark, {'name': 'fixture'}, bundle)
+        self.assertEqual(benchmark.report['kernel_integration']['status'], 'failed')
+
+    def test_malformed_checkpoint_does_not_hide_the_original_error_or_first_failure(self):
+        benchmark, bundle = self.run_fixture(native_failure=True, malformed_metadata=True)
+        with self.assertRaisesRegex(RuntimeError, 'native test command failed'):
+            integration.run_kernel_tests(benchmark, {'name': 'fixture'}, bundle)
+        result = benchmark.report['kernel_integration']['tests'][0]
+        self.assertEqual(result['metadata_diagnostics_error'], 'JSONDecodeError')
+        self.assertEqual(result['metadata_first_failure'][0]['checkpoint'], 'plain-volume')
+
+    def test_metadata_records_reject_unexpected_duplicate_or_oversized_proof(self):
+        valid = 'HAKOPOD_BUILDKIT_METADATA ' + json.dumps({'checkpoint': 'plain-volume', 'status': 'passed'})
+        for output in (valid + '\n' + valid, valid.replace('plain-volume', 'unknown'),
+                       valid.replace('passed', 'skipped'), 'HAKOPOD_BUILDKIT_METADATA ' + 'x' * 4096):
+            with self.subTest(output=output[:100]), self.assertRaises((RuntimeError, ValueError)):
+                integration.metadata_diagnostics(output)
 
 
 if __name__ == '__main__':
