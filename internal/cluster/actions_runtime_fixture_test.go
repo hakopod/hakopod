@@ -369,15 +369,29 @@ func TestActionsBuildkitQualificationFixture(t *testing.T) {
 
 func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper string) {
 	t.Helper()
+	writeActionsDiagnosticFixtureOptions(t, directory, filename, wrapper, actionsDiagnosticFixtureOptions{
+		label: "actions-export-benchmark", contextEnv: "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT", timeoutMinutes: 12,
+	})
+}
+
+type actionsDiagnosticFixtureOptions struct {
+	label          string
+	contextEnv     string
+	timeoutMinutes int64
+	runnerEnv      []corev1.EnvVar
+}
+
+func writeActionsDiagnosticFixtureOptions(t *testing.T, directory, filename, wrapper string, options actionsDiagnosticFixtureOptions) {
+	t.Helper()
 	kube := fake.NewClientset()
 	c := &Client{kube: kube}
 	target := runnerTarget(t)
-	target.ApplicationID = "actions-export-benchmark"
+	target.ApplicationID = options.label
 	target.Project = "actions-development-fixture"
 	s := target.Spec.Services["runner"]
 	s.NodeName = "k3d-hakopod-dev-server-0"
 	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
-	s.Actions.TimeoutMinutes = 12
+	s.Actions.TimeoutMinutes = options.timeoutMinutes
 	s.Actions.WorkspaceSizeGiB = 4
 	target.Spec.Services["runner"] = s
 	if err := c.bootstrap(context.Background(), target); err != nil {
@@ -395,7 +409,8 @@ func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper st
 	if err := actionsSharedWorkspaceFixture(pod, s.Actions.WorkspaceSizeGiB, os.Getenv("HAKOPOD_ACTIONS_SHARED_WORKSPACE"), os.Getenv("HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER")); err != nil {
 		t.Fatal(err)
 	}
-	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT", Value: "k3d-hakopod-dev"})
+	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: options.contextEnv, Value: "k3d-hakopod-dev"})
+	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, options.runnerEnv...)
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != ActionsRuntime || pod.Spec.HostNetwork || pod.Spec.HostPID || pod.Spec.HostIPC {
 		t.Fatal("export benchmark lost the product sandbox boundary")
 	}
@@ -407,7 +422,7 @@ func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper st
 			t.Fatal("export benchmark container has unexpected credentials or privilege")
 		}
 		for _, value := range container.Env {
-			if value.ValueFrom != nil || (value.Name != "DOCKER_HOST" && value.Name != "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT" && value.Name != "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT") {
+			if value.ValueFrom != nil || (value.Name != "DOCKER_HOST" && value.Name != "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT" && value.Name != options.contextEnv && value.Name != "HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER") {
 				t.Fatal("export benchmark received an unexpected environment source")
 			}
 		}
@@ -437,7 +452,7 @@ func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper st
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		labels["hakopod.io/development-fixture"] = "actions-export-benchmark"
+		labels["hakopod.io/development-fixture"] = options.label
 		metadata.SetLabels(labels)
 	}
 	podJSON, err := json.Marshal(pod)

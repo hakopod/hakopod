@@ -55,9 +55,9 @@ on:
         type: boolean
         default: false
       shared_workspace:
-        description: Select a shared disk workspace and Docker driver for an isolated experiment
+        description: Select an isolated workspace experiment or cold service image benchmark
         type: choice
-        options: [disabled, vfs, overlay2]
+        options: [disabled, vfs, overlay2, service-pull-vfs, service-pull-shared-vfs, service-pull-shared-overlay2]
         default: disabled
 permissions:
   contents: read
@@ -75,9 +75,10 @@ env:
   HAKOPOD_ACTIONS_EXPORT_TEST_RUN: ${{ inputs.export_buildkit_test_run }}
   HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE: ${{ inputs.runtime_buildkit_image }}
   HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF: ${{ inputs.runtime_force_overlay_diff && '1' || '0' }}
-  HAKOPOD_ACTIONS_SHARED_WORKSPACE: ${{ (inputs.shared_workspace == 'vfs' || inputs.shared_workspace == 'overlay2') && '1' || '0' }}
-  HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER: ${{ inputs.shared_workspace == 'overlay2' && 'overlay2' || 'vfs' }}
-  HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE: ${{ inputs.shared_workspace || 'disabled' }}
+  HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK: ${{ startsWith(inputs.shared_workspace, 'service-pull-') && '1' || '0' }}
+  HAKOPOD_ACTIONS_SHARED_WORKSPACE: ${{ (inputs.shared_workspace == 'vfs' || inputs.shared_workspace == 'overlay2' || inputs.shared_workspace == 'service-pull-shared-vfs' || inputs.shared_workspace == 'service-pull-shared-overlay2') && '1' || '0' }}
+  HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER: ${{ (inputs.shared_workspace == 'overlay2' || inputs.shared_workspace == 'service-pull-shared-overlay2') && 'overlay2' || 'vfs' }}
+  HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE: ${{ (inputs.shared_workspace == 'overlay2' || inputs.shared_workspace == 'service-pull-shared-overlay2') && 'overlay2' || (inputs.shared_workspace == 'vfs' || inputs.shared_workspace == 'service-pull-shared-vfs') && 'vfs' || 'disabled' }}
 jobs:
   validate-scenario:
     runs-on: ubuntu-24.04
@@ -115,7 +116,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: ${{ startsWith(inputs.shared_workspace, 'service-pull-') && 40 || 35 }}
     env:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
@@ -150,7 +151,9 @@ jobs:
           version: v3.17.2
       - name: Compile the product fixture before runtime measurement
         run: |
-          if [ "$HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION" = '1' ]; then
+          if [ "$HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK" = '1' ]; then
+            go test -p=1 ./internal/cluster -run '^TestActionsServicePullBenchmarkFixture$' -count=1
+          elif [ "$HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION" = '1' ]; then
             go test -p=1 ./internal/cluster -run '^TestActionsBuildkitQualificationFixture$' -count=1
           elif [ "$HAKOPOD_ACTIONS_EXPORT_BENCHMARK" = '1' ]; then
             go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
@@ -175,6 +178,7 @@ jobs:
             .local/actions-runtime-acceptance/report.json
             .local/actions-runtime-acceptance/export-benchmark-report.json
             .local/actions-runtime-acceptance/buildkit-qualification-report.json
+            .local/actions-runtime-acceptance/service-pull-benchmark-report.json
             .local/actions-runtime-acceptance/*.log
             .local/actions-runtime-acceptance/*-pods.txt
           retention-days: 14

@@ -62,6 +62,18 @@ def runtime_selection_from_environment(environment):
     force = environment.get('HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF', '0')
     require(force in ('0', '1'), 'Runtime forced-overlay flag must be 0 or 1')
     candidate_build = environment.get('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE') == '1'
+    service_pull = environment.get('HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK', '0')
+    require(service_pull in ('0', '1'), 'Service pull benchmark flag must be 0 or 1')
+    if service_pull == '1':
+        flags = ('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE', 'HAKOPOD_ACTIONS_PUBLISH_CANDIDATE',
+                 'HAKOPOD_ACTIONS_EXPORT_BENCHMARK', 'HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION',
+                 'HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF', 'HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS',
+                 'HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF')
+        values = ('HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE', 'HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE',
+                  'HAKOPOD_ACTIONS_EXPORT_TEST_RUN')
+        require(not any(environment.get(key, '0') != '0' for key in flags) and
+                not any(environment.get(key) for key in values),
+                'Service pull benchmarks must run separately from other runtime and candidate diagnostics')
     shared = environment.get('HAKOPOD_ACTIONS_SHARED_WORKSPACE', '0')
     require(shared in ('0', '1'), 'Shared workspace flag must be 0 or 1')
     storage_driver = environment.get('HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER', 'vfs')

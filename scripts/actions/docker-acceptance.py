@@ -21,6 +21,7 @@ limits when using a worker different from this disposable CI server node.
 import json
 from datetime import datetime
 import importlib.util
+import math
 import os
 from pathlib import Path
 import platform
@@ -39,7 +40,8 @@ PEER_NAMESPACE = 'hakopod-actions-acceptance-peer'
 STARTED = time.monotonic()
 EXPORT_BENCHMARK = os.environ.get('HAKOPOD_ACTIONS_EXPORT_BENCHMARK') == '1'
 BUILDKIT_QUALIFICATION = os.environ.get('HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION') == '1'
-DEADLINE = STARTED + 25 * 60
+SERVICE_PULL_BENCHMARK = os.environ.get('HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK') == '1'
+DEADLINE = STARTED + (32 if SERVICE_PULL_BENCHMARK else 25) * 60
 REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platform.machine(),
           'scope': 'disposable single-node product runner pod acceptance',
           'limits': {'node_memory': os.environ.get('HAKOPOD_DEV_SERVER_MEMORY', '6g'),
@@ -61,7 +63,7 @@ LOG_LIMIT = 4 * 1024 * 1024
 class BoundedLogCapture:
     """Persist the live fixture stream before kubelet can remove an evicted Pod."""
     def __init__(self, namespace, scenario):
-        assert scenario in ('export-benchmark', 'buildkit-qualification'), 'unexpected diagnostic log name'
+        assert scenario in ('export-benchmark', 'buildkit-qualification', 'service-pull-benchmark'), 'unexpected diagnostic log name'
         self.namespace, self.scenario = namespace, scenario
         self.stop = threading.Event()
         self.process = self.thread = None
@@ -529,9 +531,15 @@ else:
 
 
 def export_fixture(fixture):
+    return diagnostic_fixture(fixture)
+
+
+def diagnostic_fixture(fixture, service_pull=False):
+    marker = 'actions-service-pull-benchmark' if service_pull else 'actions-export-benchmark'
+    context_env = 'HAKOPOD_SERVICE_PULL_BENCHMARK_DEV_CONTEXT' if service_pull else 'HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT'
     items = fixture['items']
     assert all(item['kind'] in {'Namespace', 'NetworkPolicy', 'ResourceQuota', 'Pod'} for item in items), 'export fixture must not include credentials or extra infrastructure'
-    assert all(item['metadata'].get('labels', {}).get('hakopod.io/development-fixture') == 'actions-export-benchmark' for item in items), 'unmarked export fixture object'
+    assert all(item['metadata'].get('labels', {}).get('hakopod.io/development-fixture') == marker for item in items), 'unmarked diagnostic fixture object'
     namespaces = [item for item in items if item['kind'] == 'Namespace']
     pods = [item for item in items if item['kind'] == 'Pod']
     assert len(namespaces) == len(pods) == 1, 'expected one private namespace and one runner pod'
@@ -549,7 +557,10 @@ def export_fixture(fixture):
     volumes = config.get('volumes', [])
     assert len(volumes) == 1 and set(volumes[0]) == {'name', 'emptyDir'} and volumes[0]['name'] == 'runner' and volumes[0]['emptyDir'].get('sizeLimit') == '4Gi', 'benchmark must only use its bounded 4 GiB workspace'
     assert not config.get('imagePullSecrets'), 'benchmark must not receive registry credentials'
-    allowed_env = {'DOCKER_HOST', 'ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT', 'HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT'}
+    allowed_env = {'DOCKER_HOST', 'ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT', context_env}
+    if service_pull:
+        allowed_env.add('HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER')
+        assert config.get('activeDeadlineSeconds') == 30 * 60, 'service pull Pod deadline changed'
     containers = config['initContainers'] + config['containers']
     for container in containers:
         assert '@sha256:' in container['image'], 'benchmark image is not pinned'
@@ -557,8 +568,97 @@ def export_fixture(fixture):
         assert all(value['name'] in allowed_env and 'valueFrom' not in value for value in container.get('env', [])), 'unexpected environment injection'
         assert all(mount['name'] == 'runner' for mount in container.get('volumeMounts', [])), 'unexpected credential or host mount'
     runner_env = {value['name']: value.get('value') for value in config['containers'][0]['env']}
-    assert runner_env.get('DOCKER_HOST') == 'tcp://127.0.0.1:2375' and runner_env.get('HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT') == 'k3d-hakopod-dev', 'benchmark entry environment changed'
+    assert runner_env.get('DOCKER_HOST') == 'tcp://127.0.0.1:2375' and runner_env.get(context_env) == 'k3d-hakopod-dev', 'benchmark entry environment changed'
+    if service_pull:
+        assert runner_env.get('HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER') == shared_workspace_helpers().storage_driver(os.environ), 'service pull driver differs from selection'
     return namespace
+
+
+def verify_service_pull_report(value, architecture, driver):
+    spec = importlib.util.spec_from_file_location('service_pull_evidence', ROOT / 'scripts/actions/service-pull-benchmark.py')
+    benchmark = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(benchmark)
+    assert architecture in ('amd64', 'arm64') and driver in ('vfs', 'overlay2'), 'unsupported service pull selection'
+    assert value.get('schema_version') == 1 and value.get('scenario') == 'cold-service-image-pulls' and value.get('status') == 'passed', 'service pull benchmark did not pass'
+    assert value.get('context') == 'k3d-hakopod-dev' and value.get('architecture') == architecture and value.get('storage_driver') == driver, 'service pull context, architecture, or driver changed'
+    assert value.get('limits') == {'images': 2, 'seconds_per_image': benchmark.MAX_IMAGE_SECONDS,
+                                   'stream_bytes_per_image': benchmark.MAX_STREAM_BYTES, 'events_per_image': benchmark.MAX_EVENTS}, 'service pull bounds changed'
+    services = value.get('services', [])
+    assert isinstance(services, list) and len(services) == 2, 'service pull results are incomplete'
+    for measured, service in zip(services, benchmark.SERVICES):
+        expected = service['platforms'][architecture]
+        image = measured.get('image', {})
+        assert measured.get('service') == service['name'], 'service pull order or identity changed'
+        assert image == {'config_digest': expected['config_digest'], 'platform': 'linux/' + architecture,
+                         'repository_digest': service['reference'].rsplit('@', 1)[1]}, 'service pull image identity changed'
+        assert measured.get('target_image_absent_before') is True and measured.get('target_config_absent_before') is True, 'service pull was not cold'
+        assert measured.get('cleanup') == {'status': 'passed', 'removed_config_digest': expected['config_digest']}, 'service pull cleanup did not pass'
+        version = measured.get('version')
+        assert isinstance(version, str) and 0 < len(version) <= 256 and '\n' not in version, 'service binary execution evidence is missing'
+        pull = measured.get('pull', {})
+        total = pull.get('total_seconds')
+        assert type(total) in (int, float) and math.isfinite(total) and 0 <= total <= benchmark.MAX_IMAGE_SECONDS, 'service pull duration is invalid'
+        assert type(pull.get('event_count')) is int and 2 * len(expected['layer_prefixes']) <= pull['event_count'] <= benchmark.MAX_EVENTS, 'service pull event count is invalid'
+        assert type(pull.get('stream_bytes')) is int and 0 < pull['stream_bytes'] <= benchmark.MAX_STREAM_BYTES, 'service pull byte count is invalid'
+        layers = pull.get('layers', {})
+        assert isinstance(layers, dict) and set(layers) == set(expected['layer_prefixes']), 'service pull layer evidence is incomplete'
+        for timing in layers.values():
+            assert set(timing) == {'Download complete', 'Pull complete', 'extraction_registration_queue_seconds'}, 'service layer timing evidence changed'
+            download, complete, elapsed = (timing[key] for key in ('Download complete', 'Pull complete', 'extraction_registration_queue_seconds'))
+            assert all(type(item) in (int, float) and math.isfinite(item) for item in (download, complete, elapsed)), 'service layer timing is invalid'
+            assert 0 <= download <= complete <= total and elapsed == round(complete - download, 3), 'service layer timing order is invalid'
+
+
+def run_service_pull_benchmark(fixture):
+    scenario = 'service-pull-benchmark'
+    namespace = diagnostic_fixture(fixture, service_pull=True)
+    NAMESPACES.add(namespace)
+    REPORT['scenario'] = scenario
+    REPORT['limits'].update(workspace_gib=4, concurrent_build_requests=0, buildkit_max_parallelism=0,
+                            disk_probe_max_written_mib=0, service_pull_seconds_per_image=600)
+    started = time.monotonic()
+    apply(fixture)
+    capture = BoundedLogCapture(namespace, scenario)
+    failure = None
+    try:
+        prepare_shared_workspace(namespace, capture)
+        pod = wait_for(namespace, lambda value: value.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=1800, capture=capture)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        try:
+            REPORT['service_pull_log_capture'] = capture.close()
+            events, malformed = captured_records(scenario, 'HAKOPOD_SERVICE_PULL_EVENT ')
+            REPORT['service_pull_log_capture']['malformed_events'] = malformed
+            REPORT['service_pull_events'] = events
+            saved, malformed = captured_records(scenario, 'HAKOPOD_SERVICE_PULL ')
+            REPORT['service_pull_log_capture']['malformed_reports'] = malformed
+            if len(saved) == 1:
+                REPORT['service_pull_benchmark'] = saved[0]
+                (OUTPUT / (scenario + '-report.json')).write_text(json.dumps(saved[0], indent=2) + '\n')
+        except Exception as error:
+            REPORT.setdefault('service_pull_log_capture', {})['capture_error_type'] = type(error).__name__
+            if failure is None:
+                raise
+    REPORT['service_pull_pod'] = {
+        'namespace': namespace, 'name': pod['metadata']['name'], 'node': pod['spec'].get('nodeName'),
+        'phase': pod.get('status', {}).get('phase'), 'reason': pod.get('status', {}).get('reason'),
+        'message': pod.get('status', {}).get('message'), 'overhead': pod['spec'].get('overhead', {}),
+        'startup_timings': startup_timings(pod),
+        'containers': [{'name': item['name'], 'resources': item['resources']} for item in pod['spec']['initContainers'] + pod['spec']['containers']]}
+    outer = command(['docker', 'inspect', NODE, '--format', '[{{json .HostConfig.NanoCpus}},{{json .HostConfig.CpuQuota}},{{json .HostConfig.CpuPeriod}},{{json .HostConfig.Memory}},{{json .HostConfig.CpusetCpus}}]']).stdout
+    limits = json.loads(outer)
+    assert len(limits) == 5, 'outer worker limits could not be observed'
+    REPORT['service_pull_outer_worker'] = dict(zip(['nano_cpus', 'cpu_quota', 'cpu_period', 'memory_bytes', 'cpuset_cpus'], limits))
+    assert len(saved) == 1, 'service pull did not preserve exactly one JSON report'
+    verify_log_capture(REPORT['service_pull_log_capture'])
+    assert pod['spec'].get('nodeName') == NODE and pod.get('status', {}).get('phase') == 'Succeeded', 'service pull Pod failed or ran on an unexpected node'
+    architecture = {'x86_64': 'amd64', 'aarch64': 'arm64', 'amd64': 'amd64', 'arm64': 'arm64'}.get(platform.machine())
+    verify_service_pull_report(saved[0], architecture, shared_workspace_helpers().storage_driver(os.environ))
+    assert events == saved[0]['services'], 'service pull completion differs from its captured per-service evidence'
+    record('opt-in-service-pull-benchmark', started, report=scenario + '-report.json')
+    delete_pod(namespace, credential_config=False)
 
 
 def verify_qualification_report(value, selected, architecture, force):
@@ -677,11 +777,13 @@ def main():
     OUTPUT_CREATED = True
     if SHARED_WORKSPACE:
         SHARED_WORKSPACE.verify_config()
-    fixture_test = ('^TestActionsBuildkitQualificationFixture$' if BUILDKIT_QUALIFICATION else
+    fixture_test = ('^TestActionsServicePullBenchmarkFixture$' if SERVICE_PULL_BENCHMARK else
+                    '^TestActionsBuildkitQualificationFixture$' if BUILDKIT_QUALIFICATION else
                     '^TestActionsExportBenchmarkFixture$' if EXPORT_BENCHMARK else '^TestActionsRuntimeAcceptanceFixtures$')
     command(['go', 'test', '-p=1', './internal/cluster', '-run', fixture_test, '-count=1', '-timeout=60s'],
             env={**os.environ, 'HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR': str(OUTPUT)}, cwd=ROOT, timeout=240)
-    fixture_names = ['buildkit-qualification'] if BUILDKIT_QUALIFICATION else ['export-benchmark'] if EXPORT_BENCHMARK else ['workload', 'disk', 'replacement']
+    fixture_names = (['service-pull-benchmark'] if SERVICE_PULL_BENCHMARK else ['buildkit-qualification'] if BUILDKIT_QUALIFICATION else
+                     ['export-benchmark'] if EXPORT_BENCHMARK else ['workload', 'disk', 'replacement'])
     fixtures = {name: json.loads((OUTPUT / f'{name}.json').read_text()) for name in fixture_names}
     for fixture in fixtures.values():
         namespace = next(item['metadata']['name'] for item in fixture['items'] if item['kind'] == 'Namespace')
@@ -694,6 +796,10 @@ def main():
            'overhead': {'podFixed': {'cpu': '100m', 'memory': '512Mi'}}})
     RUNTIME_CREATED = True
     kube(['label', 'node', NODE, 'hakopod.io/actions-runtime=ready'])
+    if SERVICE_PULL_BENCHMARK:
+        run_service_pull_benchmark(fixtures[fixture_names[0]])
+        REPORT['status'] = 'passed'
+        return
     if EXPORT_BENCHMARK or BUILDKIT_QUALIFICATION:
         run_export_benchmark(fixtures[fixture_names[0]], integration, BUILDKIT_QUALIFICATION)
         REPORT['status'] = 'passed'
