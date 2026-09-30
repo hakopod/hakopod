@@ -11357,10 +11357,110 @@
                   },
                   "issuer": {
                     "type": "string"
+                  },
+                  "issuer_kind": {
+                    "$ref": "#/components/schemas/TLSIssuerKind"
                   }
                 },
                 "required": [
                   "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}/tls/issuers": {
+      "get": {
+        "operationId": "listApplicationTLSIssuers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TLSIssuers"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createApplicationTLSIssuer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TLSIssuer"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "production": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email"
                 ]
               }
             }
@@ -22196,6 +22296,13 @@
           "error"
         ]
       },
+      "TLSIssuerKind": {
+        "type": "string",
+        "enum": [
+          "ClusterIssuer",
+          "Issuer"
+        ]
+      },
       "TLSConfig": {
         "type": "object",
         "properties": {
@@ -22204,6 +22311,9 @@
           },
           "issuer": {
             "type": "string"
+          },
+          "issuer_kind": {
+            "$ref": "#/components/schemas/TLSIssuerKind"
           }
         },
         "required": []
@@ -22563,6 +22673,9 @@
           "issuer": {
             "type": "string"
           },
+          "issuer_kind": {
+            "$ref": "#/components/schemas/TLSIssuerKind"
+          },
           "not_before": {
             "type": "string",
             "format": "date-time"
@@ -22588,6 +22701,12 @@
           "name": {
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/TLSIssuerKind"
+          },
+          "default": {
+            "type": "boolean"
+          },
           "email": {
             "type": "string"
           },
@@ -22606,6 +22725,8 @@
         },
         "required": [
           "name",
+          "kind",
+          "default",
           "email",
           "server",
           "ready",

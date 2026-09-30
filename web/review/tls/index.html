@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-edition="self-hosted">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TLS issuer synthetic UI review</title>
+    <script>
+      (() => {
+        const theme = localStorage.getItem('hakopod-theme') === 'light' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = theme
+        document.documentElement.className = theme
+      })()
+    </script>
+    <style>
+      #fixture-banner {
+        padding: 8px 16px;
+        border-bottom: 2px solid #b84135;
+        background: #fff5e5;
+        color: #3c2416;
+        font: 12px/1.5 system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="fixture-banner" role="note">
+      Synthetic UI review. API responses and uploaded files are fixtures. No live installation is connected.
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

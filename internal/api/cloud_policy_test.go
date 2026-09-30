@@ -18,6 +18,22 @@ func TestCloudInstallationPaths(t *testing.T) {
 	}
 }
 
+func TestCloudIssuerDiscoveryDoesNotUnlockInstallationMutation(t *testing.T) {
+	if cloudInstallationRequest("GET", "/api/v1/tls/issuers") {
+		t.Fatal("Cloud blocked sanitized default issuer discovery")
+	}
+	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+		if !cloudInstallationRequest(method, "/api/v1/tls/issuers") {
+			t.Fatalf("Cloud allowed global issuer mutation: %s", method)
+		}
+	}
+	for _, path := range []string{"/api/v1/tls/issuers/foreign", "/api/v1/tls/issuers/", "/api/v1/settings/haproxy"} {
+		if !cloudInstallationRequest("GET", path) {
+			t.Fatalf("discovery exception unlocked %s", path)
+		}
+	}
+}
+
 func TestCloudOperatorRequiresTrustedRuntimeAndUnscopedBrowserOwner(t *testing.T) {
 	owner := store.Principal{Owner: true, Admin: true, Email: "operator@example.test", CredentialType: "browser", Permissions: []string{"admin"}}
 	for _, tc := range []struct {

@@ -6,6 +6,7 @@ import '../lib/effective-service.test'
 import '../lib/dotenv.test'
 import '../lib/save-environment.test'
 import '../lib/proxy-settings.test'
+import '../lib/tls-issuers.test'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import './toml-code.test'
@@ -79,7 +80,7 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
         volume: { mount_path: '/data', size_gib: 10, storage_class: 'local-path' },
         resources: { cpu_request: '250m', cpu_limit: '2', memory_limit: '1Gi' },
         gpu: { count: 1 },
-        tls: { issuer: 'letsencrypt-staging' },
+        tls: { issuer: 'letsencrypt-staging', issuer_kind: 'Issuer' },
         secrets: { API_TOKEN: { ref: 'api-token' } },
       },
     },
@@ -101,6 +102,7 @@ test('canonical configuration preserves persistent volumes, GPU, TLS and secret 
     'count = 1',
     '[services.web.tls]',
     'issuer = "letsencrypt-staging"',
+    'issuer_kind = "Issuer"',
     '[services.web.secrets.API_TOKEN]',
     'ref = "api-token"',
   ])

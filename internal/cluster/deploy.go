@@ -624,6 +624,7 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 	}
 	delete(current.Annotations, "haproxy.org/timeout-server")
 	delete(current.Annotations, "cert-manager.io/cluster-issuer")
+	delete(current.Annotations, "cert-manager.io/issuer")
 	delete(current.Annotations, "haproxy.org/ssl-redirect")
 	delete(current.Annotations, "haproxy.org/server-proto")
 	for key, value := range wanted.Annotations {

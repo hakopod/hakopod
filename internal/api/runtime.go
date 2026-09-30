@@ -13,6 +13,8 @@ func (s *Server) registerRuntimeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/nodes/enrollments/{id}", s.revokeNodeEnrollment)
 	mux.HandleFunc("GET /api/v1/applications/{id}/services/{service}/tls", s.serviceTLS)
 	mux.HandleFunc("POST /api/v1/applications/{id}/services/{service}/tls", s.attachTLS)
+	mux.HandleFunc("GET /api/v1/applications/{id}/tls/issuers", s.applicationTLSIssuers)
+	mux.HandleFunc("POST /api/v1/applications/{id}/tls/issuers", s.createApplicationTLSIssuer)
 	mux.HandleFunc("GET /api/v1/tls/issuers", s.tlsIssuers)
 	mux.HandleFunc("POST /api/v1/tls/issuers", s.createTLSIssuer)
 	mux.HandleFunc("GET /api/v1/registries", s.registries)

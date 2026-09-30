@@ -30,11 +30,14 @@ type TLSStatus struct {
 	Source     string     `json:"source"`
 	SecretName string     `json:"secret_name,omitempty"`
 	Issuer     string     `json:"issuer,omitempty"`
+	IssuerKind string     `json:"issuer_kind,omitempty"`
 	NotBefore  *time.Time `json:"not_before,omitempty"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	Message    string     `json:"message,omitempty"`
 }
 type TLSIssuer struct {
+	Kind       string             `json:"kind"`
+	Default    bool               `json:"default"`
 	Name       string             `json:"name"`
 	Email      string             `json:"email"`
 	Server     string             `json:"server"`
@@ -162,9 +165,11 @@ func (c *Client) PutTLSCertificate(ctx context.Context, t Target, service string
 
 func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string, svc spec.Service, wanted *networkingv1.Ingress) error {
 	issuer := c.options.TLSIssuer
+	kind := "ClusterIssuer"
 	secret := "hakopod-tls-" + name
 	if svc.TLS != nil {
 		issuer = svc.TLS.Issuer
+		kind = tlsIssuerKind(svc.TLS.IssuerKind)
 		if svc.TLS.Certificate != "" {
 			secret = svc.TLS.Certificate
 			stored, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, secret, metav1.GetOptions{})
@@ -180,7 +185,7 @@ func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string,
 			if _, err = c.validateServiceCertificate(ctx, t, name, stored.Data[corev1.TLSCertKey], stored.Data[corev1.TLSPrivateKeyKey]); err != nil {
 				return err
 			}
-		} else if err := c.TLSIssuerExists(ctx, issuer); err != nil {
+		} else if err := c.ValidateTLSIssuer(ctx, t, issuer, kind); err != nil {
 			return err
 		}
 	}
@@ -197,7 +202,11 @@ func (c *Client) configureTLSIngress(ctx context.Context, t Target, name string,
 	}
 	wanted.Annotations["haproxy.org/ssl-redirect"] = "true"
 	if issuer != "" {
-		wanted.Annotations["cert-manager.io/cluster-issuer"] = issuer
+		annotation := "cert-manager.io/cluster-issuer"
+		if kind == "Issuer" {
+			annotation = "cert-manager.io/issuer"
+		}
+		wanted.Annotations[annotation] = issuer
 	}
 	hosts, err := c.serviceHostnames(ctx, t, name)
 	if err != nil {
@@ -233,6 +242,14 @@ func (c *Client) ServiceTLS(ctx context.Context, t Target, service string) (TLSS
 		return value, nil
 	}
 	value.Issuer = ingress.Annotations["cert-manager.io/cluster-issuer"]
+	value.IssuerKind = "ClusterIssuer"
+	if local := ingress.Annotations["cert-manager.io/issuer"]; local != "" {
+		value.Issuer = local
+		value.IssuerKind = "Issuer"
+	}
+	if value.Issuer == "" {
+		value.IssuerKind = ""
+	}
 	value.Source = "uploaded"
 	if value.Issuer != "" {
 		value.Source = "cert-manager"
@@ -267,10 +284,9 @@ func (c *Client) ServiceTLS(ctx context.Context, t Target, service string) (TLSS
 }
 
 type issuerDocument struct {
-	Metadata struct {
-		Name string `json:"name"`
-	} `json:"metadata"`
-	Spec struct {
+	Kind     string            `json:"kind"`
+	Metadata metav1.ObjectMeta `json:"metadata"`
+	Spec     struct {
 		ACME struct {
 			Email  string `json:"email"`
 			Server string `json:"server"`
@@ -282,29 +298,28 @@ type issuerDocument struct {
 			Status             string    `json:"status"`
 			Reason             string    `json:"reason"`
 			Message            string    `json:"message"`
+			ObservedGeneration int64     `json:"observedGeneration"`
 			LastTransitionTime time.Time `json:"lastTransitionTime"`
 		} `json:"conditions"`
 	} `json:"status"`
 }
 
 func issuerView(item issuerDocument) TLSIssuer {
-	value := TLSIssuer{Name: item.Metadata.Name, Email: item.Spec.ACME.Email, Server: item.Spec.ACME.Server, Conditions: []RuntimeCondition{}}
+	value := TLSIssuer{Kind: tlsIssuerKind(item.Kind), Name: item.Metadata.Name, Email: item.Spec.ACME.Email, Server: item.Spec.ACME.Server, Conditions: []RuntimeCondition{}}
 	for i, condition := range item.Status.Conditions {
 		if i >= 16 {
 			break
 		}
 		value.Conditions = append(value.Conditions, RuntimeCondition{Type: condition.Type, Status: condition.Status, Reason: condition.Reason, Message: condition.Message, LastTransitionTime: condition.LastTransitionTime})
+		if condition.Type == "Ready" && condition.Status == "True" && condition.ObservedGeneration == item.Metadata.Generation {
+			value.Ready = true
+		}
 	}
 	if value.Conditions == nil {
 		value.Conditions = []RuntimeCondition{}
 	}
 	if len(value.Conditions) > 16 {
 		value.Conditions = value.Conditions[:16]
-	}
-	for _, condition := range value.Conditions {
-		if condition.Type == "Ready" && condition.Status == "True" {
-			value.Ready = true
-		}
 	}
 	return value
 }
@@ -333,7 +348,9 @@ func (c *Client) TLSIssuers(ctx context.Context) (TLSIssuers, error) {
 	}
 	result.Installed = true
 	for _, item := range list.Items {
-		result.Items = append(result.Items, issuerView(item))
+		view := issuerView(item)
+		view.Default = view.Name == c.options.TLSIssuer
+		result.Items = append(result.Items, view)
 	}
 	if list.Metadata.Continue != "" {
 		result.Message = "Only the first 64 issuers are displayed."

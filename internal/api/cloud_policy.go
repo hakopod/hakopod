@@ -1,15 +1,26 @@
 package api
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
-	"strings"
 )
 
 // Customer Cloud runtimes deny installation administration. The trusted internal
 // runtime may serve its live, verified installation owner.
 func (s *Server) cloudOperator(p store.Principal) bool {
 	return s.OperatorRuntime && s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && p.IsSuperAdmin()
+}
+
+func cloudInstallationRequest(method, path string) bool {
+	// Customers may discover the configured default; the handler filters its
+	// metadata. Creating shared ClusterIssuers remains installation work.
+	if method == http.MethodGet && path == "/api/v1/tls/issuers" {
+		return false
+	}
+	return cloudInstallationPath(path)
 }
 
 func cloudInstallationPath(path string) bool {

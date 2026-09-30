@@ -193,7 +193,9 @@ metadata and audit history. Rotation and synchronization are explicit. A referen
 credential cannot be deleted while a workload still uses it.
 
 Services can use uploaded hostname-matching certificates/private keys or an
-operator-configured cert-manager issuer. Uploaded keys are service-scoped and are
+operator-configured default or an application-owned cert-manager issuer.
+[Certificate issuer configuration](certificates.md) describes discovery, creation
+and Cloud scope rules. Uploaded keys are service-scoped and are
 not exported. Automatic ACME needs cert-manager, an operator email/domain, correct
 DNS and reachable challenge ports. Use staging first; a localhost wildcard cannot
 receive a public Let's Encrypt certificate. HTTP and HTTPS local ingress use
