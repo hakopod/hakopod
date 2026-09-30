@@ -24,12 +24,18 @@ def read(*args):
 def run(*args):
     subprocess.run(args,check=True,timeout=240)
 
-def main(module):
+def main(module, workspace_profile=None):
+    if os.geteuid()!=0:raise ValueError('Run module setup as root')
+    os.umask(0o077)
+    # This broader lock also covers the ordinary qualification probe, after
+    # runtime installation hands off its separate local maintenance lock.
     with open("/run/lock/hakopod-install.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return apply_module(module)
+        return apply_module(module, workspace_profile)
 
-def apply_module(module):
+def apply_module(module, workspace_profile=None):
+    if workspace_profile is not None and module != 'managed-actions':
+        raise ValueError('Workspace profiles apply only to Managed Actions')
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     config=json.loads(Path('/etc/hakopod/config.json').read_text())
@@ -48,7 +54,7 @@ def apply_module(module):
     with tempfile.TemporaryDirectory(prefix='hakopod-module-') as tmp:
         if module=='managed-actions':
             from actions_runtime import install
-            install(config, marker, KUBE, read)
+            install(config, marker, KUBE, read, workspace_profile)
         elif module=='storage':
             for item in read('get','storageclasses')['items']:
                 if item['metadata']['name']!='hakopod-local-path' and item['metadata'].get('annotations',{}).get('storageclass.kubernetes.io/is-default-class')=='true':
@@ -76,4 +82,6 @@ def apply_module(module):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions'])
-    main(parser.parse_args().module)
+    parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
+    options = parser.parse_args()
+    main(options.module, options.workspace_profile)
