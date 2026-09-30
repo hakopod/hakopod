@@ -81,6 +81,8 @@ func TestActionsResolvedImageRemainsValid(t *testing.T) {
 		actionsRunnerResolvedImage,
 		previousActionsRunnerImage,
 		actionsRunnerRepository + "@" + previousActionsRunnerDigest,
+		legacyActionsRunnerImage,
+		actionsRunnerRepository + "@" + legacyActionsRunnerDigest,
 		"ghcr.io/actions/actions-runner:2.337.0@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
 		"ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4",
 	} {
@@ -111,6 +113,7 @@ func TestActionsResolvedImageRemainsValid(t *testing.T) {
 		"ghcr.io/other/actions-runner@" + actionsRunnerDigest,
 		actionsRunnerRepository + ":unapproved@" + actionsRunnerDigest,
 		actionsRunnerRepository + ":unapproved@" + previousActionsRunnerDigest,
+		actionsRunnerRepository + ":unapproved@" + legacyActionsRunnerDigest,
 		strings.SplitN(ActionsRunnerImage, "@", 2)[0] + "@" + previousActionsRunnerDigest,
 		strings.SplitN(previousActionsRunnerImage, "@", 2)[0] + "@" + actionsRunnerDigest,
 	} {
