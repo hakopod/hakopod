@@ -210,8 +210,16 @@ def verify_container_source(value, identity):
     return sandbox_id
 
 
-def verify_sandbox(value, identity, sandbox_id):
-    items = value.get('items', [])
+def verify_sandbox(value, identity, sandbox_id, observation=None):
+    inventory = value.get('items', [])
+    require(isinstance(inventory, list) and len(inventory) <= 128 and
+            all(isinstance(item, dict) for item in inventory), 'Sandbox inventory exceeded its bound or is malformed')
+    # CRI retains stopped sandboxes when a Pod is replaced under the same name.
+    # Select the exact sandbox reported by the running container's OCI record.
+    items = [item for item in inventory if item.get('id') == sandbox_id]
+    if observation is not None:
+        observation.update(pod_uid=identity['uid'], sandbox_id=sandbox_id,
+                           inventory_count=len(inventory), selected_count=len(items))
     require(len(items) == 1 and items[0].get('id') == sandbox_id and items[0].get('state') == 'SANDBOX_READY' and
             items[0].get('metadata', {}).get('uid') == identity['uid'] and
             items[0].get('metadata', {}).get('namespace') == identity['namespace'] and
@@ -540,7 +548,9 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         inspected = bounded_json(self.host(['/bin/crictl', 'inspect', '-o', 'json', identity['container_id']]))
         identity['sandbox_id'] = verify_container_source(inspected, identity)
         sandboxes = bounded_json(self.host(['/bin/crictl', 'pods', '--name', 'actions-runtime-fixture', '--namespace', identity['namespace'], '-o', 'json']))
-        verify_sandbox(sandboxes, identity, identity['sandbox_id'])
+        selection = {}
+        self.report.setdefault('sandbox_selections', []).append(selection)
+        verify_sandbox(sandboxes, identity, identity['sandbox_id'], selection)
         mount = verify_mount(bounded_json(self.runner(identity, MOUNT_PROBE)), identity)
         self.identities[identity['uid']] = identity
         evidence = {'identity': identity, 'mount': mount, 'status': 'running', 'full_probe': full}
