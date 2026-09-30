@@ -21,6 +21,7 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -455,7 +456,8 @@ func (p *actionsWorkspaceProbe) desiredPod() (*corev1.Pod, error) {
 	}
 	pod.Spec.Tolerations = append(tolerations,
 		corev1.Toleration{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: ptr(int64(300))},
-		corev1.Toleration{Key: "node.kubernetes.io/unreachable", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: ptr(int64(300))})
+		corev1.Toleration{Key: "node.kubernetes.io/unreachable", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: ptr(int64(300))},
+		corev1.Toleration{Key: "node.kubernetes.io/memory-pressure", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule})
 	if p.node != nil && len(tolerations) == 1 {
 		pod.Spec.NodeSelector["hakopod.com/pool"] = p.node.Labels["hakopod.com/pool"]
 	}
@@ -529,14 +531,14 @@ func (p *actionsWorkspaceProbe) create(ctx context.Context) error {
 }
 
 func actionsWorkspaceProbeShape(got, wanted *corev1.Pod) bool {
-	if got == nil || wanted == nil || got.Name != wanted.Name || got.Namespace != wanted.Namespace || !reflect.DeepEqual(got.Annotations, wanted.Annotations) || !reflect.DeepEqual(got.Spec.RuntimeClassName, wanted.Spec.RuntimeClassName) || !reflect.DeepEqual(got.Spec.AutomountServiceAccountToken, wanted.Spec.AutomountServiceAccountToken) || !reflect.DeepEqual(got.Spec.SecurityContext, wanted.Spec.SecurityContext) || !reflect.DeepEqual(got.Spec.ActiveDeadlineSeconds, wanted.Spec.ActiveDeadlineSeconds) || !reflect.DeepEqual(got.Spec.Volumes, wanted.Spec.Volumes) || !reflect.DeepEqual(got.Spec.Affinity, wanted.Spec.Affinity) || !reflect.DeepEqual(got.Spec.NodeSelector, wanted.Spec.NodeSelector) || !reflect.DeepEqual(got.Spec.Overhead, wanted.Spec.Overhead) || !reflect.DeepEqual(got.Spec.Tolerations, wanted.Spec.Tolerations) || got.Spec.HostNetwork || got.Spec.HostPID || got.Spec.HostIPC || got.Spec.RestartPolicy != wanted.Spec.RestartPolicy || len(got.Spec.InitContainers) != 2 || len(got.Spec.Containers) != 1 || len(got.Spec.EphemeralContainers) != 0 {
+	if got == nil || wanted == nil || got.Name != wanted.Name || got.Namespace != wanted.Namespace || !reflect.DeepEqual(got.Annotations, wanted.Annotations) || !reflect.DeepEqual(got.Spec.RuntimeClassName, wanted.Spec.RuntimeClassName) || !reflect.DeepEqual(got.Spec.AutomountServiceAccountToken, wanted.Spec.AutomountServiceAccountToken) || !reflect.DeepEqual(got.Spec.SecurityContext, wanted.Spec.SecurityContext) || !reflect.DeepEqual(got.Spec.ActiveDeadlineSeconds, wanted.Spec.ActiveDeadlineSeconds) || !reflect.DeepEqual(got.Spec.Volumes, wanted.Spec.Volumes) || !reflect.DeepEqual(got.Spec.Affinity, wanted.Spec.Affinity) || !reflect.DeepEqual(got.Spec.NodeSelector, wanted.Spec.NodeSelector) || !apiequality.Semantic.DeepEqual(got.Spec.Overhead, wanted.Spec.Overhead) || !reflect.DeepEqual(got.Spec.Tolerations, wanted.Spec.Tolerations) || got.Spec.HostNetwork || got.Spec.HostPID || got.Spec.HostIPC || got.Spec.RestartPolicy != wanted.Spec.RestartPolicy || len(got.Spec.InitContainers) != 2 || len(got.Spec.Containers) != 1 || len(got.Spec.EphemeralContainers) != 0 {
 		return false
 	}
 	containers := append(append([]corev1.Container{}, got.Spec.InitContainers...), got.Spec.Containers...)
 	expected := append(append([]corev1.Container{}, wanted.Spec.InitContainers...), wanted.Spec.Containers...)
 	for i, c := range containers {
 		w := expected[i]
-		if c.Name != w.Name || c.Image != w.Image || !reflect.DeepEqual(c.Command, w.Command) || !reflect.DeepEqual(c.Args, w.Args) || !reflect.DeepEqual(c.Env, w.Env) || len(c.EnvFrom) != 0 || !reflect.DeepEqual(c.SecurityContext, w.SecurityContext) || !reflect.DeepEqual(c.Resources, w.Resources) || !reflect.DeepEqual(c.VolumeMounts, w.VolumeMounts) || len(c.VolumeDevices) != 0 || !reflect.DeepEqual(c.RestartPolicy, w.RestartPolicy) {
+		if c.Name != w.Name || c.Image != w.Image || !reflect.DeepEqual(c.Command, w.Command) || !reflect.DeepEqual(c.Args, w.Args) || !reflect.DeepEqual(c.Env, w.Env) || len(c.EnvFrom) != 0 || !reflect.DeepEqual(c.SecurityContext, w.SecurityContext) || !apiequality.Semantic.DeepEqual(c.Resources, w.Resources) || !reflect.DeepEqual(c.VolumeMounts, w.VolumeMounts) || len(c.VolumeDevices) != 0 || !reflect.DeepEqual(c.RestartPolicy, w.RestartPolicy) {
 			return false
 		}
 	}

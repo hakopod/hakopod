@@ -48,6 +48,14 @@ func actionsWorkspaceRuntimeLockDirectory() (*os.File, error) {
 	}
 	for _, part := range []string{"", "run", "lock"} {
 		if part != "" {
+			// Minimal node images may omit /run/lock. Create only this fixed
+			// directory beneath the already verified /run descriptor.
+			if part == "lock" {
+				if err := unix.Mkdirat(fd, part, 0755); err != nil && !errors.Is(err, unix.EEXIST) {
+					unix.Close(fd)
+					return nil, err
+				}
+			}
 			next, openErr := unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 			unix.Close(fd)
 			if openErr != nil {

@@ -354,6 +354,60 @@ func TestActionsWorkspaceProbePodContainsNoRegistrationOrClusterCredentials(t *t
 	}
 }
 
+func TestActionsWorkspaceProbeShapeSurvivesAPISerializationAndRejectsEnvelopeChanges(t *testing.T) {
+	p, _, _ := newWorkspaceProbeTest(t)
+	p.lock = actionsWorkspaceProbeLock{Nonce: probeTestInstallation, Namespace: "test-probe"}
+	wanted, err := p.desiredPod()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(wanted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var admitted corev1.Pod
+	if err := json.Unmarshal(raw, &admitted); err != nil {
+		t.Fatal(err)
+	}
+	admitted.Spec.Overhead[corev1.ResourceCPU] = resource.MustParse("0.1")
+	admitted.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("0.225")
+	if !actionsWorkspaceProbeShape(&admitted, wanted) {
+		t.Fatal("equivalent API-decoded resource quantities were treated as an admission change")
+	}
+	if got := wanted.Spec.Tolerations[len(wanted.Spec.Tolerations)-1]; got.Key != "node.kubernetes.io/memory-pressure" || got.Operator != corev1.TolerationOpExists || got.Effect != corev1.TaintEffectNoSchedule {
+		t.Fatal("probe does not predeclare the standard non-BestEffort admission toleration")
+	}
+
+	tests := map[string]func(*corev1.Pod){
+		"cpu request": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("900m")
+		},
+		"memory request": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("1Gi")
+		},
+		"cpu limit": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU] = resource.MustParse("2")
+		},
+		"memory limit": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory] = resource.MustParse("3Gi")
+		},
+		"mount":    func(pod *corev1.Pod) { pod.Spec.Containers[0].VolumeMounts[0].MountPath = "/tmp/runner" },
+		"security": func(pod *corev1.Pod) { pod.Spec.Containers[0].SecurityContext.Privileged = ptr(true) },
+		"toleration": func(pod *corev1.Pod) {
+			pod.Spec.Tolerations = append(pod.Spec.Tolerations, corev1.Toleration{Key: "dedicated", Operator: corev1.TolerationOpExists})
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			changed := admitted.DeepCopy()
+			mutate(changed)
+			if actionsWorkspaceProbeShape(changed, wanted) {
+				t.Fatal("admission envelope mutation was not detected")
+			}
+		})
+	}
+}
+
 func TestActionsWorkspaceProbeToleratesOnlyItsExactOwnedPool(t *testing.T) {
 	p, kube, _ := newWorkspaceProbeTest(t)
 	node, _ := kube.CoreV1().Nodes().Get(context.Background(), p.options.NodeName, metav1.GetOptions{})
@@ -365,7 +419,7 @@ func TestActionsWorkspaceProbeToleratesOnlyItsExactOwnedPool(t *testing.T) {
 	}
 	p.lock = actionsWorkspaceProbeLock{Nonce: probeTestInstallation, Namespace: "probe"}
 	pod, err := p.desiredPod()
-	if err != nil || pod.Spec.NodeSelector["hakopod.com/pool"] != "actions" || len(pod.Spec.Tolerations) != 3 || pod.Spec.Tolerations[0].Operator != corev1.TolerationOpEqual || pod.Spec.Tolerations[0].Value != "actions" {
+	if err != nil || pod.Spec.NodeSelector["hakopod.com/pool"] != "actions" || len(pod.Spec.Tolerations) != 4 || pod.Spec.Tolerations[0].Operator != corev1.TolerationOpEqual || pod.Spec.Tolerations[0].Value != "actions" {
 		t.Fatal("probe lost exact pool placement", err)
 	}
 	for _, taint := range []corev1.Taint{
