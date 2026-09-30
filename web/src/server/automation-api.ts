@@ -24,6 +24,9 @@ const routes: [RegExp, string[]][] = [
   [/^applications\/[A-Za-z0-9_-]+\/logs$/, ['GET']],
   [/^applications\/[A-Za-z0-9_-]+\/logs\/query$/, ['POST']],
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/runtime$/, ['GET']],
+  [/^tls\/issuers$/, ['GET']],
+  [/^applications\/[A-Za-z0-9_-]+\/tls\/issuers$/, ['GET', 'POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/tls$/, ['GET', 'POST']],
   [
     /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/(?:scale|restart|stop|resume)$/,
     ['POST'],

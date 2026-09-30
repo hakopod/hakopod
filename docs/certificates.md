@@ -22,7 +22,7 @@ condition details.
 A missing default is reported separately from a missing certificate controller.
 An application issuer remains an option when cert-manager is installed without
 a default. Issuer creation requires a successfully deployed application and
-waits until other application runtime work has finished; a failed request
+requires other application runtime work to have finished; a failed request
 preserves the entered form values for retry.
 
 An issuer's Ready condition describes account configuration. A service's TLS

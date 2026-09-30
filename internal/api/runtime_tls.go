@@ -191,6 +191,16 @@ func (s *Server) createApplicationTLSIssuer(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
+	// Runtime claims hold a pool connection during Kubernetes requests. Keep
+	// capacity available for authorization, audit writes and ordinary API reads.
+	select {
+	case s.tlsIssuerChanges <- struct{}{}:
+		defer func() { <-s.tlsIssuerChanges }()
+	default:
+		w.Header().Set("Retry-After", "2")
+		problem(w, 503, "issuer_busy", "certificate issuer setup is busy; retry shortly")
+		return
+	}
 	// The application runtime lock also fences deployment and deletion. It
 	// serializes the bounded issuer count and creation across API processes.
 	claim, err := s.Store.ClaimRuntime(ctx, a.ID, a.Revision)

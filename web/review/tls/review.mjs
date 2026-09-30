@@ -53,10 +53,16 @@ async function capture(page, id, options = {}) {
     const style = getComputedStyle(main)
     const dialogs = [...document.querySelectorAll('[role=dialog]')].filter(visible)
     const surface = dialogs.at(-1) || main
-    const controls = [...surface.querySelectorAll('input:not([type=hidden]),textarea,button,[role=combobox]')].filter(visible).map((element) => ({
-      label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim() || element.textContent?.trim(),
-      box: rect(element),
-    }))
+    const controls = [...surface.querySelectorAll('input:not([type=hidden]),textarea,button,[role=combobox]')].filter(visible).map((element) => {
+      const tabList = element.closest('.tab-list')
+      const scrollableInactiveTab = element.matches('[role=tab][data-state=inactive]') && tabList &&
+        ['auto', 'scroll'].includes(getComputedStyle(tabList).overflowX) && tabList.scrollWidth > tabList.clientWidth
+      return {
+        label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim() || element.textContent?.trim(),
+        box: rect(element),
+        scrollableInactiveTab: Boolean(scrollableInactiveTab),
+      }
+    })
     const active = [...document.querySelectorAll('.tab-list [data-state=active]')].filter(visible).map((element) => ({ label: element.textContent, box: rect(element), color: getComputedStyle(element).color, background: getComputedStyle(element).backgroundColor }))
     return {
       width: innerWidth,
@@ -67,6 +73,7 @@ async function capture(page, id, options = {}) {
       dialogs: dialogs.map((element) => ({ box: rect(element), title: element.getAttribute('aria-labelledby') })),
       controls,
       active,
+      tabLists: [...main.querySelectorAll('.tab-list')].filter(visible).map(rect),
       visibleBrackets: [...document.querySelectorAll('[class*=bracket]')].filter(visible).map((element) => element.className),
       loading: [...document.querySelectorAll('.hako-loading-stack')].filter(visible).length,
       fixture: window.__tlsFixture.synthetic,
@@ -83,7 +90,12 @@ async function capture(page, id, options = {}) {
     assert(dialog.box.x >= -1 && dialog.box.right <= data.width + 1, 'Dialog is clipped horizontally')
     assert(dialog.box.y >= -1 && dialog.box.bottom <= data.height + 1, 'Dialog is clipped vertically')
   }
-  for (const control of data.controls) assert(control.box.x >= -1 && control.box.right <= data.width + 1, `Control is clipped horizontally: ${control.label}`)
+  // Inactive tabs may sit outside an intentionally scrollable strip. The strip
+  // and selected tab must remain visible; ordinary controls have no exemption.
+  for (const control of data.controls) {
+    if (!control.scrollableInactiveTab) assert(control.box.x >= -1 && control.box.right <= data.width + 1, `Control is clipped horizontally: ${control.label}`)
+  }
+  for (const tabList of data.tabLists) assert(tabList.x >= -1 && tabList.right <= data.width + 1, 'Tab strip is clipped horizontally')
   for (const active of data.active) {
     assert(active.box.x >= -1 && active.box.right <= data.width + 1, `Active tab is outside the viewport: ${active.label}`)
     assert.equal(active.background, 'rgba(0, 0, 0, 0)', 'Active tab has a selected background')

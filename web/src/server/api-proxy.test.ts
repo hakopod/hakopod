@@ -151,6 +151,17 @@ test('preview and framework requests preserve scoped paths and mutation protecti
     })),
     { path: 'requests', method: 'GET', query: '?project=demo&service=api&status=5' },
     { path: 'applications/app-a/services/api/requests/routing', method: 'GET' },
+    { path: 'applications/app-a/tls/issuers', method: 'GET' },
+    {
+      path: 'applications/app-a/tls/issuers',
+      method: 'POST',
+      body: { name: 'custom', email: 'app@example.test', production: false },
+    },
+    {
+      path: 'applications/app-a/services/api/tls',
+      method: 'POST',
+      body: { issuer: 'custom', issuer_kind: 'Issuer', expected_revision: 1 },
+    },
     {
       path: 'applications/app-a/services/api/move-plan',
       method: 'POST',
