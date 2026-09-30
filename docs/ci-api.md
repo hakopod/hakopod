@@ -28,6 +28,32 @@ returns canonical authorization, revision-conflict and rate-limit errors.
 Only the listed methods and routes are forwarded; this is not an unrestricted
 proxy for installation administration.
 
+## GitHub Actions step
+
+Use the [Hakopod deployment action](../actions/deploy/README.md) to fetch the
+current application, plan a selected-service change and submit it with a
+revision check:
+
+```yaml
+- name: Deploy to Hakopod
+  id: deploy
+  uses: hakopod/hakopod/actions/deploy@main
+  with:
+    api-url: ${{ vars.HAKOPOD_API_URL }}
+    api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
+    application-id: ${{ vars.HAKOPOD_APPLICATION_ID }}
+    services: '["api", "worker"]'
+    env: '{"LOG_LEVEL":"info"}'
+```
+
+This is a source preview until the action is merged; no versioned action release
+is published yet. Pin a full reviewed commit SHA for production. The token needs
+the scoped permissions above. The step waits for success by default, uses each
+service's saved image unless an image digest is supplied, and supports individual
+service images, environment patches and existing secret references. It needs no
+checkout or CLI installation. The action guide covers concurrency, outputs,
+timeouts and recovery after an ambiguous deployment response.
+
 ## Stop on a failed specification fetch
 
 A 404 followed by “services not in the app spec” does not establish that the
