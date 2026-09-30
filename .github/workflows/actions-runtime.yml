@@ -18,8 +18,24 @@ on:
     paths: *runtime_paths
   workflow_dispatch:
     inputs:
+      buildkit_candidate:
+        description: Build and test the managed BuildKit candidate instead of running acceptance
+        type: boolean
+        default: false
+      publish_candidate:
+        description: Publish immutable candidate images after the candidate build passes
+        type: boolean
+        default: false
       export_benchmark:
         description: Compare image export speed and verify image contents
+        type: boolean
+        default: false
+      export_buildkit_image:
+        description: Optional digest-pinned Hakopod BuildKit candidate (enables export benchmark)
+        type: string
+        default: ''
+      export_force_overlay_diff:
+        description: Diagnose the optimized overlay path without fallback (enables export benchmark)
         type: boolean
         default: false
 permissions:
@@ -28,7 +44,16 @@ concurrency:
   group: actions-runtime-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  buildkit-candidate:
+    if: inputs.buildkit_candidate
+    uses: ./.github/workflows/buildkit-image.yml
+    with:
+      publish_candidate: ${{ inputs.publish_candidate }}
+    permissions:
+      contents: read
+      packages: write
   runtime:
+    if: ${{ !inputs.buildkit_candidate }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +64,9 @@ jobs:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
-      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ inputs.export_benchmark && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff) && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE: ${{ inputs.export_buildkit_image }}
+      HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF: ${{ inputs.export_force_overlay_diff && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: git submodule update --init templates

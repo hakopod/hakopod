@@ -5,6 +5,8 @@ These tests do not call Docker, create fixture data or measure performance.
 The real benchmark must still pass inside a product runner pod.
 """
 import importlib.util
+import contextlib
+import copy
 import io
 import json
 from pathlib import Path
@@ -35,6 +37,54 @@ def archive(entries):
 
 
 class ExportProofTests(unittest.TestCase):
+    def test_buildkit_selection_defaults_to_stock_and_accepts_only_pinned_candidates(self):
+        stock = benchmark.buildkit_selection()
+        self.assertEqual(stock, benchmark.buildkit_selection(''))
+        self.assertEqual(stock['reference'], benchmark.BUILDKIT)
+        self.assertEqual(stock['kind'], 'upstream')
+        self.assertEqual(stock['version'], 'v0.32.2')
+        candidate = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64
+        selected = benchmark.buildkit_selection(candidate)
+        self.assertEqual(selected['reference'], candidate)
+        self.assertEqual(selected['kind'], 'candidate')
+        self.assertEqual(selected['hakopod_revision'], 'a' * 40)
+        self.assertEqual(selected['digest'], 'sha256:' + 'b' * 64)
+        invalid = [None, candidate.split('@')[0], candidate.replace('ghcr.io/', 'ghcr.io.evil/'),
+            candidate.replace('/hakopod/', '/other/'), candidate.replace('v0.32.2', 'v0.32.3'),
+            candidate.replace('a' * 40, 'a' * 39), candidate.replace('b' * 64, 'B' * 64),
+            ' ' + candidate, candidate + '\n', candidate + ',network=host',
+            'docker.io/moby/buildkit:v0.32.2@sha256:' + 'b' * 64]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                benchmark.buildkit_selection(value)
+
+    def test_selected_builder_must_match_observed_image_version_architecture_and_mode(self):
+        candidate = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64
+        for reference in (benchmark.BUILDKIT, candidate):
+            selected = benchmark.buildkit_selection(reference)
+            image = {'Id': 'sha256:' + 'c' * 64, 'Os': 'linux', 'Architecture': 'amd64'}
+            settings = ['HAKOPOD_BUILDKIT_USERXATTR=true'] if selected['kind'] == 'candidate' else []
+            container = {'Image': image['Id'], 'Config': {'Image': reference, 'Env': settings}}
+            version = 'buildkitd github.com/moby/buildkit ' + selected['version'] + ' upstream-revision\n'
+            result = benchmark.builder_image_identity(selected, container, image, version, 'amd64')
+            self.assertEqual(result['image'], reference)
+            self.assertEqual(result['image_id'], image['Id'])
+            self.assertEqual(result['managed_userxattr'], selected['kind'] == 'candidate')
+            changes = [
+                lambda c, i: c.update(Image='sha256:' + 'd' * 64),
+                lambda c, i: c['Config'].update(Image=reference.split('@')[0]),
+                lambda c, i: c['Config'].update(Env=['HAKOPOD_BUILDKIT_USERXATTR=false']),
+                lambda c, i: i.update(Architecture='arm64'),
+                lambda c, i: i.update(Os='windows'),
+            ]
+            for change in changes:
+                observed, metadata = copy.deepcopy(container), copy.deepcopy(image)
+                change(observed, metadata)
+                with self.subTest(reference=reference, change=change), self.assertRaises(RuntimeError):
+                    benchmark.builder_image_identity(selected, observed, metadata, version, 'amd64')
+            with self.assertRaises(RuntimeError):
+                benchmark.builder_image_identity(selected, container, image, version.replace('v0.32.2', 'v0.32.20'), 'amd64')
+
     def test_child_environment_does_not_inherit_credentials_or_proxy_settings(self):
         result = benchmark.benchmark_environment({'PATH': '/usr/bin', 'HOME': '/home/runner', 'LANG': 'C',
             'GITHUB_TOKEN': 'fixture-secret', 'AWS_SECRET_ACCESS_KEY': 'fixture-secret', 'HTTP_PROXY': 'http://proxy.invalid',
@@ -128,6 +178,29 @@ class ExportProofTests(unittest.TestCase):
         self.assertNotIn('name', records[1])
         self.assertEqual(records[2]['name'], 'exporting config sha256:config')
         self.assertEqual(records[3]['name'], 'pushing layer')
+
+    def test_registry_failure_keeps_partial_measurement_without_comparison(self):
+        runner = benchmark.Benchmark.__new__(benchmark.Benchmark)
+        runner.report = {'phases': [], 'variants': []}
+        runner.boundary = runner.fixture = runner.registry = lambda: {}
+        runner.builder = lambda variant: {'name': 'fixture-' + variant}
+        runner.build = lambda *args: {'build_and_push_seconds': 49, 'phases': [
+            {'name': 'exporting layers', 'duration_seconds': 40, 'cached': False}],
+            'payload_and_mutation_cached': False}
+        def fail(*args):
+            raise RuntimeError('Registry rootfs filesystem mismatch: test fixture')
+        runner.verify_registry = fail
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'Registry rootfs'):
+            runner.execute()
+        result = runner.report['variants'][0]
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['cold']['build_and_push_seconds'], 49)
+        self.assertFalse(result['cold']['registry_verified'])
+        self.assertFalse(result['cold']['pullback_verified'])
+        self.assertNotIn('warm', result)
+        self.assertNotIn('comparison', runner.report)
+        self.assertEqual(runner.report['phases'][-1]['phase'], 'gzip-default-cold-registry')
+        self.assertEqual(runner.report['phases'][-1]['status'], 'failed')
 
 
 if __name__ == '__main__':

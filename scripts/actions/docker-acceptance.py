@@ -5,7 +5,9 @@ HAKOPOD_ACTIONS_EXPORT_BENCHMARK=1 selects the export-only diagnostic instead of
 the normal runtime/disk suite. It does not add a long benchmark to default runs.
 HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF=1 additionally selects its explicit
 forced-overlay diagnostic. Both modes retain the named-cluster and isolation
-checks. An owned VM wrapper can generate the same fake-client fixture with:
+checks. HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE selects a digest-pinned Hakopod
+candidate only for this benchmark; an empty value retains the stock image.
+An owned VM wrapper can generate the same fake-client fixture with:
 
   HAKOPOD_ACTIONS_EXPORT_BENCHMARK=1 HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR=<directory>
   go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
@@ -15,6 +17,7 @@ limits when using a worker different from this disposable CI server node.
 """
 import json
 from datetime import datetime
+import importlib.util
 import os
 from pathlib import Path
 import platform
@@ -43,6 +46,15 @@ REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platfor
 NAMESPACES = set()
 RUNTIME_CREATED = False
 OUTPUT_CREATED = False
+
+
+def export_buildkit_selection(image=''):
+    spec = importlib.util.spec_from_file_location('selected_export_benchmark', ROOT / 'scripts/actions/export-benchmark.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.buildkit_selection(image)
+
+
 if EXPORT_BENCHMARK:
     REPORT['scenario'] = 'opt-in-export-benchmark'
     REPORT['limits'].update(workspace_gib=4, concurrent_build_requests=1, buildkit_max_parallelism=1)
@@ -270,6 +282,8 @@ def export_fixture(fixture):
 
 
 def run_export_benchmark(fixture):
+    selected = export_buildkit_selection(os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE', ''))
+    REPORT['export_buildkit_selection'] = selected
     namespace = export_fixture(fixture)
     NAMESPACES.add(namespace)
     started = time.monotonic()
@@ -297,6 +311,7 @@ def run_export_benchmark(fixture):
     assert pod['spec'].get('nodeName') == NODE, 'benchmark did not run on the named development node'
     assert pod['status']['phase'] == 'Succeeded' and saved[0].get('status') == 'passed', 'export benchmark failed; see retained JSON and log'
     assert saved[0].get('context') == 'k3d-hakopod-dev' and saved[0].get('snapshotter') == 'overlayfs', 'benchmark used an unexpected context or snapshotter'
+    assert saved[0].get('buildkit_selection') == selected and saved[0].get('images', {}).get('buildkit') == selected['reference'], 'benchmark image identity differs from the explicit selection'
     assert saved[0].get('force_overlay_diff') == (os.environ.get('HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF') == '1'), 'forced-diff diagnostic did not match the explicit selection'
     assert any(event.get('phase') == 'complete' and event.get('status') == 'passed' for event in events), 'benchmark completion was not observed'
     assert len(saved[0].get('variants', [])) == 2 and saved[0].get('comparison'), 'benchmark comparison is incomplete'
@@ -308,6 +323,9 @@ def main():
     global RUNTIME_CREATED, OUTPUT_CREATED
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
+    if os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'):
+        assert EXPORT_BENCHMARK, 'select the export benchmark when selecting a BuildKit image'
+        export_buildkit_selection(os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'])
     label = command(['docker', 'inspect', '--format', '{{index .Config.Labels "k3d.cluster"}}', NODE]).stdout.strip()
     assert label == 'hakopod-dev', 'unexpected development container'
     OUTPUT.mkdir(parents=True, exist_ok=False)

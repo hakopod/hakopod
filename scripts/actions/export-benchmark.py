@@ -20,7 +20,10 @@ required. Timing ratios are emitted only after all correctness checks pass.
 --force-overlay-diff is an explicit diagnostic: it sets the builder container's
 BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF=true. Failure is reported, with no snapshotter
 fallback. It does not change product defaults or prove that this path is faster.
-This diagnostic pins the affected workflow's BuildKit v0.32.2 version. Extended
+The default is the affected workflow's pinned stock BuildKit v0.32.2 image.
+--buildkit-image explicitly selects a digest-pinned Hakopod v0.32.2 candidate;
+the selected reference, actual container image ID and version are recorded.
+It never changes product defaults or silently replaces the stock benchmark. Extended
 attributes are not verified here, so these checks cannot qualify an overlay-diff
 patch for production even when the recorded filesystem assertions pass.
 
@@ -69,6 +72,34 @@ MAX_FIXTURE_BYTES = 2 * 1024 * MIB
 MAX_TAR_BYTES = 128 * MIB
 PREFIX = 'HAKOPOD_EXPORT_BENCHMARK '
 CONTEXT = 'k3d-hakopod-dev'
+
+
+def buildkit_selection(image=BUILDKIT):
+    require(isinstance(image, str), 'BuildKit image must be an immutable allowed reference')
+    if image == '' or image == BUILDKIT:
+        return {'kind': 'upstream', 'reference': BUILDKIT, 'version': 'v0.32.2',
+                'digest': BUILDKIT.split('@', 1)[1]}
+    candidate = re.fullmatch(r'ghcr\.io/hakopod/buildkit:(v0\.32\.2-hakopod-([a-f0-9]{40}))@(sha256:[a-f0-9]{64})', image)
+    require(candidate is not None, 'BuildKit image must be the stock pin or a digest-pinned Hakopod v0.32.2 candidate')
+    return {'kind': 'candidate', 'reference': image, 'version': candidate[1],
+            'hakopod_revision': candidate[2], 'digest': candidate[3]}
+
+
+def builder_image_identity(selection, container, image, version, architecture):
+    require(container.get('Config', {}).get('Image') == selection['reference'], 'Builder did not use the selected image reference')
+    image_id = image.get('Id', '')
+    require(re.fullmatch(r'sha256:[a-f0-9]{64}', image_id) and container.get('Image') == image_id,
+            'Builder container image ID differs from the selected image')
+    require(image.get('Os') == 'linux' and image.get('Architecture') == architecture, 'Builder image is not the native Linux architecture')
+    require(isinstance(version, str) and len(version) <= 512 and selection['version'] in version.split(),
+            'Builder version differs from the selected image')
+    settings = container.get('Config', {}).get('Env', [])
+    require(isinstance(settings, list) and all(isinstance(value, str) for value in settings), 'Unexpected builder environment')
+    mode = [value for value in settings if value.startswith('HAKOPOD_BUILDKIT_USERXATTR=')]
+    require(mode == (['HAKOPOD_BUILDKIT_USERXATTR=true'] if selection['kind'] == 'candidate' else []),
+            'Builder overlay namespace differs from the selected image')
+    return {'image': selection['reference'], 'image_id': image_id, 'version': version.strip(),
+            'architecture': architecture, 'managed_userxattr': selection['kind'] == 'candidate'}
 
 
 def benchmark_environment(source, private_home):
@@ -245,7 +276,8 @@ def verify_files(rootfs, expected, context):
 
 
 class Benchmark:
-    def __init__(self, force):
+    def __init__(self, force, buildkit_image=BUILDKIT):
+        self.buildkit = buildkit_selection(buildkit_image)
         self.started = time.monotonic()
         self.deadline = self.started + 520
         self.force = force
@@ -265,7 +297,8 @@ class Benchmark:
         self.report = {'schema_version': 1, 'status': 'running', 'context': CONTEXT,
                        'scope': 'disposable managed runner; diagnostic, not fleet performance evidence',
                        'architecture': self.architecture, 'snapshotter': 'overlayfs',
-                       'force_overlay_diff': force, 'images': {'buildkit': BUILDKIT, 'busybox': BUSYBOX, 'registry': REGISTRY},
+                       'force_overlay_diff': force, 'buildkit_selection': self.buildkit,
+                       'images': {'buildkit': self.buildkit['reference'], 'busybox': BUSYBOX, 'registry': REGISTRY},
                        'limits': {'workload_seconds': 520, 'cleanup_seconds': 45, 'fixture_bytes': MAX_FIXTURE_BYTES,
                                   'command_output_bytes': 8 * MIB, 'temporary_archive_bytes': MAX_TAR_BYTES,
                                   'buildkit_max_parallelism': 1, 'cpu_memory': 'outer product runner pod limits'},
@@ -397,7 +430,7 @@ COPY marker.txt /fixture/marker.txt
                 'binary_sha256': expected['fixture/binary.bin']['sha256'], 'only_warm_change': 'marker.txt: cold newline -> warm newline'}
 
     def registry(self):
-        for image in [BUSYBOX, BUILDKIT, REGISTRY]:
+        for image in [BUSYBOX, self.buildkit['reference'], REGISTRY]:
             self.run(['pull', image], timeout=120)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
@@ -439,7 +472,7 @@ COPY marker.txt /fixture/marker.txt
   http = true
 ''')
         command = ['buildx', 'create', '--name', name, '--driver', 'docker-container',
-                   '--driver-opt', f'image={BUILDKIT}', '--driver-opt', 'network=host', '--buildkitd-config', str(config)]
+                   '--driver-opt', 'image=' + self.buildkit['reference'], '--driver-opt', 'network=host', '--buildkitd-config', str(config)]
         if self.force:
             command += ['--driver-opt', 'env.BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF=true']
         self.run(command)
@@ -448,8 +481,10 @@ COPY marker.txt /fixture/marker.txt
         workers = self.run(['exec', container, 'buildctl', 'debug', 'workers', '--verbose'])
         require(re.search(r'org\.mobyproject\.buildkit\.worker\.snapshotter:\s*overlayfs\b', workers), 'BuildKit is not using overlayfs')
         version = self.run(['exec', container, 'buildkitd', '--version'])
-        require('v0.32.2' in version, 'Unexpected BuildKit version')
-        settings = json.loads(self.run(['inspect', container, '--format', '{{json .Config.Env}}']))
+        actual = json.loads(self.run(['inspect', container, '--format', '{{json .}}']))
+        image = json.loads(self.run(['image', 'inspect', self.buildkit['reference'], '--format', '{{json .}}']))
+        identity = builder_image_identity(self.buildkit, actual, image, version, self.architecture)
+        settings = actual['Config']['Env']
         forced = [value for value in settings if value.startswith('BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF=')]
         require(forced == (['BUILDKIT_DEBUG_FORCE_OVERLAY_DIFF=true'] if self.force else []), 'Unexpected forced-overlay diagnostic configuration')
         mounts = json.loads(self.run(['inspect', container, '--format', '{{json .Mounts}}']))
@@ -457,7 +492,7 @@ COPY marker.txt /fixture/marker.txt
             if mount.get('Type') == 'volume':
                 require(mount['Name'].startswith('buildx_buildkit_' + name), 'Builder mounted an unowned volume')
                 self.volumes.add(mount['Name'])
-        return {'name': name, 'version': version[:512], 'snapshotter': 'overlayfs', 'force_overlay_diff': self.force}
+        return {'name': name, **identity, 'snapshotter': 'overlayfs', 'force_overlay_diff': self.force}
 
     def build(self, builder, variant, temperature):
         (self.source / 'marker.txt').write_text(temperature + '\n')
@@ -560,20 +595,31 @@ COPY marker.txt /fixture/marker.txt
         self.phase('prefetch-and-loopback-registry', self.registry)
         for variant in ['gzip-default', 'gzip-level1']:
             builder = self.phase(variant + '-builder-startup', lambda: self.builder(variant))
-            result = {'name': variant, 'builder': builder}
-            for temperature in ['cold', 'warm']:
-                key = variant + '-' + temperature
-                measured = self.phase(key + '-build-and-push', lambda: self.build(builder['name'], variant, temperature))
-                checked = self.verify_registry(variant, temperature)
-                self.phase(key + '-pullback', lambda: self.pullback(variant, checked))
-                checked.pop('expected_rootfs')
-                measured.update(checked)
-                result[temperature] = measured
-                emit({'phase': key + '-registry', 'status': 'passed', 'details': checked})
-                self.phase(key + '-storage', self.storage)
-            require(result['cold']['layer_digests'][:-1] == result['warm']['layer_digests'][:-1], 'Warm build re-exported unchanged layers with different digests')
-            require(result['cold']['layer_digests'][-1] != result['warm']['layer_digests'][-1], 'Warm marker change was not exported')
+            result = {'name': variant, 'builder': builder, 'status': 'running'}
             self.report['variants'].append(result)
+            try:
+                for temperature in ['cold', 'warm']:
+                    key = variant + '-' + temperature
+                    measured = self.phase(key + '-build-and-push', lambda: self.build(builder['name'], variant, temperature))
+                    measured.update(registry_verified=False, pullback_verified=False)
+                    # Keep timing evidence even when a later correctness check
+                    # fails. A measurement is not a successful verification.
+                    result[temperature] = measured
+                    checked = {}
+                    def verify():
+                        checked.update(self.verify_registry(variant, temperature))
+                        return {name: value for name, value in checked.items() if name != 'expected_rootfs'}
+                    summary = self.phase(key + '-registry', verify)
+                    measured.update(summary, registry_verified=True)
+                    self.phase(key + '-pullback', lambda: self.pullback(variant, checked))
+                    measured['pullback_verified'] = True
+                    self.phase(key + '-storage', self.storage)
+                require(result['cold']['layer_digests'][:-1] == result['warm']['layer_digests'][:-1], 'Warm build re-exported unchanged layers with different digests')
+                require(result['cold']['layer_digests'][-1] != result['warm']['layer_digests'][-1], 'Warm marker change was not exported')
+                result['status'] = 'passed'
+            finally:
+                if result['status'] == 'running':
+                    result['status'] = 'failed'
             self.run(['buildx', 'stop', builder['name']], timeout=20)
         baseline, candidate = self.report['variants']
         self.report['comparison'] = {temperature: {'default_gzip_seconds': baseline[temperature]['build_and_push_seconds'],
@@ -605,9 +651,10 @@ COPY marker.txt /fixture/marker.txt
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--force-overlay-diff', action='store_true', help='Diagnostic builder env only; unsupported paths fail without fallback')
+    parser.add_argument('--buildkit-image', default=BUILDKIT, help='Exact stock pin or digest-pinned ghcr.io/hakopod/buildkit:v0.32.2-hakopod-<revision> candidate')
     args = parser.parse_args()
     require(os.environ.get('HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT') == CONTEXT, 'Run only through the named development-cluster harness')
-    benchmark = Benchmark(args.force_overlay_diff)
+    benchmark = Benchmark(args.force_overlay_diff, args.buildkit_image)
     failure = None
     def deadline(_signal, _frame):
         raise TimeoutError('Export benchmark wall-clock deadline exceeded')
