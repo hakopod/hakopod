@@ -21593,7 +21593,7 @@
             "type": "string",
             "maxLength": 128,
             "default": "/",
-            "description": "Case-sensitive prefix of the canonical request path; queries are excluded."
+            "description": "Case-sensitive prefix of the canonical request path; queries are excluded. Noncanonical paths on covered hosts are rejected before routing."
           },
           "allow_cidrs": {
             "type": "array",

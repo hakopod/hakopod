@@ -149,7 +149,8 @@ export function EdgePolicyFields({
         <Note>
           The first matching hostname and path rule wins. Put specific paths before broader ones.
           Later rules do not add restrictions to a match. Requests with no matching rule keep their
-          existing access.
+          existing access, but listed hosts reject ambiguous paths such as /a/../b or encoded
+          separators. Use canonical URLs. Certificate-challenge token paths remain available.
         </Note>
         <div className="grid min-w-0 gap-5">
           {draft.rules.map((rule, index) => (

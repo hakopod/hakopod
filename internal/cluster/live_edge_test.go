@@ -9,11 +9,14 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -41,14 +44,15 @@ func TestLiveEdgeTrafficProtection(t *testing.T) {
 	if err != nil || originalPolicy.Enabled && len(originalPolicy.Rules) > 0 {
 		t.Fatal("edge acceptance requires a development ingress without an active operator edge policy", err)
 	}
-	// Development fixture: the real HTTP server reports the received path so
-	// normalization and byte-for-byte query preservation can be checked.
-	app, err := spec.Normalize(spec.Application{Name: "edge-fixture", Services: map[string]spec.Service{"api": {Image: "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a", Port: 8080, Public: true, Command: []string{"python", "-u", "-c"}, Args: []string{`
-import http.server, json
+	// Development fixtures report the actual backend and received path. Distinct
+	// prefix backends expose disagreement between policy and controller routing.
+	fixture := func(backend string) spec.Service {
+		return spec.Service{Image: "python:3.13.15-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a", Port: 8080, Public: true, Command: []string{"python", "-u", "-c"}, Args: []string{`
+import http.server, json, sys
 class Fixture(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def do_GET(self):
-        body = json.dumps({'fixture': 'hakopod-edge-development', 'path': self.path}).encode()
+        body = json.dumps({'fixture': 'hakopod-edge-development', 'backend': sys.argv[1], 'path': self.path}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -57,22 +61,34 @@ class Fixture(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 http.server.ThreadingHTTPServer(('0.0.0.0', 8080), Fixture).serve_forever()
-`}}}})
+`, backend}}
+	}
+	app, err := spec.Normalize(spec.Application{Name: "edge-fixture", Services: map[string]spec.Service{"api": fixture("public"), "private": fixture("private")}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	target := Target{ApplicationID: fmt.Sprintf("edge-fixture-%d", time.Now().UnixNano()), Project: "edge-test", Environment: "test", OperationID: "initial", Revision: 1, Spec: app}
 	t.Cleanup(func() {
-		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)
-		defer stop()
-		namespace, e := c.kube.CoreV1().Namespaces().Get(cleanup, Namespace(target.ApplicationID), metav1.GetOptions{})
-		if e == nil && owned(namespace, target) == nil {
-			if e = c.kube.CoreV1().Namespaces().Delete(cleanup, namespace.Name, deleteOptions(namespace)); e != nil {
-				t.Error(e)
-			}
-		}
+		deleteLiveProxyFixture(t, c, kubeconfig, target)
 	})
 	if _, err = c.Deploy(ctx, target, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Change only this development fixture's owned Ingress, never an operator
+	// route. The ordinary root route remains for rate, country and ACME probes.
+	ingresses := c.kube.NetworkingV1().Ingresses(Namespace(target.ApplicationID))
+	ingress, err := ingresses.Get(ctx, "api", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = owned(ingress, target); err != nil {
+		t.Fatal(err)
+	}
+	pathType := networkingv1.PathTypePrefix
+	for _, entry := range []struct{ path, service string }{{"/private", "private"}, {"/public", "api"}} {
+		ingress.Spec.Rules[0].HTTP.Paths = append(ingress.Spec.Rules[0].HTTP.Paths, networkingv1.HTTPIngressPath{Path: entry.path, PathType: &pathType, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: entry.service, Port: networkingv1.ServiceBackendPort{Number: 8080}}}})
+	}
+	if _, err = ingresses.Update(ctx, ingress, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	known := []*corev1.ConfigMap{}
@@ -99,13 +115,24 @@ http.server.ThreadingHTTPServer(('0.0.0.0', 8080), Fixture).serve_forever()
 		// owned comments. The controller does not reliably clear an empty snippet.
 		if original.Annotations[edgePolicyAnnotation] == "" {
 			disabled, _ := NormalizeEdgePolicy(EdgePolicy{})
-			if _, e = c.ApplyProxyConfigurationWithEdge(cleanup, nil, &disabled, current.ResourceVersion, time.Now().UnixNano()); e != nil {
+			disabledRevision := time.Now().UnixNano()
+			expected := current.DeepCopy()
+			if e = setEdgePolicy(expected, disabled); e != nil {
+				t.Error(e)
+				return
+			}
+			expected.Annotations["hakopod.io/proxy-revision"] = fmt.Sprint(disabledRevision)
+			if _, e = c.ApplyProxyConfigurationWithEdge(cleanup, nil, &disabled, current.ResourceVersion, disabledRevision); e != nil {
 				t.Error("could not acknowledge edge cleanup", e)
 				return
 			}
 			current, e = c.proxyConfigMap(cleanup)
 			if e != nil {
 				t.Error(e)
+				return
+			}
+			if !maps.Equal(current.Data, expected.Data) || !maps.Equal(current.Annotations, expected.Annotations) {
+				t.Error("edge configuration changed during cleanup; preserving operator state")
 				return
 			}
 		}
@@ -202,20 +229,39 @@ http.server.ThreadingHTTPServer(('0.0.0.0', 8080), Fixture).serve_forever()
 			t.Fatal(err)
 		}
 	}
+	var received struct {
+		Backend string `json:"backend"`
+		Path    string `json:"path"`
+	}
+	for attempt := 0; attempt < 40; attempt++ {
+		if err = json.Unmarshal(request("/private", nil, http.StatusOK), &received); err != nil {
+			t.Fatal("invalid prefix-routing fixture response", err)
+		}
+		if received.Backend == "private" {
+			break
+		}
+		if attempt == 39 {
+			t.Fatal("development private prefix never reached its separate backend")
+		}
+		if err = sleepContext(ctx, 500*time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
 	connection := EdgePolicy{Enabled: true, Rules: []EdgeRule{{ID: "private", Host: host, PathPrefix: "/private", DenyCIDRs: []string{"0.0.0.0/0", "::/0"}}, {ID: "rate", Host: host, PathPrefix: "/rate", RequestsPerSecond: 2}}}
 	apply(connection)
-	for _, path := range []string{"/private", "/%70rivate", "/x/../private", "/private//child"} {
-		request(path, http.Header{"X-Forwarded-For": {"192.0.2.1"}, "Cf-Connecting-Ip": {"192.0.2.1"}}, http.StatusForbidden)
-	}
-	for _, path := range []string{"/private%2fchild", "/private%5cchild", "/%2570rivate"} {
+	request("/private", http.Header{"X-Forwarded-For": {"192.0.2.1"}, "Cf-Connecting-Ip": {"192.0.2.1"}}, http.StatusForbidden)
+	for _, path := range []string{
+		"/%70rivate", "/%70ublic", "/x/../private", "/private//child", "/private/../public", "/public/../private",
+		"/private%2fchild", "/private%5cchild", "/%2570rivate", "/public/..;/private", "/..;/private", "/public/..%3b/private", "/public/..%3B/private",
+		"/.well-known/acme-challenge/../../private", "/.well-known/acme-challenge/%2e%2e/%2e%2e/private", "/.well-known/acme-challenge/token/../../../private", "/.well-known/acme-challenge/%2f..%2fprivate",
+	} {
 		request(path, nil, http.StatusBadRequest)
 	}
 	request("/.well-known/acme-challenge/test-token", nil, http.StatusOK)
-	var received struct {
-		Path string `json:"path"`
-	}
-	if err = json.Unmarshal(request("/%70ublic?name=%61+z&separator=%2f", nil, http.StatusOK), &received); err != nil || received.Path != "/public?name=%61+z&separator=%2f" {
-		t.Fatal("normalization changed query bytes", received.Path, err)
+	for _, queryPath := range []string{"/public?name=%61+z&separator=%2f&matrix=a;b&encoded=%3b", "/public?"} {
+		if err = json.Unmarshal(request(queryPath, nil, http.StatusOK), &received); err != nil || received.Path != queryPath || received.Backend != "public" {
+			t.Fatal("edge changed the canonical request target or backend", received, err)
+		}
 	}
 	request("/rate", nil, http.StatusOK)
 	limited := false
@@ -284,5 +330,46 @@ http.server.ThreadingHTTPServer(('0.0.0.0', 8080), Fixture).serve_forever()
 	apply(trusted)
 	request("/country", nil, http.StatusOK)
 	request("/unlisted", nil, http.StatusOK)
-	t.Log("Real HAProxy accepted the owned configuration; active workers acknowledged every revision; IP, country, first-match, rate, spoofed header, path normalization, ACME bypass and disable checks passed.")
+	t.Log("Real HAProxy accepted the owned configuration; active workers acknowledged every revision; IP, country, first-match, rate, spoofed header, canonical path, separate prefix backends, ACME bypass and disable checks passed.")
+}
+
+func deleteLiveProxyFixture(t *testing.T, c *Client, kubeconfig string, target Target) {
+	t.Helper()
+	cleanup, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	namespace, err := c.kube.CoreV1().Namespaces().Get(cleanup, Namespace(target.ApplicationID), metav1.GetOptions{})
+	if err == nil {
+		if err = owned(namespace, target); err != nil {
+			t.Error("fixture namespace ownership changed; preserving it", err)
+			return
+		}
+		if err = c.kube.CoreV1().Namespaces().Delete(cleanup, namespace.Name, deleteOptions(namespace)); err != nil && !apierrors.IsNotFound(err) {
+			t.Error(err)
+			return
+		}
+	} else if !apierrors.IsNotFound(err) {
+		t.Error(err)
+		return
+	}
+	for {
+		_, err := c.kube.CoreV1().Namespaces().Get(cleanup, Namespace(target.ApplicationID), metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			// Wait for the controller as well: the next proxy test must not take
+			// its baseline while a deleted fixture's backend is still disappearing.
+			output := &tcpBoundedWriter{limit: 4096}
+			command := exec.CommandContext(cleanup, "kubectl", "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", "-n", c.options.ProxyNamespace, "exec", "deployment/"+c.options.ProxyConfigMap, "--", "awk", "-v", "prefix="+Namespace(target.ApplicationID)+"_", `$1=="backend" && index($2,prefix)==1 {print $2}`, "/etc/haproxy/haproxy.cfg")
+			command.Stdout = output
+			command.Stderr = io.Discard
+			if e := command.Run(); e == nil && output.Len() == 0 {
+				return
+			}
+		} else if err != nil {
+			t.Error("waiting for development fixture cleanup", err)
+			return
+		}
+		if err := sleepContext(cleanup, 500*time.Millisecond); err != nil {
+			t.Error("development fixture namespace or generated backend did not disappear", err)
+			return
+		}
+	}
 }

@@ -300,6 +300,13 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
                     The proposed policy replaces all current traffic rules. The first matching rule
                     wins; later rules do not add restrictions.
                   </Note>
+                  {review.edge.enabled && review.edge.rules.length > 0 && (
+                    <Note>
+                      Listed hosts will reject ambiguous paths, including dot segments, repeated
+                      slashes and encoded separators. Use canonical URLs. Certificate-challenge
+                      token paths remain available.
+                    </Note>
+                  )}
                   {review.edge.enabled && review.edge.client_ip_source === 'trusted_proxy' && (
                     <Note>
                       Protected routes will reject direct or untrusted connections and missing

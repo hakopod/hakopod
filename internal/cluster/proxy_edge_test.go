@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os/exec"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -220,6 +223,28 @@ func TestEdgeRejectsDriftAndOperatorConflicts(t *testing.T) {
 		{"frontend-config-snippet", "http-request track-sc2 src"},
 		{"global-config-snippet", "tune.stick-counters 2"},
 		{"cr-frontend-http", "operator-frontend"},
+		{"cr-frontend-ssl", "operator-tls-frontend"},
+		{"ssl-passthrough", "true"},
+		{"ssl-passthrough", "invalid"},
+		{"frontend-config-snippet", "http-request allow"},
+		{"frontend-config-snippet", "http-request return status 200"},
+		{"frontend-config-snippet", "http-request use-service lua.operator"},
+		{"frontend-config-snippet", "http-request cache-use operator-cache"},
+		{"frontend-config-snippet", "http-request lua.operator"},
+		{"frontend-config-snippet", "http-request strict-mode off"},
+		{"frontend-config-snippet", "http-request set-header Host public.example.test"},
+		{"frontend-config-snippet", "http-request add-header HOST public.example.test"},
+		{"frontend-config-snippet", "http-request del-header Host"},
+		{"frontend-config-snippet", "http-request replace-header Host .* public.example.test"},
+		{"frontend-config-snippet", "http-request replace-value Host .* public.example.test"},
+		{"frontend-config-snippet", "http-request set-path /public"},
+		{"frontend-config-snippet", "http-request set-pathq /public"},
+		{"frontend-config-snippet", "http-request replace-path .* /public"},
+		{"frontend-config-snippet", "http-request replace-pathq .* /public"},
+		{"frontend-config-snippet", "http-request set-uri /public"},
+		{"frontend-config-snippet", "http-request replace-uri .* /public"},
+		{"frontend-config-snippet", "http-request normalize-uri path-merge-slashes"},
+		{"frontend-config-snippet", "tcp-request connection set-src src"},
 	} {
 		c := edgeTestClient()
 		ctx := context.Background()
@@ -233,6 +258,138 @@ func TestEdgeRejectsDriftAndOperatorConflicts(t *testing.T) {
 		after, _ := c.proxyConfigMap(ctx)
 		if after.Data["maxconn"] != "" || after.Annotations[edgePolicyAnnotation] != "" {
 			t.Fatal("rejected combined change partially mutated the ConfigMap")
+		}
+	}
+}
+
+func TestEdgeExplicitlyDisabledTLSPassthroughRemainsCompatible(t *testing.T) {
+	c := edgeTestClient()
+	ctx := context.Background()
+	cm, _ := c.proxyConfigMap(ctx)
+	cm.Data["ssl-passthrough"] = "false"
+	if _, err := c.kube.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	policy := edgeTestPolicy()
+	if _, err := c.ApplyProxyConfigurationWithEdge(ctx, nil, &policy, "100", 1); err != nil {
+		t.Fatal("explicitly disabled TLS passthrough prevented protection", err)
+	}
+	current, _ := c.proxyConfigMap(ctx)
+	current.Data["ssl-passthrough"] = "true"
+	if _, err := c.kube.CoreV1().ConfigMaps(current.Namespace).Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, revision := range []int64{1, 2} {
+		if _, err := c.ApplyProxyConfigurationWithEdge(ctx, nil, &policy, "100", revision); !errors.Is(err, ErrEdgeUnsupported) {
+			t.Fatal("a replay or retained-policy edit acknowledged TLS passthrough", err)
+		}
+	}
+	if _, err := c.ApplyProxyConfiguration(ctx, map[string]string{"maxconn": "2048"}, "100", 3); !errors.Is(err, ErrEdgeUnsupported) {
+		t.Fatal("a controller-only edit concealed TLS passthrough", err)
+	}
+}
+
+func TestEdgeGeneratedPreflightRejectsPolicyBypasses(t *testing.T) {
+	awk, err := exec.LookPath("awk")
+	if err != nil {
+		t.Skip("requires awk, also present in the supported ingress container")
+	}
+	check := func(config string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, awk, "-v", "client_header=CF-Connecting-IP", "-v", "country_header=CF-IPCountry", edgeGeneratedCompatibilityAWK)
+		command.Stdin = strings.NewReader(config)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatal("generated frontend inspection failed", err, string(output))
+		}
+		return strings.TrimSpace(string(output))
+	}
+	for _, action := range []string{
+		"http-request allow", "http-request return status 200", "http-request use-service lua.operator", "http-request cache-use operator-cache", "http-request lua.operator", "http-request strict-mode off",
+		"http-request set-header Host public.example.test", "http-request add-header HOST public.example.test", "http-request del-header Host", "http-request replace-header Host .* public.example.test", "http-request replace-value Host .* public.example.test",
+		"http-request set-path /public", "http-request set-pathq /public", "http-request replace-path .* /public", "http-request replace-pathq .* /public", "http-request set-uri /public", "http-request replace-uri .* /public", "http-request normalize-uri path-strip-dotdot full",
+		"http-request set-header CF-Connecting-IP 192.0.2.1", "http-request replace-value CF-IPCountry .* US", "http-request set-src src", "tcp-request connection expect-proxy layer4", "http-request track-sc2 src", "stick-table type ip size 100",
+	} {
+		for _, frontend := range []string{"http", "https"} {
+			if got := check("global\nfrontend " + frontend + "\n  " + action + "\nbackend api\n"); got != "INCOMPATIBLE" {
+				t.Fatalf("frontend %s accepted %s: %s", frontend, action, got)
+			}
+		}
+	}
+	if got := check("frontend http\n  bind :80\nfrontend ssl\n  mode tcp\n  bind :443\n"); got != "INCOMPATIBLE" {
+		t.Fatal("TLS passthrough bypassed generated preflight", got)
+	}
+	for _, config := range []string{
+		"frontend http\n  http-request set-var(txn.path) path\n  http-request redirect scheme https if { ssl_fc }\n",
+		"frontend https\n  http-request set-header X-Request-ID %[unique-id]\nbackend api\n  http-request set-path /private\n",
+		"frontend http\n" + edgeFrontendBlock(edgeTestPolicy()) + "\nfrontend https\n" + edgeFrontendBlock(edgeTestPolicy()) + "\n",
+	} {
+		if got := check(config); got != "COMPATIBLE" {
+			t.Fatal("compatible controller or owned policy was rejected", got)
+		}
+	}
+}
+
+func TestEdgePrerequisitesFailBeforeMutation(t *testing.T) {
+	c := edgeTestClient()
+	c.edgeAck = nil
+	policy := edgeTestPolicy()
+	kube := c.kube.(*fake.Clientset)
+	if _, err := c.ApplyProxyConfigurationWithEdge(context.Background(), map[string]string{"maxconn": "2048"}, &policy, "100", 1); !errors.Is(err, ErrEdgeUnsupported) {
+		t.Fatal("missing runtime access was not rejected during preflight", err)
+	}
+	for _, action := range kube.Actions() {
+		if action.GetVerb() == "update" || action.GetVerb() == "patch" {
+			t.Fatal("unsupported edge configuration was written before prerequisites were checked")
+		}
+	}
+}
+
+func TestControllerOnlyEditCannotHideInactiveEdgePolicy(t *testing.T) {
+	c := edgeTestClient()
+	ctx := context.Background()
+	checks := 0
+	c.edgeAck = func(context.Context, EdgePolicy) error {
+		checks++
+		return ErrEdgeNotAcknowledged
+	}
+	policy := edgeTestPolicy()
+	if _, err := c.ApplyProxyConfigurationWithEdge(ctx, nil, &policy, "100", 1); !errors.Is(err, ErrEdgeNotAcknowledged) {
+		t.Fatal(err)
+	}
+	if _, err := c.ApplyProxyConfiguration(ctx, map[string]string{"maxconn": "2048"}, "100", 2); !errors.Is(err, ErrEdgeNotAcknowledged) || checks != 2 {
+		t.Fatal("a controller-only change concealed an inactive retained edge policy", err)
+	}
+}
+
+func TestEdgeACMEExemptionRejectsTraversal(t *testing.T) {
+	challenge := regexp.MustCompile(edgeACMETokenPattern)
+	for _, path := range []string{"/.well-known/acme-challenge/token_123-abc", "/.well-known/acme-challenge/" + strings.Repeat("a", 43)} {
+		if !challenge.MatchString(path) {
+			t.Fatal("canonical HTTP-01 token was not exempted")
+		}
+	}
+	for _, path := range []string{"/.well-known/acme-challenge/", "/.well-known/acme-challenge/../../private", "/.well-known/acme-challenge/%2e%2e/%2e%2e/private", "/.well-known/acme-challenge/token/../../../private", "/.well-known/acme-challenge/token%2f..", "/.well-known/acme-challenge/token\\..", "/.well-known/acme-challenge/" + strings.Repeat("a", 257)} {
+		if challenge.MatchString(path) {
+			t.Fatalf("non-token path bypassed edge policy: %s", path)
+		}
+	}
+}
+
+func TestEdgeCompiledACLsRespectHAProxyArgumentLimit(t *testing.T) {
+	policy := EdgePolicy{Enabled: true, ClientIPSource: "trusted_proxy", TrustedProxyCIDRs: []string{"192.0.2.0/24"}, ClientIPHeader: "CF-Connecting-IP", CountryHeader: "CF-IPCountry"}
+	for i := 0; i < edgeMaximumRules; i++ {
+		policy.Rules = append(policy.Rules, EdgeRule{ID: fmt.Sprintf("rule-%d", i), Host: fmt.Sprintf("%d.example.test", i), AllowCountries: strings.Fields(edgeCountryCodes)[:64], RequestsPerSecond: 100000})
+	}
+	policy, err := NormalizeEdgePolicy(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(edgeFrontendBlock(policy), "\n") {
+		if len(strings.Fields(line)) > 64 {
+			t.Fatal("bounded public input exceeded HAProxy's 64-argument configuration limit")
 		}
 	}
 }

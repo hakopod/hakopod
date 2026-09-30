@@ -1,7 +1,7 @@
 # Hakopod Edge
 
 Hakopod Edge is the traffic-protection and routing configuration built on our
-existing HAProxy ingress. Open **Settings → Hakopod Edge → Edit settings** to
+existing HAProxy ingress. Open **Settings → Hakopod Edge → Edit configuration** to
 configure it. The Infrastructure entry remains available. This name does not
 describe a separate service, a CDN or a global network.
 
@@ -24,10 +24,14 @@ matches `/apiculture`; use `/api/` when that distinction matters. Denied address
 and countries take precedence over allow lists in the selected rule.
 
 Hostnames must be exact DNS names without wildcards, schemes or ports. On hosts
-with enabled rules, HAProxy canonicalizes unreserved percent escapes, repeated
-slashes and dot segments before matching. Encoded separators, nested percent
-encoding and malformed escapes are rejected. Query bytes are preserved.
-Certificate-renewal requests under `/.well-known/acme-challenge/` are excluded.
+with enabled rules, requests must use canonical paths. Unreserved percent
+escapes, repeated slashes, dot segments, encoded separators, semicolon path
+parameters, nested percent encoding and malformed escapes receive **400**. This
+keeps the ingress route, traffic rule and application request aligned. Query
+bytes are preserved.
+Only canonical certificate-challenge token paths under
+`/.well-known/acme-challenge/` are excluded. Traversal, extra path segments and
+encoded separators do not receive that exemption.
 
 Requests rejected by an address or country rule receive **403**. Requests over a
 configured rate receive **429**. Rates use HAProxy's one-second request-rate
@@ -72,9 +76,10 @@ the provider send it. Missing, duplicated, invalid and unknown country values
 receive 403 for a rule with country restrictions. This is proxy-asserted
 geography; Hakopod does not install or download a GeoIP database.
 
-Existing unconditional source-header rewrites, PROXY protocol configuration,
-disabled snippets or conflicting operator rules require separate operator
-review. Hakopod rejects incompatible configuration rather than overwriting it.
+Existing host/path rewrites, TLS passthrough routes, unconditional source-header
+rewrites, PROXY protocol configuration, disabled snippets or conflicting operator
+rules require separate operator review. Hakopod rejects incompatible configuration
+rather than overwriting it.
 The compiler reserves its own variables and rate tracking; arbitrary HAProxy
 directives remain unavailable through the editor.
 
@@ -109,9 +114,10 @@ policy. `settings` retains its existing partial-patch semantics. A 202 response
 means the change is durably queued, not active. The worker rechecks administrator
 and Cloud-operator authority before applying it.
 
-For edge changes, the worker checks the owned ingress configuration and reads
-the exact policy revision from the running HAProxy workers before marking the
-change applied. A saved ConfigMap or a generated configuration file alone is
+For changes that include or retain an edge policy, the worker checks the owned
+ingress configuration and reads the exact policy revision from the running
+HAProxy workers before marking the change applied. A saved ConfigMap or a
+generated configuration file alone is
 insufficient. Unsupported configuration, drift or failed reload acknowledgement
 is reported. Keep the previous working revision available when troubleshooting
 an external controller failure; an applied status records a successful check at
@@ -193,8 +199,10 @@ requests preserve the editor draft; unrelated settings remain untouched.
 
 The controller may reload HAProxy after a change. Existing connections normally
 drain, but `hard-stop-after` bounds that drain. Long drains keep old processes and
-their memory alive. A durable `applied` status confirms the ConfigMap update; it
-does not replace checking ingress health or the controller's reload status.
+their memory alive. A durable `applied` status confirms the ConfigMap update.
+If an edge policy is saved, even when disabled, it also confirms that the running
+workers acknowledged that policy during the apply. This is not continuous health
+monitoring; inspect ingress health when diagnosing later changes.
 
 `TestLiveProxyConfiguration` applies these controls to the named development
 cluster, waits for the generated directives, checks them with `haproxy -c` and
@@ -205,7 +213,7 @@ preserves intervening operator edits instead of overwriting them during cleanup.
 
 In self-hosted installations, set `"max-content-length": "10485760"` for a
 10 MiB declared upload limit. An empty string removes the guard. The dashboard
-lists this under Infrastructure → HAProxy → Supported fields. Hakopod Cloud
+lists this under Settings → Hakopod Edge → Edit configuration. Hakopod Cloud
 rejects changes to this field, including previously queued self-hosted changes.
 
 This is a Content-Length admission guard, **not a complete request-body limit**.

@@ -5434,7 +5434,7 @@ export interface components {
             /** @description Exact DNS hostname. Wildcards, ports and schemes are rejected. */
             host: string;
             /**
-             * @description Case-sensitive prefix of the canonical request path; queries are excluded.
+             * @description Case-sensitive prefix of the canonical request path; queries are excluded. Noncanonical paths on covered hosts are rejected before routing.
              * @default /
              */
             path_prefix: string;

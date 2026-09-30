@@ -6,7 +6,7 @@ schemas["EdgeRule"] = {
     **obj({
         "id": {**S, "minLength": 1, "maxLength": 32, "description": "Unique stable rule identifier."},
         "host": {**S, "minLength": 1, "maxLength": 253, "description": "Exact DNS hostname. Wildcards, ports and schemes are rejected."},
-        "path_prefix": {**S, "maxLength": 128, "default": "/", "description": "Case-sensitive prefix of the canonical request path; queries are excluded."},
+        "path_prefix": {**S, "maxLength": 128, "default": "/", "description": "Case-sensitive prefix of the canonical request path; queries are excluded. Noncanonical paths on covered hosts are rejected before routing."},
         "allow_cidrs": edge_cidrs,
         "deny_cidrs": edge_cidrs,
         "allow_countries": edge_countries,
