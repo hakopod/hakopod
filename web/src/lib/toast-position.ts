@@ -5,23 +5,34 @@ export function toastPosition(container: Bounds, viewport: Bounds, footers: Boun
   const bottom = Math.min(container.bottom, viewport.bottom)
   const left = Math.max(container.left, viewport.left)
   const right = Math.min(container.right, viewport.right)
+  if (bottom <= top) return { footerSpace: Math.max(0, container.bottom - bottom), maxHeight: 0 }
+  const blockers = footers
+    .filter(
+      (footer) =>
+        footer.bottom > footer.top &&
+        footer.right > footer.left &&
+        footer.bottom > top &&
+        footer.top < bottom &&
+        footer.right > left &&
+        footer.left < right,
+    )
+    .map((footer) => ({ top: Math.max(top, footer.top), bottom: Math.min(bottom, footer.bottom) }))
+    .sort((a, b) => a.top - b.top)
   let availableTop = top
-  let availableBottom = bottom
-  for (const footer of footers) {
-    if (
-      footer.bottom > footer.top &&
-      footer.right > footer.left &&
-      footer.bottom > top &&
-      footer.top < bottom &&
-      footer.right > left &&
-      footer.left < right
-    ) {
-      // If actions reach the top edge, use the space below them so the
-      // notification can still be read and dismissed while scrolling past.
-      if (footer.top <= top + 32) availableTop = Math.max(availableTop, footer.bottom)
-      else availableBottom = Math.min(availableBottom, footer.top)
+  let availableBottom = top
+  let cursor = top
+  const considerGap = (start: number, end: number) => {
+    // Visit gaps from top to bottom so equal space keeps the notification above.
+    if (end - start > availableBottom - availableTop) {
+      availableTop = start
+      availableBottom = end
     }
   }
+  for (const blocker of blockers) {
+    considerGap(cursor, blocker.top)
+    cursor = Math.max(cursor, blocker.bottom)
+  }
+  considerGap(cursor, bottom)
   return {
     footerSpace: Math.max(0, container.bottom - availableBottom),
     maxHeight: Math.max(0, availableBottom - availableTop - 32),

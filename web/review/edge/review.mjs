@@ -115,6 +115,7 @@ async function recoveryControls(page, id, names) {
         box: rect(element), footerSpace: element.style.getPropertyValue('--toast-footer-space'),
       })),
       toasts: [...document.querySelectorAll('[data-error-toast]')].map(rect),
+      footers: [...document.querySelectorAll('main .form-footer')].map(rect),
     }
   })
   state.viewport = viewport
@@ -340,9 +341,38 @@ try {
           const footerTop = await page.locator('form .form-footer').evaluate((element) => element.getBoundingClientRect().top)
           assert(footerTop >= size.height, 'Scroll check did not move the static mobile footer out of view')
           assert(offscreen.notifications.every((entry) => parseFloat(entry.footerSpace) === 0), 'Offscreen footer still reserves notification space')
-          await page.evaluate(({ x, y }) => window.scrollTo({ top: y, left: x, behavior: 'instant' }), failedSave.scroll)
+          let syntheticScrollProbe
+          if (size.width === 320) {
+            // The normal Edge page ends too close to this footer to reach the
+            // intermediate position. This labelled fixture-only extension
+            // exercises the shared toast contract without changing product UI.
+            try {
+              await page.evaluate((height) => {
+                const buffer = document.createElement('div')
+                buffer.dataset.uiReviewScrollBuffer = 'true'
+                buffer.textContent = 'Synthetic scroll-layout probe: extra document space for notification review.'
+                buffer.style.height = `${height}px`
+                document.querySelector('main').append(buffer)
+                const footer = document.querySelector('form .form-footer')
+                window.scrollTo({ top: scrollY + footer.getBoundingClientRect().top - 50, left: 0, behavior: 'instant' })
+              }, size.height)
+              const probe = await recoveryControls(page, `${id}-synthetic-scroll-layout-probe`, recoveryNames)
+              assert.equal(probe.footers.length, 1, 'Expected the Edge action footer in the scroll probe')
+              const footer = probe.footers[0]
+              assert(Math.abs(footer.y - 50) <= 1, 'Synthetic scroll probe did not reach the intermediate footer position')
+              for (const toast of probe.toasts) {
+                assert(toast.right <= footer.x || toast.x >= footer.right || toast.bottom <= footer.y || toast.y >= footer.bottom, 'Notification overlaps the action footer in the synthetic scroll probe')
+              }
+              syntheticScrollProbe = { kind: 'synthetic scroll-layout probe with temporary trailing space', ...probe }
+            } finally {
+              await page.evaluate(() => document.querySelector('[data-ui-review-scroll-buffer]')?.remove())
+              await page.evaluate(({ x, y }) => window.scrollTo({ top: y, left: x, behavior: 'instant' }), failedSave.scroll)
+            }
+          } else {
+            await page.evaluate(({ x, y }) => window.scrollTo({ top: y, left: x, behavior: 'instant' }), failedSave.scroll)
+          }
           const restored = await recoveryControls(page, `${id}-error-footer-restored`, recoveryNames)
-          scrollRecovery = { offscreen, restored }
+          scrollRecovery = { offscreen, syntheticScrollProbe, restored }
         }
         const back = page.getByRole('button', { name: 'Back to editor', exact: true })
         if (size.width < 640) await back.tap()
