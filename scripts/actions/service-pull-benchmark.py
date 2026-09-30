@@ -2,8 +2,8 @@
 """Development-only cold pull timing for two representative service images.
 
 This runs inside one real Hakopod gVisor runner against its loopback Docker
-Engine. It is intentionally standalone and is not wired into CI or runtime
-acceptance.
+Engine. The explicit service-pull choices in actions-runtime.yml run it in a
+fresh product-derived Pod; the normal acceptance suite does not run it.
 """
 import http.client
 from contextlib import contextmanager
@@ -28,6 +28,7 @@ MAX_STREAM_BYTES = 4 * 1024 * 1024
 MAX_EVENTS = 4096
 MAX_LINE_BYTES = 64 * 1024
 PREFIX = 'HAKOPOD_SERVICE_PULL '
+EVENT_PREFIX = 'HAKOPOD_SERVICE_PULL_EVENT '
 DAEMON_VERSION = '29.8.1'
 DAEMON_COMMIT = '464cd50'
 OWNER_LABEL = 'dev.hakopod.service-pull-benchmark'
@@ -176,6 +177,8 @@ class DockerAPI:
                        if set(timings) != {'Download complete', 'Pull complete'}]
             require(not missing, 'Cold pull did not emit complete timings for expected layers: ' + ','.join(missing))
             for timings in observed.values():
+                require(timings['Pull complete'] >= timings['Download complete'],
+                        'Service layer completion preceded its download')
                 timings['extraction_registration_queue_seconds'] = round(
                     timings['Pull complete'] - timings['Download complete'], 3)
             return {'total_seconds': round(self.clock() - started, 3), 'event_count': event_count,
@@ -294,7 +297,8 @@ def benchmark_service(api, service, architecture):
         owned_id = image['Id']
         version = version_check(api, service, expected_id)
         require(api.inspect(expected_id).get('Id') == expected_id, 'Owned service config identity changed before cleanup')
-        result = {'service': service['name'], 'pull': pull, 'image': identity, 'version': version}
+        result = {'service': service['name'], 'pull': pull, 'image': identity, 'version': version,
+                  'target_image_absent_before': True, 'target_config_absent_before': True}
     except Exception as primary_error:
         try:
             recovered = recover_owned_image(api, service, architecture) if owned_id is None else owned_id
@@ -304,18 +308,23 @@ def benchmark_service(api, service, architecture):
             raise primary_error from cleanup_error
         raise
     api.remove_exact(owned_id)
+    result['cleanup'] = {'status': 'passed', 'removed_config_digest': owned_id}
     return result
 
 
 def main():
     api = DockerAPI()
     environment = verify_environment(api)
-    result = {'schema_version': 1, 'scope': 'development-only sequential cold service image pulls',
+    result = {'schema_version': 1, 'scenario': 'cold-service-image-pulls', 'context': DEV_CONTEXT,
+              'scope': 'development-only sequential cold service image pulls',
               **environment, 'limits': {'images': 2, 'seconds_per_image': MAX_IMAGE_SECONDS,
                                         'stream_bytes_per_image': MAX_STREAM_BYTES, 'events_per_image': MAX_EVENTS},
               'services': []}
     for service in SERVICES:
-        result['services'].append(benchmark_service(api, service, environment['architecture']))
+        measured = benchmark_service(api, service, environment['architecture'])
+        result['services'].append(measured)
+        print(EVENT_PREFIX + json.dumps(measured, separators=(',', ':'), sort_keys=True), flush=True)
+    result['status'] = 'passed'
     print(PREFIX + json.dumps(result, separators=(',', ':'), sort_keys=True), flush=True)
 
 

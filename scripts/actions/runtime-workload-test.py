@@ -18,6 +18,23 @@ CANDIDATE = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' 
 
 
 class RuntimeSelectionTests(unittest.TestCase):
+    def test_service_pulls_allow_only_three_isolated_storage_comparators(self):
+        base = {'HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK': '1'}
+        for mode, shared, driver in [('disabled', '0', 'vfs'), ('vfs', '1', 'vfs'), ('overlay2', '1', 'overlay2')]:
+            selection = {**base, 'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': mode,
+                         'HAKOPOD_ACTIONS_SHARED_WORKSPACE': shared, 'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER': driver}
+            self.assertEqual(workload.runtime_selection_from_environment(selection), workload.runtime_buildkit_selection())
+        for key in ('HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE', 'HAKOPOD_ACTIONS_PUBLISH_CANDIDATE',
+                    'HAKOPOD_ACTIONS_EXPORT_BENCHMARK', 'HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION',
+                    'HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF', 'HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS',
+                    'HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF', 'HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE',
+                    'HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE', 'HAKOPOD_ACTIONS_EXPORT_TEST_RUN'):
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'Service pull benchmarks must run separately'):
+                workload.runtime_selection_from_environment({**base, key: '1'})
+        for flag in ('true', '', 'yes', ' 1', '2'):
+            with self.subTest(flag=flag), self.assertRaisesRegex(RuntimeError, 'Service pull benchmark flag'):
+                workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SERVICE_PULL_BENCHMARK': flag})
+
     def test_overlay_driver_requires_explicit_shared_workspace_without_changing_builder_selection(self):
         environment = {'HAKOPOD_ACTIONS_SHARED_WORKSPACE': '1', 'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER': 'overlay2'}
         self.assertEqual(workload.runtime_selection_from_environment(environment), workload.runtime_buildkit_selection())

@@ -156,6 +156,76 @@ class QualificationEnvelopeTests(unittest.TestCase):
             acceptance.verify_qualification_report(value, acceptance.export_buildkit_selection(), 'amd64', True)
 
 
+class ServicePullEnvelopeTests(unittest.TestCase):
+    def evidence(self, architecture='amd64', driver='vfs'):
+        spec = importlib.util.spec_from_file_location('service_pull_test_data', Path(__file__).with_name('service-pull-benchmark.py'))
+        benchmark = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(benchmark)
+        services = []
+        for service in benchmark.SERVICES:
+            expected = service['platforms'][architecture]
+            services.append({'service': service['name'], 'target_image_absent_before': True,
+                             'target_config_absent_before': True, 'version': 'fixture version',
+                             'image': {'config_digest': expected['config_digest'], 'platform': 'linux/' + architecture,
+                                       'repository_digest': service['reference'].rsplit('@', 1)[1]},
+                             'cleanup': {'status': 'passed', 'removed_config_digest': expected['config_digest']},
+                             'pull': {'total_seconds': 5, 'event_count': len(expected['layer_prefixes']) * 2, 'stream_bytes': 100,
+                                      'layers': {layer: {'Download complete': 1, 'Pull complete': 4,
+                                                         'extraction_registration_queue_seconds': 3}
+                                                 for layer in expected['layer_prefixes']}}})
+        return {'schema_version': 1, 'scenario': 'cold-service-image-pulls', 'status': 'passed',
+                'context': 'k3d-hakopod-dev', 'architecture': architecture, 'storage_driver': driver,
+                'limits': {'images': 2, 'seconds_per_image': 600, 'stream_bytes_per_image': 4 * 1024 * 1024,
+                           'events_per_image': 4096}, 'services': services}
+
+    def test_requires_exact_cold_images_bounded_layer_timings_and_cleanup(self):
+        for architecture in ('amd64', 'arm64'):
+            for driver in ('vfs', 'overlay2'):
+                acceptance.verify_service_pull_report(self.evidence(architecture, driver), architecture, driver)
+        original = self.evidence()
+        changes = [lambda v: v.update(status='failed'), lambda v: v.update(context='operator'),
+                   lambda v: v.update(architecture='arm64'), lambda v: v.update(storage_driver='overlay2'),
+                   lambda v: v['limits'].update(seconds_per_image=601), lambda v: v['services'].pop(),
+                   lambda v: v['services'].reverse(), lambda v: v['services'][0].update(target_image_absent_before=False),
+                   lambda v: v['services'][0].update(target_config_absent_before=False),
+                   lambda v: v['services'][0]['image'].update(config_digest='sha256:' + '0' * 64),
+                   lambda v: v['services'][0]['cleanup'].update(status='failed'),
+                   lambda v: v['services'][0].update(version=''),
+                   lambda v: v['services'][0]['pull'].update(total_seconds=float('nan')),
+                   lambda v: v['services'][0]['pull'].update(total_seconds=True),
+                   lambda v: v['services'][0]['pull'].update(event_count=1),
+                   lambda v: v['services'][0]['pull'].update(stream_bytes=0),
+                   lambda v: v['services'][0]['pull']['layers'].popitem()]
+        for change in changes:
+            value = copy.deepcopy(original)
+            change(value)
+            with self.subTest(change=change), self.assertRaises(AssertionError):
+                acceptance.verify_service_pull_report(value, 'amd64', 'vfs')
+        for key, changed in [('Download complete', 6), ('Pull complete', 6),
+                             ('extraction_registration_queue_seconds', 99), ('Pull complete', float('inf'))]:
+            value = copy.deepcopy(original)
+            next(iter(value['services'][0]['pull']['layers'].values()))[key] = changed
+            with self.subTest(key=key, changed=changed), self.assertRaises(AssertionError):
+                acceptance.verify_service_pull_report(value, 'amd64', 'vfs')
+
+    def test_service_progress_and_failure_survive_a_wait_error(self):
+        event = {'service': 'postgres:16', 'measured': True}
+        failure = {'schema_version': 1, 'status': 'failed', 'error': 'second pull failed'}
+        raw = 'HAKOPOD_SERVICE_PULL_EVENT ' + json.dumps(event) + '\nHAKOPOD_SERVICE_PULL ' + json.dumps(failure) + '\n'
+        def failed_wait(*args, **kwargs):
+            kwargs['capture'].observe(RUNNING)
+            raise RuntimeError('API disconnected')
+        with tempfile.TemporaryDirectory() as temp, patch.object(acceptance, 'OUTPUT', Path(temp)), \
+                patch.object(acceptance, 'REPORT', {'limits': {}}), patch.object(acceptance, 'DEADLINE', time.monotonic() + 10), \
+                patch.object(acceptance.subprocess, 'Popen', side_effect=writer('print(' + repr(raw[:-1]) + ')')), \
+                patch.object(acceptance, 'diagnostic_fixture', return_value='fixture'), patch.object(acceptance, 'apply'), \
+                patch.object(acceptance, 'wait_for', side_effect=failed_wait):
+            with self.assertRaisesRegex(RuntimeError, 'API disconnected'):
+                acceptance.run_service_pull_benchmark({})
+            self.assertEqual(json.loads((Path(temp) / 'service-pull-benchmark-report.json').read_text()), failure)
+            self.assertEqual(acceptance.REPORT['service_pull_events'], [event])
+
+
 class RuntimeEnvelopeTests(unittest.TestCase):
     def evidence(self, image='', force=False, architecture='amd64'):
         selected = acceptance.runtime_helpers().runtime_buildkit_selection(image, force)
