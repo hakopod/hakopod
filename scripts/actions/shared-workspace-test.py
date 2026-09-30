@@ -196,13 +196,24 @@ class IdentityTests(unittest.TestCase):
 
 class AccountingTests(unittest.TestCase):
     def test_physical_blocks_are_measured_instead_of_sparse_logical_size(self):
-        value = shared.verify_filestore('ext4\nregular file|1|20|30|67108864|4096\n')
+        value = shared.verify_filestore('ext4|ef53\nregular file|1|20|30|67108864|4096\n')
         self.assertEqual(value['allocated_bytes'], 2 * shared.MIB)
         self.assertEqual(value['logical_bytes'], 64 * shared.MIB)
-        for text in ('tmpfs\nregular file|1|20|30|67108864|4096', 'ext4\nregular file|2|20|30|67108864|4096',
-                     'ext4\nsymbolic link|1|20|30|67108864|4096', 'ext4\nregular file|1|20|30|67108864|0'):
+        for text in ('tmpfs|1021994\nregular file|1|20|30|67108864|4096', 'ext4|ef53\nregular file|2|20|30|67108864|4096',
+                     'ext4|ef53\nsymbolic link|1|20|30|67108864|4096', 'ext4|ef53\nregular file|1|20|30|67108864|0'):
             with self.subTest(text=text), self.assertRaises(RuntimeError):
                 shared.verify_filestore(text)
+
+    def test_filesystem_ids_handle_busybox_ext_names_and_reject_unknown_backing(self):
+        for name in ('ext4|ef53', 'ext2/ext3|ef53', 'xfs|58465342', 'btrfs|9123683e'):
+            with self.subTest(name=name):
+                value = shared.verify_filestore(name + '\nregular file|1|20|30|67108864|4096\n')
+                self.assertEqual(value['host_filesystem'], name.split('|')[0])
+                self.assertEqual(value['host_filesystem_id'], name.split('|')[1])
+        for name in ('tmpfs|1021994', 'ramfs|858458f6', 'overlayfs|794c7630',
+                     'UNKNOWN (0x1234)|1234', 'ext4', 'ext4|ef53|extra', 'x' * 65 + '|ef53'):
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'observed'):
+                shared.verify_filestore(name + '\nregular file|1|20|30|67108864|4096\n')
 
     def test_growth_requires_matching_kubelet_accounting_and_stable_file_identity(self):
         before = {'device': 20, 'inode': 30, 'allocated_bytes': 64 * shared.MIB, 'kubelet_used_bytes': 64 * shared.MIB + 4096}
@@ -273,8 +284,8 @@ class LifecycleTests(unittest.TestCase):
                 return False
         identity = {**shared.pod_identity(pod(2)), 'sandbox_id': SANDBOX}
         before = {'device': 20, 'inode': 30, 'allocated_bytes': 4096}
-        for output, invalid in [('ext4\nregular file|1|20|30|3221225472|6291456\n', False),
-                                ('malformed', True), ('ext4\nregular file|1|20|31|3221225472|6291456\n', True)]:
+        for output, invalid in [('ext4|ef53\nregular file|1|20|30|3221225472|6291456\n', False),
+                                ('malformed', True), ('ext4|ef53\nregular file|1|20|31|3221225472|6291456\n', True)]:
             observer = shared.Observer(lambda *args, **kwargs: SimpleNamespace(stdout=output), None, shared.NODE, {})
             observer.identities[UID] = identity
             with self.subTest(output=output), patch.object(shared.threading, 'Event', Event), patch.object(shared.threading, 'Thread', Thread):

@@ -218,14 +218,19 @@ def verify_filestore(text):
     require(isinstance(text, str) and len(text) < 1024, 'Filestore observation exceeded its bound')
     lines = text.strip().splitlines()
     require(len(lines) == 2, 'Filestore observation is incomplete')
-    require(lines[0] not in ('tmpfs', 'ramfs', 'devtmpfs') and re.fullmatch(r'[A-Za-z0-9_. -]{1,40}', lines[0]),
-            'Filestore is not on disk-backed node storage')
+    filesystem = lines[0].split('|')
+    # BusyBox names ext4 "ext2/ext3". Match Linux filesystem identifiers, not
+    # utility-specific display names, and keep unknown backing stores closed.
+    require(len(filesystem) == 2 and 0 < len(filesystem[0]) <= 64 and
+            filesystem[1] in ('ef53', '58465342', '9123683e'),
+            'Filestore requires ext, XFS, or Btrfs node storage; observed ' + repr(lines[0][:96]))
     fields = lines[1].split('|')
     require(len(fields) == 6 and fields[0] == 'regular file' and fields[1] == '1' and
             all(re.fullmatch(r'[0-9]+', value) for value in fields[2:]), 'Filestore is not a singly linked regular file')
     device, inode, size, blocks = map(int, fields[2:])
     require(device >= 0 and inode > 0 and 0 < blocks * 512 <= size <= 64 * GIB, 'Filestore size or physical allocation is invalid')
-    return {'host_filesystem': lines[0], 'device': device, 'inode': inode, 'logical_bytes': size, 'allocated_bytes': blocks * 512}
+    return {'host_filesystem': filesystem[0], 'host_filesystem_id': filesystem[1],
+            'device': device, 'inode': inode, 'logical_bytes': size, 'allocated_bytes': blocks * 512}
 
 
 def volume_accounting(stats, identity):
@@ -354,7 +359,7 @@ for entry in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
     fi
 done
 test "$count" = 1
-stat -f -c '%T' "$directory"
+stat -f -c '%T|%t' "$directory"
 stat -c '%F|%h|%d|%i|%s|%b' "$file"
 '''
         return ['sh', '-c', script, 'shared-workspace', identity['source'], identity['sandbox_id']]
