@@ -233,11 +233,43 @@ def verify_filestore(text):
             'device': device, 'inode': inode, 'logical_bytes': size, 'allocated_bytes': blocks * 512}
 
 
-def volume_accounting(stats, identity):
-    pods = [pod for pod in stats.get('pods', []) if pod.get('podRef', {}).get('uid') == identity['uid'] and
+def fs_observation(value):
+    """Keep only bounded filesystem counters and timestamps, never full stats."""
+    result = {}
+    for key in ('name', 'time', 'usedBytes', 'capacityBytes', 'availableBytes', 'inodes', 'inodesFree', 'inodesUsed'):
+        if key not in value:
+            continue
+        item = value[key]
+        result[key] = item[:96] if isinstance(item, str) else item if item is None or type(item) is bool or type(item) is int and abs(item) <= 2 ** 64 else {'type': type(item).__name__}
+    return result
+
+
+def volume_accounting(stats, identity, observation=None):
+    require(isinstance(stats, dict) and isinstance(stats.get('pods', []), list) and len(stats.get('pods', [])) <= 256,
+            'Kubelet workspace Pod inventory is malformed or excessive')
+    inventory = stats.get('pods', [])
+    require(all(isinstance(pod, dict) and isinstance(pod.get('podRef', {}), dict) for pod in inventory), 'Kubelet Pod reference is malformed')
+    pods = [pod for pod in inventory if pod.get('podRef', {}).get('uid') == identity['uid'] and
             pod.get('podRef', {}).get('namespace') == identity['namespace'] and pod.get('podRef', {}).get('name') == 'actions-runtime-fixture']
+    if observation is not None:
+        observation.update(summary_pod_count=len(inventory), matched_pod_count=len(pods),
+            same_name_pod_uids=[str(pod['podRef'].get('uid', ''))[:64] for pod in inventory
+                if pod['podRef'].get('namespace') == identity['namespace'] and
+                pod['podRef'].get('name') == 'actions-runtime-fixture'][:4])
     require(len(pods) <= 1, 'Kubelet returned duplicate workspace observations')
-    volumes = [volume for volume in pods[0].get('volume', []) if volume.get('name') == 'runner'] if pods else []
+    listed = pods[0].get('volume', []) if pods else []
+    if observation is not None:
+        observation.update(volume_field_present=bool(pods and 'volume' in pods[0]),
+            volume_field_type=type(listed).__name__, volume_count=len(listed) if isinstance(listed, list) else None)
+        if pods and isinstance(pods[0].get('ephemeral-storage'), dict):
+            observation['pod_ephemeral_storage'] = fs_observation(pods[0]['ephemeral-storage'])
+    require(isinstance(listed, list) and len(listed) <= 32 and all(isinstance(volume, dict) for volume in listed),
+            'Kubelet workspace volume inventory is malformed or excessive')
+    volumes = [volume for volume in listed if volume.get('name') == 'runner']
+    if observation is not None:
+        observation.update(volume_names=[str(volume.get('name', ''))[:64] for volume in listed], matched_volume_count=len(volumes))
+        if volumes:
+            observation['runner_volume'] = fs_observation(volumes[0])
     require(len(volumes) <= 1, 'Kubelet returned duplicate runner volume observations')
     value = volumes[0].get('usedBytes') if volumes else None
     require(value is None or type(value) is int and 0 <= value <= 64 * GIB, 'Kubelet returned invalid workspace usage')
@@ -367,10 +399,13 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
     def filestore(self, identity):
         return verify_filestore(self.host(self.filestore_command(identity)))
 
-    def sample(self, identity):
+    def sample(self, identity, observation=None):
         result = self.filestore(identity)
+        if observation is not None:
+            observation['physical'] = dict(result)
+            observation['kubelet'] = {}
         stats = bounded_json(self.kube(['get', '--raw', f'/api/v1/nodes/{self.node}/proxy/stats/summary'], timeout=self._timeout()).stdout, 2 * MIB)
-        result['kubelet_used_bytes'] = volume_accounting(stats, identity)
+        result['kubelet_used_bytes'] = volume_accounting(stats, identity, observation['kubelet'] if observation is not None else None)
         return result
 
     def usage(self, stats):
@@ -453,13 +488,34 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         self.report['eviction_usage'] = {**peaks, 'physical_bytes': physical, 'kubelet_evicted_for_runner_emptydir': True,
             'kubelet_overage_summary_observed': peaks.get('kubelet_bytes', 0) > 2 * GIB}
 
-    def accounted(self, identity):
-        end = min(self.deadline, time.monotonic() + 85)
-        while time.monotonic() < end:
-            value = self.sample(identity)
+    def accounted(self, identity, phase='unspecified'):
+        require(phase in ('before', 'after', 'unspecified'), 'Unexpected accounting probe phase')
+        attempts = self.report.setdefault('accounting_attempts', [])
+        require(len(attempts) < 6, 'Excessive workspace accounting attempts')
+        started = time.monotonic()
+        end = min(self.deadline, started + 85)
+        attempt = {'uid': identity['uid'], 'phase': phase, 'tolerance_bytes': MIB,
+                   'maximum_samples': 32, 'samples': [], 'status': 'running'}
+        attempts.append(attempt)
+        for index in range(32):
+            if time.monotonic() >= end:
+                break
+            observation = {'index': index, 'elapsed_seconds': round(time.monotonic() - started, 3)}
+            attempt['samples'].append(observation)
+            try:
+                value = self.sample(identity, observation)
+            except Exception as error:
+                observation['error_type'] = type(error).__name__
+                attempt['status'] = 'observation-failed'
+                raise
+            observation.update(allocated_bytes=value['allocated_bytes'], logical_bytes=value.get('logical_bytes'),
+                kubelet_used_bytes=value['kubelet_used_bytes'],
+                kubelet_minus_physical_bytes=value['kubelet_used_bytes'] - value['allocated_bytes'] if value['kubelet_used_bytes'] is not None else None)
             if value['kubelet_used_bytes'] is not None and abs(value['kubelet_used_bytes'] - value['allocated_bytes']) <= MIB:
+                attempt['status'] = 'matched'
                 return value
             time.sleep(3)
+        attempt['status'] = 'unmatched'
         raise RuntimeError('Kubelet runner volume usage did not match physical filestore allocation')
 
     def daemon_sharing(self, identity, inodes):
@@ -497,7 +553,8 @@ stat -c '%F|%h|%d|%i|%s|%b' "$file"
         # The daemon directly reads the same init and runner files, in addition
         # to the nested Docker bind mount exercised by CREATE_PROBE.
         self.daemon_sharing(identity, inodes)
-        before = self.accounted(identity)
+        before = self.accounted(identity, 'before')
+        evidence['before'] = before
         self.runner(identity, '''import os, pathlib
 with pathlib.Path('/home/runner/.hakopod-shared-proof/allocation').open('xb') as output:
     for _ in range(16):
@@ -505,7 +562,8 @@ with pathlib.Path('/home/runner/.hakopod-shared-proof/allocation').open('xb') as
     output.flush()
     os.fsync(output.fileno())
 ''')
-        after = self.accounted(identity)
+        after = self.accounted(identity, 'after')
+        evidence['after'] = after
         evidence.update(before=before, after=after, accounting=verify_growth(before, after))
         restart(timeout=self._timeout())
         require(bounded_json(self.runner(identity, constants + VERIFY_PROBE), 1024) == inodes,
