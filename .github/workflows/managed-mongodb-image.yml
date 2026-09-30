@@ -1,0 +1,104 @@
+name: Publish qualified MongoDB controller
+on:
+  workflow_dispatch:
+    inputs:
+      archive_release:
+        description: Release containing mongodb-controller-v1.oci.tar
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: managed-mongodb-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'hakopod/hakopod' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ARCHIVE_RELEASE: ${{ inputs.archive_release }}
+      IMAGE: ghcr.io/hakopod/managed-mongodb-operator:1.13.0-hakopod.1
+      IMAGE_DIGEST: sha256:7ba576ba3115f007fcfc22c38b530ad05c211705a6a958124ec41ea80239a85c
+      DOCKER_CONFIG: ${{ runner.temp }}/mongodb-registry-auth
+    steps:
+      - name: Download and check the accepted artifact and publisher
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$ARCHIVE_RELEASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]
+          mkdir -m 700 mongodb-image mongodb-publisher "$DOCKER_CONFIG"
+          gh release download "$ARCHIVE_RELEASE" --repo "$GITHUB_REPOSITORY" --pattern mongodb-controller-v1.oci.tar --dir mongodb-image
+          printf '%s  %s\n' e499c619bd401ad28dcc5885b1058349e6274d2796ba7a58a8e143a67546d392 mongodb-image/mongodb-controller-v1.oci.tar | sha256sum --check
+          curl --fail --location --silent --show-error --output mongodb-publisher/crane.tgz https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          printf '%s  %s\n' 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 mongodb-publisher/crane.tgz | sha256sum --check
+          tar -xzf mongodb-publisher/crane.tgz -C mongodb-publisher crane
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, tarfile
+          from pathlib import Path, PurePosixPath
+          layout = Path('mongodb-image/layout')
+          layout.mkdir(mode=0o700)
+          with tarfile.open('mongodb-image/mongodb-controller-v1.oci.tar') as archive:
+              members = archive.getmembers()
+              assert len(members) < 128 and sum(m.size for m in members) < 256 * 1024 * 1024
+              for member in members:
+                  name = PurePosixPath(member.name)
+                  assert not name.is_absolute() and '..' not in name.parts
+                  assert member.isdir() or member.isfile()
+                  target = layout.joinpath(*name.parts)
+                  if member.isdir():
+                      target.mkdir(mode=0o700, parents=True, exist_ok=True)
+                      continue
+                  target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                  with target.open('xb') as output:
+                      shutil.copyfileobj(archive.extractfile(member), output)
+                  if name.parts[:2] == ('blobs', 'sha256'):
+                      assert len(name.parts) == 3
+                      with target.open('rb') as source:
+                          assert hashlib.file_digest(source, 'sha256').hexdigest() == name.name
+          index = json.loads((layout / 'index.json').read_text())
+          assert len(index['manifests']) == 1
+          assert index['manifests'][0]['digest'] == os.environ['IMAGE_DIGEST']
+          PY
+      - name: Publish the exact manifest without rebuilding
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$GH_TOKEN" | mongodb-publisher/crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          python3 - <<'PY'
+          import os, re, subprocess
+          image, digest = os.environ['IMAGE'], os.environ['IMAGE_DIGEST']
+          publisher = 'mongodb-publisher/crane'
+          registry, repository = image.split('/', 1)
+          repository, tag = repository.rsplit(':', 1)
+          manifest_url = 'https://' + registry + '/v2/' + repository + '/manifests/' + tag
+          manifest = subprocess.run([publisher, 'manifest', image], capture_output=True, text=True, timeout=60)
+          if len(manifest.stdout) > 256 * 1024 or len(manifest.stderr) > 64 * 1024:
+              raise RuntimeError('Registry lookup exceeded its bound; no image will be published')
+          if manifest.returncode == 0:
+              current = subprocess.check_output([publisher, 'digest', image], text=True, timeout=60).strip()
+              assert current == digest, 'Refusing to replace a different published tag'
+          else:
+              # Pinned crane renders one parsed Registry diagnostic in this form.
+              # Generic 404s, token errors, retries and mixed errors cannot authorize a push.
+              missing = re.fullmatch(r'Error: GET ' + re.escape(manifest_url) +
+                  r': (MANIFEST_UNKNOWN|NAME_UNKNOWN): [^\r\n]+', manifest.stderr.strip())
+              if manifest.stdout.strip() or missing is None:
+                  raise RuntimeError('Registry lookup did not confirm a missing tag; no image will be published')
+          subprocess.run([publisher, 'push', 'mongodb-image/layout', image], check=True, timeout=300)
+          for reference in (image, image + '@' + digest):
+              assert subprocess.check_output([publisher, 'digest', reference], text=True, timeout=60).strip() == digest
+          PY
+          printf 'Published the qualified MongoDB controller: `%s@%s`. No source rebuild was performed. Anonymous pull verification is required after package visibility is public.\n' "$IMAGE" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary registry authentication
+        if: always()
+        shell: bash
+        run: rm -rf -- "$DOCKER_CONFIG"

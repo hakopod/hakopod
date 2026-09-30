@@ -1,0 +1,61 @@
+package controllers
+
+import (
+	"context"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/mongodb/mongodb-kubernetes/pkg/kube/client"
+)
+
+func TestHakopodTLSResizeCreatesTheNextPodBeforeWaitingForItsAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name                               string
+		current, desired, requested, ready int
+		tls, exists, automationFirst       bool
+	}{
+		{"initial bootstrap publishes config", 0, 3, 0, 0, true, false, true},
+		{"three to five creates fourth pod", 3, 5, 3, 3, true, true, false},
+		{"fourth pod receives config before readiness", 3, 5, 4, 3, true, true, true},
+		{"ready fourth member completes its step", 3, 5, 4, 4, true, true, false},
+		{"four to five creates fifth pod", 4, 5, 4, 4, true, true, false},
+		{"five to seven creates sixth pod", 5, 7, 5, 5, true, true, false},
+		{"shrink changes membership before removing pods", 7, 3, 7, 7, true, true, true},
+		{"existing healthy TLS deployment", 3, 3, 3, 3, true, true, false},
+		{"TLS rollout waits for current config", 3, 3, 3, 2, true, true, true},
+		{"existing plaintext scaling behavior", 3, 5, 3, 3, false, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mdb := newTestReplicaSet()
+			mdb.Spec.Members = tc.desired
+			mdb.Spec.Security.TLS.Enabled = tc.tls
+			mdb.Status.CurrentMongoDBMembers = tc.current
+			mdb.Status.CurrentStatefulSetReplicas = tc.current
+			mgr := client.NewManager(ctx, &mdb)
+			if tc.exists {
+				replicas := int32(tc.requested)
+				sts := &appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: mdb.Name, Namespace: mdb.Namespace, Generation: 1},
+					Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+					Status:     appsv1.StatefulSetStatus{ObservedGeneration: 1, UpdatedReplicas: replicas, ReadyReplicas: int32(tc.ready)},
+				}
+				if err := mgr.GetClient().Create(ctx, sts); err != nil {
+					t.Fatal(err)
+				}
+				// The upstream mock marks every created StatefulSet ready. Restore
+				// the observed count so a requested pod can still be unready.
+				sts.Status.ReadyReplicas = int32(tc.ready)
+				if err := mgr.GetClient().Update(ctx, sts); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := NewReconciler(mgr, "fake-repo", "fake-mongodb", "ubi8", AgentImage, "fake-upgrade", "fake-readiness")
+			if got := r.shouldRunInOrder(ctx, mdb); got != tc.automationFirst {
+				t.Fatalf("automation first=%v, want %v: current=%d desired=%d requested=%d ready=%d", got, tc.automationFirst, tc.current, tc.desired, tc.requested, tc.ready)
+			}
+		})
+	}
+}
