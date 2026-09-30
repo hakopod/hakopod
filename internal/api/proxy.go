@@ -4,23 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"reflect"
+	"slices"
+	"time"
+
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
-	"net/http"
-	"slices"
-	"time"
 )
 
 type proxyChange struct {
-	Settings        map[string]string `json:"settings"`
-	ResourceVersion string            `json:"resource_version"`
-	KeyID           string            `json:"key_id,omitempty"`
-	Status          string            `json:"status"`
-	Error           string            `json:"error"`
-	AppliedVersion  string            `json:"applied_version"`
-	Attempts        int               `json:"attempts"`
-	RetryAt         time.Time         `json:"retry_at"`
+	Settings        map[string]string   `json:"settings"`
+	Edge            *cluster.EdgePolicy `json:"edge,omitempty"`
+	ResourceVersion string              `json:"resource_version"`
+	KeyID           string              `json:"key_id,omitempty"`
+	Status          string              `json:"status"`
+	Error           string              `json:"error"`
+	AppliedVersion  string              `json:"applied_version"`
+	Attempts        int                 `json:"attempts"`
+	RetryAt         time.Time           `json:"retry_at"`
 }
 
 func (s *Server) registerProxyRoutes(routes *http.ServeMux) {
@@ -68,6 +71,9 @@ func (s *Server) getProxy(w http.ResponseWriter, r *http.Request) {
 		for k, v := range change.Settings {
 			drift = drift || observed.Settings[k] != v
 		}
+		if change.Edge != nil {
+			drift = drift || !reflect.DeepEqual(observed.Edge, *change.Edge)
+		}
 	}
 	write(w, 200, map[string]any{"observed": observed, "revision": row.Revision, "change": change, "drift": drift})
 }
@@ -76,9 +82,10 @@ func (s *Server) setProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Settings                map[string]string `json:"settings"`
-		ExpectedRevision        *int64            `json:"expected_revision"`
-		ExpectedResourceVersion string            `json:"expected_resource_version"`
+		Settings                map[string]string   `json:"settings"`
+		Edge                    *cluster.EdgePolicy `json:"edge"`
+		ExpectedRevision        *int64              `json:"expected_revision"`
+		ExpectedResourceVersion string              `json:"expected_resource_version"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -86,6 +93,18 @@ func (s *Server) setProxy(w http.ResponseWriter, r *http.Request) {
 	if in.ExpectedRevision == nil || in.ExpectedResourceVersion == "" {
 		problem(w, 400, "review_required", "provide the reviewed database revision and Kubernetes resource version")
 		return
+	}
+	if len(in.Settings) == 0 && in.Edge == nil {
+		problem(w, 400, "invalid_proxy", "provide controller settings or an edge policy to change")
+		return
+	}
+	if in.Edge != nil {
+		normalized, err := cluster.NormalizeEdgePolicy(*in.Edge)
+		if err != nil {
+			problem(w, 400, "invalid_edge", err.Error())
+			return
+		}
+		in.Edge = &normalized
 	}
 	previous, previousErr := s.Store.RuntimeResource(r.Context(), "proxy", "", "", "haproxy")
 	if previousErr == nil {
@@ -109,9 +128,11 @@ func (s *Server) setProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := cluster.ValidateProxySettings(in.Settings); err != nil {
-		problem(w, 400, "invalid_proxy", err.Error())
-		return
+	if len(in.Settings) > 0 {
+		if err := cluster.ValidateProxySettings(in.Settings); err != nil {
+			problem(w, 400, "invalid_proxy", err.Error())
+			return
+		}
 	}
 	if s.Cluster == nil {
 		problem(w, 503, "unavailable", "Kubernetes is unavailable")
@@ -126,7 +147,7 @@ func (s *Server) setProxy(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "proxy_conflict", "HAProxy configuration changed; refresh before saving")
 		return
 	}
-	change := proxyChange{Settings: in.Settings, ResourceVersion: in.ExpectedResourceVersion, KeyID: who(r).KeyID, Status: "queued"}
+	change := proxyChange{Settings: in.Settings, Edge: in.Edge, ResourceVersion: in.ExpectedResourceVersion, KeyID: who(r).KeyID, Status: "queued"}
 	row, err := s.Store.PutRuntimeResource(r.Context(), who(r), "proxy", "", "", "haproxy", *in.ExpectedRevision, change)
 	if err != nil {
 		failure(w, err)
@@ -150,7 +171,7 @@ func (s *Server) RunPlatform(ctx context.Context) {
 	}
 }
 func (s *Server) reconcileProxy(parent context.Context) {
-	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 	defer cancel()
 	if s.Cluster == nil {
 		return
@@ -167,6 +188,9 @@ func (s *Server) reconcileProxy(parent context.Context) {
 	if err == nil && !principal.IsAdmin() {
 		err = store.ErrForbidden
 	}
+	if err == nil && s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && !s.cloudOperator(principal) {
+		err = store.ErrForbidden
+	}
 	if _, ok := change.Settings["max-content-length"]; ok {
 		mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
 		if modeErr != nil || mode != cluster.DeploymentSelfHosted {
@@ -174,7 +198,7 @@ func (s *Server) reconcileProxy(parent context.Context) {
 		}
 	}
 	if err == nil {
-		change.AppliedVersion, err = s.Cluster.ApplyProxyConfiguration(ctx, change.Settings, change.ResourceVersion, row.Revision)
+		change.AppliedVersion, err = s.Cluster.ApplyProxyConfigurationWithEdge(ctx, change.Settings, change.Edge, change.ResourceVersion, row.Revision)
 	}
 	if parent.Err() != nil {
 		return
@@ -188,7 +212,7 @@ func (s *Server) reconcileProxy(parent context.Context) {
 		if len(change.Error) > 512 {
 			change.Error = "HAProxy configuration could not be applied"
 		}
-		if change.Attempts < 5 && !errors.Is(err, store.ErrForbidden) && !errors.Is(err, store.ErrUnauthorized) && !errors.Is(err, cluster.ErrProxyConflict) && !errors.Is(err, cluster.ErrProxySelfHosted) {
+		if change.Attempts < 5 && !errors.Is(err, store.ErrForbidden) && !errors.Is(err, store.ErrUnauthorized) && !errors.Is(err, cluster.ErrProxyConflict) && !errors.Is(err, cluster.ErrProxySelfHosted) && !errors.Is(err, cluster.ErrEdgeUnsupported) {
 			change.Status = "queued"
 			change.RetryAt = time.Now().Add(time.Duration(5*(1<<change.Attempts)) * time.Second)
 		}

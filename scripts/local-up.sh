@@ -80,7 +80,8 @@ if actual != expected:
     raise SystemExit('HAProxy chart checksum mismatch; refusing to install')
 PY
 helm upgrade --install hakopod-ingress "$ROOT/deploy/charts/hakopod-platform" \
-  --namespace haproxy-controller --create-namespace --wait --timeout 240s
+  --namespace haproxy-controller --create-namespace --wait --timeout 240s \
+  --set kubernetes-ingress.controller.service.externalTrafficPolicy=Local
 
 if ! [[ -f "$ROOT/.local/postgres.env" ]]; then
   python3 - "$ROOT" <<'PY'

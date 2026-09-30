@@ -78,12 +78,14 @@ type Client struct {
 	actionsObserve         func(context.Context, Target, string, spec.Service) (ServiceStatus, error)
 	// publicTCPAck is injected by unit tests; real clients always inspect HAProxy.
 	publicTCPAck func(context.Context, Target, []any, map[string]string) error
-	execConfig   *rest.Config
-	clusterCA    []byte
-	kube         kubernetes.Interface
-	dynamic      dynamic.Interface
-	options      Options
-	http         *http.Client
+	// edgeAck is injected by unit tests; real clients inspect every owned worker.
+	edgeAck    func(context.Context, EdgePolicy) error
+	execConfig *rest.Config
+	clusterCA  []byte
+	kube       kubernetes.Interface
+	dynamic    dynamic.Interface
+	options    Options
+	http       *http.Client
 }
 
 type Target struct {

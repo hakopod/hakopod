@@ -1,0 +1,101 @@
+name: Hakopod Edge acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'internal/cluster/proxy*.go'
+      - 'internal/cluster/live_edge*.go'
+      - 'internal/api/proxy*.go'
+      - 'internal/api/edge*.go'
+      - 'web/src/components/proxy*.tsx'
+      - 'web/src/components/edge*.tsx'
+      - 'web/src/routes/settings.edge*.tsx'
+      - 'web/src/lib/edge*.ts'
+      - 'web/src/lib/proxy*.ts'
+      - 'web/src/routes/settings.tsx'
+      - 'web/src/routes/infrastructure.tsx'
+      - 'web/review/edge/**'
+      - 'deploy/charts/hakopod-platform/values.yaml'
+      - 'scripts/local-up.sh'
+      - '.github/workflows/edge-acceptance.yml'
+permissions:
+  contents: read
+concurrency:
+  group: edge-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ingress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      HAKOPOD_DEV_SERVER_MEMORY: 4g
+      HAKOPOD_EDGE_TEST: '1'
+      HAKOPOD_PROXY_TEST: '1'
+      HAKOPOD_BODY_LIMIT_TEST: '1'
+      HAKOPOD_TEST_KUBECONFIG: ${{ github.workspace }}/.local/kubeconfig
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - name: Create the disposable named development cluster
+        run: scripts/local-up.sh
+      - name: Exercise real HAProxy traffic protection
+        run: go test -p=1 ./internal/cluster -run '^TestLive(Edge|ProxyConfiguration|ContentLengthGuard)' -v -count=1 -timeout=15m
+      - name: Diagnose the development ingress
+        if: failure()
+        run: |
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get pods -A
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev -n haproxy-controller logs deployment/hakopod-ingress-kubernetes-ingress --tail=100
+      - name: Stop the disposable cluster
+        if: always()
+        run: scripts/local-down.sh
+  interface:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NODE_OPTIONS: --max-old-space-size=1024
+      HAKOPOD_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.local/edge-review-tools/node_modules/playwright/index.mjs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore public sources
+        run: |
+          git submodule update --init templates
+          python3 scripts/ui-source.py restore
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm --dir web install --frozen-lockfile
+      - name: Install the isolated browser review tool
+        run: |
+          npm install --prefix .local/edge-review-tools --no-package-lock --ignore-scripts playwright@1.63.0
+          node .local/edge-review-tools/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Review the real UI with synthetic development data
+        run: |
+          node web/review/edge/server.mjs > "$RUNNER_TEMP/edge-review-server.log" 2>&1 &
+          edge_review_pid=$!
+          trap 'kill "$edge_review_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --max-time 1 http://127.0.0.1:4198/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node web/review/edge/review.mjs
+      - name: Save rendered review evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edge-ui-review
+          path: .local/edge-review
+          if-no-files-found: error
+          retention-days: 7
