@@ -118,6 +118,9 @@ test('CI denies cookies, browser tokens, unsupported methods/routes and oversize
   assert.equal((await request('applications/' + app, 'PATCH')).status, 405)
   assert.equal((await request('keys')).status, 404)
   assert.equal((await request('cloud/workspaces')).status, 404)
+  assert.equal((await request('tls/issuers', 'POST', '{}')).status, 405)
+  assert.equal((await request('applications/' + app + '/tls/issuers', 'DELETE')).status, 405)
+  assert.equal((await request('applications/' + app + '/tls/issuers/foreign')).status, 404)
   assert.equal((await request('deployments', 'POST', 'x'.repeat(1024 * 1024 + 1))).status, 413)
   assert.equal(fetch.mock.callCount(), 0)
 })
@@ -134,6 +137,11 @@ test('SDK lifecycle routes forward scoped machine credentials and DELETE confirm
     ['POST', 'applications/' + app + '/services/web/stop'],
     ['POST', 'applications/' + app + '/services/web/resume'],
     ['GET', 'applications/' + app + '/services/web/runtime'],
+    ['GET', 'tls/issuers'],
+    ['GET', 'applications/' + app + '/tls/issuers'],
+    ['POST', 'applications/' + app + '/tls/issuers'],
+    ['GET', 'applications/' + app + '/services/web/tls'],
+    ['POST', 'applications/' + app + '/services/web/tls'],
     ['GET', 'applications/' + app + '/logs'],
     ['POST', 'applications/' + app + '/rollback'],
     ['POST', 'databases'],

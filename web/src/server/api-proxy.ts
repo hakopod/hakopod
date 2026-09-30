@@ -69,6 +69,7 @@ export const allowed = [
   /^projects\/[A-Za-z0-9_-]+\/(?:members|invites|environments)$/,
   /^registries(?:\/[A-Za-z0-9_-]+(?:\/sync)?)?$/,
   /^tls\/issuers$/,
+  /^applications\/[A-Za-z0-9_-]+\/tls\/issuers$/,
   /^settings\/haproxy$/,
   /^nodes\/(?:[A-Za-z0-9_.-]+\/(?:cordon|drain)|enrollments(?:\/[A-Za-z0-9_-]+)?)$/,
   /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,

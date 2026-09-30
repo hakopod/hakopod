@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	clientconfig "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -26,18 +28,20 @@ import (
 // Synthetic Kubernetes responses exercise real API authorization and durable
 // revisions in PostgreSQL. The separate development-cluster test proves issuance.
 type tlsAPIFixture struct {
-	t        *testing.T
-	db       *store.Store
-	owner    store.Principal
-	app      store.Application
-	other    store.Application
-	token    string
-	handler  http.Handler
-	mu       sync.Mutex
-	issuers  map[string]map[string]any
-	secrets  map[string]corev1.Secret
-	requests int
-	writes   int
+	t                 *testing.T
+	db                *store.Store
+	owner             store.Principal
+	app               store.Application
+	other             store.Application
+	token             string
+	handler           http.Handler
+	mu                sync.Mutex
+	issuers           map[string]map[string]any
+	secrets           map[string]corev1.Secret
+	requests          int
+	writes            int
+	blockNamespaces   chan struct{}
+	enteredNamespaces chan struct{}
 }
 
 func newTLSAPIFixture(t *testing.T) *tlsAPIFixture {
@@ -53,7 +57,7 @@ func newTLSAPIFixture(t *testing.T) *tlsAPIFixture {
 		t.Fatal(err)
 	}
 	newApp := func(name string) store.Application {
-		app, err := spec.Normalize(spec.Application{Name: name, Services: map[string]spec.Service{"web": {Image: "nginx:alpine", Port: 8080, Public: true}}})
+		app, err := spec.Normalize(spec.Application{Name: name, Services: map[string]spec.Service{"web": {Image: "example.invalid/synthetic@sha256:" + strings.Repeat("a", 64), Port: 8080, Public: true}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,6 +101,18 @@ func (f *tlsAPIFixture) key(name, application string, permissions ...string) str
 }
 
 func (f *tlsAPIFixture) kubernetes(w http.ResponseWriter, r *http.Request) {
+	if f.blockNamespaces != nil && (r.URL.Path == "/api/v1/namespaces/"+cluster.Namespace(f.app.ID) || r.URL.Path == "/api/v1/namespaces/"+cluster.Namespace(f.other.ID)) {
+		select {
+		case <-f.blockNamespaces:
+		default:
+			f.enteredNamespaces <- struct{}{}
+			select {
+			case <-f.blockNamespaces:
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests++
@@ -152,8 +168,14 @@ func (f *tlsAPIFixture) kubernetes(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == base+"/secrets" {
 			if r.Method == "POST" {
 				var secret corev1.Secret
-				if json.NewDecoder(r.Body).Decode(&secret) != nil {
+				data, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+				if err == nil {
+					_, _, err = scheme.Codecs.UniversalDeserializer().Decode(data, nil, &secret)
+				}
+				if err != nil {
 					f.t.Error("invalid secret body")
+					missing()
+					return
 				}
 				f.secrets[ns+"/"+secret.Name] = secret
 				f.writes++
@@ -285,5 +307,43 @@ func TestCloudTLSDefaultAttachmentCompatibility(t *testing.T) {
 	saved, err := f.db.RuntimeBase(context.Background(), f.app.ID, 2)
 	if err != nil || saved.Spec.Services["web"].TLS == nil || saved.Spec.Services["web"].TLS.Issuer != "default" || saved.Spec.Services["web"].TLS.IssuerKind != "" {
 		t.Fatalf("legacy default reference changed: %v", err)
+	}
+}
+
+func TestCloudTLSIssuerOverloadLeavesAPIReadsAvailable(t *testing.T) {
+	f := newTLSAPIFixture(t)
+	f.blockNamespaces = make(chan struct{})
+	f.enteredNamespaces = make(chan struct{}, 2)
+	var release sync.Once
+	writer := f.key("both-apps", "", "deployments:read", "deployments:write")
+	input := map[string]any{"name": "custom", "email": "app@example.test"}
+	var operations sync.WaitGroup
+	defer func() {
+		release.Do(func() { close(f.blockNamespaces) })
+		operations.Wait()
+	}()
+	for _, app := range []store.Application{f.app, f.other} {
+		operations.Add(1)
+		go func() {
+			defer operations.Done()
+			f.request("POST", "/applications/"+app.ID+"/tls/issuers", writer, input, 201)
+		}()
+	}
+	for range 2 {
+		select {
+		case <-f.enteredNamespaces:
+		case <-time.After(5 * time.Second):
+			t.Fatal("issuer operation did not reach its bounded Kubernetes request")
+		}
+	}
+	response := f.request("POST", "/applications/"+f.app.ID+"/tls/issuers", writer, input, 503)
+	if response.Header().Get("Retry-After") != "2" {
+		t.Fatal("busy response omitted retry guidance")
+	}
+	f.request("GET", "/tls/issuers", writer, nil, 200)
+	release.Do(func() { close(f.blockNamespaces) })
+	operations.Wait()
+	if f.writes != 4 {
+		t.Fatalf("overload created extra resources: %d writes", f.writes)
 	}
 }

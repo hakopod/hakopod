@@ -28,7 +28,8 @@ import (
 )
 
 type Server struct {
-	databaseImports chan struct{}
+	databaseImports  chan struct{}
+	tlsIssuerChanges chan struct{}
 	// CloudControlPlane enables shared auth settings only in the trusted Cloud embedding.
 	CloudControlPlane bool
 	// OperatorRuntime is set only by the trusted Cloud embedding, never an HTTP request.
@@ -83,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	s.concurrent = make(chan struct{}, 64)
 	s.streams = make(chan struct{}, 16)
 	s.databaseImports = make(chan struct{}, 2)
+	s.tlsIssuerChanges = make(chan struct{}, 2)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/build-registry/authorize", s.authorizeBuildRegistry)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]string{"status": "ok"}) })
