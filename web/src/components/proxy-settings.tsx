@@ -398,15 +398,6 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
             Configuration changed after review. Your draft is kept. Compare with the latest settings
             before applying again.
           </p>
-          <Button
-            type="button"
-            size="sm"
-            className="mt-3"
-            disabled={busy}
-            onClick={() => void compareLatest()}
-          >
-            {busy ? 'Loading comparison…' : 'Compare latest settings'}
-          </Button>
         </Note>
       )}
       <div className="form-footer">
@@ -421,6 +412,16 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
         >
           {submitted ? 'Return to Settings' : review ? 'Back to editor' : 'Cancel'}
         </Button>
+        {conflict && (
+          <Button
+            type="button"
+            variant="primary"
+            disabled={busy}
+            onClick={() => void compareLatest()}
+          >
+            {busy ? 'Loading comparison…' : 'Compare latest settings'}
+          </Button>
+        )}
         <Button
           type="submit"
           variant="primary"
