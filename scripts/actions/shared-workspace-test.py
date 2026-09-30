@@ -195,6 +195,107 @@ class IdentityTests(unittest.TestCase):
 
 
 class AccountingTests(unittest.TestCase):
+    def test_summary_diagnostics_preserve_real_volume_time_values_and_missing_identity(self):
+        identity = shared.pod_identity(pod())
+        value = stats(4096)
+        value['pods'][0]['volume'][0].update(time='2026-09-30T18:00:00Z', capacityBytes=100 * shared.GIB,
+                                             availableBytes=80 * shared.GIB, inodesUsed=2, private='never retain')
+        value['pods'][0]['ephemeral-storage'] = {'usedBytes': 8192, 'time': '2026-09-30T18:00:01Z'}
+        observation = {}
+        self.assertEqual(shared.volume_accounting(value, identity, observation), 4096)
+        self.assertEqual(observation['runner_volume']['time'], '2026-09-30T18:00:00Z')
+        self.assertEqual(observation['runner_volume']['usedBytes'], 4096)
+        self.assertEqual(observation['runner_volume']['capacityBytes'], 100 * shared.GIB)
+        self.assertEqual(observation['pod_ephemeral_storage']['usedBytes'], 8192)
+        self.assertNotIn('private', observation['runner_volume'])
+        self.assertEqual(observation['volume_names'], ['runner'])
+        value['pods'][0]['podRef']['uid'] = 'another-uid'
+        observation = {}
+        self.assertIsNone(shared.volume_accounting(value, identity, observation))
+        self.assertEqual(observation['matched_pod_count'], 0)
+        self.assertEqual(observation['same_name_pod_uids'], ['another-uid'])
+        self.assertFalse(observation['volume_field_present'])
+        value['pods'][0]['podRef']['uid'] = UID
+        del value['pods'][0]['volume']
+        observation = {}
+        self.assertIsNone(shared.volume_accounting(value, identity, observation))
+        self.assertEqual(observation['matched_pod_count'], 1)
+        self.assertFalse(observation['volume_field_present'])
+
+    def test_invalid_summary_retains_selection_evidence_without_accepting_bad_usage(self):
+        identity = shared.pod_identity(pod())
+        value = stats('not-a-counter')
+        observation = {}
+        with self.assertRaisesRegex(RuntimeError, 'invalid workspace usage'):
+            shared.volume_accounting(value, identity, observation)
+        self.assertEqual(observation['runner_volume']['usedBytes'], 'not-a-counter')
+        value['pods'][0]['volume'].append({'name': 'runner', 'usedBytes': 123})
+        observation = {}
+        with self.assertRaisesRegex(RuntimeError, 'duplicate runner'):
+            shared.volume_accounting(value, identity, observation)
+        self.assertEqual(observation['matched_volume_count'], 2)
+        self.assertEqual(shared.fs_observation({'time': 'x' * 10000, 'usedBytes': 10 ** 100, 'secret': 'omit'}),
+                         {'time': 'x' * 96, 'usedBytes': {'type': 'int'}})
+
+    def test_accounting_failure_keeps_bounded_physical_and_kubelet_samples(self):
+        observer = shared.Observer(None, None, shared.NODE, {})
+        observer.deadline = 100
+        value = {'device': 20, 'inode': 30, 'logical_bytes': shared.GIB, 'allocated_bytes': 64 * shared.MIB,
+                 'kubelet_used_bytes': 4096}
+        with patch.object(shared.time, 'monotonic', return_value=0), patch.object(shared.time, 'sleep'), \
+                patch.object(observer, 'sample', return_value=value) as sample:
+            with self.assertRaisesRegex(RuntimeError, 'did not match physical'):
+                observer.accounted(shared.pod_identity(pod()), 'before')
+        attempt = observer.report['accounting_attempts'][0]
+        self.assertEqual((attempt['phase'], attempt['status'], sample.call_count), ('before', 'unmatched', 32))
+        self.assertEqual(len(attempt['samples']), 32)
+        for sample in attempt['samples']:
+            self.assertEqual(sample['logical_bytes'], shared.GIB)
+            self.assertEqual(sample['allocated_bytes'], 64 * shared.MIB)
+            self.assertEqual(sample['kubelet_used_bytes'], 4096)
+            self.assertEqual(sample['kubelet_minus_physical_bytes'], 4096 - 64 * shared.MIB)
+        self.assertLess(len(json.dumps(attempt)), 32768)
+
+    def test_accounting_timeout_retains_missing_summary_value_without_turning_it_into_zero(self):
+        observer = shared.Observer(None, None, shared.NODE, {})
+        observer.deadline = 85
+        value = {'allocated_bytes': 64 * shared.MIB, 'kubelet_used_bytes': None}
+        with patch.object(shared.time, 'monotonic', side_effect=[0, 0, 0, 90]), patch.object(shared.time, 'sleep'), \
+                patch.object(observer, 'sample', return_value=value) as sample:
+            with self.assertRaisesRegex(RuntimeError, 'did not match physical'):
+                observer.accounted(shared.pod_identity(pod()), 'after')
+        self.assertEqual(sample.call_count, 1)
+        saved = observer.report['accounting_attempts'][0]['samples'][0]
+        self.assertIsNone(saved['kubelet_used_bytes'])
+        self.assertIsNone(saved['kubelet_minus_physical_bytes'])
+
+    def test_failed_summary_request_keeps_the_completed_physical_observation(self):
+        observer = shared.Observer(None, lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('summary unavailable')),
+                                   shared.NODE, {})
+        observer.deadline = 100
+        physical = {'device': 20, 'inode': 30, 'logical_bytes': shared.GIB, 'allocated_bytes': 64 * shared.MIB}
+        with patch.object(shared.time, 'monotonic', return_value=0), patch.object(observer, 'filestore', return_value=physical):
+            with self.assertRaisesRegex(RuntimeError, 'summary unavailable'):
+                observer.accounted(shared.pod_identity(pod()), 'before')
+        attempt = observer.report['accounting_attempts'][0]
+        self.assertEqual(attempt['status'], 'observation-failed')
+        self.assertEqual(attempt['samples'][0]['physical'], physical)
+        self.assertEqual(attempt['samples'][0]['error_type'], 'RuntimeError')
+
+    def test_successful_accounting_retains_prior_mismatch_without_relaxing_tolerance(self):
+        observer = shared.Observer(None, None, shared.NODE, {})
+        observer.deadline = 100
+        physical = {'device': 20, 'inode': 30, 'logical_bytes': shared.GIB, 'allocated_bytes': 64 * shared.MIB}
+        observations = [{**physical, 'kubelet_used_bytes': 0}, {**physical, 'kubelet_used_bytes': 64 * shared.MIB + 4096}]
+        with patch.object(shared.time, 'monotonic', return_value=0), patch.object(shared.time, 'sleep'), \
+                patch.object(observer, 'sample', side_effect=observations):
+            result = observer.accounted(shared.pod_identity(pod()), 'before')
+        self.assertEqual(result, observations[-1])
+        attempt = observer.report['accounting_attempts'][0]
+        self.assertEqual(attempt['status'], 'matched')
+        self.assertEqual(attempt['tolerance_bytes'], shared.MIB)
+        self.assertEqual([sample['kubelet_used_bytes'] for sample in attempt['samples']], [0, 64 * shared.MIB + 4096])
+
     def test_physical_blocks_are_measured_instead_of_sparse_logical_size(self):
         value = shared.verify_filestore('ext4|ef53\nregular file|1|20|30|67108864|4096\n')
         self.assertEqual(value['allocated_bytes'], 2 * shared.MIB)
