@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -22,6 +24,8 @@ import (
 // TestActionsRepresentativeBuildFixture generates a credential-free product pod
 // for a private repository's opt-in development acceptance. The source archive
 // travels separately, never in Kubernetes objects or public build artifacts.
+// HAKOPOD_ACTIONS_REPRESENTATIVE_STORAGE=shared-overlay2-16 selects the explicit
+// shared-workspace comparison; an absent value retains the original VFS pod.
 func TestActionsRepresentativeBuildFixture(t *testing.T) {
 	directory := os.Getenv("HAKOPOD_ACTIONS_REPRESENTATIVE_DIR")
 	if directory == "" {
@@ -72,6 +76,10 @@ runpy.run_path(sys.argv[0], run_name='__main__')
 	pod.Spec.Containers[0].VolumeMounts = pod.Spec.Containers[0].VolumeMounts[:1]
 	pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", wrapper}
 	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT", Value: "k3d-hakopod-dev"})
+	pod.Labels["hakopod.io/development-fixture"] = "actions-representative-build"
+	if err := actionsRepresentativeSharedWorkspaceFixture(pod, os.Getenv("HAKOPOD_ACTIONS_REPRESENTATIVE_STORAGE")); err != nil {
+		t.Fatal(err)
+	}
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != ActionsRuntime || pod.Spec.HostNetwork || pod.Spec.HostPID || pod.Spec.HostIPC {
 		t.Fatal("representative build lost the product sandbox boundary")
 	}
@@ -122,5 +130,73 @@ runpy.run_path(sys.argv[0], run_name='__main__')
 	}
 	if err := os.WriteFile(filepath.Join(directory, "representative.json"), data, 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestActionsRepresentativeStorageProfilesPreserveProductFixture(t *testing.T) {
+	directory := t.TempDir()
+	script := filepath.Join(directory, "private-helper.py")
+	if err := os.WriteFile(script, []byte("print('development fixture')\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HAKOPOD_ACTIONS_REPRESENTATIVE_DIR", directory)
+	t.Setenv("HAKOPOD_ACTIONS_REPRESENTATIVE_SCRIPT", script)
+	var baseline *corev1.Pod
+	var baselineObjects []json.RawMessage
+	for _, selection := range []string{"", "baseline-vfs", "shared-overlay2-16"} {
+		t.Setenv("HAKOPOD_ACTIONS_REPRESENTATIVE_STORAGE", selection)
+		TestActionsRepresentativeBuildFixture(t)
+		data, err := os.ReadFile(filepath.Join(directory, "representative.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fixture struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal(data, &fixture); err != nil {
+			t.Fatal(err)
+		}
+		var pod *corev1.Pod
+		var other []json.RawMessage
+		for _, raw := range fixture.Items {
+			var item corev1.Pod
+			if err := json.Unmarshal(raw, &item); err != nil {
+				t.Fatal(err)
+			}
+			if item.Kind != "Pod" {
+				other = append(other, raw)
+				continue
+			}
+			if pod != nil {
+				t.Fatal("representative acceptance generated more than one Pod")
+			}
+			pod = &item
+		}
+		if pod == nil || pod.Name != "actions-representative" || pod.Labels["hakopod.io/development-fixture"] != "actions-representative-build" || pod.Spec.ActiveDeadlineSeconds == nil || *pod.Spec.ActiveDeadlineSeconds != 3300 {
+			t.Fatal("representative fixture lost its exact identity or deadline")
+		}
+		if selection == "" {
+			baseline, baselineObjects = pod, other
+			if len(pod.Annotations) != 0 || pod.Spec.InitContainers[1].Command[2] != actionsDaemon {
+				t.Fatal("default representative fixture no longer uses unchanged VFS")
+			}
+			continue
+		}
+		if !reflect.DeepEqual(other, baselineObjects) {
+			t.Fatal("representative storage selection changed the namespace, quota, or network policy")
+		}
+		if selection == "shared-overlay2-16" {
+			expected := map[string]string{"dev.gvisor.spec.mount.runner.type": "bind", "dev.gvisor.spec.mount.runner.share": "pod", "dev.gvisor.spec.mount.runner.options": "rw,rprivate,mode=0770,uid=1001,gid=1001,size=17g"}
+			if !reflect.DeepEqual(pod.Annotations, expected) || pod.Spec.InitContainers[1].Command[2] != strings.Replace(actionsDaemon, "--storage-driver=vfs", "--storage-driver=overlay2", 1) || !strings.HasSuffix(pod.Spec.Containers[0].Command[3], baseline.Spec.Containers[0].Command[3]) || !strings.Contains(pod.Spec.InitContainers[0].Command[2], ".hakopod-shared-prepare") {
+				t.Fatal("representative storage did not retain its exact disk hints, driver, and staging checkpoint")
+			}
+			pod.Annotations = baseline.Annotations
+			pod.Spec.InitContainers[0].Command = baseline.Spec.InitContainers[0].Command
+			pod.Spec.InitContainers[1].Command = baseline.Spec.InitContainers[1].Command
+			pod.Spec.Containers[0].Command = baseline.Spec.Containers[0].Command
+		}
+		if !reflect.DeepEqual(pod, baseline) {
+			t.Fatal("representative storage changed product resources, images, credentials, placement, or security")
+		}
 	}
 }

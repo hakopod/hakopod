@@ -67,6 +67,30 @@ def docker(driver='vfs'):
         'version': {'Version': '29.8.1', 'GitCommit': '464cd50', 'Os': 'linux', 'Arch': 'amd64'}}
 
 
+def representative_pod():
+    value = pod(driver='overlay2')
+    value['metadata'].update(name='actions-representative',
+        labels={'hakopod.io/development-fixture': 'actions-representative-build'},
+        annotations=shared.annotations(16, profile='representative-16'))
+    value['spec'].update(nodeSelector={'kubernetes.io/arch': 'arm64', 'hakopod.io/actions-runtime': 'ready'},
+                         overhead={'cpu': '100m', 'memory': '512Mi'})
+    value['spec']['volumes'][0]['emptyDir']['sizeLimit'] = '16Gi'
+    value['spec']['initContainers'].insert(0, {'name': 'prepare'})
+    for item, cpu, memory, request, limit in zip(
+            [*value['spec']['initContainers'], *value['spec']['containers']],
+            ('1900m', '1425m', '475m'), ('5632Mi', '4224Mi', '1408Mi'),
+            ('16Gi', '256Mi', '16Gi'), ('17Gi', '2Gi', '17Gi')):
+        item['resources'] = {'requests': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': request},
+                             'limits': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': limit}}
+    return value
+
+
+def representative_docker():
+    value = docker('overlay2')
+    value['machine'], value['version']['Arch'] = 'aarch64', 'arm64'
+    return value
+
+
 class SelectionTests(unittest.TestCase):
     def test_dispatch_mode_cannot_silently_fall_back_to_disabled(self):
         for mode, flag, driver in [('disabled', '0', 'vfs'), ('vfs', '1', 'vfs'), ('overlay2', '1', 'overlay2')]:
@@ -116,6 +140,115 @@ class SelectionTests(unittest.TestCase):
         other = '\n[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc]\npod_annotations = ["dev.*"]\n'
         with self.assertRaises(RuntimeError):
             shared.verify_runtime_config(changed + other)
+
+
+class RepresentativeTests(unittest.TestCase):
+    def test_profile_is_explicit_and_does_not_expand_runtime_sizes(self):
+        value = representative_pod()
+        identity = shared.pod_identity(value, 'overlay2', profile='representative-16')
+        self.assertEqual((identity['name'], identity['workspace_gib'], identity['profile']),
+                         ('actions-representative', 16, 'representative-16'))
+        self.assertEqual(shared.verify_mount(mount(16), identity)['limit_bytes'], 17 * shared.GIB)
+        with self.assertRaises(RuntimeError):
+            shared.annotations(16)
+        with self.assertRaises(RuntimeError):
+            shared.pod_identity(value, 'overlay2')
+        with self.assertRaises(RuntimeError):
+            shared.pod_identity(pod(driver='overlay2'), 'overlay2', profile='representative-16')
+        for size in (2, 4, 8, 17):
+            with self.subTest(size=size), self.assertRaises(RuntimeError):
+                shared.annotations(size, profile='representative-16')
+        for profile in ('', 'shared-overlay2-16', 'representative-16\n', None):
+            with self.subTest(profile=profile), self.assertRaises(RuntimeError):
+                shared.Observer(None, None, shared.NODE, {}, driver='overlay2', profile=profile)
+        with self.assertRaises(RuntimeError):
+            shared.Observer(None, None, shared.NODE, {}, profile='representative-16')
+
+    def test_profile_requires_exact_admitted_identity_annotations_and_budget(self):
+        mutations = [lambda v: v['metadata'].update(name='actions-runtime-fixture'),
+            lambda v: v['metadata'].update(labels={}),
+            lambda v: v['metadata']['annotations'].update({shared.PREFIX + 'source': '/other'}),
+            lambda v: v['metadata']['annotations'].update({shared.KEYS[2]: shared.annotations(8)[shared.KEYS[2]]}),
+            lambda v: v['spec']['nodeSelector'].update({'kubernetes.io/arch': 'amd64'}),
+            lambda v: v['spec']['nodeSelector'].pop('hakopod.io/actions-runtime'),
+            lambda v: v['spec']['volumes'][0]['emptyDir'].update(sizeLimit='8Gi'),
+            lambda v: v['spec']['volumes'][0]['emptyDir'].update(medium='Memory'),
+            lambda v: v['spec']['overhead'].update(memory='1Gi'),
+            lambda v: v['spec']['initContainers'].append({'name': 'unrelated'}),
+            lambda v: v['spec']['volumes'].append({'name': 'extra', 'emptyDir': {}})]
+        for mutate in mutations:
+            value = representative_pod()
+            mutate(value)
+            with self.subTest(mutation=mutate), self.assertRaises(RuntimeError):
+                shared.pod_identity(value, 'overlay2', profile='representative-16')
+        for kind, index in (('initContainers', 0), ('initContainers', 1), ('containers', 0)):
+            for bound in ('requests', 'limits'):
+                for resource in ('cpu', 'memory', 'ephemeral-storage'):
+                    value = representative_pod()
+                    value['spec'][kind][index]['resources'][bound][resource] = '1'
+                    with self.subTest(kind=kind, index=index, bound=bound, resource=resource), self.assertRaises(RuntimeError):
+                        shared.pod_identity(value, 'overlay2', profile='representative-16')
+
+    def test_sandbox_accounting_and_exec_use_the_validated_representative_name(self):
+        identity = shared.pod_identity(representative_pod(), 'overlay2', profile='representative-16')
+        value = sandbox()
+        with self.assertRaises(RuntimeError):
+            shared.verify_sandbox(value, identity, SANDBOX)
+        value['items'][0]['metadata']['name'] = identity['name']
+        shared.verify_sandbox(value, identity, SANDBOX)
+        summary = stats(4096)
+        self.assertIsNone(shared.volume_accounting(summary, identity))
+        summary['pods'][0]['podRef']['name'] = identity['name']
+        self.assertEqual(shared.volume_accounting(summary, identity), 4096)
+        with patch.object(shared.time, 'monotonic', return_value=0):
+            with patch('subprocess.run', side_effect=AssertionError('test launched a process')):
+                calls = []
+                def kube(args, **kwargs):
+                    calls.append(args)
+                    return SimpleNamespace(stdout='10\n11\n')
+                observer = shared.Observer(None, kube, shared.NODE, {}, driver='overlay2', profile='representative-16')
+                observer.deadline = 60
+                observer.runner(identity, 'print(1)')
+                observer.daemon_sharing(identity, {'runner_inode': 10, 'capability_inode': 11})
+        self.assertEqual([args[3] for args in calls], ['actions-representative', 'actions-representative'])
+
+    def test_representative_cannot_skip_full_checks_or_run_the_runtime_eviction_probe(self):
+        observer = shared.Observer(None, None, shared.NODE, {}, driver='overlay2', profile='representative-16')
+        for full, disk in ((False, False), (True, True), (1, False)):
+            with self.subTest(full=full, disk=disk), patch.object(observer, 'host') as host:
+                with self.assertRaisesRegex(RuntimeError, 'full accounting'):
+                    observer.prepare(representative_pod(), lambda **kwargs: None, full=full, disk=disk)
+                host.assert_not_called()
+
+    def test_full_probe_preserves_accounting_restart_and_physical_cleanup(self):
+        inodes = {'runner_inode': 10, 'capability_inode': 11}
+        before = {'device': 20, 'inode': 30, 'allocated_bytes': 64 * shared.MIB, 'kubelet_used_bytes': 64 * shared.MIB}
+        after = {**before, 'allocated_bytes': 80 * shared.MIB, 'kubelet_used_bytes': 80 * shared.MIB}
+        sandboxes = sandbox()
+        sandboxes['items'][0]['metadata']['name'] = 'actions-representative'
+        observer = shared.Observer(None, lambda *args, **kwargs: SimpleNamespace(stdout='10\n11\n'),
+                                   shared.NODE, {}, driver='overlay2', profile='representative-16')
+        with patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandboxes)]) as host, \
+                patch.object(observer, 'runner', side_effect=[json.dumps(mount(16)), json.dumps(representative_docker()),
+                    json.dumps(inodes), '', json.dumps(inodes), json.dumps(representative_docker()), '']) as runner, \
+                patch.object(observer, 'accounted', side_effect=[before, after]) as accounted, \
+                patch.object(shared.time, 'monotonic', return_value=0), \
+                patch.object(observer, 'sample', return_value=after), patch('subprocess.run') as restart:
+            evidence = observer.prepare(representative_pod(), restart)
+        self.assertEqual(evidence['status'], 'passed')
+        self.assertTrue(evidence['full_probe'])
+        self.assertTrue(evidence['docker_archive_metadata'])
+        self.assertEqual(evidence['shared_inodes'], inodes)
+        self.assertEqual(evidence['accounting']['physical_growth_bytes'], 16 * shared.MIB)
+        self.assertEqual([call.args[1] for call in accounted.call_args_list], ['before', 'after'])
+        restart.assert_called_once()
+        self.assertEqual(host.call_args_list[1].args[0][3], 'actions-representative')
+        self.assertIn('.hakopod-shared-continue', runner.call_args_list[-1].args[1])
+        self.assertNotIn('disk_physical_monitor', observer.report)
+        with patch.object(observer, 'host', return_value='') as host:
+            observer.removed(UID)
+        self.assertEqual(host.call_args.args[0][-1], evidence['identity']['source'])
+        self.assertEqual(observer.report['removed_workspaces'], [{'uid': UID, 'sandbox_id': SANDBOX, 'source_absent': True}])
 
 
 class IdentityTests(unittest.TestCase):
