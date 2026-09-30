@@ -16,16 +16,17 @@ import (
 // sandbox selection and resource limits on every reconciliation.
 type WorkloadPolicy struct {
 	// Recreate avoids surge pods when a tenant reserves a fixed memory budget.
-	StorageClass      string
-	Recreate          bool
-	IdleHTTP          bool
-	NodeName          string
-	Pool              string
-	RuntimeClass      string
-	MemoryRequest     string
-	Quota             map[string]string
-	EgressPorts       []int32
-	DeniedEgressCIDRs []string
+	StorageClass            string
+	Recreate                bool
+	IdleHTTP                bool
+	NodeName                string
+	Pool                    string
+	RuntimeClass            string
+	MemoryRequest           string
+	Quota                   map[string]string
+	EgressPorts             []int32
+	DeniedEgressCIDRs       []string
+	ActionsWorkspaceProfile ActionsWorkspaceProfile
 }
 
 type WorkloadPolicyResolver func(context.Context, string, string, spec.Application) (WorkloadPolicy, error)
@@ -64,6 +65,9 @@ func (c *Client) workloadPolicy(ctx context.Context, t Target) (*WorkloadPolicy,
 }
 
 func checkedWorkloadPolicy(p WorkloadPolicy) (*WorkloadPolicy, error) {
+	if _, err := normalizedActionsWorkspaceProfile(p.ActionsWorkspaceProfile); err != nil {
+		return nil, err
+	}
 	if p.NodeName == "" || len(p.Quota) > 32 || len(p.EgressPorts) > 16 || len(p.DeniedEgressCIDRs) > 16 {
 		return nil, fmt.Errorf("invalid runtime workload policy")
 	}

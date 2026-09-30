@@ -49,9 +49,10 @@ func (c *Client) actionsRuntimeAvailable(ctx context.Context) error {
 }
 
 type actionsPlacement struct {
-	nodeName string
-	policy   *WorkloadPolicy
-	selector map[string]string
+	nodeName         string
+	policy           *WorkloadPolicy
+	selector         map[string]string
+	workspaceProfile ActionsWorkspaceProfile
 }
 
 // ActionsScopeAvailable checks discovery readiness without inventing a pool or
@@ -90,7 +91,7 @@ func (c *Client) availableActionsPlacement(ctx context.Context, policy *Workload
 	if c.options.DeploymentMode == DeploymentManagedCloud && policy == nil && c.options.DedicatedPublicTCPNode == "" && c.options.OperatorNodeLimit == 0 {
 		return nil, fmt.Errorf("Managed Actions compute is not allocated to this environment")
 	}
-	p := &actionsPlacement{nodeName: s.NodeName, policy: policy, selector: mergeActionsSelector(nil)}
+	p := &actionsPlacement{nodeName: s.NodeName, policy: policy, selector: mergeActionsSelector(nil), workspaceProfile: ActionsWorkspaceVFS}
 	if s.Architecture != "" {
 		p.selector["kubernetes.io/arch"] = s.Architecture
 	}
@@ -102,7 +103,60 @@ func (c *Client) availableActionsPlacement(ctx context.Context, policy *Workload
 		if policy.Pool != "" {
 			p.selector["hakopod.com/pool"] = policy.Pool
 		}
+		if githubActionsService(s) {
+			profile, err := normalizedActionsWorkspaceProfile(policy.ActionsWorkspaceProfile)
+			if err != nil {
+				return nil, err
+			}
+			p.workspaceProfile = profile
+			if profile == ActionsWorkspaceSharedOverlay2V1 {
+				p.selector[ActionsWorkspaceCapabilityLabel] = string(profile)
+			}
+		}
 	}
+	// A self-hosted operator opts in by enrolling a node after its functional
+	// probe. Cloud allocation and explicit VFS policies never borrow this opt-in.
+	selfHosted := c.options.DeploymentMode == "" || c.options.DeploymentMode == DeploymentSelfHosted
+	preferShared := selfHosted && policy == nil && githubActionsService(s)
+	if preferShared && p.nodeName == "" {
+		// Query qualified nodes directly so an unrelated first inventory page
+		// cannot hide enrollment in a larger installation.
+		p.workspaceProfile = ActionsWorkspaceSharedOverlay2V1
+		p.selector[ActionsWorkspaceCapabilityLabel] = string(ActionsWorkspaceSharedOverlay2V1)
+		qualified, err := c.actionsPlacementNodes(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		for _, node := range qualified {
+			if p.matches(node) {
+				return p, nil
+			}
+		}
+		p.workspaceProfile = ActionsWorkspaceVFS
+		delete(p.selector, ActionsWorkspaceCapabilityLabel)
+	}
+	candidates, err := c.actionsPlacementNodes(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if preferShared {
+		for _, node := range candidates {
+			if p.matches(node) && node.Labels[ActionsWorkspaceCapabilityLabel] == string(ActionsWorkspaceSharedOverlay2V1) {
+				p.workspaceProfile = ActionsWorkspaceSharedOverlay2V1
+				p.selector[ActionsWorkspaceCapabilityLabel] = string(ActionsWorkspaceSharedOverlay2V1)
+				return p, nil
+			}
+		}
+	}
+	for _, node := range candidates {
+		if p.matches(node) {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("No ready Managed Actions node matches this pool's placement")
+}
+
+func (c *Client) actionsPlacementNodes(ctx context.Context, p *actionsPlacement) ([]corev1.Node, error) {
 	selector := labels.SelectorFromSet(p.selector)
 	var candidates []corev1.Node
 	if p.nodeName != "" {
@@ -121,12 +175,7 @@ func (c *Client) availableActionsPlacement(ctx context.Context, policy *Workload
 		}
 		candidates = nodes.Items
 	}
-	for _, n := range candidates {
-		if selector.Matches(labels.Set(n.Labels)) && actionsNodeUnavailable(n, policy) == "" {
-			return p, nil
-		}
-	}
-	return nil, fmt.Errorf("No ready Managed Actions node matches this pool's placement")
+	return candidates, nil
 }
 
 func actionsNodeReady(n corev1.Node) bool {
@@ -220,11 +269,23 @@ func (c *Client) SaveActionsConfig(ctx context.Context, t Target, service, id, c
 		if e != nil {
 			return e
 		}
-		return owned(current, t)
+		return checkActionsConfig(current, t, service)
 	}
 	return err
 }
 func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id string, s spec.Service) error {
+	if err := beforeStep(ctx, t); err != nil {
+		return err
+	}
+	// Running jobs keep their selected filesystem and Docker store. Capability
+	// changes affect only a fresh pod, never a retry for an existing job.
+	current, err := c.kube.CoreV1().Pods(Namespace(t.ApplicationID)).Get(ctx, "actions-"+id, metav1.GetOptions{})
+	if err == nil {
+		return c.existingActionsPod(ctx, t, service, current)
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
 	placement, err := c.actionsPoolPlacement(ctx, t, s)
 	if err != nil {
 		return err
@@ -240,6 +301,9 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 		pinActionsNode(&p.Spec, placement.nodeName)
 	}
 	p.Spec.NodeSelector = placement.selector
+	if err = applyActionsWorkspaceProfile(p, spec.ActionsWorkspaceGiB(s.Actions), placement.workspaceProfile); err != nil {
+		return err
+	}
 	if err = beforeStep(ctx, t); err != nil {
 		return err
 	}
@@ -247,7 +311,13 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 	if err != nil {
 		return err
 	}
-	if err = owned(secret, t); err != nil {
+	if err = checkActionsConfig(secret, t, service); err != nil {
+		return err
+	}
+	if err = beforeStep(ctx, t); err != nil {
+		return err
+	}
+	if err = c.revalidateActionsWorkspacePlacement(ctx, placement); err != nil {
 		return err
 	}
 	_, err = c.kube.CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
@@ -256,9 +326,45 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 		if e != nil {
 			return e
 		}
-		return owned(current, t)
+		return c.existingActionsPod(ctx, t, service, current)
 	}
 	return err
+}
+
+func (c *Client) existingActionsPod(ctx context.Context, t Target, service string, pod *corev1.Pod) error {
+	if err := owned(pod, t); err != nil {
+		return err
+	}
+	if pod.Labels[serviceKey] != service || pod.Labels["hakopod.io/actions-provider"] != "" && pod.Labels["hakopod.io/actions-provider"] != "github" {
+		return fmt.Errorf("the Actions pod belongs to another service")
+	}
+	configurationBound := false
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == "jit" && volume.Secret != nil && volume.Secret.SecretName == pod.Name {
+			configurationBound = true
+		}
+	}
+	if !configurationBound {
+		return fmt.Errorf("the Actions pod does not use its original configuration")
+	}
+	secret, err := c.kube.CoreV1().Secrets(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	return checkActionsConfig(secret, t, service)
+}
+
+func checkActionsConfig(secret *corev1.Secret, t Target, service string) error {
+	if err := owned(secret, t); err != nil {
+		return err
+	}
+	if secret.Labels[serviceKey] != service {
+		return fmt.Errorf("the Actions configuration belongs to another service")
+	}
+	if secret.Immutable == nil || !*secret.Immutable || len(secret.Data["config"]) == 0 || len(secret.Data["config"]) > 128<<10 {
+		return fmt.Errorf("the original Actions configuration must be immutable and bounded")
+	}
+	return nil
 }
 func (c *Client) ActionsPodPhase(ctx context.Context, t Target, id string) (string, error) {
 	p, err := c.kube.CoreV1().Pods(Namespace(t.ApplicationID)).Get(ctx, "actions-"+id, metav1.GetOptions{})
