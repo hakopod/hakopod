@@ -51,6 +51,34 @@ test('an action bar leaving through the top does not hide the persistent error',
   )
 })
 
+test('a footer near the top uses the larger gap below for a readable, dismissible error', () => {
+  assert.deepEqual(
+    toastPosition(toastArea, viewport, [{ top: 50, bottom: 190, left: 16, right: 304 }]),
+    { footerSpace: 0, maxHeight: 622 },
+  )
+})
+
+test('unordered and overlapping footers preserve the largest contiguous gap', () => {
+  const footers = [
+    { top: 650, bottom: 790, left: 16, right: 304 },
+    { top: 50, bottom: 190, left: 16, right: 304 },
+    { top: 700, bottom: 840, left: 16, right: 304 },
+    { top: 80, bottom: 150, left: 16, right: 304 },
+  ]
+  const original = structuredClone(footers)
+  const expected = { footerSpace: 194, maxHeight: 428 }
+  assert.deepEqual(toastPosition(toastArea, viewport, footers), expected)
+  assert.deepEqual(toastPosition(toastArea, viewport, [...footers].reverse()), expected)
+  assert.deepEqual(footers, original)
+})
+
+test('equally sized gaps prefer the space above the action bar', () => {
+  assert.deepEqual(
+    toastPosition(toastArea, viewport, [{ top: 352, bottom: 492, left: 16, right: 304 }]),
+    { footerSpace: 492, maxHeight: 320 },
+  )
+})
+
 test('dialog toasts use their own containing area instead of the page bottom', () => {
   const dialog = { top: 150, bottom: 700, left: 28, right: 292 }
   const position = toastPosition(dialog, viewport, [
@@ -59,6 +87,13 @@ test('dialog toasts use their own containing area instead of the page bottom', (
   ])
   assert.deepEqual(position, { footerSpace: 100, maxHeight: 418 })
   assert.equal(dialog.bottom - 16 - position.footerSpace, 584)
+})
+
+test('a container outside the visible viewport keeps a zero height limit', () => {
+  assert.deepEqual(toastPosition({ top: 900, bottom: 1100, left: 28, right: 292 }, viewport, []), {
+    footerSpace: 256,
+    maxHeight: 0,
+  })
 })
 
 test('visual viewport changes leave toast content above the keyboard and inside view', () => {
