@@ -1,0 +1,299 @@
+name: Managed BuildKit candidate
+on:
+  pull_request:
+    paths: ['images/buildkit/**', '.github/workflows/buildkit-image.yml']
+  workflow_dispatch:
+    inputs:
+      publish_candidate:
+        description: Publish candidate digests for isolated runtime qualification
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      publish_candidate:
+        description: Publish candidate digests for isolated runtime qualification
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: managed-buildkit-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 3GiB
+      CGO_ENABLED: '0'
+      GOFLAGS: '-p=2 -mod=vendor'
+      GOTOOLCHAIN: local
+      ARCH: ${{ matrix.arch }}
+      IMAGE_REPOSITORY: ghcr.io/hakopod/buildkit
+      UPSTREAM_REVISION: 991535e0973488b6a429096d21fa13f81f2d89d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check out the exact upstream source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: moby/buildkit
+          ref: 991535e0973488b6a429096d21fa13f81f2d89d8
+          path: upstream-buildkit
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.26.8'
+          cache-dependency-path: upstream-buildkit/go.sum
+      - name: Apply the managed overlay compatibility patch
+        working-directory: upstream-buildkit
+        run: |
+          git apply --check ../images/buildkit/userxattr.patch
+          git apply ../images/buildkit/userxattr.patch
+          test -z "$(gofmt -l $(git diff --name-only -- '*.go') $(git ls-files --others --exclude-standard -- '*.go'))"
+      - name: Test namespace routing, errors and immutable snapshot modes
+        working-directory: upstream-buildkit
+        run: |
+          go test ./util/overlay ./snapshot ./cmd/buildkitd \
+            -run 'Test(OverlayFlag|LegacyOverlayFlag|UpperView|UserXAttrVolume|UserXAttrRefuses|UserXAttrProbeFailure|UserXAttrApplier|MergeRoutesExplicit|MergeDoesNotApply|ManagedUserXAttrFlag|ManagedUserXAttrRejects)' \
+            -count=1 -timeout=5m
+      - name: Compile the native BuildKit daemon
+        working-directory: upstream-buildkit
+        run: |
+          go build -trimpath -tags 'osusergo netgo static_build seccomp' \
+            -ldflags "-s -w -X github.com/moby/buildkit/version.Version=v0.32.2-hakopod-${GITHUB_SHA} -X github.com/moby/buildkit/version.Revision=991535e0973488b6a429096d21fa13f81f2d89d8" \
+            -o ../images/buildkit/buildkitd ./cmd/buildkitd
+      - name: Compile native tests for managed sandbox qualification
+        working-directory: upstream-buildkit
+        run: |
+          mkdir -p "../buildkit-tests/${ARCH}"
+          go test -c -trimpath -tags 'osusergo netgo static_build seccomp' \
+            -o "../buildkit-tests/${ARCH}/overlay.test" ./util/overlay
+          go test -c -trimpath -tags 'osusergo netgo static_build seccomp' \
+            -o "../buildkit-tests/${ARCH}/buildkitd.test" ./cmd/buildkitd
+      - name: Package the native candidate
+        run: |
+          tag="${IMAGE_REPOSITORY}:${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ARCH}"
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -t "$tag" images/buildkit
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$tag")" = "linux/${ARCH}"
+          docker run --rm --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --cpus=1 --memory=256m \
+            "$tag" --version
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          arch = os.environ["ARCH"]
+          test_dir = Path("buildkit-tests") / arch
+          test_paths = [test_dir / "overlay.test", test_dir / "buildkitd.test"]
+          if any(not 0 < path.stat().st_size <= 256 * 1024**2 for path in test_paths):
+              raise SystemExit("Native test binary exceeds the qualification artifact allowance")
+          files = {
+              "buildkitd": Path("images/buildkit/buildkitd"),
+              "userxattr.patch": Path("images/buildkit/userxattr.patch"),
+              "overlay.test": test_dir / "overlay.test",
+              "buildkitd.test": test_dir / "buildkitd.test",
+          }
+          checksums = {}
+          for name, path in files.items():
+              with path.open("rb") as source:
+                  checksums[name] = hashlib.file_digest(source, "sha256").hexdigest()
+          identity = {
+              "schema": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "revision": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "architecture": arch,
+              "upstream_revision": os.environ["UPSTREAM_REVISION"],
+              "sha256": checksums,
+          }
+          encoded = json.dumps(identity, indent=2) + "\n"
+          if len(encoded.encode()) > 16 * 1024 or sum(path.stat().st_size for path in test_paths) + len(encoded.encode()) > 512 * 1024**2:
+              raise SystemExit("Native test archive exceeds the qualification artifact allowance")
+          Path(f"buildkit-{arch}-source.json").write_text(encoded)
+          (test_dir / "source.json").write_text(encoded)
+          PY
+          tar -czf "buildkit-tests-${ARCH}.tar.gz" -C "buildkit-tests/${ARCH}" \
+            overlay.test buildkitd.test source.json
+          test "$(stat -c '%s' "buildkit-tests-${ARCH}.tar.gz")" -le 536870912
+      - name: Retain candidate source identity
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: buildkit-source-${{ matrix.arch }}
+          path: buildkit-${{ matrix.arch }}-source.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      - name: Retain native sandbox tests outside the candidate image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: buildkit-tests-${{ matrix.arch }}
+          path: buildkit-tests-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 14
+      - name: Publish candidate architecture for isolated runtime tests
+        if: inputs.publish_candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          trap 'docker logout ghcr.io' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tag="${IMAGE_REPOSITORY}:${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ARCH}"
+          docker push "$tag"
+          docker image inspect --format '{{json .RepoDigests}}' "$tag" > repo-digests.json
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          repository = os.environ["IMAGE_REPOSITORY"]
+          references = json.loads(Path("repo-digests.json").read_text())
+          if not isinstance(references, list) or len(references) != 1:
+              raise SystemExit("Expected exactly one pushed image digest")
+          reference = references[0]
+          if not isinstance(reference, str) or not re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", reference):
+              raise SystemExit("Unexpected pushed image digest or repository")
+          arch = os.environ["ARCH"]
+          identity = json.loads(Path(f"buildkit-{arch}-source.json").read_text())
+          identity["reference"] = reference
+          identity["tag"] = f"{repository}:{identity['revision']}-{identity['run_id']}-{identity['run_attempt']}-{arch}"
+          Path("digests").mkdir()
+          Path(f"digests/{arch}.json").write_text(json.dumps(identity, indent=2) + "\n")
+          PY
+      - name: Retain the exact pushed architecture digest
+        if: inputs.publish_candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: buildkit-digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+  manifest:
+    needs: image
+    if: inputs.publish_candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: buildkit-digest-*
+          path: digests
+          merge-multiple: true
+      - name: Validate architecture identity before assembling by digest
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          repository = "ghcr.io/hakopod/buildkit"
+          upstream = "991535e0973488b6a429096d21fa13f81f2d89d8"
+          paths = sorted(Path("digests").iterdir())
+          if [path.name for path in paths] != ["amd64.json", "arm64.json"]:
+              raise SystemExit("Expected exactly one digest artifact for each native architecture")
+          identities = []
+          for path in paths:
+              identity = json.loads(path.read_text())
+              arch = path.stem
+              expected = {
+                  "schema": 1, "architecture": arch,
+                  "repository": os.environ["GITHUB_REPOSITORY"],
+                  "revision": os.environ["GITHUB_SHA"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "upstream_revision": upstream,
+              }
+              if not isinstance(identity, dict) or any(identity.get(key) != value for key, value in expected.items()):
+                  raise SystemExit(f"Candidate identity mismatch for {arch}")
+              attempt = identity.get("run_attempt")
+              # A failed-job rerun can reuse the other architecture's successful earlier attempt.
+              if type(attempt) is not int or not 1 <= attempt <= int(os.environ["GITHUB_RUN_ATTEMPT"]):
+                  raise SystemExit(f"Invalid run attempt for {arch}")
+              expected_tag = f"{repository}:{identity['revision']}-{identity['run_id']}-{attempt}-{arch}"
+              if identity.get("tag") != expected_tag:
+                  raise SystemExit(f"Candidate tag mismatch for {arch}")
+              reference = identity.get("reference", "")
+              if not isinstance(reference, str) or not re.fullmatch(re.escape(repository) + r"@sha256:[0-9a-f]{64}", reference):
+                  raise SystemExit(f"Invalid candidate digest for {arch}")
+              checksums = identity.get("sha256")
+              names = {"buildkitd", "userxattr.patch", "overlay.test", "buildkitd.test"}
+              if not isinstance(checksums, dict) or checksums.keys() != names or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in checksums.values()):
+                  raise SystemExit(f"Invalid source checksums for {arch}")
+              identities.append(identity)
+          if identities[0]["sha256"]["userxattr.patch"] != identities[1]["sha256"]["userxattr.patch"]:
+              raise SystemExit("Architectures were compiled from different patches")
+          if identities[0]["reference"] == identities[1]["reference"]:
+              raise SystemExit("Native architecture digests unexpectedly match")
+          Path("candidate-sources.json").write_text(json.dumps(identities, indent=2) + "\n")
+          Path("candidate-references.txt").write_text("".join(item["reference"] + "\n" for item in identities))
+          PY
+      - name: Publish a candidate manifest with no release alias
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          trap 'docker logout ghcr.io' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image=ghcr.io/hakopod/buildkit
+          candidate="$image:v0.32.2-hakopod-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mapfile -t references < candidate-references.txt
+          docker buildx imagetools create -t "$candidate" -t "$image:v0.32.2-hakopod-${GITHUB_SHA}" \
+            "${references[@]}"
+          docker buildx imagetools inspect "$candidate" --format '{{.Manifest.Digest}}' > candidate-digest.txt
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          digest = Path("candidate-digest.txt").read_text().strip()
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit("Registry did not return a candidate manifest digest")
+          reference = "ghcr.io/hakopod/buildkit@" + digest
+          qualification_reference = f"ghcr.io/hakopod/buildkit:v0.32.2-hakopod-{os.environ['GITHUB_SHA']}@{digest}"
+          record = {
+              "schema": 1,
+              "reference": reference,
+              "qualification_reference": qualification_reference,
+              "revision": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "architectures": json.loads(Path("candidate-sources.json").read_text()),
+          }
+          Path("buildkit-candidate.json").write_text(json.dumps(record, indent=2) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Candidate for isolated qualification: `{qualification_reference}`\n\n")
+              summary.write("Always qualify and select the digest. The commit lookup tag is mutable across runs; no release alias is published.\n")
+          PY
+      - name: Retain the candidate manifest and its source digests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: buildkit-candidate
+          path: buildkit-candidate.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
