@@ -21,6 +21,32 @@ runtime, edited managed configuration, or a multi-node/external cluster.
 Existing installations retain their original maintenance helpers on upgrade;
 use the new release's verified kit for this optional module.
 
+The optional shared workspace profile must be enabled explicitly from that
+same verified installer kit:
+
+```sh
+sudo python3 ./installer/modules.py managed-actions --workspace-profile shared-overlay2-v1
+```
+
+This maintenance action withdraws the node's workspace capability before it
+restarts K3s. It publishes the versioned capability only after the runtime
+configuration and an isolated workspace probe pass. A failed probe leaves the
+node ineligible for this profile. Enabling it affects only fresh GitHub job
+pods scheduled on a node carrying the matching capability; running pods,
+GitLab runners and Bitbucket runners keep their existing storage behavior.
+This profile does not provide a build-speed guarantee. Check the release's
+verification record before enabling it in production.
+
+To return future jobs to VFS, run another maintenance action:
+
+```sh
+sudo python3 ./installer/modules.py managed-actions --workspace-profile vfs
+```
+
+Jobs already running keep their original workspace until they finish. Omitting
+`--workspace-profile` preserves the profile previously selected by the
+installer; a first-time installation defaults to VFS.
+
 External cluster operators must provision the same pinned runtime on eligible
 nodes and the RuntimeClass scheduling selector. Do not run the CI setup script
 on an operator cluster: it deliberately replaces a disposable k3d configuration.
@@ -144,9 +170,12 @@ Workspaces default to 2 GiB of temporary disk. Set `actions.workspace_size_gib`
 to 2–16 GiB for larger jobs. Source, tools, Docker images and build files share
 this disk allowance. The node reserves it plus container/log headroom before
 scheduling each slot; all workspace and Docker data is deleted after every job.
-Docker uses VFS, so image layers and builds can require substantially more disk
-than their compressed download size. The maximum lifetime includes startup and waiting for a job. Jobs requiring
-more disk or a different runtime must use another runner type.
+VFS remains the default Docker storage driver. On a node that has passed the
+optional `shared-overlay2-v1` qualification, fresh GitHub job pods use the same
+bounded workspace for overlay2 data. Each job still receives a clean workspace;
+the profile does not persist Docker layers or files between jobs. The maximum
+lifetime includes startup and waiting for a job. Jobs requiring more disk or a
+different runtime must use another runner type.
 
 The GitHub runner-management token stays in control-plane secret storage. A pod
 gets only its one-job JIT registration. Configuring this pool does not replace
@@ -154,7 +183,8 @@ Hakopod's application build provider.
 
 ## Reusing dependencies across jobs
 
-Each job starts with a clean workspace. Use GitHub's `actions/cache` or the
+Each job starts with a clean workspace, including with the optional shared
+workspace profile. Use GitHub's `actions/cache` or the
 cache option in an official setup action to download dependencies saved by a
 previous job. GitHub stores the cache; runner workspaces and Docker daemons
 remain private to one job. No extra Hakopod secret or persistent volume is
