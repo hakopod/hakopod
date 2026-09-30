@@ -33,6 +33,11 @@ Only canonical certificate-challenge token paths under
 `/.well-known/acme-challenge/` are excluded. Traversal, extra path segments and
 encoded separators do not receive that exemption.
 
+HAProxy 3.2 requires `expose-experimental-directives` for its URI normalizers.
+Hakopod adds that directive in its owned global block while these path guards
+are enabled and removes its directive when protection is disabled. The editor
+does not accept arbitrary experimental directives.
+
 Requests rejected by an address or country rule receive **403**. Requests over a
 configured rate receive **429**. Rates use HAProxy's one-second request-rate
 counter and are independent for each rule and client. They are local to each

@@ -149,6 +149,7 @@ export function ProxyEditor() {
       title="Configure Hakopod Edge"
       description="Review HTTP traffic rules and HAProxy controller settings before applying an installation change."
       breadcrumbs={[]}
+      keepFocusedControlsVisible
     >
       <InstallationAccess managedDescription={managedDescription} renderDenied={renderEdgeDenied}>
         <ProxyEditorLoader />

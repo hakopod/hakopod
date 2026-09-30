@@ -153,6 +153,9 @@ func TestEdgeApplyIsAtomicOwnedAndResumable(t *testing.T) {
 	if current.Data["other-controller-setting"] != "preserved" || current.Annotations["operator.example/managed"] != "preserved" || !bodyLimitBlockMatches(current) {
 		t.Fatal("unrelated controller state was lost")
 	}
+	if !strings.Contains(current.Data["global-config-snippet"], "\nexpose-experimental-directives\n") {
+		t.Fatal("active path guards omitted the HAProxy 3.2 parser prerequisite")
+	}
 	// A failed observation can resume after the first mutation received a newer
 	// Kubernetes version, without submitting that mutation again.
 	current.ResourceVersion = "101"
@@ -187,8 +190,38 @@ func TestEdgeApplyIsAtomicOwnedAndResumable(t *testing.T) {
 		t.Fatal(err)
 	}
 	reset, err := c.proxyConfigMap(ctx)
-	if err != nil || strings.Contains(reset.Data["frontend-config-snippet"], "http-request") || strings.Contains(reset.Data["frontend-config-snippet"], "stick-table") || !strings.Contains(reset.Data["backend-config-snippet"], "req.hdr(content-length)") {
+	if err != nil || strings.Contains(reset.Data["frontend-config-snippet"], "http-request") || strings.Contains(reset.Data["frontend-config-snippet"], "stick-table") || strings.Contains(reset.Data["global-config-snippet"], "expose-experimental-directives") || !strings.Contains(reset.Data["backend-config-snippet"], "req.hdr(content-length)") {
 		t.Fatal("disabling edge retained enforcement or removed another owned guard", err)
+	}
+}
+
+func TestEdgePreservesOperatorExperimentalDirective(t *testing.T) {
+	c := edgeTestClient()
+	ctx := context.Background()
+	cm, _ := c.proxyConfigMap(ctx)
+	const operator = "# operator global setting\nexpose-experimental-directives\n"
+	cm.Data["global-config-snippet"] = operator
+	if _, err := c.kube.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	policy := edgeTestPolicy()
+	for i, enabled := range []bool{true, false} {
+		policy.Enabled = enabled
+		if _, err := c.ApplyProxyConfigurationWithEdge(ctx, nil, &policy, cm.ResourceVersion, int64(i+1)); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		cm, err = c.proxyConfigMap(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 1
+		if enabled {
+			count++
+		}
+		if !strings.HasPrefix(cm.Data["global-config-snippet"], operator) || strings.Count(cm.Data["global-config-snippet"], "expose-experimental-directives") != count {
+			t.Fatal("edge changed the operator's existing experimental-directive setting")
+		}
 	}
 }
 

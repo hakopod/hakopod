@@ -236,8 +236,14 @@ func edgeOwnedBlock(lines ...string) string {
 
 func edgeSnippets(policy EdgePolicy) map[string]string {
 	hash := edgePolicyHash(policy)
+	global := []string{"set-var " + edgeRuntimeVariable + " str(" + hash + ")"}
+	if policy.Enabled && len(policy.Rules) > 0 {
+		// HAProxy 3.2 requires this before parsing the fixed normalize-uri
+		// actions used to reject ambiguous paths in the owned frontend block.
+		global = append(global, "expose-experimental-directives")
+	}
 	return map[string]string{
-		"global-config-snippet":   edgeOwnedBlock("set-var " + edgeRuntimeVariable + " str(" + hash + ")"),
+		"global-config-snippet":   edgeOwnedBlock(global...),
 		"frontend-config-snippet": edgeFrontendBlock(policy),
 		"backend-config-snippet":  edgeOwnedBlock("# Reload acknowledgement " + hash),
 	}
