@@ -1,6 +1,9 @@
 name: Deploy to Hakopod
 description: Deploy selected services in an existing Hakopod application and wait for the rollout.
 author: Hakopod
+branding:
+  icon: upload-cloud
+  color: red
 inputs:
   api-url:
     description: Public Hakopod HTTPS origin or API URL ending in /api/v1.

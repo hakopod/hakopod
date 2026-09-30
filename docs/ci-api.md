@@ -37,7 +37,7 @@ revision check:
 ```yaml
 - name: Deploy to Hakopod
   id: deploy
-  uses: hakopod/hakopod/actions/deploy@main
+  uses: hakopod/deploy@v1
   with:
     api-url: ${{ vars.HAKOPOD_API_URL }}
     api-token: ${{ secrets.HAKOPOD_API_TOKEN }}
@@ -46,13 +46,15 @@ revision check:
     env: '{"LOG_LEVEL":"info"}'
 ```
 
-This is a source preview until the action is merged; no versioned action release
-is published yet. Pin a full reviewed commit SHA for production. The token needs
-the scoped permissions above. The step waits for success by default, uses each
+Release distribution: [hakopod/deploy](https://github.com/hakopod/deploy). Pin a
+full reviewed release commit SHA for production. The token needs the scoped
+permissions above. The step waits for success by default, uses each
 service's saved image unless an image digest is supplied, and supports individual
 service images, environment patches and existing secret references. It needs no
 checkout or CLI installation. The action guide covers concurrency, outputs,
-timeouts and recovery after an ambiguous deployment response.
+timeouts and recovery after an ambiguous deployment response. Maintainers can
+follow the [action release guide](deploy-action-release.md) to export and publish
+the reviewed source.
 
 ## Stop on a failed specification fetch
 
