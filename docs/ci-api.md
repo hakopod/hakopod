@@ -30,7 +30,7 @@ proxy for installation administration.
 
 ## GitHub Actions step
 
-Use the [Hakopod deployment action](../actions/deploy/README.md) to fetch the
+Use the [Hakopod deployment action](https://github.com/hakopod/deploy) to fetch the
 current application, plan a selected-service change and submit it with a
 revision check:
 
@@ -46,15 +46,42 @@ revision check:
     env: '{"LOG_LEVEL":"info"}'
 ```
 
-Release distribution: [hakopod/deploy](https://github.com/hakopod/deploy). Pin a
-full reviewed release commit SHA for production. The token needs the scoped
+The action is maintained in [hakopod/deploy](https://github.com/hakopod/deploy)
+and published on [GitHub Marketplace](https://github.com/marketplace/actions/deploy-to-hakopod).
+Pin a full reviewed release commit SHA for production. The token needs the scoped
 permissions above. The step waits for success by default, uses each
 service's saved image unless an image digest is supplied, and supports individual
 service images, environment patches and existing secret references. It needs no
 checkout or CLI installation. The action guide covers concurrency, outputs,
 timeouts and recovery after an ambiguous deployment response. Maintainers can
-follow the [action release guide](deploy-action-release.md) to export and publish
-the reviewed source.
+follow the [action release guide](https://github.com/hakopod/deploy/blob/main/RELEASING.md)
+in that repository.
+
+### API compatibility tests
+
+This repository tests the released action against its real Go API handlers and
+an isolated PostgreSQL database. CI checks out `hakopod/deploy` at a full commit
+SHA; the action's source, unit tests and runner smoke test live in that repository.
+When updating the supported action version, update the pinned checkout in
+`.github/workflows/ci.yml` and run these compatibility tests.
+
+To run them locally, check out the action and set `HAKOPOD_DEPLOY_ACTION_PATH` to
+its absolute directory path. For the current `v1.0.0` release, from this
+repository's root:
+
+```sh
+git clone https://github.com/hakopod/deploy.git .local/deploy-action
+git -C .local/deploy-action checkout --detach 8b3a7e4927761e9dbc4128441b67a06993082183
+export HAKOPOD_DEPLOY_ACTION_PATH="$PWD/.local/deploy-action"
+go test ./internal/api -run '^TestGitHubAction' -count=1 -v
+```
+
+Set `HAKOPOD_TEST_DATABASE_URL` to a development PostgreSQL connection before
+running the tests and install Node.js 24 (`HAKOPOD_ACTION_NODE` can select its
+binary). When `HAKOPOD_DEPLOY_ACTION_PATH` is unset, local runs skip these tests
+explicitly. An invalid configured action path fails the tests. These checks cover durable
+deployment acceptance, authorization, revision conflicts and response recovery;
+they do not exercise a Kubernetes rollout.
 
 ## Stop on a failed specification fetch
 
