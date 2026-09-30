@@ -203,6 +203,7 @@ class ExportProofTests(unittest.TestCase):
     def test_registry_failure_keeps_partial_measurement_without_comparison(self):
         runner = benchmark.Benchmark.__new__(benchmark.Benchmark)
         runner.integration = None
+        runner.docker_storage = lambda *args: None
         runner.report = {'phases': [], 'variants': []}
         runner.boundary = runner.fixture = runner.registry = lambda: {}
         runner.builder = lambda variant: {'name': 'fixture-' + variant}
@@ -223,6 +224,29 @@ class ExportProofTests(unittest.TestCase):
         self.assertNotIn('comparison', runner.report)
         self.assertEqual(runner.report['phases'][-1]['phase'], 'gzip-default-cold-registry')
         self.assertEqual(runner.report['phases'][-1]['status'], 'failed')
+
+    def test_storage_diagnostics_use_bounded_docker_accounting_without_new_containers(self):
+        runner = benchmark.Benchmark.__new__(benchmark.Benchmark)
+        runner.root = Path('/')
+        runner.report = {'docker_storage_samples': []}
+        calls = []
+        def accounting(args, **options):
+            calls.append((args, options))
+            return json.dumps({'Type': 'Images', 'TotalCount': 3, 'Active': 1, 'Size': '1.5GB', 'Reclaimable': '0B'})
+        runner.run = accounting
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.docker_storage('after-pull-buildkit')
+        self.assertEqual(calls, [(['system', 'df', '--format', '{{json .}}'], {'timeout': 5, 'maximum': 16384})])
+        sample = runner.report['docker_storage_samples'][0]
+        self.assertEqual(sample['status'], 'available')
+        self.assertEqual(sample['docker_accounting'][0]['Size'], '1.5GB')
+        def unavailable(*args, **kwargs):
+            raise RuntimeError('daemon unavailable')
+        runner.run = unavailable
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.docker_storage('failed-command')
+        self.assertEqual(runner.report['docker_storage_samples'][-1]['status'], 'unavailable')
+        self.assertEqual(runner.report['docker_storage_samples'][-1]['error_type'], 'RuntimeError')
 
 
 if __name__ == '__main__':

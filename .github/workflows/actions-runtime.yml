@@ -30,12 +30,16 @@ on:
         description: Compare image export speed and verify image contents
         type: boolean
         default: false
+      buildkit_qualification:
+        description: Verify candidate metadata and registry-cache restoration in a separate pod run
+        type: boolean
+        default: false
       export_buildkit_image:
-        description: Optional digest-pinned Hakopod BuildKit candidate (enables export benchmark)
+        description: Digest-pinned candidate for qualification, or optional export benchmark candidate
         type: string
         default: ''
       export_force_overlay_diff:
-        description: Diagnose the optimized overlay path without fallback (enables export benchmark)
+        description: Diagnose the selected scenario's optimized overlay path without fallback
         type: boolean
         default: false
       export_buildkit_test_run:
@@ -45,11 +49,20 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}
+  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
   cancel-in-progress: true
 jobs:
+  invalid-qualification:
+    if: ${{ inputs.buildkit_qualification && (inputs.buildkit_candidate || inputs.export_benchmark || inputs.export_buildkit_test_run != '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Reject overlapping diagnostic scenarios
+        run: |
+          echo 'BuildKit qualification must run separately from candidate builds, export benchmarks and native kernel tests.'
+          exit 1
   buildkit-candidate:
-    if: inputs.buildkit_candidate
+    if: ${{ inputs.buildkit_candidate && !inputs.buildkit_qualification }}
     uses: ./.github/workflows/buildkit-image.yml
     with:
       publish_candidate: ${{ inputs.publish_candidate }}
@@ -57,7 +70,7 @@ jobs:
       contents: read
       packages: write
   runtime:
-    if: ${{ !inputs.buildkit_candidate }}
+    if: ${{ !inputs.buildkit_candidate && !(inputs.buildkit_qualification && (inputs.export_benchmark || inputs.export_buildkit_test_run != '')) }}
     permissions:
       contents: read
       actions: read
@@ -75,7 +88,8 @@ jobs:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
-      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff || inputs.export_buildkit_test_run != '') && '1' || '0' }}
+      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ !inputs.buildkit_qualification && (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff || inputs.export_buildkit_test_run != '') && '1' || '0' }}
+      HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION: ${{ inputs.buildkit_qualification && '1' || '0' }}
       HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE: ${{ inputs.export_buildkit_image }}
       HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF: ${{ inputs.export_force_overlay_diff && '1' || '0' }}
       HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS: ${{ inputs.export_buildkit_test_run != '' && '1' || '0' }}
@@ -110,7 +124,9 @@ jobs:
           version: v3.17.2
       - name: Compile the product fixture before runtime measurement
         run: |
-          if [ "$HAKOPOD_ACTIONS_EXPORT_BENCHMARK" = '1' ]; then
+          if [ "$HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION" = '1' ]; then
+            go test -p=1 ./internal/cluster -run '^TestActionsBuildkitQualificationFixture$' -count=1
+          elif [ "$HAKOPOD_ACTIONS_EXPORT_BENCHMARK" = '1' ]; then
             go test -p=1 ./internal/cluster -run '^TestActionsExportBenchmarkFixture$' -count=1
           else
             go test -p=1 ./internal/cluster -run '^TestActionsRuntimeAcceptanceFixtures$' -count=1
@@ -132,6 +148,7 @@ jobs:
           path: |
             .local/actions-runtime-acceptance/report.json
             .local/actions-runtime-acceptance/export-benchmark-report.json
+            .local/actions-runtime-acceptance/buildkit-qualification-report.json
             .local/actions-runtime-acceptance/*.log
             .local/actions-runtime-acceptance/*-pods.txt
           retention-days: 14
