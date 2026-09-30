@@ -55,13 +55,14 @@ on:
         type: boolean
         default: false
       shared_workspace:
-        description: Experiment with a disk-backed pod-shared workspace in the disposable development runtime
-        type: boolean
-        default: false
+        description: Select a shared disk workspace and Docker driver for an isolated experiment
+        type: choice
+        options: [disabled, vfs, overlay2]
+        default: disabled
 permissions:
   contents: read
 concurrency:
-  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.shared_workspace && 'shared-workspace' || 'direct-workspace' }}-${{ inputs.runtime_force_overlay_diff && 'forced-candidate-runtime' || inputs.runtime_buildkit_image != '' && 'candidate-runtime' || inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
+  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.shared_workspace || 'disabled' }}-${{ inputs.runtime_force_overlay_diff && 'forced-candidate-runtime' || inputs.runtime_buildkit_image != '' && 'candidate-runtime' || inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
   cancel-in-progress: true
 env:
   HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE: ${{ inputs.buildkit_candidate && '1' || '0' }}
@@ -74,7 +75,9 @@ env:
   HAKOPOD_ACTIONS_EXPORT_TEST_RUN: ${{ inputs.export_buildkit_test_run }}
   HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE: ${{ inputs.runtime_buildkit_image }}
   HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF: ${{ inputs.runtime_force_overlay_diff && '1' || '0' }}
-  HAKOPOD_ACTIONS_SHARED_WORKSPACE: ${{ inputs.shared_workspace && '1' || '0' }}
+  HAKOPOD_ACTIONS_SHARED_WORKSPACE: ${{ (inputs.shared_workspace == 'vfs' || inputs.shared_workspace == 'overlay2') && '1' || '0' }}
+  HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER: ${{ inputs.shared_workspace == 'overlay2' && 'overlay2' || 'vfs' }}
+  HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE: ${{ inputs.shared_workspace || 'disabled' }}
 jobs:
   validate-scenario:
     runs-on: ubuntu-24.04

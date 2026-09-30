@@ -28,10 +28,12 @@ SANDBOX = 'b' * 64
 CONTAINER = 'c' * 64
 
 
-def pod(size=4):
+def pod(size=4, driver='vfs'):
     return {'metadata': {'uid': UID, 'name': 'actions-runtime-fixture', 'namespace': 'hp-development',
             'annotations': shared.annotations(size)},
         'spec': {'nodeName': shared.NODE, 'runtimeClassName': 'hakopod-actions',
+            'initContainers': [{'name': 'docker', 'image': shared.DAEMON_IMAGE,
+                'command': ['sh', '-c', 'dockerd --storage-driver=' + driver + ' --feature=containerd-snapshotter=false']}],
             'volumes': [{'name': 'runner', 'emptyDir': {'sizeLimit': f'{size}Gi'}}],
             'containers': [{'name': 'runner', 'resources': {'limits': {'ephemeral-storage': f'{size + 1}Gi'}}}]},
         'status': {'containerStatuses': [{'name': 'runner', 'containerID': 'containerd://' + CONTAINER}]}}
@@ -59,7 +61,31 @@ def stats(used):
         'volume': [{'name': 'runner', 'usedBytes': used}]}]}
 
 
+def docker(driver='vfs'):
+    status = [['Backing Filesystem', 'tmpfs'], ['Supports d_type', 'true'], ['Native Overlay Diff', 'true']] if driver == 'overlay2' else []
+    return {'machine': 'x86_64', 'info': {'Driver': driver, 'DockerRootDir': '/home/runner/.docker-data', 'Images': 0, 'Containers': 0, 'DriverStatus': status},
+        'version': {'Version': '29.8.1', 'GitCommit': '464cd50', 'Os': 'linux', 'Arch': 'amd64'}}
+
+
 class SelectionTests(unittest.TestCase):
+    def test_dispatch_mode_cannot_silently_fall_back_to_disabled(self):
+        for mode, flag, driver in [('disabled', '0', 'vfs'), ('vfs', '1', 'vfs'), ('overlay2', '1', 'overlay2')]:
+            environment = {'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': mode, shared.FLAG: flag, shared.DRIVER_FLAG: driver}
+            self.assertEqual(shared.storage_driver(environment), driver)
+        for mode in ('true', 'false', '', 'unknown'):
+            with self.subTest(mode=mode), self.assertRaisesRegex(RuntimeError, 'Shared workspace mode'):
+                shared.enabled({'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': mode})
+        with self.assertRaisesRegex(RuntimeError, 'Shared workspace mode'):
+            shared.enabled({'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': 'overlay2'})
+
+    def test_overlay_driver_is_explicit_and_only_allowed_on_shared_workspaces(self):
+        self.assertEqual(shared.storage_driver({}), 'vfs')
+        self.assertEqual(shared.storage_driver({shared.FLAG: '1', shared.DRIVER_FLAG: 'overlay2'}), 'overlay2')
+        for environment in ({shared.DRIVER_FLAG: 'overlay2'}, {shared.FLAG: '0', shared.DRIVER_FLAG: 'overlay2'},
+                            {shared.FLAG: '1', shared.DRIVER_FLAG: 'overlay'}, {shared.FLAG: '1', shared.DRIVER_FLAG: ''}):
+            with self.subTest(environment=environment), self.assertRaises(RuntimeError):
+                shared.storage_driver(environment)
+
     def test_disabled_setup_is_byte_identical_and_enabled_setup_forwards_only_three_keys(self):
         original = installer.runtime_section(Path('/opt/hakopod-actions-fixture'))
         self.assertEqual(shared.runtime_section(original, False), original)
@@ -93,6 +119,33 @@ class SelectionTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_selected_storage_driver_must_match_the_pinned_daemon_command(self):
+        self.assertEqual(shared.pod_identity(pod(driver='overlay2'), 'overlay2')['storage_driver'], 'overlay2')
+        for mutate in (lambda v: v['spec']['initContainers'][0].update(image='docker:latest'),
+                       lambda v: v['spec']['initContainers'][0]['command'].__setitem__(2, 'dockerd --storage-driver=vfs'),
+                       lambda v: v['spec']['initContainers'][0]['command'].__setitem__(2, 'dockerd --storage-driver=overlay2 --storage-driver=vfs --feature=containerd-snapshotter=false')):
+            value = pod(driver='overlay2')
+            mutate(value)
+            with self.subTest(mutation=mutate), self.assertRaises(RuntimeError):
+                shared.pod_identity(value, 'overlay2')
+
+    def test_overlay_requires_native_diff_on_tmpfs_and_a_fresh_pinned_daemon(self):
+        self.assertEqual(shared.verify_docker(docker(), 'vfs', empty=True)['driver'], 'vfs')
+        self.assertTrue(shared.verify_docker(docker('overlay2'), 'overlay2', empty=True)['fresh_daemon_verified'])
+        mutations = [lambda v: v['info'].update(Driver='vfs'), lambda v: v['info'].update(DockerRootDir='/var/lib/docker'),
+            lambda v: v['version'].update(Version='29.8.0'), lambda v: v['version'].update(GitCommit='other'),
+            lambda v: v.update(machine='aarch64'),
+            lambda v: v['info'].update(Images=1), lambda v: v['info'].update(Containers=1),
+            lambda v: v['info']['DriverStatus'][0].__setitem__(1, '9p'),
+            lambda v: v['info']['DriverStatus'][1].__setitem__(1, 'false'),
+            lambda v: v['info']['DriverStatus'][2].__setitem__(1, 'false'),
+            lambda v: v['info']['DriverStatus'].append(['Native Overlay Diff', 'true'])]
+        for mutate in mutations:
+            value = docker('overlay2')
+            mutate(value)
+            with self.subTest(mutation=mutate), self.assertRaises(RuntimeError):
+                shared.verify_docker(value, 'overlay2', empty=True)
+
     def test_unchanged_disk_limits_and_exact_bind_hints_are_required(self):
         for size in (2, 4, 8):
             identity = shared.pod_identity(pod(size))
@@ -245,15 +298,18 @@ class LifecycleTests(unittest.TestCase):
 
     def test_disk_and_replacement_checks_never_create_containers_or_pull_images(self):
         observer = shared.Observer(None, None, shared.NODE, {})
-        with patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]), \
-                patch.object(observer, 'runner', side_effect=[json.dumps(mount()), '']) as runner, \
+        with patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]) as host, \
+                patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(docker()), '']) as runner, \
                 patch.object(observer, 'sample', return_value={'allocated_bytes': 100}), \
                 patch('subprocess.run', side_effect=AssertionError('test launched a process')):
             evidence = observer.prepare(pod(), lambda **kwargs: self.fail('minimal probe restarted the daemon'), full=False)
         self.assertEqual(evidence['status'], 'passed')
         self.assertFalse(evidence['full_probe'])
-        self.assertEqual(runner.call_count, 2)
-        self.assertNotIn('docker', runner.call_args_list[1].args[1])
+        self.assertEqual(runner.call_count, 3)
+        self.assertEqual(host.call_args_list[0].args[0][:2], ['/bin/crictl', 'inspect'])
+        self.assertEqual(host.call_args_list[1].args[0][:2], ['/bin/crictl', 'pods'])
+        self.assertEqual(runner.call_args_list[1].args[1], shared.DOCKER_PROBE)
+        self.assertNotIn('docker', runner.call_args_list[2].args[1])
 
     def test_full_probe_requires_metadata_and_inode_stability_after_restart(self):
         inodes = {'runner_inode': 10, 'capability_inode': 11}
@@ -264,7 +320,7 @@ class LifecycleTests(unittest.TestCase):
             later = {**inodes, 'capability_inode': 12} if changed else inodes
             with self.subTest(changed=changed), \
                     patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]), \
-                    patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(inodes), '', json.dumps(later), '']), \
+                    patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(docker()), json.dumps(inodes), '', json.dumps(later), json.dumps(docker()), '']), \
                     patch.object(observer, 'accounted', side_effect=[before, after]), \
                     patch.object(observer, 'sample', return_value=after):
                 if changed:
@@ -275,6 +331,27 @@ class LifecycleTests(unittest.TestCase):
                     self.assertEqual(evidence['status'], 'passed')
                     self.assertTrue(evidence['docker_archive_metadata'])
                     self.assertEqual(evidence['shared_inodes'], inodes)
+
+    def test_full_probe_rejects_a_different_valid_daemon_identity_after_restart(self):
+        inodes = {'runner_inode': 10, 'capability_inode': 11}
+        before = {'device': 20, 'inode': 30, 'allocated_bytes': 64 * shared.MIB, 'kubelet_used_bytes': 64 * shared.MIB}
+        after = {**before, 'allocated_bytes': 80 * shared.MIB, 'kubelet_used_bytes': 80 * shared.MIB}
+        later = docker('overlay2')
+        later['machine'] = 'aarch64'
+        later['version']['Arch'] = 'arm64'
+        self.assertEqual(shared.verify_docker(later, 'overlay2')['architecture'], 'arm64')
+        observer = shared.Observer(None, lambda *args, **kwargs: SimpleNamespace(stdout='10\n11\n'),
+                                   shared.NODE, {}, driver='overlay2')
+        with patch.object(observer, 'host', side_effect=[json.dumps(inspected()), json.dumps(sandbox())]), \
+                patch.object(observer, 'runner', side_effect=[json.dumps(mount()), json.dumps(docker('overlay2')),
+                    json.dumps(inodes), '', json.dumps(inodes), json.dumps(later)]) as runner, \
+                patch.object(observer, 'accounted', side_effect=[before, after]), \
+                patch.object(observer, 'sample', side_effect=AssertionError('changed daemon identity was accepted')):
+            with self.assertRaisesRegex(RuntimeError, 'Docker daemon identity or storage driver changed after restart'):
+                observer.prepare(pod(driver='overlay2'), lambda **kwargs: None)
+        self.assertEqual(runner.call_count, 6)
+        self.assertNotIn('after_restart', observer.report['pods'][0])
+        self.assertEqual(observer.report['pods'][0]['status'], 'running')
 
     def test_removal_only_accepts_an_observed_owned_workspace(self):
         observer = shared.Observer(None, None, shared.NODE, {})

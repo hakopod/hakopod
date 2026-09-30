@@ -18,6 +18,19 @@ CANDIDATE = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' 
 
 
 class RuntimeSelectionTests(unittest.TestCase):
+    def test_overlay_driver_requires_explicit_shared_workspace_without_changing_builder_selection(self):
+        environment = {'HAKOPOD_ACTIONS_SHARED_WORKSPACE': '1', 'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER': 'overlay2'}
+        self.assertEqual(workload.runtime_selection_from_environment(environment), workload.runtime_buildkit_selection())
+        for changed in ({'HAKOPOD_ACTIONS_SHARED_WORKSPACE': '0'}, {'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER': 'overlay'},
+                        {'HAKOPOD_ACTIONS_DOCKER_STORAGE_DRIVER': ''}):
+            with self.subTest(changed=changed), self.assertRaises(RuntimeError):
+                workload.runtime_selection_from_environment({**environment, **changed})
+        for mode in ('true', 'false', '', 'unknown'):
+            with self.subTest(mode=mode), self.assertRaisesRegex(RuntimeError, 'Shared workspace mode'):
+                workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': mode})
+        with self.assertRaisesRegex(RuntimeError, 'Shared workspace mode'):
+            workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE_MODE': 'overlay2'})
+
     def test_shared_workspace_is_explicit_and_cannot_build_or_publish_images(self):
         for flag in ('0', '1'):
             self.assertEqual(workload.runtime_selection_from_environment({'HAKOPOD_ACTIONS_SHARED_WORKSPACE': flag}), workload.runtime_buildkit_selection())

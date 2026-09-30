@@ -12,9 +12,18 @@ import (
 
 // This experiment changes only development fixtures, never actionsPod or the
 // installed runtime. The shim discovers the source from the owned Pod UID.
-func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag string) error {
+func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag, driver string) error {
 	if flag != "" && flag != "0" && flag != "1" {
 		return fmt.Errorf("shared workspace flag must be 0 or 1")
+	}
+	if driver == "" {
+		driver = "vfs"
+	}
+	if driver != "vfs" && driver != "overlay2" {
+		return fmt.Errorf("development Docker storage driver must be vfs or overlay2")
+	}
+	if driver == "overlay2" && flag != "1" {
+		return fmt.Errorf("development Docker overlay2 requires the shared workspace")
 	}
 	if flag != "1" {
 		return nil
@@ -38,6 +47,9 @@ func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag str
 	if len(pod.Spec.InitContainers) != 2 || pod.Spec.InitContainers[0].Name != "prepare" || !reflect.DeepEqual(pod.Spec.InitContainers[0].Command, []string{"sh", "-c", "cp -R /home/runner/. /runner/"}) || len(pod.Spec.Containers) != 1 || len(pod.Spec.Containers[0].Command) != 4 || !reflect.DeepEqual(pod.Spec.Containers[0].Command[:3], []string{"python3", "-u", "-c"}) {
 		return fmt.Errorf("shared workspace requires the existing development prepare and Python workload")
 	}
+	if pod.Spec.InitContainers[1].Name != "docker" || pod.Spec.InitContainers[1].Image != ActionsDaemonImage || !reflect.DeepEqual(pod.Spec.InitContainers[1].Command, []string{"sh", "-c", actionsDaemon}) || strings.Count(actionsDaemon, "--storage-driver=vfs") != 1 {
+		return fmt.Errorf("shared workspace requires the unchanged pinned Docker daemon command")
+	}
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -49,6 +61,11 @@ func actionsSharedWorkspaceFixture(pod *corev1.Pod, workspaceGiB int64, flag str
 	// Leave the EmptyDir eviction threshold unchanged. The extra GiB matches
 	// the existing runner ephemeral limit and lets kubelet observe overage.
 	pod.Annotations["dev.gvisor.spec.mount.runner.options"] = fmt.Sprintf("rw,rprivate,mode=0770,uid=1001,gid=1001,size=%dg", workspaceGiB+1)
+	// Only a freshly generated disposable fixture selects another driver. Never
+	// migrate existing Docker stores or alter the daemon's sandbox permissions.
+	if driver == "overlay2" {
+		pod.Spec.InitContainers[1].Command[2] = strings.Replace(actionsDaemon, "--storage-driver=vfs", "--storage-driver=overlay2", 1)
+	}
 	pod.Spec.InitContainers[0].Command[2] += " && printf 'shared-workspace-v1\\n' > /runner/.hakopod-shared-prepare"
 	pod.Spec.Containers[0].Command[3] = `import pathlib, time
 _shared_root = pathlib.Path('/home/runner')
@@ -75,11 +92,11 @@ func TestActionsSharedWorkspaceFixtureIsExplicitAndBounded(t *testing.T) {
 		pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", "print('original fixture')"}
 		original := pod.DeepCopy()
 		for _, flag := range []string{"", "0"} {
-			if err := actionsSharedWorkspaceFixture(pod, size, flag); err != nil || !reflect.DeepEqual(pod, original) {
+			if err := actionsSharedWorkspaceFixture(pod, size, flag, ""); err != nil || !reflect.DeepEqual(pod, original) {
 				t.Fatalf("disabled experiment changed product fixture: %v", err)
 			}
 		}
-		if err := actionsSharedWorkspaceFixture(pod, size, "1"); err != nil {
+		if err := actionsSharedWorkspaceFixture(pod, size, "1", "vfs"); err != nil {
 			t.Fatal(err)
 		}
 		if len(pod.Annotations) != 3 || pod.Annotations["dev.gvisor.spec.mount.runner.type"] != "bind" || pod.Annotations["dev.gvisor.spec.mount.runner.share"] != "pod" || pod.Annotations["dev.gvisor.spec.mount.runner.options"] != fmt.Sprintf("rw,rprivate,mode=0770,uid=1001,gid=1001,size=%dg", size+1) {
@@ -117,16 +134,56 @@ func TestActionsSharedWorkspaceFixtureRejectsUnsafeConfiguration(t *testing.T) {
 		pod := original.DeepCopy()
 		mutate(pod)
 		before := pod.DeepCopy()
-		if err := actionsSharedWorkspaceFixture(pod, 4, "1"); err == nil || !reflect.DeepEqual(pod, before) {
+		if err := actionsSharedWorkspaceFixture(pod, 4, "1", "vfs"); err == nil || !reflect.DeepEqual(pod, before) {
 			t.Fatal("unsafe experiment was accepted or partially applied")
 		}
 	}
 	for _, flag := range []string{"true", "yes", " 1", "1\n"} {
-		if err := actionsSharedWorkspaceFixture(original.DeepCopy(), 4, flag); err == nil {
+		if err := actionsSharedWorkspaceFixture(original.DeepCopy(), 4, flag, "vfs"); err == nil {
 			t.Fatal("malformed experiment flag was accepted")
 		}
 	}
-	if err := actionsSharedWorkspaceFixture(original.DeepCopy(), 16, "1"); err == nil {
+	if err := actionsSharedWorkspaceFixture(original.DeepCopy(), 16, "1", "vfs"); err == nil {
 		t.Fatal("experiment accepted a new workspace size")
+	}
+}
+
+func TestActionsSharedWorkspaceOverlayDriverOnlyChangesFreshFixtureCommand(t *testing.T) {
+	target := runnerTarget(t)
+	s := target.Spec.Services["runner"]
+	s.NodeName = "k3d-hakopod-dev-server-0"
+	s.Actions.WorkspaceSizeGiB = 4
+	original := actionsPod(target, "runner", "runtime-fixture", s)
+	original.Spec.Containers[0].Command = []string{"python3", "-u", "-c", "print('fixture')"}
+	vfs, overlay := original.DeepCopy(), original.DeepCopy()
+	if err := actionsSharedWorkspaceFixture(vfs, 4, "1", "vfs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := actionsSharedWorkspaceFixture(overlay, 4, "1", "overlay2"); err != nil {
+		t.Fatal(err)
+	}
+	if overlay.Spec.InitContainers[1].Command[2] != strings.Replace(actionsDaemon, "--storage-driver=vfs", "--storage-driver=overlay2", 1) {
+		t.Fatal("experiment did not select the exact overlay2 daemon command")
+	}
+	overlay.Spec.InitContainers[1].Command = vfs.Spec.InitContainers[1].Command
+	if !reflect.DeepEqual(overlay, vfs) {
+		t.Fatal("storage driver experiment changed resources, images, placement, or sandbox security")
+	}
+	for _, selection := range [][2]string{{"0", "overlay2"}, {"", "overlay2"}, {"1", "overlay"}, {"1", "overlay2 --privileged"}} {
+		pod := original.DeepCopy()
+		if err := actionsSharedWorkspaceFixture(pod, 4, selection[0], selection[1]); err == nil || !reflect.DeepEqual(pod, original) {
+			t.Fatal("unsafe storage selection was accepted or partially applied")
+		}
+	}
+	for _, mutate := range []func(*corev1.Pod){
+		func(p *corev1.Pod) { p.Spec.InitContainers[1].Image = "docker:latest" },
+		func(p *corev1.Pod) { p.Spec.InitContainers[1].Command[2] += " --storage-driver=overlay2" },
+	} {
+		pod := original.DeepCopy()
+		mutate(pod)
+		before := pod.DeepCopy()
+		if err := actionsSharedWorkspaceFixture(pod, 4, "1", "overlay2"); err == nil || !reflect.DeepEqual(pod, before) {
+			t.Fatal("modified daemon image or command was accepted")
+		}
 	}
 }
