@@ -21,7 +21,11 @@ import importlib.util
 import os
 from pathlib import Path
 import platform
+import re
+import selectors
+import signal
 import subprocess
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +35,7 @@ NODE = 'k3d-hakopod-dev-server-0'
 PEER_NAMESPACE = 'hakopod-actions-acceptance-peer'
 STARTED = time.monotonic()
 EXPORT_BENCHMARK = os.environ.get('HAKOPOD_ACTIONS_EXPORT_BENCHMARK') == '1'
+BUILDKIT_QUALIFICATION = os.environ.get('HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION') == '1'
 DEADLINE = STARTED + 25 * 60
 REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platform.machine(),
           'scope': 'disposable single-node product runner pod acceptance',
@@ -46,6 +51,141 @@ REPORT = {'schema_version': 1, 'status': 'running', 'host_architecture': platfor
 NAMESPACES = set()
 RUNTIME_CREATED = False
 OUTPUT_CREATED = False
+LOG_LIMIT = 4 * 1024 * 1024
+
+
+class BoundedLogCapture:
+    """Persist the live fixture stream before kubelet can remove an evicted Pod."""
+    def __init__(self, namespace, scenario):
+        assert scenario in ('export-benchmark', 'buildkit-qualification'), 'unexpected diagnostic log name'
+        self.namespace, self.scenario = namespace, scenario
+        self.stop = threading.Event()
+        self.process = self.thread = None
+        self.result = {'started': False, 'stdout_bytes': 0, 'stderr_bytes': 0, 'truncated': False}
+        self.streams = {}
+        try:
+            for name, suffix in [('stdout', '.log'), ('stderr', '-capture.log')]:
+                fd = os.open(OUTPUT / (scenario + suffix), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                self.streams[name] = os.fdopen(fd, 'wb', buffering=0)
+        except OSError:
+            for stream in self.streams.values():
+                stream.close()
+            raise
+
+    def observe(self, pod):
+        if self.result['started']:
+            return
+        statuses = pod.get('status', {}).get('containerStatuses', [])
+        runner = next((item.get('state', {}) for item in statuses if item['name'] == 'runner'), {})
+        if not (runner.get('running') or runner.get('terminated')):
+            return
+        self.result['started'] = True
+        try:
+            self.process = subprocess.Popen(KUBE + ['-n', self.namespace, 'logs', 'actions-runtime-fixture',
+                '-c', 'runner', '--follow', '--tail=-1'],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            self.thread = threading.Thread(target=self._collect, daemon=True)
+            self.thread.start()
+        except OSError as error:
+            self.result['error_type'] = type(error).__name__
+
+    def _collect(self):
+        selector = selectors.DefaultSelector()
+        terminated_at = None
+        try:
+            for name in ('stdout', 'stderr'):
+                stream = getattr(self.process, name)
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, name)
+            while selector.get_map():
+                if time.monotonic() >= DEADLINE:
+                    self.result['deadline_reached'] = True
+                    self.stop.set()
+                if self.stop.is_set():
+                    if terminated_at is None:
+                        self._signal_group(signal.SIGTERM)
+                        terminated_at = time.monotonic()
+                    elif time.monotonic() - terminated_at >= 2:
+                        self._signal_group(signal.SIGKILL)
+                        if time.monotonic() - terminated_at >= 2.5:
+                            self.result['drain_deadline_reached'] = True
+                            break
+                for key, _ in selector.select(0.1):
+                    chunk = os.read(key.fd, 16384)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    name = key.data
+                    limit = LOG_LIMIT if name == 'stdout' else 65536
+                    remaining = max(0, limit - self.result[name + '_bytes'])
+                    self.streams[name].write(chunk[:remaining])
+                    self.result[name + '_bytes'] += min(len(chunk), remaining)
+                    if len(chunk) > remaining:
+                        self.result['truncated'] = True
+                        self.stop.set()
+            self.result['exit_code'] = self.process.wait(timeout=2)
+        except Exception as error:
+            self.result['error_type'] = type(error).__name__
+            self._signal_group(signal.SIGKILL)
+            if self.process.poll() is None:
+                self.process.wait(timeout=2)
+        finally:
+            selector.close()
+            for name in ('stdout', 'stderr'):
+                getattr(self.process, name).close()
+
+    def _signal_group(self, value):
+        # The follower starts its own session. Its subprocesses must not retain
+        # pipes or survive cancellation after kubectl itself has already exited.
+        try:
+            os.killpg(self.process.pid, value)
+        except ProcessLookupError:
+            pass
+
+    def close(self):
+        if self.thread:
+            # A terminal Pod usually closes the follower itself. Drain those
+            # final bytes before interrupting a still-open stream.
+            self.thread.join(timeout=1)
+            if self.thread.is_alive():
+                self.stop.set()
+                self.thread.join(timeout=4)
+            if self.thread.is_alive():
+                self._signal_group(signal.SIGKILL)
+                self.thread.join(timeout=2)
+                self.result['error_type'] = 'CollectorDidNotStop'
+        for stream in self.streams.values():
+            stream.close()
+        return dict(self.result)
+
+
+def captured_records(scenario, prefix):
+    with (OUTPUT / (scenario + '.log')).open('rb') as source:
+        data = source.read(LOG_LIMIT + 1)
+    assert len(data) <= LOG_LIMIT, 'captured diagnostic log exceeds its bound'
+    records, malformed = [], 0
+    for line in data.splitlines(keepends=True):
+        if not line.startswith(prefix.encode()):
+            continue
+        if not line.endswith(b'\n') or len(line) > 1048576:
+            malformed += 1
+            continue
+        try:
+            value = json.loads(line[len(prefix):])
+            assert isinstance(value, dict)
+        except (ValueError, AssertionError):
+            malformed += 1
+            continue
+        records.append(value)
+        assert len(records) <= 4096, 'captured diagnostic event count exceeds its bound'
+    return records, malformed
+
+
+def verify_log_capture(result):
+    assert result.get('started') and result.get('stdout_bytes', 0) > 0, 'diagnostic live log capture did not start'
+    assert result.get('exit_code') == 0, 'diagnostic log follower did not exit cleanly'
+    assert not any(result.get(key) for key in ('truncated', 'deadline_reached', 'drain_deadline_reached',
+        'error_type', 'capture_error_type', 'malformed_events', 'malformed_reports')), 'diagnostic log capture is incomplete or malformed'
 
 
 def export_buildkit_selection(image=''):
@@ -110,14 +250,16 @@ os.rename(root / 'ready.pending', root / 'ready')
             'duration_seconds': round(time.monotonic() - started, 3)}
 
 
-if EXPORT_BENCHMARK:
-    REPORT['scenario'] = 'opt-in-export-benchmark'
+if EXPORT_BENCHMARK or BUILDKIT_QUALIFICATION:
+    REPORT['scenario'] = 'opt-in-buildkit-qualification' if BUILDKIT_QUALIFICATION else 'opt-in-export-benchmark'
     REPORT['limits'].update(workspace_gib=4, concurrent_build_requests=1, buildkit_max_parallelism=1)
     REPORT['limits'].pop('disk_probe_max_written_mib')
     REPORT['coverage_limits'] = [
         'Two compression settings in one disposable product sandbox; no fleet or provider lifecycle qualification.',
         'Pinned BuildKit v0.32.2 diagnostics do not qualify other versions or an overlay patch.',
         'Resource peaks are sampled lower bounds; the pod and outer worker limits are reported separately.']
+    if BUILDKIT_QUALIFICATION:
+        REPORT['coverage_limits'][0] = 'Small metadata and fresh-builder registry-cache fixture; no fleet or provider lifecycle qualification.'
 
 
 def command(args, timeout=45, check=True, **kwargs):
@@ -207,10 +349,12 @@ def logs(namespace, scenario, prefix='HAKOPOD_ACCEPTANCE '):
     return events
 
 
-def wait_for(namespace, predicate, timeout=300):
+def wait_for(namespace, predicate, timeout=300, capture=None):
     end = min(DEADLINE, time.monotonic() + timeout)
     while time.monotonic() < end:
         pod = state(namespace)
+        if capture:
+            capture.observe(pod)
         if predicate(pod):
             return pod
         if pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'):
@@ -336,47 +480,90 @@ def export_fixture(fixture):
     return namespace
 
 
-def run_export_benchmark(fixture, integration=None):
+def verify_qualification_report(value, selected, architecture, force):
+    assert selected.get('kind') == 'candidate', 'qualification requires an explicitly selected managed candidate'
+    assert value.get('schema_version') == 1 and value.get('scenario') == 'buildkit-metadata-and-registry-cache', 'unexpected qualification scenario'
+    assert value.get('status') == 'passed' and value.get('metadata_cache_checks_passed') is True, 'metadata and registry-cache qualification did not pass'
+    assert value.get('context') == 'k3d-hakopod-dev' and value.get('architecture') == architecture, 'qualification ran in an unexpected context or architecture'
+    assert value.get('snapshotter') == 'overlayfs' and value.get('force_overlay_diff') is force, 'qualification changed its selected overlay configuration'
+    assert value.get('buildkit_selection') == selected and value.get('images', {}).get('buildkit') == selected['reference'], 'qualification image identity changed'
+    assert value.get('cleanup', {}).get('status') == 'passed', 'qualification cleanup did not pass'
+    builders = [value.get(name, {}) for name in ('cold_builder', 'restored_builder')]
+    for builder, suffix in zip(builders, ('cold', 'restored')):
+        assert builder.get('image') == selected['reference'] and builder.get('architecture') == architecture, 'qualification builder image differs from selection'
+        assert isinstance(builder.get('version'), str) and selected['version'] in builder['version'].split(), 'qualification builder version differs from selection'
+        assert re.fullmatch(r'sha256:[a-f0-9]{64}', builder.get('image_id', '')), 'qualification builder lacks an observed image ID'
+        assert builder.get('snapshotter') == 'overlayfs' and builder.get('managed_userxattr') is True and builder.get('force_overlay_diff') is force, 'qualification builder namespace differs from selection'
+        assert re.fullmatch(r'hako-export-[a-f0-9]{10}-metadata-' + suffix, builder.get('name', '')), 'qualification builder name is unexpected'
+    assert builders[0]['name'] != builders[1]['name'] and builders[0]['image_id'] == builders[1]['image_id'], 'qualification did not use two fresh builders of the same image'
+
+
+def run_export_benchmark(fixture, integration=None, qualification=False):
+    scenario = 'buildkit-qualification' if qualification else 'export-benchmark'
+    key = 'buildkit_qualification' if qualification else 'export_benchmark'
+    capture_key = 'qualification_log_capture' if qualification else 'export_log_capture'
     selected = export_buildkit_selection(os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE', ''))
-    REPORT['export_buildkit_selection'] = selected
+    REPORT['qualification_buildkit_selection' if qualification else 'export_buildkit_selection'] = selected
     namespace = export_fixture(fixture)
     NAMESPACES.add(namespace)
     started = time.monotonic()
     apply(fixture)
-    if integration:
-        wait_for(namespace, lambda value: any(item['name'] == 'runner' and item.get('state', {}).get('running')
-            for item in value.get('status', {}).get('containerStatuses', [])), timeout=360)
-        REPORT['native_test_staging'] = stage_export_integration(kube, namespace, integration)
-    pod = wait_for(namespace, lambda value: value.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=900)
-    events = logs(namespace, 'export-benchmark', prefix='HAKOPOD_EXPORT_BENCHMARK ')
-    REPORT['export_benchmark_events'] = events
-    REPORT['export_benchmark_pod'] = {
+    capture = BoundedLogCapture(namespace, scenario)
+    failure = None
+    try:
+        if integration:
+            wait_for(namespace, lambda value: any(item['name'] == 'runner' and item.get('state', {}).get('running')
+                for item in value.get('status', {}).get('containerStatuses', [])), timeout=360, capture=capture)
+            REPORT['native_test_staging'] = stage_export_integration(kube, namespace, integration)
+        pod = wait_for(namespace, lambda value: value.get('status', {}).get('phase') in ('Succeeded', 'Failed'), timeout=900, capture=capture)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        try:
+            REPORT[capture_key] = capture.close()
+            events, malformed = captured_records(scenario, 'HAKOPOD_EXPORT_BENCHMARK ')
+            REPORT[capture_key]['malformed_events'] = malformed
+            REPORT[key + '_events'] = events
+            saved, malformed = captured_records(scenario, 'HAKOPOD_QUALIFICATION_REPORT ' if qualification else 'HAKOPOD_EXPORT_REPORT ')
+            REPORT[capture_key]['malformed_reports'] = malformed
+            # Persist any complete result before checking terminal status. A
+            # failed wait must not discard source evidence already captured.
+            if len(saved) == 1:
+                REPORT[key] = saved[0]
+                (OUTPUT / (scenario + '-report.json')).write_text(json.dumps(saved[0], indent=2) + '\n')
+        except Exception as error:
+            REPORT.setdefault(capture_key, {})['capture_error_type'] = type(error).__name__
+            if failure is None:
+                raise
+    REPORT[key + '_pod'] = {
         'namespace': namespace, 'name': pod['metadata']['name'], 'node': pod['spec'].get('nodeName'),
+        'phase': pod.get('status', {}).get('phase'), 'reason': pod.get('status', {}).get('reason'),
+        'message': pod.get('status', {}).get('message'),
         'overhead': pod['spec'].get('overhead', {}), 'startup_timings': startup_timings(pod),
         'containers': [{'name': item['name'], 'resources': item['resources']} for item in pod['spec']['initContainers'] + pod['spec']['containers']]}
     outer = command(['docker', 'inspect', NODE, '--format', '[{{json .HostConfig.NanoCpus}},{{json .HostConfig.CpuQuota}},{{json .HostConfig.CpuPeriod}},{{json .HostConfig.Memory}},{{json .HostConfig.CpusetCpus}}]']).stdout
     limits = json.loads(outer)
     assert len(limits) == 5, 'outer worker limits could not be observed'
-    REPORT['export_benchmark_outer_worker'] = dict(zip(['nano_cpus', 'cpu_quota', 'cpu_period', 'memory_bytes', 'cpuset_cpus'], limits))
-    report_prefix = 'HAKOPOD_EXPORT_REPORT '
-    saved = []
-    for line in (OUTPUT / 'export-benchmark.log').read_text().splitlines():
-        if line.startswith(report_prefix):
-            assert len(line) <= 1048576, 'benchmark JSON report exceeded its bound'
-            saved.append(json.loads(line[len(report_prefix):]))
+    REPORT[key + '_outer_worker'] = dict(zip(['nano_cpus', 'cpu_quota', 'cpu_period', 'memory_bytes', 'cpuset_cpus'], limits))
     assert len(saved) == 1, 'benchmark did not preserve exactly one JSON report'
-    REPORT['export_benchmark'] = saved[0]
-    (OUTPUT / 'export-benchmark-report.json').write_text(json.dumps(saved[0], indent=2) + '\n')
+    verify_log_capture(REPORT[capture_key])
     assert pod['spec'].get('nodeName') == NODE, 'benchmark did not run on the named development node'
     assert pod['status']['phase'] == 'Succeeded' and saved[0].get('status') == 'passed', 'export benchmark failed; see retained JSON and log'
     assert saved[0].get('context') == 'k3d-hakopod-dev' and saved[0].get('snapshotter') == 'overlayfs', 'benchmark used an unexpected context or snapshotter'
     assert saved[0].get('buildkit_selection') == selected and saved[0].get('images', {}).get('buildkit') == selected['reference'], 'benchmark image identity differs from the explicit selection'
     assert saved[0].get('force_overlay_diff') == (os.environ.get('HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF') == '1'), 'forced-diff diagnostic did not match the explicit selection'
-    assert any(event.get('phase') == 'complete' and event.get('status') == 'passed' for event in events), 'benchmark completion was not observed'
-    assert len(saved[0].get('variants', [])) == 2 and saved[0].get('comparison'), 'benchmark comparison is incomplete'
+    if qualification:
+        architecture = {'x86_64': 'amd64', 'aarch64': 'arm64', 'amd64': 'amd64', 'arm64': 'arm64'}.get(platform.machine())
+        verify_qualification_report(saved[0], selected, architecture, os.environ.get('HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF') == '1')
+        completed, malformed = captured_records(scenario, 'HAKOPOD_BUILDKIT_QUALIFICATION ')
+        assert not malformed and completed == saved, 'qualification completion differs from its saved report'
+    else:
+        assert any(event.get('phase') == 'complete' and event.get('status') == 'passed' for event in events), 'benchmark completion was not observed'
+        assert len(saved[0].get('variants', [])) == 2 and saved[0].get('comparison'), 'benchmark comparison is incomplete'
     if integration:
         assert saved[0].get('kernel_integration', {}).get('status') == 'passed', 'native kernel verification did not pass'
-    record('opt-in-export-benchmark', started, report='export-benchmark-report.json')
+    record('opt-in-' + scenario, started, report=scenario + '-report.json')
     delete_pod(namespace, credential_config=False)
 
 
@@ -384,12 +571,13 @@ def main():
     global RUNTIME_CREATED, OUTPUT_CREATED
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
+    assert not (EXPORT_BENCHMARK and BUILDKIT_QUALIFICATION), 'select one diagnostic workload per disposable Pod'
     if os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'):
-        assert EXPORT_BENCHMARK, 'select the export benchmark when selecting a BuildKit image'
+        assert EXPORT_BENCHMARK or BUILDKIT_QUALIFICATION, 'select a diagnostic when selecting a BuildKit image'
         export_buildkit_selection(os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'])
     integration = None
     if os.environ.get('HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS') == '1':
-        assert EXPORT_BENCHMARK, 'native tests require the explicit export benchmark'
+        assert EXPORT_BENCHMARK and not BUILDKIT_QUALIFICATION, 'native tests require the explicit export benchmark'
         architecture = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine())
         integration = export_integration_bundle(os.environ['HAKOPOD_ACTIONS_EXPORT_TESTS_DIR'],
             os.environ['HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'], architecture, os.environ.get('HAKOPOD_ACTIONS_EXPORT_TEST_RUN') or None)
@@ -397,10 +585,11 @@ def main():
     assert label == 'hakopod-dev', 'unexpected development container'
     OUTPUT.mkdir(parents=True, exist_ok=False)
     OUTPUT_CREATED = True
-    fixture_test = '^TestActionsExportBenchmarkFixture$' if EXPORT_BENCHMARK else '^TestActionsRuntimeAcceptanceFixtures$'
+    fixture_test = ('^TestActionsBuildkitQualificationFixture$' if BUILDKIT_QUALIFICATION else
+                    '^TestActionsExportBenchmarkFixture$' if EXPORT_BENCHMARK else '^TestActionsRuntimeAcceptanceFixtures$')
     command(['go', 'test', '-p=1', './internal/cluster', '-run', fixture_test, '-count=1', '-timeout=60s'],
             env={**os.environ, 'HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR': str(OUTPUT)}, cwd=ROOT, timeout=240)
-    fixture_names = ['export-benchmark'] if EXPORT_BENCHMARK else ['workload', 'disk', 'replacement']
+    fixture_names = ['buildkit-qualification'] if BUILDKIT_QUALIFICATION else ['export-benchmark'] if EXPORT_BENCHMARK else ['workload', 'disk', 'replacement']
     fixtures = {name: json.loads((OUTPUT / f'{name}.json').read_text()) for name in fixture_names}
     for fixture in fixtures.values():
         namespace = next(item['metadata']['name'] for item in fixture['items'] if item['kind'] == 'Namespace')
@@ -413,8 +602,8 @@ def main():
            'overhead': {'podFixed': {'cpu': '100m', 'memory': '512Mi'}}})
     RUNTIME_CREATED = True
     kube(['label', 'node', NODE, 'hakopod.io/actions-runtime=ready'])
-    if EXPORT_BENCHMARK:
-        run_export_benchmark(fixtures['export-benchmark'], integration)
+    if EXPORT_BENCHMARK or BUILDKIT_QUALIFICATION:
+        run_export_benchmark(fixtures[fixture_names[0]], integration, BUILDKIT_QUALIFICATION)
         REPORT['status'] = 'passed'
         return
     workload_ns = next(item['metadata']['namespace'] for item in fixtures['workload']['items'] if item['kind'] == 'Pod')

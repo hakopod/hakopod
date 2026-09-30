@@ -131,26 +131,6 @@ func TestActionsExportBenchmarkFixture(t *testing.T) {
 	if len(workload) == 0 || len(workload) > 128*1024 {
 		t.Fatal("export benchmark source exceeds its 128 KiB bound")
 	}
-	kube := fake.NewClientset()
-	c := &Client{kube: kube}
-	target := runnerTarget(t)
-	target.ApplicationID = "actions-export-benchmark"
-	target.Project = "actions-development-fixture"
-	s := target.Spec.Services["runner"]
-	s.NodeName = "k3d-hakopod-dev-server-0"
-	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
-	s.Actions.TimeoutMinutes = 12
-	s.Actions.WorkspaceSizeGiB = 4
-	target.Spec.Services["runner"] = s
-	if err := c.bootstrap(context.Background(), target); err != nil {
-		t.Fatal(err)
-	}
-	pod := actionsPod(target, "runner", "runtime-fixture", s)
-	pod.APIVersion, pod.Kind = "v1", "Pod"
-	// The benchmark never registers with GitHub. Remove the unused JIT projection
-	// rather than mount even a synthetic registration secret into the workload.
-	pod.Spec.Volumes = pod.Spec.Volumes[:1]
-	pod.Spec.Containers[0].VolumeMounts = pod.Spec.Containers[0].VolumeMounts[:1]
 	// Keep the exact source within the bounded Pod and command inputs, including
 	// the optional VM observer. This changes transport only, not the workload.
 	var compressed bytes.Buffer
@@ -192,15 +172,223 @@ else:
         print('HAKOPOD_EXPORT_REPORT ' + json.dumps(json.loads(data), separators=(',', ':')), flush=True)
 raise SystemExit(status)
 `, arguments, base64.StdEncoding.EncodeToString(compressed.Bytes()), len(workload), sha256.Sum256(workload))
+	writeActionsDiagnosticFixture(t, directory, "export-benchmark.json", wrapper)
+}
+
+func actionsBuildkitQualificationArguments(force bool, image string) (string, error) {
+	encoded, err := actionsExportBenchmarkArguments(force, image, "")
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(image, "ghcr.io/hakopod/buildkit:") {
+		return "", fmt.Errorf("metadata and cache qualification requires an explicitly pinned managed candidate")
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+		return "", err
+	}
+	args[0] = "buildkit-qualification.py"
+	data, err := json.Marshal(args)
+	return string(data), err
+}
+
+func actionsBuildkitQualificationWrapper(arguments string, sources map[string][]byte) (string, error) {
+	type sourceFile struct {
+		Name       string `json:"name"`
+		Size       int    `json:"size"`
+		SHA256     string `json:"sha256"`
+		GzipBase64 string `json:"gzip_base64"`
+	}
+	names := []string{"export-benchmark.py", "buildkit-qualification.py"}
+	if len(sources) != len(names) {
+		return "", fmt.Errorf("qualification requires exactly its two reviewed source files")
+	}
+	files := make([]sourceFile, 0, len(names))
+	for _, name := range names {
+		data := sources[name]
+		if len(data) == 0 || len(data) > 128*1024 {
+			return "", fmt.Errorf("qualification source %s exceeds its 128 KiB bound", name)
+		}
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		if _, err := writer.Write(data); err != nil {
+			return "", err
+		}
+		if err := writer.Close(); err != nil {
+			return "", err
+		}
+		files = append(files, sourceFile{Name: name, Size: len(data), SHA256: fmt.Sprintf("%x", sha256.Sum256(data)),
+			GzipBase64: base64.StdEncoding.EncodeToString(compressed.Bytes())})
+	}
+	encoded, err := json.Marshal(files)
+	if err != nil {
+		return "", err
+	}
+	wrapper := fmt.Sprintf(`import base64, gzip, hashlib, io, json, os, runpy, sys, tempfile, traceback
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.argv = %s
+files = %s
+status = 0
+report_root = None
+try:
+    home = Path('/home/runner')
+    if home.resolve(strict=True) != home or not home.is_dir():
+        raise RuntimeError('Qualification home must be its real private volume')
+    root = Path('/home/runner/_work')
+    root.mkdir(mode=0o700, exist_ok=True)
+    if root.resolve(strict=True) != root or not root.is_dir():
+        raise RuntimeError('Qualification workspace must be its real private directory')
+    report_root = root
+    if [item['name'] for item in files] != ['export-benchmark.py', 'buildkit-qualification.py']:
+        raise RuntimeError('Qualification source inventory changed')
+    verified = []
+    for item in files:
+        with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(item['gzip_base64'], validate=True))) as source:
+            data = source.read(131073)
+        if not 0 < len(data) <= 131072 or len(data) != item['size'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+            raise RuntimeError('Qualification source identity mismatch')
+        verified.append((item['name'], data))
+    directory = Path(tempfile.mkdtemp(prefix='buildkit-qualification-source-', dir=root))
+    os.chmod(directory, 0o700)
+    for name, data in verified:
+        fd = os.open(directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as source:
+            source.write(data)
+    sys.argv[0] = str(directory / 'buildkit-qualification.py')
+    runpy.run_path(sys.argv[0], run_name='__main__')
+except SystemExit as error:
+    status = 0 if error.code is None else error.code if isinstance(error.code, int) else 1
+except BaseException:
+    traceback.print_exc()
+    status = 1
+reports = []
+if report_root is not None:
+    for report in report_root.glob('hako-export-*/qualification-report.json'):
+        reports.append(report)
+        if len(reports) > 1:
+            break
+if len(reports) != 1:
+    print('HAKOPOD_QUALIFICATION_REPORT_ERROR missing or ambiguous report', flush=True)
+    status = 1
+else:
+    with reports[0].open('rb') as source:
+        data = source.read(1048577)
+    if len(data) > 1048576:
+        print('HAKOPOD_QUALIFICATION_REPORT_ERROR report exceeded 1 MiB', flush=True)
+        status = 1
+    else:
+        print('HAKOPOD_QUALIFICATION_REPORT ' + json.dumps(json.loads(data), separators=(',', ':')), flush=True)
+raise SystemExit(status)
+`, arguments, encoded)
+	if len(wrapper) >= 120*1024 {
+		return "", fmt.Errorf("qualification command exceeds its 120 KiB bound")
+	}
+	return wrapper, nil
+}
+
+func TestActionsBuildkitQualificationArguments(t *testing.T) {
+	candidate := "ghcr.io/hakopod/buildkit:v0.32.2-hakopod-" + strings.Repeat("a", 40) + "@sha256:" + strings.Repeat("b", 64)
+	for _, force := range []bool{false, true} {
+		encoded, err := actionsBuildkitQualificationArguments(force, candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var args []string
+		if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+			t.Fatal(err)
+		}
+		expected := []string{"buildkit-qualification.py"}
+		if force {
+			expected = append(expected, "--force-overlay-diff")
+		}
+		expected = append(expected, "--buildkit-image", candidate)
+		if fmt.Sprint(args) != fmt.Sprint(expected) {
+			t.Fatalf("unexpected qualification arguments: %v", args)
+		}
+	}
+	for _, image := range []string{"", actionsExportStockBuildkit, strings.Split(candidate, "@")[0], candidate + "\n"} {
+		if _, err := actionsBuildkitQualificationArguments(false, image); err == nil {
+			t.Fatalf("qualification accepted an unapproved image: %q", image)
+		}
+	}
+}
+
+func TestActionsBuildkitQualificationSourceBounds(t *testing.T) {
+	valid := map[string][]byte{"export-benchmark.py": []byte("# fixture helper\n"), "buildkit-qualification.py": []byte("# fixture entry point\n")}
+	if _, err := actionsBuildkitQualificationWrapper(`["buildkit-qualification.py"]`, valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, files := range []map[string][]byte{
+		{},
+		{"export-benchmark.py": valid["export-benchmark.py"]},
+		{"export-benchmark.py": valid["export-benchmark.py"], "../buildkit-qualification.py": valid["buildkit-qualification.py"]},
+		{"export-benchmark.py": valid["export-benchmark.py"], "buildkit-qualification.py": nil},
+		{"export-benchmark.py": valid["export-benchmark.py"], "buildkit-qualification.py": bytes.Repeat([]byte("x"), 128*1024+1)},
+	} {
+		if _, err := actionsBuildkitQualificationWrapper(`["buildkit-qualification.py"]`, files); err == nil {
+			t.Fatal("qualification accepted a missing, unexpected or oversized source file")
+		}
+	}
+}
+
+// Qualification is a separate pod run, so export benchmarks and native kernel
+// test artifacts do not consume this scenario's workspace or deadline.
+func TestActionsBuildkitQualificationFixture(t *testing.T) {
+	if os.Getenv("HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION") != "1" {
+		t.Skip("only used by the opt-in metadata and cache qualification harness")
+	}
+	if os.Getenv("HAKOPOD_ACTIONS_EXPORT_BENCHMARK") == "1" || os.Getenv("HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS") == "1" || os.Getenv("HAKOPOD_ACTIONS_EXPORT_TEST_RUN") != "" {
+		t.Fatal("qualification must run separately from export benchmarks and native kernel tests")
+	}
+	arguments, err := actionsBuildkitQualificationArguments(os.Getenv("HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF") == "1", os.Getenv("HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := os.Getenv("HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR")
+	if directory == "" {
+		t.Skip("fixture output directory was not requested")
+	}
+	sources := map[string][]byte{}
+	for _, name := range []string{"export-benchmark.py", "buildkit-qualification.py"} {
+		sources[name], err = os.ReadFile(filepath.Join("../../scripts/actions", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper, err := actionsBuildkitQualificationWrapper(arguments, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeActionsDiagnosticFixture(t, directory, "buildkit-qualification.json", wrapper)
+}
+
+func writeActionsDiagnosticFixture(t *testing.T, directory, filename, wrapper string) {
+	t.Helper()
+	kube := fake.NewClientset()
+	c := &Client{kube: kube}
+	target := runnerTarget(t)
+	target.ApplicationID = "actions-export-benchmark"
+	target.Project = "actions-development-fixture"
+	s := target.Spec.Services["runner"]
+	s.NodeName = "k3d-hakopod-dev-server-0"
+	s.Resources = &spec.Resources{CPURequest: "500m", CPULimit: "2", MemoryRequest: "1Gi", MemoryLimit: "4Gi"}
+	s.Actions.TimeoutMinutes = 12
+	s.Actions.WorkspaceSizeGiB = 4
+	target.Spec.Services["runner"] = s
+	if err := c.bootstrap(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	pod := actionsPod(target, "runner", "runtime-fixture", s)
+	pod.APIVersion, pod.Kind = "v1", "Pod"
+	// These diagnostics never register with GitHub and need no JIT projection.
+	pod.Spec.Volumes = pod.Spec.Volumes[:1]
+	pod.Spec.Containers[0].VolumeMounts = pod.Spec.Containers[0].VolumeMounts[:1]
 	if len(wrapper) >= 120*1024 {
 		t.Fatal("export benchmark command exceeds its 120 KiB bound")
 	}
 	pod.Spec.Containers[0].Command = []string{"python3", "-u", "-c", wrapper}
 	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, corev1.EnvVar{Name: "HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT", Value: "k3d-hakopod-dev"})
-	podJSON, err := json.Marshal(pod)
-	if err != nil || len(podJSON) > 65536 {
-		t.Fatalf("export benchmark Pod exceeds its 64 KiB bound: %v", err)
-	}
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != ActionsRuntime || pod.Spec.HostNetwork || pod.Spec.HostPID || pod.Spec.HostIPC {
 		t.Fatal("export benchmark lost the product sandbox boundary")
 	}
@@ -245,11 +433,15 @@ raise SystemExit(status)
 		labels["hakopod.io/development-fixture"] = "actions-export-benchmark"
 		metadata.SetLabels(labels)
 	}
+	podJSON, err := json.Marshal(pod)
+	if err != nil || len(podJSON) > 65536 {
+		t.Fatalf("diagnostic Pod exceeds its 64 KiB bound: %v", err)
+	}
 	data, err := json.MarshalIndent(map[string]any{"apiVersion": "v1", "kind": "List", "items": items}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "export-benchmark.json"), data, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, filename), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 }

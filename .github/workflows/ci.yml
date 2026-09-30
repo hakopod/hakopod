@@ -73,12 +73,18 @@ jobs:
       - run: go vet ./...
       - run: go build ./cmd/...
       - name: Check scripts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
         run: |
           bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh scripts/install.sh release/install-syft.sh deploy/cert-manager/install.sh
           python3 -m py_compile scripts/*.py api/generate.py api/contracts/*.py examples/shop/variants.py tests/restart.py release/*.py
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
+          python3 -B scripts/actions/export-benchmark-test.py
+          python3 -B scripts/actions/docker-acceptance-test.py
+          python3 -B scripts/actions/buildkit-integration-test.py
+          python3 -B scripts/actions/buildkit-qualification-test.py
           sh -n scripts/installer.sh
   dashboard:
     runs-on: ubuntu-24.04

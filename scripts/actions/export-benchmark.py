@@ -323,6 +323,7 @@ class Benchmark:
         self.opener = registry_opener()
         self.builders, self.containers, self.volumes, self.images = [], [], set(), set()
         self.layers = {}
+        self.command_sequence = 0
         self.report = {'schema_version': 1, 'status': 'running', 'context': CONTEXT,
                        'scope': 'disposable managed runner; diagnostic, not fleet performance evidence',
                        'architecture': self.architecture, 'snapshotter': 'overlayfs',
@@ -334,7 +335,7 @@ class Benchmark:
                        'coverage_limits': ['Pinned BuildKit v0.32.2; other versions require their own measurements.',
                                            'Extended attributes are not checked; this benchmark cannot qualify an overlay-diff patch.',
                                            'Sequential single-sandbox measurements are not fleet-scale evidence.'],
-                       'phases': [], 'variants': [], 'fixture_storage_samples': []}
+                       'phases': [], 'variants': [], 'fixture_storage_samples': [], 'docker_storage_samples': []}
         if integration:
             self.report['integration_artifacts'] = {'source': integration['bundle']['source'],
                 'files': integration['bundle']['files'], 'helper_sha256': integration['helper_sha256'],
@@ -343,6 +344,13 @@ class Benchmark:
     def run(self, args, timeout=120, maximum=8 * MIB, progress=False, archive=False):
         remaining = min(timeout, self.deadline - time.monotonic())
         require(remaining > 0, 'Export benchmark workload deadline exceeded')
+        self.command_sequence += 1
+        require(self.command_sequence <= 512, 'Export benchmark command count exceeded its bound')
+        # This fixture has no credentials. Emit bounded arguments before the
+        # command so abrupt eviction still identifies the interrupted work.
+        emit({'phase': 'docker-command', 'status': 'started', 'sequence': self.command_sequence,
+              'arguments': [value[:256] for value in args[:24]],
+              'arguments_truncated': len(args) > 24 or any(len(value) > 256 for value in args[:24])})
         output = tempfile.TemporaryFile(dir=self.root)
         errors = tempfile.TemporaryFile(dir=self.root) if archive else None
         process = subprocess.Popen(['docker', '--config', str(self.config), *args], env=self.env,
@@ -394,6 +402,7 @@ class Benchmark:
     def phase(self, name, action):
         start = time.monotonic()
         print(f'::group::{name}', flush=True)
+        emit({'phase': name, 'status': 'started'})
         try:
             result = action()
             event = {'phase': name, 'status': 'passed', 'duration_seconds': elapsed(start), 'details': result}
@@ -407,6 +416,24 @@ class Benchmark:
             raise
         finally:
             print('::endgroup::', flush=True)
+            if name.endswith(('-builder-startup', '-builder', '-build-and-push', '-cache-export', '-cache-import', '-pullback')):
+                self.docker_storage(name)
+
+    def docker_storage(self, checkpoint):
+        """Docker accounting is diagnostic; it is not physical VFS disk usage."""
+        if len(self.report['docker_storage_samples']) >= 32:
+            return
+        sample = {'checkpoint': checkpoint, 'status': 'unavailable'}
+        try:
+            rows = [json.loads(line) for line in self.run(['system', 'df', '--format', '{{json .}}'], timeout=5, maximum=16384).splitlines()]
+            require(0 < len(rows) <= 8 and all(isinstance(row, dict) for row in rows), 'Unexpected Docker storage accounting')
+            sample.update(status='available', docker_accounting=[
+                {key: str(row.get(key, ''))[:128] for key in ('Type', 'TotalCount', 'Active', 'Size', 'Reclaimable')}
+                for row in rows], filesystem_free_bytes=shutil.disk_usage(self.root).free)
+        except Exception as error:
+            sample['error_type'] = type(error).__name__
+        self.report['docker_storage_samples'].append(sample)
+        emit({'phase': 'docker-storage', 'details': sample})
 
     def boundary(self):
         require(os.environ.get('HAKOPOD_EXPORT_BENCHMARK_DEV_CONTEXT') == CONTEXT, 'Outer development-context gate is missing')
@@ -463,8 +490,10 @@ COPY marker.txt /fixture/marker.txt
                 'binary_sha256': expected['fixture/binary.bin']['sha256'], 'only_warm_change': 'marker.txt: cold newline -> warm newline'}
 
     def registry(self):
-        for image in [BUSYBOX, self.buildkit['reference'], REGISTRY]:
+        self.docker_storage('before-prefetch')
+        for kind, image in [('busybox', BUSYBOX), ('buildkit', self.buildkit['reference']), ('registry', REGISTRY)]:
             self.run(['pull', image], timeout=120)
+            self.docker_storage('after-pull-' + kind)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             self.port = probe.getsockname()[1]
