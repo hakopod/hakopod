@@ -156,5 +156,63 @@ class QualificationEnvelopeTests(unittest.TestCase):
             acceptance.verify_qualification_report(value, acceptance.export_buildkit_selection(), 'amd64', True)
 
 
+class RuntimeEnvelopeTests(unittest.TestCase):
+    def evidence(self, image='', force=False, architecture='amd64'):
+        selected = acceptance.runtime_helpers().runtime_buildkit_selection(image, force)
+        builder = {'image': selected['reference'], 'image_id': 'sha256:' + 'c' * 64,
+                   'version': 'buildkitd github.com/moby/buildkit ' + selected['version'] + ' ' + selected['upstream_revision'],
+                   'architecture': architecture, 'managed_userxattr': selected['kind'] == 'candidate',
+                   'snapshotter': selected['snapshotter'], 'force_overlay_diff': force,
+                   'upstream_revision': selected['upstream_revision']}
+        cold = [{'architecture': arch, 'cached': False, 'emulated': arch != architecture, 'duration_seconds': 1.0}
+                for arch in ('amd64', 'arm64')]
+        result = {'buildkit_selection': selected, 'builder': builder, 'platforms': ['amd64', 'arm64'],
+                  'pullback_execution_platforms': ['amd64', 'arm64'], 'native_cross_compile_platforms': ['amd64', 'arm64'],
+                  'manifest_digest': 'sha256:' + 'd' * 64, 'native_and_emulated_compiler': True,
+                  'failed_build_recovered': True, 'post_failure_pullback_verified': True, 'buildkit_max_parallelism': 2,
+                  'parallel_build_requests': [{'request': 1}, {'request': 2}],
+                  'timings': {'cold_compiler_vertices': cold, 'warm_compiler_vertices': [{**item, 'cached': True} for item in cold]}}
+        def event(phase, details=None):
+            return {'phase': phase, 'status': 'passed', 'details': copy.deepcopy(details or {})}
+        events = [event('sandbox-boundary'), event('containers-and-services'),
+                  event('runtime-builder-verified', {'selection': selected, 'builder': builder}),
+                  event('build-results-verified', result)]
+        result['timings']['ephemeral_builder_stop_seconds'] = 1.0
+        events += [event('compiled-multiarch-registry-concurrency', result), event('complete')]
+        return selected, events
+
+    def test_normal_candidate_and_forced_paths_require_full_runtime_evidence(self):
+        candidate = 'ghcr.io/hakopod/buildkit:v0.32.2-hakopod-' + 'a' * 40 + '@sha256:' + 'b' * 64
+        for image, force in (('', False), (candidate, False), (candidate, True)):
+            for architecture in ('amd64', 'arm64'):
+                selected, events = self.evidence(image, force, architecture)
+                identity = acceptance.verify_runtime_report(events, selected, architecture)
+                self.assertEqual(identity['image'], selected['reference'])
+                self.assertEqual(identity['force_overlay_diff'], force)
+
+    def test_missing_changed_or_cached_compiler_evidence_cannot_pass(self):
+        selected, events = self.evidence()
+        mutations = [lambda values: values.pop(), lambda values: values.append(copy.deepcopy(values[-1])),
+                     lambda values: values[2]['details']['builder'].update(image_id='bad'),
+                     lambda values: values[2]['details']['builder'].update(architecture='arm64'),
+                     lambda values: values[2]['details']['builder'].update(snapshotter='overlayfs'),
+                     lambda values: values[2]['details']['builder'].update(force_overlay_diff=True),
+                     lambda values: values[2]['details']['selection'].update(reference='mutable'),
+                     lambda values: values[4]['details'].update(pullback_execution_platforms=['amd64']),
+                     lambda values: values[4]['details'].update(post_failure_pullback_verified=False)]
+        for mutate in mutations:
+            changed = copy.deepcopy(events)
+            mutate(changed)
+            with self.subTest(mutation=mutate), self.assertRaises((AssertionError, RuntimeError)):
+                acceptance.verify_runtime_report(changed, selected, 'amd64')
+        for cached, cold in ((True, True), (False, False)):
+            changed = copy.deepcopy(events)
+            key = 'cold_compiler_vertices' if cold else 'warm_compiler_vertices'
+            for position in (3, 4):
+                changed[position]['details']['timings'][key][1]['cached'] = cached
+            with self.subTest(cold=cold), self.assertRaises(RuntimeError):
+                acceptance.verify_runtime_report(changed, selected, 'amd64')
+
+
 if __name__ == '__main__':
     unittest.main()

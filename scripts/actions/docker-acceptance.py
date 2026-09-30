@@ -7,6 +7,9 @@ HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF=1 additionally selects its explicit
 forced-overlay diagnostic. Both modes retain the named-cluster and isolation
 checks. HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE selects a digest-pinned Hakopod
 candidate only for this benchmark; an empty value retains the stock image.
+HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE independently selects a candidate for the
+full normal runtime suite. HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF=1 requires
+that explicit candidate. Neither input may overlap an export-only diagnostic.
 An owned VM wrapper can generate the same fake-client fixture with:
 
   HAKOPOD_ACTIONS_EXPORT_BENCHMARK=1 HAKOPOD_ACTIONS_RUNTIME_FIXTURE_DIR=<directory>
@@ -193,6 +196,52 @@ def export_buildkit_selection(image=''):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.buildkit_selection(image)
+
+
+def runtime_helpers():
+    spec = importlib.util.spec_from_file_location('selected_runtime_workload', ROOT / 'scripts/actions/runtime-workload.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_runtime_report(events, selected, architecture):
+    helpers = runtime_helpers()
+    assert architecture in ('amd64', 'arm64'), 'unsupported runtime architecture'
+    assert isinstance(events, list) and len(events) <= 4096, 'runtime event bound exceeded'
+    def details(phase):
+        matching = [event for event in events if event.get('phase') == phase]
+        assert len(matching) == 1 and matching[0].get('status') == 'passed', 'missing or repeated runtime phase: ' + phase
+        return matching[0].get('details', {})
+    initial = details('runtime-builder-verified')
+    result = details('compiled-multiarch-registry-concurrency')
+    verified = details('build-results-verified')
+    assert {key: value for key, value in result.items() if key != 'timings'} == {key: value for key, value in verified.items() if key != 'timings'}, 'runtime build evidence changed during cleanup'
+    assert {key: value for key, value in result.get('timings', {}).items() if key != 'ephemeral_builder_stop_seconds'} == verified.get('timings'), 'runtime timing evidence changed during cleanup'
+    details('complete')
+    details('sandbox-boundary')
+    details('containers-and-services')
+    assert initial.get('selection') == selected and result.get('buildkit_selection') == selected, 'runtime BuildKit selection changed'
+    identity = initial.get('builder', {})
+    assert identity == result.get('builder'), 'runtime builder identity changed after compilation'
+    assert re.fullmatch(r'sha256:[a-f0-9]{64}', identity.get('image_id', '')), 'runtime builder image ID is invalid'
+    expected = {'image': selected['reference'], 'image_id': identity['image_id'],
+                'version': 'buildkitd github.com/moby/buildkit ' + selected['version'] + ' ' + selected['upstream_revision'],
+                'architecture': architecture, 'managed_userxattr': selected['kind'] == 'candidate',
+                'snapshotter': selected['snapshotter'], 'force_overlay_diff': selected['force_overlay_diff'],
+                'upstream_revision': selected['upstream_revision']}
+    assert identity == expected, 'runtime builder identity differs from the explicitly selected mode'
+    for key in ('platforms', 'pullback_execution_platforms', 'native_cross_compile_platforms'):
+        assert result.get(key) == ['amd64', 'arm64'], 'runtime did not verify both platforms: ' + key
+    assert re.fullmatch(r'sha256:[a-f0-9]{64}', result.get('manifest_digest', '')), 'runtime manifest digest is invalid'
+    assert result.get('native_and_emulated_compiler') is True and result.get('failed_build_recovered') is True and result.get('post_failure_pullback_verified') is True, 'runtime compiler or recovery checks are incomplete'
+    assert result.get('buildkit_max_parallelism') == 2, 'runtime compiler concurrency changed'
+    requests = result.get('parallel_build_requests', [])
+    assert len(requests) == 2 and [item.get('request') for item in requests] == [1, 2], 'runtime did not verify concurrent build requests'
+    timings = result.get('timings', {})
+    helpers.verify_compiler_metrics(timings.get('cold_compiler_vertices'), architecture, cold=True)
+    helpers.verify_compiler_metrics(timings.get('warm_compiler_vertices'), architecture, cold=False)
+    return identity
 
 
 def export_integration_bundle(directory, image, architecture, run_id=None):
@@ -571,6 +620,7 @@ def main():
     global RUNTIME_CREATED, OUTPUT_CREATED
     if os.environ.get('GITHUB_ACTIONS') != 'true':
         raise SystemExit('This fixture only runs in an isolated GitHub Actions job')
+    runtime_selection = runtime_helpers().runtime_selection_from_environment(os.environ)
     assert not (EXPORT_BENCHMARK and BUILDKIT_QUALIFICATION), 'select one diagnostic workload per disposable Pod'
     if os.environ.get('HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE'):
         assert EXPORT_BENCHMARK or BUILDKIT_QUALIFICATION, 'select a diagnostic when selecting a BuildKit image'
@@ -606,6 +656,8 @@ def main():
         run_export_benchmark(fixtures[fixture_names[0]], integration, BUILDKIT_QUALIFICATION)
         REPORT['status'] = 'passed'
         return
+    REPORT['scenario'] = 'candidate-full-runtime' if runtime_selection['kind'] == 'candidate' else 'normal-runtime'
+    REPORT['runtime_buildkit_selection'] = runtime_selection
     workload_ns = next(item['metadata']['namespace'] for item in fixtures['workload']['items'] if item['kind'] == 'Pod')
     disk_ns = next(item['metadata']['namespace'] for item in fixtures['disk']['items'] if item['kind'] == 'Pod')
     NAMESPACES.add(workload_ns)
@@ -620,6 +672,8 @@ def main():
     REPORT['workload_events'] = logs(workload_ns, 'workload')
     assert pod['status']['phase'] == 'Succeeded', pod['status']
     assert any(event['phase'] == 'complete' for event in REPORT['workload_events']), 'missing workload completion'
+    REPORT['runtime_builder'] = verify_runtime_report(REPORT['workload_events'], runtime_selection,
+        {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine()))
     record('compiled-multiarch-workload', started)
     started = time.monotonic()
     delete_pod(workload_ns)

@@ -46,22 +46,45 @@ on:
         description: Optional candidate build run ID supplying matching native kernel test artifacts
         type: string
         default: ''
+      runtime_buildkit_image:
+        description: Optional digest-pinned candidate for the full runtime and emulation suite
+        type: string
+        default: ''
+      runtime_force_overlay_diff:
+        description: Force overlay diff in the full runtime suite; requires runtime_buildkit_image
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
+  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runtime_force_overlay_diff && 'forced-candidate-runtime' || inputs.runtime_buildkit_image != '' && 'candidate-runtime' || inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
   cancel-in-progress: true
+env:
+  HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE: ${{ inputs.buildkit_candidate && '1' || '0' }}
+  HAKOPOD_ACTIONS_PUBLISH_CANDIDATE: ${{ inputs.publish_candidate && '1' || '0' }}
+  HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ !inputs.buildkit_qualification && (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff || inputs.export_buildkit_test_run != '') && '1' || '0' }}
+  HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION: ${{ inputs.buildkit_qualification && '1' || '0' }}
+  HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE: ${{ inputs.export_buildkit_image }}
+  HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF: ${{ inputs.export_force_overlay_diff && '1' || '0' }}
+  HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS: ${{ inputs.export_buildkit_test_run != '' && '1' || '0' }}
+  HAKOPOD_ACTIONS_EXPORT_TEST_RUN: ${{ inputs.export_buildkit_test_run }}
+  HAKOPOD_ACTIONS_RUNTIME_BUILDKIT_IMAGE: ${{ inputs.runtime_buildkit_image }}
+  HAKOPOD_ACTIONS_RUNTIME_FORCE_OVERLAY_DIFF: ${{ inputs.runtime_force_overlay_diff && '1' || '0' }}
 jobs:
-  invalid-qualification:
-    if: ${{ inputs.buildkit_qualification && (inputs.buildkit_candidate || inputs.export_benchmark || inputs.export_buildkit_test_run != '') }}
+  validate-scenario:
     runs-on: ubuntu-24.04
-    timeout-minutes: 1
+    timeout-minutes: 3
     steps:
-      - name: Reject overlapping diagnostic scenarios
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Validate explicit runtime selection before building or starting a cluster
         run: |
-          echo 'BuildKit qualification must run separately from candidate builds, export benchmarks and native kernel tests.'
-          exit 1
+          if [ '${{ inputs.buildkit_qualification && inputs.export_benchmark }}' = 'true' ]; then
+            echo 'BuildKit qualification must run separately from export benchmarks.'
+            exit 1
+          fi
+          python3 -B scripts/actions/runtime-workload.py --validate-selection
   buildkit-candidate:
+    needs: validate-scenario
     if: ${{ inputs.buildkit_candidate && !inputs.buildkit_qualification }}
     uses: ./.github/workflows/buildkit-image.yml
     with:
@@ -70,6 +93,7 @@ jobs:
       contents: read
       packages: write
   runtime:
+    needs: validate-scenario
     if: ${{ !inputs.buildkit_candidate && !(inputs.buildkit_qualification && (inputs.export_benchmark || inputs.export_buildkit_test_run != '')) }}
     permissions:
       contents: read
@@ -88,12 +112,6 @@ jobs:
       HAKOPOD_DEV_SERVER_MEMORY: 6g
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
-      HAKOPOD_ACTIONS_EXPORT_BENCHMARK: ${{ !inputs.buildkit_qualification && (inputs.export_benchmark || inputs.export_buildkit_image != '' || inputs.export_force_overlay_diff || inputs.export_buildkit_test_run != '') && '1' || '0' }}
-      HAKOPOD_ACTIONS_BUILDKIT_QUALIFICATION: ${{ inputs.buildkit_qualification && '1' || '0' }}
-      HAKOPOD_ACTIONS_EXPORT_BUILDKIT_IMAGE: ${{ inputs.export_buildkit_image }}
-      HAKOPOD_ACTIONS_EXPORT_FORCE_OVERLAY_DIFF: ${{ inputs.export_force_overlay_diff && '1' || '0' }}
-      HAKOPOD_ACTIONS_EXPORT_INTEGRATION_TESTS: ${{ inputs.export_buildkit_test_run != '' && '1' || '0' }}
-      HAKOPOD_ACTIONS_EXPORT_TEST_RUN: ${{ inputs.export_buildkit_test_run }}
       HAKOPOD_ACTIONS_EXPORT_TESTS_DIR: ${{ github.workspace }}/.local/buildkit-tests/${{ matrix.arch }}
       ARCH: ${{ matrix.arch }}
     steps:
