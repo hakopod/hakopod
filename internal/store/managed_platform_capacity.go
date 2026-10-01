@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 	"k8s.io/apimachinery/pkg/util/validation"
 )

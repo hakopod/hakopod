@@ -108,7 +108,7 @@ func TestManagedCapacityScopesBackfillFromTrustedPolicyAndRejectPoolChange(t *te
 		t.Fatal("trusted startup reconciliation did not bind the legacy scope", pool, err)
 	}
 	ownership, err := s.ManagedCapacityPoolOwnership(ctx, policy.Pool)
-	if err != nil || len(ownership.Workloads) != 1 || ownership.Workloads[0].Kind != "application" || ownership.Workloads[0].ID != created.ID || ownership.Workloads[0].Capacity.CPUMilli < 1 || ownership.Workloads[0].Capacity.MemoryBytes < 1 {
+	if err != nil || len(ownership.Workloads) != 1 || ownership.Workloads[0].Kind != "application" || ownership.Workloads[0].ID != created.ApplicationID || ownership.Workloads[0].Capacity.CPUMilli < 1 || ownership.Workloads[0].Capacity.MemoryBytes < 1 {
 		t.Fatal("pool ownership did not include the exact durable application", ownership, err)
 	}
 	s.ManagedCapacityPool = func(context.Context, pgx.Tx, string, string) (string, error) { return "changed", nil }
@@ -134,8 +134,7 @@ func TestManagedCapacityPoolOwnershipIncludesCrossScopePlatforms(t *testing.T) {
 		current := item
 		current.ID = NewID()
 		current.Environment = environment
-		current.Name = fmt.Sprintf("capacity-owned-%d", index)
-		current.Spec.Name = current.Name
+		current.Spec.Name = fmt.Sprintf("capacity-owned-%d", index)
 		currentPlan := plan
 		currentPlan.Namespace = "managed-platform-" + current.ID
 		review := managedPlatformReview(t, s, p, current, currentPlan, 0, "create")
@@ -175,7 +174,7 @@ func TestManagedCapacityPoolOwnershipIncludesCrossScopePlatforms(t *testing.T) {
 	}
 	foundApplication := false
 	for _, workload := range ownership.Workloads {
-		foundApplication = foundApplication || workload.Kind == "application" && workload.ID == created.ID && workload.Environment == "other"
+		foundApplication = foundApplication || workload.Kind == "application" && workload.ID == created.ApplicationID && workload.Environment == "other"
 	}
 	if !foundApplication {
 		t.Fatal("pool ownership omitted cross-scope durable application")
