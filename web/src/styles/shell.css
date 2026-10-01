@@ -221,6 +221,8 @@
   inset: 0;
 }
 .hako-tooltip {
+  background: var(--card);
+  animation: none;
   max-width: min(360px, calc(100vw - 16px));
   white-space: normal;
   overflow-wrap: anywhere;
@@ -926,6 +928,9 @@ html[data-accent] .button-primary:hover {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+.hako-page-heading-title {
+  @apply items-start;
 }
 .hako-heading-help.button {
   width: 32px;
