@@ -1,3 +1,4 @@
+import { fieldError } from '../lib/form-errors'
 import { EnvironmentFiles, environmentFilePayload, type EnvironmentFile } from './environment-files'
 import { EnvironmentFields } from './runtime-settings-fields'
 import { parseEnvironment, type EnvironmentRow } from '../lib/service-environment'
@@ -8,8 +9,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
-import { fieldError } from '../lib/form-errors'
+import { TOMLEditor } from './toml-editor'
 import { Note, RequestError } from './shared'
 
 export type ComposeDraft = components['schemas']['ComposeImport']
@@ -125,20 +125,14 @@ export function ComposeImport({
       </label>
       <label className="field-stack">
         Docker Compose YAML
-        <Textarea
-          className="code-editor"
+        <TOMLEditor
+          label="Docker Compose YAML"
+          language="yaml"
+          purpose="compose"
           value={yaml}
-          error={fieldError(error, 'compose')}
           disabled={busy}
-          maxLength={262144}
-          spellCheck={false}
-          autoComplete="off"
-          rows={12}
-          placeholder={
-            'services:\n  web:\n    image: nginxinc/nginx-unprivileged:alpine\n    ports:\n      - "8080:8080"'
-          }
-          onChange={(event) => {
-            setYAML(event.target.value)
+          onChange={(value) => {
+            setYAML(value)
             reset()
           }}
         />
@@ -187,12 +181,11 @@ export function ComposeImport({
         <section className="grid min-w-0 gap-3" aria-label="Generated configuration">
           <label className="field-stack">
             Generated config.toml
-            <Textarea
-              className="code-editor"
+            <TOMLEditor
+              label="Generated TOML configuration"
               value={draft.toml}
+              onChange={() => {}}
               readOnly
-              rows={12}
-              spellCheck={false}
             />
           </label>
           {draft.warnings.map((warning, index) => (
