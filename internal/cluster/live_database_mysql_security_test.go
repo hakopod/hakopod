@@ -9,10 +9,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
 	"os/exec"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/database"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -66,6 +69,14 @@ grep -E 'ERROR 2026.*(SSL|TLS)' "$work/error" >/dev/null
 func testMySQLCredentialLogs(t *testing.T, ctx context.Context, c *Client, d database.Resource) {
 	t.Helper()
 	ns := DatabaseNamespace(d.ID)
+	namespace, err := c.kube.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{})
+	if err != nil || namespace.Labels[databaseOwner] != d.ID || namespace.Labels[managedBy] != "hakopod" || namespace.CreationTimestamp.IsZero() {
+		t.Fatal("MySQL log audit fixture namespace identity is unavailable")
+	}
+	// The shared operator may have months of unrelated logs. Inspect the whole
+	// fixture lifetime from its namespace creation, including every bootstrap
+	// and fault, without silently truncating that interval.
+	since := namespace.CreationTimestamp
 	secrets, err := c.kube.CoreV1().Secrets(ns).List(ctx, metav1.ListOptions{Limit: 40})
 	if err != nil || secrets.Continue != "" {
 		t.Fatal("MySQL log audit credential inventory unavailable")
@@ -87,23 +98,217 @@ func testMySQLCredentialLogs(t *testing.T, ctx context.Context, c *Client, d dat
 			t.Fatal("MySQL log audit pod inventory unavailable")
 		}
 		for _, pod := range pods.Items {
+			if mysqlAuditPodEndedBefore(pod, since) {
+				continue
+			}
 			for _, container := range append(append([]corev1.Container{}, pod.Spec.InitContainers...), pod.Spec.Containers...) {
-				limit := int64(4 << 20)
-				data, err := c.kube.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, LimitBytes: &limit}).DoRaw(ctx)
-				if err != nil || len(data) >= int(limit) {
-					t.Fatal("MySQL log audit could not inspect the complete bounded log")
+				status, found := mysqlAuditContainerStatus(pod, container.Name)
+				if !found {
+					t.Fatalf("MySQL log audit container history is unavailable for %s/%s", pod.Name, container.Name)
 				}
-				for _, value := range private {
-					if bytes.Contains(data, value) {
-						t.Fatalf("MySQL private material appeared in %s/%s logs", pod.Name, container.Name)
+				streams, err := mysqlAuditContainerStreams(status, since)
+				if err != nil {
+					t.Fatalf("MySQL log audit history is incomplete for %s/%s: %s", pod.Name, container.Name, err)
+				}
+				for _, previous := range streams {
+					limit := int64(4 << 20)
+					data, err := c.kube.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, LimitBytes: &limit, SinceTime: &since, Previous: previous}).DoRaw(ctx)
+					if err != nil {
+						t.Fatalf("MySQL log audit failed for %s/%s: Kubernetes reason %s", pod.Name, container.Name, apierrors.ReasonForError(err))
 					}
+					if len(data) >= int(limit) {
+						t.Fatalf("MySQL log audit exceeded its complete-log bound for %s/%s", pod.Name, container.Name)
+					}
+					for _, value := range private {
+						if bytes.Contains(data, value) {
+							t.Fatalf("MySQL private material appeared in %s/%s logs", pod.Name, container.Name)
+						}
+					}
+				}
+				latest, err := c.kube.CoreV1().Pods(namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+				if err != nil || latest.UID != pod.UID {
+					t.Fatal("MySQL log audit pod identity changed during inspection")
+				}
+				latestStatus, found := mysqlAuditContainerStatus(*latest, container.Name)
+				if !found || !reflect.DeepEqual(status, latestStatus) {
+					t.Fatal("MySQL log audit container restarted or changed during inspection")
 				}
 			}
 		}
 	}
 	audit(ns, "")
 	audit("mysql-operator", "name=mysql-operator")
+	latestNamespace, err := c.kube.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{})
+	if err != nil || latestNamespace.UID != namespace.UID || !latestNamespace.CreationTimestamp.Equal(&since) {
+		t.Fatal("MySQL log audit fixture namespace changed during inspection")
+	}
 	t.Log("MySQL member, initialization, Router and controller logs contain none of this fixture's credential or private-key values")
+}
+
+func mysqlAuditPodEndedBefore(pod corev1.Pod, since metav1.Time) bool {
+	if pod.Status.Phase != corev1.PodFailed || pod.Status.Reason != "Evicted" {
+		return false
+	}
+	for _, status := range append(append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...), pod.Status.ContainerStatuses...) {
+		if status.State.Running != nil {
+			return false
+		}
+		if terminated := status.State.Terminated; terminated != nil && !terminated.FinishedAt.IsZero() && !terminated.FinishedAt.Before(&since) {
+			return false
+		}
+	}
+	sandboxStopped := false
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReadyToStartContainers && condition.Status == corev1.ConditionFalse && !condition.LastTransitionTime.IsZero() && condition.LastTransitionTime.Before(&since) {
+			sandboxStopped = true
+		}
+	}
+	if !sandboxStopped {
+		return false
+	}
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.DisruptionTarget && condition.Status == corev1.ConditionTrue && condition.Reason == "TerminationByKubelet" && !condition.LastTransitionTime.IsZero() && condition.LastTransitionTime.Before(&since) {
+			return true
+		}
+	}
+	return false
+}
+
+func mysqlAuditContainerStatus(pod corev1.Pod, name string) (corev1.ContainerStatus, bool) {
+	for _, status := range append(append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...), pod.Status.ContainerStatuses...) {
+		if status.Name == name {
+			return status, true
+		}
+	}
+	return corev1.ContainerStatus{}, false
+}
+
+func mysqlFixtureOperatorProcesses(t *testing.T, ctx context.Context, c *Client) map[string]int32 {
+	t.Helper()
+	pods, err := c.kube.CoreV1().Pods("mysql-operator").List(ctx, metav1.ListOptions{LabelSelector: "name=mysql-operator", Limit: 20})
+	if err != nil || pods.Continue != "" {
+		t.Fatal("MySQL operator process inventory is unavailable")
+	}
+	processes := make(map[string]int32)
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
+			continue
+		}
+		status, found := mysqlAuditContainerStatus(pod, "mysql-operator")
+		if pod.UID == "" || pod.DeletionTimestamp != nil || !found || status.State.Running == nil || status.State.Running.StartedAt.IsZero() || !status.Ready {
+			t.Fatal("MySQL operator process is not stable and ready")
+		}
+		processes[string(pod.UID)] = status.RestartCount
+	}
+	if len(processes) == 0 {
+		t.Fatal("MySQL operator has no ready process")
+	}
+	return processes
+}
+
+// Kubernetes keeps only the current and most recently terminated container's
+// logs. Reject a fixture interval that also includes an older lost process.
+func mysqlAuditContainerStreams(status corev1.ContainerStatus, since metav1.Time) ([]bool, error) {
+	var streams []bool
+	var currentStart metav1.Time
+	switch {
+	case status.State.Running != nil:
+		currentStart = status.State.Running.StartedAt
+		if currentStart.IsZero() {
+			return nil, fmt.Errorf("running process timestamp is unavailable")
+		}
+		streams = append(streams, false)
+	case status.State.Terminated != nil:
+		terminated := status.State.Terminated
+		if terminated.FinishedAt.IsZero() || terminated.StartedAt.IsZero() {
+			return nil, fmt.Errorf("termination timestamps are unavailable")
+		}
+		if terminated.FinishedAt.Before(&since) {
+			return nil, nil
+		}
+		currentStart = terminated.StartedAt
+		streams = append(streams, false)
+	case status.State.Waiting != nil:
+		if status.RestartCount == 0 && status.LastTerminationState.Terminated == nil {
+			return nil, nil
+		}
+	default:
+		return nil, fmt.Errorf("container process state is unavailable")
+	}
+	if status.RestartCount == 0 {
+		return streams, nil
+	}
+	if !currentStart.IsZero() && !currentStart.After(since.Time) {
+		return streams, nil
+	}
+	previous := status.LastTerminationState.Terminated
+	if previous == nil || previous.FinishedAt.IsZero() || previous.StartedAt.IsZero() {
+		return nil, fmt.Errorf("previous process timestamps are unavailable")
+	}
+	if previous.FinishedAt.Before(&since) {
+		return streams, nil
+	}
+	if status.RestartCount > 1 && previous.StartedAt.After(since.Time) {
+		return nil, fmt.Errorf("more than one terminated process overlaps the fixture")
+	}
+	return append(streams, true), nil
+}
+
+func TestMySQLCredentialLogAuditRetainsOverlappingProcesses(t *testing.T) {
+	since := metav1.NewTime(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	before, after := metav1.NewTime(since.Add(-time.Hour)), metav1.NewTime(since.Add(time.Hour))
+	running := func(start metav1.Time, restarts int32, previous *corev1.ContainerStateTerminated) corev1.ContainerStatus {
+		return corev1.ContainerStatus{State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: start}}, RestartCount: restarts, LastTerminationState: corev1.ContainerState{Terminated: previous}}
+	}
+	for _, tc := range []struct {
+		name    string
+		status  corev1.ContainerStatus
+		streams []bool
+		invalid bool
+	}{
+		{"stable operator with old restarts", running(before, 2, nil), []bool{false}, false},
+		{"fresh process", running(after, 0, nil), []bool{false}, false},
+		{"one fixture restart", running(after, 1, &corev1.ContainerStateTerminated{StartedAt: before, FinishedAt: after}), []bool{false, true}, false},
+		{"multiple fixture restarts lost history", running(after, 2, &corev1.ContainerStateTerminated{StartedAt: after, FinishedAt: after}), nil, true},
+		{"multiple older restarts with complete fixture coverage", running(after, 2, &corev1.ContainerStateTerminated{StartedAt: before, FinishedAt: after}), []bool{false, true}, false},
+		{"old terminated process", corev1.ContainerStatus{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{StartedAt: before, FinishedAt: before}}, RestartCount: 2}, nil, false},
+		{"unavailable restart history", running(after, 1, nil), nil, true},
+		{"unknown termination", corev1.ContainerStatus{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown"}}}, nil, true},
+		{"unstarted container", corev1.ContainerStatus{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}}}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			streams, err := mysqlAuditContainerStreams(tc.status, since)
+			if (err != nil) != tc.invalid || !reflect.DeepEqual(streams, tc.streams) {
+				t.Fatal("credential audit lost fixture logs or accepted unavailable history")
+			}
+		})
+	}
+}
+
+func TestMySQLCredentialLogAuditExcludesOnlyProvenOldEvictions(t *testing.T) {
+	since := metav1.NewTime(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	before, after := metav1.NewTime(since.Add(-time.Hour)), metav1.NewTime(since.Add(time.Hour))
+	old := corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted", ContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown"}}}}, Conditions: []corev1.PodCondition{
+		{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue, Reason: "TerminationByKubelet", LastTransitionTime: before},
+		{Type: corev1.PodReadyToStartContainers, Status: corev1.ConditionFalse, LastTransitionTime: before},
+	}}}
+	if !mysqlAuditPodEndedBefore(old, since) {
+		t.Fatal("proven pre-fixture eviction was included")
+	}
+	for _, change := range []func(*corev1.Pod){
+		func(p *corev1.Pod) { p.Status.Conditions[0].LastTransitionTime = after },
+		func(p *corev1.Pod) { p.Status.Conditions[1].LastTransitionTime = after },
+		func(p *corev1.Pod) { p.Status.Conditions[1].Status = corev1.ConditionTrue },
+		func(p *corev1.Pod) { p.Status.ContainerStatuses[0].State.Terminated.FinishedAt = after },
+		func(p *corev1.Pod) { p.Status.Phase = corev1.PodRunning },
+		func(p *corev1.Pod) { p.Status.Reason = "Error" },
+	} {
+		changed := old.DeepCopy()
+		change(changed)
+		if mysqlAuditPodEndedBefore(*changed, since) {
+			t.Fatal("overlapping or unproven eviction was excluded")
+		}
+	}
 }
 
 func testMySQLQuorumLoss(t *testing.T, ctx context.Context, c *Client, d database.Resource, o database.Observation) {

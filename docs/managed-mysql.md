@@ -188,14 +188,27 @@ reports database and Router pods evicted for ephemeral-storage pressure. This
 supports resolving development capacity before repeating the test; it does not
 establish a database recovery or rejoin implementation defect.
 
+Router keeps warning-level logs so metadata certificate failures remain visible.
+Debug logging stays disabled. The native tests inspect complete bounded member,
+initialization, Router and operator logs for this fixture's credential and
+private-key values without printing those logs.
+
 The latest recovery-ingress gates and explicit recovery checks against every
 replica still need native acceptance. The standalone
 `TestManagedMySQLRouterBackendTLSLive` test checks the effective Router TLS
 configuration and injects unrelated-issuer and wrong-hostname server identities.
 It must prove that direct server authentication remains available, Router
 rejects the backend identity, and normal routing recovers after restoring the
-certificate. The final strict-certificate run passed on October 1, 2026, in
+certificate. An earlier strict-certificate run passed on October 1, 2026, in
 360.724 seconds. Both unrelated-issuer and wrong-hostname rejection passed;
 normal fixture cleanup left no namespace or persistent-volume reference. This
-result covers Router backend TLS, not the outstanding scaling and recovery
-acceptance above.
+result predates the latest source. Reruns exposed hidden certificate details at
+the previous ERROR-only log level and repeated-error suppression in Router.
+The current test uses a fresh UID-checked Router process for each fault and
+requires new certificate-specific evidence. That native rerun passed on
+October 1, 2026, in 262.371 seconds. Both faults, restored routing and complete
+fixture credential-log audits passed. The namespace and its persistent-volume
+references are absent. The audit excludes only proven pre-fixture evictions,
+inspects overlapping current and previous container logs, and rejects lost
+restart history or an operator process change. Scaling and recovery acceptance
+remain pending.

@@ -79,6 +79,23 @@ func TestMySQLObjectPinsAllContainersAndSeparatesCredentials(t *testing.T) {
 			t.Fatal("wrong engine identity")
 		}
 	}
+	options, found, err := unstructured.NestedSlice(object.Object, "spec", "router", "bootstrapOptions")
+	if err != nil || !found {
+		t.Fatal("Router bootstrap policy is unavailable")
+	}
+	logger := ""
+	for _, option := range options {
+		value, ok := option.(string)
+		if ok && strings.HasPrefix(value, "--conf-set-option=logger.level=") {
+			if logger != "" {
+				t.Fatal("Router logger policy is ambiguous")
+			}
+			logger = strings.TrimPrefix(value, "--conf-set-option=logger.level=")
+		}
+	}
+	if logger != "WARNING" {
+		t.Fatal("Router hides certificate failures or enables verbose metadata logging")
+	}
 }
 
 func TestMySQLHealthRejectsUnknownMembersAndUnsafeTransport(t *testing.T) {
