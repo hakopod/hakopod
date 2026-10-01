@@ -631,6 +631,36 @@ func TestSupabasePoolerUsesBoundedTemporaryHomes(t *testing.T) {
 	t.Fatal("pooler Deployment is missing")
 }
 
+func TestSupabasePoolerUsesSeparateAdministrativeJWT(t *testing.T) {
+	manifests, err := RenderSupabase(rendererFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range manifests.Objects {
+		deployment, ok := object.(*appsv1.Deployment)
+		if !ok || deployment.Name != "supabase-pooler" {
+			continue
+		}
+		env := map[string]corev1.EnvVar{}
+		for _, item := range deployment.Spec.Template.Spec.Containers[0].Env {
+			env[item.Name] = item
+		}
+		api := env["API_JWT_SECRET"].ValueFrom
+		metrics := env["METRICS_JWT_SECRET"].ValueFrom
+		if api == nil || api.SecretKeyRef == nil || api.SecretKeyRef.Name != "supabase-pooler-api-jwt-secret-r1" || api.SecretKeyRef.Key != "value" {
+			t.Fatal("pooler admin API does not use its dedicated immutable JWT secret")
+		}
+		if metrics == nil || metrics.SecretKeyRef == nil || metrics.SecretKeyRef.Name != "supabase-jwt-secret-r1" || metrics.SecretKeyRef.Key != "value" {
+			t.Fatal("pooler metrics no longer use the platform JWT secret")
+		}
+		if api.SecretKeyRef.Name == metrics.SecretKeyRef.Name {
+			t.Fatal("pooler admin and application JWT authority are shared")
+		}
+		return
+	}
+	t.Fatal("pooler Deployment is missing")
+}
+
 func TestSupabaseRendererWiresDatabaseTLSWithoutPrivateKeyDisclosure(t *testing.T) {
 	manifests, err := RenderSupabase(rendererFixture())
 	if err != nil {

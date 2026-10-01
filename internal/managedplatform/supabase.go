@@ -38,6 +38,7 @@ var supabaseSecretKeys = []string{
 	"jwt-signing-keys",
 	"jwt-verification-keys",
 	"pg-meta-crypto-key",
+	"pooler-api-jwt-secret",
 	"postgres-meta-database-password",
 	"publishable-key",
 	"realtime-database-password",
@@ -106,6 +107,9 @@ func (s Spec) ValidateSupabase() error {
 	}
 	if err := s.ValidateSecrets(supabaseSecretKeys); err != nil {
 		return err
+	}
+	if s.Secrets["pooler-api-jwt-secret"] == s.Secrets["jwt-secret"] {
+		return fmt.Errorf("pooler-api-jwt-secret must use a separate immutable secret revision from jwt-secret")
 	}
 	if err := s.Placement.Validate("standalone", 1); err != nil {
 		return err
@@ -181,7 +185,7 @@ func PlanSupabase(s Spec, images map[string]string) (Plan, error) {
 	add("database", []int32{5432}, []string{"database-owner-password", "database-role-bootstrap", "database-tls-certificate"}, []string{"database", "database-encryption"})
 	add("edge-runtime", []int32{9000}, []string{"anon-key", "jwt-secret", "jwt-verification-keys", "publishable-key", "secret-key", "service-role-key"}, []string{"edge-functions"})
 	add("image-proxy", []int32{5001}, nil, []string{"objects"})
-	add("pooler", []int32{4000, 5432, 6543}, []string{"jwt-secret", "secret-key-base", "supavisor-database-url", "vault-encryption-key"}, nil)
+	add("pooler", []int32{4000, 5432, 6543}, []string{"jwt-secret", "pooler-api-jwt-secret", "secret-key-base", "supavisor-database-url", "vault-encryption-key"}, nil)
 	add("postgres-meta", []int32{8080}, []string{"pg-meta-crypto-key", "postgres-meta-database-password"}, nil)
 	add("realtime", []int32{4000}, []string{"anon-key", "jwt-secret", "jwt-verification-keys", "realtime-database-password", "realtime-db-encryption-key", "secret-key-base"}, nil)
 	add("rest", []int32{3000}, []string{"jwt-verification-keys", "rest-database-url"}, nil)
