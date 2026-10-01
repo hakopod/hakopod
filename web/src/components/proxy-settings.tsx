@@ -188,6 +188,7 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
   const [conflict, setConflict] = useState(false)
   const [compared, setCompared] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [error, setError] = useState('')
   const formRef = useInstallationFormFocus(Boolean(review))
   const navigate = useNavigate()
@@ -284,6 +285,7 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
           setError('')
         } catch (cause) {
           setError(message(cause))
+          setShowAdvanced(true)
         }
       }}
     >
@@ -388,7 +390,15 @@ function ProxyForm({ current }: { current: ProxyStatus }) {
       ) : (
         <fieldset disabled={busy || submitted} className="m-0 grid min-w-0 gap-4 border-0 p-0">
           <EdgePolicyFields draft={draft} onChange={setDraft} />
-          <ControllerFields snapshot={snapshot} text={text} onChange={setText} />
+          <details
+            open={showAdvanced}
+            onToggle={(event) => setShowAdvanced(event.currentTarget.open)}
+          >
+            <summary>Advanced HAProxy controller settings</summary>
+            <div className="mt-4">
+              <ControllerFields snapshot={snapshot} text={text} onChange={setText} />
+            </div>
+          </details>
         </fieldset>
       )}
       {error && <RequestError error={error} />}

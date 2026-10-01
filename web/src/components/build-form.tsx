@@ -327,7 +327,7 @@ export default function BuildForm({
         <GitDeploymentPaths active="build" />
       )}
       <ComputeNotice creatingApplication={!linked} />
-      {!build && (
+      {
         <nav aria-label="Source build steps" className="flex flex-wrap gap-2 py-3">
           {buildSteps.map((label, index) => (
             <Button
@@ -349,7 +349,7 @@ export default function BuildForm({
             </Button>
           ))}
         </nav>
-      )}
+      }
       <form
         ref={formRef}
         noValidate
@@ -359,8 +359,8 @@ export default function BuildForm({
           if (!validateVisibleFields(e.currentTarget)) return
           setError('')
           try {
-            if (!build && step < 3) {
-              if (step === 0 && lastDetectedSource.current !== sourceFingerprint)
+            if (step < 3) {
+              if (!build && step === 0 && lastDetectedSource.current !== sourceFingerprint)
                 await detectRepository(true)
               if (step === 1) {
                 parseField('build_args', () => parseBuildArgs(buildArgs))
@@ -445,15 +445,13 @@ export default function BuildForm({
         }}
       >
         <div className="form-body auth-form">
-          {!build && (
-            <div ref={stepHeading} tabIndex={-1} className="sr-only" role="status">
-              Step {step + 1} of {buildSteps.length}: {buildSteps[step]}
-            </div>
-          )}
+          <div ref={stepHeading} tabIndex={-1} className="sr-only" role="status">
+            Step {step + 1} of {buildSteps.length}: {buildSteps[step]}
+          </div>
           {error && <RequestError error={error} />}
           <fieldset
-            disabled={busy || detecting || (!build && step !== 0)}
-            className={build || step === 0 ? 'grid min-w-0 gap-4' : 'hidden'}
+            disabled={busy || detecting || step !== 0}
+            className={step === 0 ? 'grid min-w-0 gap-4' : 'hidden'}
           >
             <FormSection
               title="Repository"
@@ -594,8 +592,8 @@ export default function BuildForm({
             </FormSection>
           </fieldset>
           <fieldset
-            disabled={busy || (!build && step !== 1)}
-            className={build || step === 1 ? 'grid min-w-0 gap-4' : 'hidden'}
+            disabled={busy || step !== 1}
+            className={step === 1 ? 'grid min-w-0 gap-4' : 'hidden'}
           >
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
               <div className="grid min-w-0 gap-1 text-sm" aria-live="polite">
@@ -846,8 +844,8 @@ export default function BuildForm({
             </details>
           </fieldset>
           <fieldset
-            disabled={busy || (!build && step !== 2)}
-            className={build || step === 2 ? 'grid min-w-0 gap-4' : 'hidden'}
+            disabled={busy || step !== 2}
+            className={step === 2 ? 'grid min-w-0 gap-4' : 'hidden'}
           >
             <FormSection
               title="Runtime"
@@ -1148,8 +1146,8 @@ export default function BuildForm({
               )}
             </FormSection>
           </fieldset>
-          {!build && step === 3 && (
-            <FormSection title="Review source build">
+          {step === 3 && (
+            <FormSection title={build ? 'Review build changes' : 'Review source build'}>
               <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 [&_dd]:break-words [&_dt]:text-[var(--muted)]">
                 <div>
                   <dt>Application / service</dt>
@@ -1263,8 +1261,9 @@ export default function BuildForm({
                 )}
               </dl>
               <Note>
-                Saving prepares a workflow for review. Next, install it in your repository to start
-                building. This does not deploy your service yet.
+                {build
+                  ? 'Saving applies these build configuration changes. It does not deploy your service.'
+                  : 'Saving prepares a workflow for review. Next, install it in your repository to start building. This does not deploy your service yet.'}
               </Note>
             </FormSection>
           )}
@@ -1273,7 +1272,7 @@ export default function BuildForm({
           <Button type="button" disabled={busy || detecting} onClick={onClose}>
             Cancel
           </Button>
-          {!build && step > 0 && (
+          {step > 0 && (
             <Button
               type="button"
               disabled={busy || detecting}
@@ -1289,7 +1288,9 @@ export default function BuildForm({
             {busy
               ? 'Saving…'
               : build
-                ? 'Save build configuration'
+                ? step === 3
+                  ? 'Save build configuration'
+                  : `Continue to ${buildSteps[step + 1].toLowerCase()}`
                 : step === 3
                   ? 'Save and review workflow'
                   : `Continue to ${buildSteps[step + 1].toLowerCase()}`}

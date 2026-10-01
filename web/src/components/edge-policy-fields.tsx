@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import {
   newEdgeRule,
   type EdgeDraft,
@@ -225,167 +225,177 @@ function RuleFields({
   const change = <K extends keyof EdgeRuleDraft>(key: K, value: EdgeRuleDraft[K]) =>
     onChange({ ...rule, [key]: value })
   const label = rule.id || String(index + 1)
+  const [open, setOpen] = useState(index === 0)
   return (
-    <section
-      aria-labelledby={ruleHeading}
-      className="grid min-w-0 gap-4 border-t border-border pt-4"
+    <details
+      className="min-w-0 border-t border-border pt-4"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <h3 id={ruleHeading} className="m-0 text-sm font-medium">
-          Rule {index + 1}
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={index === 0}
-            aria-label={`Move rule ${label} earlier`}
-            onClick={() => onMove(-1)}
-          >
-            Move up
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={index === total - 1}
-            aria-label={`Move rule ${label} later`}
-            onClick={() => onMove(1)}
-          >
-            Move down
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="danger"
-            aria-label={`Remove rule ${label}`}
-            onClick={onRemove}
-          >
-            <Icon name="trash" size={14} />
-            Remove
-          </Button>
+      <summary id={ruleHeading} className="min-w-0 cursor-pointer text-sm font-medium">
+        Rule {index + 1}: {rule.id || 'Unnamed rule'}
+        {rule.host && (
+          <span className="ml-2 break-all font-mono text-xs text-muted-foreground">
+            {rule.host}
+            {rule.path_prefix || '/'}
+          </span>
+        )}
+      </summary>
+      <div className="mt-4 grid min-w-0 gap-4">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={index === 0}
+              aria-label={`Move rule ${label} earlier`}
+              onClick={() => onMove(-1)}
+            >
+              Move up
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={index === total - 1}
+              aria-label={`Move rule ${label} later`}
+              onClick={() => onMove(1)}
+            >
+              Move down
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="danger"
+              aria-label={`Remove rule ${label}`}
+              onClick={onRemove}
+            >
+              <Icon name="trash" size={14} />
+              Remove
+            </Button>
+          </div>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-2">
+            Rule ID
+            <Input
+              required
+              value={rule.id}
+              maxLength={32}
+              pattern="[a-z0-9][a-z0-9_\-]{0,31}"
+              spellCheck={false}
+              onChange={(event) => change('id', event.target.value)}
+              aria-describedby={idHelp}
+            />
+            <small id={idHelp} className="field-help">
+              Unique lowercase name using letters, digits, - or _.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Hostname
+            <Input
+              required
+              value={rule.host}
+              maxLength={253}
+              placeholder="app.example.com"
+              spellCheck={false}
+              onChange={(event) => change('host', event.target.value)}
+              aria-describedby={hostHelp}
+            />
+            <small id={hostHelp} className="field-help">
+              Exact hostname, without a scheme, port or wildcard.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Path prefix
+            <Input
+              required
+              value={rule.path_prefix}
+              maxLength={128}
+              placeholder="/"
+              spellCheck={false}
+              onChange={(event) => change('path_prefix', event.target.value)}
+              aria-describedby={pathHelp}
+            />
+            <small id={pathHelp} className="field-help">
+              Use / for all paths or a prefix such as /api. No query string or encoded characters.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Requests per second
+            <Input
+              required
+              type="number"
+              min={0}
+              max={100000}
+              step={1}
+              value={rule.requests_per_second}
+              onChange={(event) => change('requests_per_second', event.target.value)}
+              aria-describedby={rateHelp}
+            />
+            <small id={rateHelp} className="field-help">
+              Per client, for this rule. 0 disables the limit. Each HAProxy process and listener
+              counts separately.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Allowed IPs and networks
+            <Textarea
+              value={rule.allow_cidrs}
+              rows={3}
+              maxLength={4096}
+              spellCheck={false}
+              className="font-mono text-sm"
+              onChange={(event) => change('allow_cidrs', event.target.value)}
+              aria-describedby={allowHelp}
+            />
+            <small id={allowHelp} className="field-help">
+              Up to 64 IPs or CIDRs, one per line. Empty allows any client address.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Denied IPs and networks
+            <Textarea
+              value={rule.deny_cidrs}
+              rows={3}
+              maxLength={4096}
+              spellCheck={false}
+              className="font-mono text-sm"
+              onChange={(event) => change('deny_cidrs', event.target.value)}
+              aria-describedby={denyHelp}
+            />
+            <small id={denyHelp} className="field-help">
+              Up to 64 IPs or CIDRs, one per line. Denials take precedence over allowed entries.
+            </small>
+          </label>
+          <label className="grid gap-2">
+            Allowed country codes
+            <Input
+              value={rule.allow_countries}
+              maxLength={256}
+              placeholder="US, DE"
+              spellCheck={false}
+              onChange={(event) => change('allow_countries', event.target.value)}
+              aria-describedby={countryHelp}
+            />
+          </label>
+          <label className="grid gap-2">
+            Denied country codes
+            <Input
+              value={rule.deny_countries}
+              maxLength={256}
+              spellCheck={false}
+              onChange={(event) => change('deny_countries', event.target.value)}
+              aria-describedby={countryHelp}
+            />
+          </label>
+        </div>
+        <p id={countryHelp} className="field-help">
+          {countryAvailable
+            ? 'Use up to 64 two-letter country codes per list. Empty allow lists allow any country. If you set both IP and country allow lists, a client must match both. Denials take precedence.'
+            : 'Country lists require a trusted proxy and country header above. Leave both lists empty for direct connections.'}
+        </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-2">
-          Rule ID
-          <Input
-            required
-            value={rule.id}
-            maxLength={32}
-            pattern="[a-z0-9][a-z0-9_\-]{0,31}"
-            spellCheck={false}
-            onChange={(event) => change('id', event.target.value)}
-            aria-describedby={idHelp}
-          />
-          <small id={idHelp} className="field-help">
-            Unique lowercase name using letters, digits, - or _.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Hostname
-          <Input
-            required
-            value={rule.host}
-            maxLength={253}
-            placeholder="app.example.com"
-            spellCheck={false}
-            onChange={(event) => change('host', event.target.value)}
-            aria-describedby={hostHelp}
-          />
-          <small id={hostHelp} className="field-help">
-            Exact hostname, without a scheme, port or wildcard.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Path prefix
-          <Input
-            required
-            value={rule.path_prefix}
-            maxLength={128}
-            placeholder="/"
-            spellCheck={false}
-            onChange={(event) => change('path_prefix', event.target.value)}
-            aria-describedby={pathHelp}
-          />
-          <small id={pathHelp} className="field-help">
-            Use / for all paths or a prefix such as /api. No query string or encoded characters.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Requests per second
-          <Input
-            required
-            type="number"
-            min={0}
-            max={100000}
-            step={1}
-            value={rule.requests_per_second}
-            onChange={(event) => change('requests_per_second', event.target.value)}
-            aria-describedby={rateHelp}
-          />
-          <small id={rateHelp} className="field-help">
-            Per client, for this rule. 0 disables the limit. Each HAProxy process and listener
-            counts separately.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Allowed IPs and networks
-          <Textarea
-            value={rule.allow_cidrs}
-            rows={3}
-            maxLength={4096}
-            spellCheck={false}
-            className="font-mono text-sm"
-            onChange={(event) => change('allow_cidrs', event.target.value)}
-            aria-describedby={allowHelp}
-          />
-          <small id={allowHelp} className="field-help">
-            Up to 64 IPs or CIDRs, one per line. Empty allows any client address.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Denied IPs and networks
-          <Textarea
-            value={rule.deny_cidrs}
-            rows={3}
-            maxLength={4096}
-            spellCheck={false}
-            className="font-mono text-sm"
-            onChange={(event) => change('deny_cidrs', event.target.value)}
-            aria-describedby={denyHelp}
-          />
-          <small id={denyHelp} className="field-help">
-            Up to 64 IPs or CIDRs, one per line. Denials take precedence over allowed entries.
-          </small>
-        </label>
-        <label className="grid gap-2">
-          Allowed country codes
-          <Input
-            value={rule.allow_countries}
-            maxLength={256}
-            placeholder="US, DE"
-            spellCheck={false}
-            onChange={(event) => change('allow_countries', event.target.value)}
-            aria-describedby={countryHelp}
-          />
-        </label>
-        <label className="grid gap-2">
-          Denied country codes
-          <Input
-            value={rule.deny_countries}
-            maxLength={256}
-            spellCheck={false}
-            onChange={(event) => change('deny_countries', event.target.value)}
-            aria-describedby={countryHelp}
-          />
-        </label>
-      </div>
-      <p id={countryHelp} className="field-help">
-        {countryAvailable
-          ? 'Use up to 64 two-letter country codes per list. Empty allow lists allow any country. If you set both IP and country allow lists, a client must match both. Denials take precedence.'
-          : 'Country lists require a trusted proxy and country header above. Leave both lists empty for direct connections.'}
-      </p>
-    </section>
+    </details>
   )
 }
 
