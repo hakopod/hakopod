@@ -729,7 +729,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KeyInput"
+                "$ref": "#/components/schemas/AutomationKeyInput"
               }
             }
           }
@@ -819,16 +819,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "expires_at": {
-                    "type": "string",
-                    "format": "date-time"
-                  }
-                },
-                "required": [
-                  "expires_at"
-                ]
+                "$ref": "#/components/schemas/AutomationKeyLifetimeInput"
               }
             }
           }
@@ -8128,6 +8119,66 @@
         }
       }
     },
+    "/database-placement/nodes": {
+      "get": {
+        "operationId": "listDatabasePlacementNodes",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DatabasePlacementNode"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "limit"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}": {
       "get": {
         "operationId": "getManagedDatabase",
@@ -8263,6 +8314,392 @@
                   "required": [
                     "items"
                   ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/{id}/public-endpoint-capabilities": {
+      "get": {
+        "operationId": "getDatabasePublicEndpointCapabilities",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicEndpointCapabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled."
+      }
+    },
+    "/databases/{id}/public-endpoints": {
+      "get": {
+        "operationId": "listDatabasePublicEndpoints",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DatabasePublicEndpoint"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "publishDatabasePublicEndpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicEndpointOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "expected_database_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "expected_endpoint_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "expected_database_revision",
+                  "expected_endpoint_revision"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them."
+      }
+    },
+    "/databases/{id}/public-endpoint-plan": {
+      "post": {
+        "operationId": "reviewDatabasePublicEndpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicEndpointPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabasePublicEndpointSpec"
+              }
+            }
+          }
+        },
+        "description": "Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them."
+      }
+    },
+    "/databases/{id}/public-endpoints/{endpoint}": {
+      "delete": {
+        "operationId": "revokeDatabasePublicEndpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicEndpointOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_endpoint_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "expected_endpoint_revision"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Close and acknowledge the owned HAProxy route and its existing sessions before releasing the endpoint allocation."
+      }
+    },
+    "/database-public-endpoint-operations/{id}": {
+      "get": {
+        "operationId": "getDatabasePublicEndpointOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicEndpointOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/{id}/connections": {
+      "get": {
+        "operationId": "listDatabaseConnections",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConnections"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/{id}/trust": {
+      "get": {
+        "operationId": "getDatabasePublicTrust",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicTrust"
                 }
               }
             }
@@ -8483,6 +8920,204 @@
             }
           }
         }
+      }
+    },
+    "/databases/{id}/switchover-plan": {
+      "post": {
+        "operationId": "reviewOracleDatabaseSwitchover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOracleSwitchoverPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target_member": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253
+                  }
+                },
+                "required": [
+                  "target_member"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable."
+      }
+    },
+    "/databases/{id}/switchover": {
+      "post": {
+        "operationId": "switchoverOracleDatabase",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "expected_revision",
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable."
+      }
+    },
+    "/databases/{id}/switchover-retry": {
+      "post": {
+        "operationId": "retryOracleDatabaseSwitchover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation_id": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation_id",
+                  "expected_revision",
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. Resumes the existing approved operation and target after a worker timeout. The operation ID makes retries idempotent; no new review, target or request token is created."
       }
     },
     "/databases/{id}/restore-plan": {
@@ -8879,6 +9514,806 @@
             }
           }
         }
+      }
+    },
+    "/databases/{id}/metrics": {
+      "get": {
+        "operationId": "getDatabaseMetricHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "6h",
+                "24h"
+              ],
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseMetricHistory"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases": {
+      "get": {
+        "operationId": "listExternalDatabases",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ExternalDatabase"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases/{id}": {
+      "get": {
+        "operationId": "getExternalDatabase",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabase"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "rotateExternalDatabaseCredentials",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "spec": {
+                    "$ref": "#/components/schemas/ExternalDatabaseSpec"
+                  },
+                  "credentials": {
+                    "$ref": "#/components/schemas/ExternalDatabaseCredentials"
+                  },
+                  "expected_revision": {
+                    "type": "integer"
+                  },
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "spec",
+                  "credentials",
+                  "expected_revision",
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteExternalDatabase",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  },
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expected_revision",
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases/{id}/connections": {
+      "get": {
+        "operationId": "listExternalDatabaseConnections",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConnections"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases/{id}/trust": {
+      "get": {
+        "operationId": "getExternalDatabaseTrust",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabaseTrust"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases/{id}/connection-plan": {
+      "post": {
+        "operationId": "reviewLegacyExternalDatabaseBinding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabaseConnectionPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "application_id": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "variable": {
+                    "type": "string"
+                  },
+                  "disconnect": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "application_id",
+                  "service",
+                  "variable",
+                  "disconnect"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-databases/{id}/connect": {
+      "post": {
+        "operationId": "applyLegacyExternalDatabaseBindingReview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "confirm_application": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "confirm_application"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/external-database-operations/{id}": {
+      "get": {
+        "operationId": "getExternalDatabaseOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalDatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platforms": {
+      "get": {
+        "operationId": "listManagedPlatforms",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManagedPlatform"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected."
+      }
+    },
+    "/managed-platforms/{id}": {
+      "get": {
+        "operationId": "getManagedPlatform",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatform"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platforms/{id}/operations": {
+      "get": {
+        "operationId": "listManagedPlatformOperations",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManagedPlatformOperation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platform-operations/{id}": {
+      "get": {
+        "operationId": "getManagedPlatformOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platforms/reviews": {
+      "post": {
+        "operationId": "reviewManagedPlatform",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformReviewResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedPlatformIntent"
+              }
+            }
+          }
+        },
+        "description": "Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource."
+      }
+    },
+    "/managed-platforms/operations": {
+      "post": {
+        "operationId": "acceptManagedPlatform",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedPlatformAcceptIntent"
+              }
+            }
+          }
+        },
+        "description": "Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource."
       }
     },
     "/applications/{id}/provenance": {
@@ -15786,6 +17221,118 @@
           "expires_at"
         ]
       },
+      "AutomationKeyInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              },
+              "environment": {
+                "type": "string"
+              },
+              "application": {
+                "type": "string"
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "never_expires": {
+                "type": "boolean",
+                "const": false
+              }
+            },
+            "required": [
+              "name",
+              "permissions",
+              "expires_at"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              },
+              "environment": {
+                "type": "string"
+              },
+              "application": {
+                "type": "string"
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expires_at": {
+                "type": "null"
+              },
+              "never_expires": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "name",
+              "permissions",
+              "never_expires"
+            ]
+          }
+        ],
+        "description": "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
+      },
+      "AutomationKeyLifetimeInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "never_expires": {
+                "type": "boolean",
+                "const": false
+              }
+            },
+            "required": [
+              "expires_at"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "expires_at": {
+                "type": "null"
+              },
+              "never_expires": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "never_expires"
+            ]
+          }
+        ],
+        "description": "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
+      },
       "Key": {
         "type": "object",
         "properties": {
@@ -15808,8 +17355,18 @@
             }
           },
           "expires_at": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "never_expires": {
+            "type": "boolean"
           },
           "id": {
             "type": "string"
@@ -15856,6 +17413,7 @@
           "project",
           "environment",
           "expires_at",
+          "never_expires",
           "created_at"
         ]
       },
@@ -17766,7 +19324,10 @@
               "postgresql",
               "mysql",
               "clickhouse",
-              "redis"
+              "redis",
+              "mongodb",
+              "oracle",
+              "vitess"
             ]
           },
           "database": {
@@ -17944,7 +19505,10 @@
               "postgresql",
               "mysql",
               "clickhouse",
-              "redis"
+              "redis",
+              "mongodb",
+              "oracle",
+              "vitess"
             ]
           },
           "database": {
@@ -18851,6 +20415,24 @@
           },
           "aws_identity": {
             "type": "boolean"
+          },
+          "managed_cluster_nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "uid": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "uid"
+              ]
+            }
           }
         },
         "required": [
@@ -20574,7 +22156,10 @@
               "http",
               "postgres",
               "mysql",
-              "redis"
+              "redis",
+              "mongodb",
+              "clickhouse",
+              "oracle"
             ]
           },
           "database": {
@@ -20594,6 +22179,12 @@
           },
           "cluster_aware": {
             "type": "boolean"
+          },
+          "external_database": {
+            "type": "string"
+          },
+          "external_database_revision": {
+            "type": "integer"
           }
         },
         "required": [
@@ -20614,6 +22205,225 @@
           "port"
         ]
       },
+      "DatabasePlacement": {
+        "type": "object",
+        "properties": {
+          "spread": {
+            "type": "string",
+            "enum": [
+              "",
+              "nodes",
+              "zones"
+            ]
+          },
+          "node_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 48,
+            "uniqueItems": true
+          }
+        },
+        "required": []
+      },
+      "DatabaseTLSConfig": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "required"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "DatabaseOracleConfig": {
+        "type": "object",
+        "properties": {
+          "edition": {
+            "type": "string",
+            "enum": [
+              "free",
+              "enterprise"
+            ]
+          },
+          "image": {
+            "type": "string"
+          },
+          "registry_credential": {
+            "type": "string"
+          },
+          "license_confirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "edition"
+        ]
+      },
+      "DatabaseVitessTable": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+          },
+          "sharding_column": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+          }
+        },
+        "required": [
+          "name",
+          "sharding_column"
+        ]
+      },
+      "DatabaseVitessConfig": {
+        "type": "object",
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseVitessTable"
+            },
+            "maxItems": 128
+          },
+          "backup_destination_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "backup_destination_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "backup_destination_id",
+          "backup_destination_revision"
+        ]
+      },
+      "DatabaseTLSObservation": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "plaintext_rejected": {
+            "type": "boolean"
+          },
+          "minimum_version": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "dns_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "ca_fingerprint": {
+            "type": "string"
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "required",
+          "verified",
+          "plaintext_rejected"
+        ]
+      },
+      "DatabasePublicTrust": {
+        "type": "object",
+        "properties": {
+          "certificate_pem": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "not_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "certificate_pem",
+          "fingerprint",
+          "issuer",
+          "not_before",
+          "expires_at"
+        ]
+      },
+      "DatabasePooling": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "session",
+              "transaction"
+            ]
+          },
+          "instances": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "max_client_connections": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 2000
+          },
+          "default_pool_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "instances",
+          "max_client_connections",
+          "default_pool_size",
+          "read_only"
+        ]
+      },
       "ManagedDatabaseSpec": {
         "type": "object",
         "properties": {
@@ -20628,7 +22438,12 @@
             "type": "string",
             "enum": [
               "postgresql",
-              "redis"
+              "redis",
+              "mysql",
+              "mongodb",
+              "clickhouse",
+              "oracle",
+              "vitess"
             ]
           },
           "version": {
@@ -20655,6 +22470,21 @@
           },
           "storage_gib": {
             "type": "integer"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/DatabasePlacement"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/DatabaseTLSConfig"
+          },
+          "pooling": {
+            "$ref": "#/components/schemas/DatabasePooling"
+          },
+          "oracle": {
+            "$ref": "#/components/schemas/DatabaseOracleConfig"
+          },
+          "vitess": {
+            "$ref": "#/components/schemas/DatabaseVitessConfig"
           }
         },
         "required": [
@@ -20690,6 +22520,31 @@
           },
           "node": {
             "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "restarts": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "image": {
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/RuntimeMetrics"
           }
         },
         "required": [
@@ -20697,6 +22552,37 @@
           "uid",
           "role",
           "ready"
+        ]
+      },
+      "DatabasePlacementObservation": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "integer"
+          },
+          "zones": {
+            "type": "integer"
+          },
+          "regions": {
+            "type": "integer"
+          },
+          "providers": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "verified",
+          "message",
+          "nodes",
+          "zones",
+          "regions",
+          "providers"
         ]
       },
       "DatabaseEndpoint": {
@@ -20757,6 +22643,27 @@
           },
           "topology_fingerprint": {
             "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/RuntimeMetrics"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/DatabasePlacementObservation"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/DatabaseTLSObservation"
+          },
+          "engine_metrics": {
+            "$ref": "#/components/schemas/DatabaseEngineMetrics"
+          },
+          "pooling": {
+            "$ref": "#/components/schemas/DatabasePoolingObservation"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/DatabaseRoutingObservation"
+          },
+          "coordination": {
+            "$ref": "#/components/schemas/DatabaseCoordinationObservation"
           }
         },
         "required": [
@@ -20854,6 +22761,420 @@
           "updated_at"
         ]
       },
+      "DatabasePublicEndpointSpec": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only",
+              "pooled_read_write",
+              "pooled_read_only",
+              "native",
+              "https"
+            ]
+          },
+          "source_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "ipv4"
+            },
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true
+          },
+          "max_connections": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          }
+        },
+        "required": [
+          "purpose",
+          "source_cidrs",
+          "max_connections"
+        ]
+      },
+      "DatabasePublicEndpointAllocation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "required": [
+          "id",
+          "host",
+          "address",
+          "port"
+        ]
+      },
+      "DatabasePublicEndpointMemberAllocation": {
+        "type": "object",
+        "properties": {
+          "member_name": {
+            "type": "string"
+          },
+          "member_uid": {
+            "type": "string"
+          },
+          "allocation": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointAllocation"
+          }
+        },
+        "required": [
+          "member_name",
+          "member_uid",
+          "allocation"
+        ]
+      },
+      "DatabasePublicEndpointObservation": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "externally_verified": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "configured",
+          "externally_verified",
+          "message"
+        ]
+      },
+      "DatabasePublicEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spec": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointSpec"
+          },
+          "allocation": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointAllocation"
+          },
+          "member_allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabasePublicEndpointMemberAllocation"
+            },
+            "maxItems": 48
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "review",
+              "pending",
+              "active",
+              "revoking",
+              "error",
+              "revoked"
+            ]
+          },
+          "observation": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointObservation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "database_id",
+          "revision",
+          "spec",
+          "allocation",
+          "status",
+          "observation",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "DatabasePublicEndpointRoute": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only",
+              "pooled_read_write",
+              "pooled_read_only",
+              "native",
+              "https"
+            ]
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "postgresql",
+              "mysql",
+              "clickhouse_native",
+              "https",
+              "oracle_tcps",
+              "mongodb",
+              "redis"
+            ]
+          },
+          "routing": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "pgbouncer",
+              "mysql_router",
+              "replica_set_horizons",
+              "cluster_discovery"
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "pooled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "purpose",
+          "protocol",
+          "routing",
+          "read_only",
+          "pooled"
+        ]
+      },
+      "DatabasePublicEndpointCapabilities": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "type": "string"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabasePublicEndpointRoute"
+            },
+            "maxItems": 4
+          }
+        },
+        "required": [
+          "engine",
+          "available",
+          "unavailable_reason",
+          "routes"
+        ]
+      },
+      "DatabasePublicEndpointReview": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "database_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "endpoint_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spec": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointSpec"
+          },
+          "allocation": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointAllocation"
+          },
+          "route": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointRoute"
+          },
+          "route_fingerprint": {
+            "type": "string"
+          },
+          "topology_fingerprint": {
+            "type": "string"
+          },
+          "member_allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabasePublicEndpointMemberAllocation"
+            },
+            "maxItems": 48
+          },
+          "tls_fingerprint": {
+            "type": "string"
+          },
+          "authority_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "blocked_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "database_id",
+          "project",
+          "environment",
+          "database_revision",
+          "endpoint_id",
+          "endpoint_revision",
+          "spec",
+          "allocation",
+          "topology_fingerprint",
+          "tls_fingerprint",
+          "blocked_reasons",
+          "warnings",
+          "expires_at"
+        ]
+      },
+      "DatabasePublicEndpointPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointReview"
+          }
+        },
+        "required": [
+          "id",
+          "plan"
+        ]
+      },
+      "DatabasePublicEndpointOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "publish",
+              "revoke"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/DatabasePublicEndpointReview"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "endpoint_id",
+          "database_id",
+          "revision",
+          "kind",
+          "status",
+          "phase",
+          "message",
+          "created_at"
+        ]
+      },
       "DatabaseBackupEvidence": {
         "type": "object",
         "properties": {
@@ -20932,6 +23253,92 @@
           "expires_at"
         ]
       },
+      "DatabaseOracleSwitchoverReview": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "broker_uid": {
+            "type": "string"
+          },
+          "topology_fingerprint": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "target_controller": {
+            "type": "string"
+          },
+          "target_unique_name": {
+            "type": "string"
+          },
+          "member_uids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "request_id",
+          "database_id",
+          "project",
+          "environment",
+          "revision",
+          "broker_uid",
+          "topology_fingerprint",
+          "primary",
+          "target",
+          "target_controller",
+          "target_unique_name",
+          "member_uids",
+          "expires_at"
+        ]
+      },
+      "DatabaseOracleSwitchoverPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/DatabaseOracleSwitchoverReview"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "plan",
+          "warnings"
+        ]
+      },
       "DatabaseOperation": {
         "type": "object",
         "properties": {
@@ -20962,6 +23369,9 @@
           "review": {
             "$ref": "#/components/schemas/DatabaseResizePlan"
           },
+          "switchover": {
+            "$ref": "#/components/schemas/DatabaseOracleSwitchoverReview"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -20985,6 +23395,121 @@
           "message",
           "spec",
           "created_at"
+        ]
+      },
+      "DatabasePlacementNode": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reserved_cpu_milli": {
+            "type": "integer"
+          },
+          "reserved_memory_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "architecture",
+          "available",
+          "reason"
+        ]
+      },
+      "DatabaseConnectionReference": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "application_display_name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "saved_revision": {
+            "type": "integer"
+          },
+          "last_successful_revision": {
+            "type": "integer"
+          },
+          "latest_attempt_revision": {
+            "type": "integer"
+          },
+          "latest_attempt_status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "application_name",
+          "application_display_name",
+          "project",
+          "environment",
+          "service",
+          "variable",
+          "endpoint",
+          "saved_revision",
+          "last_successful_revision",
+          "latest_attempt_revision",
+          "latest_attempt_status"
+        ]
+      },
+      "DatabaseConnections": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseConnectionReference"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "truncated",
+          "limit"
         ]
       },
       "DatabaseConnectionPlan": {
@@ -21120,6 +23645,1447 @@
           "spec",
           "status",
           "expires_at"
+        ]
+      },
+      "DatabaseEngineMetrics": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sampled_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connections": {
+            "type": "integer"
+          },
+          "active_connections": {
+            "type": "integer"
+          },
+          "max_connections": {
+            "type": "integer"
+          },
+          "data_bytes": {
+            "type": "integer"
+          },
+          "transactions": {
+            "type": "integer"
+          },
+          "commands": {
+            "type": "integer"
+          },
+          "replication_lag_bytes": {
+            "type": "integer"
+          },
+          "evicted_keys": {
+            "type": "integer"
+          },
+          "rejected_connections": {
+            "type": "integer"
+          },
+          "uptime_seconds": {
+            "type": "integer"
+          },
+          "cache_hit_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
+      "DatabaseMetricPoint": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/RuntimeMetrics"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/DatabaseEngineMetrics"
+          }
+        },
+        "required": [
+          "observed_at",
+          "revision",
+          "status"
+        ]
+      },
+      "DatabaseMetricHistory": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseMetricPoint"
+            },
+            "maxItems": 1441
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolution_seconds": {
+            "type": "integer"
+          },
+          "retention_hours": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "from",
+          "until",
+          "resolution_seconds",
+          "retention_hours"
+        ]
+      },
+      "DatabasePoolingObservation": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseMember"
+            }
+          }
+        },
+        "required": [
+          "ready",
+          "members"
+        ]
+      },
+      "DatabaseRoutingObservation": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseMember"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "ready",
+          "members"
+        ]
+      },
+      "DatabaseCoordinationObservation": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseMember"
+            },
+            "maxItems": 3
+          }
+        },
+        "required": [
+          "ready",
+          "members"
+        ]
+      },
+      "ExternalDatabaseSpec": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "planetscale"
+            ]
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "postgresql"
+            ]
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "database": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "provider",
+          "engine",
+          "host",
+          "port",
+          "database"
+        ]
+      },
+      "ExternalDatabaseCredentials": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "writeOnly": true
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "ExternalDatabaseObservation": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "tls_verified": {
+            "type": "boolean"
+          },
+          "query_verified": {
+            "type": "boolean"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "verified_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "observed_at",
+          "revision",
+          "status",
+          "message",
+          "tls_verified",
+          "query_verified"
+        ]
+      },
+      "ExternalDatabase": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "credential_revision": {
+            "type": "integer"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ExternalDatabaseSpec"
+          },
+          "status": {
+            "type": "string"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/ExternalDatabaseObservation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "revision",
+          "credential_revision",
+          "spec",
+          "status",
+          "observation",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ExternalDatabaseOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ExternalDatabaseSpec"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "database_id",
+          "revision",
+          "kind",
+          "status",
+          "message",
+          "spec",
+          "created_at"
+        ]
+      },
+      "ExternalDatabaseTrust": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "minimum_protocol": {
+            "type": "string"
+          },
+          "trust_source": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "hostname",
+          "minimum_protocol",
+          "trust_source",
+          "verified",
+          "observed_at",
+          "message"
+        ]
+      },
+      "ExternalDatabaseConnectionPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "refresh",
+              "disconnect"
+            ]
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "database_revision": {
+            "type": "integer"
+          },
+          "credential_revision": {
+            "type": "integer"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "application_revision": {
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "binding": {
+            "$ref": "#/components/schemas/ServiceBinding"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "database_id",
+          "database_name",
+          "database_revision",
+          "credential_revision",
+          "application_id",
+          "application_name",
+          "application_revision",
+          "service",
+          "variable",
+          "expires_at",
+          "warnings"
+        ]
+      },
+      "ManagedPlatformSecretReference": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "revision"
+        ]
+      },
+      "ManagedPlatformResources": {
+        "type": "object",
+        "properties": {
+          "cpu": {
+            "type": "string"
+          },
+          "memory": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cpu",
+          "memory"
+        ]
+      },
+      "ManagedPlatformPlacement": {
+        "type": "object",
+        "properties": {
+          "node_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 48,
+            "uniqueItems": true
+          },
+          "spread": {
+            "type": "string",
+            "enum": [
+              "",
+              "nodes",
+              "zones"
+            ]
+          }
+        },
+        "required": [
+          "node_names"
+        ]
+      },
+      "SupabaseConfig": {
+        "type": "object",
+        "properties": {
+          "public_url": {
+            "type": "string"
+          },
+          "site_url": {
+            "type": "string"
+          },
+          "redirect_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "jwt_expiry_seconds": {
+            "type": "integer"
+          },
+          "rest_max_rows": {
+            "type": "integer"
+          },
+          "storage_file_limit_bytes": {
+            "type": "integer"
+          },
+          "pool_size": {
+            "type": "integer"
+          },
+          "pool_max_clients": {
+            "type": "integer"
+          },
+          "email_signup": {
+            "type": "boolean",
+            "const": false
+          },
+          "anonymous_signup": {
+            "type": "boolean"
+          },
+          "smtp_secret": {
+            "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+          }
+        },
+        "required": [
+          "public_url",
+          "site_url",
+          "database_name",
+          "jwt_expiry_seconds",
+          "rest_max_rows",
+          "storage_file_limit_bytes",
+          "pool_size",
+          "pool_max_clients",
+          "email_signup"
+        ]
+      },
+      "NeonConfig": {
+        "type": "object",
+        "properties": {
+          "postgres_version": {
+            "type": "string",
+            "const": "17"
+          },
+          "compute_replicas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "pageservers": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 8
+          },
+          "safekeepers": {
+            "type": "integer",
+            "const": 3
+          },
+          "branch_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "object_storage_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri",
+            "description": "Exact HTTPS object-storage origin on port 443. The server rejects credentials, paths, query strings and unsafe network destinations."
+          },
+          "object_storage_bucket": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+          },
+          "object_storage_region": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          },
+          "object_storage_prefix": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+          },
+          "proxy_control_plane_patch_sha256": {
+            "type": "string",
+            "const": "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
+          }
+        },
+        "required": [
+          "postgres_version",
+          "compute_replicas",
+          "pageservers",
+          "safekeepers",
+          "branch_limit",
+          "object_storage_url",
+          "object_storage_bucket",
+          "object_storage_region",
+          "object_storage_prefix",
+          "proxy_control_plane_patch_sha256"
+        ]
+      },
+      "ManagedPlatformSpec": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SupabasePlatformSpec"
+          },
+          {
+            "$ref": "#/components/schemas/NeonPlatformSpec"
+          }
+        ]
+      },
+      "SupabasePlatformSpec": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "supabase",
+              "neon"
+            ],
+            "const": "supabase"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "0.8.2",
+              "fa504217c61bbcaf5c512d75830564541f917f8f"
+            ],
+            "const": "0.8.2"
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformResources"
+            }
+          },
+          "storage": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+            }
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "node_names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 1,
+                "uniqueItems": true
+              },
+              "spread": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "nodes",
+                  "zones"
+                ],
+                "const": ""
+              }
+            },
+            "required": [
+              "node_names"
+            ]
+          },
+          "supabase": {
+            "$ref": "#/components/schemas/SupabaseConfig"
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "kind",
+          "version",
+          "resources",
+          "storage",
+          "secrets",
+          "placement",
+          "supabase"
+        ]
+      },
+      "NeonPlatformSpec": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "supabase",
+              "neon"
+            ],
+            "const": "neon"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "0.8.2",
+              "fa504217c61bbcaf5c512d75830564541f917f8f"
+            ],
+            "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformResources"
+            }
+          },
+          "storage": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+            }
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "node_names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 3,
+                "maxItems": 48,
+                "uniqueItems": true
+              },
+              "spread": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "nodes",
+                  "zones"
+                ]
+              }
+            },
+            "required": [
+              "node_names"
+            ]
+          },
+          "neon": {
+            "$ref": "#/components/schemas/NeonConfig"
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "kind",
+          "version",
+          "resources",
+          "storage",
+          "secrets",
+          "placement",
+          "neon"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 2
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 3
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 4
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 4
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 5
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 5
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 6
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 6
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 7
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 7
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "neon": {
+                  "properties": {
+                    "pageservers": {
+                      "const": 8
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "placement": {
+                  "properties": {
+                    "node_names": {
+                      "minItems": 8
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ManagedPlatformCapability": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "cluster_qualified": {
+            "type": "boolean"
+          },
+          "public_qualified": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "cluster_qualified",
+          "public_qualified",
+          "reason"
+        ]
+      },
+      "ManagedPlatformComponent": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ManagedPlatformResources"
+          },
+          "replicas": {
+            "type": "integer"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "secret_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storage_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "image",
+          "resources",
+          "replicas",
+          "ports",
+          "secret_keys",
+          "storage_keys"
+        ]
+      },
+      "ManagedPlatformPlan": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformComponent"
+            }
+          },
+          "public_service": {
+            "type": "string"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/ManagedPlatformCapability"
+          }
+        },
+        "required": [
+          "namespace",
+          "components",
+          "public_service",
+          "capability"
+        ]
+      },
+      "ManagedPlatformReview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "authority_fingerprint": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blocked_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "expected_revision",
+          "kind",
+          "request_hash",
+          "expires_at",
+          "blocked_reasons"
+        ]
+      },
+      "ManagedPlatformObservation": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "namespace_uid": {
+            "type": "string"
+          },
+          "ready_components": {
+            "type": "integer"
+          },
+          "expected_components": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "timeline_id": {
+            "type": "string"
+          },
+          "safekeeper_count": {
+            "type": "integer"
+          },
+          "attached_computes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proxy_endpoint_id": {
+            "type": "string"
+          },
+          "proxy_generation": {
+            "type": "integer"
+          }
+        },
+        "required": []
+      },
+      "ManagedPlatform": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ManagedPlatformSpec"
+          },
+          "status": {
+            "type": "string"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/ManagedPlatformObservation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "revision",
+          "spec",
+          "status",
+          "observation",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ManagedPlatformOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "platform_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ManagedPlatformSpec"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ManagedPlatformPlan"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ManagedPlatformReview"
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attempt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "platform_id",
+          "revision",
+          "kind",
+          "status",
+          "phase",
+          "message",
+          "spec",
+          "plan",
+          "review",
+          "review_id",
+          "created_at",
+          "attempt"
+        ]
+      },
+      "ManagedPlatformIntent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ManagedPlatformSpec"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ManagedPlatformReview"
+          },
+          "confirm_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "expected_revision",
+          "kind",
+          "spec"
+        ]
+      },
+      "ManagedPlatformAcceptIntent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ManagedPlatformSpec"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ManagedPlatformReview"
+          },
+          "confirm_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "expected_revision",
+          "kind",
+          "spec",
+          "review"
+        ]
+      },
+      "ManagedPlatformReviewResponse": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/ManagedPlatform"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ManagedPlatformPlan"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedPlatformReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "platform",
+          "plan",
+          "review",
+          "blocked"
         ]
       },
       "BuildProvenance": {

@@ -1,0 +1,7 @@
+FROM docker.io/planetscale/vitess-operator:v2.16.0@sha256:f0a6f6beec2a5e54872eadc84fca43c3093a076b74dc1a287ad78c35f1c772e2
+
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
+      io.hakopod.vitess.operator-upstream="10a3b742c02c38f97d554739d5a257197daa48f9" \
+      io.hakopod.vitess.patch="native-backup-tls-fsgroup-flags-v3"
+
+COPY --chmod=0755 bin/vitess-operator /usr/local/bin/vitess-operator

@@ -99,6 +99,78 @@ text; no live logging backend or persistent preference was exercised. Existing
 toggle behavior remains available. This addendum does not repeat the broader
 log filtering, streaming, retention or installation-log acceptance matrix.
 
+## Isolated MySQL public-endpoint candidate — 1 October 2026
+
+An independent reviewer approved the isolated candidate source for the database
+public-endpoint route, generated dashboard/SDK types, browser API proxy and
+machine API proxy. The review verified that capability data is scoped to the
+loaded database, uses the generated route descriptor, and fails closed for new
+publication when the capability request fails. Endpoint inventory, a retained
+publication review, operation tracking and revocation remain available in that
+state. The MySQL capability describes MySQL Router routes but remains unavailable
+until native Router TLS, routing and revocation qualification completes.
+
+Rendered evidence is in ignored
+`work/database-enterprise/mysql-public-endpoint-final-review/`. Synthetic,
+intercepted fixtures covered the ready PostgreSQL route, retained-review plus
+failed capability refresh, MySQL-unavailable controls, revocation review opened
+with Enter and visible region focus, and a rejected revocation with the actual
+API error envelope. The changed MySQL-unavailable controls were inspected in
+Paper and dark at CSS widths 1484px and 320px. The 320px disabled select may
+truncate its long option, so the final v5 capture also shows the wrapping
+`MySQL Router · Read and write` summary beneath it. All accepted bounds report
+document widths within their viewport.
+
+The malformed `paper-320-mysql-revocation-rejected-v4` capture is excluded
+because its fixture returned `{ message }` instead of the API error envelope
+and rendered a TypeError. The v5-final replacements use the proper error
+envelope and show the rejection beside the still-open revocation review. No
+actionable source, layout or copy finding remains.
+
+The source owner reports v5 dashboard typecheck and production build passed.
+The v4 run passed 60 server/proxy tests and 200 UI tests; the v5 SDK suite
+passed 46 tests. The v5 display-only summary did not repeat the UI test run.
+This is dashboard and proxy-surface validation with synthetic fixtures, not
+native MySQL qualification, public reachability, a production API claim, or
+publication approval. Native touch remains unverified.
+
+
+## ClickHouse public-endpoint presentation candidate — 1 October 2026
+
+An independent final UI review approves the ClickHouse public-endpoint presentation candidate. The accepted evidence is synthetic and intercepted only, under `work/database-enterprise/clickhouse-public-endpoint-final-review/`; it does not establish ClickHouse native/HTTPS capability, public reachability, backend acceptance, deployment, or production behavior.
+
+The reviewer inspected the dark and Paper unavailable states at CSS widths 1484px and 320px, each at top and bottom scroll positions. The unavailable message is clear, the controls and review action are disabled, text remains readable, and all recorded viewport widths remain within their documents (`1477px` of `1484px` on desktop, `313px` of `320px` on the unavailable and review mobiles). The Paper 320px protocol menu exposes both readable choices, marks the selected native route, and has the expected list semantics in the supplied accessibility capture.
+
+The corrected Paper HTTPS review v2 final was inspected at 1484px and 320px at top and bottom scroll positions. The inventory and review content retain a clear hierarchy; the confirmation region is visibly focused, address and hostname wrap inside the mobile layout, the warning remains visible, and Back, Edit controls, and Publish endpoint retain distinct action hierarchy. No actionable layout, clipping, contrast, focus, semantics, or copy finding remains in this scoped evidence.
+
+Excluded evidence: `paper-320-clickhouse-https-review-v1-{0,1}` and `paper-1484-clickhouse-https-review-v1-{0,1}`. Those captures correctly show stale-review rejection because the initial fixture did not put its reserved endpoint into inventory; they are not evidence for the completed review.
+
+Coverage is limited to the listed synthetic desktop/mobile captures, theme rendering, recorded element bounds, and the supplied menu/focus accessibility evidence. Native touch remains unverified, as do physical-device assistive technology, other browsers, live APIs, and all cluster or public-network behavior. No application code was changed for this review.
+
+## Oracle TCPS presentation — 1 October 2026
+
+The independent review passed for the Oracle protocol label, unavailable state
+and shared review layout. Fourteen final screenshots cover dark and Paper at
+CSS widths 1484px and 320px: unavailable and reviewed states, settled route
+menus and mobile keyboard help. The actual theme and element bounds are
+recorded with the captures. Only
+`work/database-enterprise/oracle-public-endpoint-final-review/v2-final/` is
+accepted; earlier theme and animation captures are excluded.
+
+The unavailable reason stays visible beside disabled publication controls.
+The review identifies Oracle TCPS and shows the single-member restart warning
+before publication. Hostnames and controls remain inside the mobile layout.
+Space, Enter and Escape were checked for menus and help. The independent
+reviewer inspected the final screenshots and recorded bounds without direct
+access to the capture browser.
+
+This is synthetic presentation evidence. No public endpoint was published or
+revoked, and the Oracle availability gate remains disabled. Native touch,
+physical assistive technology, other browsers and native Oracle public-network
+behavior remain unverified. The integrated dashboard typecheck, 60 server
+tests, 200 UI tests and production build passed on the VM; SDK generated checks
+and all 46 SDK tests also passed.
+
 ## Standing checklist
 
 The required reusable checklist follows. Its blank boxes are not a claim that
@@ -141,4 +213,3 @@ Copy this standing checklist into each UI review. The blank boxes are a reusable
 - [ ] Secrets are write-only, roles are enforced by Go, and mutation controls respect access. Review shared-secret impact before replacement.
 - [ ] Polling, streaming, caches and buffers are bounded and inactive work stops. Do not add dependencies or runtime services for cosmetic changes.
 - [ ] Product copy is concise plain English with no emojis. Avoid repeated context and implementation jargon in routine flows.
-

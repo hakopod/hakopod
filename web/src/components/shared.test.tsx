@@ -1,7 +1,9 @@
 import '../lib/toml-language.test'
 import '../lib/framework-recipes.test'
+import '../lib/key-lifetime.test'
 import '../lib/runner-resources.test'
 import '../lib/public-endpoints.test'
+import '../lib/database-public-endpoints.test'
 import '../lib/build-onboarding.test'
 import '../lib/effective-service.test'
 import '../lib/dotenv.test'
@@ -29,6 +31,12 @@ import '../lib/lifecycle.test'
 import '../lib/remove-service.test'
 import '../lib/projects.test'
 import '../lib/runtime-metrics.test'
+import '../lib/database-view.test'
+import '../lib/database-topology.test'
+import '../lib/database-create.test'
+import '../lib/database-monitoring.test'
+import '../lib/external-databases.test'
+import '../lib/database-placement.test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Copy, ErrorState } from './shared'
 import { APIError, message } from '../lib/api'
@@ -36,6 +44,13 @@ import { specToTOML } from '../lib/toml'
 import { serviceProfileLabel, serviceResources } from '../lib/service-resources'
 import { canAccess, canOpenHostTerminal } from '../lib/scope'
 import type { Identity } from '../lib/types'
+import { engineManagedSource } from '../lib/backups'
+
+test('managed ClickHouse recovery jobs do not inherit application-engine object-storage status', () => {
+  assert.equal(engineManagedSource({ kind: 'managed_database', engine: 'clickhouse' }), false)
+  assert.equal(engineManagedSource({ kind: 'database', engine: 'clickhouse' }), true)
+  assert.equal(engineManagedSource(undefined), false)
+})
 
 test('error messages survive normalization and rendering across form boundaries', () => {
   const text = 'Verify domain ownership before importing an application with custom domains.'

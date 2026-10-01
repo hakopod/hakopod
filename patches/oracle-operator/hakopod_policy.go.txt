@@ -1,0 +1,183 @@
+package commons
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const hakopodOracleProfile = "hakopod-oracle-tcps-v1"
+
+// ApplyHakopodPodPolicy is used by the two database controllers. The
+// managed platform supplies this bounded envelope on its owned CR, rather than
+// accepting arbitrary user-supplied pod templates.
+func ApplyHakopodPodPolicy(pod *corev1.Pod, owner metav1.ObjectMeta) error {
+	raw := owner.Annotations["hakopod.io/oracle-pod-policy"]
+	if raw == "" {
+		return nil
+	}
+	var policy struct {
+		Profile          string                      `json:"profile"`
+		Labels           map[string]string           `json:"labels"`
+		Resources        corev1.ResourceRequirements `json:"resources"`
+		NodeSelector     map[string]string           `json:"nodeSelector"`
+		Tolerations      []corev1.Toleration         `json:"tolerations"`
+		Affinity         *corev1.Affinity            `json:"affinity"`
+		RuntimeClassName string                      `json:"runtimeClassName"`
+	}
+	if len(raw) > 32<<10 {
+		return fmt.Errorf("managed Oracle pod policy exceeds its size limit")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&policy) != nil || policy.Profile != hakopodOracleProfile || len(policy.Labels) > 16 || owner.Labels["app.kubernetes.io/managed-by"] != "hakopod" || owner.Namespace != "hdb-"+owner.Labels["hakopod.io/database-id"] || policy.Labels["hakopod.io/database-id"] != owner.Labels["hakopod.io/database-id"] || policy.Labels["app.kubernetes.io/managed-by"] != "hakopod" {
+		return fmt.Errorf("managed Oracle pod policy identity is invalid")
+	}
+	for _, key := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourceEphemeralStorage} {
+		request, limit := policy.Resources.Requests[key], policy.Resources.Limits[key]
+		if request.Sign() <= 0 || limit.Sign() <= 0 || request.Cmp(limit) > 0 {
+			return fmt.Errorf("managed Oracle pod resources must have bounded requests and limits")
+		}
+	}
+	if pod.Labels == nil {
+		pod.Labels = map[string]string{}
+	}
+	for key, value := range policy.Labels {
+		pod.Labels[key] = value
+	}
+	pod.Labels["hakopod.io/oracle-pod"] = pod.Name
+	no, yes := false, true
+	uid := int64(54321)
+	pod.Spec.AutomountServiceAccountToken = &no
+	pod.Spec.HostNetwork, pod.Spec.HostPID, pod.Spec.HostIPC = false, false, false
+	pod.Spec.SecurityContext = &corev1.PodSecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+	pod.Spec.NodeSelector = policy.NodeSelector
+	pod.Spec.Tolerations = policy.Tolerations
+	if policy.Affinity != nil {
+		pod.Spec.Affinity = policy.Affinity
+	}
+	if policy.RuntimeClassName != "" {
+		pod.Spec.RuntimeClassName = &policy.RuntimeClassName
+	}
+	apply := func(container *corev1.Container) error {
+		if !strings.Contains(container.Image, "@sha256:") {
+			return fmt.Errorf("managed Oracle images must use immutable digests")
+		}
+		container.Resources = *policy.Resources.DeepCopy()
+		container.SecurityContext = &corev1.SecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid, AllowPrivilegeEscalation: &no, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+		return nil
+	}
+	for i := range pod.Spec.Containers {
+		if err := apply(&pod.Spec.Containers[i]); err != nil {
+			return err
+		}
+	}
+	for i := range pod.Spec.InitContainers {
+		if err := apply(&pod.Spec.InitContainers[i]); err != nil {
+			return err
+		}
+	}
+	for i := range pod.Spec.Volumes {
+		volume := &pod.Spec.Volumes[i]
+		if volume.HostPath != nil {
+			return fmt.Errorf("managed Oracle cannot mount a host path")
+		}
+		if volume.EmptyDir != nil && volume.EmptyDir.SizeLimit == nil {
+			limit := resource.MustParse("256Mi")
+			volume.EmptyDir.SizeLimit = &limit
+		}
+	}
+	mode := int32(0440)
+	// Only the managed platform can select these fixed, namespace-owned inputs.
+	// All runner pods need the prompt helper; only members mount server secrets.
+	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: "hakopod-oracle-bootstrap", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "database-oracle-bootstrap"}, DefaultMode: &mode}}})
+	for i := range pod.Spec.Containers {
+		container := &pod.Spec.Containers[i]
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "hakopod-oracle-bootstrap", MountPath: "/etc/hakopod-oracle", ReadOnly: true})
+		container.Env = append(container.Env, corev1.EnvVar{Name: "HAKOPOD_ORACLE_POLICY", Value: hakopodOracleProfile})
+	}
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "hakopod-oracle-bootstrap", MountPath: "/etc/hakopod-oracle", ReadOnly: true})
+		container.Env = append(container.Env, corev1.EnvVar{Name: "HAKOPOD_ORACLE_POLICY", Value: hakopodOracleProfile})
+	}
+	if policy.Labels["hakopod.io/oracle-member"] == "true" {
+		for _, input := range []struct{ name, secret, path string }{{"hakopod-oracle-tls", "database-tls", "/etc/hakopod-oracle-tls"}, {"hakopod-oracle-access", "database-oracle-access", "/etc/hakopod-oracle-access"}} {
+			pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: input.name, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: input.secret, DefaultMode: &mode}}})
+			for i := range pod.Spec.Containers {
+				pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, corev1.VolumeMount{Name: input.name, MountPath: input.path, ReadOnly: true})
+			}
+			for i := range pod.Spec.InitContainers {
+				pod.Spec.InitContainers[i].VolumeMounts = append(pod.Spec.InitContainers[i].VolumeMounts, corev1.VolumeMount{Name: input.name, MountPath: input.path, ReadOnly: true})
+			}
+		}
+	}
+	return nil
+}
+
+// ManagedOracleAdminWalletCommand runs in the image's waiting init container.
+// Atomic installation prevents the entrypoint seeing a half-populated wallet.
+const ManagedOracleAdminWalletCommand = `python3 - <<'HAKOPOD_WALLET_BOOTSTRAP'
+import json, os, pathlib, shutil, subprocess, tempfile
+target = pathlib.Path(os.environ['WALLET_DIR'])
+if not str(target).startswith('/opt/oracle/') or '..' in target.parts:
+    raise SystemExit(1)
+password = pathlib.Path('/etc/hakopod-oracle-access/wallet').read_text().strip()
+admin = pathlib.Path('/etc/hakopod-oracle-access/admin').read_text().strip()
+target.parent.mkdir(parents=True, exist_ok=True)
+stage = pathlib.Path(tempfile.mkdtemp(prefix='.hakopod-admin-', dir=target.parent))
+try:
+    def run(operation, value, arguments):
+        request = dict(operation=operation, wallet=str(stage), password=password, value=value, arguments=arguments)
+        subprocess.run(['python3', '/etc/hakopod-oracle/wallet.py'], input=json.dumps(request).encode(), check=True, timeout=50, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run('create', '', [])
+    for entry in ('sysPassword', 'systemPassword', 'pdbAdminPassword', 'dbsnmpPassword'):
+        run('entry', admin, ['oracle.dbsecurity.' + entry])
+    (stage / '.hakopod-ready').write_text('ready\n')
+    if target.exists():
+        # Refuse existing partial state for explicit inspection, not replacement.
+        if any(target.iterdir()):
+            raise SystemExit(1)
+        target.rmdir()
+    os.replace(stage, target)
+finally:
+    if stage.exists():
+        shutil.rmtree(stage)
+HAKOPOD_WALLET_BOOTSTRAP`
+
+// Native tools may return large data or echo input on failure. Keep buffers
+// bounded and never embed their contents in error messages or container logs.
+type oracleCommandBuffer struct{ bytes.Buffer }
+
+func (b *oracleCommandBuffer) Write(value []byte) (int, error) {
+	if b.Len()+len(value) > 256<<10 {
+		return 0, fmt.Errorf("Oracle command output exceeds 256 KiB")
+	}
+	return b.Buffer.Write(value)
+}
+
+var oracleCommandCode = regexp.MustCompile(`\b(?:ORA|PLS|SP2)-[0-9]{4,5}\b`)
+
+func oracleCommandFailure(stdout, stderr string) (string, error) {
+	codes := []string{}
+	seen := map[string]bool{}
+	for _, code := range oracleCommandCode.FindAllString(stdout+"\n"+stderr, -1) {
+		if !seen[code] {
+			codes = append(codes, code)
+			seen[code] = true
+		}
+		if len(codes) == 8 {
+			break
+		}
+	}
+	// Preserve Oracle's stable error identifiers for bootstrap/retry decisions,
+	// without preserving SQL, credentials, schema names or native diagnostics.
+	safe := strings.Join(codes, " ")
+	return safe, fmt.Errorf("Oracle command failed (%s); diagnostic output is withheld", safe)
+}

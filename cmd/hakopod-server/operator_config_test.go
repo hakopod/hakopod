@@ -282,6 +282,23 @@ func TestOperatorServerlessGatewayMapping(t *testing.T) {
 	}
 }
 
+func TestOperatorDatabasePublicEndpointSettingsAreCompleteAndSelfHosted(t *testing.T) {
+	valid := []byte("schema_version=1\n[server]\ndeployment_mode='self-hosted'\npublic_tcp_ports=[15432,15433]\ndatabase_public_address='192.0.2.10'\ndatabase_public_domain='database.example.test'\ndatabase_public_ports=[15432]\n")
+	settings, err := operatorSettings(valid, t.TempDir(), noOperatorEnvironment)
+	if err != nil || settings["HAKOPOD_DATABASE_PUBLIC_ADDRESS"] != "192.0.2.10" || settings["HAKOPOD_DATABASE_PUBLIC_DOMAIN"] != "database.example.test" || settings["HAKOPOD_DATABASE_PUBLIC_PORTS"] != "15432" {
+		t.Fatal("database public endpoint operator settings were not mapped", settings, err)
+	}
+	for _, input := range []string{
+		"schema_version=1\n[server]\ndeployment_mode='self-hosted'\npublic_tcp_ports=[15432]\ndatabase_public_address='192.0.2.10'\n",
+		"schema_version=1\n[server]\ndeployment_mode='managed-cloud'\npublic_tcp_ports=[15432]\ndatabase_public_address='192.0.2.10'\ndatabase_public_domain='database.example.test'\ndatabase_public_ports=[15432]\n",
+		"schema_version=1\n[server]\ndeployment_mode='self-hosted'\npublic_tcp_ports=[15432]\ndatabase_public_address='192.0.2.10'\ndatabase_public_domain='database.example.test'\ndatabase_public_ports=[15433]\n",
+	} {
+		if _, err := operatorSettings([]byte(input), t.TempDir(), noOperatorEnvironment); err == nil {
+			t.Fatal("unsafe database public endpoint operator settings were accepted")
+		}
+	}
+}
+
 func TestOperatorContainerDaemonBindingsFileMapping(t *testing.T) {
 	dir := t.TempDir()
 	path := operatorSecret(t, dir, "container-daemons.toml", "schema_version = 1\n")

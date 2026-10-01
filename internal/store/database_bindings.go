@@ -36,7 +36,27 @@ func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 		return fmt.Errorf("%w: inspect the completed recovery before connecting an application", ErrConflict)
 	}
 	if d.Spec.Engine == "postgresql" {
-		if b.Protocol != "postgres" || b.Endpoint != "read_write" && (b.Endpoint != "read_only" || d.Spec.Replicas == 0) || b.ClusterAware {
+		endpointOK := b.Endpoint == "read_write" || b.Endpoint == "read_only" && d.Spec.Replicas > 0
+		if d.Spec.Pooling != nil {
+			endpointOK = endpointOK || b.Endpoint == "pooled_read_write" || b.Endpoint == "pooled_read_only" && d.Spec.Pooling.ReadOnly
+		}
+		if b.Protocol != "postgres" || !endpointOK || b.ClusterAware {
+			return ErrInput
+		}
+	} else if d.Spec.Engine == "mysql" || d.Spec.Engine == "vitess" {
+		if b.Protocol != "mysql" || b.ClusterAware || (b.Endpoint != "read_write" && !(b.Endpoint == "read_only" && d.Spec.Replicas > 0)) {
+			return ErrInput
+		}
+	} else if d.Spec.Engine == "oracle" {
+		if b.Protocol != "oracle" || b.Endpoint != "read_write" || b.ClusterAware || d.Spec.Mode != "standalone" {
+			return ErrInput
+		}
+	} else if d.Spec.Engine == "clickhouse" {
+		if b.Protocol != "clickhouse" || (d.Spec.Mode == "cluster" && (b.Endpoint != "cluster" || !b.ClusterAware)) || (d.Spec.Mode == "standalone" && (b.Endpoint != "read_write" || b.ClusterAware)) {
+			return fmt.Errorf("%w: select a matching ClickHouse endpoint and acknowledge clustered table routing", ErrInput)
+		}
+	} else if d.Spec.Engine == "mongodb" {
+		if b.Protocol != "mongodb" || b.Endpoint != "cluster" || !b.ClusterAware {
 			return ErrInput
 		}
 	} else if b.Protocol != "redis" || d.Spec.Mode == "cluster" && (b.Endpoint != "cluster" || !b.ClusterAware) || d.Spec.Mode == "standalone" && (b.Endpoint != "read_write" || b.ClusterAware) {
@@ -48,6 +68,9 @@ func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 // Lock the same database rows as deletion before accepting a new saved grant.
 // Application keys may reuse a grant, but cannot add or change one.
 func validateDatabaseBindingsTx(ctx context.Context, tx pgx.Tx, p Principal, app Application, specs ...spec.Application) error {
+	if err := validateExternalDatabaseBindingsTx(ctx, tx, p, app, specs...); err != nil {
+		return err
+	}
 	loaded := map[string]database.Resource{}
 	unique := map[string]bool{}
 	for _, next := range specs {

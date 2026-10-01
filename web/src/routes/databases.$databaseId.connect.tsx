@@ -1,12 +1,13 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { endpointName } from '../lib/database-view'
 import { useDatabase } from '../lib/databases'
 import { useScope, canAccess } from '../lib/scope'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import type { components } from '../lib/api.generated'
-import { FormPage, FormSection } from '../components/form-page'
+import { FormError, FormPage, FormSection } from '../components/form-page'
 import { Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -113,7 +114,7 @@ function Connect({ id }: { id: string }) {
       </ConnectionState>
     )
   const chosenEndpoint =
-    endpoint || (d.spec.engine === 'redis' && d.spec.mode === 'cluster' ? 'cluster' : 'read_write')
+    endpoint || (d.spec.engine === 'mongodb' || ['redis', 'clickhouse'].includes(d.spec.engine) && d.spec.mode === 'cluster' ? 'cluster' : 'read_write')
   const expired = Boolean(plan && Date.parse(plan.expires_at) <= Date.now())
   function reset() {
     setPlan(null)
@@ -261,13 +262,15 @@ function Connect({ id }: { id: string }) {
               onValueChange={(value) => {
                 reset()
                 setEndpoint(value)
+                setClusterAware(false)
               }}
               options={(d.observation.endpoints || []).map((e) => ({
                 value: e.purpose,
-                label: e.purpose.replaceAll('_', ' '),
+                label: endpointName(e.purpose, d.spec.engine),
               }))}
             />
           </label>
+          {chosenEndpoint.startsWith('pooled_') && <Note>PgBouncer uses {d.spec.pooling?.mode} pooling. Choose write or replica traffic explicitly. Clients must reconnect after failover.{d.spec.pooling?.mode === 'transaction' ? ' Session settings and temporary tables across transactions need a direct or session connection.' : ''}</Note>}
           {chosenEndpoint === 'cluster' && (
             <label className="flex min-h-11 items-center gap-2">
               <Input
@@ -280,7 +283,7 @@ function Connect({ id }: { id: string }) {
                   setClusterAware(e.target.checked)
                 }}
               />
-              This application uses a cluster-aware Redis client.
+              {d.spec.engine === 'mongodb' ? 'This application uses a MongoDB driver that supports replica-set discovery.' : d.spec.engine === 'clickhouse' ? 'This application uses Distributed tables or explicit shard routing. The endpoint does not combine local tables automatically.' : 'This application uses a cluster-aware Redis client.'}
             </label>
           )}
         </FormSection>
@@ -320,9 +323,7 @@ function Connect({ id }: { id: string }) {
           </FormSection>
         )}
         {error && (
-          <p role="alert" className="py-3 text-destructive">
-            {error}
-          </p>
+          <FormError>{error}</FormError>
         )}
         {expired && <Note>This review expired. Refresh it before continuing.</Note>}
         <div className="py-4">

@@ -16,6 +16,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -23,13 +24,20 @@ import (
 )
 
 type BackupConfig struct {
+	VitessApprovals                   []backup.VitessBackupApproval
 	ManagedPostgres                   bool
 	DatabaseURL, PGDumpPath, StateDir string
 	MaxBytes                          int64
 	BlockedEndpointCIDRs              []netip.Prefix
 }
 
-func (s *Server) ConfigureBackups(config BackupConfig) {
+func (s *Server) ConfigureBackups(config BackupConfig) error {
+	if s.Backups != nil {
+		return fmt.Errorf("backup runtime is already configured")
+	}
+	if err := backup.ValidateVitessBackupApprovals(config.VitessApprovals); err != nil {
+		return err
+	}
 	if config.PGDumpPath == "" {
 		config.PGDumpPath = "pg_dump"
 	}
@@ -40,10 +48,38 @@ func (s *Server) ConfigureBackups(config BackupConfig) {
 	// engines that back themselves up.
 	runtime := &backupRuntime{server: s, config: config}
 	s.Backups = &backup.Service{Repo: s.Store, Runtime: runtime, Engine: runtime, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
+	if s.Cluster != nil {
+		recoveryRuntime := &cluster.SupabaseRecoveryRuntime{Cluster: s.Cluster, Store: s.Store}
+		recoveryArtifacts := &platformbackup.EncryptedStore{Repo: s.Store, CredentialKey: s.authEncryptionKey(), MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
+		s.PlatformRecovery = &platformbackup.Service{Repo: s.Store, Runtime: recoveryRuntime, Artifacts: recoveryArtifacts, Timeout: 2 * time.Hour}
+	}
+	s.Store.VitessBackupApprovals = config.VitessApprovals
+	if s.Cluster != nil {
+		if err := s.Cluster.SetVitessBackupResolver(s.resolveVitessBackup(config.VitessApprovals)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *Server) RunBackups(ctx context.Context) {
 	if s.Backups != nil {
 		s.Backups.Run(ctx)
+	}
+}
+
+func (s *Server) RunPlatformRecovery(ctx context.Context) {
+	if s.PlatformRecovery == nil {
+		return
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		_ = s.PlatformRecovery.RunOnce(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

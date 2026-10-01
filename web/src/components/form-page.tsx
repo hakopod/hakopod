@@ -141,3 +141,13 @@ export function FormHint({ title, children }: { title: string; children: ReactNo
     </section>
   )
 }
+
+export function FormError({ children, className = 'py-3 text-destructive', focus = true }: {
+  children: ReactNode
+  className?: string
+  focus?: boolean
+}) {
+  const alert = useRef<HTMLParagraphElement>(null)
+  useEffect(() => { if (focus) alert.current?.focus() }, [focus])
+  return <p ref={alert} role="alert" tabIndex={-1} className={`${className} outline-offset-2 focus:outline-2 focus:outline-current`}>{children}</p>
+}

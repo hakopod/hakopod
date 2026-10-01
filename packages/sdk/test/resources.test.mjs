@@ -76,6 +76,19 @@ function fixture(handler) {
   });
   return { client, calls };
 }
+test("database node discovery uses the selected scope without changing the client's scope", async () => {
+  const { client, calls } = fixture(() => Response.json({ items: [], limit: 48 }));
+  assert.deepEqual(await client.in({ project: "orders", environment: "staging" }).databasePlacementNodes(), { items: [], limit: 48 });
+  await client.databasePlacementNodes();
+  for (const call of calls) {
+    assert.equal(call.path, "/database-placement/nodes");
+    assert.equal(call.method, "GET");
+  }
+  assert.equal(calls[0].url.searchParams.get("project"), "orders");
+  assert.equal(calls[0].url.searchParams.get("environment"), "staging");
+  assert.equal(calls[1].url.searchParams.get("project"), scope.project);
+  assert.equal(calls[1].url.searchParams.get("environment"), scope.environment);
+});
 test("connect uses the machine key scope and requires an explicit scope for installation keys", async () => {
   const options = {
     apiUrl: "https://fixture.invalid",
@@ -98,12 +111,10 @@ test("application deletion includes the explicitly reviewed revision", async () 
       call.method === "DELETE" ? { status: "deleted" } : application,
     ),
   );
-  await client
-    .application(application.id)
-    .delete({
-      confirmName: application.name,
-      expectedRevision: application.revision,
-    });
+  await client.application(application.id).delete({
+    confirmName: application.name,
+    expectedRevision: application.revision,
+  });
   assert.deepEqual(calls.at(-1).body, {
     confirm_name: application.name,
     expected_revision: application.revision,
@@ -128,15 +139,96 @@ test("database backups and schedules use the managed database identity", async (
     },
   });
   assert.equal(calls.at(-1).key, "backup-fixture-key");
-  await client
-    .database(database.id)
-    .schedule({
-      name: "daily-fixture",
-      destinationId: "destination-fixture",
-      frequency: "daily",
-      retentionCount: 7,
-    });
+  await client.database(database.id).schedule({
+    name: "daily-fixture",
+    destinationId: "destination-fixture",
+    frequency: "daily",
+    retentionCount: 7,
+  });
   assert.equal(calls.at(-1).body.interval_hours, 24);
+});
+test("database public endpoint review binds scope and preserves one retry key", async () => {
+  const endpointPlan = {
+    id: "endpoint-review",
+    plan: {
+      database_id: database.id,
+      project: scope.project,
+      environment: scope.environment,
+      database_revision: database.revision,
+      endpoint_id: "endpoint-fixture",
+      endpoint_revision: 0,
+      spec: { purpose: "read_write", source_cidrs: ["192.0.2.0/24"], max_connections: 32 },
+      route: { purpose: "read_write", protocol: "postgresql", routing: "direct", read_only: false, pooled: false },
+      allocation: { id: "allocation-fixture", host: "database-15432.example.test", address: "192.0.2.10", port: 15432 },
+      topology_fingerprint: "topology-fixture",
+      tls_fingerprint: "tls-fixture",
+      blocked_reasons: [],
+      warnings: ["Existing connections close before publication."],
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    },
+  };
+  const accepted = { id: "endpoint-operation", endpoint_id: endpointPlan.plan.endpoint_id, database_id: database.id, revision: 1, kind: "publish", status: "queued", phase: "accepted", message: "", created_at: new Date().toISOString() };
+  const capabilities = {
+    engine: "postgresql",
+    available: true,
+    unavailable_reason: "",
+    routes: [
+      { purpose: "read_write", protocol: "postgresql", routing: "direct", read_only: false, pooled: false },
+    ],
+  };
+  const { client, calls } = fixture((call) => Response.json(
+    call.path.endsWith("public-endpoint-plan") ? endpointPlan :
+      call.path.endsWith("public-endpoint-capabilities") ? capabilities :
+      call.path.endsWith("public-endpoints") && call.method === "POST" ? accepted : database,
+  ));
+  const input = { purpose: "read_write", source_cidrs: ["192.0.2.0/24"], max_connections: 32 };
+  const review = await client.database(database.id).publicEndpointPlan(input);
+  input.source_cidrs[0] = "0.0.0.0/0";
+  const run = await review.apply();
+  await review.apply();
+  assert.equal(run.endpointId, endpointPlan.plan.endpoint_id);
+  assert.equal(calls[3].key, calls[4].key);
+  assert.deepEqual(calls[3].body, { review_id: endpointPlan.id, expected_database_revision: 1, expected_endpoint_revision: 0 });
+});
+test("database public endpoint capabilities preserve the selected database identity", async () => {
+  const capabilities = {
+    engine: "mysql",
+    available: false,
+    unavailable_reason: "MySQL public endpoint qualification is incomplete.",
+    routes: [
+      { purpose: "read_write", protocol: "mysql", routing: "mysql_router", read_only: false, pooled: false },
+      { purpose: "read_only", protocol: "mysql", routing: "mysql_router", read_only: true, pooled: false },
+    ],
+  };
+  const mysql = { ...database, spec: { ...database.spec, engine: "mysql" } };
+  const { client, calls } = fixture((call) => Response.json(
+    call.path.endsWith("public-endpoint-capabilities") ? capabilities : mysql,
+  ));
+  assert.deepEqual(await client.database(mysql.id).publicEndpointCapabilities(), capabilities);
+  assert.equal(calls.at(-1).method, "GET");
+  assert.equal(calls.at(-1).path, `/databases/${mysql.id}/public-endpoint-capabilities`);
+});
+test("database public endpoint review rejects missing or changed route descriptors", async () => {
+  const route = { purpose: "read_write", protocol: "postgresql", routing: "direct", read_only: false, pooled: false };
+  for (const reviewedRoute of [undefined, { ...route, protocol: "mysql" }, { ...route, routing: "pgbouncer" }, { ...route, read_only: true }, { ...route, pooled: true }]) {
+    const input = { purpose: "read_write", source_cidrs: ["192.0.2.0/24"], max_connections: 32 };
+    const { client, calls } = fixture((call) => Response.json(
+      call.path.endsWith("public-endpoint-capabilities") ? { engine: database.spec.engine, available: true, routes: [route], unavailable_reason: "" } :
+        call.path.endsWith("public-endpoint-plan") ? { id: "review", plan: { database_id: database.id, project: database.project, environment: database.environment, database_revision: database.revision, spec: input, route: reviewedRoute } } : database,
+    ));
+    await assert.rejects(client.database(database.id).publicEndpointPlan(input), { code: "invalid_response" });
+    assert.equal(calls.some((call) => call.path.endsWith("public-endpoints") && call.method === "POST"), false);
+  }
+});
+test("database public endpoint revocation and operation lookup preserve identities", async () => {
+  const endpointId = "endpoint-fixture";
+  const accepted = { id: "revoke-operation", endpoint_id: endpointId, database_id: database.id, revision: 3, kind: "revoke", status: "queued", phase: "accepted", message: "", created_at: new Date().toISOString() };
+  const { client, calls } = fixture((call) => Response.json(call.method === "GET" && call.path === `/databases/${database.id}` ? database : accepted));
+  const run = await client.database(database.id).revokePublicEndpoint(endpointId, 2, { idempotencyKey: "endpoint-revoke-key" });
+  assert.equal(calls.at(-1).path, `/databases/${database.id}/public-endpoints/${endpointId}`);
+  assert.deepEqual(calls.at(-1).body, { expected_endpoint_revision: 2 });
+  assert.equal(calls.at(-1).key, "endpoint-revoke-key");
+  assert.equal((await run.get()).id, accepted.id);
 });
 test("recovery review binds the archive and target and inspection requires explicit attestation", async () => {
   const recoveryPlan = {
@@ -164,14 +256,12 @@ test("recovery review binds the archive and target and inspection requires expli
     confirmation: "restore fixture",
   });
   await assert.rejects(
-    client
-      .database(database.id)
-      .inspectRecovery({
-        jobId: "restore-fixture",
-        confirmName: "wrong",
-        expectedRevision: 1,
-        inspected: true,
-      }),
+    client.database(database.id).inspectRecovery({
+      jobId: "restore-fixture",
+      confirmName: "wrong",
+      expectedRevision: 1,
+      inspected: true,
+    }),
     { code: "confirmation_required" },
   );
   const wrong = fixture((call) =>
@@ -385,14 +475,12 @@ test("database creation retains its recovery key and bindings never fetch passwo
         : database,
     ),
   );
-  const created = await client
-    .db("fixture-db")
-    .create({
-      engine: "postgresql",
-      cpu: "100m",
-      memory: "256Mi",
-      storageGiB: 1,
-    });
+  const created = await client.db("fixture-db").create({
+    engine: "postgresql",
+    cpu: "100m",
+    memory: "256Mi",
+    storageGiB: 1,
+  });
   assert.equal(created.idempotencyKey, calls[0].key);
   assert.deepEqual(calls[0].body.spec, database.spec);
   assert.deepEqual(await created.database.binding(), {
@@ -415,6 +503,119 @@ test("database creation retains its recovery key and bindings never fetch passwo
       .endpoint,
     "cluster",
   );
+});
+test("Vitess preserves reviewed configuration and uses MySQL gateway routes", async () => {
+  const vitess = { backup_destination_id: 'a'.repeat(32), backup_destination_revision: 3, tables: [{ name: 'orders', sharding_column: 'tenant_id' }] };
+  const definition = db({ name: 'vitess-fixture', engine: 'vitess', mode: 'cluster', shards: 2, cpu: '500m', memory: '1Gi', storageGiB: 5, vitess });
+  assert.equal(definition.version, '23');
+  assert.equal(definition.replicas, 1);
+  assert.deepEqual(definition.vitess, vitess);
+  assert.deepEqual(definition.tls, { mode: 'required' });
+  const f = fixture(() => Response.json({ ...database, spec: definition }));
+  assert.deepEqual(await f.client.database(database.id).binding(), { managed_database: database.id, protocol: 'mysql', endpoint: 'read_write' });
+  assert.deepEqual(await f.client.database(database.id).binding({ endpoint: 'read_only' }), { managed_database: database.id, protocol: 'mysql', endpoint: 'read_only' });
+  await assert.rejects(f.client.database(database.id).binding({ endpoint: 'cluster', clusterAware: true }), { code: 'invalid_binding' });
+});
+test("ClickHouse and Oracle SDK definitions preserve engine configuration and routing", async () => {
+  for (const engine of ["clickhouse", "oracle"]) {
+    const definition = db({ name: "engine-fixture", engine, cpu: "1", memory: "4Gi", storageGiB: 10 });
+    assert.equal(definition.version, engine === "oracle" ? "23.26" : "26.3");
+    assert.deepEqual(definition.tls, { mode: "required" });
+    if (engine === "oracle") assert.deepEqual(definition.oracle, { edition: "free" });
+    const f = fixture(() => Response.json({ ...database, spec: definition }));
+    assert.deepEqual(await f.client.database(database.id).binding(), { managed_database: database.id, protocol: engine, endpoint: "read_write" });
+    await assert.rejects(f.client.database(database.id).binding({ endpoint: "read_only" }), { code: "invalid_binding" });
+  }
+  const oracle = { edition: "enterprise", image: `registry.example.com/oracle@sha256:${"a".repeat(64)}`, registry_credential: "oracle-registry", license_confirmed: true };
+  assert.deepEqual(db({ name: "licensed-fixture", engine: "oracle", oracle, version: "19", cpu: "1", memory: "4Gi", storageGiB: 20 }).oracle, oracle);
+  const cluster = fixture(() => Response.json({ ...database, spec: db({ name: "cluster-fixture", engine: "clickhouse", mode: "cluster", shards: 2, cpu: "1", memory: "4Gi", storageGiB: 10 }) }));
+  await assert.rejects(cluster.client.database(database.id).binding(), { code: "cluster_client_required" });
+  assert.deepEqual(await cluster.client.database(database.id).binding({ clusterAware: true }), { managed_database: database.id, protocol: "clickhouse", endpoint: "cluster", cluster_aware: true });
+  await assert.rejects(cluster.client.database(database.id).binding({ endpoint: "read_only", clusterAware: true }), { code: "invalid_binding" });
+});
+test("MySQL SDK creation and binding retain its engine, quorum, TLS and placement", async () => {
+  const input = {
+    engine: "mysql",
+    mode: "cluster",
+    cpu: "500m",
+    memory: "1Gi",
+    storageGiB: 5,
+    placement: { spread: "zones" },
+  };
+  const mysql = { ...database, spec: db({ ...input, name: "mysql-fixture" }) };
+  const { client, calls } = fixture((call) =>
+    Response.json(
+      call.path === "/databases"
+        ? { id: "mysql-create", database_id: mysql.id }
+        : mysql,
+    ),
+  );
+  await client.db("mysql-fixture").create(input);
+  assert.equal(calls[0].body.spec.version, "8.4");
+  assert.equal(calls[0].body.spec.replicas, 2);
+  assert.deepEqual(calls[0].body.spec.tls, { mode: "required" });
+  assert.deepEqual(calls[0].body.spec.placement, { spread: "zones" });
+  assert.deepEqual(
+    await client.database(mysql.id).binding({ endpoint: "read_only" }),
+    { managed_database: mysql.id, protocol: "mysql", endpoint: "read_only" },
+  );
+  for (const options of [
+    { endpoint: "cluster" },
+    { endpoint: "pooled_read_write" },
+    { clusterAware: true },
+  ])
+    await assert.rejects(client.database(mysql.id).binding(options), {
+      code: "invalid_binding",
+    });
+  assert(calls.every((call) => !call.path.endsWith("/credentials")));
+});
+test("SDK preserves PgBouncer configuration and validates routes against it", async () => {
+  const pooling = {
+    mode: "transaction",
+    instances: 2,
+    max_client_connections: 100,
+    default_pool_size: 10,
+    read_only: true,
+  };
+  const spec = db({
+    name: "pooled-fixture",
+    engine: "postgresql",
+    mode: "cluster",
+    cpu: "250m",
+    memory: "512Mi",
+    storageGiB: 5,
+    pooling,
+  });
+  assert.deepEqual(spec.pooling, pooling);
+  const { client } = fixture(() => Response.json({ ...database, spec }));
+  assert.equal(
+    (
+      await client
+        .database(database.id)
+        .binding({ endpoint: "pooled_read_only" })
+    ).endpoint,
+    "pooled_read_only",
+  );
+  const standalone = fixture(() => Response.json(database));
+  for (const endpoint of ["read_only", "pooled_read_write", "cluster"])
+    await assert.rejects(
+      standalone.client.database(database.id).binding({ endpoint }),
+      { code: "invalid_binding" },
+    );
+});
+
+test("MongoDB SDK uses replica-set discovery even for standalone deployments", async () => {
+  for (const mode of ["standalone", "cluster"]) {
+    const spec = db({ name: "mongo-fixture", engine: "mongodb", mode, cpu: "500m", memory: "1Gi", storageGiB: 5 });
+    assert.equal(spec.version, "8.0");
+    assert.equal(spec.replicas, mode === "cluster" ? 2 : 0);
+    assert.deepEqual(spec.tls, { mode: "required" });
+    const { client, calls } = fixture(() => Response.json({ ...database, spec }));
+    await assert.rejects(client.database(database.id).binding(), { code: "cluster_client_required" });
+    assert.deepEqual(await client.database(database.id).binding({ clusterAware: true }), { managed_database: database.id, protocol: "mongodb", endpoint: "cluster", cluster_aware: true });
+    for (const endpoint of ["read_write", "read_only", "pooled_read_write"]) await assert.rejects(client.database(database.id).binding({ endpoint, clusterAware: true }), { code: "invalid_binding" });
+    assert(calls.every((call) => !call.path.endsWith("/credentials")));
+  }
 });
 test("blocked resize reviews cannot apply; approved reviews retain the server's exact ID and spec", async () => {
   let blocked = ["A verified recent backup is required."];

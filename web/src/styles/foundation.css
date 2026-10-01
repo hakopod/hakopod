@@ -76,6 +76,10 @@ textarea {
 :focus-visible {
   outline: none;
 }
+/* Hatch's unlayered paragraph color must not override explicit error text. */
+.text-destructive {
+  color: var(--destructive);
+}
 /* The fallback gives native links and controls the same four focus corners. */
 :root:not([data-edition='self-hosted'])
   :where(a, button, select, summary):focus-visible:not(:has(> .brackets)) {
@@ -622,6 +626,10 @@ html[data-edition='self-hosted']
 html[data-edition='self-hosted'] .otp-cell[data-active] {
   outline: 2px solid var(--navigation-active);
   outline-offset: 2px;
+}
+/* Scrollable navigation must contain all four sides of its focus outline. */
+html[data-edition='self-hosted'] :is(.tab-trigger, .settings-nav button):focus-visible {
+  outline-offset: -2px;
 }
 
 /* Stretched card links focus the entire card, rather than outlining its label twice. */

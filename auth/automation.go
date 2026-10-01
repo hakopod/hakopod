@@ -10,13 +10,14 @@ import (
 )
 
 type AutomationKey = store.Key
-type AutomationKeyInput = store.KeyInput
+type AutomationKeyInput = store.BoundKeyInput
 type AutomationGrant struct {
-	Workspace   string
-	Binding     string
-	Project     string
-	Environment string
-	Permissions []string
+	Workspace         string
+	Binding           string
+	Project           string
+	Environment       string
+	Permissions       []string
+	AllowNeverExpires bool
 }
 
 // Automation keys are issued by a trusted embedding after it authorizes the
@@ -50,7 +51,10 @@ func (s *Service) CreateAutomationKey(ctx context.Context, account User, grant A
 			return AutomationKey{}, "", store.ErrForbidden
 		}
 	}
-	return s.store.CreateBoundKey(ctx, p, in, grant.Workspace, grant.Binding, rotate)
+	if in.NeverExpires && !grant.AllowNeverExpires {
+		return AutomationKey{}, "", store.ErrForbidden
+	}
+	return s.store.CreateBoundKey(ctx, p, in, grant.Workspace, grant.Binding, rotate, grant.AllowNeverExpires)
 }
 
 func (s *Service) AutomationKeys(ctx context.Context, workspace string) ([]AutomationKey, error) {

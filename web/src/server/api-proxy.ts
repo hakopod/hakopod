@@ -8,8 +8,15 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
-  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect))?)?$/,
+  /^managed-platforms(?:\/(?:reviews|operations|[a-f0-9]{32}(?:\/(?:operations|recovery-operations))?))?$/,
+  /^managed-platform-operations\/[a-f0-9]{32}$/,
+  /^managed-platform-recovery\/(?:reviews|operations)$/,
+  /^managed-platform-recovery-operations\/[a-f0-9]{32}(?:\/cancel)?$/,
+  /^external-databases(?:\/[a-f0-9]{32}(?:\/(?:connections|trust|connection-plan|connect))?)?$/,
+  /^external-database-operations\/[a-f0-9]{32}$/,
+  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|connections|trust|metrics|credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|public-endpoint-capabilities|public-endpoint-plan|public-endpoints(?:\/[a-f0-9]{32})?))?)?$/,
   /^database-operations\/[a-f0-9]{32}$/,
+  /^database-public-endpoint-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,
   /^applications\/[A-Za-z0-9_-]+\/actions$/,
   /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/jobs(?:\/[A-Za-z0-9_-]+\/(?:logs|cancel))?$/,
@@ -21,6 +28,7 @@ export const allowed = [
   /^applications\/[A-Za-z0-9_-]+\/volume-resizes(?:\/plan|\/[A-Za-z0-9_-]+\/(?:retry|cancel|retain|delete-original))?$/,
   /^deployments\/[A-Za-z0-9_-]+\/volume-cleanup$/,
   /^placement\/nodes$/,
+  /^database-placement\/nodes$/,
   /^requests$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/requests\/routing$/,
   /^applications\/[A-Za-z0-9_-]+\/notifications(?:\/[A-Za-z0-9_-]+(?:\/test)?)?$/,

@@ -1,0 +1,49 @@
+package controllermanager
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+
+	"github.com/spf13/pflag"
+)
+
+func TestHakopodBackupSubcontrollerFlags(t *testing.T) {
+	mode := os.Getenv("HAKOPOD_OPERATOR_FLAG_TEST")
+	if mode == "" {
+		binary, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, alias := range []string{"hyphens", "underscores"} {
+			command := exec.Command(binary, "-test.run=^TestHakopodBackupSubcontrollerFlags$")
+			command.Env = append(os.Environ(), "HAKOPOD_OPERATOR_FLAG_TEST="+alias)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("%s backup subcontroller flags failed: %v\n%s", alias, err, output)
+			}
+		}
+		return
+	}
+	arguments := []string{
+		"backup-storage-implementation=s3", "s3-backup-aws-region=us-east-1",
+		"s3-backup-storage-bucket=fixture", "s3-backup-storage-root=fixture-prefix",
+		"s3-backup-force-path-style=true", "s3-backup-aws-endpoint=https://storage.example.test",
+		"s3-backup-aws-min-partsize=8388608",
+	}
+	os.Args = []string{"vitess-operator"}
+	for _, argument := range arguments {
+		name, value, _ := strings.Cut(argument, "=")
+		if mode == "underscores" {
+			name = strings.ReplaceAll(name, "-", "_")
+		}
+		os.Args = append(os.Args, "--"+name+"="+value)
+	}
+	InitFlags()
+	for _, name := range []string{"s3-backup-aws-min-partsize", "s3_backup_aws_min_partsize"} {
+		flag := pflag.CommandLine.Lookup(name)
+		if flag == nil || flag.Value.String() != "8388608" {
+			t.Fatal("operator lost the generated multipart size flag")
+		}
+	}
+}

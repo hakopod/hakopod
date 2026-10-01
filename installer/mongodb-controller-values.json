@@ -1,0 +1,47 @@
+{
+  "operator": {
+    "watchNamespace": "*",
+    "watchedResources": [
+      "mongodbcommunity"
+    ],
+    "enableClusterMongoDBRoles": false,
+    "createResourcesServiceAccountsAndRoles": false,
+    "telemetry": {
+      "enabled": false,
+      "installClusterRole": false,
+      "send": {
+        "enabled": false
+      }
+    },
+    "maxConcurrentReconciles": 1,
+    "nodeSelector": {
+      "kubernetes.io/arch": "amd64"
+    },
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "512Mi"
+      }
+    },
+    "operator_image_name": "managed-mongodb-operator",
+    "version": "1.13.0-hakopod.1@sha256:7ba576ba3115f007fcfc22c38b530ad05c211705a6a958124ec41ea80239a85c"
+  },
+  "registry": {
+    "operator": "ghcr.io/hakopod"
+  },
+  "community": {
+    "agent": {
+      "version": "109.0.0.9285-1@sha256:2d819aff81c5d9be80017791ad9e6f8c0fef828b476c9ed1cba8fe9838b07cd2"
+    }
+  },
+  "versionUpgradeHook": {
+    "version": "1.0.10@sha256:65e653bd319022328102bbd4aa8559810fe10282608af359e34e224e98116652"
+  },
+  "readinessProbe": {
+    "version": "1.0.24@sha256:dd861b4254ebf0458c460e9445fcda89a5b101ad39f9719fd09c33a99511d928"
+  }
+}

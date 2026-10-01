@@ -56,6 +56,18 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	if d.Spec.Engine == "redis" {
 		b.Protocol = "redis"
 	}
+	if d.Spec.Engine == "mysql" || d.Spec.Engine == "vitess" {
+		b.Protocol = "mysql"
+	}
+	if d.Spec.Engine == "mongodb" {
+		b.Protocol = "mongodb"
+	}
+	if d.Spec.Engine == "clickhouse" {
+		b.Protocol = "clickhouse"
+	}
+	if d.Spec.Engine == "oracle" {
+		b.Protocol = "oracle"
+	}
 	if err = validateDatabaseBinding(d, b); err != nil {
 		return DatabaseConnectionPlan{}, err
 	}
@@ -93,6 +105,24 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 		return DatabaseConnectionPlan{}, fmt.Errorf("%w: %v", ErrInput, err)
 	}
 	plan := DatabaseConnectionPlan{ID: NewID(), DatabaseID: id, DatabaseName: d.Spec.Name, DatabaseRevision: d.Revision, ApplicationID: a.ID, ApplicationName: a.Name, ApplicationRevision: a.Revision, Service: service, Variable: variable, PreviousKind: previous, Binding: b, Recovery: d.Recovery, ExpiresAt: time.Now().UTC().Add(database.ReviewLifetime), Warnings: []string{"This replaces the saved connection and queues a new application deployment. Existing pods use their previous connection until replaced.", "Source data remains available. Keep any Git-managed configuration in sync with the new binding."}}
+	if d.Spec.Pooling != nil && (endpoint == "pooled_read_write" || endpoint == "pooled_read_only") {
+		plan.Warnings = append(plan.Warnings, "PgBouncer uses "+d.Spec.Pooling.Mode+" pooling. Clients must reconnect after failover; replica reads may lag. Routing does not grant read-only database permissions.")
+		if d.Spec.Pooling.Mode == "transaction" {
+			plan.Warnings = append(plan.Warnings, "Transaction pooling does not preserve session settings, LISTEN subscriptions or temporary tables across transactions. Use a direct or session endpoint when required.")
+		}
+	}
+	if d.Spec.Engine == "mysql" {
+		plan.Warnings = append(plan.Warnings, "MySQL Router selects the primary or replica route explicitly. Configure your driver to load the mounted CA and verify the endpoint hostname. Reconnect after a primary election; replica reads may lag.")
+	}
+	if d.Spec.Engine == "vitess" {
+		plan.Warnings = append(plan.Warnings, "Vitess uses the MySQL protocol with app@primary or app@replica as the database target. Configure your driver to verify the gateway hostname using the mounted CA. The gateway does not decide which queries may use replicas; replica reads may lag.")
+	}
+	if d.Spec.Engine == "mongodb" {
+		plan.Warnings = append(plan.Warnings, "Use a MongoDB driver that discovers replica set members and verifies TLS. This binding requests majority writes and primary reads. Secondary reads require an explicit driver read preference and may lag.")
+	}
+	if d.Spec.Engine == "clickhouse" {
+		plan.Warnings = append(plan.Warnings, "Use the ClickHouse native protocol with TLS and the mounted CA. Replication is asynchronous. Sharded queries require Distributed tables; a cluster endpoint does not automatically rewrite SQL or distribute table data.")
+	}
 	if d.Recovery != nil {
 		plan.Warnings = append(plan.Warnings, "Writes after the captured recovery point are absent from this copy. Pause source writes and take a fresh capture before final cutover when necessary.")
 	}

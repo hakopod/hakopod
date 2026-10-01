@@ -21,6 +21,7 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/dnsprovider"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -36,11 +37,21 @@ type Server struct {
 	// Customer runtimes keep installation administration disabled.
 	BuildRegistry   string
 	OperatorRuntime bool
-	Store           *store.Store
-	Cluster         *cluster.Client
-	Auth            AuthConfig
-	Backups         *backup.Service
-	ProcessLogs     *serverlogs.Buffer
+	// DatabasePublicEndpointAuthority is supplied only by a trusted embedding.
+	// It owns provider resources outside Kubernetes; customer requests cannot
+	// replace it or supply any of its inventory.
+	DatabasePublicEndpointAuthority  DatabasePublicEndpointAuthority
+	Store                            *store.Store
+	Cluster                          *cluster.Client
+	Auth                             AuthConfig
+	Backups                          *backup.Service
+	PlatformRecovery                 *platformbackup.Service
+	ManagedPlatformRecoveryQualified bool
+	ProcessLogs                      *serverlogs.Buffer
+	ManagedPlatformPlanner           ManagedPlatformPlanner
+	ManagedPlatformRuntime           ManagedPlatformRuntime
+	NeonProxyAuthority               NeonProxyAuthority
+	neonProxyConcurrent              chan struct{}
 	// Overrides are only set by in-process tests, never by an API request.
 	actionsTestRuntime      actionsRuntime
 	actionsClient           func(string) (runnerProvider, error)
@@ -83,9 +94,11 @@ func (s *Server) Handler() http.Handler {
 	s.buckets = map[string]bucket{}
 	s.concurrent = make(chan struct{}, 64)
 	s.streams = make(chan struct{}, 16)
+	s.neonProxyConcurrent = make(chan struct{}, 32)
 	s.databaseImports = make(chan struct{}, 2)
 	s.tlsIssuerChanges = make(chan struct{}, 2)
 	mux := http.NewServeMux()
+	s.registerNeonProxyControlPlane(mux)
 	mux.HandleFunc("POST /api/v1/build-registry/authorize", s.authorizeBuildRegistry)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +118,8 @@ func (s *Server) Handler() http.Handler {
 	s.registerDomainRoutes(routes)
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)
+	s.registerManagedPlatformRoutes(routes)
+	s.registerExternalDatabaseRoutes(routes)
 	s.registerAlarmRoutes(routes)
 	s.registerNotificationRoutes(routes)
 	s.registerRequestRoutes(routes)

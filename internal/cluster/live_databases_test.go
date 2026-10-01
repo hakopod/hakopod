@@ -38,6 +38,9 @@ func TestManagedDatabasesLive(t *testing.T) {
 				}
 				d := database.Resource{ID: hex.EncodeToString(id), Project: "demo", Environment: "development", Revision: 1, Spec: database.Spec{SchemaVersion: 1, Name: "managed-database-development-fixture", Engine: engine, Mode: mode, Shards: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1}}
 				d.Spec.Version = "17"
+				if os.Getenv("HAKOPOD_DATABASE_TLS_TEST") == "1" {
+					d.Spec.TLS = &database.TLSConfig{Mode: "required"}
+				}
 				if engine == "redis" {
 					d.Spec.Version = "8"
 					d.Spec.Memory = "128Mi"
@@ -46,6 +49,12 @@ func TestManagedDatabasesLive(t *testing.T) {
 					d.Spec.Replicas = 1
 					if engine == "redis" {
 						d.Spec.Shards = 3
+					}
+				}
+				if engine == "postgresql" && mode == "cluster" && os.Getenv("HAKOPOD_DATABASE_PLACEMENT_TEST") == "1" {
+					d.Spec.Placement = database.Placement{Spread: "zones", NodeNames: []string{"k3d-hakopod-dev-server-0", "k3d-hakopod-database-worker-0"}}
+					if err := c.ValidateDatabasePlacement(ctx, d); err != nil {
+						t.Fatal(err)
 					}
 				}
 				password := make([]byte, 32)
@@ -65,6 +74,38 @@ func TestManagedDatabasesLive(t *testing.T) {
 					t.Fatal(err)
 				}
 				observed := waitManagedDatabase(t, ctx, c, d)
+				if os.Getenv("HAKOPOD_DATABASE_ENGINE_METRICS_TEST") == "1" && (observed.EngineMetrics == nil || !observed.EngineMetrics.Available || observed.EngineMetrics.DataBytes == nil) {
+					t.Fatal("database engine metrics are not observed")
+				}
+				if d.Spec.TLSRequired() && (observed.TLS == nil || !observed.TLS.Verified || !observed.TLS.PlaintextRejected) {
+					t.Fatal("database TLS enforcement was not verified")
+				}
+				if d.Spec.Placement.Spread != "" && (observed.Placement == nil || !observed.Placement.Verified || observed.Placement.Nodes != 2 || observed.Placement.Zones != 2) {
+					t.Fatal("requested development node/zone separation was not observed")
+				}
+				if os.Getenv("HAKOPOD_DATABASE_METRICS_TEST") == "1" {
+					deadline := time.Now().Add(90 * time.Second)
+					for (observed.Metrics == nil || !observed.Metrics.Available) && time.Now().Before(deadline) {
+						if sleepContext(ctx, 5*time.Second) != nil {
+							break
+						}
+						step, stop := context.WithTimeout(ctx, 10*time.Second)
+						observed, err = c.ObserveDatabase(step, d)
+						stop()
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+					if observed.Metrics == nil || !observed.Metrics.Available || observed.Metrics.PodsSampled != d.Spec.Members() || observed.Metrics.Memory == nil || *observed.Metrics.Memory <= 0 {
+						t.Fatalf("complete real member samples unavailable: %+v", observed.Metrics)
+					}
+					for _, member := range observed.Members {
+						if member.Metrics == nil || !member.Metrics.Available || member.Image == "" || member.CreatedAt == nil {
+							t.Fatalf("member telemetry incomplete: %s", member.Name)
+						}
+					}
+					t.Logf("verified real resource samples: %d members, %.2f mCPU, %d bytes memory", observed.Metrics.PodsSampled, *observed.Metrics.CPU, *observed.Metrics.Memory)
+				}
 				if engine == "postgresql" && mode == "cluster" {
 					var primary database.Member
 					for _, m := range observed.Members {
@@ -111,7 +152,7 @@ func waitManagedDatabase(t *testing.T, ctx context.Context, c *Client, d databas
 	t.Helper()
 	last := ""
 	for ctx.Err() == nil {
-		step, stop := context.WithTimeout(ctx, 15*time.Second)
+		step, stop := context.WithTimeout(ctx, 25*time.Second)
 		observed, err := c.ObserveDatabase(step, d)
 		stop()
 		if err == nil && observed.Status == "ready" {

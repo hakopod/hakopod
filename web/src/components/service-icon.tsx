@@ -8,11 +8,13 @@ const source: Record<string, string> = {
   postgresql: 'postgresql',
   cockroachdb: 'cockroachlabs',
   clickhouse: 'clickhouse',
+  oracle: 'oracle',
   metabase: 'metabase',
   redis: 'redis',
   mysql: 'mysql',
   mariadb: 'mariadb',
   mongodb: 'mongodb',
+  vitess: 'vitess',
   'uptime-kuma': 'uptimekuma',
   gitea: 'gitea',
   vllm: 'vllm',
@@ -35,11 +37,13 @@ export function ServiceIcon({
   size = 28,
   src,
   background,
+  loading = 'lazy',
 }: {
   name: string
   size?: number
   src?: string
   background?: string
+  loading?: 'lazy' | 'eager'
 }) {
   const slug = source[name]
   const catalogLogo =
@@ -57,7 +61,7 @@ export function ServiceIcon({
           alt=""
           width={size}
           height={size}
-          loading="lazy"
+          loading={loading}
           decoding="async"
         />
       ) : (

@@ -306,3 +306,91 @@ serverless plans are available. See [serverless setup](../docs/serverless.md).
 ### Managed Actions runner sandbox
 
 Managed Actions is an optional Pro module. See [the setup and lifecycle guide](../docs/managed-actions.md). Run `sudo python3 ./installer/modules.py managed-actions` from the verified installer kit for your installed release during a maintenance window; it restarts K3s and does not change the default workload runtime.
+
+## Managed database controllers
+
+The installer kit now carries a `deploy/database-controllers` bundle. Release
+packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
+sources, plus Vitess resource definitions, with pinned checksums and image digests. Building that bundle requires
+PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
+separately qualified credential/TLS-safe Redis image. The builder downloads and
+checks the pinned Helm binary itself. Controller installation uses only Python,
+kubectl and the packaged JSON; it does not download charts or install Python
+packages on the target host.
+
+Building with `--include-vitess` requires native qualification records that match the
+current source and exact runtime images. It stops when those records are missing
+or stale. The Vitess payload contains eight CRDs. Hakopod creates a separate,
+namespace-scoped operator for each Vitess database; this module does not install
+a shared Vitess controller. Builds without that option and installation of other
+engines do not require Vitess qualification. A kit that omits Vitess cannot enable it.
+
+From the matching extracted installer kit on a completed installer-owned host:
+
+```sh
+sudo python3 installer/modules.py managed-databases \
+  --engines postgresql redis mysql mongodb clickhouse vitess \
+  --plan /root/hakopod-database-controllers-plan.json
+```
+
+Review the file's cluster identity, existing resource identities, controller
+images, replicas, node selectors and each container's requests and limits.
+MySQL, MongoDB and Vitess require a ready schedulable AMD64 node. Controller resources
+are additional to the database/application reservations. Check taints and total
+capacity before accepting the plan; a ready node alone is not a reservation.
+Then apply that exact plan within 30 minutes:
+
+```sh
+sudo python3 installer/modules.py managed-databases \
+  --engines postgresql redis mysql mongodb clickhouse vitess \
+  --apply-reviewed-plan /root/hakopod-database-controllers-plan.json
+```
+
+A different bundle, cluster or existing object invalidates the review. Existing
+resources must carry this installation's ownership label. A controller installed
+outside this module is not adopted automatically, including a controller from a
+development installer. Such installations need an explicit ownership/migration
+review. Existing ClickHouse controller credentials are retained. Failures stop
+without deleting already installed objects; prepare a fresh plan to resume.
+
+Use the new release kit for a controller upgrade and review its changes. Normal
+API/dashboard maintenance does not upgrade controllers or replace an existing
+privileged maintenance helper. Keep the prior kit and plan. Controller changes
+may affect active databases; take required database backups and use an operator
+maintenance window. A rollback of an API binary is not a controller rollback.
+
+These commands install controller infrastructure only. They do not create or
+resize databases, delete volumes, change node runtimes, enable Cloud admission,
+or establish native acceptance. `scripts/install-development-*` remain confined
+to the named development cluster and are not the shipped installation path.
+Vitess is excluded until its patched images and runtime are qualified. Oracle
+Free uses its own engine-owned workload and has no additional controller module.
+Oracle Enterprise and Data Guard have a source implementation, but deployment
+remains disabled pending licensed native acceptance of the hardened controller
+and customer image. Public database endpoints are not included in this installer.
+
+## Optional ClickHouse sandbox
+
+Self-hosted installations may use the ordinary native runtime. To prepare the
+dedicated ClickHouse gVisor profile on the installer's single local K3s node,
+review a separate runtime plan:
+
+```sh
+sudo python3 installer/clickhouse_runtime.py \
+  --plan /root/hakopod-clickhouse-runtime-plan.json
+sudo python3 installer/clickhouse_runtime.py \
+  --apply-reviewed-plan /root/hakopod-clickhouse-runtime-plan.json
+```
+
+The apply step restarts K3s and can interrupt workloads. It checks the pinned
+runtime archive, preserves the existing default and Actions configuration,
+waits for a fresh kubelet heartbeat, verifies the generated handler and only
+then attests the node. Existing runtime bytes are not overwritten. Multi-node
+or externally managed clusters require their own reviewed node rollout.
+
+After native acceptance, enable `clickhouse_sandbox = true` in the operator's
+versioned `[server]` TOML configuration and restart only the API as appropriate.
+The helper deliberately does not edit operator settings or enable admission.
+This profile disables Systrap syscall patching so ClickHouse can keep its own
+executable integrity checks enabled; it does not permit tenant-selected runtime
+flags. Other database controllers remain on their configured runtime.

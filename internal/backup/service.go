@@ -220,6 +220,20 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 			if target.Engine == "mysql" {
 				prefix = "-- MySQL dump"
 			}
+			if target.Engine == "mongodb" {
+				prefix = "HAKOPOD-MONGODB-1\n"
+			}
+			if target.Engine == "clickhouse" {
+				// Managed ClickHouse streams a tar archive whose first entry is
+				// the versioned manifest, followed by each native shard backup.
+				prefix = "manifest.json\x00"
+			}
+			if target.Engine == "oracle" {
+				prefix = "HAKOPOD_ORACLE_DATAPUMP_V1\n"
+			}
+			if target.Engine == "vitess" {
+				prefix = "HAKOPOD_VITESS_LOGICAL_V1\n"
+			}
 			verified := &dumpFormatWriter{target: encrypted, prefix: []byte(prefix)}
 			e = s.Runtime.Dump(ctx, target, verified)
 			if e == nil && !verified.valid {
@@ -251,6 +265,18 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 		}
 		if target.Engine == "mysql" {
 			return "mysql-sql"
+		}
+		if target.Engine == "mongodb" {
+			return "mongodb-bson-v1"
+		}
+		if target.Engine == "clickhouse" {
+			return "clickhouse-shards-v1"
+		}
+		if target.Engine == "oracle" {
+			return "oracle-datapump-v1"
+		}
+		if target.Engine == "vitess" {
+			return "vitess-logical-v1"
 		}
 		return "postgresql-custom"
 	}(), Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC()}

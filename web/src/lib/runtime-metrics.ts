@@ -1,7 +1,7 @@
 export const retainedMetricSamples = 24
 export const metricsStaleAfter = 120_000
 
-export type MetricSample = { at: string; cpu: number; memory: number }
+export type MetricSample = { at: string; cpu: number; memory: number; breakBefore?: boolean }
 type Metrics = {
   available: boolean
   sampled_at?: string

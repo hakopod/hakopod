@@ -104,3 +104,28 @@ func TestRedisTopologyRequiresExactOwnership(t *testing.T) {
 		t.Fatal("fingerprint depends on discovery order")
 	}
 }
+
+func TestPlacementIdentitySurvivesJSONAndNodeOrdering(t *testing.T) {
+	now := time.Now().UTC()
+	original := Spec{SchemaVersion: 1, Name: "placement", Engine: "postgresql", Version: "17", Mode: "cluster", Replicas: 1, Shards: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1, Placement: Placement{Spread: "nodes", NodeNames: []string{"worker-b", "worker-a"}}}
+	next := original
+	next.Placement.NodeNames = []string{"worker-a", "worker-b"}
+	d := Resource{Revision: 1, Spec: original, Status: "ready", Observation: Observation{Revision: 1, Status: "ready", ObservedAt: now}}
+	if plan, err := PlanResize(d, next, nil, now); err != nil || len(plan.BlockedReasons) > 0 {
+		t.Fatal("same node set rejected", err)
+	}
+	if !original.Equal(next) {
+		t.Fatal("node order changed review identity")
+	}
+	next.CPU = "200m"
+	if original.Equal(next) {
+		t.Fatal("resource change escaped review identity")
+	}
+	next.Placement.NodeNames = []string{"worker-a", "worker-c"}
+	if _, err := PlanResize(d, next, nil, now); err == nil {
+		t.Fatal("placement changed during resize")
+	}
+	if !(Placement{}).Equal(Placement{NodeNames: []string{}}) {
+		t.Fatal("empty node list changed placement")
+	}
+}

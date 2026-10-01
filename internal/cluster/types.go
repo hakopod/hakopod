@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/spec"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -27,9 +28,16 @@ const (
 )
 
 type Options struct {
-	DatabasePolicy    DatabasePolicyResolver
-	DatabaseBindings  DatabaseBindingResolver
-	ServerlessAddress string
+	// ClickHouseSandbox selects the verified gVisor compatibility profile on
+	// self-hosted installations. Hosted database allocations always require it.
+	ClickHouseSandbox       bool
+	DatabasePolicy          DatabasePolicyResolver
+	DatabasePlacementPolicy func(context.Context, string, string) (DatabasePolicy, error)
+	// ManagedClusterNodes is trusted enrollment, separate from the default limit.
+	ManagedClusterNodes []ManagedClusterNode
+	VitessBackup        VitessBackupResolver
+	DatabaseBindings    DatabaseBindingResolver
+	ServerlessAddress   string
 
 	WorkloadPolicy WorkloadPolicyResolver
 	// PlacementPolicy resolves discovery only; workload admission always uses WorkloadPolicy.
@@ -38,11 +46,20 @@ type Options struct {
 	CloudResourceCeiling *spec.Profile
 	// OperatorNodeLimit is set only by the trusted embedded operator runtime.
 	// Zero preserves the single-node customer policy; supported values are 1 through 3.
-	OperatorNodeLimit   int
-	ApprovedDomains     func(context.Context, string) (map[string]bool, error)
-	ReadinessProbeImage string
-	DeploymentMode      string
-	PublicTCPPorts      []int32
+	OperatorNodeLimit     int
+	ApprovedDomains       func(context.Context, string) (map[string]bool, error)
+	ReadinessProbeImage   string
+	DeploymentMode        string
+	PublicTCPPorts        []int32
+	DatabasePublicAddress string
+	DatabasePublicDomain  string
+	DatabasePublicPorts   []int32
+	// ManagedDatabasePublicEndpoints is set only by the trusted Cloud embedding.
+	// It does not enable application public TCP.
+	ManagedDatabasePublicEndpoints bool
+	// ManagedDatabasePublicEndpointsQualified is a source-controlled release
+	// gate. Operator configuration cannot enable an unqualified candidate.
+	ManagedDatabasePublicEndpointsQualified bool
 	// DedicatedPublicTCPNode is operator-only: an isolated BYO cluster with exactly this node.
 	DedicatedPublicTCPNode string
 	AWSIdentityBindings    []AWSIdentityBinding
@@ -81,6 +98,9 @@ type Client struct {
 	actionsObserve         func(context.Context, Target, string, spec.Service) (ServiceStatus, error)
 	// publicTCPAck is injected by unit tests; real clients always inspect HAProxy.
 	publicTCPAck func(context.Context, Target, []any, map[string]string) error
+	// databasePublicTCPAck is injected by focused endpoint tests. Production
+	// always inspects each owned HAProxy worker.
+	databasePublicTCPAck func(context.Context, database.Resource, database.PublicEndpoint, []any, map[string]string) error
 	// edgeAck is injected by unit tests; real clients inspect every owned worker.
 	edgeAck    func(context.Context, EdgePolicy) error
 	execConfig *rest.Config
@@ -197,11 +217,22 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		return nil, err
 	}
 	options.DeploymentMode = mode
+	if len(options.ManagedClusterNodes) > 0 {
+		if mode != DeploymentManagedCloud || options.DedicatedPublicTCPNode != "" {
+			return nil, fmt.Errorf("managed cluster enrollment requires managed-cloud mode without dedicated TCP")
+		}
+		if err := ValidateManagedClusterNodes(options.ManagedClusterNodes); err != nil {
+			return nil, err
+		}
+	}
 	if err := ValidateDedicatedPublicTCPNode(mode, options.DedicatedPublicTCPNode); err != nil {
 		return nil, err
 	}
 	if mode == DeploymentManagedCloud && options.DedicatedPublicTCPNode == "" && len(options.PublicTCPPorts) > 0 {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
+	}
+	if err := ValidateDatabasePublicEndpointOptions(options); err != nil {
+		return nil, err
 	}
 	if err := ValidateAWSIdentityBindings(options.AWSIdentityBindings); err != nil {
 		return nil, err

@@ -4,7 +4,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { timestamp, message } from '../lib/api'
-import { sourceLabel, byteSize, engineManagedEngine } from '../lib/backups'
+import { sourceLabel, byteSize, engineManagedSource } from '../lib/backups'
 import { FormPage, FormSection } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
@@ -48,7 +48,7 @@ function BackupJob() {
           )}
         </div>
         {item.status === 'queued' &&
-          engineManagedEngine(item.source?.engine) &&
+          engineManagedSource(item.source) &&
           !item.cancel_requested && (
             <p className="field-note">
               Waiting on the database engine, which writes this backup to object storage itself.

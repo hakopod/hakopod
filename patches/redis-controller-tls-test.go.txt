@@ -1,0 +1,30 @@
+package k8sutils
+
+import (
+ "context"
+ "crypto/tls"
+ "slices"
+ "testing"
+
+ commonapi "github.com/OT-CONTAINER-KIT/redis-operator/api/common/v1beta2"
+ corev1 "k8s.io/api/core/v1"
+ "k8s.io/client-go/kubernetes/fake"
+)
+
+func TestHakopodTLSNeverDisablesVerification(t *testing.T) {
+ args := getRedisTLSArgs(&commonapi.TLSConfig{CaCertFile: "ca.crt"}, "database-leader-0")
+ if slices.Contains(args,"--insecure") || !slices.Contains(args,"--tls") || !slices.Contains(args,"--cacert") || !slices.Contains(args,"/tls/ca.crt") {
+  t.Fatal("TLS command must verify the configured CA")
+ }
+}
+
+func TestHakopodTLSNeverFallsBackToPlaintext(t *testing.T) {
+ client := fake.NewSimpleClientset()
+ if getRedisTLSConfig(context.Background(),client,"fixture",nil) != nil { t.Fatal("legacy plaintext policy changed") }
+ for _, cfg := range []*commonapi.TLSConfig{{},{Secret:corev1.SecretVolumeSource{SecretName:"missing"}}} {
+  result := getRedisTLSConfig(context.Background(),client,"fixture",cfg)
+  if result == nil || result.MinVersion < tls.VersionTLS12 || result.RootCAs == nil || result.InsecureSkipVerify {
+   t.Fatal("missing TLS material fell back to plaintext or disabled verification")
+  }
+ }
+}

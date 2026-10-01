@@ -1,0 +1,36 @@
+package vitessbackupschedule
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+)
+
+func TestHakopodGeneratedClusterAPI(t *testing.T) {
+	directory := os.Getenv("HAKOPOD_VITESS_CANDIDATE_DIR")
+	if directory == "" {
+		t.Skip("no Hakopod candidate resource provided")
+	}
+	for _, mode := range []string{"standalone", "cluster"} {
+		raw, err := os.ReadFile(filepath.Join(directory, mode+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var cluster planetscalev2.VitessCluster
+		if err = decoder.Decode(&cluster); err != nil {
+			t.Fatalf("%s resource does not match pinned operator API: %v", mode, err)
+		}
+		if cluster.Spec.Backup == nil || len(cluster.Spec.Backup.Locations) != 1 || len(cluster.Spec.Backup.Schedules) != 1 {
+			t.Fatal("candidate omitted native recovery")
+		}
+		if cluster.Spec.Backup.Schedules[0].Suspend != nil && *cluster.Spec.Backup.Schedules[0].Suspend {
+			t.Fatal("approved desired schedule cannot clear prior suspension")
+		}
+	}
+}

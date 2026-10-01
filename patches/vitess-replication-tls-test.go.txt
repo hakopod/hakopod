@@ -1,0 +1,31 @@
+package mysql
+
+import (
+	"strings"
+	"testing"
+
+	"vitess.io/vitess/go/mysql/replication"
+	"vitess.io/vitess/go/vt/vttls"
+)
+
+func TestHakopodReplicationVerifiesIdentity(t *testing.T) {
+	for _, params := range []ConnParams{
+		{SslMode: vttls.VerifyIdentity, SslCa: "/trust/ca.pem"},
+		{SslMode: vttls.VerifyIdentity},
+		{Flags: CapabilityClientSSL, SslCa: "/trust/ca.pem"},
+	} {
+		params.Host, params.Port, params.Uname = "primary.database.svc", 3306, "replication"
+		regular := (mysqlFlavor{}).setReplicationSourceCommand(&params, params.Host, int32(params.Port), 0, 10)
+		catchup := strings.Join((mysqlFlavor{}).catchupToGTIDCommands(&params, replication.Position{}), "\n")
+		for name, command := range map[string]string{"regular": regular, "catchup": catchup} {
+			compact := strings.ReplaceAll(command, " ", "")
+			if !strings.Contains(compact, "SOURCE_SSL=1") || !strings.Contains(compact, "SOURCE_SSL_VERIFY_SERVER_CERT=1") || strings.Contains(compact, "GET_SOURCE_PUBLIC_KEY") {
+				t.Fatalf("%s replication omitted required certificate verification", name)
+			}
+		}
+	}
+	params := ConnParams{SslMode: vttls.Disabled}
+	if strings.Contains((mysqlFlavor{}).setReplicationSourceCommand(&params, "primary", 3306, 0, 10), "SOURCE_SSL_VERIFY_SERVER_CERT") {
+		t.Fatal("disabled TLS unexpectedly acquired certificate verification")
+	}
+}

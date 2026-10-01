@@ -23,10 +23,11 @@ type Runtime interface {
 }
 
 type Worker struct {
-	Store       *store.Store
-	Cluster     Runtime
-	Concurrency int
-	Timeout     time.Duration
+	Store            *store.Store
+	Cluster          Runtime
+	ManagedPlatforms ManagedPlatformRuntime
+	Concurrency      int
+	Timeout          time.Duration
 }
 
 var errCancelled = errors.New("cancellation requested; already applied resources remain")
@@ -42,6 +43,22 @@ func (w *Worker) Run(ctx context.Context) {
 		n = 4
 	}
 	var wg sync.WaitGroup
+	if w.ManagedPlatforms != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			timer := time.NewTicker(3 * time.Second)
+			defer timer.Stop()
+			for ctx.Err() == nil {
+				w.runManagedPlatform(ctx)
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
 	// One migration at a time. File copying runs in a bounded owned pod; this
 	// lane only advances its durable state and the explicitly reviewed cutover.
 	wg.Add(1)
@@ -416,23 +433,27 @@ func (w *Worker) Resync(ctx context.Context) {
 
 // Maintenance shares the deployment claim and rechecks it before each write.
 func (w *Worker) renewCertificates(parent context.Context, a store.Application, round uint64) {
-	if !spec.HasAutomaticCertificates(a.Spec) {
-		return
-	}
 	names := []string{}
 	for _, name := range spec.Names(a.Spec) {
+		needsMaintenance := false
 		for _, mount := range a.Spec.Services[name].CertificateMounts {
 			if mount.Source == "ingress" {
-				names = append(names, name)
+				needsMaintenance = true
 				break
 			}
+		}
+		for _, b := range a.Spec.Services[name].Bindings {
+			needsMaintenance = needsMaintenance || b.ManagedDatabase != "" || b.ExternalDatabase != ""
+		}
+		if needsMaintenance {
+			names = append(names, name)
 		}
 	}
 	if len(names) == 0 {
 		return
 	}
 	selected := names[round%uint64(len(names))]
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 25*time.Second)
 	defer cancel()
 	claim, err := w.Store.ClaimRuntime(ctx, a.ID, a.Revision)
 	if err != nil || claim == nil {
@@ -440,9 +461,24 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 	}
 	defer claim.Release()
 	target := cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec, BeforeStep: claim.Check}
-	err = w.Cluster.RenewBackendCertificates(ctx, target, func(event cluster.Event) {
+	emit := func(event cluster.Event) {
 		_ = w.Store.Event(ctx, claim.OperationID, event.Type, event.Message, event.Service)
-	}, selected)
+	}
+	err = w.Cluster.RenewBackendCertificates(ctx, target, emit, selected)
+	if err == nil {
+		if runtime, ok := w.Cluster.(interface {
+			RenewDatabaseTrust(context.Context, cluster.Target, func(cluster.Event), string) error
+		}); ok {
+			err = runtime.RenewDatabaseTrust(ctx, target, emit, selected)
+		}
+	}
+	if err == nil {
+		if runtime, ok := w.Cluster.(interface {
+			RefreshExternalDatabaseEgress(context.Context, cluster.Target, func(cluster.Event), string) error
+		}); ok {
+			err = runtime.RefreshExternalDatabaseEgress(ctx, target, emit, selected)
+		}
+	}
 	if err != nil && ctx.Err() == nil {
 		slog.Debug("automatic certificate renewal deferred", "application", a.ID)
 	}

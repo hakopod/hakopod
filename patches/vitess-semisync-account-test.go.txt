@@ -1,0 +1,26 @@
+package semisyncmonitor
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"testing"
+)
+
+// The monitor writes and truncates internal sidecar tables. Customer table
+// grants must remain independent of the local account used by that pool.
+func TestHakopodMonitorUsesInternalAccount(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "monitor.go", nil, 0)
+	if err != nil { t.Fatal(err) }
+	internal, application := 0, 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok { return true }
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok { return true }
+		if selector.Sel.Name == "AllPrivsWithDB" { internal++ }
+		if selector.Sel.Name == "AppWithDB" { application++ }
+		return true
+	})
+	if internal != 1 || application != 0 { t.Fatal("semi-sync monitor must use the internal account") }
+}

@@ -122,6 +122,7 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 				}
 			}
 		}
+		policy.Spec.Egress = append(policy.Spec.Egress, externalDatabaseEgressRules(t, name)...)
 		// These grants are resolved from trusted self-hosted configuration only.
 		// They never participate in (or broaden) a Cloud workload policy.
 		if t.policy == nil {

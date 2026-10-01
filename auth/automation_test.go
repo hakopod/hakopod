@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
 	"testing"
@@ -50,7 +51,8 @@ func TestAutomationKeysCannotBecomeBrowserOrLegacyCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := AutomationGrant{Workspace: store.NewID(), Binding: "node:fixture", Project: "customer", Environment: "production", Permissions: []string{"deployments:read", "deployments:write"}}
-	in := AutomationKeyInput{Name: "sdk-fixture", Project: g.Project, Environment: g.Environment, Permissions: g.Permissions, ExpiresAt: time.Now().Add(time.Hour)}
+	expires := time.Now().Add(time.Hour)
+	in := AutomationKeyInput{Name: "sdk-fixture", Project: g.Project, Environment: g.Environment, Permissions: g.Permissions, ExpiresAt: &expires}
 	k, raw, err := s.CreateAutomationKey(ctx, u, g, in, "")
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +74,26 @@ func TestAutomationKeysCannotBecomeBrowserOrLegacyCLI(t *testing.T) {
 	bad.Permissions = []string{"deployments:read", "applications:manage"}
 	if _, _, err = s.CreateAutomationKey(ctx, u, g, bad, ""); err == nil {
 		t.Fatal("grant exceeded")
+	}
+	never := in
+	never.ExpiresAt = nil
+	never.NeverExpires = true
+	if _, _, err = s.CreateAutomationKey(ctx, u, g, never, ""); !errors.Is(err, store.ErrForbidden) {
+		t.Fatal("non-Cloud grant issued a never-expiring key", err)
+	}
+	g.AllowNeverExpires = true
+	neverKey, neverRaw, err := s.CreateAutomationKey(ctx, u, g, never, "")
+	if err != nil || neverKey.ExpiresAt != nil || !neverKey.NeverExpires {
+		t.Fatal("trusted Cloud grant did not issue nullable never-expiring metadata", err, neverKey)
+	}
+	if _, _, err = s.VerifyAutomation(ctx, neverRaw); err != nil {
+		t.Fatal("bound never-expiring key was not accepted", err)
+	}
+	if err = s.RevokeAutomationKey(ctx, u, g.Workspace, neverKey.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.VerifyAutomation(ctx, neverRaw); err == nil {
+		t.Fatal("revoked never-expiring key accepted")
 	}
 	if _, _, err = s.CreateAutomationKey(ctx, account, g, in, ""); err == nil {
 		t.Fatal("machine minted key")

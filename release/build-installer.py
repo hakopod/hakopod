@@ -210,6 +210,9 @@ def main():
     kit = stage / f'hakopod_{args.version}_installer'; kit.mkdir()
     for folder in ('installer', 'deploy'):
         shutil.copytree(ROOT / folder, kit / folder, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    # Controller manifests are built from checksummed sources, then shipped as JSON.
+    # Installation never needs Helm, PyYAML or network access for these manifests.
+    subprocess.run(['python3', str(ROOT / 'installer/build_database_controllers.py'), '--include-vitess', '--output', str(kit / 'deploy/database-controllers')], check=True)
     (kit / 'scripts').mkdir()
     shutil.copyfile(ROOT / 'scripts/install.sh', kit / 'scripts/install.sh')
     rendered_bootstrap = bootstrap.render((ROOT / 'scripts/installer.sh').read_text(), args.version)

@@ -25,28 +25,34 @@ const operatorConfigLimit = 64 << 10
 type operatorConfig struct {
 	SchemaVersion int `toml:"schema_version"`
 	Server        struct {
-		DeploymentMode      *string `toml:"deployment_mode"`
-		Listen              *string `toml:"listen"`
-		ServerlessAddress   *string `toml:"serverless_address"`
-		ServerlessListen    *string `toml:"serverless_listen"`
-		WebOrigin           *string `toml:"web_origin"`
-		DatabaseURLFile     *string `toml:"database_url_file"`
-		KubeconfigFile      *string `toml:"kubeconfig_file"`
-		AppDomain           *string `toml:"app_domain"`
-		IngressClass        *string `toml:"ingress_class"`
-		RolloutTimeout      *string `toml:"rollout_timeout"`
-		PublicPort          *int    `toml:"public_port"`
-		PublicHTTPSPort     *int    `toml:"public_https_port"`
-		PublicTCPPorts      *[]int  `toml:"public_tcp_ports"`
-		ReadinessProbeImage *string `toml:"readiness_probe_image"`
-		TLSIssuer           *string `toml:"tls_issuer"`
-		TLSCertFile         *string `toml:"tls_cert_file"`
-		TLSKeyFile          *string `toml:"tls_key_file"`
-		TrustProxy          *bool   `toml:"trust_proxy"`
-		SupervisorURL       *string `toml:"k3s_supervisor_url"`
-		HAProxyNamespace    *string `toml:"haproxy_namespace"`
-		HAProxyConfigMap    *string `toml:"haproxy_configmap"`
-		HAProxyRelease      *string `toml:"haproxy_release"`
+		DeploymentMode        *string `toml:"deployment_mode"`
+		Listen                *string `toml:"listen"`
+		ServerlessAddress     *string `toml:"serverless_address"`
+		ServerlessListen      *string `toml:"serverless_listen"`
+		WebOrigin             *string `toml:"web_origin"`
+		DatabaseURLFile       *string `toml:"database_url_file"`
+		KubeconfigFile        *string `toml:"kubeconfig_file"`
+		ManagedClusterFile    *string `toml:"managed_cluster_file"`
+		ManagedPlatformFile   *string `toml:"managed_platform_file"`
+		AppDomain             *string `toml:"app_domain"`
+		IngressClass          *string `toml:"ingress_class"`
+		RolloutTimeout        *string `toml:"rollout_timeout"`
+		PublicPort            *int    `toml:"public_port"`
+		PublicHTTPSPort       *int    `toml:"public_https_port"`
+		PublicTCPPorts        *[]int  `toml:"public_tcp_ports"`
+		DatabasePublicAddress *string `toml:"database_public_address"`
+		DatabasePublicDomain  *string `toml:"database_public_domain"`
+		DatabasePublicPorts   *[]int  `toml:"database_public_ports"`
+		ReadinessProbeImage   *string `toml:"readiness_probe_image"`
+		ClickHouseSandbox     *bool   `toml:"clickhouse_sandbox"`
+		TLSIssuer             *string `toml:"tls_issuer"`
+		TLSCertFile           *string `toml:"tls_cert_file"`
+		TLSKeyFile            *string `toml:"tls_key_file"`
+		TrustProxy            *bool   `toml:"trust_proxy"`
+		SupervisorURL         *string `toml:"k3s_supervisor_url"`
+		HAProxyNamespace      *string `toml:"haproxy_namespace"`
+		HAProxyConfigMap      *string `toml:"haproxy_configmap"`
+		HAProxyRelease        *string `toml:"haproxy_release"`
 	} `toml:"server"`
 	Auth struct {
 		SignupEnabled     *bool   `toml:"signup_enabled"`
@@ -81,9 +87,10 @@ type operatorConfig struct {
 		File *string `toml:"file"`
 	} `toml:"managed_actions"`
 	Backups struct {
-		PGDumpPath      *string `toml:"pg_dump_path"`
-		StateDir        *string `toml:"state_dir"`
-		ManagedPostgres *bool   `toml:"managed_postgres"`
+		VitessApprovalsFile *string `toml:"vitess_approvals_file"`
+		PGDumpPath          *string `toml:"pg_dump_path"`
+		StateDir            *string `toml:"state_dir"`
+		ManagedPostgres     *bool   `toml:"managed_postgres"`
 	} `toml:"backups"`
 }
 type operatorProvider struct {
@@ -185,13 +192,19 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"server.web_origin", "HAKOPOD_WEB_ORIGIN", c.Server.WebOrigin, false, false, false},
 		{"server.database_url_file", "HAKOPOD_DATABASE_URL_FILE", c.Server.DatabaseURLFile, true, true, true},
 		{"server.kubeconfig_file", "HAKOPOD_KUBECONFIG", c.Server.KubeconfigFile, true, true, false},
+		{"server.managed_cluster_file", "HAKOPOD_MANAGED_CLUSTER_FILE", c.Server.ManagedClusterFile, true, true, false},
+		{"server.managed_platform_file", "HAKOPOD_MANAGED_PLATFORM_CONFIG_FILE", c.Server.ManagedPlatformFile, true, true, true},
 		{"server.app_domain", "HAKOPOD_APP_DOMAIN", c.Server.AppDomain, false, false, false},
 		{"server.ingress_class", "HAKOPOD_INGRESS_CLASS", c.Server.IngressClass, false, false, false},
 		{"server.rollout_timeout", "HAKOPOD_ROLLOUT_TIMEOUT", c.Server.RolloutTimeout, false, false, false},
 		{"server.public_port", "HAKOPOD_PUBLIC_PORT", intSetting(c.Server.PublicPort), false, false, false},
 		{"server.public_https_port", "HAKOPOD_PUBLIC_HTTPS_PORT", intSetting(c.Server.PublicHTTPSPort), false, false, false},
 		{"server.public_tcp_ports", "HAKOPOD_PUBLIC_TCP_PORTS", portsSetting(c.Server.PublicTCPPorts), false, false, false},
+		{"server.database_public_address", "HAKOPOD_DATABASE_PUBLIC_ADDRESS", c.Server.DatabasePublicAddress, false, false, false},
+		{"server.database_public_domain", "HAKOPOD_DATABASE_PUBLIC_DOMAIN", c.Server.DatabasePublicDomain, false, false, false},
+		{"server.database_public_ports", "HAKOPOD_DATABASE_PUBLIC_PORTS", portsSetting(c.Server.DatabasePublicPorts), false, false, false},
 		{"server.readiness_probe_image", "HAKOPOD_READINESS_PROBE_IMAGE", c.Server.ReadinessProbeImage, false, false, false},
+		{"server.clickhouse_sandbox", "HAKOPOD_CLICKHOUSE_SANDBOX", boolSetting(c.Server.ClickHouseSandbox), false, false, false},
 		{"server.tls_issuer", "HAKOPOD_TLS_ISSUER", c.Server.TLSIssuer, false, false, false},
 		{"server.tls_cert_file", "HAKOPOD_TLS_CERT", c.Server.TLSCertFile, true, false, false},
 		{"server.tls_key_file", "HAKOPOD_TLS_KEY", c.Server.TLSKeyFile, true, true, false},
@@ -222,6 +235,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"container_daemons.file", "HAKOPOD_CONTAINER_DAEMONS_FILE", c.ContainerDaemons.File, true, true, false},
 		{"managed_actions.file", "HAKOPOD_MANAGED_ACTIONS_FILE", c.ManagedActions.File, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
+		{"backups.vitess_approvals_file", "HAKOPOD_VITESS_BACKUP_APPROVALS_FILE", c.Backups.VitessApprovalsFile, true, true, false},
 		{"backups.state_dir", "HAKOPOD_BACKUP_STATE_DIR", c.Backups.StateDir, false, false, false},
 		{"backups.managed_postgres", "HAKOPOD_MANAGED_POSTGRES", boolSetting(c.Backups.ManagedPostgres), false, false, false},
 	}
@@ -281,6 +295,22 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	}
 	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_DEDICATED_TCP_NODE") == "" && get("HAKOPOD_PUBLIC_TCP_PORTS") != "" {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure public TCP ports")
+	}
+	publicPorts, err := cluster.ParsePublicTCPPorts(get("HAKOPOD_PUBLIC_TCP_PORTS"))
+	if err != nil {
+		return nil, err
+	}
+	databasePublicPorts, err := cluster.ParseDatabasePublicPorts(get("HAKOPOD_DATABASE_PUBLIC_PORTS"))
+	if err != nil {
+		return nil, err
+	}
+	if err = cluster.ValidateDatabasePublicEndpointOptions(cluster.Options{
+		DeploymentMode: mode, PublicTCPPorts: publicPorts,
+		DatabasePublicAddress: get("HAKOPOD_DATABASE_PUBLIC_ADDRESS"),
+		DatabasePublicDomain:  get("HAKOPOD_DATABASE_PUBLIC_DOMAIN"),
+		DatabasePublicPorts:   databasePublicPorts,
+	}); err != nil {
+		return nil, err
 	}
 	// Refuse the unusable combination at startup rather than once per deployment:
 	// a managed-cloud installation without the dedicated BYO node never grants a
@@ -343,6 +373,18 @@ func validateOperatorValue(field, value string) error {
 	case "server.public_tcp_ports":
 		_, err := cluster.ParsePublicTCPPorts(value)
 		return err
+	case "server.database_public_ports":
+		_, err := cluster.ParseDatabasePublicPorts(value)
+		return err
+	case "server.database_public_address":
+		address := net.ParseIP(value)
+		if address == nil || address.To4() == nil || address.IsUnspecified() || address.IsMulticast() {
+			return fmt.Errorf("server.database_public_address must be a usable IPv4 address")
+		}
+	case "server.database_public_domain":
+		if len(value) > 220 || len(validation.IsDNS1123Subdomain(value)) != 0 {
+			return fmt.Errorf("server.database_public_domain must be a DNS domain of at most 220 characters")
+		}
 	case "server.public_port", "server.public_https_port":
 		port, err := strconv.Atoi(value)
 		if err != nil || port < 1 || port > 65535 {

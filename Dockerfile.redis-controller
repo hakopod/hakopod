@@ -4,8 +4,11 @@ WORKDIR /source
 # Upstream's credential fix has not been included in a released image yet.
 ADD --checksum=sha256:e9c552a4176dc6172c7d348de55991e2419ae0b165b4bcfe5eb8625f7d0e81c4 https://codeload.github.com/OT-CONTAINER-KIT/redis-operator/tar.gz/c5017206e75f7743d79e82db47ec8c39d7410816 /tmp/source.tar.gz
 RUN tar -xzf /tmp/source.tar.gz --strip-components=1 && rm /tmp/source.tar.gz
+COPY patches/redis-controller-tls.patch /tmp/redis-controller-tls.patch
+RUN apk add --no-cache patch && patch -p1 < /tmp/redis-controller-tls.patch
+COPY patches/redis-controller-tls-test.go.txt /source/internal/k8sutils/hakopod_tls_test.go
 ENV GOMAXPROCS=2 GOMEMLIMIT=1500MiB CGO_ENABLED=0
-RUN go test -p 2 ./internal/k8sutils -run '^(TestGetRedisClusterAuthArgs|TestCheckRedisCLIAuthInEnv|TestClusterCheckCommand|TestWrapRedisCLIAuthSanitize)$'
+RUN go test -p 2 ./internal/k8sutils -run '^(TestGetRedisClusterAuthArgs|TestCheckRedisCLIAuthInEnv|TestClusterCheckCommand|TestWrapRedisCLIAuthSanitize|TestHakopodTLSNeverDisablesVerification|TestHakopodTLSNeverFallsBackToPlaintext)$'
 ARG TARGETOS
 ARG TARGETARCH
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -p 2 -trimpath -ldflags='-s -w' -o /operator ./cmd
@@ -13,6 +16,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -p 2 -trimpath -ldflags='-s -w' -
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 LABEL org.opencontainers.image.source="https://github.com/OT-CONTAINER-KIT/redis-operator" \
       org.opencontainers.image.revision="c5017206e75f7743d79e82db47ec8c39d7410816"
+LABEL io.hakopod.redis-tls-policy="ca-verified-v1"
 COPY --from=build /operator /operator
 COPY --from=build /source/LICENSE /licenses/redis-operator.txt
 USER 65532:65532

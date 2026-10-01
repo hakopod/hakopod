@@ -402,6 +402,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	configureWorkload(result, svc)
 	configureFiles(t, name, svc, &result.Spec.Template.Spec)
 	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
+	applyDatabaseTrustMount(t, name, &result.Spec.Template.Spec)
 	image := ""
 	if len(readinessImages) > 0 {
 		image = readinessImages[0]

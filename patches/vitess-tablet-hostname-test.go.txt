@@ -1,0 +1,32 @@
+package vttablet
+
+import (
+    "strings"
+    "testing"
+
+    corev1 "k8s.io/api/core/v1"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+)
+
+func TestHakopodTabletHostnameOverrideHasOneCanonicalFlag(t *testing.T) {
+    for _, override := range []string{"", "tablet-hostname", "--tablet-hostname"} {
+        spec := &Spec{
+            Images: planetscalev2.VitessKeyspaceImages{Vttablet:"test-tablet",Mysqld:&planetscalev2.MysqldImage{Mysql80Compatible:"test-mysql"}},
+            Vttablet:&planetscalev2.VttabletSpec{ExtraFlags:map[string]string{}},
+            Mysqld:&planetscalev2.MysqldSpec{},
+        }
+        want := "$(POD_IP)"
+        if override!="" {want="$(POD_NAME).database.svc.cluster.local";spec.Vttablet.ExtraFlags[override]=want}
+        pod := NewPod(client.ObjectKey{Namespace:"database",Name:"tablet"},spec)
+        var tablet *corev1.Container
+        for i:=range pod.Spec.Containers {if pod.Spec.Containers[i].Name=="vttablet"{tablet=&pod.Spec.Containers[i]}}
+        if tablet==nil {t.Fatal("vttablet container is absent")}
+        count:=0
+        for _,arg:=range tablet.Args {
+            if strings.HasPrefix(arg,"--tablet_hostname=") {t.Fatal("deprecated alias can override the canonical hostname")}
+            if strings.HasPrefix(arg,"--tablet-hostname=") {count++;if arg!="--tablet-hostname="+want{t.Fatalf("wrong hostname: %s",arg)}}
+        }
+        if count!=1 {t.Fatalf("expected one canonical hostname flag, found %d",count)}
+    }
+}

@@ -76,7 +76,7 @@ func (c *Client) RestoreRedisDatabase(ctx context.Context, d database.Resource, 
 		if err = c.DatabaseExec(ctx, d, member, []string{"true"}, nil, io.Discard); err != nil {
 			return err
 		}
-		conn, closeForward, err := c.databaseRedisConnection(ctx, DatabaseNamespace(d.ID), member.Name, types.UID(member.UID))
+		conn, closeForward, err := c.databaseRedisMemberConnection(ctx, d, member)
 		if err != nil {
 			return err
 		}
@@ -181,8 +181,8 @@ func (c *Client) RestoreRedisDatabase(ctx context.Context, d database.Resource, 
 	if err != nil || after.Status != "ready" || after.TopologyFingerprint != o.TopologyFingerprint {
 		return fmt.Errorf("Redis target health changed during recovery")
 	}
-	d.Status = "ready"
-	return c.databaseNetworkPolicy(ctx, d, func() error { return nil })
+	// Application ingress reopens only after durable completion and inspection.
+	return nil
 }
 
 func (c *Client) redisRecoveryHelper(ctx context.Context, d database.Resource) (*corev1.Pod, func(), error) {
@@ -261,6 +261,14 @@ func (c *Client) redisRecoveryExec(ctx context.Context, d database.Resource, exp
 // userspace network stack. The pinned Redis image supplies nc; executing it
 // inside the verified container carries binary RESP over Kubernetes exec.
 func (c *Client) databaseRedisConnection(ctx context.Context, namespace, name string, uid types.UID) (*database.RedisWire, func(), error) {
+	conn, closeStream, err := c.databaseRedisStream(ctx, namespace, name, uid, "127.0.0.1")
+	if err != nil {
+		return nil, closeStream, err
+	}
+	return database.NewRedisWire(conn), closeStream, nil
+}
+
+func (c *Client) databaseRedisStream(ctx context.Context, namespace, name string, uid types.UID, host string) (net.Conn, func(), error) {
 	noop := func() {}
 	pod, err := c.kube.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil || pod.UID != uid || pod.DeletionTimestamp != nil {
@@ -275,9 +283,12 @@ func (c *Client) databaseRedisConnection(ctx context.Context, namespace, name st
 	if container == "" || c.execConfig == nil || c.restClient() == nil {
 		return nil, noop, fmt.Errorf("Redis transport requires its pinned container")
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	// A shard can be idle while another shard is copied. Command deadlines and
+	// the enclosing operation bound this stream; nc's idle timeout would close
+	// healthy connections while the other shards are still making progress.
 	u := c.restClient().Post().Resource("pods").Namespace(namespace).Name(name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{
-		Container: container, Command: []string{"nc", "-w", "35", "127.0.0.1", "6379"}, Stdin: true, Stdout: true, Stderr: true,
+		Container: container, Command: []string{"nc", host, "6379"}, Stdin: true, Stdout: true, Stderr: true,
 	}, scheme.ParameterCodec).URL()
 	executor, err := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, u)
 	if err != nil {
@@ -303,5 +314,5 @@ func (c *Client) databaseRedisConnection(ctx context.Context, namespace, name st
 		<-ctx.Done()
 		closeStream()
 	}()
-	return database.NewRedisWire(conn), closeStream, nil
+	return conn, closeStream, nil
 }

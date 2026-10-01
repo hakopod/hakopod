@@ -47,6 +47,13 @@ test('capabilities, schema and idempotency lookups use the authenticated proxy',
     'openapi.json',
     'idempotency/deploy-12345678',
     'placement/nodes',
+    'database-placement/nodes',
+    `databases/${'a'.repeat(32)}/public-endpoint-capabilities`,
+    'managed-platforms',
+    `managed-platforms/${'a'.repeat(32)}/operations`,
+    `managed-platform-operations/${'a'.repeat(32)}`,
+    `managed-platforms/${'a'.repeat(32)}/recovery-operations`,
+    `managed-platform-recovery-operations/${'a'.repeat(32)}`,
   ]) {
     const input = new Request(`http://127.0.0.1/api/${path}`)
     input.headers.set('Cookie', sessionCookie(input, sealSession('fixture-token')).split(';')[0])
@@ -61,6 +68,44 @@ test('capabilities, schema and idempotency lookups use the authenticated proxy',
     assert.equal(mocked.mock.callCount(), 1)
     mocked.mock.restore()
   }
+})
+
+test('platform recovery writes preserve authentication, origin and retry authority', async (t) => {
+  for (const path of [
+    'managed-platform-recovery/reviews',
+    'managed-platform-recovery/operations',
+    `managed-platform-recovery-operations/${'a'.repeat(32)}/cancel`,
+  ]) {
+    const body = '{\n "project": "fixture", "environment": "development"\n}'
+    const input = new Request(`http://127.0.0.1/api/${path}`, {
+      method: 'POST',
+      headers: { Origin: 'http://127.0.0.1', 'Idempotency-Key': 'recovery-retry-123' },
+      body,
+    })
+    const unauthenticated = await proxy({ request: input.clone(), params: { _splat: path } })
+    assert.equal(unauthenticated.status, 401)
+    input.headers.set('Cookie', sessionCookie(input, sealSession('fixture-token')).split(';')[0])
+    const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+      assert.equal(new URL(String(url)).pathname, `/api/v1/${path}`)
+      assert.equal(init?.method, 'POST')
+      assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer fixture-token')
+      assert.equal(new Headers(init?.headers).get('Idempotency-Key'), 'recovery-retry-123')
+      assert.equal(init?.body, body)
+      return Response.json({ error: { code: 'managed_platform_recovery_unavailable' } }, { status: 503 })
+    })
+    const response = await proxy({ request: input, params: { _splat: path } })
+    assert.equal(response.status, 503)
+    assert.equal(mocked.mock.callCount(), 1)
+    mocked.mock.restore()
+  }
+})
+
+test('platform recovery transport rejects unregistered paths', () => {
+  for (const path of [
+    'managed-platform-recovery/admin',
+    `managed-platform-recovery-operations/${'a'.repeat(32)}/execute`,
+    `managed-platforms/${'a'.repeat(32)}/recovery-operations/cancel`,
+  ]) assert.equal(allowed.some((pattern) => pattern.test(path)), false, path)
 })
 
 test('deployment events preserve streaming, reconnection cursor and cancellation', async (t) => {

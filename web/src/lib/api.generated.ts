@@ -2075,6 +2075,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/database-placement/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDatabasePlacementNodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}": {
         parameters: {
             query?: never;
@@ -2099,6 +2115,122 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listDatabaseOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/public-endpoint-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled. */
+        get: operations["getDatabasePublicEndpointCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/public-endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDatabasePublicEndpoints"];
+        put?: never;
+        /** @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them. */
+        post: operations["publishDatabasePublicEndpoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/public-endpoint-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them. */
+        post: operations["reviewDatabasePublicEndpoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/public-endpoints/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Close and acknowledge the owned HAProxy route and its existing sessions before releasing the endpoint allocation. */
+        delete: operations["revokeDatabasePublicEndpoint"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database-public-endpoint-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getDatabasePublicEndpointOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDatabaseConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getDatabasePublicTrust"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2149,6 +2281,57 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["resizeManagedDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/switchover-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. */
+        post: operations["reviewOracleDatabaseSwitchover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/switchover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. */
+        post: operations["switchoverOracleDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/switchover-retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. Resumes the existing approved operation and target after a worker timeout. The operation ID makes retries idempotent; no new review, target or request token is created. */
+        post: operations["retryOracleDatabaseSwitchover"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2261,6 +2444,233 @@ export interface paths {
         get?: never;
         put: operations["uploadDatabaseImport"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getDatabaseMetricHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listExternalDatabases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getExternalDatabase"];
+        put: operations["rotateExternalDatabaseCredentials"];
+        post?: never;
+        delete: operations["deleteExternalDatabase"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases/{id}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listExternalDatabaseConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases/{id}/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getExternalDatabaseTrust"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases/{id}/connection-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewLegacyExternalDatabaseBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-databases/{id}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["applyLegacyExternalDatabaseBindingReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-database-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getExternalDatabaseOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platforms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected. */
+        get: operations["listManagedPlatforms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platforms/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedPlatform"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platforms/{id}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listManagedPlatformOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platform-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedPlatformOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platforms/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource. */
+        post: operations["reviewManagedPlatform"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platforms/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource. */
+        post: operations["acceptManagedPlatform"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3863,14 +4273,46 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer. */
+        AutomationKeyInput: {
+            name: string;
+            project?: string;
+            environment?: string;
+            application?: string;
+            permissions: string[];
+            /** Format: date-time */
+            expires_at: string;
+            /** @constant */
+            never_expires?: false;
+        } | {
+            name: string;
+            project?: string;
+            environment?: string;
+            application?: string;
+            permissions: string[];
+            expires_at?: null;
+            /** @constant */
+            never_expires: true;
+        };
+        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer. */
+        AutomationKeyLifetimeInput: {
+            /** Format: date-time */
+            expires_at: string;
+            /** @constant */
+            never_expires?: false;
+        } | {
+            expires_at?: null;
+            /** @constant */
+            never_expires: true;
+        };
         Key: {
             name: string;
             project: string;
             environment: string;
             application?: string;
             permissions: string[];
-            /** Format: date-time */
-            expires_at: string;
+            expires_at: string | null;
+            never_expires: boolean;
             id: string;
             identity_id: string;
             prefix: string;
@@ -4392,7 +4834,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess";
             database?: string;
             managed_database_id?: string;
             external_name?: string;
@@ -4440,7 +4882,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess";
             database?: string;
             application_name?: string;
             revision: number;
@@ -4704,6 +5146,10 @@ export interface components {
             public_tcp: boolean;
             gpu: boolean;
             aws_identity: boolean;
+            managed_cluster_nodes?: {
+                name: string;
+                uid: string;
+            }[];
         };
         ComposeImportInput: {
             project: string;
@@ -5144,24 +5590,85 @@ export interface components {
         ServiceBinding: {
             service?: string;
             /** @enum {string} */
-            protocol: "http" | "postgres" | "mysql" | "redis";
+            protocol: "http" | "postgres" | "mysql" | "redis" | "mongodb" | "clickhouse" | "oracle";
             database?: string;
             username?: string;
             password?: components["schemas"]["SecretRef"];
             managed_database?: string;
             endpoint?: string;
             cluster_aware?: boolean;
+            external_database?: string;
+            external_database_revision?: number;
         };
         HTTPEndpoint: {
             port: number;
             domain?: string;
+        };
+        DatabasePlacement: {
+            /** @enum {string} */
+            spread?: "" | "nodes" | "zones";
+            node_names?: string[];
+        };
+        DatabaseTLSConfig: {
+            /** @enum {string} */
+            mode: "required";
+        };
+        DatabaseOracleConfig: {
+            /** @enum {string} */
+            edition: "free" | "enterprise";
+            image?: string;
+            registry_credential?: string;
+            license_confirmed?: boolean;
+        };
+        DatabaseVitessTable: {
+            name: string;
+            sharding_column: string;
+        };
+        DatabaseVitessConfig: {
+            tables?: components["schemas"]["DatabaseVitessTable"][];
+            backup_destination_id: string;
+            backup_destination_revision: number;
+        };
+        DatabaseTLSObservation: {
+            required: boolean;
+            verified: boolean;
+            plaintext_rejected: boolean;
+            minimum_version?: string;
+            issuer?: string;
+            dns_names?: string[];
+            fingerprint?: string;
+            ca_fingerprint?: string;
+            /** Format: date-time */
+            not_before?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            checked_at?: string;
+            message?: string;
+        };
+        DatabasePublicTrust: {
+            certificate_pem: string;
+            fingerprint: string;
+            issuer: string;
+            /** Format: date-time */
+            not_before: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabasePooling: {
+            /** @enum {string} */
+            mode: "session" | "transaction";
+            instances: number;
+            max_client_connections: number;
+            default_pool_size: number;
+            read_only: boolean;
         };
         ManagedDatabaseSpec: {
             /** @constant */
             schema_version: 1;
             name: string;
             /** @enum {string} */
-            engine: "postgresql" | "redis";
+            engine: "postgresql" | "redis" | "mysql" | "mongodb" | "clickhouse" | "oracle" | "vitess";
             version: string;
             /** @enum {string} */
             mode: "standalone" | "cluster";
@@ -5170,6 +5677,11 @@ export interface components {
             cpu: string;
             memory: string;
             storage_gib: number;
+            placement?: components["schemas"]["DatabasePlacement"];
+            tls?: components["schemas"]["DatabaseTLSConfig"];
+            pooling?: components["schemas"]["DatabasePooling"];
+            oracle?: components["schemas"]["DatabaseOracleConfig"];
+            vitess?: components["schemas"]["DatabaseVitessConfig"];
         };
         DatabaseMember: {
             name: string;
@@ -5178,6 +5690,23 @@ export interface components {
             shard?: string;
             ready: boolean;
             node?: string;
+            zone?: string;
+            region?: string;
+            provider?: string;
+            phase?: string;
+            restarts?: number;
+            /** Format: date-time */
+            created_at?: string;
+            image?: string;
+            metrics?: components["schemas"]["RuntimeMetrics"];
+        };
+        DatabasePlacementObservation: {
+            verified: boolean;
+            message: string;
+            nodes: number;
+            zones: number;
+            regions: number;
+            providers: number;
         };
         DatabaseEndpoint: {
             purpose: string;
@@ -5196,6 +5725,13 @@ export interface components {
             slots_assigned?: number;
             slots_healthy: boolean;
             topology_fingerprint?: string;
+            metrics?: components["schemas"]["RuntimeMetrics"];
+            placement?: components["schemas"]["DatabasePlacementObservation"];
+            tls?: components["schemas"]["DatabaseTLSObservation"];
+            engine_metrics?: components["schemas"]["DatabaseEngineMetrics"];
+            pooling?: components["schemas"]["DatabasePoolingObservation"];
+            routing?: components["schemas"]["DatabaseRoutingObservation"];
+            coordination?: components["schemas"]["DatabaseCoordinationObservation"];
         };
         DatabaseRecovery: {
             artifact_id: string;
@@ -5225,6 +5761,107 @@ export interface components {
             /** Format: date-time */
             deleted_at?: string;
         };
+        DatabasePublicEndpointSpec: {
+            /** @enum {string} */
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https";
+            source_cidrs: string[];
+            max_connections: number;
+        };
+        DatabasePublicEndpointAllocation: {
+            id: string;
+            host: string;
+            /** Format: ipv4 */
+            address: string;
+            port: number;
+        };
+        DatabasePublicEndpointMemberAllocation: {
+            member_name: string;
+            member_uid: string;
+            allocation: components["schemas"]["DatabasePublicEndpointAllocation"];
+        };
+        DatabasePublicEndpointObservation: {
+            configured: boolean;
+            externally_verified: boolean;
+            message: string;
+            /** Format: date-time */
+            checked_at?: string;
+        };
+        DatabasePublicEndpoint: {
+            id: string;
+            database_id: string;
+            revision: number;
+            spec: components["schemas"]["DatabasePublicEndpointSpec"];
+            allocation: components["schemas"]["DatabasePublicEndpointAllocation"];
+            member_allocations?: components["schemas"]["DatabasePublicEndpointMemberAllocation"][];
+            /** @enum {string} */
+            status: "review" | "pending" | "active" | "revoking" | "error" | "revoked";
+            observation: components["schemas"]["DatabasePublicEndpointObservation"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            revoked_at?: string;
+        };
+        DatabasePublicEndpointRoute: {
+            /** @enum {string} */
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https";
+            /** @enum {string} */
+            protocol: "postgresql" | "mysql" | "clickhouse_native" | "https" | "oracle_tcps" | "mongodb" | "redis";
+            /** @enum {string} */
+            routing: "direct" | "pgbouncer" | "mysql_router" | "replica_set_horizons" | "cluster_discovery";
+            read_only: boolean;
+            pooled: boolean;
+        };
+        DatabasePublicEndpointCapabilities: {
+            engine: string;
+            available: boolean;
+            unavailable_reason: string;
+            routes: components["schemas"]["DatabasePublicEndpointRoute"][];
+        };
+        DatabasePublicEndpointReview: {
+            database_id: string;
+            project: string;
+            environment: string;
+            database_revision: number;
+            endpoint_id: string;
+            endpoint_revision: number;
+            spec: components["schemas"]["DatabasePublicEndpointSpec"];
+            allocation: components["schemas"]["DatabasePublicEndpointAllocation"];
+            route?: components["schemas"]["DatabasePublicEndpointRoute"];
+            route_fingerprint?: string;
+            topology_fingerprint: string;
+            member_allocations?: components["schemas"]["DatabasePublicEndpointMemberAllocation"][];
+            tls_fingerprint: string;
+            authority_fingerprint?: string;
+            blocked_reasons: string[];
+            warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabasePublicEndpointPlan: {
+            id: string;
+            plan: components["schemas"]["DatabasePublicEndpointReview"];
+        };
+        DatabasePublicEndpointOperation: {
+            id: string;
+            endpoint_id: string;
+            database_id: string;
+            revision: number;
+            /** @enum {string} */
+            kind: "publish" | "revoke";
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            phase: string;
+            message: string;
+            review?: components["schemas"]["DatabasePublicEndpointReview"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
         DatabaseBackupEvidence: {
             artifact_id: string;
             database_id: string;
@@ -5246,6 +5883,27 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        DatabaseOracleSwitchoverReview: {
+            request_id: string;
+            database_id: string;
+            project: string;
+            environment: string;
+            revision: number;
+            broker_uid: string;
+            topology_fingerprint: string;
+            primary: string;
+            target: string;
+            target_controller: string;
+            target_unique_name: string;
+            member_uids: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabaseOracleSwitchoverPlan: {
+            id: string;
+            plan: components["schemas"]["DatabaseOracleSwitchoverReview"];
+            warnings: string[];
+        };
         DatabaseOperation: {
             id: string;
             database_id: string;
@@ -5256,12 +5914,43 @@ export interface components {
             message: string;
             spec: components["schemas"]["ManagedDatabaseSpec"];
             review?: components["schemas"]["DatabaseResizePlan"];
+            switchover?: components["schemas"]["DatabaseOracleSwitchoverReview"];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             started_at?: string;
             /** Format: date-time */
             finished_at?: string;
+        };
+        DatabasePlacementNode: {
+            name: string;
+            architecture: string;
+            available: boolean;
+            reason: string;
+            zone?: string;
+            region?: string;
+            provider?: string;
+            reserved_cpu_milli?: number;
+            reserved_memory_bytes?: number;
+        };
+        DatabaseConnectionReference: {
+            application_id: string;
+            application_name: string;
+            application_display_name: string;
+            project: string;
+            environment: string;
+            service: string;
+            variable: string;
+            endpoint: string;
+            saved_revision: number;
+            last_successful_revision: number;
+            latest_attempt_revision: number;
+            latest_attempt_status: string;
+        };
+        DatabaseConnections: {
+            items: components["schemas"]["DatabaseConnectionReference"][];
+            truncated: boolean;
+            limit: number;
         };
         DatabaseConnectionPlan: {
             id: string;
@@ -5298,6 +5987,360 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
             artifact_id?: string;
+        };
+        DatabaseEngineMetrics: {
+            available: boolean;
+            reason?: string;
+            /** Format: date-time */
+            sampled_at?: string;
+            connections?: number;
+            active_connections?: number;
+            max_connections?: number;
+            data_bytes?: number;
+            transactions?: number;
+            commands?: number;
+            replication_lag_bytes?: number;
+            evicted_keys?: number;
+            rejected_connections?: number;
+            uptime_seconds?: number;
+            cache_hit_ratio?: number;
+        };
+        DatabaseMetricPoint: {
+            /** Format: date-time */
+            observed_at: string;
+            revision: number;
+            status: string;
+            resources?: components["schemas"]["RuntimeMetrics"];
+            engine?: components["schemas"]["DatabaseEngineMetrics"];
+        };
+        DatabaseMetricHistory: {
+            items: components["schemas"]["DatabaseMetricPoint"][];
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            until: string;
+            resolution_seconds: number;
+            retention_hours: number;
+        };
+        DatabasePoolingObservation: {
+            ready: boolean;
+            message?: string;
+            members: components["schemas"]["DatabaseMember"][];
+        };
+        DatabaseRoutingObservation: {
+            kind: string;
+            ready: boolean;
+            message?: string;
+            members: components["schemas"]["DatabaseMember"][];
+        };
+        DatabaseCoordinationObservation: {
+            ready: boolean;
+            message?: string;
+            members: components["schemas"]["DatabaseMember"][];
+        };
+        ExternalDatabaseSpec: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /** @enum {string} */
+            provider: "planetscale";
+            /** @enum {string} */
+            engine: "mysql" | "postgresql";
+            host: string;
+            port: number;
+            database: string;
+        };
+        ExternalDatabaseCredentials: {
+            username: string;
+            password: string;
+        };
+        ExternalDatabaseObservation: {
+            /** Format: date-time */
+            observed_at: string;
+            revision: number;
+            status: string;
+            message: string;
+            tls_verified: boolean;
+            query_verified: boolean;
+            latency_ms?: number;
+            verified_ips?: string[];
+        };
+        ExternalDatabase: {
+            id: string;
+            project: string;
+            environment: string;
+            revision: number;
+            credential_revision: number;
+            spec: components["schemas"]["ExternalDatabaseSpec"];
+            status: string;
+            observation: components["schemas"]["ExternalDatabaseObservation"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+        };
+        ExternalDatabaseOperation: {
+            id: string;
+            database_id: string;
+            revision: number;
+            kind: string;
+            status: string;
+            message: string;
+            spec: components["schemas"]["ExternalDatabaseSpec"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        ExternalDatabaseTrust: {
+            mode: string;
+            hostname: string;
+            minimum_protocol: string;
+            trust_source: string;
+            verified: boolean;
+            /** Format: date-time */
+            observed_at: string;
+            message: string;
+        };
+        ExternalDatabaseConnectionPlan: {
+            id: string;
+            /** @enum {string} */
+            kind: "refresh" | "disconnect";
+            database_id: string;
+            database_name: string;
+            database_revision: number;
+            credential_revision: number;
+            application_id: string;
+            application_name: string;
+            application_revision: number;
+            service: string;
+            variable: string;
+            binding?: components["schemas"]["ServiceBinding"];
+            /** Format: date-time */
+            expires_at: string;
+            warnings: string[];
+        };
+        ManagedPlatformSecretReference: {
+            name: string;
+            revision: number;
+        };
+        ManagedPlatformResources: {
+            cpu: string;
+            memory: string;
+        };
+        ManagedPlatformPlacement: {
+            node_names: string[];
+            /** @enum {string} */
+            spread?: "" | "nodes" | "zones";
+        };
+        SupabaseConfig: {
+            public_url: string;
+            site_url: string;
+            redirect_urls?: string[];
+            database_name: string;
+            jwt_expiry_seconds: number;
+            rest_max_rows: number;
+            storage_file_limit_bytes: number;
+            pool_size: number;
+            pool_max_clients: number;
+            /** @constant */
+            email_signup: false;
+            anonymous_signup?: boolean;
+            smtp_secret?: components["schemas"]["ManagedPlatformSecretReference"];
+        };
+        NeonConfig: {
+            /** @constant */
+            postgres_version: "17";
+            compute_replicas: number;
+            pageservers: number;
+            /** @constant */
+            safekeepers: 3;
+            branch_limit: number;
+            /**
+             * Format: uri
+             * @description Exact HTTPS object-storage origin on port 443. The server rejects credentials, paths, query strings and unsafe network destinations.
+             */
+            object_storage_url: string;
+            object_storage_bucket: string;
+            object_storage_region: string;
+            object_storage_prefix: string;
+            /** @constant */
+            proxy_control_plane_patch_sha256: "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6";
+        };
+        ManagedPlatformSpec: components["schemas"]["SupabasePlatformSpec"] | components["schemas"]["NeonPlatformSpec"];
+        SupabasePlatformSpec: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /**
+             * @constant
+             * @enum {string}
+             */
+            kind: "supabase";
+            /**
+             * @constant
+             * @enum {string}
+             */
+            version: "0.8.2";
+            resources: {
+                [key: string]: components["schemas"]["ManagedPlatformResources"];
+            };
+            storage: {
+                [key: string]: number;
+            };
+            secrets: {
+                [key: string]: components["schemas"]["ManagedPlatformSecretReference"];
+            };
+            placement: {
+                node_names: string[];
+                /**
+                 * @constant
+                 * @enum {string}
+                 */
+                spread?: "";
+            };
+            supabase: components["schemas"]["SupabaseConfig"];
+        };
+        NeonPlatformSpec: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /**
+             * @constant
+             * @enum {string}
+             */
+            kind: "neon";
+            /**
+             * @constant
+             * @enum {string}
+             */
+            version: "fa504217c61bbcaf5c512d75830564541f917f8f";
+            resources: {
+                [key: string]: components["schemas"]["ManagedPlatformResources"];
+            };
+            storage: {
+                [key: string]: number;
+            };
+            secrets: {
+                [key: string]: components["schemas"]["ManagedPlatformSecretReference"];
+            };
+            placement: {
+                node_names: string[];
+                /** @enum {string} */
+                spread?: "" | "nodes" | "zones";
+            };
+            neon: components["schemas"]["NeonConfig"];
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        ManagedPlatformCapability: {
+            available: boolean;
+            cluster_qualified: boolean;
+            public_qualified: boolean;
+            reason: string;
+        };
+        ManagedPlatformComponent: {
+            name: string;
+            image: string;
+            resources: components["schemas"]["ManagedPlatformResources"];
+            replicas: number;
+            ports: number[];
+            secret_keys: string[];
+            storage_keys: string[];
+        };
+        ManagedPlatformPlan: {
+            namespace: string;
+            components: components["schemas"]["ManagedPlatformComponent"][];
+            public_service: string;
+            capability: components["schemas"]["ManagedPlatformCapability"];
+        };
+        ManagedPlatformReview: {
+            id: string;
+            expected_revision: number;
+            /** @enum {string} */
+            kind: "create" | "update" | "delete";
+            request_hash: string;
+            authority_fingerprint?: string;
+            /** Format: date-time */
+            expires_at: string;
+            blocked_reasons: string[];
+        };
+        ManagedPlatformObservation: {
+            status?: string;
+            phase?: string;
+            revision?: number;
+            namespace_uid?: string;
+            ready_components?: number;
+            expected_components?: number;
+            pending?: string[];
+            tenant_id?: string;
+            timeline_id?: string;
+            safekeeper_count?: number;
+            attached_computes?: string[];
+            proxy_endpoint_id?: string;
+            proxy_generation?: number;
+        };
+        ManagedPlatform: {
+            id: string;
+            project: string;
+            environment: string;
+            revision: number;
+            spec: components["schemas"]["ManagedPlatformSpec"];
+            status: string;
+            observation: components["schemas"]["ManagedPlatformObservation"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            deleted_at?: string | null;
+        };
+        ManagedPlatformOperation: {
+            id: string;
+            platform_id: string;
+            revision: number;
+            kind: string;
+            status: string;
+            phase: string;
+            message: string;
+            spec: components["schemas"]["ManagedPlatformSpec"];
+            plan: components["schemas"]["ManagedPlatformPlan"];
+            review: components["schemas"]["ManagedPlatformReview"];
+            review_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            attempt: number;
+        };
+        ManagedPlatformIntent: {
+            id?: string;
+            project: string;
+            environment: string;
+            expected_revision: number;
+            /** @enum {string} */
+            kind: "create" | "update" | "delete";
+            spec: components["schemas"]["ManagedPlatformSpec"];
+            review?: components["schemas"]["ManagedPlatformReview"];
+            confirm_name?: string;
+        };
+        ManagedPlatformAcceptIntent: {
+            id: string;
+            project: string;
+            environment: string;
+            expected_revision: number;
+            /** @enum {string} */
+            kind: "create" | "update" | "delete";
+            spec: components["schemas"]["ManagedPlatformSpec"];
+            review: components["schemas"]["ManagedPlatformReview"];
+            confirm_name?: string;
+        };
+        ManagedPlatformReviewResponse: {
+            platform: components["schemas"]["ManagedPlatform"];
+            plan: components["schemas"]["ManagedPlatformPlan"];
+            review: components["schemas"]["ManagedPlatformReview"] | null;
+            blocked: boolean;
         };
         BuildProvenance: {
             /** @enum {string} */
@@ -6813,7 +7856,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["KeyInput"];
+                "application/json": components["schemas"]["AutomationKeyInput"];
             };
         };
         responses: {
@@ -6881,10 +7924,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** Format: date-time */
-                    expires_at: string;
-                };
+                "application/json": components["schemas"]["AutomationKeyLifetimeInput"];
             };
         };
         responses: {
@@ -11897,6 +12937,41 @@ export interface operations {
             };
         };
     };
+    listDatabasePlacementNodes: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DatabasePlacementNode"][];
+                        limit: number;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getManagedDatabase: {
         parameters: {
             query?: never;
@@ -11988,6 +13063,278 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["DatabaseOperation"][];
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabasePublicEndpointCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicEndpointCapabilities"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDatabasePublicEndpoints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DatabasePublicEndpoint"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    publishDatabasePublicEndpoint: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    expected_database_revision: number;
+                    expected_endpoint_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicEndpointOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewDatabasePublicEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabasePublicEndpointSpec"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicEndpointPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revokeDatabasePublicEndpoint: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_endpoint_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicEndpointOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabasePublicEndpointOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicEndpointOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDatabaseConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnections"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabasePublicTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicTrust"];
                 };
             };
             /** @description Error */
@@ -12097,6 +13444,123 @@ export interface operations {
                     review_id: string;
                     expected_revision: number;
                     spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewOracleDatabaseSwitchover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    target_member: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOracleSwitchoverPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    switchoverOracleDatabase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    expected_revision: number;
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    retryOracleDatabaseSwitchover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    operation_id: string;
+                    expected_revision: number;
+                    confirm_name: string;
                 };
             };
         };
@@ -12367,6 +13831,556 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackupArtifact"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabaseMetricHistory: {
+        parameters: {
+            query?: {
+                range?: "1h" | "6h" | "24h";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseMetricHistory"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listExternalDatabases: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ExternalDatabase"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getExternalDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabase"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rotateExternalDatabaseCredentials: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    spec: components["schemas"]["ExternalDatabaseSpec"];
+                    credentials: components["schemas"]["ExternalDatabaseCredentials"];
+                    expected_revision: number;
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteExternalDatabase: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listExternalDatabaseConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnections"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getExternalDatabaseTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabaseTrust"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewLegacyExternalDatabaseBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    application_id: string;
+                    service: string;
+                    variable: string;
+                    disconnect: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabaseConnectionPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    applyLegacyExternalDatabaseBindingReview: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    confirm_application: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getExternalDatabaseOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalDatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listManagedPlatforms: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ManagedPlatform"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedPlatform: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatform"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listManagedPlatformOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ManagedPlatformOperation"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedPlatformOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewManagedPlatform: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedPlatformIntent"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformReviewResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    acceptManagedPlatform: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedPlatformAcceptIntent"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformOperation"];
                 };
             };
             /** @description Error */
