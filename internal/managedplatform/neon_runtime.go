@@ -20,7 +20,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -651,11 +650,12 @@ func (r *NeonRuntime) lock(operationID string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("open Neon operation lock: %w", err)
 	}
-	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	unlock, err := lockNeonStateFile(file)
+	if err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("Neon operation is already running: %w", err)
 	}
-	return func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }, nil
+	return func() { unlock(); _ = file.Close() }, nil
 }
 
 func (r *NeonRuntime) loadOrCreateState(request NeonLifecycleRequest, digest string) (NeonLifecycleState, error) {
