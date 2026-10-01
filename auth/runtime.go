@@ -295,6 +295,22 @@ func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservation
 				checkedScopes[scope] = true
 			}
 			if s.store.ManagedCapacityPool == nil {
+				bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+				owned, ownershipErr := s.store.ManagedCapacityScopeWorkloads(bounded, project, environment)
+				cancel()
+				if ownershipErr != nil {
+					return ownershipErr
+				}
+				for _, workload := range owned {
+					if workload.Kind != "database" {
+						continue
+					}
+					key := workload.Kind + "\x00" + workload.ID
+					if !workloads[key] {
+						reservation.Ownership.Workloads = append(reservation.Ownership.Workloads, workload)
+						workloads[key] = true
+					}
+				}
 				continue
 			}
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)

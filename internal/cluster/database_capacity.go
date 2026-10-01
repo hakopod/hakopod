@@ -11,7 +11,10 @@ import (
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type ManagedPlatformNodeReservation struct {
@@ -32,9 +35,12 @@ type DatabaseNodeReservation struct {
 }
 
 type capacityNamespaceIdentity struct {
+	kind        string
+	id          string
 	owner       string
 	project     string
 	environment string
+	capacity    managedplatform.Capacity
 }
 
 type capacityOwnershipIndex struct {
@@ -43,16 +49,80 @@ type capacityOwnershipIndex struct {
 	platforms    map[string]managedplatform.CapacityNamespaceOwnership
 }
 
+func pooledDatabaseRootResource(owner metav1.OwnerReference) (schema.GroupVersionResource, bool) {
+	resources := map[string]schema.GroupVersionResource{
+		"postgresql.cnpg.io/v1/Cluster":                     pgDatabaseResource,
+		"redis.redis.opstreelabs.in/v1beta2/Redis":          redisDatabaseResource,
+		"redis.redis.opstreelabs.in/v1beta2/RedisCluster":   redisClusterResource,
+		"mysql.oracle.com/v2/InnoDBCluster":                 mysqlDatabaseResource,
+		"mongodbcommunity.mongodb.com/v1/MongoDBCommunity":  mongodbDatabaseResource,
+		"clickhouse.altinity.com/v1/ClickHouseInstallation": clickhouseDatabaseResource,
+		"planetscale.com/v2/VitessCluster":                  vitessDatabaseResource,
+		"database.oracle.com/v4/SingleInstanceDatabase":     oracleEnterpriseResource,
+	}
+	gvr, ok := resources[owner.APIVersion+"/"+owner.Kind]
+	return gvr, ok
+}
+
+func pooledDatabaseRootName(owner metav1.OwnerReference) bool {
+	if owner.Name == "database" {
+		return true
+	}
+	if owner.APIVersion != "database.oracle.com/v4" || owner.Kind != "SingleInstanceDatabase" || !strings.HasPrefix(owner.Name, "database-") {
+		return false
+	}
+	for _, value := range owner.Name[len("database-"):] {
+		if value < '0' || value > '9' {
+			return false
+		}
+	}
+	return len(owner.Name) > len("database-")
+}
+
+func (c *Client) pooledDatabaseRootOwned(ctx context.Context, namespace string, owner metav1.OwnerReference, identity capacityNamespaceIdentity) (bool, error) {
+	gvr, ok := pooledDatabaseRootResource(owner)
+	if !ok || !pooledDatabaseRootName(owner) || c.dynamic == nil {
+		return false, nil
+	}
+	item, err := c.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	labels := item.GetLabels()
+	return item.GetUID() == owner.UID && item.GetDeletionTimestamp() == nil && labels[managedBy] == "hakopod" && labels[databaseOwner] == identity.owner && labels["hakopod.io/project"] == identity.project && labels["hakopod.io/environment"] == identity.environment, nil
+}
+
+func (c *Client) pooledVitessPodOwned(ctx context.Context, pod corev1.Pod, identity capacityNamespaceIdentity) (bool, error) {
+	if c.dynamic == nil {
+		return false, nil
+	}
+	root, err := c.dynamic.Resource(vitessDatabaseResource).Namespace(pod.Namespace).Get(ctx, "database", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	labels := root.GetLabels()
+	if root.GetUID() == "" || root.GetDeletionTimestamp() != nil || labels[managedBy] != "hakopod" || labels[databaseOwner] != identity.owner || labels["hakopod.io/project"] != identity.project || labels["hakopod.io/environment"] != identity.environment {
+		return false, nil
+	}
+	return c.vitessPodOwned(ctx, pod, root.GetUID()), nil
+}
+
 func capacityOwnership(ownership managedplatform.CapacityPoolOwnership, platforms map[string]managedplatform.CapacityNamespaceOwnership) (capacityOwnershipIndex, error) {
 	result := capacityOwnershipIndex{applications: map[string]capacityNamespaceIdentity{}, databases: map[string]capacityNamespaceIdentity{}, platforms: map[string]managedplatform.CapacityNamespaceOwnership{}}
 	if len(ownership.Workloads) > managedplatform.MaxCapacityPoolWorkloads || len(ownership.PlatformNamespaces)+len(platforms) > managedplatform.MaxCapacityPoolWorkloads {
 		return result, fmt.Errorf("managed capacity pool ownership inventory exceeds its bound")
 	}
 	for _, workload := range ownership.Workloads {
-		if workload.ID == "" || workload.Project == "" || workload.Environment == "" {
+		if workload.ID == "" || workload.Project == "" || workload.Environment == "" || workload.Capacity.CPUMilli < 0 || workload.Capacity.MemoryBytes < 0 {
 			return result, fmt.Errorf("managed capacity pool workload identity is invalid")
 		}
-		identity := capacityNamespaceIdentity{project: workload.Project, environment: workload.Environment}
+		identity := capacityNamespaceIdentity{kind: workload.Kind, id: workload.ID, project: workload.Project, environment: workload.Environment, capacity: workload.Capacity}
 		var namespace string
 		switch workload.Kind {
 		case "application":
@@ -83,28 +153,126 @@ func capacityOwnership(ownership managedplatform.CapacityPoolOwnership, platform
 	return result, nil
 }
 
-func (c *Client) pooledNamespacePod(ctx context.Context, pod corev1.Pod, namespaces map[string]*corev1.Namespace, ownership capacityOwnershipIndex) (bool, error) {
+func (c *Client) pooledPodControllerOwned(ctx context.Context, pod corev1.Pod, identity capacityNamespaceIdentity, controllers map[string]bool) (bool, error) {
+	if pod.UID == "" || len(pod.OwnerReferences) != 1 {
+		return false, nil
+	}
+	owner := pod.OwnerReferences[0]
+	if owner.UID == "" || owner.Controller == nil || !*owner.Controller {
+		return false, nil
+	}
+	key := pod.Namespace + "\x00" + owner.APIVersion + "\x00" + owner.Kind + "\x00" + owner.Name + "\x00" + string(owner.UID)
+	if owned, ok := controllers[key]; ok {
+		return owned, nil
+	}
+	valid := func(labels map[string]string, uid types.UID, expected metav1.OwnerReference, deleting bool) bool {
+		if uid != expected.UID || deleting || labels[managedBy] != "hakopod" {
+			return false
+		}
+		if identity.kind == "application" {
+			return labels[ownerKey] == identity.owner && labels[serviceKey] != ""
+		}
+		return labels[databaseOwner] == identity.owner
+	}
+	owned, err := func() (bool, error) {
+		if identity.kind == "database" {
+			if _, ok := pooledDatabaseRootResource(owner); ok {
+				return c.pooledDatabaseRootOwned(ctx, pod.Namespace, owner, identity)
+			}
+			if strings.HasPrefix(owner.APIVersion+"/"+owner.Kind, "planetscale.com/v2/") || pod.Labels["planetscale.com/cluster"] == "database" {
+				return c.pooledVitessPodOwned(ctx, pod, identity)
+			}
+		}
+		switch owner.APIVersion + "/" + owner.Kind {
+		case "apps/v1/ReplicaSet":
+			item, err := c.kube.AppsV1().ReplicaSets(pod.Namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			if err != nil || !valid(item.Labels, item.UID, owner, item.DeletionTimestamp != nil) || len(item.OwnerReferences) != 1 {
+				return false, err
+			}
+			parent := item.OwnerReferences[0]
+			if parent.APIVersion != "apps/v1" || parent.Kind != "Deployment" || parent.UID == "" || parent.Controller == nil || !*parent.Controller {
+				return false, nil
+			}
+			deployment, err := c.kube.AppsV1().Deployments(pod.Namespace).Get(ctx, parent.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			owned := err == nil && valid(deployment.Labels, deployment.UID, parent, deployment.DeletionTimestamp != nil)
+			if identity.kind == "application" {
+				owned = owned && deployment.Name == pod.Labels[serviceKey] && len(deployment.OwnerReferences) == 0
+			}
+			return owned, err
+		case "apps/v1/StatefulSet":
+			item, err := c.kube.AppsV1().StatefulSets(pod.Namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return err == nil && valid(item.Labels, item.UID, owner, item.DeletionTimestamp != nil), err
+		case "batch/v1/Job":
+			item, err := c.kube.BatchV1().Jobs(pod.Namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			if err != nil || !valid(item.Labels, item.UID, owner, item.DeletionTimestamp != nil) {
+				return false, err
+			}
+			if len(item.OwnerReferences) == 0 {
+				return identity.kind == "application" && item.Name == jobName(pod.Labels[serviceKey]), nil
+			}
+			if len(item.OwnerReferences) != 1 {
+				return false, nil
+			}
+			parent := item.OwnerReferences[0]
+			if parent.APIVersion != "batch/v1" || parent.Kind != "CronJob" || parent.UID == "" || parent.Controller == nil || !*parent.Controller {
+				return false, nil
+			}
+			cron, err := c.kube.BatchV1().CronJobs(pod.Namespace).Get(ctx, parent.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return err == nil && valid(cron.Labels, cron.UID, parent, cron.DeletionTimestamp != nil), err
+		default:
+			return false, nil
+		}
+	}()
+	if err == nil {
+		controllers[key] = owned
+	}
+	return owned, err
+}
+
+func (c *Client) pooledNamespacePod(ctx context.Context, pod corev1.Pod, namespaces map[string]*corev1.Namespace, controllers map[string]bool, ownership capacityOwnershipIndex) (string, managedplatform.Capacity, bool, error) {
 	application, applicationOwned := ownership.applications[pod.Namespace]
 	database, databaseOwned := ownership.databases[pod.Namespace]
 	if !applicationOwned && !databaseOwned {
-		return false, nil
+		return "", managedplatform.Capacity{}, false, nil
 	}
 	namespace, loaded := namespaces[pod.Namespace]
 	if !loaded {
 		var err error
 		namespace, err = c.kube.CoreV1().Namespaces().Get(ctx, pod.Namespace, metav1.GetOptions{})
 		if err != nil {
-			return false, fmt.Errorf("managed capacity namespace identity is unavailable")
+			return "", managedplatform.Capacity{}, false, fmt.Errorf("managed capacity namespace identity is unavailable")
 		}
 		namespaces[pod.Namespace] = namespace
 	}
 	if namespace.UID == "" || namespace.DeletionTimestamp != nil || namespace.Labels[managedBy] != "hakopod" {
-		return false, nil
+		return "", managedplatform.Capacity{}, false, nil
 	}
+	identity := database
 	if applicationOwned {
-		return namespace.Name == "hp-"+application.owner && namespace.Labels[ownerKey] == application.owner && namespace.Labels[scopeKey] == scopeLabel(application.project, application.environment) && pod.Labels[managedBy] == "hakopod" && pod.Labels[ownerKey] == application.owner, nil
+		identity = application
+		if namespace.Name != "hp-"+identity.owner || namespace.Labels[ownerKey] != identity.owner || namespace.Labels[scopeKey] != scopeLabel(identity.project, identity.environment) || pod.Labels[managedBy] != "hakopod" || pod.Labels[ownerKey] != identity.owner || pod.Labels[serviceKey] == "" {
+			return "", managedplatform.Capacity{}, false, nil
+		}
+	} else if namespace.Name != DatabaseNamespace(identity.owner) || namespace.Labels[databaseOwner] != identity.owner || namespace.Labels["hakopod.io/project"] != identity.project || namespace.Labels["hakopod.io/environment"] != identity.environment {
+		return "", managedplatform.Capacity{}, false, nil
 	}
-	return namespace.Name == DatabaseNamespace(database.owner) && namespace.Labels[databaseOwner] == database.owner && namespace.Labels["hakopod.io/project"] == database.project && namespace.Labels["hakopod.io/environment"] == database.environment && pod.Labels[managedBy] == "hakopod" && pod.Labels[databaseOwner] == database.owner, nil
+	controlled, err := c.pooledPodControllerOwned(ctx, pod, identity, controllers)
+	return identity.kind + "\x00" + identity.id, identity.capacity, controlled, err
 }
 
 func capacityWithHeadroom(cpu, memory int64) (int64, int64, error) {
@@ -239,11 +407,49 @@ func addNodeCapacityUsage(cpu, memory *int64, usedCPU, usedMemory int64) error {
 	return nil
 }
 
+func capacityRequest(resources corev1.ResourceList) (int64, int64, error) {
+	cpu, cpuOK := resources.Cpu().AsScaledInt64(resource.Milli)
+	memory, memoryOK := resources.Memory().AsInt64()
+	if !cpuOK || !memoryOK || cpu < 0 || memory < 0 {
+		return 0, 0, fmt.Errorf("pod resource request exceeds its arithmetic bound")
+	}
+	return cpu, memory, nil
+}
+
 func podCapacityUsage(spec corev1.PodSpec) (int64, int64, error) {
-	cpu, memory := podRequests(spec)
-	overheadCPU, overheadMemory := spec.Overhead.Cpu().MilliValue(), spec.Overhead.Memory().Value()
-	if err := addNodeCapacityUsage(&cpu, &memory, overheadCPU, overheadMemory); err != nil {
+	var cpu, memory, sideCPU, sideMemory, initCPU, initMemory int64
+	for _, container := range spec.Containers {
+		containerCPU, containerMemory, err := capacityRequest(container.Resources.Requests)
+		if err != nil || addNodeCapacityUsage(&cpu, &memory, containerCPU, containerMemory) != nil {
+			return 0, 0, fmt.Errorf("pod container requests exceed their arithmetic bound")
+		}
+	}
+	for _, container := range spec.InitContainers {
+		containerCPU, containerMemory, err := capacityRequest(container.Resources.Requests)
+		if err != nil {
+			return 0, 0, err
+		}
+		if container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			if err = addNodeCapacityUsage(&sideCPU, &sideMemory, containerCPU, containerMemory); err != nil {
+				return 0, 0, err
+			}
+			initCPU, initMemory = max(initCPU, sideCPU), max(initMemory, sideMemory)
+		} else {
+			stageCPU, stageMemory := sideCPU, sideMemory
+			if err = addNodeCapacityUsage(&stageCPU, &stageMemory, containerCPU, containerMemory); err != nil {
+				return 0, 0, err
+			}
+			initCPU, initMemory = max(initCPU, stageCPU), max(initMemory, stageMemory)
+		}
+	}
+	runningCPU, runningMemory := cpu, memory
+	if err := addNodeCapacityUsage(&runningCPU, &runningMemory, sideCPU, sideMemory); err != nil {
 		return 0, 0, err
+	}
+	cpu, memory = max(runningCPU, initCPU), max(runningMemory, initMemory)
+	overheadCPU, overheadMemory, err := capacityRequest(spec.Overhead)
+	if err != nil || addNodeCapacityUsage(&cpu, &memory, overheadCPU, overheadMemory) != nil {
+		return 0, 0, fmt.Errorf("pod requests and overhead exceed their arithmetic bound")
 	}
 	return cpu, memory, nil
 }
@@ -251,7 +457,17 @@ func podCapacityUsage(spec corev1.PodSpec) (int64, int64, error) {
 func addManagedPlatformExcess(cpu, memory *int64, usage, envelope map[string]managedplatform.Capacity) error {
 	for key, actual := range usage {
 		expected := envelope[key]
-		if err := addNodeCapacityUsage(cpu, memory, max(int64(0), actual.CPUMilli-expected.CPUMilli), max(int64(0), actual.MemoryBytes-expected.MemoryBytes)); err != nil {
+		if actual.CPUMilli < 0 || actual.MemoryBytes < 0 || expected.CPUMilli < 0 || expected.MemoryBytes < 0 {
+			return fmt.Errorf("node workload capacity envelope is invalid")
+		}
+		excessCPU, excessMemory := int64(0), int64(0)
+		if actual.CPUMilli > expected.CPUMilli {
+			excessCPU = actual.CPUMilli - expected.CPUMilli
+		}
+		if actual.MemoryBytes > expected.MemoryBytes {
+			excessMemory = actual.MemoryBytes - expected.MemoryBytes
+		}
+		if err := addNodeCapacityUsage(cpu, memory, excessCPU, excessMemory); err != nil {
 			return err
 		}
 	}
@@ -279,8 +495,11 @@ func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.N
 		return fmt.Errorf("database node workload inventory is unavailable or exceeds its bound")
 	}
 	namespaces := map[string]*corev1.Namespace{}
+	controllers := map[string]bool{}
 	managedUsage := map[string]managedplatform.Capacity{}
 	managedEnvelope := map[string]managedplatform.Capacity{}
+	pooledUsage := map[string]managedplatform.Capacity{}
+	pooledEnvelope := map[string]managedplatform.Capacity{}
 	for _, pod := range pods.Items {
 		if pod.Spec.NodeName != node.Name || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 			continue
@@ -322,9 +541,23 @@ func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.N
 				inGrant = false
 			}
 		} else {
-			inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, ownership)
+			var key string
+			var envelope managedplatform.Capacity
+			key, envelope, inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, controllers, ownership)
 			if err != nil {
 				return err
+			}
+			if inGrant {
+				usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+				if usageErr != nil {
+					return usageErr
+				}
+				actual := pooledUsage[key]
+				if usageErr = addNodeCapacityUsage(&actual.CPUMilli, &actual.MemoryBytes, usedCPU, usedMemory); usageErr != nil {
+					return usageErr
+				}
+				pooledUsage[key] = actual
+				pooledEnvelope[key] = envelope
 			}
 		}
 		if inGrant {
@@ -339,6 +572,9 @@ func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.N
 		}
 	}
 	if err = addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope); err != nil {
+		return err
+	}
+	if err = addManagedPlatformExcess(&cpu, &memory, pooledUsage, pooledEnvelope); err != nil {
 		return err
 	}
 	if cpu > node.Status.Allocatable.Cpu().MilliValue() || memory > node.Status.Allocatable.Memory().Value() {
@@ -389,8 +625,11 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 			return fmt.Errorf("managed platform node workload inventory is unavailable or exceeds its bound")
 		}
 		namespaces := map[string]*corev1.Namespace{}
+		controllers := map[string]bool{}
 		managedUsage := map[string]managedplatform.Capacity{}
 		managedEnvelope := map[string]managedplatform.Capacity{}
+		pooledUsage := map[string]managedplatform.Capacity{}
+		pooledEnvelope := map[string]managedplatform.Capacity{}
 		for _, pod := range pods.Items {
 			if pod.Spec.NodeName != name || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 				continue
@@ -430,9 +669,23 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 					}
 				}
 			} else {
-				inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, ownership)
+				var key string
+				var envelope managedplatform.Capacity
+				key, envelope, inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, controllers, ownership)
 				if err != nil {
 					return err
+				}
+				if inGrant {
+					usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+					if usageErr != nil {
+						return usageErr
+					}
+					actual := pooledUsage[key]
+					if usageErr = addNodeCapacityUsage(&actual.CPUMilli, &actual.MemoryBytes, usedCPU, usedMemory); usageErr != nil {
+						return usageErr
+					}
+					pooledUsage[key] = actual
+					pooledEnvelope[key] = envelope
 				}
 			}
 			if inGrant {
@@ -447,6 +700,9 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 			}
 		}
 		if err = addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope); err != nil {
+			return err
+		}
+		if err = addManagedPlatformExcess(&cpu, &memory, pooledUsage, pooledEnvelope); err != nil {
 			return err
 		}
 		if cpu > node.Status.Allocatable.Cpu().MilliValue() || memory > node.Status.Allocatable.Memory().Value() {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -768,26 +769,23 @@ func (s *Store) ManagedCapacityPoolOwnership(ctx context.Context, pool string) (
 	if len(validation.IsDNS1123Label(pool)) != 0 {
 		return result, fmt.Errorf("managed capacity pool is invalid")
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT kind,id,project,environment FROM (
-		SELECT 'application' AS kind,a.id,a.project,a.environment FROM applications a
+	rows, err := s.Pool.Query(ctx, `SELECT kind,id,project,environment,reserved_cpu_milli,reserved_memory_bytes,application_spec,application_history FROM (
+		SELECT 'application' AS kind,a.id,a.project,a.environment,0::bigint AS reserved_cpu_milli,0::bigint AS reserved_memory_bytes,a.spec AS application_spec,
+		COALESCE((SELECT jsonb_agg(jsonb_build_array(d.spec,d.resolved_spec,d.recovery_spec)) FROM (
+		 SELECT spec,resolved_spec,recovery_spec FROM deployments WHERE application_id=a.id AND (
+		 status IN ('queued','running') OR id=(SELECT id FROM deployments WHERE application_id=a.id ORDER BY revision DESC LIMIT 1)
+		 OR id=(SELECT id FROM deployments WHERE application_id=a.id AND status='succeeded' ORDER BY revision DESC LIMIT 1)) ORDER BY revision DESC LIMIT 33
+		 ) d),'[]'::jsonb) AS application_history FROM applications a
 		JOIN managed_capacity_scopes s ON s.project=a.project AND s.environment=a.environment WHERE s.capacity_pool=$1
 		UNION ALL
-		SELECT 'database' AS kind,d.id,d.project,d.environment FROM managed_databases d
+		SELECT 'database' AS kind,d.id,d.project,d.environment,d.reserved_cpu_milli,d.reserved_memory_bytes,'{}'::jsonb,'[]'::jsonb FROM managed_databases d
 		JOIN managed_capacity_scopes s ON s.project=d.project AND s.environment=d.environment WHERE s.capacity_pool=$1 AND d.deleted_at IS NULL
 	) workloads ORDER BY kind,id LIMIT $2`, pool, managedplatform.MaxCapacityPoolWorkloads+1)
 	if err != nil {
 		return result, err
 	}
-	for rows.Next() {
-		var workload managedplatform.CapacityPoolWorkload
-		if err = rows.Scan(&workload.Kind, &workload.ID, &workload.Project, &workload.Environment); err != nil {
-			rows.Close()
-			return result, err
-		}
-		result.Workloads = append(result.Workloads, workload)
-	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
+	result.Workloads, err = scanManagedCapacityWorkloads(rows)
+	if err != nil {
 		return result, err
 	}
 	if len(result.Workloads) > managedplatform.MaxCapacityPoolWorkloads {
@@ -813,6 +811,77 @@ func (s *Store) ManagedCapacityPoolOwnership(ctx context.Context, pool string) (
 				return result, fmt.Errorf("managed capacity pool platform namespace inventory exceeds its bound")
 			}
 		}
+	}
+	return result, nil
+}
+
+func (s *Store) ManagedCapacityScopeWorkloads(ctx context.Context, project, environment string) ([]managedplatform.CapacityPoolWorkload, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT 'database',id,project,environment,reserved_cpu_milli,reserved_memory_bytes,'{}'::jsonb,'[]'::jsonb
+		FROM managed_databases WHERE project=$1 AND environment=$2 AND deleted_at IS NULL ORDER BY id LIMIT $3`, project, environment, managedplatform.MaxCapacityPoolWorkloads+1)
+	if err != nil {
+		return nil, err
+	}
+	result, err := scanManagedCapacityWorkloads(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(result) > managedplatform.MaxCapacityPoolWorkloads {
+		return nil, fmt.Errorf("managed capacity scope workload inventory exceeds its bound")
+	}
+	return result, nil
+}
+
+func scanManagedCapacityWorkloads(rows pgx.Rows) ([]managedplatform.CapacityPoolWorkload, error) {
+	defer rows.Close()
+	result := make([]managedplatform.CapacityPoolWorkload, 0)
+	for rows.Next() {
+		var workload managedplatform.CapacityPoolWorkload
+		var application spec.Application
+		var historyJSON []byte
+		if err := rows.Scan(&workload.Kind, &workload.ID, &workload.Project, &workload.Environment, &workload.Capacity.CPUMilli, &workload.Capacity.MemoryBytes, &application, &historyJSON); err != nil {
+			return nil, err
+		}
+		if workload.Kind == "application" {
+			var history [][]*spec.Application
+			if err := json.Unmarshal(historyJSON, &history); err != nil {
+				return nil, err
+			}
+			if len(history) > 32 {
+				return nil, ErrConflict
+			}
+			candidates := []spec.Application{application}
+			for _, revision := range history {
+				for _, version := range revision {
+					if version != nil {
+						candidates = append(candidates, *version)
+					}
+				}
+			}
+			services := map[string]managedplatform.Capacity{}
+			for _, candidate := range candidates {
+				for name, service := range candidate.Services {
+					capacity, err := applicationCapacityReservation(spec.Application{Services: map[string]spec.Service{name: service}})
+					if err != nil {
+						return nil, err
+					}
+					current := services[name]
+					current.CPUMilli = max(current.CPUMilli, capacity.CPUMilli)
+					current.MemoryBytes = max(current.MemoryBytes, capacity.MemoryBytes)
+					services[name] = current
+				}
+			}
+			for _, capacity := range services {
+				if capacity.CPUMilli < 0 || capacity.MemoryBytes < 0 || workload.Capacity.CPUMilli > math.MaxInt64-capacity.CPUMilli || workload.Capacity.MemoryBytes > math.MaxInt64-capacity.MemoryBytes {
+					return nil, fmt.Errorf("managed capacity application envelope exceeds its arithmetic bound")
+				}
+				workload.Capacity.CPUMilli += capacity.CPUMilli
+				workload.Capacity.MemoryBytes += capacity.MemoryBytes
+			}
+		}
+		result = append(result, workload)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

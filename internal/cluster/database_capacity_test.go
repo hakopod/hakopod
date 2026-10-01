@@ -13,7 +13,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -104,14 +107,24 @@ func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	applicationID := "application-fixture"
 	applicationOwner := ownerID(applicationID)
 	applicationNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(applicationID), UID: "application-namespace", Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner, scopeKey: scopeLabel("project", "production")}}}
-	applicationPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "application", Namespace: applicationNamespace.Name, Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "application", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
+	applicationLabels := map[string]string{managedBy: "hakopod", ownerKey: applicationOwner, serviceKey: "application"}
+	applicationDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "application", Namespace: applicationNamespace.Name, UID: "application-deployment", Labels: applicationLabels}}
+	applicationReplica := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "application-rs", Namespace: applicationNamespace.Name, UID: "application-replica", Labels: applicationLabels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: applicationDeployment.Name, UID: applicationDeployment.UID, Controller: ptr(true)}}}}
+	applicationPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "application", Namespace: applicationNamespace.Name, UID: "application-pod", Labels: applicationLabels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: applicationReplica.Name, UID: applicationReplica.UID, Controller: ptr(true)}}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "application", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
 	databaseID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	databaseNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(databaseID), UID: "database-namespace", Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID, "hakopod.io/project": "project", "hakopod.io/environment": "production"}}}
-	databasePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: databaseNamespace.Name, Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "database", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
-	c := &Client{kube: fake.NewClientset(node, applicationNamespace, applicationPod, databaseNamespace, databasePod)}
-	ownership := managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "application", ID: applicationID, Project: "project", Environment: "production"}, {Kind: "database", ID: databaseID, Project: "project", Environment: "production"}}}
+	databaseLabels := map[string]string{managedBy: "hakopod", databaseOwner: databaseID}
+	databaseSet := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: databaseNamespace.Name, UID: "database-statefulset", Labels: databaseLabels}}
+	databasePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: databaseNamespace.Name, UID: "database-pod", Labels: databaseLabels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "StatefulSet", Name: databaseSet.Name, UID: databaseSet.UID, Controller: ptr(true)}}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "database", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
+	c := &Client{kube: fake.NewClientset(node, applicationNamespace, applicationDeployment, applicationReplica, applicationPod, databaseNamespace, databaseSet, databasePod)}
+	workloadCapacity := managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512 << 20}
+	ownership := managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "application", ID: applicationID, Project: "project", Environment: "production", Capacity: workloadCapacity}, {Kind: "database", ID: databaseID, Project: "project", Environment: "production", Capacity: workloadCapacity}}}
 	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1 << 30}, Ownership: ownership}
 	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
+		t.Fatal(err)
+	}
+	databaseReservation := DatabaseNodeReservation{UID: "uid-worker", Capacity: database.Capacity{CPUMilli: 1300, MemoryBytes: 1 << 30}, Scopes: []string{"project/production"}, Ownership: ownership}
+	if err := c.CheckDatabaseNodeReservations(ctx, map[string]DatabaseNodeReservation{node.Name: databaseReservation}); err != nil {
 		t.Fatal(err)
 	}
 	spoof := applicationPod.DeepCopy()
@@ -122,6 +135,92 @@ func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
 		t.Fatal("unowned application pod disappeared from external workload accounting")
 	}
+	if err := c.CheckDatabaseNodeReservations(ctx, map[string]DatabaseNodeReservation{node.Name: databaseReservation}); err == nil {
+		t.Fatal("database-node accounting ignored an unowned application pod")
+	}
+	if err := c.kube.CoreV1().Pods(applicationNamespace.Name).Delete(ctx, spoof.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	foreign := applicationPod.DeepCopy()
+	foreign.Name, foreign.UID = "foreign-controller", "foreign-controller-pod"
+	foreign.OwnerReferences[0].UID = "foreign-replica"
+	if _, err := c.kube.CoreV1().Pods(applicationNamespace.Name).Create(ctx, foreign, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("pod with a foreign controller UID disappeared from capacity accounting")
+	}
+	if err := c.kube.CoreV1().Pods(applicationNamespace.Name).Delete(ctx, foreign.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	extra := applicationPod.DeepCopy()
+	extra.Name, extra.UID = "application-extra", "application-extra-uid"
+	if _, err := c.kube.CoreV1().Pods(applicationNamespace.Name).Create(ctx, extra, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("application pods exceeded their durable reservation without capacity accounting")
+	}
+	if err := c.CheckDatabaseNodeReservations(ctx, map[string]DatabaseNodeReservation{node.Name: databaseReservation}); err == nil {
+		t.Fatal("database-node accounting ignored a durable application envelope overrun")
+	}
+}
+
+func TestPooledDatabasePodRequiresExactCustomControllerChain(t *testing.T) {
+	ctx := context.Background()
+	databaseID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(databaseID), UID: "database-namespace", Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID, "hakopod.io/project": "project", "hakopod.io/environment": "production"}}}
+	root := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "clickhouse.altinity.com/v1",
+		"kind":       "ClickHouseInstallation",
+		"metadata": map[string]any{
+			"name":      "database",
+			"namespace": namespace.Name,
+			"uid":       "database-controller",
+			"labels": map[string]any{managedBy: "hakopod", databaseOwner: databaseID,
+				"hakopod.io/project": "project", "hakopod.io/environment": "production"},
+		},
+	}}
+	pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database-0", Namespace: namespace.Name, UID: "database-pod", OwnerReferences: []metav1.OwnerReference{{APIVersion: root.GetAPIVersion(), Kind: root.GetKind(), Name: root.GetName(), UID: root.GetUID(), Controller: ptr(true)}}}}
+	c := &Client{kube: fake.NewClientset(namespace), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), root)}
+	ownership, err := capacityOwnership(managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "database", ID: databaseID, Project: "project", Environment: "production", Capacity: managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512 << 20}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, owned, err := c.pooledNamespacePod(ctx, pod, map[string]*corev1.Namespace{}, map[string]bool{}, ownership); err != nil || !owned {
+		t.Fatal("exact custom database controller was not recognized", err)
+	}
+	pod.OwnerReferences[0].UID = "foreign-controller"
+	if _, _, owned, err := c.pooledNamespacePod(ctx, pod, map[string]*corev1.Namespace{}, map[string]bool{}, ownership); err != nil || owned {
+		t.Fatal("foreign custom database controller was accepted", err)
+	}
+}
+
+func TestPooledVitessPodRequiresChainToExactRoot(t *testing.T) {
+	ctx := context.Background()
+	databaseID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(databaseID), UID: "database-namespace", Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID, "hakopod.io/project": "project", "hakopod.io/environment": "production"}}}
+	root := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "planetscale.com/v2", "kind": "VitessCluster",
+		"metadata": map[string]any{"name": "database", "namespace": namespace.Name, "uid": "database-controller", "labels": map[string]any{managedBy: "hakopod", databaseOwner: databaseID, "hakopod.io/project": "project", "hakopod.io/environment": "production"}},
+	}}
+	shard := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "planetscale.com/v2", "kind": "VitessShard",
+		"metadata": map[string]any{"name": "database-zone1-x80", "namespace": namespace.Name, "uid": "database-shard", "ownerReferences": []any{map[string]any{"apiVersion": root.GetAPIVersion(), "kind": root.GetKind(), "name": root.GetName(), "uid": string(root.GetUID()), "controller": true}}},
+	}}
+	pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database-zone1-x80-0", Namespace: namespace.Name, UID: "database-pod", Labels: map[string]string{"planetscale.com/cluster": "database"}, OwnerReferences: []metav1.OwnerReference{{APIVersion: shard.GetAPIVersion(), Kind: shard.GetKind(), Name: shard.GetName(), UID: shard.GetUID(), Controller: ptr(true)}}}}
+	c := &Client{kube: fake.NewClientset(namespace), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), root, shard)}
+	ownership, err := capacityOwnership(managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "database", ID: databaseID, Project: "project", Environment: "production", Capacity: managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512 << 20}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, owned, err := c.pooledNamespacePod(ctx, pod, map[string]*corev1.Namespace{}, map[string]bool{}, ownership); err != nil || !owned {
+		t.Fatal("exact Vitess controller chain was not recognized", err)
+	}
+	pod.OwnerReferences[0].UID = "foreign-shard"
+	if _, _, owned, err := c.pooledNamespacePod(ctx, pod, map[string]*corev1.Namespace{}, map[string]bool{}, ownership); err != nil || owned {
+		t.Fatal("foreign Vitess controller chain was accepted", err)
+	}
 }
 
 func TestCapacityHeadroomRejectsOverflow(t *testing.T) {
@@ -130,6 +229,13 @@ func TestCapacityHeadroomRejectsOverflow(t *testing.T) {
 	}
 	if _, _, err := capacityWithHeadroom(1, 1<<63-1); err == nil {
 		t.Fatal("memory headroom overflow was accepted")
+	}
+	huge := corev1.PodSpec{Containers: []corev1.Container{
+		{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("9223372036854775807m"), corev1.ResourceMemory: resource.MustParse("9223372036854775807")}}},
+		{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1m"), corev1.ResourceMemory: resource.MustParse("1")}}},
+	}}
+	if _, _, err := podCapacityUsage(huge); err == nil {
+		t.Fatal("pod resource request overflow was accepted")
 	}
 }
 
