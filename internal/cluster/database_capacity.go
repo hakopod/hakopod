@@ -3,7 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"slices"
+	"math"
 	"strings"
 	"time"
 
@@ -17,6 +17,7 @@ import (
 type ManagedPlatformNodeReservation struct {
 	UID        string
 	Capacity   managedplatform.Capacity
+	Ownership  managedplatform.CapacityPoolOwnership
 	Namespaces map[string]managedplatform.CapacityNamespaceOwnership
 }
 
@@ -26,7 +27,93 @@ type DatabaseNodeReservation struct {
 	UID                       string
 	Capacity                  database.Capacity
 	Scopes                    []string
+	Ownership                 managedplatform.CapacityPoolOwnership
 	ManagedPlatformNamespaces map[string]managedplatform.CapacityNamespaceOwnership
+}
+
+type capacityNamespaceIdentity struct {
+	owner       string
+	project     string
+	environment string
+}
+
+type capacityOwnershipIndex struct {
+	applications map[string]capacityNamespaceIdentity
+	databases    map[string]capacityNamespaceIdentity
+	platforms    map[string]managedplatform.CapacityNamespaceOwnership
+}
+
+func capacityOwnership(ownership managedplatform.CapacityPoolOwnership, platforms map[string]managedplatform.CapacityNamespaceOwnership) (capacityOwnershipIndex, error) {
+	result := capacityOwnershipIndex{applications: map[string]capacityNamespaceIdentity{}, databases: map[string]capacityNamespaceIdentity{}, platforms: map[string]managedplatform.CapacityNamespaceOwnership{}}
+	if len(ownership.Workloads) > managedplatform.MaxCapacityPoolWorkloads || len(ownership.PlatformNamespaces)+len(platforms) > managedplatform.MaxCapacityPoolWorkloads {
+		return result, fmt.Errorf("managed capacity pool ownership inventory exceeds its bound")
+	}
+	for _, workload := range ownership.Workloads {
+		if workload.ID == "" || workload.Project == "" || workload.Environment == "" {
+			return result, fmt.Errorf("managed capacity pool workload identity is invalid")
+		}
+		identity := capacityNamespaceIdentity{project: workload.Project, environment: workload.Environment}
+		var namespace string
+		switch workload.Kind {
+		case "application":
+			namespace, identity.owner = Namespace(workload.ID), ownerID(workload.ID)
+			if _, exists := result.applications[namespace]; exists {
+				return result, fmt.Errorf("managed capacity pool application identity is duplicated")
+			}
+			result.applications[namespace] = identity
+		case "database":
+			namespace, identity.owner = DatabaseNamespace(workload.ID), workload.ID
+			if _, exists := result.databases[namespace]; exists {
+				return result, fmt.Errorf("managed capacity pool database identity is duplicated")
+			}
+			result.databases[namespace] = identity
+		default:
+			return result, fmt.Errorf("managed capacity pool workload kind is invalid")
+		}
+	}
+	for namespace, ownership := range ownership.PlatformNamespaces {
+		result.platforms[namespace] = ownership
+	}
+	for namespace, ownership := range platforms {
+		if previous, exists := result.platforms[namespace]; exists && previous.UID != ownership.UID {
+			return result, fmt.Errorf("managed platform namespace ownership is inconsistent")
+		}
+		result.platforms[namespace] = ownership
+	}
+	return result, nil
+}
+
+func (c *Client) pooledNamespacePod(ctx context.Context, pod corev1.Pod, namespaces map[string]*corev1.Namespace, ownership capacityOwnershipIndex) (bool, error) {
+	application, applicationOwned := ownership.applications[pod.Namespace]
+	database, databaseOwned := ownership.databases[pod.Namespace]
+	if !applicationOwned && !databaseOwned {
+		return false, nil
+	}
+	namespace, loaded := namespaces[pod.Namespace]
+	if !loaded {
+		var err error
+		namespace, err = c.kube.CoreV1().Namespaces().Get(ctx, pod.Namespace, metav1.GetOptions{})
+		if err != nil {
+			return false, fmt.Errorf("managed capacity namespace identity is unavailable")
+		}
+		namespaces[pod.Namespace] = namespace
+	}
+	if namespace.UID == "" || namespace.DeletionTimestamp != nil || namespace.Labels[managedBy] != "hakopod" {
+		return false, nil
+	}
+	if applicationOwned {
+		return namespace.Name == "hp-"+application.owner && namespace.Labels[ownerKey] == application.owner && namespace.Labels[scopeKey] == scopeLabel(application.project, application.environment) && pod.Labels[managedBy] == "hakopod" && pod.Labels[ownerKey] == application.owner, nil
+	}
+	return namespace.Name == DatabaseNamespace(database.owner) && namespace.Labels[databaseOwner] == database.owner && namespace.Labels["hakopod.io/project"] == database.project && namespace.Labels["hakopod.io/environment"] == database.environment && pod.Labels[managedBy] == "hakopod" && pod.Labels[databaseOwner] == database.owner, nil
+}
+
+func capacityWithHeadroom(cpu, memory int64) (int64, int64, error) {
+	const cpuHeadroom int64 = 250
+	const memoryHeadroom int64 = 256 << 20
+	if cpu < 1 || memory < 1 || cpu > math.MaxInt64-cpuHeadroom || memory > math.MaxInt64-memoryHeadroom {
+		return 0, 0, fmt.Errorf("node capacity reservation cannot include system headroom")
+	}
+	return cpu + cpuHeadroom, memory + memoryHeadroom, nil
 }
 
 func validManagedPlatformLabels(labels map[string]string, owned managedplatform.CapacityNamespaceOwnership) bool {
@@ -143,12 +230,32 @@ func (c *Client) managedPlatformPodReservation(ctx context.Context, pod corev1.P
 	}
 }
 
-func addManagedPlatformExcess(cpu, memory *int64, usage, envelope map[string]managedplatform.Capacity) {
+func addNodeCapacityUsage(cpu, memory *int64, usedCPU, usedMemory int64) error {
+	if usedCPU < 0 || usedMemory < 0 || *cpu > math.MaxInt64-usedCPU || *memory > math.MaxInt64-usedMemory {
+		return fmt.Errorf("node workload capacity exceeds its arithmetic bound")
+	}
+	*cpu += usedCPU
+	*memory += usedMemory
+	return nil
+}
+
+func podCapacityUsage(spec corev1.PodSpec) (int64, int64, error) {
+	cpu, memory := podRequests(spec)
+	overheadCPU, overheadMemory := spec.Overhead.Cpu().MilliValue(), spec.Overhead.Memory().Value()
+	if err := addNodeCapacityUsage(&cpu, &memory, overheadCPU, overheadMemory); err != nil {
+		return 0, 0, err
+	}
+	return cpu, memory, nil
+}
+
+func addManagedPlatformExcess(cpu, memory *int64, usage, envelope map[string]managedplatform.Capacity) error {
 	for key, actual := range usage {
 		expected := envelope[key]
-		*cpu += max(int64(0), actual.CPUMilli-expected.CPUMilli)
-		*memory += max(int64(0), actual.MemoryBytes-expected.MemoryBytes)
+		if err := addNodeCapacityUsage(cpu, memory, max(int64(0), actual.CPUMilli-expected.CPUMilli), max(int64(0), actual.MemoryBytes-expected.MemoryBytes)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.Node, r DatabaseNodeReservation) error {
@@ -157,34 +264,39 @@ func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.N
 	if r.UID == "" || string(node.UID) != r.UID || r.Capacity.CPUMilli < 1 || r.Capacity.MemoryBytes < 1 || len(r.Scopes) < 1 || len(r.Scopes) > 64 {
 		return fmt.Errorf("database node identity or capacity reservation is invalid")
 	}
+	ownership, err := capacityOwnership(r.Ownership, r.ManagedPlatformNamespaces)
+	if err != nil {
+		return err
+	}
 	// Allocatable already excludes kube/system reservations when configured. Keep
 	// additional headroom for bounded probes and host processes on every node.
-	cpu := r.Capacity.CPUMilli + 250
-	memory := r.Capacity.MemoryBytes + (256 << 20)
+	cpu, memory, err := capacityWithHeadroom(r.Capacity.CPUMilli, r.Capacity.MemoryBytes)
+	if err != nil {
+		return err
+	}
 	pods, err := c.kube.CoreV1().Pods("").List(ctx, metav1.ListOptions{FieldSelector: "spec.nodeName=" + node.Name, Limit: 1001})
 	if err != nil || pods.Continue != "" || len(pods.Items) > 1000 {
 		return fmt.Errorf("database node workload inventory is unavailable or exceeds its bound")
 	}
-	covered := map[string]bool{}
-	platformNamespaces := map[string]*corev1.Namespace{}
+	namespaces := map[string]*corev1.Namespace{}
 	managedUsage := map[string]managedplatform.Capacity{}
 	managedEnvelope := map[string]managedplatform.Capacity{}
 	for _, pod := range pods.Items {
 		if pod.Spec.NodeName != node.Name || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 			continue
 		}
-		inGrant, seen := covered[pod.Namespace]
+		inGrant := false
 		if strings.HasPrefix(pod.Namespace, "managed-platform-") {
-			owned, ok := r.ManagedPlatformNamespaces[pod.Namespace]
+			owned, ok := ownership.platforms[pod.Namespace]
 			if ok {
-				ns, loaded := platformNamespaces[pod.Namespace]
+				ns, loaded := namespaces[pod.Namespace]
 				if !loaded {
 					var e error
 					ns, e = c.kube.CoreV1().Namespaces().Get(ctx, pod.Namespace, metav1.GetOptions{})
 					if e != nil {
 						return fmt.Errorf("managed platform namespace identity is unavailable")
 					}
-					platformNamespaces[pod.Namespace] = ns
+					namespaces[pod.Namespace] = ns
 				}
 				var e error
 				var workload string
@@ -195,31 +307,40 @@ func (c *Client) checkDatabaseNodeReservation(ctx context.Context, node corev1.N
 				}
 				if inGrant {
 					key := pod.Namespace + "\x00" + workload
-					usedCPU, usedMemory := podRequests(pod.Spec)
-					managedUsage[key] = managedUsage[key].Add(managedplatform.Capacity{CPUMilli: usedCPU + pod.Spec.Overhead.Cpu().MilliValue(), MemoryBytes: usedMemory + pod.Spec.Overhead.Memory().Value()})
+					usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+					if usageErr != nil {
+						return usageErr
+					}
+					actual := managedUsage[key]
+					if usageErr = addNodeCapacityUsage(&actual.CPUMilli, &actual.MemoryBytes, usedCPU, usedMemory); usageErr != nil {
+						return usageErr
+					}
+					managedUsage[key] = actual
 					managedEnvelope[key] = envelope
 				}
 			} else {
 				inGrant = false
 			}
-		} else if !seen {
-			if strings.HasPrefix(pod.Namespace, "hdb-") {
-				ns, e := c.kube.CoreV1().Namespaces().Get(ctx, pod.Namespace, metav1.GetOptions{})
-				if e != nil {
-					return fmt.Errorf("database namespace identity is unavailable")
-				}
-				inGrant = ns.Labels[managedBy] == "hakopod" && ns.Labels[databaseOwner] != "" && ns.Name == DatabaseNamespace(ns.Labels[databaseOwner]) && slices.Contains(r.Scopes, ns.Labels["hakopod.io/project"]+"/"+ns.Labels["hakopod.io/environment"])
+		} else {
+			inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, ownership)
+			if err != nil {
+				return err
 			}
-			covered[pod.Namespace] = inGrant
 		}
 		if inGrant {
 			continue
 		}
-		usedCPU, usedMemory := podRequests(pod.Spec)
-		cpu += usedCPU + pod.Spec.Overhead.Cpu().MilliValue()
-		memory += usedMemory + pod.Spec.Overhead.Memory().Value()
+		usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+		if usageErr != nil {
+			return usageErr
+		}
+		if err = addNodeCapacityUsage(&cpu, &memory, usedCPU, usedMemory); err != nil {
+			return err
+		}
 	}
-	addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope)
+	if err = addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope); err != nil {
+		return err
+	}
 	if cpu > node.Status.Allocatable.Cpu().MilliValue() || memory > node.Status.Allocatable.Memory().Value() {
 		return fmt.Errorf("database grants and existing workloads exceed node capacity including system headroom")
 	}
@@ -255,13 +376,19 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 		if err != nil || reservation.UID == "" || string(node.UID) != reservation.UID || reservation.Capacity.CPUMilli < 1 || reservation.Capacity.MemoryBytes < 1 || len(reservation.Namespaces) > managedplatform.MaxCapacityReservations {
 			return fmt.Errorf("managed platform reservation node is unavailable or invalid")
 		}
-		cpu := reservation.Capacity.CPUMilli + 250
-		memory := reservation.Capacity.MemoryBytes + (256 << 20)
+		ownership, ownershipErr := capacityOwnership(reservation.Ownership, reservation.Namespaces)
+		if ownershipErr != nil {
+			return ownershipErr
+		}
+		cpu, memory, headroomErr := capacityWithHeadroom(reservation.Capacity.CPUMilli, reservation.Capacity.MemoryBytes)
+		if headroomErr != nil {
+			return headroomErr
+		}
 		pods, listErr := c.kube.CoreV1().Pods("").List(ctx, metav1.ListOptions{FieldSelector: "spec.nodeName=" + name, Limit: 1001})
 		if listErr != nil || pods.Continue != "" || len(pods.Items) > 1000 {
 			return fmt.Errorf("managed platform node workload inventory is unavailable or exceeds its bound")
 		}
-		platformNamespaces := map[string]*corev1.Namespace{}
+		namespaces := map[string]*corev1.Namespace{}
 		managedUsage := map[string]managedplatform.Capacity{}
 		managedEnvelope := map[string]managedplatform.Capacity{}
 		for _, pod := range pods.Items {
@@ -270,15 +397,15 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 			}
 			inGrant := false
 			if strings.HasPrefix(pod.Namespace, "managed-platform-") {
-				owned, ok := reservation.Namespaces[pod.Namespace]
-				ns, loaded := platformNamespaces[pod.Namespace]
+				owned, ok := ownership.platforms[pod.Namespace]
+				ns, loaded := namespaces[pod.Namespace]
 				if ok && !loaded {
 					var namespaceErr error
 					ns, namespaceErr = c.kube.CoreV1().Namespaces().Get(ctx, pod.Namespace, metav1.GetOptions{})
 					if namespaceErr != nil {
 						return fmt.Errorf("managed platform namespace identity is unavailable")
 					}
-					platformNamespaces[pod.Namespace] = ns
+					namespaces[pod.Namespace] = ns
 				}
 				if ok {
 					var ownershipErr error
@@ -290,20 +417,38 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 					}
 					if inGrant {
 						key := pod.Namespace + "\x00" + workload
-						usedCPU, usedMemory := podRequests(pod.Spec)
-						managedUsage[key] = managedUsage[key].Add(managedplatform.Capacity{CPUMilli: usedCPU + pod.Spec.Overhead.Cpu().MilliValue(), MemoryBytes: usedMemory + pod.Spec.Overhead.Memory().Value()})
+						usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+						if usageErr != nil {
+							return usageErr
+						}
+						actual := managedUsage[key]
+						if usageErr = addNodeCapacityUsage(&actual.CPUMilli, &actual.MemoryBytes, usedCPU, usedMemory); usageErr != nil {
+							return usageErr
+						}
+						managedUsage[key] = actual
 						managedEnvelope[key] = envelope
 					}
+				}
+			} else {
+				inGrant, err = c.pooledNamespacePod(ctx, pod, namespaces, ownership)
+				if err != nil {
+					return err
 				}
 			}
 			if inGrant {
 				continue
 			}
-			usedCPU, usedMemory := podRequests(pod.Spec)
-			cpu += usedCPU + pod.Spec.Overhead.Cpu().MilliValue()
-			memory += usedMemory + pod.Spec.Overhead.Memory().Value()
+			usedCPU, usedMemory, usageErr := podCapacityUsage(pod.Spec)
+			if usageErr != nil {
+				return usageErr
+			}
+			if err = addNodeCapacityUsage(&cpu, &memory, usedCPU, usedMemory); err != nil {
+				return err
+			}
 		}
-		addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope)
+		if err = addManagedPlatformExcess(&cpu, &memory, managedUsage, managedEnvelope); err != nil {
+			return err
+		}
 		if cpu > node.Status.Allocatable.Cpu().MilliValue() || memory > node.Status.Allocatable.Memory().Value() {
 			return fmt.Errorf("managed platform grants and existing workloads exceed node capacity including system headroom")
 		}

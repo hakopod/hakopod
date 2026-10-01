@@ -97,6 +97,42 @@ func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 		t.Fatal("pod that differs from its claimed controller template disappeared from capacity accounting")
 	}
 }
+
+func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
+	ctx := context.Background()
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	applicationID := "application-fixture"
+	applicationOwner := ownerID(applicationID)
+	applicationNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(applicationID), UID: "application-namespace", Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner, scopeKey: scopeLabel("project", "production")}}}
+	applicationPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "application", Namespace: applicationNamespace.Name, Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "application", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
+	databaseID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	databaseNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(databaseID), UID: "database-namespace", Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID, "hakopod.io/project": "project", "hakopod.io/environment": "production"}}}
+	databasePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: databaseNamespace.Name, Labels: map[string]string{managedBy: "hakopod", databaseOwner: databaseID}}, Spec: corev1.PodSpec{NodeName: node.Name, Containers: []corev1.Container{{Name: "database", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
+	c := &Client{kube: fake.NewClientset(node, applicationNamespace, applicationPod, databaseNamespace, databasePod)}
+	ownership := managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "application", ID: applicationID, Project: "project", Environment: "production"}, {Kind: "database", ID: databaseID, Project: "project", Environment: "production"}}}
+	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1 << 30}, Ownership: ownership}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
+		t.Fatal(err)
+	}
+	spoof := applicationPod.DeepCopy()
+	spoof.Name, spoof.Labels = "unowned", map[string]string{managedBy: "hakopod"}
+	if _, err := c.kube.CoreV1().Pods(applicationNamespace.Name).Create(ctx, spoof, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("unowned application pod disappeared from external workload accounting")
+	}
+}
+
+func TestCapacityHeadroomRejectsOverflow(t *testing.T) {
+	if _, _, err := capacityWithHeadroom(1<<63-1, 1); err == nil {
+		t.Fatal("CPU headroom overflow was accepted")
+	}
+	if _, _, err := capacityWithHeadroom(1, 1<<63-1); err == nil {
+		t.Fatal("memory headroom overflow was accepted")
+	}
+}
+
 func TestManagedClusterFileIsStrictAndBounded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nodes.toml")
 	valid := "schema_version=1\n[[nodes]]\nname='node-a'\nuid='uid-a'\n"
