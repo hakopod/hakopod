@@ -1,22 +1,23 @@
-Hakopod 0.1.0-alpha.45 adds Hakopod Edge traffic rules and application-owned TLS issuers.
+Hakopod 0.1.0-alpha.46 improves certificate recovery, configuration editing and runner setup.
 
-- Installation administrators can configure Hakopod Edge through the HAProxy editor in Settings. Ordered hostname and path rules support IPv4/IPv6 allow and deny lists, per-client rate limits and country restrictions supplied by an explicitly trusted proxy. Protection remains disabled until enabled and reviewed.
-- Edge changes use durable, audited revisions and optimistic concurrency. Applied status requires acknowledgement from the running HAProxy workers; saving a ConfigMap alone does not mark a policy active. Rate limits apply separately to each HTTP/HTTPS listener and ingress process.
-- Application certificate settings discover the available default issuer and application-owned issuers. Authorized users can create an application HTTP-01 issuer, select it for a service or upload a hostname-matching certificate and key. Cloud keeps application issuer access separate from shared operator settings.
-- Configuration and certificate forms preserve drafts, including entered certificate data, after failed requests. Review screens, error recovery and narrow-screen layouts keep actions reachable.
+- Application certificate issuers can be created after a failed or cancelled deployment, allowing missing issuer configuration to be repaired before redeployment. Deployment, revision, deletion and volume-resize fences remain enforced.
+- New HTTP-01 issuers use RuntimeDefault seccomp for restricted solver pods. Identical retries reuse older managed issuers and account keys without silently changing their configuration; operators must correct older solver profiles where restricted Pod Security requires it.
+- Trusted embedded operators can disable the private HAProxy HTTPS redirect behind an HTTPS-enforcing front proxy. Self-hosted and tenant runtimes retain redirects by default; certificate and issuer attachments are preserved.
+- TOML and YAML configuration editors use Monaco with Catppuccin themes. Platform configuration and runner setup use compact pages, clear help and draft-preserving error recovery.
+- The qualified MongoDB TLS scaling controller is published with content verification before its immutable version tag is assigned.
 
-Hakopod Edge uses the existing HAProxy ingress. Country rules rely on trusted proxy headers; the release does not add a GeoIP database. Automatic certificates require cert-manager, an explicit ACME contact, correct DNS and reachable challenge ports. Existing installations retain their issuer configuration; upgrading alone does not create a default issuer.
+Automatic certificates require cert-manager, an explicit ACME contact, correct DNS and reachable challenge ports. Existing installations retain their issuer configuration; upgrading alone does not create or migrate issuers.
 
 ## Installation and upgrade
 
 ```sh
 curl --fail --location --proto '=https' --tlsv1.2 \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.45/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.45
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.46/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.46
 ```
 
-Direct upgrades are supported from alpha.42 and alpha.44, the last two published, installable versions. Older installations need supported intermediate releases. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.44 and alpha.45, the last two published, installable versions. Older installations need supported intermediate releases. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
 
-Publication requires source tests, native package smoke checks and the complete fresh-install and upgrade matrix on AMD64 and ARM64. Edge and certificate behavior passed the named development-cluster acceptance checks. Public ACME issuance and production configuration still require validation on the target installation.
+Publication requires source tests, native package smoke checks and the complete fresh-install and upgrade matrix on AMD64 and ARM64. Public ACME issuance and production configuration require validation on the target installation.
 
 Cloud packages are released separately. This public engine release does not deploy or upgrade a Cloud installation.
