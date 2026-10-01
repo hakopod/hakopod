@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/supabase/supavisor.git",
+  "upstream_tag": "v2.9.12",
+  "upstream_commit": "e8719d9ac5a43604c46d2d9e15bb34c76dea8f12",
+  "upstream_source_sha256": "8b883bd6cc72db080ac4e6abfa90f11ba433bae41e3e8e5e4618ff49199ab098",
+  "upstream_linux_amd64_image_digest": "sha256:68ec476a3cfed150fb067995e12bd751b4dd5872acb9f7d9ce762d63ffd4f64d",
+  "patch": "supavisor-v2.9.12-hakopod-tls.patch",
+  "patch_sha256": "0e32aa27bfbc8b8a59be2ce2b71ea71a2edb3bf69b13e0ac6762b01598724082",
+  "builder_digest": "sha256:8723523aac87dca52da6bb5a8a766099aef6586c708627c51e82d71608ca8951",
+  "runner_digest": "sha256:e831d9a884d63734fe3dd9c491ed9a5a3d4c6a6d32c5b14f2067357c49b0b7e1",
+  "debian_snapshot": "20250203T000000Z",
+  "rust_version": "1.84.1",
+  "hex_version": "2.5.1",
+  "rebar3_version": "3.24.0",
+  "built_oci": {
+    "platform": "linux/amd64",
+    "manifest_digest": "sha256:94712de6f5752f1e43f8ec3096d2b51e62475406b77982052b2c0f1179cc7d4a",
+    "config_digest": "sha256:4c2a423545f42839fa1d6daa0014b0cecd683cdf5bd57b91ed5bd69ad2ecfa15",
+    "tar_sha256": "sha256:e12aad282eca721d08a5b35d0052aa1156a7518c68deaf7e89beaeaa4d68714c",
+    "user": "65534:65534",
+    "entrypoint": ["/usr/bin/tini", "-s", "-g", "--", "/app/limits.sh"],
+    "cmd": ["/app/bin/server"]
+  },
+  "verification": {
+    "format": "passed",
+    "focused_tls_options": "passed",
+    "native_tls_acceptance": "pending"
+  },
+  "qualification": "The image remains unqualified until correct-CA, wrong-CA, wrong-host and pg_stat_ssl native acceptance pass."
+}
