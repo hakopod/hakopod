@@ -192,6 +192,49 @@ func applicationACMESpec(email, ingressClass string, production bool, secret str
 	return map[string]any{"acme": map[string]any{"email": email, "server": server, "privateKeySecretRef": map[string]string{"name": secret}, "solvers": []any{map[string]any{"http01": map[string]any{"ingress": ingress}}}}}
 }
 
+// Older managed issuers omitted seccompProfile. Accept that sole difference on
+// retry without changing the stored issuer or weakening other immutable fields.
+func applicationIssuerSpecMatches(existing, desired any) bool {
+	if reflect.DeepEqual(existing, desired) {
+		return true
+	}
+	// Clone the generated spec so compatibility does not alter the new default.
+	raw, err := json.Marshal(desired)
+	if err != nil {
+		return false
+	}
+	var legacy map[string]any
+	if json.Unmarshal(raw, &legacy) != nil {
+		return false
+	}
+	acme, ok := legacy["acme"].(map[string]any)
+	if !ok {
+		return false
+	}
+	solvers, ok := acme["solvers"].([]any)
+	if !ok || len(solvers) != 1 {
+		return false
+	}
+	solver, ok := solvers[0].(map[string]any)
+	if !ok {
+		return false
+	}
+	var current any = solver
+	for _, key := range []string{"http01", "ingress", "podTemplate", "spec", "securityContext"} {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return false
+		}
+		current = object[key]
+	}
+	security, ok := current.(map[string]any)
+	if !ok {
+		return false
+	}
+	delete(security, "seccompProfile")
+	return reflect.DeepEqual(existing, legacy)
+}
+
 // Callers serialize creation per application across processes before entering this
 // method so the 16 issuer limit also holds under concurrent requests.
 func (c *Client) CreateApplicationTLSIssuer(ctx context.Context, t Target, name, email string, production bool) (TLSIssuer, error) {
@@ -232,7 +275,7 @@ func (c *Client) CreateApplicationTLSIssuer(ctx context.Context, t Target, name,
 		if existing.Metadata.Namespace != Namespace(t.ApplicationID) || owned(&existing.Metadata, t) != nil {
 			return TLSIssuer{}, fmt.Errorf("certificate issuer is not owned by this application")
 		}
-		if !reflect.DeepEqual(document.Spec, desiredMap) {
+		if !applicationIssuerSpecMatches(document.Spec, desiredMap) {
 			return TLSIssuer{}, fmt.Errorf("certificate issuer configuration is immutable; choose a new name")
 		}
 	} else {

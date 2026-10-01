@@ -20,8 +20,13 @@ func TestApplicationIssuersIsolationAndImmutableRetry(t *testing.T) {
 	var issuer map[string]any
 	var secret corev1.Secret
 	posts := 0
+	secretPosts := 0
+	writes := 0
 	orphanCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes++
+		}
 		w.Header().Set("Content-Type", "application/json")
 		write := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 		missing := func() {
@@ -33,6 +38,7 @@ func TestApplicationIssuersIsolationAndImmutableRetry(t *testing.T) {
 			write(corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(target.ApplicationID), Labels: labelsFor(target, "")}})
 		case strings.Contains(r.URL.Path, "/secrets"):
 			if r.Method == "POST" {
+				secretPosts++
 				_ = json.NewDecoder(r.Body).Decode(&secret)
 				write(secret)
 			} else if r.URL.Query().Get("limit") != "" {
@@ -94,6 +100,32 @@ func TestApplicationIssuersIsolationAndImmutableRetry(t *testing.T) {
 		t.Fatalf("retry created %d issuers", posts)
 	}
 	assertIssuerSolverSecurityContext(t, issuer)
+	// A pre-upgrade issuer differs only by its missing managed seccomp default.
+	acme := issuer["spec"].(map[string]any)["acme"].(map[string]any)
+	solver := acme["solvers"].([]any)[0].(map[string]any)
+	security := solver["http01"].(map[string]any)["ingress"].(map[string]any)["podTemplate"].(map[string]any)["spec"].(map[string]any)["securityContext"].(map[string]any)
+	profile := security["seccompProfile"]
+	delete(security, "seccompProfile")
+	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "app@example.test", false); err != nil {
+		t.Fatalf("legacy issuer retry: %v", err)
+	}
+	if _, present := security["seccompProfile"]; present || posts != 1 || secretPosts != 1 || writes != 2 {
+		t.Fatal("legacy retry changed issuer or account key")
+	}
+	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "changed@example.test", false); err == nil {
+		t.Fatal("legacy retry accepted a changed email")
+	}
+	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "app@example.test", true); err == nil {
+		t.Fatal("legacy retry accepted a changed ACME environment")
+	}
+	security["seccompProfile"] = map[string]any{"type": "Unconfined"}
+	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "app@example.test", false); err == nil {
+		t.Fatal("retry accepted an explicit non-default seccomp profile")
+	}
+	if posts != 1 || secretPosts != 1 || writes != 2 {
+		t.Fatal("conflicting retries changed issuer or account key")
+	}
+	security["seccompProfile"] = profile
 	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "changed@example.test", false); err == nil {
 		t.Fatal("changed immutable configuration")
 	}
