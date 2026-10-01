@@ -282,7 +282,22 @@ function Nodes() {
         ) : !filtered.length ? (
           <Empty icon="search" title="No matching nodes" description="Try a different node name." />
         ) : (
-          <div className="table-container ops-table">
+          <div
+            className="table-container ops-table focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--navigation-active)]"
+            tabIndex={0}
+            role="region"
+            aria-label="Node table. Use left and right arrow keys to view all columns."
+            onKeyDown={(event) => {
+              const scroll = event.currentTarget
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                event.preventDefault()
+                scroll.scrollBy({ left: event.key === 'ArrowRight' ? 80 : -80 })
+              } else if (event.key === 'Home' || event.key === 'End') {
+                event.preventDefault()
+                scroll.scrollTo({ left: event.key === 'Home' ? 0 : scroll.scrollWidth })
+              }
+            }}
+          >
             <table>
               <thead>
                 <tr>

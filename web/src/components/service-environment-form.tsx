@@ -15,7 +15,7 @@ import {
   sameEnvironment,
   type Environment,
 } from '../lib/service-environment'
-import { FormHint, FormPage, FormSection } from './form-page'
+import { FormPage, FormSection } from './form-page'
 import { DiffTable } from './deploy-dialog'
 import { Icon } from './icons'
 import { Note, RequestError } from './shared'
@@ -171,29 +171,22 @@ export function ServiceEnvironmentForm({
       (change) => change.field === 'secrets' || change.field === 'inject_env',
     ) || []
   const secrets = Object.entries(service.secrets || {})
+  const inherited = serviceName
+    ? Object.keys({
+        ...(application.spec.inject_env ? application.spec.env : {}),
+        ...application.spec.secrets,
+      }).sort()
+    : []
   return (
     <FormPage
       title={reviewed ? 'Review environment changes' : `${label} environment`}
-      description={`${application.name} · Application defaults are inherited by services; service values take precedence.`}
+      description={`${application.name} · Plain values may be empty. Secret values remain write-only, and service values take precedence over inherited defaults.`}
       icon="code"
       breadcrumbs={[
         { label: 'Applications', to: `/projects/${encodeURIComponent(application.project)}` },
         { label: application.name, to: `/applications/${application.id}` },
         { label: `${label} environment` },
       ]}
-      help={
-        <>
-          <FormHint title="Keep credentials in secrets">
-            Plain variables are stored in application revisions. Imported passwords, tokens and
-            credential URLs are stored as secret references when you review, before deployment.
-          </FormHint>
-          <FormHint title="A reviewed deployment">
-            Changes create an immutable revision. Application defaults update all inheriting
-            services; service overrides update that service. Your draft stays here if validation or
-            deployment fails.
-          </FormHint>
-        </>
-      }
     >
       <div className="form-body service-environment-form">
         {reviewed ? (
@@ -292,6 +285,78 @@ export function ServiceEnvironmentForm({
                   </span>
                 </label>
               )}
+              {(secrets.length > 0 || inherited.length > 0) && (
+                <details className="mb-4 grid gap-2">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Attached context
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      {secrets.length > 0 &&
+                        `${secrets.length} secret reference${secrets.length === 1 ? '' : 's'}`}
+                      {secrets.length > 0 && inherited.length > 0 && ' · '}
+                      {inherited.length > 0 &&
+                        `${inherited.length} inherited default${inherited.length === 1 ? '' : 's'}`}
+                    </span>
+                  </summary>
+                  <div className="grid gap-3 border-l-2 border-border pl-3">
+                    {secrets.length > 0 && (
+                      <div className="grid gap-1">
+                        <strong className="text-sm">Secret references</strong>
+                        <dl className="env-secret-references">
+                          {secrets.map(([name, reference]) => (
+                            <div key={name}>
+                              <dt>
+                                <code>{name}</code>
+                              </dt>
+                              <dd>
+                                <Icon name="lock" size={13} />
+                                <code>{secretReference(reference)}</code>
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <Button asChild className="justify-self-start">
+                          <Link
+                            to="/applications/$applicationId"
+                            params={{ applicationId: application.id }}
+                            search={{ service: serviceName, tab: 'secrets' }}
+                          >
+                            Manage application secrets
+                            <Icon name="arrow" size={14} />
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                    {inherited.length > 0 && (
+                      <div className="grid gap-1">
+                        <strong className="text-sm">Inherited from application</strong>
+                        <p className="field-help">
+                          Add a service variable with the same name to override a default. Empty
+                          strings also override defaults.
+                        </p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {inherited.map((name) => (
+                            <code key={name}>
+                              {name}
+                              {rows.some((row) => row.name === name) ||
+                              Object.hasOwn(service.secrets || {}, name)
+                                ? ' · overridden'
+                                : ''}
+                            </code>
+                          ))}
+                        </div>
+                        <Button asChild className="justify-self-start">
+                          <Link
+                            to="/applications/$applicationId/environment"
+                            params={{ applicationId: application.id }}
+                          >
+                            Edit application variables
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
               <EnvironmentFields
                 rows={rows}
                 onBusyChange={setBusy}
@@ -302,74 +367,6 @@ export function ServiceEnvironmentForm({
                 label={label}
                 disabled={busy}
               />
-              {serviceName &&
-                Object.keys({
-                  ...(application.spec.inject_env ? application.spec.env : {}),
-                  ...application.spec.secrets,
-                }).length > 0 && (
-                  <div className="mt-4 grid gap-2">
-                    <strong className="text-sm">Inherited from application</strong>
-                    <p className="field-help">
-                      Add a service variable with the same name to override a default. Empty strings
-                      also override defaults.
-                    </p>
-                    {Object.keys({
-                      ...(application.spec.inject_env ? application.spec.env : {}),
-                      ...application.spec.secrets,
-                    })
-                      .sort()
-                      .map((name) => (
-                        <code key={name}>
-                          {name}
-                          {rows.some((row) => row.name === name) ||
-                          Object.hasOwn(service.secrets || {}, name)
-                            ? ' · overridden'
-                            : ''}
-                        </code>
-                      ))}
-                    <Button asChild>
-                      <Link
-                        to="/applications/$applicationId/environment"
-                        params={{ applicationId: application.id }}
-                      >
-                        Edit application variables
-                      </Link>
-                    </Button>
-                  </div>
-                )}
-            </FormSection>
-            <FormSection
-              title="Secret references"
-              description="Managed separately from plain variables. Secret values are never shown here."
-              icon="lock"
-            >
-              {secrets.length ? (
-                <dl className="env-secret-references">
-                  {secrets.map(([name, reference]) => (
-                    <div key={name}>
-                      <dt>
-                        <code>{name}</code>
-                      </dt>
-                      <dd>
-                        <Icon name="lock" size={13} />
-                        <code>{secretReference(reference)}</code>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <p className="field-help">No secret references attached at this scope.</p>
-              )}
-              <Button asChild>
-                <Link
-                  to="/applications/$applicationId"
-                  params={{ applicationId: application.id }}
-                  search={{ service: serviceName, tab: 'secrets' }}
-                >
-                  Manage application secrets
-                  <Icon name="arrow" size={14} />
-                </Link>
-              </Button>
             </FormSection>
             {conflict && (
               <div className="env-conflict" role="alert">

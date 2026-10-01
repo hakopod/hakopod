@@ -150,12 +150,12 @@ export function EnvironmentFields({
     const valueLabel = `${label} ${secret ? 'secret' : 'variable'} ${index + 1}`
     return (
       <div
-        className="grid min-w-0 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
+        className="grid min-w-0 items-start gap-2 border-b border-border pb-3 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(10rem,1fr)_minmax(0,2fr)_auto] sm:gap-x-3"
         key={row.id}
         data-env-row={row.id}
       >
-        <label>
-          Name
+        <label className="grid min-w-0 gap-1 text-sm font-medium">
+          <span className="sm:sr-only">Name</span>
           <Input
             aria-label={`${valueLabel} name`}
             data-env-control="name"
@@ -171,8 +171,8 @@ export function EnvironmentFields({
           />
         </label>
         <div className="grid min-w-0 gap-1">
-          <label>
-            Value
+          <label className="grid min-w-0 gap-1 text-sm font-medium">
+            <span className="sm:sr-only">{secret ? 'Secret value' : 'Value'}</span>
             {protectedValue && !visible ? (
               <Input
                 type="password"
@@ -200,7 +200,13 @@ export function EnvironmentFields({
                 disabled={locked}
                 rows={secret ? 2 : 1}
                 maxLength={secret ? 65536 : 4096}
-                placeholder={secret ? 'Paste a secret, including multiline values' : 'production'}
+                placeholder={
+                  secret
+                    ? 'Paste a secret, including multiline values'
+                    : row.value === ''
+                      ? 'Empty value'
+                      : 'Value'
+                }
                 autoComplete="off"
                 spellCheck={false}
                 onChange={(event) => changeValue(row, event.target.value)}
@@ -209,11 +215,15 @@ export function EnvironmentFields({
               />
             )}
           </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 sm:pt-1">
+          <span className="mr-1 text-xs text-muted-foreground">
+            {secret ? 'Secret' : 'Variable'}
+          </span>
           {protectedValue ? (
             <Button
               variant="ghost"
               size="sm"
-              className="justify-self-start"
               disabled={locked}
               aria-label={`${visible ? 'Hide' : 'Show'} ${valueLabel} value`}
               aria-pressed={visible}
@@ -232,13 +242,12 @@ export function EnvironmentFields({
                 })
               }}
             >
-              {visible ? 'Hide value' : 'Show value'}
+              {visible ? 'Hide' : 'Show'}
             </Button>
           ) : allowSecrets ? (
             <Button
               variant="ghost"
               size="sm"
-              className="justify-self-start"
               disabled={locked}
               aria-label={`Store ${valueLabel} as secret`}
               onClick={() => {
@@ -246,68 +255,47 @@ export function EnvironmentFields({
                 update(row.id, { secret: true })
               }}
             >
-              Store as secret
+              Make secret
             </Button>
           ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={locked}
+            aria-label={`Remove ${valueLabel}`}
+            data-env-control="remove"
+            onBlur={(event) => promote(row, event)}
+            onClick={() => onChange(rows.filter((item) => item.id !== row.id))}
+          >
+            <Icon name="trash" size={14} />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={locked}
-          className="sm:mt-6"
-          aria-label={`Remove ${valueLabel}`}
-          data-env-control="remove"
-          onBlur={(event) => promote(row, event)}
-          onClick={() => onChange(rows.filter((item) => item.id !== row.id))}
-        >
-          <Icon name="trash" size={14} />
-        </Button>
       </div>
     )
   }
   return (
     <div ref={container} className="grid min-w-0 gap-4">
       {error && <RequestError error={error} />}
-      <section className="grid min-w-0 gap-3" aria-label={`${label} environment variables`}>
-        <h3 className="text-sm font-semibold">
-          Environment variables{' '}
-          <span className="font-normal text-muted-foreground">{plainRows.length} / 128</span>
-        </h3>
-        {plainRows.map((row, index) => renderRow(row, index, false))}
-        <Button
-          className="justify-self-start"
-          disabled={locked || plainRows.length >= 128}
-          onClick={() => onChange([...rows, { id: crypto.randomUUID(), name: '', value: '' }])}
-        >
-          <Icon name="plus" size={14} />
-          Add variable
-        </Button>
-      </section>
-      {allowSecrets && (
-        <section className="grid min-w-0 gap-3" aria-label={`${label} secrets`}>
-          <h3 className="text-sm font-semibold">
-            Secrets{' '}
-            <span className="font-normal text-muted-foreground">{secretRows.length} / 32</span>
-          </h3>
-          {secretRows.map((row, index) => renderRow(row, index, true))}
+      <div className="grid min-w-0 gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
-            className="justify-self-start"
-            disabled={locked || secretRows.length >= 32}
-            onClick={() =>
-              onChange([...rows, { id: crypto.randomUUID(), name: '', value: '', secret: true }])
-            }
+            disabled={locked || plainRows.length >= 128}
+            onClick={() => onChange([...rows, { id: crypto.randomUUID(), name: '', value: '' }])}
           >
             <Icon name="plus" size={14} />
-            Add secret
+            Add variable
           </Button>
-          <p className="field-help">
-            Secret values are stored separately. Only their references enter your configuration and
-            deployment history.
-          </p>
-        </section>
-      )}
-      <div className="grid min-w-0 gap-2">
-        <div className="flex flex-wrap gap-2">
+          {allowSecrets && (
+            <Button
+              disabled={locked || secretRows.length >= 32}
+              onClick={() =>
+                onChange([...rows, { id: crypto.randomUUID(), name: '', value: '', secret: true }])
+              }
+            >
+              <Icon name="plus" size={14} />
+              Add secret
+            </Button>
+          )}
           <input
             ref={fileInput}
             type="file"
@@ -347,36 +335,38 @@ export function EnvironmentFields({
           <Button disabled={locked} onClick={() => fileInput.current?.click()}>
             {importing ? 'Importing…' : 'Import .env'}
           </Button>
+          <details className="text-sm">
+            <summary className="cursor-pointer py-2">Paste .env</summary>
+            <div className="mt-2 grid min-w-0 gap-2">
+              <Textarea
+                aria-label={`Paste ${label} .env`}
+                value={paste}
+                onChange={(event) => setPaste(event.target.value)}
+                onPaste={(event) => {
+                  if (!paste) pasteFile(event, true)
+                }}
+                disabled={locked}
+                rows={4}
+                placeholder={'APP_ENV=production\nDATABASE_PASSWORD=your-secret'}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <Button
+                className="justify-self-start"
+                disabled={locked || !paste.trim()}
+                onClick={() => {
+                  try {
+                    importText(paste)
+                  } catch (error) {
+                    showError(error)
+                  }
+                }}
+              >
+                Import pasted values
+              </Button>
+            </div>
+          </details>
         </div>
-        <details className="grid gap-2">
-          <summary className="cursor-pointer text-sm">Paste .env</summary>
-          <Textarea
-            aria-label={`Paste ${label} .env`}
-            value={paste}
-            onChange={(event) => setPaste(event.target.value)}
-            onPaste={(event) => {
-              if (!paste) pasteFile(event, true)
-            }}
-            disabled={locked}
-            rows={4}
-            placeholder={'APP_ENV=production\nDATABASE_PASSWORD=your-secret'}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <Button
-            className="mt-2"
-            disabled={locked || !paste.trim()}
-            onClick={() => {
-              try {
-                importText(paste)
-              } catch (error) {
-                showError(error)
-              }
-            }}
-          >
-            Import pasted variables
-          </Button>
-        </details>
         {importMessage && (
           <p className="field-help" role={importError ? 'alert' : 'status'}>
             {importMessage}
@@ -384,12 +374,40 @@ export function EnvironmentFields({
         )}
         <p className="field-help">
           {allowSecrets
-            ? 'Paste or import .env to fill both sections. Detected passwords, tokens, private keys and credential URLs move to Secrets automatically. You can also mark any other value as a secret.'
-            : 'These values replace Compose placeholders, not service variables. Use application secret references for passwords and tokens.'}{' '}
-          Existing names are kept; duplicates must be resolved. References such as ${'{NAME}'} stay
-          literal.
+            ? 'Imports keep existing names and promote detected passwords, tokens, private keys and credential URLs to secrets. Resolve duplicates before review.'
+            : 'Imports keep existing names; resolve duplicates before review. These values replace Compose placeholders, not service variables.'}
         </p>
       </div>
+      <section className="grid min-w-0 gap-3" aria-label={`${label} environment variables`}>
+        <h3 className="text-sm font-semibold">
+          Environment variables{' '}
+          <span className="font-normal text-muted-foreground">{plainRows.length} / 128</span>
+        </h3>
+        <div className="hidden grid-cols-[minmax(10rem,1fr)_minmax(0,2fr)_auto] gap-x-3 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid">
+          <span>Name</span>
+          <span>Value</span>
+          <span>Actions</span>
+        </div>
+        {plainRows.map((row, index) => renderRow(row, index, false))}
+      </section>
+      {allowSecrets && (
+        <section className="grid min-w-0 gap-3" aria-label={`${label} secrets`}>
+          <h3 className="text-sm font-semibold">
+            Secrets{' '}
+            <span className="font-normal text-muted-foreground">{secretRows.length} / 32</span>
+          </h3>
+          <div className="hidden grid-cols-[minmax(10rem,1fr)_minmax(0,2fr)_auto] gap-x-3 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid">
+            <span>Name</span>
+            <span>Value</span>
+            <span>Actions</span>
+          </div>
+          {secretRows.map((row, index) => renderRow(row, index, true))}
+          <p className="field-help">
+            Secret values are stored separately. Only their references enter your configuration and
+            deployment history.
+          </p>
+        </section>
+      )}
     </div>
   )
 }
