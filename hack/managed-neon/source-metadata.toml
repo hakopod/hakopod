@@ -1,0 +1,34 @@
+schema_version = 1
+upstream_repository = "https://github.com/neondatabase/neon.git"
+upstream_commit = "fa504217c61bbcaf5c512d75830564541f917f8f"
+proxy_patch = "patches/neon-proxy-control-plane-timeout.patch"
+proxy_patch_sha256 = "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
+ownership_patch = "patches/neon-provider-ownership.patch"
+ownership_patch_sha256 = "a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
+frozen_combined_patch_sha256 = "bb37c2f06bad5aecdfe6e17a0cc19325613497b6e63d1b232b433ade2518fe30"
+combined_candidate_tree = "8fcaa8600a9da41870d6f74478cfdfcd53fb2dd6"
+
+# The ownership patch is intentionally derived after applying the existing proxy
+# patch. Applying the two patches produces the same Git tree as the frozen
+# combined patch above; this keeps the proxy timeout provenance independent.
+
+[source_archive]
+sha256 = "0a364b86e81faefca56c7dcf56e2057767c63cb396d653775d7596fcd343e209"
+size_bytes = 113605826
+member_count = 30746
+repeat_comparison = "PASS"
+global_member_order = "PASS"
+location = "/srv/hakopod-backup-scratch/neon-packaging-v2/output/neon-provider-source.tar.gz"
+
+[qualification]
+images_built = false
+images_published = false
+cluster_qualified = false
+
+[[rejected_artifacts]]
+sha256 = "7a2f44a2a4c676be3ad64ef0ea52b3b144020d619facec4ad10ab8c94027020f"
+reason = "Provenance claimed sorted tar members, but the archive member order was not sorted."
+
+[[rejected_artifacts]]
+sha256 = "d0e4288c499b3c1ac92a03696d0dd38c3873b979af268947a5caa79bd045b38a"
+reason = "Superseded VM source archive included build outputs and lacked a committed reproducible recipe."

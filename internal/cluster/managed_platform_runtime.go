@@ -14,7 +14,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
-const maxManagedPlatformSnapshotBytes = 60 << 10
+const maxManagedPlatformSnapshotBytes = managedplatform.MaxManagedPlatformSnapshotBytes
 
 type ManagedPlatformSnapshot struct {
 	Version      int                     `json:"version"`
@@ -57,7 +57,7 @@ func OpenManagedPlatformSnapshot(key []byte, op store.ManagedPlatformOperation) 
 		return snapshot, err
 	}
 	gcm, err := cipher.NewGCM(block)
-	if err != nil || len(op.EncryptedSnapshot) < gcm.NonceSize() || len(op.EncryptedSnapshot) > maxManagedPlatformSnapshotBytes+gcm.NonceSize()+gcm.Overhead() {
+	if err != nil || len(op.EncryptedSnapshot) < gcm.NonceSize() || len(op.EncryptedSnapshot) > managedplatform.MaxManagedPlatformEncryptedSnapshotBytes {
 		return snapshot, fmt.Errorf("managed platform snapshot is invalid")
 	}
 	nonce, data := op.EncryptedSnapshot[:gcm.NonceSize()], op.EncryptedSnapshot[gcm.NonceSize():]

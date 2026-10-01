@@ -16,6 +16,11 @@ import (
 
 const MaxComponents = 32
 
+const (
+	MaxManagedPlatformSnapshotBytes          = 4 << 20
+	MaxManagedPlatformEncryptedSnapshotBytes = MaxManagedPlatformSnapshotBytes + 12 + 16
+)
+
 type SecretReference struct {
 	Name     string `json:"name" toml:"name"`
 	Revision int64  `json:"revision" toml:"revision"`

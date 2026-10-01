@@ -581,7 +581,18 @@ func (r *NeonRuntime) requestOwned(ctx context.Context, target NeonControlTarget
 	return r.requestWithOwnership(ctx, target, method, path, body, ownershipToken)
 }
 
+func (r *NeonRuntime) requestPreparedDelete(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken string) ([]byte, int, error) {
+	if !validNeonComputeOwnershipToken(ownershipToken) || !validNeonComputeOwnershipToken(deletionToken) {
+		return nil, 0, fmt.Errorf("Neon ownership or deletion token is invalid")
+	}
+	return r.requestWithTokens(ctx, target, method, path, body, ownershipToken, deletionToken)
+}
+
 func (r *NeonRuntime) requestWithOwnership(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken string) ([]byte, int, error) {
+	return r.requestWithTokens(ctx, target, method, path, body, ownershipToken, "")
+}
+
+func (r *NeonRuntime) requestWithTokens(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken string) ([]byte, int, error) {
 	requestURI, err := url.ParseRequestURI(path)
 	if err != nil || !strings.HasPrefix(requestURI.Path, "/") || requestURI.Fragment != "" {
 		return nil, 0, fmt.Errorf("invalid Neon control path")
@@ -603,6 +614,9 @@ func (r *NeonRuntime) requestWithOwnership(ctx context.Context, target NeonContr
 	}
 	if ownershipToken != "" {
 		req.Header.Set(neonOwnershipHeader, ownershipToken)
+	}
+	if deletionToken != "" {
+		req.Header.Set(neonDeletionHeader, deletionToken)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {

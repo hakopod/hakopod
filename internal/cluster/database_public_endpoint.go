@@ -69,6 +69,9 @@ func databasePublicEndpointModels(d database.Resource, endpoint database.PublicE
 			if d.Spec.Engine == "mongodb" {
 				service = mongodbPublicEndpointServiceName(endpoint, member)
 			}
+			if d.Spec.Engine == "redis" {
+				service = redisPublicEndpointServiceName(endpoint, member)
+			}
 		}
 		models = append(models, map[string]any{
 			"name":    frontend,
@@ -481,6 +484,11 @@ func (c *Client) ReconcileDatabasePublicEndpoint(ctx context.Context, d database
 	if err := c.reserveDatabasePublicEndpoint(ctx, d, endpoint, before); err != nil {
 		return err
 	}
+	if d.Spec.Engine == "redis" {
+		if err := c.reconcileRedisPublicMemberServices(ctx, d, endpoint, true, before); err != nil {
+			return err
+		}
+	}
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
 	if err != nil || ns.UID == "" || ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		return fmt.Errorf("database public endpoint namespace ownership changed")
@@ -560,6 +568,11 @@ func (c *Client) RemoveDatabasePublicEndpoint(ctx context.Context, d database.Re
 	}
 	if d.Spec.Engine == "mongodb" {
 		if err := c.reconcileMongoDBPublicEndpoint(ctx, d, endpoint, false, before); err != nil {
+			return err
+		}
+	}
+	if d.Spec.Engine == "redis" {
+		if err := c.reconcileRedisPublicMemberServices(ctx, d, endpoint, false, before); err != nil {
 			return err
 		}
 	}
@@ -649,6 +662,15 @@ func (c *Client) ObserveDatabasePublicEndpoint(ctx context.Context, d database.R
 		result.Configured = true
 		result.CheckedAt = &stamp
 		result.Message = "Route configured and reload acknowledged. External reachability has not been verified."
+		if d.Spec.Engine == "redis" && d.Spec.Mode == "cluster" {
+			result.ClientAddressMap, err = c.observeRedisPublicAddressMap(ctx, d, endpoint)
+			if err != nil {
+				result.Configured = false
+				result.ClientAddressMap = nil
+				return result, err
+			}
+			result.Message = "Each public Redis member requires the displayed client address map. External reachability has not been verified."
+		}
 	}
 	return result, nil
 }

@@ -76,6 +76,8 @@ A PostgreSQL application chooses `read_write`, `read_only`, `pooled_read_write` 
 
 MySQL Router likewise exposes different routes for primary and replica traffic. Redis and MongoDB clients must reach every advertised member needed for discovery and requests. A single reachable seed address does not establish that access. ClickHouse connection balancing does not invent a shard key or query every shard.
 
+Redis Cluster advertises one set of member addresses. The public endpoint source preserves private discovery for applications inside the cluster and allocates a separate TLS listener for each member. An outside client must map each advertised private address to that member's public hostname and port, verify its certificate, and refresh the mapping after a member changes. A `rediss://` seed URI alone does not configure this. Public Redis access remains disabled until outside-in client routing, failover, source filtering and session revocation pass native acceptance.
+
 The proposed Vitess contract uses declared integer hash sharding columns and SINGLE transaction mode. It must not promise cross-shard transactions or live resharding. Its controller, internal TLS, replication identity verification and recovery still need native acceptance. See [Vitess configuration](../internal/database/vitess.go) and [runtime source](../internal/cluster/database_vitess.go).
 
 Every route needs a retry policy. A broken connection after `COMMIT` does not prove the transaction failed. Reconnect with bounded retries, and use application idempotency for writes whose outcome is unknown.

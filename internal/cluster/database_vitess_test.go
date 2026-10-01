@@ -48,7 +48,7 @@ func TestVitessReplicationCredentialMatchesNativeLimit(t *testing.T) {
 
 func TestVitessPolicyLimitsClientsToGateway(t *testing.T) {
 	d := vitessTestDatabase()
-	policies := vitessNetworkPolicies(d, "namespace-uid", nil)
+	policies := vitessNetworkPolicies(d, "namespace-uid", nil, Options{})
 	if len(policies) != 4 || len(policies[2].Spec.Ingress) != 1 || policies[2].Spec.PodSelector.MatchLabels[vitessComponentLabel] != "gateway" {
 		t.Fatal("client policy does not select only gateways")
 	}
@@ -57,7 +57,7 @@ func TestVitessPolicyLimitsClientsToGateway(t *testing.T) {
 		t.Fatal("client policy exposes internal ports")
 	}
 	d.Status = "restoring"
-	policies = vitessNetworkPolicies(d, "namespace-uid", nil)
+	policies = vitessNetworkPolicies(d, "namespace-uid", nil, Options{})
 	if len(policies[2].Spec.Ingress) != 0 {
 		t.Fatal("restoring database permits application ingress")
 	}

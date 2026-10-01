@@ -7,6 +7,7 @@ const purposeLabels: Record<string, string> = {
   pooled_read_only: 'Pooled read only',
   native: 'Native protocol',
   https: 'HTTPS',
+  cluster: 'Redis cluster',
 }
 
 const protocolLabels: Record<string, string> = {
@@ -23,8 +24,10 @@ const routingLabels: Record<DatabasePublicEndpointRoute['routing'], string> = {
   direct: 'Direct database route',
   pgbouncer: 'PgBouncer pool',
   mysql_router: 'MySQL Router',
+  vitess_gateway: 'Vitess gateway',
   replica_set_horizons: 'MongoDB member discovery',
   cluster_discovery: 'Redis cluster discovery',
+  client_address_mapping: 'Redis client address mapping required',
 }
 
 export function databasePublicEndpointRouteLabel(route: DatabasePublicEndpointRoute) {

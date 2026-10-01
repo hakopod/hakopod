@@ -170,7 +170,7 @@ func vitessIdentityNames(d database.Resource) []string {
 	for i := 1; i <= 3; i++ {
 		names = append(names, fmt.Sprintf("%s-%d.%s-peer.%s.svc.cluster.local", etcd, i, etcd, ns))
 	}
-	return names
+	return append(names, d.PublicEndpointNames...)
 }
 
 func applyVitessPolicy(object *unstructured.Unstructured, s database.Spec, p DatabasePolicy) {

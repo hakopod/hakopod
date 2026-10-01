@@ -11,13 +11,15 @@ import (
 
 const neonOwnershipProtocolV1 = "hakopod-ownership-v1"
 const neonOwnershipHeader = "Hakopod-Ownership-Token"
+const neonDeletionHeader = "Hakopod-Deletion-Token"
 
 // neonOwnershipCapability is returned by the storage controller capability
 // endpoint. Provisioning must stay disabled unless all provider mutations are
 // covered; partial support would reopen the adoption race.
 type neonOwnershipCapability struct {
-	Protocol  string   `json:"protocol"`
-	Mutations []string `json:"mutations"`
+	Protocol             string   `json:"protocol"`
+	TenantDeleteProtocol string   `json:"tenant_delete_protocol"`
+	Mutations            []string `json:"mutations"`
 }
 
 func verifyNeonOwnershipCapability(body []byte) error {
@@ -28,6 +30,9 @@ func verifyNeonOwnershipCapability(body []byte) error {
 	required := map[string]bool{"tenant": false, "timeline": false, "pageserver_registration": false, "safekeeper_registration": false}
 	if got.Protocol != neonOwnershipProtocolV1 {
 		return fmt.Errorf("Neon provider ownership protocol is unavailable")
+	}
+	if got.TenantDeleteProtocol != "prepare-v1" {
+		return fmt.Errorf("Neon provider ownership protocol omits prepared tenant deletion")
 	}
 	for _, mutation := range got.Mutations {
 		if _, ok := required[mutation]; ok {
