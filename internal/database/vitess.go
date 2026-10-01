@@ -28,8 +28,8 @@ const (
 	VitessTabletMemory                 = "256Mi"
 	VitessGatewayCPU                   = "250m"
 	VitessGatewayMemory                = "256Mi"
-	VitessControlCPU                   = "100m"
-	VitessControlMemory                = "128Mi"
+	VitessControlCPU                   = "500m"
+	VitessControlMemory                = "256Mi"
 	VitessTopologyCPU                  = "100m"
 	VitessTopologyMemory               = "256Mi"
 	VitessTopologyStorageGiB     int64 = 1

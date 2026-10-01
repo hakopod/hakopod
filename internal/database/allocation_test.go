@@ -9,7 +9,7 @@ func TestCPUReservationIncludesSupportingProcesses(t *testing.T) {
 		want int64
 	}{
 		{"mysql standalone", Spec{Engine: "mysql", Version: "8.4", Mode: "standalone", Shards: 1, CPU: "500m", Memory: "1Gi"}, 1400},
-		{"vitess standalone", Spec{Engine: "vitess", Version: "23", Mode: "standalone", Shards: 1, CPU: "500m", Memory: "1Gi", Vitess: &VitessConfig{BackupDestinationID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", BackupDestinationRevision: 1}}, 3700},
+		{"vitess standalone", Spec{Engine: "vitess", Version: "23", Mode: "standalone", Shards: 1, CPU: "500m", Memory: "1Gi", Vitess: &VitessConfig{BackupDestinationID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", BackupDestinationRevision: 1}}, 4900},
 		{"mysql cluster", Spec{Engine: "mysql", Version: "8.4", Mode: "cluster", Replicas: 2, Shards: 1, CPU: "500m", Memory: "1Gi"}, 2700},
 		{"mongodb cluster", Spec{Engine: "mongodb", Version: "8.0", Mode: "cluster", Replicas: 2, Shards: 1, CPU: "500m", Memory: "1Gi"}, 2400},
 		{"clickhouse two shards", Spec{Engine: "clickhouse", Version: "26.3", Mode: "cluster", Replicas: 1, Shards: 2, CPU: "500m", Memory: "2Gi"}, 3500},
