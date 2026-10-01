@@ -27,7 +27,8 @@ python3 "$task_root/scripts/apply-managed-vitess-patches.py" --vitess-source "$t
 
 export GOMAXPROCS=1 GOFLAGS=-p=1 CGO_ENABLED=0
 export GOCACHE="${GOCACHE:-$task_scratch/go-build}" GOTMPDIR="$task_scratch/go-tmp"
-mkdir -p "$GOCACHE" "$GOTMPDIR" "$task_scratch/runtime/bin" "$task_scratch/controller/bin"
+export GOPATH="$task_scratch/go-work" GOENV=off GOWORK=off
+mkdir -p "$GOCACHE" "$GOTMPDIR" "$GOPATH" "$task_scratch/runtime/bin" "$task_scratch/controller/bin"
 export HAKOPOD_VITESS_CANDIDATE_DIR="$task_scratch/candidate-specs"
 cd "$task_root"
 GOTOOLCHAIN=auto go test -count=1 ./internal/cluster -run '^TestVitessExportCandidateSchemaManifests$' -timeout=5m
