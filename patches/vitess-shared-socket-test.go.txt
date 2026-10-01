@@ -1,0 +1,92 @@
+package vttablet
+
+import (
+	"reflect"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+)
+
+func TestHakopodRunscSocketVolumeIsBoundedAndShared(t *testing.T) {
+	spec := &Spec{
+		AliasStr:     "zone1-0000000001",
+		KeyspaceName: "app",
+		Vttablet:     &planetscalev2.VttabletSpec{},
+		Mysqld:       &planetscalev2.MysqldSpec{},
+		Images: planetscalev2.VitessKeyspaceImages{
+			Vttablet: "vitess:test",
+			Mysqld:   &planetscalev2.MysqldImage{Mysql80Compatible: "mysql:test"},
+		},
+	}
+	pod := NewPod(client.ObjectKey{Namespace: "fixture", Name: "tablet"}, spec)
+	volumes := 0
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name != vtSocketVolumeName {
+			continue
+		}
+		volumes++
+		if volume.EmptyDir == nil || volume.EmptyDir.Medium != corev1.StorageMediumMemory || volume.EmptyDir.SizeLimit == nil || volume.EmptyDir.SizeLimit.Cmp(resource.MustParse("16Mi")) != 0 {
+			t.Fatal("rundir must be one bounded 16Mi memory EmptyDir")
+		}
+	}
+	if volumes != 1 {
+		t.Fatalf("rendered Pod has %d rundir volumes, want 1", volumes)
+	}
+
+	wantProbe := map[string]*corev1.Probe{
+		vttabletContainerName: {
+			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
+				"bash", "-ceu", "curl --fail --silent --show-error --max-time 2 http://127.0.0.1:15000/healthz >/dev/null; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
+			}}},
+			TimeoutSeconds:   3,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+		},
+		MysqldContainerName: {
+			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
+				"bash", "-ceu", "exec 3<>/dev/tcp/127.0.0.1/3306; exec 3>&-; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
+			}}},
+			TimeoutSeconds:   1,
+			PeriodSeconds:    2,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+		},
+	}
+	seen := map[string]bool{}
+	for _, container := range pod.Spec.Containers {
+		probe, process := wantProbe[container.Name]
+		if !process {
+			continue
+		}
+		if seen[container.Name] {
+			t.Fatalf("duplicate %s container", container.Name)
+		}
+		seen[container.Name] = true
+		mounts := 0
+		for _, mount := range container.VolumeMounts {
+			if mount.Name != vtSocketVolumeName && mount.MountPath != vtSocketPath {
+				continue
+			}
+			mounts++
+			if mount.Name != vtSocketVolumeName || mount.MountPath != vtSocketPath || mount.SubPath != "" || mount.SubPathExpr != "" || mount.ReadOnly {
+				t.Fatalf("%s socket mount is not the shared writable rundir", container.Name)
+			}
+		}
+		if mounts != 1 {
+			t.Fatalf("%s has %d socket mounts, want 1", container.Name, mounts)
+		}
+		if !reflect.DeepEqual(container.ReadinessProbe, probe) {
+			t.Fatalf("%s readiness probe changed: %#v", container.Name, container.ReadinessProbe)
+		}
+	}
+	for name := range wantProbe {
+		if !seen[name] {
+			t.Fatalf("rendered Pod omitted %s", name)
+		}
+	}
+}
