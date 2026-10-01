@@ -1,0 +1,919 @@
+{
+  "Spec": {
+    "type": "object",
+    "properties": {
+      "schema_version": {
+        "type": "integer"
+      },
+      "name": {
+        "type": "string"
+      },
+      "services": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/Service"
+        }
+      },
+      "networks": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/Network"
+        }
+      },
+      "domains": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "recovery": {
+        "$ref": "#/components/schemas/RecoveryPolicy"
+      },
+      "volumes": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/NamedVolume"
+        }
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Application-wide plain environment defaults. Service values override these defaults."
+      },
+      "secrets": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/SecretRef"
+        }
+      },
+      "inject_env": {
+        "type": "boolean",
+        "description": "Inject all application env defaults into services. Service values override these defaults."
+      }
+    },
+    "required": [
+      "schema_version",
+      "name",
+      "services"
+    ]
+  },
+  "Service": {
+    "type": "object",
+    "properties": {
+      "image": {
+        "type": "string"
+      },
+      "port": {
+        "type": "integer"
+      },
+      "public": {
+        "type": "boolean"
+      },
+      "size": {
+        "type": "string"
+      },
+      "replicas": {
+        "type": "integer"
+      },
+      "healthcheck": {
+        "type": "string"
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "command": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "depends_on": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "networks": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "secrets": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/SecretRef"
+        }
+      },
+      "autoscaling": {
+        "$ref": "#/components/schemas/Autoscaling"
+      },
+      "actions": {
+        "$ref": "#/components/schemas/Actions"
+      },
+      "public_tcp": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PublicTCPListener"
+        }
+      },
+      "certificate_mounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CertificateMount"
+        }
+      },
+      "aws_identity": {
+        "type": "string"
+      },
+      "job": {
+        "$ref": "#/components/schemas/DeploymentJob"
+      },
+      "files": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ConfigurationFile"
+        }
+      },
+      "bindings": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ServiceBinding"
+        }
+      },
+      "http": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/HTTPEndpoint"
+        }
+      },
+      "backend_http2": {
+        "type": "boolean",
+        "description": "Opt-in: the ingress speaks HTTP/2 (h2) to this service's backend, for gRPC and other h2-only servers. Requires public with a port. Rejected with serverless or with named http endpoints."
+      },
+      "readiness": {
+        "$ref": "#/components/schemas/Readiness"
+      },
+      "update_strategy": {
+        "type": "string",
+        "enum": [
+          "rolling",
+          "recreate"
+        ]
+      },
+      "resources": {
+        "$ref": "#/components/schemas/Resources"
+      },
+      "restart_nonce": {
+        "type": "string"
+      },
+      "registry_credential": {
+        "type": "string"
+      },
+      "tls": {
+        "$ref": "#/components/schemas/TLSConfig"
+      },
+      "suspended": {
+        "type": "boolean"
+      },
+      "volume": {
+        "$ref": "#/components/schemas/Volume"
+      },
+      "gpu": {
+        "$ref": "#/components/schemas/GPU"
+      },
+      "run_as_user": {
+        "type": "integer"
+      },
+      "architecture": {
+        "type": "string",
+        "enum": [
+          "amd64",
+          "arm64"
+        ]
+      },
+      "mounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Mount"
+        }
+      },
+      "temporary_mounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/TemporaryMount"
+        }
+      },
+      "ports": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PrivatePort"
+        }
+      },
+      "network_access": {
+        "$ref": "#/components/schemas/NetworkAccess"
+      },
+      "run_as_group": {
+        "type": "integer"
+      },
+      "fs_group": {
+        "type": "integer"
+      },
+      "read_only_root_filesystem": {
+        "type": "boolean"
+      },
+      "working_dir": {
+        "type": "string"
+      },
+      "termination_grace_seconds": {
+        "type": "integer"
+      },
+      "private_egress": {
+        "type": "array",
+        "maxItems": 16,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"
+        },
+        "description": "Self-hosted: named private destinations approved by the installation administrator for this service."
+      },
+      "node_name": {
+        "type": "string",
+        "maxLength": 253,
+        "description": "Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks."
+      },
+      "serverless": {
+        "$ref": "#/components/schemas/Serverless"
+      }
+    },
+    "required": [
+      "image"
+    ]
+  },
+  "SecretRef": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ref": {
+        "type": "string",
+        "description": "Existing application-scoped native secret name."
+      },
+      "provider": {
+        "type": "string",
+        "description": "Administrator-configured external provider name."
+      },
+      "path": {
+        "type": "string",
+        "maxLength": 512,
+        "description": "Relative path below the provider root; empty selects its root."
+      },
+      "key": {
+        "type": "string",
+        "maxLength": 128,
+        "description": "Vault string field or Infisical shared secret name."
+      }
+    },
+    "oneOf": [
+      {
+        "required": [
+          "ref"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "provider"
+              ]
+            },
+            {
+              "required": [
+                "path"
+              ]
+            },
+            {
+              "required": [
+                "key"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "required": [
+          "provider",
+          "key"
+        ],
+        "not": {
+          "required": [
+            "ref"
+          ]
+        }
+      }
+    ]
+  },
+  "Autoscaling": {
+    "type": "object",
+    "properties": {
+      "min_replicas": {
+        "type": "integer"
+      },
+      "max_replicas": {
+        "type": "integer"
+      },
+      "target_cpu": {
+        "type": "integer"
+      }
+    },
+    "required": []
+  },
+  "Actions": {
+    "type": "object",
+    "properties": {
+      "repository": {
+        "type": "string"
+      },
+      "organization": {
+        "type": "string"
+      },
+      "runner_group_id": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "description": "Organization runner group ID; omit or use zero for the GitHub default group."
+      },
+      "credential": {
+        "type": "string"
+      },
+      "labels": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "timeout_minutes": {
+        "type": "integer"
+      },
+      "provider": {
+        "type": "string",
+        "enum": [
+          "github",
+          "gitlab",
+          "bitbucket"
+        ],
+        "description": "Defaults to github when omitted. Declaring a provider does not enable its managed runtime."
+      },
+      "gitlab": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "group_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "trust_policy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
+      },
+      "bitbucket": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace"
+        ],
+        "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
+      },
+      "workspace_size_gib": {
+        "type": "integer",
+        "minimum": 2,
+        "maximum": 16,
+        "description": "Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job."
+      },
+      "jobs_credential": {
+        "type": "string",
+        "description": "Optional application secret for provider job details and logs. Defaults to credential when omitted or empty."
+      },
+      "cache": {
+        "type": "object",
+        "properties": {
+          "credential": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
+      }
+    },
+    "required": [
+      "credential",
+      "labels"
+    ],
+    "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment."
+  },
+  "PublicTCPListener": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "integer"
+      },
+      "target_port": {
+        "type": "integer"
+      },
+      "source_cidrs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "port",
+      "target_port",
+      "source_cidrs"
+    ]
+  },
+  "CertificateMount": {
+    "type": "object",
+    "properties": {
+      "certificate": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string",
+        "enum": [
+          "ingress"
+        ]
+      },
+      "hostname": {
+        "type": "string"
+      },
+      "mount_path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "hostname",
+      "mount_path"
+    ],
+    "oneOf": [
+      {
+        "required": [
+          "certificate"
+        ],
+        "not": {
+          "required": [
+            "source"
+          ]
+        }
+      },
+      {
+        "required": [
+          "source"
+        ],
+        "not": {
+          "required": [
+            "certificate"
+          ]
+        }
+      }
+    ]
+  },
+  "DeploymentJob": {
+    "type": "object",
+    "properties": {
+      "timeout_seconds": {
+        "type": "integer",
+        "minimum": 10,
+        "maximum": 900
+      },
+      "retries": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3
+      },
+      "schedule": {
+        "$ref": "#/components/schemas/JobSchedule"
+      }
+    },
+    "required": []
+  },
+  "JobSchedule": {
+    "properties": {
+      "cron": {
+        "description": "Five cron fields: minute hour day month weekday.",
+        "type": "string"
+      },
+      "history_limit": {
+        "default": 1,
+        "maximum": 2,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "timezone": {
+        "default": "UTC",
+        "type": "string"
+      }
+    },
+    "required": [
+      "cron"
+    ],
+    "type": "object"
+  },
+  "ConfigurationFile": {
+    "type": "object",
+    "properties": {
+      "mount_path": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      },
+      "secret": {
+        "$ref": "#/components/schemas/SecretRef"
+      },
+      "mode": {
+        "type": "integer",
+        "enum": [
+          288,
+          292
+        ]
+      }
+    },
+    "required": [
+      "mount_path"
+    ]
+  },
+  "ServiceBinding": {
+    "type": "object",
+    "properties": {
+      "service": {
+        "type": "string"
+      },
+      "protocol": {
+        "type": "string",
+        "enum": [
+          "http",
+          "postgres",
+          "mysql",
+          "redis"
+        ]
+      },
+      "database": {
+        "type": "string"
+      },
+      "username": {
+        "type": "string"
+      },
+      "password": {
+        "$ref": "#/components/schemas/SecretRef"
+      },
+      "managed_database": {
+        "type": "string"
+      },
+      "endpoint": {
+        "type": "string"
+      },
+      "cluster_aware": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "protocol"
+    ]
+  },
+  "HTTPEndpoint": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "integer"
+      },
+      "domain": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "port"
+    ]
+  },
+  "Readiness": {
+    "type": "object",
+    "properties": {
+      "protocol": {
+        "type": "string",
+        "enum": [
+          "tcp",
+          "smtp",
+          "smtp_starttls"
+        ]
+      },
+      "port": {
+        "type": "integer"
+      },
+      "tls_server_name": {
+        "type": "string"
+      },
+      "tls_ca_file": {
+        "type": "string"
+      },
+      "period_seconds": {
+        "type": "integer"
+      },
+      "timeout_seconds": {
+        "type": "integer"
+      },
+      "failure_threshold": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "protocol",
+      "port"
+    ]
+  },
+  "Resources": {
+    "type": "object",
+    "properties": {
+      "cpu_request": {
+        "type": "string",
+        "maxLength": 32,
+        "description": "Per-replica CPU reservation, 1m\u201364 cores; omit to inherit size."
+      },
+      "cpu_limit": {
+        "type": "string",
+        "maxLength": 32,
+        "description": "Per-replica CPU limit, 1m\u201364 cores; must cover request."
+      },
+      "memory_request": {
+        "type": "string",
+        "maxLength": 32,
+        "description": "Per-replica memory reservation, 1Mi\u2013256Gi; omit to inherit size."
+      },
+      "memory_limit": {
+        "type": "string",
+        "maxLength": 32,
+        "description": "Per-replica memory limit, 1Mi\u2013256Gi; must cover request."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
+  "TLSConfig": {
+    "type": "object",
+    "properties": {
+      "certificate": {
+        "type": "string"
+      },
+      "issuer": {
+        "type": "string"
+      },
+      "issuer_kind": {
+        "$ref": "#/components/schemas/TLSIssuerKind"
+      }
+    },
+    "required": []
+  },
+  "TLSIssuerKind": {
+    "type": "string",
+    "enum": [
+      "ClusterIssuer",
+      "Issuer"
+    ]
+  },
+  "Volume": {
+    "type": "object",
+    "properties": {
+      "mount_path": {
+        "type": "string"
+      },
+      "size_gib": {
+        "type": "integer"
+      },
+      "storage_class": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "mount_path",
+      "size_gib"
+    ]
+  },
+  "GPU": {
+    "type": "object",
+    "properties": {
+      "count": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "count"
+    ]
+  },
+  "Mount": {
+    "type": "object",
+    "properties": {
+      "volume": {
+        "type": "string"
+      },
+      "mount_path": {
+        "type": "string"
+      },
+      "sub_path": {
+        "type": "string"
+      },
+      "read_only": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "volume",
+      "mount_path"
+    ]
+  },
+  "TemporaryMount": {
+    "type": "object",
+    "properties": {
+      "mount_path": {
+        "type": "string"
+      },
+      "size_mib": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 128
+      },
+      "memory": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "mount_path",
+      "size_mib"
+    ]
+  },
+  "PrivatePort": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "port": {
+        "type": "integer"
+      },
+      "target_port": {
+        "type": "integer"
+      },
+      "protocol": {
+        "type": "string",
+        "enum": [
+          "TCP",
+          "UDP"
+        ]
+      }
+    },
+    "required": [
+      "name",
+      "port"
+    ]
+  },
+  "NetworkAccess": {
+    "type": "object",
+    "properties": {
+      "from": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "from_applications": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "from"
+    ]
+  },
+  "Serverless": {
+    "type": "object",
+    "properties": {
+      "min_replicas": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0
+      },
+      "idle_seconds": {
+        "type": "integer",
+        "minimum": 30,
+        "maximum": 86400,
+        "default": 300
+      },
+      "startup_timeout_seconds": {
+        "type": "integer",
+        "minimum": 5,
+        "maximum": 300,
+        "default": 60
+      },
+      "request_timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300,
+        "default": 60
+      },
+      "max_concurrency": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 64,
+        "default": 16
+      }
+    },
+    "required": []
+  },
+  "Network": {
+    "type": "object",
+    "properties": {
+      "internal": {
+        "type": "boolean"
+      },
+      "virtual_network": {
+        "type": "string"
+      },
+      "segment": {
+        "type": "string"
+      }
+    },
+    "required": []
+  },
+  "RecoveryPolicy": {
+    "properties": {
+      "on_failure": {
+        "enum": [
+          "safe",
+          "disabled"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "on_failure"
+    ],
+    "type": "object"
+  },
+  "NamedVolume": {
+    "type": "object",
+    "properties": {
+      "size_gib": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+      },
+      "storage_class": {
+        "type": "string"
+      },
+      "access_mode": {
+        "type": "string",
+        "enum": [
+          "ReadWriteOnce",
+          "ReadWriteMany"
+        ]
+      }
+    },
+    "required": [
+      "size_gib"
+    ]
+  }
+}

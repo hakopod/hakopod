@@ -1,3 +1,4 @@
+import { TOMLEditor } from '../components/toml-editor'
 import { DeploymentSecrets } from '../components/deployment-secrets'
 import { frameworkLabel } from '../components/framework-build-fields'
 import { Input } from '../components/ui/input'
@@ -403,7 +404,7 @@ function BuildDetail() {
                   </span>
                   <Copy value={preview.workflow} />
                 </div>
-                <pre>{preview.workflow}</pre>
+                <TOMLEditor label="Generated build workflow" language="yaml" purpose="workflow" value={preview.workflow} onChange={() => {}} readOnly />
               </div>
               {preview.config.auto_build && (
                 <Note>

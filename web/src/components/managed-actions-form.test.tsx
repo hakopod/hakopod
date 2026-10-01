@@ -197,7 +197,7 @@ test('native pools preserve targets in guided setup while unavailable deployment
     )
     assert.match(html, /value="native-management"/)
     assert.match(html, /id="runner-jobs-credential"[^>]*value="native-observer"/)
-    assert.doesNotMatch(html, /<textarea[^>]*id="toml-import"|How to create the GitHub token/)
+    assert.doesNotMatch(html, /aria-label="TOML configuration"|How to create the GitHub token/)
     if (provider === 'gitlab') {
       assert.match(html, /value="https:\/\/ci.example.test\/gitlab"/)
       assert.match(html, /value="123"/)
@@ -209,7 +209,7 @@ test('native pools preserve targets in guided setup while unavailable deployment
     const generic = render(saved, true)
     assert.match(generic, /runner settings are preserved in TOML/)
     assert.match(generic, /Use the runner pool setup for guided provider configuration/)
-    assert.match(generic, /<textarea[^>]*id="toml-import"/)
+    assert.match(generic, /aria-label="TOML configuration"/)
     assert.match(generic, new RegExp(saved.spec.services.runner.image))
     assert.deepEqual(saved, before)
   }
@@ -225,7 +225,7 @@ test('inconsistent imported native targets cannot fall into the GitHub form', ()
       gitlab: { url: 'https://gitlab.com', group_id: 456 },
     }
     const html = render(saved)
-    assert.match(html, /<textarea[^>]*id="toml-import"/)
+    assert.match(html, /aria-label="TOML configuration"/)
     assert.match(html, /group_id = 456/)
     assert.doesNotMatch(html, /id="runner-jobs-credential"|How to create the GitHub token/)
   }
