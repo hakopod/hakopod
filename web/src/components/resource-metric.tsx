@@ -77,7 +77,9 @@ export function ResourceMetric({
         </div>
       )}
       {samples.length < 2 ? (
-        <p className="node-runtime-wait">Waiting for a second source sample.</p>
+        <p className="node-runtime-wait">
+          {samples.length ? 'Waiting for a second source sample.' : 'No source samples yet.'}
+        </p>
       ) : (
         <svg
           viewBox="0 0 240 54"

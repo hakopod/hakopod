@@ -611,6 +611,12 @@ label:has(input[type='file']) {
 html[data-edition='self-hosted'] .brackets {
   display: none;
 }
+html[data-edition='self-hosted'] .input-wrap:focus-within :is(input, textarea),
+html[data-edition='self-hosted'] .otp-cell:focus-within,
+html[data-edition='self-hosted'] .otp-cell[data-active] {
+  background-image: none;
+  background-color: transparent;
+}
 html[data-edition='self-hosted']
   :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible,
 html[data-edition='self-hosted'] .otp-cell[data-active] {

@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { client, unwrap } from '../lib/client'
 import type { Application } from '../lib/types'
-import { canAccess, useScope } from '../lib/scope'
 import { actionsProvider, actionsProviderName, actionsTargetLabel } from '../lib/actions-provider'
 import { Button } from './ui/button'
 import { Badge } from '@hakopod/hatch-ui/components/badge'
 import { HeadingHelp } from './shared'
 import { Empty, ErrorState, Loading, Note } from './shared'
+import { Icon } from './icons'
 
 export function ManagedActionsStatus({
   application,
@@ -16,7 +16,6 @@ export function ManagedActionsStatus({
   application: Application
   service?: string
 }) {
-  const scope = useScope()
   const query = useQuery({
     queryKey: ['managed-actions', application.id],
     queryFn: ({ signal }) =>
@@ -60,12 +59,19 @@ export function ManagedActionsStatus({
   const stale = (item?.slots.length || 0) - fresh.length
   return (
     <section
-      className="mb-4 grid min-w-0 gap-3 border-b border-[var(--hairline)] pb-4"
+      className="mb-6 grid min-w-0 gap-4 border-b border-[var(--hairline)] pb-4"
       aria-label={`${providerName} runner pool`}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">{providerName} runners</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">{providerName} runners</h2>
+            <HeadingHelp title="Runner pool">
+              {provider === 'bitbucket'
+                ? 'This runner stays assigned to one repository. Its sandbox is reused between pipeline steps.'
+                : 'Each job uses a fresh workspace. Workflow cache configuration controls what is restored between jobs.'}
+            </HeadingHelp>
+          </div>
           {actions && (
             <Badge>
               <span className="min-w-0 break-all whitespace-normal">
@@ -73,34 +79,19 @@ export function ManagedActionsStatus({
               </span>
             </Badge>
           )}
-          <HeadingHelp title="Runner pool">
-            {provider === 'bitbucket'
-              ? 'This runner stays assigned to one repository. Its sandbox is reused between pipeline steps.'
-              : 'Each job uses a fresh workspace. Workflow cache configuration controls what is restored between jobs.'}
-          </HeadingHelp>
         </div>
         {!removing && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="ghost" asChild>
+            <Button size="sm" variant="primary" asChild>
               <Link
                 to="/applications/$applicationId"
                 params={{ applicationId: application.id }}
                 search={{ service, tab: 'actions' }}
               >
-                Workflow activity
+                View jobs
+                <Icon name="arrow" size={14} />
               </Link>
             </Button>
-            {canAccess(scope.identity, application.project, 'deployments:write') && (
-              <Button size="sm" asChild>
-                <Link
-                  to="/templates/$templateId"
-                  params={{ templateId: 'managed-actions' }}
-                  search={{ application: application.id, runner: service }}
-                >
-                  Configure pool
-                </Link>
-              </Button>
-            )}
           </div>
         )}
       </div>
@@ -115,16 +106,24 @@ export function ManagedActionsStatus({
         />
       ) : (
         <>
-          <div
-            className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"
+          <dl
+            className="grid min-w-0 grid-cols-3 gap-4 sm:max-w-lg"
             aria-label="Runner pool status"
           >
-            <span>
-              <strong>{busy}</strong> running
-            </span>
-            <span>
-              <strong>{available}</strong> available
-            </span>
+            <div className="grid gap-1">
+              <dt className="min-h-8 text-xs muted-text sm:min-h-0">Running jobs</dt>
+              <dd className="text-2xl font-medium tabular-nums">{busy}</dd>
+            </div>
+            <div className="grid gap-1">
+              <dt className="min-h-8 text-xs muted-text sm:min-h-0">Available runners</dt>
+              <dd className="text-2xl font-medium tabular-nums">{available}</dd>
+            </div>
+            <div className="grid gap-1">
+              <dt className="min-h-8 text-xs muted-text sm:min-h-0">Configured slots</dt>
+              <dd className="text-2xl font-medium tabular-nums">{item.pool.config.replicas}</dd>
+            </div>
+          </dl>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs">
             {starting > 0 && (
               <span>
                 <strong>{starting}</strong> starting or cleaning up
@@ -135,19 +134,32 @@ export function ManagedActionsStatus({
                 <strong>{stale}</strong> out of date
               </span>
             )}
-            <span className="muted-text">{item.pool.config.replicas} job slots</span>
             {removing && <Badge>Removal pending</Badge>}
             {!removing && (provider === 'github' || provider === 'gitlab') && (
-              <code className="min-w-0 break-all text-xs muted-text">
-                {provider === 'gitlab' ? 'tags' : 'runs-on'}: [
-                {item.pool.config.actions?.labels.join(', ')}]
-              </code>
+              <div
+                className="flex min-w-0 flex-wrap items-center gap-2"
+                aria-label="Workflow labels"
+              >
+                <span className="muted-text">
+                  {provider === 'gitlab' ? 'Tags' : 'Workflow labels'}
+                </span>
+                {item.pool.config.actions?.labels.map((label) => (
+                  <Badge key={label}>
+                    <span className="break-all whitespace-normal">{label}</span>
+                  </Badge>
+                ))}
+              </div>
             )}
           </div>
           {item.pool.message && <Note>{item.pool.message}</Note>}
-          <details className="min-w-0">
-            <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-xs muted-text">
-              Inspect {item.slots.length} runner{' '}
+          <details className="group/registrations min-w-0">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs muted-text [&::-webkit-details-marker]:hidden">
+              <Icon
+                name="chevron"
+                size={14}
+                className="shrink-0 group-open/registrations:rotate-90"
+              />
+              {item.slots.length} runner{' '}
               {item.slots.length === 1 ? 'registration' : 'registrations'}
             </summary>
             {item.slots.length === 0 ? (

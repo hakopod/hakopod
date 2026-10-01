@@ -20,7 +20,7 @@ import { message, relative, timestamp } from '../lib/api'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { readinessLabel } from '../lib/readiness'
 import { specToTOML } from '../lib/toml'
-import { useScope } from '../lib/scope'
+import { canAccess, useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import { runtimeReplicaSummary, serviceRuntimeHealth } from '../lib/runtime-health'
 import { ApplicationAlarmLinks, RuntimeNotice } from './runtime-notice'
@@ -246,7 +246,7 @@ export function ServiceDetail({
           </div>
         </div>
         <div className="form-spacer" />
-        {scope.can('deployments:write') && (
+        {canAccess(scope.identity, application.project, 'deployments:write') && (
           <div className="toolbar-actions">
             <Menu
               trigger={
@@ -260,12 +260,24 @@ export function ServiceDetail({
                 </Button>
               }
             >
+              {service.actions && (
+                <MenuItem
+                  onSelect={() => {
+                    setRequestKey(crypto.randomUUID())
+                    setError('')
+                    setRestartOpen(true)
+                  }}
+                >
+                  <Icon name="refresh" size={14} />
+                  Restart runners
+                </MenuItem>
+              )}
               <MenuItem onSelect={() => setMoving(true)}>
                 <Icon name="arrow" size={14} />
                 Move to application
               </MenuItem>
             </Menu>
-            {!service.job && (
+            {!service.job && !service.actions && (
               <Button
                 onClick={() => {
                   setRequestKey(crypto.randomUUID())
@@ -279,6 +291,7 @@ export function ServiceDetail({
             )}
             <Button
               variant={
+                service.actions ||
                 ['logs', 'environment', 'secrets', 'terminal', 'settings'].includes(tab)
                   ? 'secondary'
                   : 'primary'
@@ -286,7 +299,7 @@ export function ServiceDetail({
               onClick={() => edit('form')}
             >
               <Icon name="settings" size={14} />
-              Stage changes
+              {service.actions ? 'Configure pool' : 'Stage changes'}
             </Button>
           </div>
         )}
@@ -411,16 +424,16 @@ export function ServiceDetail({
             </section>
           )}
 
-          <>
-            {service.actions && (
-              <ManagedActionsStatus application={application} service={serviceName} />
-            )}
-          </>
+          {service.actions && (
+            <ManagedActionsStatus application={application} service={serviceName} />
+          )}
           <div className="service-overview-grid">
             <section className="panel service-summary-panel">
               <div className="panel-heading">
-                <h2>Runtime</h2>
-                <span className="label-chip">{serviceProfileLabel(service)} profile</span>
+                <h2>{service.actions ? 'Pool configuration' : 'Runtime'}</h2>
+                {!service.actions && (
+                  <span className="label-chip">{serviceProfileLabel(service)} profile</span>
+                )}
               </div>
               {service.job?.schedule && (
                 <p className="px-4 text-sm muted-text">
@@ -429,24 +442,50 @@ export function ServiceDetail({
                 </p>
               )}
               {service.actions ? (
-                <div className="grid min-w-0 gap-3 px-4 pb-3">
-                  <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
-                    <div>
+                <div className="grid min-w-0 gap-3">
+                  <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
+                    <div className="min-w-0">
                       <dt className="text-xs muted-text">Placement</dt>
-                      <dd className="mt-1 break-all">{service.node_name || 'Automatic'}</dd>
+                      <dd className="mt-1 break-all">{service.node_name || 'Any eligible node'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs muted-text">Runners</dt>
-                      <dd className="mt-1">{runtimeReplicaSummary(health, false)}</dd>
+                      <dt className="text-xs muted-text">Architecture</dt>
+                      <dd className="mt-1">{service.architecture || 'Automatic'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs muted-text">Observed</dt>
-                      <dd className="mt-1">{timestamp(health.observedAt)}</dd>
+                      <dt className="text-xs muted-text">Reservations per job</dt>
+                      <dd className="mt-1">
+                        {service.resources?.cpu_request || service.resources?.memory_request ? (
+                          <>
+                            <div>
+                              CPU:{' '}
+                              {service.resources.cpu_request ||
+                                `${service.size || 'small'} profile default`}
+                            </div>
+                            <div>
+                              Memory:{' '}
+                              {service.resources.memory_request ||
+                                `${service.size || 'small'} profile default`}
+                            </div>
+                          </>
+                        ) : (
+                          `${service.size || 'small'} profile defaults`
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs muted-text">Workspace per job</dt>
+                      <dd className="mt-1">{service.actions.workspace_size_gib || 2} GiB</dd>
                     </div>
                   </dl>
-                  <details className="min-w-0 border-t border-[var(--hairline)]">
-                    <summary className="min-h-11 cursor-pointer py-3 text-sm">
-                      Image and health details
+                  <details className="group/runtime min-w-0 border-t border-[var(--hairline)]">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-3 text-sm [&::-webkit-details-marker]:hidden">
+                      <Icon
+                        name="chevron"
+                        size={14}
+                        className="shrink-0 group-open/runtime:rotate-90"
+                      />
+                      Image and runtime details
                     </summary>
                     <dl className="grid min-w-0 gap-3 pb-2 text-sm">
                       <div>
@@ -457,13 +496,32 @@ export function ServiceDetail({
                       </div>
                       <div>
                         <dt className="text-xs muted-text">Readiness</dt>
-                        <dd className="mt-1">{readinessLabel(service)}</dd>
+                        <dd className="mt-1">{runtimeReplicaSummary(health, false)}</dd>
                       </div>
                       <div>
                         <dt className="text-xs muted-text">Exposure</dt>
                         <dd className="mt-1">No inbound port</dd>
                       </div>
+                      <div>
+                        <dt className="text-xs muted-text">Observed</dt>
+                        <dd className="mt-1">{timestamp(health.observedAt)}</dd>
+                      </div>
+                      {service.resources && (
+                        <div>
+                          <dt className="text-xs muted-text">Resource overrides</dt>
+                          <dd className="mt-1 break-words">
+                            {Object.entries(service.resources)
+                              .filter(([, value]) => value)
+                              .map(([key, value]) => (
+                                <div key={key}>
+                                  {key.replaceAll('_', ' ')}: {value}
+                                </div>
+                              ))}
+                          </dd>
+                        </div>
+                      )}
                     </dl>
+                    <ApplicationAlarmLinks application={application} />
                   </details>
                 </div>
               ) : (
@@ -525,7 +583,7 @@ export function ServiceDetail({
                   </dl>
                 </>
               )}
-              <ApplicationAlarmLinks application={application} />
+              {!service.actions && <ApplicationAlarmLinks application={application} />}
             </section>
             <section
               className="panel service-summary-panel node-runtime service-runtime"
@@ -557,7 +615,7 @@ export function ServiceDetail({
                     onClick={() => void runtime.refetch({ cancelRefetch: false })}
                   >
                     <Icon name="refresh" size={14} className={runtime.isFetching ? 'spin' : ''} />
-                    {runtime.isFetching ? 'Probing…' : 'Probe now'}
+                    {runtime.isFetching ? 'Refreshing…' : 'Refresh'}
                   </Button>
                 </div>
               </div>
@@ -587,8 +645,15 @@ export function ServiceDetail({
                     {metrics.pods_sampled} / {metrics.pods_expected} pods sampled
                   </span>
                 )}
-                <details className="min-w-0">
-                  <summary className="min-h-11 cursor-pointer py-3">Sampling details</summary>
+                <details className="group/sampling min-w-0">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-3 [&::-webkit-details-marker]:hidden">
+                    <Icon
+                      name="chevron"
+                      size={14}
+                      className="shrink-0 group-open/sampling:rotate-90"
+                    />
+                    Sampling details
+                  </summary>
                   <dl className="grid gap-2 pb-2">
                     <div>
                       <dt>Source sample</dt>
@@ -630,24 +695,42 @@ export function ServiceDetail({
               )}
             </section>
           </div>
-          <div className="section-toolbar">
-            <div>
-              <div className="hako-section-heading-title">
-                <h2>Pods</h2>
-                <HeadingHelp title="Pods">Live workloads owned by this service.</HeadingHelp>
-              </div>
+          {service.actions ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-[var(--hairline)] py-3">
+              <span className="text-sm muted-text">{runtimeReplicaSummary(health, false)}</span>
+              <Button size="sm" variant="ghost" asChild>
+                <Link
+                  to="/applications/$applicationId"
+                  params={{ applicationId: application.id }}
+                  search={{ service: serviceName, tab: 'pods' }}
+                >
+                  Inspect pods and events
+                  <Icon name="arrow" size={14} />
+                </Link>
+              </Button>
             </div>
-            <Button size="sm" onClick={() => setTab('pods')}>
-              Inspect all pods
-              <Icon name="arrow" size={14} />
-            </Button>
-          </div>
-          <PodList
-            runtime={runtime.data}
-            loading={runtime.isPending}
-            error={runtime.error}
-            compact
-          />
+          ) : (
+            <>
+              <div className="section-toolbar">
+                <div>
+                  <div className="hako-section-heading-title">
+                    <h2>Pods</h2>
+                    <HeadingHelp title="Pods">Live workloads owned by this service.</HeadingHelp>
+                  </div>
+                </div>
+                <Button size="sm" onClick={() => setTab('pods')}>
+                  Inspect all pods
+                  <Icon name="arrow" size={14} />
+                </Button>
+              </div>
+              <PodList
+                runtime={runtime.data}
+                loading={runtime.isPending}
+                error={runtime.error}
+                compact
+              />
+            </>
+          )}
         </Tabs.Content>
         <Tabs.Content value="pods" className="tab-content">
           <div className="section-toolbar">

@@ -26,10 +26,12 @@ import {
 import {
   RunnerCapacity,
   RunnerChoices,
+  RunnerDisclosureSummary,
   RunnerLabels,
   RunnerFact,
-  RunnerLabelChips,
+  RunnerField,
   RunnerPlacement,
+  RunnerPoolSummary,
   RunnerResourceFields,
   RunnerSteps,
   RunnerWorkflowGuide,
@@ -181,6 +183,13 @@ function RunnerPoolForm({
     cpu_limit: profile?.CPULimit,
     memory_request: profile?.MemoryRequest,
     memory_limit: profile?.MemoryLimit,
+  }
+  const savedProfile = original && serviceResources(original, capabilities.data?.resource_profiles)
+  const savedResources: RunnerResources = {
+    cpu_request: original?.resources?.cpu_request ?? savedProfile?.CPURequest,
+    cpu_limit: original?.resources?.cpu_limit ?? savedProfile?.CPULimit,
+    memory_request: original?.resources?.memory_request ?? savedProfile?.MemoryRequest,
+    memory_limit: original?.resources?.memory_limit ?? savedProfile?.MemoryLimit,
   }
   const reservationLabel = runnerReservationLabel(effectiveResources, Number(replicas))
   const canWrite = canAccess(scope.identity, project, 'deployments:write')
@@ -515,9 +524,77 @@ function RunnerPoolForm({
       setResources(withRunnerMinimum(runnerResourcePresets[value], minimum))
     else if (value === 'custom') setResources({ ...effectiveResources })
   }
-  function presetSummary(preset: RunnerResources) {
+  function resourceFacts(value: RunnerResources) {
+    const cpu = (amount?: string) => {
+      if (!amount) return 'Unavailable'
+      const cores = amount.endsWith('m') ? Number(amount.slice(0, -1)) / 1000 : Number(amount)
+      return Number.isFinite(cores) ? `${cores} ${cores === 1 ? 'core' : 'cores'}` : amount
+    }
+    const memory = (amount?: string) => amount?.replace(/(Ki|Mi|Gi|Ti)$/, '$1B') || 'Unavailable'
+    return [
+      {
+        label: 'CPU limit',
+        value: cpu(value.cpu_limit),
+        detail: `${cpu(value.cpu_request)} reserved`,
+      },
+      {
+        label: 'Memory limit',
+        value: memory(value.memory_limit),
+        detail: `${memory(value.memory_request)} reserved`,
+      },
+    ]
+  }
+  function presetFacts(preset: RunnerResources) {
     const value = withRunnerMinimum(preset, minimum)
-    return `Up to ${value.cpu_limit} CPU · ${value.memory_limit} memory`
+    return resourceFacts(value)
+  }
+  function readablePlanValue(value: unknown) {
+    if (value === null || value === undefined || value === '') return 'not set'
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+      return String(value)
+    return 'updated configuration'
+  }
+  const reviewChanges =
+    plan?.changes.map((change) => {
+      const subject = change.service && change.service !== runnerName ? `${change.service}: ` : ''
+      const key = change.field.split('.').at(-1) || change.field
+      const labels: Record<string, string> = {
+        replicas: 'Concurrent jobs',
+        architecture: 'Architecture',
+        node_name: 'Placement',
+        workspace_size_gib: 'Workspace size',
+        timeout_minutes: 'Maximum runner lifetime',
+        labels: 'Workflow routing labels',
+        credential: 'Runner credential binding',
+        jobs_credential: 'Job logs credential binding',
+        cpu_request: 'Reserved CPU',
+        cpu_limit: 'CPU limit',
+        memory_request: 'Reserved memory',
+        memory_limit: 'Memory limit',
+      }
+      if (key === 'image') return 'Update the managed runner image.'
+      if (key === 'resources') return 'Update runner CPU and memory settings.'
+      const field = labels[key]
+      if (!field) return `Update a ${subject}configuration setting.`
+      if (change.sensitive || key === 'labels') return `${subject}${field} will be updated.`
+      if (change.before === null || change.before === undefined || change.before === '')
+        return `${subject}Set ${field[0].toLowerCase()}${field.slice(1)} to ${readablePlanValue(change.after)}.`
+      if (change.after === null || change.after === undefined || change.after === '')
+        return `Remove ${subject}${field}.`
+      if (typeof change.before === 'object' || typeof change.after === 'object')
+        return `${subject}${field} will use updated configuration.`
+      return `${subject}${field} changes from ${readablePlanValue(change.before)} to ${readablePlanValue(change.after)}.`
+    }) || []
+  const summary = {
+    provider: providerName,
+    target: targetLabel,
+    pool: [name, runnerName].filter(Boolean).join(' / '),
+    architecture,
+    replicas,
+    placement: nodeName,
+    resources: reservationLabel,
+    workspace: `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'}`,
+    labels: runnerWorkflowLabels(workflowLabels, provider, architecture),
   }
   return (
     <FormPage
@@ -579,749 +656,762 @@ function RunnerPoolForm({
                   {replicas} {replicas === '1' ? 'job slot' : 'job slots'}
                 </span>
               </div>
-              {plan ? (
-                <div
-                  ref={reviewFocus}
-                  tabIndex={-1}
-                  aria-label="Review runner pool"
-                  className="grid min-w-0 gap-4 focus-visible:outline-2"
-                >
-                  <RunnerSection title="Ready to deploy">
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <RunnerFact label={providerName}>{targetLabel}</RunnerFact>
-                      <RunnerFact label="Compute">
-                        {replicas} × {architecture || 'Automatic architecture'}
-                      </RunnerFact>
-                      <RunnerFact label="Placement">
-                        {nodeName || 'Any eligible runner node'}
-                      </RunnerFact>
-                      <RunnerFact
-                        label={
-                          lifecycle === 'dedicated' ? 'Runner workspace' : 'Workspace & lifetime'
-                        }
-                      >
-                        {workspaceSize} GiB{lifecycle !== 'dedicated' && ` · ${timeout} minutes`}
-                      </RunnerFact>
-                    </div>
-                    <RunnerLabelChips
-                      labels={runnerWorkflowLabels(workflowLabels, provider, architecture)}
-                    />
-                    <p className="text-sm" role="status">
-                      {reservationLabel}
-                    </p>
-                    {nodeName && (
-                      <p className="text-sm">
-                        Jobs wait if {nodeName} is unavailable; they will not move to another node.
-                      </p>
-                    )}
-                    <p className="text-sm">
-                      {lifecycle === 'dedicated'
-                        ? 'This runner stays assigned to one repository. Updating or stopping it may interrupt an active pipeline step.'
-                        : 'Busy runners finish their jobs before updates apply. Each new job receives a fresh workspace.'}
-                    </p>
-                    <details className="border-y border-[var(--hairline)]">
-                      <summary className="min-h-11 cursor-pointer py-3 text-sm">
-                        Configuration details
-                      </summary>
-                      <dl className="grid min-w-0 gap-3 pb-3 text-sm sm:grid-cols-2">
-                        <div>
-                          <dt className="muted-text">Application / service</dt>
-                          <dd className="wrap-anywhere">
-                            {name} / {runnerName}
-                          </dd>
+              <RunnerPoolSummary {...summary} mode="mobile" />
+              <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+                <div className="min-w-0">
+                  {plan ? (
+                    <div
+                      ref={reviewFocus}
+                      tabIndex={-1}
+                      aria-label="Review runner pool"
+                      className="grid min-w-0 gap-4 focus-visible:outline-2"
+                    >
+                      <RunnerSection title="Review runner pool">
+                        <div className="grid gap-2 rounded-md border border-[var(--hairline)] p-3 text-sm">
+                          <h3 className="font-semibold">What will change</h3>
+                          <ul className="grid list-disc gap-1 pl-5">
+                            {(reviewChanges.length
+                              ? reviewChanges
+                              : ['The plan contains no configuration changes.']
+                            ).map((change, index) => (
+                              <li key={`${index}-${change}`}>{change}</li>
+                            ))}
+                          </ul>
                         </div>
-                        <div>
-                          <dt className="muted-text">Runner credential</dt>
-                          <dd className="wrap-anywhere">
-                            <code>{credential}</code>
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="muted-text">Job logs credential</dt>
-                          <dd className="wrap-anywhere">
-                            <code>{jobsCredential || credential}</code>
-                            {(!jobsCredential || jobsCredential === credential) &&
-                              ' · Same as runner'}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="muted-text">Reserved per runner</dt>
-                          <dd>
-                            {effectiveResources.cpu_request} CPU ·{' '}
-                            {effectiveResources.memory_request} memory
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="muted-text">Limit per runner</dt>
-                          <dd>
-                            {effectiveResources.cpu_limit} CPU · {effectiveResources.memory_limit}{' '}
-                            memory
-                          </dd>
-                        </div>
-                        {provider === 'github' && runnerScope === 'organization' && (
-                          <div>
-                            <dt className="muted-text">Runner group</dt>
-                            <dd>{runnerGroup || 'GitHub default group'}</dd>
-                          </div>
-                        )}
-                      </dl>
-                    </details>
-                    <DiffTable changes={plan.changes} />
-                    <DeploymentSecrets
-                      plan={plan}
-                      project={project}
-                      environment={environment}
-                      busy={busy}
-                      onBusy={setBusy}
-                      onChange={(missing) =>
-                        setPlan((current) =>
-                          current ? { ...current, missing_secrets: missing } : current,
-                        )
-                      }
-                    />
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
-                      <Button disabled={busy} onClick={() => move(2)}>
-                        Back to workflow
-                      </Button>
-                      <Button
-                        variant="primary"
-                        disabled={busy || !!plan.missing_secrets?.length || !ready}
-                        onClick={() => void deploy()}
-                      >
-                        {busy ? 'Submitting…' : 'Deploy runner pool'}
-                      </Button>
-                    </div>
-                  </RunnerSection>
-                </div>
-              ) : (
-                <form
-                  ref={form}
-                  onSubmit={(event) => void advance(event)}
-                  className="grid min-w-0 gap-4"
-                  onInvalidCapture={(event) => {
-                    const details = (event.target as HTMLElement).closest('details')
-                    if (details) details.open = true
-                  }}
-                >
-                  <div
-                    ref={stepFocus}
-                    tabIndex={-1}
-                    aria-label={`${['Provider connection', 'Runner compute', 'Workflow settings'][step]} step`}
-                    className="min-w-0 focus-visible:outline-2"
-                  >
-                    {step === 0 && (
-                      <RunnerSection title="Connect your jobs">
-                        <RunnerChoices
-                          label="CI provider"
-                          value={provider}
-                          onChange={chooseProvider}
-                          disabled={busy || !!original}
-                          options={[
-                            { value: 'github', label: 'GitHub', detail: 'GitHub Actions' },
-                            {
-                              value: 'gitlab',
-                              label: 'GitLab',
-                              detail: 'GitLab.com or self-managed',
-                            },
-                            {
-                              value: 'bitbucket',
-                              label: 'Bitbucket',
-                              detail: 'Bitbucket Cloud Pipelines',
-                            },
-                          ]}
-                        />
-                        {!providerAvailable && (
-                          <Note>
-                            {providerCapability?.reason ||
-                              `${providerName} execution is not available on this installation yet. You can explore the setup; deployment stays disabled.`}
-                          </Note>
-                        )}
-                        {provider !== 'github' &&
-                          bindingOptions.length > 0 &&
-                          (bindingOptions.length <= 6 ? (
-                            <RunnerChoices
-                              label="Approved runner pools"
-                              value={binding ? String(approvedBindings.indexOf(binding)) : ''}
-                              options={bindingOptions}
-                              disabled={busy}
-                              onChange={chooseBinding}
-                            />
-                          ) : (
-                            <SelectField
-                              label="Approved runner pool"
-                              value={binding ? String(approvedBindings.indexOf(binding)) : ''}
-                              options={[
-                                { value: '', label: 'Choose an approved pool' },
-                                ...bindingOptions.map((item) => ({
-                                  value: item.value,
-                                  label: `${item.label} · ${item.detail}`,
-                                })),
-                              ]}
-                              disabled={busy}
-                              onValueChange={chooseBinding}
-                            />
-                          ))}
-                        {provider !== 'github' && providerAvailable && bindingReason && (
-                          <p className="text-sm muted-text" role="status">
-                            {bindingReason}
+                        {nodeName && (
+                          <p className="text-sm">
+                            Jobs wait if {nodeName} is unavailable; they will not move to another
+                            node.
                           </p>
                         )}
-                        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-                          <div className="grid content-start gap-4">
-                            <label className="grid gap-2 text-sm font-medium">
-                              Pool name
-                              <Input
-                                ref={nameFocus}
-                                required
-                                readOnly={!!application}
-                                disabled={busy}
-                                value={name}
-                                pattern={'[a-z][a-z0-9\\-]{0,39}'}
-                                maxLength={40}
-                                placeholder="team-runners"
-                                onChange={(event) => setName(event.target.value)}
-                              />
-                            </label>
-                            {provider === 'github' && (
-                              <>
-                                <RunnerChoices
-                                  compact
-                                  label="Share runners with"
-                                  value={runnerScope}
-                                  onChange={setRunnerScope}
-                                  disabled={busy}
-                                  options={[
-                                    { value: 'organization', label: 'Organization' },
-                                    { value: 'repository', label: 'Repository' },
-                                  ]}
-                                />
-                                <label className="grid gap-2 text-sm font-medium">
-                                  {runnerScope === 'organization'
-                                    ? 'GitHub organization'
-                                    : 'GitHub repository'}
-                                  <Input
-                                    required
-                                    value={
-                                      runnerScope === 'organization' ? organization : repository
-                                    }
-                                    placeholder={
-                                      runnerScope === 'organization'
-                                        ? 'your-team'
-                                        : 'your-team/your-repository'
-                                    }
-                                    maxLength={201}
-                                    disabled={busy}
-                                    onChange={(event) =>
-                                      runnerScope === 'organization'
-                                        ? setOrganization(event.target.value)
-                                        : setRepository(event.target.value)
-                                    }
-                                  />
-                                </label>
-                              </>
-                            )}
-                            {provider === 'gitlab' && (
-                              <>
-                                <RunnerChoices
-                                  compact
-                                  label="GitLab installation"
-                                  value={gitlabHost}
-                                  onChange={setGitlabHost}
-                                  disabled={busy}
-                                  options={[
-                                    { value: 'cloud', label: 'GitLab.com' },
-                                    { value: 'self-managed', label: 'Self-managed' },
-                                  ]}
-                                />
-                                <RunnerChoices
-                                  compact
-                                  label="Share runners with"
-                                  value={gitlabScope}
-                                  onChange={setGitlabScope}
-                                  disabled={busy}
-                                  options={[
-                                    { value: 'project', label: 'Project' },
-                                    { value: 'group', label: 'Group' },
-                                  ]}
-                                />
-                                <label className="grid gap-2 text-sm font-medium">
-                                  GitLab {gitlabScope} ID
-                                  <Input
-                                    required
-                                    type="number"
-                                    min={1}
-                                    max={9007199254740991}
-                                    value={gitlabID}
-                                    disabled={busy}
-                                    placeholder="12345"
-                                    onChange={(event) => setGitlabID(event.target.value)}
-                                  />
-                                  <span className="field-help">
-                                    Find this numeric ID in your {gitlabScope}'s GitLab settings.
-                                  </span>
-                                </label>
-                                {gitlabHost === 'self-managed' && (
-                                  <details open className="border-t border-[var(--hairline)]">
-                                    <summary className="min-h-11 cursor-pointer py-3 text-sm">
-                                      Instance connection
-                                    </summary>
-                                    <div className="grid gap-3 pb-3">
-                                      <label className="grid gap-2 text-sm">
-                                        GitLab URL
-                                        <Input
-                                          required
-                                          type="url"
-                                          value={gitlabURL}
-                                          placeholder="https://gitlab.example.com"
-                                          disabled={busy}
-                                          onChange={(event) => setGitlabURL(event.target.value)}
-                                        />
-                                      </label>
-                                      <label className="grid gap-2 text-sm">
-                                        Trust policy
-                                        <Input
-                                          required
-                                          value={trustPolicy}
-                                          disabled={busy}
-                                          placeholder="Your operator's policy name"
-                                          onChange={(event) => setTrustPolicy(event.target.value)}
-                                        />
-                                        <span className="field-help">
-                                          Ask your operator for the policy allowing this instance.
-                                        </span>
-                                      </label>
-                                    </div>
-                                  </details>
-                                )}
-                              </>
-                            )}
-                            {provider === 'bitbucket' && (
-                              <>
-                                <label className="grid gap-2 text-sm font-medium">
-                                  Workspace UUID
-                                  <Input
-                                    required
-                                    maxLength={38}
-                                    value={bitbucketWorkspace}
-                                    placeholder="{workspace-uuid}"
-                                    disabled={busy}
-                                    onChange={(event) => setBitbucketWorkspace(event.target.value)}
-                                  />
-                                </label>
-                                <label className="grid gap-2 text-sm font-medium">
-                                  Repository UUID
-                                  <Input
-                                    required
-                                    maxLength={38}
-                                    value={bitbucketRepository}
-                                    placeholder="{repository-uuid}"
-                                    disabled={busy}
-                                    onChange={(event) => setBitbucketRepository(event.target.value)}
-                                  />
-                                  <span className="field-help">
-                                    Copy UUIDs from Bitbucket's runner setup. This runner stays
-                                    dedicated to the selected repository.
-                                  </span>
-                                </label>
-                              </>
-                            )}
-                          </div>
-                          <div className="grid content-start gap-3">
-                            {lifecycle === 'dedicated' && (
-                              <p className="text-sm">
-                                This runner stays assigned to one repository and reuses its sandbox
-                                between pipeline steps.
-                              </p>
-                            )}
-                            <div className="rounded-lg bg-[var(--surface-2)] p-4">
-                              <div className="flex items-center gap-2 text-sm font-medium">
-                                Connect securely
-                                <HeadingHelp title="Runner credentials">
-                                  Hakopod stores credentials as application secrets. Do not place
-                                  credentials in workflow labels or repository names.
-                                </HeadingHelp>
-                              </div>
-                              <p className="mt-2 text-sm muted-text">
-                                You will save the {providerName} credential at review.
-                              </p>
+                        <p className="text-sm">
+                          {lifecycle === 'dedicated'
+                            ? 'This runner stays assigned to one repository. Updating or stopping it may interrupt an active pipeline step.'
+                            : 'Busy runners finish their jobs before updates apply. Each new job receives a fresh workspace.'}
+                        </p>
+                        <details className="group border-y border-[var(--hairline)]">
+                          <RunnerDisclosureSummary>Configuration details</RunnerDisclosureSummary>
+                          <dl className="grid min-w-0 gap-3 pb-3 text-sm sm:grid-cols-2">
+                            <div>
+                              <dt className="muted-text">Application / service</dt>
+                              <dd className="wrap-anywhere">
+                                {name} / {runnerName}
+                              </dd>
                             </div>
-                            <details className="border-b border-[var(--hairline)]">
-                              <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
-                                What access is needed?
-                              </summary>
-                              <div className="pb-3">
-                                {provider === 'github' ? (
-                                  <ManagedActionsTokenHelp
-                                    organization={runnerScope === 'organization'}
-                                    repository={runnerScope === 'repository'}
-                                    jobs={!jobsCredential || jobsCredential === credential}
+                            <div>
+                              <dt className="muted-text">Runner credential</dt>
+                              <dd className="wrap-anywhere">
+                                <code>{credential}</code>
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="muted-text">Job logs credential</dt>
+                              <dd className="wrap-anywhere">
+                                <code>{jobsCredential || credential}</code>
+                                {(!jobsCredential || jobsCredential === credential) &&
+                                  ' · Same as runner'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="muted-text">Reserved per runner</dt>
+                              <dd>
+                                {effectiveResources.cpu_request} CPU ·{' '}
+                                {effectiveResources.memory_request} memory
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="muted-text">Limit per runner</dt>
+                              <dd>
+                                {effectiveResources.cpu_limit} CPU ·{' '}
+                                {effectiveResources.memory_limit} memory
+                              </dd>
+                            </div>
+                            {provider === 'github' && runnerScope === 'organization' && (
+                              <div>
+                                <dt className="muted-text">Runner group</dt>
+                                <dd>{runnerGroup || 'GitHub default group'}</dd>
+                              </div>
+                            )}
+                          </dl>
+                        </details>
+                        <details className="group border-b border-[var(--hairline)]">
+                          <RunnerDisclosureSummary>
+                            Raw configuration changes
+                          </RunnerDisclosureSummary>
+                          <div className="pb-3">
+                            <DiffTable changes={plan.changes} />
+                          </div>
+                        </details>
+                        <DeploymentSecrets
+                          plan={plan}
+                          project={project}
+                          environment={environment}
+                          busy={busy}
+                          onBusy={setBusy}
+                          onChange={(missing) =>
+                            setPlan((current) =>
+                              current ? { ...current, missing_secrets: missing } : current,
+                            )
+                          }
+                        />
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3">
+                          <Button disabled={busy} onClick={() => move(2)}>
+                            Back to workflow
+                          </Button>
+                          <Button
+                            variant="primary"
+                            disabled={busy || !!plan.missing_secrets?.length || !ready}
+                            onClick={() => void deploy()}
+                          >
+                            {busy
+                              ? 'Submitting…'
+                              : original
+                                ? 'Update runner pool'
+                                : 'Create runner pool'}
+                          </Button>
+                        </div>
+                      </RunnerSection>
+                    </div>
+                  ) : (
+                    <form
+                      ref={form}
+                      onSubmit={(event) => void advance(event)}
+                      className="grid min-w-0 gap-4"
+                      onInvalidCapture={(event) => {
+                        const details = (event.target as HTMLElement).closest('details')
+                        if (details) details.open = true
+                      }}
+                    >
+                      <div
+                        ref={stepFocus}
+                        tabIndex={-1}
+                        aria-label={`${['Provider connection', 'Runner compute', 'Workflow settings'][step]} step`}
+                        className="min-w-0 focus-visible:outline-2"
+                      >
+                        {step === 0 && (
+                          <RunnerSection title="Connect your jobs">
+                            {original ? (
+                              <RunnerFact label="CI provider">{providerName}</RunnerFact>
+                            ) : (
+                              <RunnerChoices
+                                label="CI provider"
+                                value={provider}
+                                onChange={chooseProvider}
+                                disabled={busy}
+                                options={[
+                                  { value: 'github', label: 'GitHub', detail: 'GitHub Actions' },
+                                  {
+                                    value: 'gitlab',
+                                    label: 'GitLab',
+                                    detail: 'GitLab.com or self-managed',
+                                  },
+                                  {
+                                    value: 'bitbucket',
+                                    label: 'Bitbucket',
+                                    detail: 'Bitbucket Cloud Pipelines',
+                                  },
+                                ]}
+                              />
+                            )}
+                            {!providerAvailable && (
+                              <Note>
+                                {providerCapability?.reason ||
+                                  `${providerName} execution is not available on this installation yet. You can explore the setup; deployment stays disabled.`}
+                              </Note>
+                            )}
+                            {provider !== 'github' &&
+                              bindingOptions.length > 0 &&
+                              (bindingOptions.length <= 6 ? (
+                                <RunnerChoices
+                                  label="Approved runner pools"
+                                  value={binding ? String(approvedBindings.indexOf(binding)) : ''}
+                                  options={bindingOptions}
+                                  disabled={busy}
+                                  onChange={chooseBinding}
+                                />
+                              ) : (
+                                <SelectField
+                                  label="Approved runner pool"
+                                  value={binding ? String(approvedBindings.indexOf(binding)) : ''}
+                                  options={[
+                                    { value: '', label: 'Choose an approved pool' },
+                                    ...bindingOptions.map((item) => ({
+                                      value: item.value,
+                                      label: `${item.label} · ${item.detail}`,
+                                    })),
+                                  ]}
+                                  disabled={busy}
+                                  onValueChange={chooseBinding}
+                                />
+                              ))}
+                            {provider !== 'github' && providerAvailable && bindingReason && (
+                              <p className="text-sm muted-text" role="status">
+                                {bindingReason}
+                              </p>
+                            )}
+                            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                              <div className="grid content-start gap-4">
+                                <label className="grid gap-2 text-sm font-medium">
+                                  Pool name
+                                  <Input
+                                    ref={nameFocus}
+                                    required
+                                    readOnly={!!application}
+                                    disabled={busy}
+                                    value={name}
+                                    pattern={'[a-z][a-z0-9\\-]{0,39}'}
+                                    maxLength={40}
+                                    placeholder="team-runners"
+                                    onChange={(event) => setName(event.target.value)}
                                   />
-                                ) : (
+                                </label>
+                                {provider === 'github' && (
+                                  <>
+                                    <RunnerChoices
+                                      compact
+                                      label="Share runners with"
+                                      value={runnerScope}
+                                      onChange={setRunnerScope}
+                                      disabled={busy}
+                                      options={[
+                                        { value: 'organization', label: 'Organization' },
+                                        { value: 'repository', label: 'Repository' },
+                                      ]}
+                                    />
+                                    <label className="grid gap-2 text-sm font-medium">
+                                      {runnerScope === 'organization'
+                                        ? 'GitHub organization'
+                                        : 'GitHub repository'}
+                                      <Input
+                                        required
+                                        value={
+                                          runnerScope === 'organization' ? organization : repository
+                                        }
+                                        placeholder={
+                                          runnerScope === 'organization'
+                                            ? 'your-team'
+                                            : 'your-team/your-repository'
+                                        }
+                                        maxLength={201}
+                                        disabled={busy}
+                                        onChange={(event) =>
+                                          runnerScope === 'organization'
+                                            ? setOrganization(event.target.value)
+                                            : setRepository(event.target.value)
+                                        }
+                                      />
+                                    </label>
+                                  </>
+                                )}
+                                {provider === 'gitlab' && (
+                                  <>
+                                    <RunnerChoices
+                                      compact
+                                      label="GitLab installation"
+                                      value={gitlabHost}
+                                      onChange={setGitlabHost}
+                                      disabled={busy}
+                                      options={[
+                                        { value: 'cloud', label: 'GitLab.com' },
+                                        { value: 'self-managed', label: 'Self-managed' },
+                                      ]}
+                                    />
+                                    <RunnerChoices
+                                      compact
+                                      label="Share runners with"
+                                      value={gitlabScope}
+                                      onChange={setGitlabScope}
+                                      disabled={busy}
+                                      options={[
+                                        { value: 'project', label: 'Project' },
+                                        { value: 'group', label: 'Group' },
+                                      ]}
+                                    />
+                                    <label className="grid gap-2 text-sm font-medium">
+                                      GitLab {gitlabScope} ID
+                                      <Input
+                                        required
+                                        type="number"
+                                        min={1}
+                                        max={9007199254740991}
+                                        value={gitlabID}
+                                        disabled={busy}
+                                        placeholder="12345"
+                                        onChange={(event) => setGitlabID(event.target.value)}
+                                      />
+                                      <span className="field-help">
+                                        Find this numeric ID in your {gitlabScope}'s GitLab
+                                        settings.
+                                      </span>
+                                    </label>
+                                    {gitlabHost === 'self-managed' && (
+                                      <details
+                                        open
+                                        className="group border-t border-[var(--hairline)]"
+                                      >
+                                        <RunnerDisclosureSummary>
+                                          Instance connection
+                                        </RunnerDisclosureSummary>
+                                        <div className="grid gap-3 pb-3">
+                                          <label className="grid gap-2 text-sm">
+                                            GitLab URL
+                                            <Input
+                                              required
+                                              type="url"
+                                              value={gitlabURL}
+                                              placeholder="https://gitlab.example.com"
+                                              disabled={busy}
+                                              onChange={(event) => setGitlabURL(event.target.value)}
+                                            />
+                                          </label>
+                                          <label className="grid gap-2 text-sm">
+                                            Trust policy
+                                            <Input
+                                              required
+                                              value={trustPolicy}
+                                              disabled={busy}
+                                              placeholder="Your operator's policy name"
+                                              onChange={(event) =>
+                                                setTrustPolicy(event.target.value)
+                                              }
+                                            />
+                                            <span className="field-help">
+                                              Ask your operator for the policy allowing this
+                                              instance.
+                                            </span>
+                                          </label>
+                                        </div>
+                                      </details>
+                                    )}
+                                  </>
+                                )}
+                                {provider === 'bitbucket' && (
+                                  <>
+                                    <label className="grid gap-2 text-sm font-medium">
+                                      Workspace UUID
+                                      <Input
+                                        required
+                                        maxLength={38}
+                                        value={bitbucketWorkspace}
+                                        placeholder="{workspace-uuid}"
+                                        disabled={busy}
+                                        onChange={(event) =>
+                                          setBitbucketWorkspace(event.target.value)
+                                        }
+                                      />
+                                    </label>
+                                    <label className="grid gap-2 text-sm font-medium">
+                                      Repository UUID
+                                      <Input
+                                        required
+                                        maxLength={38}
+                                        value={bitbucketRepository}
+                                        placeholder="{repository-uuid}"
+                                        disabled={busy}
+                                        onChange={(event) =>
+                                          setBitbucketRepository(event.target.value)
+                                        }
+                                      />
+                                      <span className="field-help">
+                                        Copy UUIDs from Bitbucket's runner setup. This runner stays
+                                        dedicated to the selected repository.
+                                      </span>
+                                    </label>
+                                  </>
+                                )}
+                              </div>
+                              <div className="grid content-start gap-3">
+                                {lifecycle === 'dedicated' && (
                                   <p className="text-sm">
-                                    {provider === 'gitlab'
-                                      ? 'Use a scoped GitLab token allowed to create and remove runners for the selected project or group. A separate read-only token can supply job status and logs.'
-                                      : 'Use a Bitbucket OAuth access token or JSON with email and api_token. Hakopod generates runner registration credentials separately; you do not enter them here.'}
+                                    This runner stays assigned to one repository and reuses its
+                                    sandbox between pipeline steps.
+                                  </p>
+                                )}
+                                <div className="rounded-lg bg-[var(--surface-2)] p-4">
+                                  <div className="flex items-center gap-2 text-sm font-medium">
+                                    Connect securely
+                                    <HeadingHelp title="Runner credentials">
+                                      Hakopod stores credentials as application secrets. Do not
+                                      place credentials in workflow labels or repository names.
+                                    </HeadingHelp>
+                                  </div>
+                                  <p className="mt-2 text-sm muted-text">
+                                    You will save the {providerName} credential at review.
+                                  </p>
+                                </div>
+                                <details className="group border-b border-[var(--hairline)]">
+                                  <RunnerDisclosureSummary>
+                                    What access is needed?
+                                  </RunnerDisclosureSummary>
+                                  <div className="pb-3">
+                                    {provider === 'github' ? (
+                                      <ManagedActionsTokenHelp
+                                        organization={runnerScope === 'organization'}
+                                        repository={runnerScope === 'repository'}
+                                        jobs={!jobsCredential || jobsCredential === credential}
+                                      />
+                                    ) : (
+                                      <p className="text-sm">
+                                        {provider === 'gitlab'
+                                          ? 'Use a scoped GitLab token allowed to create and remove runners for the selected project or group. A separate read-only token can supply job status and logs.'
+                                          : 'Use a Bitbucket OAuth access token or JSON with email and api_token. Hakopod generates runner registration credentials separately; you do not enter them here.'}
+                                      </p>
+                                    )}
+                                  </div>
+                                </details>
+                                {jobsCredential && jobsCredential !== credential && (
+                                  <p className="field-help">
+                                    Job details and logs use <code>{jobsCredential}</code>
+                                    {provider === 'github'
+                                      ? ' with repository Actions: Read-only access.'
+                                      : '.'}
                                   </p>
                                 )}
                               </div>
+                            </div>
+                            <details className="group border-t border-[var(--hairline)]">
+                              <RunnerDisclosureSummary>
+                                Advanced connection settings
+                              </RunnerDisclosureSummary>
+                              <div className="grid gap-3 pb-3 sm:grid-cols-2">
+                                <RunnerField label="Service name">
+                                  <Input
+                                    required
+                                    disabled={!!original || busy}
+                                    value={runnerName}
+                                    pattern={'[a-z][a-z0-9\\-]{0,39}'}
+                                    maxLength={40}
+                                    onChange={(event) => setRunnerName(event.target.value)}
+                                  />
+                                </RunnerField>
+                                <RunnerField
+                                  label="Runner credential"
+                                  help="Application secret name; save the secret itself at review."
+                                >
+                                  <Input
+                                    required
+                                    value={credential}
+                                    maxLength={40}
+                                    disabled={busy}
+                                    onChange={(event) => setCredential(event.target.value)}
+                                  />
+                                </RunnerField>
+                                <RunnerField
+                                  label="Job logs credential (optional)"
+                                  help="Leave blank to use the runner credential."
+                                  helpId="runner-jobs-credential-help"
+                                >
+                                  <Input
+                                    id="runner-jobs-credential"
+                                    value={jobsCredential}
+                                    maxLength={40}
+                                    pattern={'[a-z]([a-z0-9\\-]{0,38}[a-z0-9])?'}
+                                    placeholder="Use runner credential"
+                                    disabled={busy}
+                                    aria-describedby="runner-jobs-credential-help"
+                                    onChange={(event) => setJobsCredential(event.target.value)}
+                                  />
+                                </RunnerField>
+                                {provider === 'github' && runnerScope === 'organization' && (
+                                  <RunnerField label="Runner group ID (optional)">
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={9007199254740991}
+                                      step={1}
+                                      value={runnerGroup}
+                                      placeholder="GitHub default group"
+                                      disabled={busy}
+                                      onChange={(event) => setRunnerGroup(event.target.value)}
+                                    />
+                                  </RunnerField>
+                                )}
+                              </div>
                             </details>
-                            {jobsCredential && jobsCredential !== credential && (
-                              <p className="field-help">
-                                Job details and logs use <code>{jobsCredential}</code>
-                                {provider === 'github'
-                                  ? ' with repository Actions: Read-only access.'
-                                  : '.'}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <details className="border-t border-[var(--hairline)]">
-                          <summary className="min-h-11 cursor-pointer py-3 text-sm">
-                            Advanced connection settings
-                          </summary>
-                          <div className="grid gap-3 pb-3 sm:grid-cols-2">
-                            <label className="grid gap-2 text-sm">
-                              Service name
-                              <Input
-                                required
-                                disabled={!!original || busy}
-                                value={runnerName}
-                                pattern={'[a-z][a-z0-9\\-]{0,39}'}
-                                maxLength={40}
-                                onChange={(event) => setRunnerName(event.target.value)}
-                              />
-                            </label>
-                            <label className="grid gap-2 text-sm">
-                              Runner credential
-                              <Input
-                                required
-                                value={credential}
-                                maxLength={40}
-                                disabled={busy}
-                                onChange={(event) => setCredential(event.target.value)}
-                              />
-                              <span className="field-help">
-                                Application secret name; save the secret itself at review.
-                              </span>
-                            </label>
-                            <label className="grid gap-2 text-sm">
-                              Job logs credential (optional)
-                              <Input
-                                id="runner-jobs-credential"
-                                value={jobsCredential}
-                                maxLength={40}
-                                pattern={'[a-z]([a-z0-9\\-]{0,38}[a-z0-9])?'}
-                                placeholder="Use runner credential"
-                                disabled={busy}
-                                aria-describedby="runner-jobs-credential-help"
-                                onChange={(event) => setJobsCredential(event.target.value)}
-                              />
-                              <span id="runner-jobs-credential-help" className="field-help">
-                                Leave blank to use the runner credential.
-                              </span>
-                            </label>
-                            {provider === 'github' && runnerScope === 'organization' && (
-                              <label className="grid gap-2 text-sm">
-                                Runner group ID (optional)
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  max={9007199254740991}
-                                  step={1}
-                                  value={runnerGroup}
-                                  placeholder="GitHub default group"
-                                  disabled={busy}
-                                  onChange={(event) => setRunnerGroup(event.target.value)}
-                                />
-                              </label>
-                            )}
-                          </div>
-                        </details>
-                      </RunnerSection>
-                    )}
-                    {step === 1 && (
-                      <RunnerSection title="Choose your compute">
-                        <RunnerChoices
-                          compact
-                          label="Architecture"
-                          value={architecture}
-                          onChange={setArchitecture}
-                          disabled={busy}
-                          options={[
-                            ...(provider === 'github' ? [{ value: '', label: 'Automatic' }] : []),
-                            { value: 'amd64', label: 'AMD64' },
-                            { value: 'arm64', label: 'ARM64' },
-                          ]}
-                        />
-                        <RunnerChoices
-                          label="Resources per job"
-                          value={resourcePreset}
-                          onChange={resourceChoice}
-                          disabled={busy}
-                          options={[
-                            ...(original
-                              ? [
-                                  {
-                                    value: 'saved',
-                                    label: 'Current settings',
-                                    detail: 'Keep current reservations and limits',
-                                  },
-                                ]
-                              : []),
-                            {
-                              value: 'defaults',
-                              label: 'Installation defaults',
-                              detail: presetSummary(installationResources),
-                            },
-                            {
-                              value: 'balanced',
-                              label: 'Balanced',
-                              detail: presetSummary(runnerResourcePresets.balanced),
-                            },
-                            {
-                              value: 'builds',
-                              label: 'Larger builds',
-                              detail: presetSummary(runnerResourcePresets.builds),
-                            },
-                            {
-                              value: 'custom',
-                              label: 'Custom',
-                              detail: 'Set reservations and limits',
-                            },
-                          ]}
-                        />
-                        {minimum && (
-                          <p className="text-xs muted-text">
-                            {providerName} requires at least {minimum.cpu_request} CPU and{' '}
-                            {minimum.memory_request} memory reserved per runner, with limits of{' '}
-                            {minimum.cpu_limit} CPU and {minimum.memory_limit} memory or more.
-                            Minimum workspace: {workspaceMinimum} GiB.
-                          </p>
+                          </RunnerSection>
                         )}
-                        {!resourcesValid && (
-                          <Note>
-                            Current values are preserved. Choose a preset or increase custom
-                            resources to meet these minimums.
-                          </Note>
-                        )}
-                        {provider !== 'github' && bindingReason && (
-                          <p className="text-sm muted-text" role="status">
-                            {bindingReason}
-                          </p>
-                        )}
-                        <div className="grid min-w-0 content-start gap-4 lg:grid-cols-2">
-                          <div className="grid content-start gap-3">
-                            <RunnerCapacity
-                              value={replicas}
-                              maximum={Math.max(
-                                Number(original?.replicas || 0),
-                                dashboardEdition.cloud ? 3 : 10,
-                              )}
-                              disabled={busy}
-                              onChange={setReplicas}
-                            />
-                            <p className="text-sm muted-text" role="status">
-                              {reservationLabel}
-                            </p>
-                          </div>
-                          <RunnerPlacement
-                            value={nodeName}
-                            architecture={architecture}
-                            nodes={nodes.data?.items}
-                            loading={nodes.isPending}
-                            failed={!!nodes.error}
-                            refreshing={nodes.isFetching}
-                            disabled={busy}
-                            onChange={setNodeName}
-                            onRetry={() => void nodes.refetch()}
-                          />
-                        </div>
-                        {resourcePreset === 'custom' && (
-                          <RunnerResourceFields
-                            effective={effectiveResources}
-                            minimum={minimum}
-                            expanded
-                            disabled={busy || !effective}
-                            onChange={(key, value) =>
-                              setResources((current) => ({ ...current, [key]: value }))
-                            }
-                          />
-                        )}
-                      </RunnerSection>
-                    )}
-                    {step === 2 && (
-                      <RunnerSection title="Prepare your workflow">
-                        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-                          <div className="grid content-start gap-4">
-                            <RunnerLabels
-                              value={labels}
-                              onChange={setLabels}
-                              disabled={busy}
-                              label={
-                                provider === 'gitlab'
-                                  ? 'Pipeline tags'
-                                  : provider === 'bitbucket'
-                                    ? 'Custom labels'
-                                    : 'Workflow labels'
-                              }
-                              provider={provider}
-                            />
+                        {step === 1 && (
+                          <RunnerSection title="Choose your compute">
                             <RunnerChoices
                               compact
-                              label={
-                                lifecycle === 'dedicated'
-                                  ? 'Runner workspace'
-                                  : 'Temporary workspace'
-                              }
-                              value={workspaceSize}
-                              onChange={setWorkspaceSize}
+                              label="Architecture"
+                              value={architecture}
+                              onChange={setArchitecture}
                               disabled={busy}
                               options={[
-                                ...new Set([
-                                  workspaceSize,
-                                  String(workspaceMinimum),
-                                  '2',
-                                  '8',
-                                  '16',
-                                ]),
-                              ]
-                                .sort((a, b) => Number(a) - Number(b))
-                                .map((value) => ({
-                                  value,
-                                  label: `${value} GiB`,
-                                  disabled: Number(value) < workspaceMinimum,
-                                }))}
+                                ...(provider === 'github'
+                                  ? [{ value: '', label: 'Automatic' }]
+                                  : []),
+                                { value: 'amd64', label: 'AMD64' },
+                                { value: 'arm64', label: 'ARM64' },
+                              ]}
                             />
-                            <span className="text-xs muted-text">
-                              {lifecycle === 'dedicated'
-                                ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
-                                : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
-                            </span>
-                          </div>
-                          <RunnerWorkflowGuide
-                            labels={workflowLabels}
-                            provider={provider}
-                            architecture={architecture}
-                          />
-                        </div>
-                        {provider === 'gitlab' && (
-                          <div className="grid gap-3">
                             <RunnerChoices
-                              label="Dependency cache"
-                              value={cacheEnabled ? 'shared' : 'none'}
-                              onChange={(value) => setCacheEnabled(value === 'shared')}
+                              label="Resources per job"
+                              value={resourcePreset}
+                              onChange={resourceChoice}
                               disabled={busy}
                               options={[
+                                ...(original
+                                  ? [
+                                      {
+                                        value: 'saved',
+                                        label: 'Current settings',
+                                        facts: resourceFacts(savedResources),
+                                      },
+                                    ]
+                                  : []),
                                 {
-                                  value: 'none',
-                                  label: 'No shared cache',
-                                  detail: 'Do not configure shared dependency storage',
+                                  value: 'defaults',
+                                  label: 'Installation defaults',
+                                  facts: presetFacts(installationResources),
                                 },
                                 {
-                                  value: 'shared',
-                                  label: 'Shared cache',
-                                  detail:
-                                    providerCapability?.cache.backend ||
-                                    'Installation-approved storage',
-                                  disabled: !cacheAvailable,
+                                  value: 'balanced',
+                                  label: 'Balanced',
+                                  facts: presetFacts(runnerResourcePresets.balanced),
+                                },
+                                {
+                                  value: 'builds',
+                                  label: 'Larger builds',
+                                  facts: presetFacts(runnerResourcePresets.builds),
+                                },
+                                {
+                                  value: 'custom',
+                                  label: 'Custom',
+                                  detail: 'Set reservations and limits',
                                 },
                               ]}
                             />
-                            {!cacheAvailable && (
+                            {minimum && (
                               <p className="text-xs muted-text">
-                                {binding
-                                  ? 'Shared caching is not approved for this pool.'
-                                  : 'Choose an approved pool to see its cache support.'}{' '}
-                                {cacheEnabled &&
-                                  'Your saved cache choice is preserved; disable it or select a matching approval before deploying.'}
+                                {providerName} requires at least {minimum.cpu_request} CPU and{' '}
+                                {minimum.memory_request} memory reserved per runner, with limits of{' '}
+                                {minimum.cpu_limit} CPU and {minimum.memory_limit} memory or more.
+                                Minimum workspace: {workspaceMinimum} GiB.
                               </p>
                             )}
-                            {providerCapability?.cache.reason && (
-                              <p className="text-xs muted-text">
-                                {providerCapability.cache.reason}
+                            {!resourcesValid && (
+                              <Note>
+                                Current values are preserved. Choose a preset or increase custom
+                                resources to meet these minimums.
+                              </Note>
+                            )}
+                            {provider !== 'github' && bindingReason && (
+                              <p className="text-sm muted-text" role="status">
+                                {bindingReason}
                               </p>
                             )}
-                            {cacheEnabled && (
-                              <label className="grid gap-2 text-sm">
-                                Cache credential
-                                <Input
-                                  required
-                                  value={cacheCredential}
-                                  maxLength={40}
-                                  disabled={busy}
-                                  onChange={(event) => setCacheCredential(event.target.value)}
-                                />
-                                <span className="field-help">
-                                  Application secret for the storage credentials. Save it securely
-                                  at review; the runner manager keeps the secret.
-                                </span>
-                              </label>
-                            )}
-                          </div>
-                        )}
-                        {lifecycle !== 'dedicated' && (
-                          <details className="border-t border-[var(--hairline)]">
-                            <summary className="min-h-11 cursor-pointer py-3 text-sm">
-                              Job lifetime
-                            </summary>
-                            <div className="pb-3">
-                              <RunnerChoices
-                                compact
-                                label="Maximum runner lifetime"
-                                value={timeout}
-                                onChange={setTimeout}
+                            <div className="grid min-w-0 gap-x-4 gap-y-3 lg:grid-cols-2">
+                              <RunnerCapacity
+                                value={replicas}
+                                reservationLabel={reservationLabel}
+                                maximum={Math.max(
+                                  Number(original?.replicas || 0),
+                                  dashboardEdition.cloud ? 3 : 10,
+                                )}
                                 disabled={busy}
-                                options={[...new Set([timeout, '30', '60', '120', '360'])]
-                                  .sort((a, b) => Number(a) - Number(b))
-                                  .map((value) => ({ value, label: `${value} minutes` }))}
+                                onChange={setReplicas}
                               />
-                              <p className="mt-2 text-xs muted-text">
-                                Includes startup, waiting for a job and execution.
-                              </p>
+                              <RunnerPlacement
+                                value={nodeName}
+                                architecture={architecture}
+                                nodes={nodes.data?.items}
+                                loading={nodes.isPending}
+                                failed={!!nodes.error}
+                                refreshing={nodes.isFetching}
+                                disabled={busy}
+                                onChange={setNodeName}
+                                onRetry={() => void nodes.refetch()}
+                              />
                             </div>
-                          </details>
+                            {resourcePreset === 'custom' && (
+                              <RunnerResourceFields
+                                effective={effectiveResources}
+                                minimum={minimum}
+                                expanded
+                                disabled={busy || !effective}
+                                onChange={(key, value) =>
+                                  setResources((current) => ({ ...current, [key]: value }))
+                                }
+                              />
+                            )}
+                          </RunnerSection>
                         )}
-                        {!ready && (
-                          <Note>
-                            {bindingReason ||
-                              (!resourcesValid
-                                ? 'Increase the resource reservations and limits to meet the provider minimums.'
-                                : Number(workspaceSize) < workspaceMinimum
-                                  ? `Choose at least ${workspaceMinimum} GiB of workspace.`
-                                  : cacheEnabled && provider === 'gitlab' && !cacheAvailable
-                                    ? 'Shared caching is not approved for this pool.'
-                                    : providerCapability?.reason ||
-                                      'This pool cannot deploy until its provider and runner environment are ready.')}
-                          </Note>
+                        {step === 2 && (
+                          <RunnerSection title="Prepare your workflow">
+                            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                              <div className="grid content-start gap-4">
+                                <RunnerLabels
+                                  value={labels}
+                                  onChange={setLabels}
+                                  disabled={busy}
+                                  label={
+                                    provider === 'gitlab'
+                                      ? 'Pipeline tags'
+                                      : provider === 'bitbucket'
+                                        ? 'Custom labels'
+                                        : 'Workflow labels'
+                                  }
+                                  provider={provider}
+                                />
+                                <RunnerChoices
+                                  compact
+                                  label={
+                                    lifecycle === 'dedicated'
+                                      ? 'Runner workspace'
+                                      : 'Temporary workspace'
+                                  }
+                                  value={workspaceSize}
+                                  onChange={setWorkspaceSize}
+                                  disabled={busy}
+                                  options={[
+                                    ...new Set([
+                                      workspaceSize,
+                                      String(workspaceMinimum),
+                                      '2',
+                                      '8',
+                                      '16',
+                                    ]),
+                                  ]
+                                    .sort((a, b) => Number(a) - Number(b))
+                                    .map((value) => ({
+                                      value,
+                                      label: `${value} GiB`,
+                                      disabled: Number(value) < workspaceMinimum,
+                                    }))}
+                                />
+                                <span className="text-xs muted-text">
+                                  {lifecycle === 'dedicated'
+                                    ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
+                                    : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
+                                </span>
+                              </div>
+                              <RunnerWorkflowGuide
+                                labels={workflowLabels}
+                                provider={provider}
+                                architecture={architecture}
+                              />
+                            </div>
+                            {provider === 'gitlab' && (
+                              <div className="grid gap-3">
+                                <RunnerChoices
+                                  label="Dependency cache"
+                                  value={cacheEnabled ? 'shared' : 'none'}
+                                  onChange={(value) => setCacheEnabled(value === 'shared')}
+                                  disabled={busy}
+                                  options={[
+                                    {
+                                      value: 'none',
+                                      label: 'No shared cache',
+                                      detail: 'Do not configure shared dependency storage',
+                                    },
+                                    {
+                                      value: 'shared',
+                                      label: 'Shared cache',
+                                      detail:
+                                        providerCapability?.cache.backend ||
+                                        'Installation-approved storage',
+                                      disabled: !cacheAvailable,
+                                    },
+                                  ]}
+                                />
+                                {!cacheAvailable && (
+                                  <p className="text-xs muted-text">
+                                    {binding
+                                      ? 'Shared caching is not approved for this pool.'
+                                      : 'Choose an approved pool to see its cache support.'}{' '}
+                                    {cacheEnabled &&
+                                      'Your saved cache choice is preserved; disable it or select a matching approval before deploying.'}
+                                  </p>
+                                )}
+                                {providerCapability?.cache.reason && (
+                                  <p className="text-xs muted-text">
+                                    {providerCapability.cache.reason}
+                                  </p>
+                                )}
+                                {cacheEnabled && (
+                                  <label className="grid gap-2 text-sm">
+                                    Cache credential
+                                    <Input
+                                      required
+                                      value={cacheCredential}
+                                      maxLength={40}
+                                      disabled={busy}
+                                      onChange={(event) => setCacheCredential(event.target.value)}
+                                    />
+                                    <span className="field-help">
+                                      Application secret for the storage credentials. Save it
+                                      securely at review; the runner manager keeps the secret.
+                                    </span>
+                                  </label>
+                                )}
+                              </div>
+                            )}
+                            {lifecycle !== 'dedicated' && (
+                              <details className="group border-t border-[var(--hairline)]">
+                                <RunnerDisclosureSummary>Job lifetime</RunnerDisclosureSummary>
+                                <div className="pb-3">
+                                  <RunnerChoices
+                                    compact
+                                    label="Maximum runner lifetime"
+                                    value={timeout}
+                                    onChange={setTimeout}
+                                    disabled={busy}
+                                    options={[...new Set([timeout, '30', '60', '120', '360'])]
+                                      .sort((a, b) => Number(a) - Number(b))
+                                      .map((value) => ({ value, label: `${value} minutes` }))}
+                                  />
+                                  <p className="mt-2 text-xs muted-text">
+                                    Includes startup, waiting for a job and execution.
+                                  </p>
+                                </div>
+                              </details>
+                            )}
+                            {!ready && (
+                              <Note>
+                                {bindingReason ||
+                                  (!resourcesValid
+                                    ? 'Increase the resource reservations and limits to meet the provider minimums.'
+                                    : Number(workspaceSize) < workspaceMinimum
+                                      ? `Choose at least ${workspaceMinimum} GiB of workspace.`
+                                      : cacheEnabled && provider === 'gitlab' && !cacheAvailable
+                                        ? 'Shared caching is not approved for this pool.'
+                                        : providerCapability?.reason ||
+                                          'This pool cannot deploy until its provider and runner environment are ready.')}
+                              </Note>
+                            )}
+                          </RunnerSection>
                         )}
-                      </RunnerSection>
-                    )}
-                  </div>
-                  {error && <RequestError error={error} />}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
-                    <Button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => (step ? move(step - 1) : onClose())}
-                    >
-                      {step ? 'Back' : 'Cancel'}
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      disabled={busy || !canDraft || (step === 2 && !ready)}
-                    >
-                      {busy
-                        ? 'Checking capacity…'
-                        : step === 0
-                          ? 'Choose compute'
-                          : step === 1
-                            ? 'Set up workflow'
-                            : 'Review runner pool'}
-                    </Button>
-                  </div>
-                </form>
-              )}
+                      </div>
+                      {error && <RequestError error={error} />}
+                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3">
+                        <Button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => (step ? move(step - 1) : onClose())}
+                        >
+                          {step ? 'Back' : 'Cancel'}
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          disabled={busy || !canDraft || (step === 2 && !ready)}
+                        >
+                          {busy
+                            ? 'Checking capacity…'
+                            : step === 0
+                              ? 'Choose compute'
+                              : step === 1
+                                ? 'Set up workflow'
+                                : 'Review runner pool'}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+                <RunnerPoolSummary {...summary} mode="desktop" />
+              </div>
             </>
           )}
         </div>
