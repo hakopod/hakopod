@@ -165,11 +165,17 @@ TCP connections. Auth, REST and Storage URLs must verify the database hostname
 against the mounted CA. Source tests and independent review passed; these
 controls have not yet passed native full-stack acceptance.
 
-Supavisor's inspected source uses `verify_none` for its internal database
-connection. Edge and Studio hostname verification also remain unqualified,
-and the exact image-to-source provenance must be checked. Database TLS and
-verified connections from every client must pass before the platform can be
-enabled. A TLS listener alone does not resolve those dependencies.
+Supavisor is configured with a separately generated `pooler-api-jwt-secret`
+for its administrative API, while NetworkPolicy denies application traffic to
+that listener. Native proof that application JWTs are refused for tenant
+changes remains part of the full-stack acceptance gate. The reviewed Supavisor
+v2.9.12 source patch replaces its upstream `verify_none` database connection
+with CA and hostname verification, and its digest-pinned OCI artifact has
+reproducible source provenance. Its native database connection is still
+unverified. Edge Runtime and Studio have no direct database route; native
+NetworkPolicy proof for both is also pending. Verified database connections
+from every direct client must pass before the platform can be enabled. A TLS
+listener or source review alone does not resolve those dependencies.
 
 Backup and restore have a separately reviewed implementation. Its durable cleanup
 keeps a paused source recoverable after a worker crash or revoked authority,

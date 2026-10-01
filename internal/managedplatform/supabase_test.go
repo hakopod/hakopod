@@ -65,6 +65,8 @@ func TestSupabaseCandidateRejectsUnsafeConfiguration(t *testing.T) {
 		func(s *Spec) { delete(s.Resources, "realtime") },
 		func(s *Spec) { delete(s.Storage, "objects") },
 		func(s *Spec) { delete(s.Secrets, "jwt-secret") },
+		func(s *Spec) { delete(s.Secrets, "pooler-api-jwt-secret") },
+		func(s *Spec) { s.Secrets["pooler-api-jwt-secret"] = s.Secrets["jwt-secret"] },
 		func(s *Spec) { s.Resources["database"] = Resources{CPU: "499m", Memory: "2Gi"} },
 		func(s *Spec) { s.Resources["database"] = Resources{CPU: "500m", Memory: "2047Mi"} },
 		func(s *Spec) { s.Resources["realtime"] = Resources{CPU: "249m", Memory: "512Mi"} },

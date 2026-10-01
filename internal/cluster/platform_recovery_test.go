@@ -4,9 +4,28 @@ import (
 	"archive/tar"
 	"bytes"
 	"io"
+	"maps"
 	"os"
 	"testing"
+
+	"github.com/hakopod/hakopod/internal/managedplatform"
 )
+
+func TestSupabaseRecoveryPreservesPoolerAdministrativeAuthority(t *testing.T) {
+	source := managedplatform.Spec{Secrets: map[string]managedplatform.SecretReference{}}
+	for _, key := range supabaseRecoveryCryptographicSecretKeys {
+		source.Secrets[key] = managedplatform.SecretReference{Name: "supabase-" + key, Revision: 1}
+	}
+	target := source
+	target.Secrets = maps.Clone(source.Secrets)
+	if err := validateSupabaseRecoverySecrets(target, source); err != nil {
+		t.Fatal(err)
+	}
+	target.Secrets["pooler-api-jwt-secret"] = managedplatform.SecretReference{Name: "supabase-pooler-api-jwt-secret", Revision: 2}
+	if err := validateSupabaseRecoverySecrets(target, source); err == nil {
+		t.Fatal("Supabase recovery accepted a different pooler administrative JWT revision")
+	}
+}
 
 func recoveryTar(t *testing.T, headers []*tar.Header) []byte {
 	t.Helper()

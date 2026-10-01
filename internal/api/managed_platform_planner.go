@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -73,6 +74,9 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
+		if err = validateSupabaseAdministrativeAuthority(item.Spec, snapshots); err != nil {
+			return nil, err
+		}
 		request := cluster.SupabaseRuntimeRequest{Render: render, SecretSnapshots: snapshots}
 		return cluster.SealManagedPlatformSnapshot(p.EncryptionKey, item.ID, expected+1, kind, cluster.ManagedPlatformSnapshot{ReviewedPlan: reviewed, Supabase: &request})
 	case "neon":
@@ -114,6 +118,23 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 	default:
 		return nil, fmt.Errorf("managed platform kind is not configured")
 	}
+}
+
+func validateSupabaseAdministrativeAuthority(spec managedplatform.Spec, snapshots map[string]map[string][]byte) error {
+	applicationRef, applicationOK := spec.Secrets["jwt-secret"]
+	adminRef, adminOK := spec.Secrets["pooler-api-jwt-secret"]
+	if !applicationOK || !adminOK || applicationRef == adminRef {
+		return fmt.Errorf("Supabase pooler administrative JWT secret must use a separate immutable revision")
+	}
+	name := func(ref managedplatform.SecretReference) string {
+		return ref.Name + "-r" + strconv.FormatInt(ref.Revision, 10)
+	}
+	application := snapshots[name(applicationRef)]["value"]
+	admin := snapshots[name(adminRef)]["value"]
+	if len(application) == 0 || len(admin) < 32 || (len(application) == len(admin) && subtle.ConstantTimeCompare(application, admin) == 1) {
+		return fmt.Errorf("Supabase pooler administrative JWT secret must contain independent key material of at least 32 bytes")
+	}
+	return nil
 }
 func cloneManagedPlatformStrings(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))

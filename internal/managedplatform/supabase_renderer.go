@@ -624,7 +624,7 @@ func secretEnvironmentName(component, key string) string {
 		"auth/auth-database-url": "GOTRUE_DB_DATABASE_URL", "auth/jwt-secret": "GOTRUE_JWT_SECRET", "auth/jwt-signing-keys": "GOTRUE_JWT_KEYS",
 		"database/database-owner-password": "POSTGRES_PASSWORD", "database/jwt-secret": "JWT_SECRET",
 		"edge-runtime/anon-key": "SUPABASE_ANON_KEY", "edge-runtime/jwt-secret": "JWT_SECRET", "edge-runtime/jwt-verification-keys": "SUPABASE_JWKS", "edge-runtime/publishable-key": "SUPABASE_PUBLISHABLE_KEYS", "edge-runtime/secret-key": "SUPABASE_SECRET_KEYS", "edge-runtime/service-role-key": "SUPABASE_SERVICE_ROLE_KEY",
-		"pooler/supavisor-database-url": "DATABASE_URL", "pooler/secret-key-base": "SECRET_KEY_BASE", "pooler/vault-encryption-key": "VAULT_ENC_KEY", "pooler/jwt-secret": "API_JWT_SECRET",
+		"pooler/supavisor-database-url": "DATABASE_URL", "pooler/secret-key-base": "SECRET_KEY_BASE", "pooler/vault-encryption-key": "VAULT_ENC_KEY", "pooler/pooler-api-jwt-secret": "API_JWT_SECRET",
 		"postgres-meta/postgres-meta-database-password": "PG_META_DB_PASSWORD", "postgres-meta/pg-meta-crypto-key": "CRYPTO_KEY",
 		"realtime/anon-key": "ANON_KEY", "realtime/realtime-database-password": "DB_PASSWORD", "realtime/realtime-db-encryption-key": "DB_ENC_KEY", "realtime/secret-key-base": "SECRET_KEY_BASE", "realtime/jwt-secret": "API_JWT_SECRET", "realtime/jwt-verification-keys": "API_JWT_JWKS",
 		"rest/rest-database-url": "PGRST_DB_URI", "rest/jwt-verification-keys": "PGRST_JWT_SECRET",

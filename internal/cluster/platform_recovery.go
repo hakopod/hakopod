@@ -103,6 +103,8 @@ type SupabaseRecoveryRuntime struct {
 	Store   *store.Store
 }
 
+var supabaseRecoveryCryptographicSecretKeys = []string{"anon-key", "jwt-secret", "jwt-signing-keys", "jwt-verification-keys", "pg-meta-crypto-key", "pooler-api-jwt-secret", "publishable-key", "realtime-db-encryption-key", "secret-key-base", "service-role-key", "secret-key", "vault-encryption-key"}
+
 func compatibleSupabaseRecoveryConfig(a, b *managedplatform.SupabaseConfig) bool {
 	if a == nil || b == nil {
 		return false
@@ -188,10 +190,8 @@ func (r *SupabaseRecoveryRuntime) ResolveEmptyTarget(ctx context.Context, op pla
 			return fmt.Errorf("target Supabase storage is smaller than the source")
 		}
 	}
-	for _, key := range []string{"anon-key", "jwt-secret", "jwt-signing-keys", "jwt-verification-keys", "pg-meta-crypto-key", "publishable-key", "realtime-db-encryption-key", "secret-key-base", "service-role-key", "secret-key", "vault-encryption-key"} {
-		if target.Spec.Secrets[key] != sourceSpec.Secrets[key] {
-			return fmt.Errorf("target Supabase cryptographic secret revisions differ from the artifact source")
-		}
+	if err = validateSupabaseRecoverySecrets(target.Spec, sourceSpec); err != nil {
+		return err
 	}
 	for name, image := range source.Images {
 		found := false
@@ -243,6 +243,15 @@ func (r *SupabaseRecoveryRuntime) ResolveEmptyTarget(ctx context.Context, op pla
 		}
 		if e = r.scaleOne(ctx, target, plan.Namespace, component.name, 0); e != nil {
 			return e
+		}
+	}
+	return nil
+}
+
+func validateSupabaseRecoverySecrets(target, source managedplatform.Spec) error {
+	for _, key := range supabaseRecoveryCryptographicSecretKeys {
+		if target.Secrets[key] != source.Secrets[key] {
+			return fmt.Errorf("target Supabase cryptographic secret revisions differ from the artifact source")
 		}
 	}
 	return nil
