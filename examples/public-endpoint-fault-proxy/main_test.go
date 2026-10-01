@@ -476,6 +476,12 @@ func (f *fakeSPDYAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if parts[5] == "hold" {
+		if stdout == nil || errorStream == nil {
+			return
+		}
+		if _, err := stdout.Write([]byte("stream-ready")); err != nil {
+			return
+		}
 		f.holdOnce.Do(func() { close(f.holdStarted) })
 		<-connection.CloseChan()
 		close(f.holdClosed)
@@ -489,6 +495,13 @@ func (f *fakeSPDYAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status, _ := json.Marshal(metav1.Status{Status: metav1.StatusSuccess})
 	_, _ = errorStream.Write(status)
 	_ = errorStream.Close()
+	// Closing the connection before the client consumes the queued stream
+	// frames can discard stdout or the exit status. The client closes it once
+	// both streams finish; keep the fake API alive until that acknowledgement.
+	select {
+	case <-connection.CloseChan():
+	case <-time.After(5 * time.Second):
+	}
 }
 
 func (f *fakeSPDYAPI) unexpected() []string {
@@ -636,6 +649,30 @@ func spdyExec(origin, namespace, pod, input string) (string, error) {
 	return output.String(), err
 }
 
+func waitUpgradeIdle(t *testing.T, proxy *faultProxy) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(proxy.upgrades) == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("completed SPDY relay did not release its concurrency slot")
+}
+
+type acknowledgedStreamWriter struct {
+	once     sync.Once
+	received chan struct{}
+}
+
+func (w *acknowledgedStreamWriter) Write(value []byte) (int, error) {
+	if len(value) > 0 {
+		w.once.Do(func() { close(w.received) })
+	}
+	return len(value), nil
+}
+
 func TestRealKubectlProxySPDYEndToEnd(t *testing.T) {
 	fake := newFakeSPDYAPI()
 	apiServer := httptest.NewServer(fake)
@@ -671,6 +708,7 @@ func TestRealKubectlProxySPDYEndToEnd(t *testing.T) {
 		namespace string
 		input     string
 	}{{"hdb-database", "database-stream"}, {"proxy", "haproxy-stream"}} {
+		waitUpgradeIdle(t, proxy)
 		output, streamErr := spdyExec(helperOrigin, test.namespace, "owned", test.input)
 		if streamErr != nil || output != test.input {
 			t.Fatalf("%s bidirectional stream output = %q, err = %v", test.namespace, output, streamErr)
@@ -740,10 +778,12 @@ func TestRealKubectlProxySPDYEndToEnd(t *testing.T) {
 	if len(afterBlocked) != before {
 		t.Fatal("post-mutation HAProxy exec contacted the upstream API")
 	}
+	waitUpgradeIdle(t, proxy)
 	if output, streamErr := spdyExec(helperOrigin, "hdb-database", "owned", "still-allowed"); streamErr != nil || output != "still-allowed" {
 		t.Fatalf("post-mutation database exec output = %q, err = %v", output, streamErr)
 	}
 
+	waitUpgradeIdle(t, proxy)
 	holdEndpoint, err := url.Parse(helperOrigin +
 		"/api/v1/namespaces/hdb-database/pods/hold/exec?command=hold&stdout=true&stdin=false&stderr=false&tty=false")
 	if err != nil {
@@ -754,14 +794,28 @@ func TestRealKubectlProxySPDYEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	holdResult := make(chan error, 1)
+	holdOutput := &acknowledgedStreamWriter{received: make(chan struct{})}
+	holdContext, cancelHold := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelHold()
 	go func() {
-		holdResult <- holdExecutor.StreamWithContext(context.Background(),
-			clientremotecommand.StreamOptions{Stdout: io.Discard})
+		holdResult <- holdExecutor.StreamWithContext(holdContext,
+			clientremotecommand.StreamOptions{Stdout: holdOutput})
 	}()
 	select {
 	case <-fake.holdStarted:
+	case streamErr := <-holdResult:
+		t.Fatalf("active SPDY stream ended before it started: %v", streamErr)
 	case <-time.After(5 * time.Second):
 		t.Fatal("active SPDY stream did not start")
+	}
+	// Server-side stream creation can precede client-go's stream registration.
+	// Observe a real frame at the client before exercising relay shutdown.
+	select {
+	case <-holdOutput.received:
+	case streamErr := <-holdResult:
+		t.Fatalf("active SPDY stream ended before client acknowledgement: %v", streamErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("active SPDY stream did not reach the client")
 	}
 	paths, _, _ = fake.snapshot()
 	before = len(paths)
