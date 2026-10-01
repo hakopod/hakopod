@@ -78,6 +78,9 @@ func (c *Client) observeVitessDatabase(ctx context.Context, d database.Resource,
 	group.SetLimit(3)
 	for i, member := range o.Members {
 		group.Go(func() error {
+			if err := c.verifyVitessTabletSockets(step, d, member); err != nil {
+				return err
+			}
 			out := &databaseBoundedWriter{limit: 16 << 10}
 			if err := c.DatabaseExec(step, d, member, vitessLocalCommand("vt_dba", vitessNativeViewQuery), nil, out); err != nil {
 				return err
@@ -198,6 +201,9 @@ func vitessPodMatches(pod corev1.Pod, d database.Resource) bool {
 		if role != "tablet" || container.Image != vitessServerImage || container.Resources.Requests.Cpu().String() != database.VitessTabletCPU || container.Resources.Limits.Cpu().String() != database.VitessTabletCPU || container.Resources.Requests.Memory().String() != database.VitessTabletMemory || container.Resources.Limits.Memory().String() != database.VitessTabletMemory {
 			return false
 		}
+	}
+	if role == "tablet" && !vitessTabletSocketMatches(pod) {
+		return false
 	}
 	for _, volume := range pod.Spec.Volumes {
 		if volume.Projected != nil {

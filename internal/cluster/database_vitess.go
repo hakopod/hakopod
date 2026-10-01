@@ -121,6 +121,9 @@ func vitessDatabaseSpec(d database.Resource, resources map[string]any) map[strin
 	orchestrator["extraFlags"] = vitessTabletClientTLSFlags(d)
 	tablet := vitessComponent(d, "tablet", database.VitessTabletCPU, database.VitessTabletMemory)
 	delete(tablet, "resources")
+	// The patched operator mounts a Pod-local 16Mi tmpfs at /vt/socket
+	// without subPath. gVisor must share that mount between both processes.
+	tablet["annotations"] = map[string]any{"dev.gvisor.spec.mount.rundir.share": "pod", "dev.gvisor.spec.mount.rundir.type": "tmpfs", "dev.gvisor.spec.mount.rundir.options": "rw,rprivate,size=16777216"}
 	tablet["cell"], tablet["type"], tablet["replicas"] = "local", "replica", int64(1+d.Spec.Replicas)
 	tablet["dataVolumeClaimTemplate"] = vitessClaim(d.Spec.StorageGiB)
 	tablet["extraEnv"] = []any{map[string]any{"name": "POD_NAME", "valueFrom": map[string]any{"fieldRef": map[string]any{"fieldPath": "metadata.name"}}}}

@@ -57,11 +57,72 @@ def vitess_changes(root):
     monitor_text = replace(monitor.read_text(),
                            'm.appPool.Open(m.config.DB.AppWithDB())',
                            'm.appPool.Open(m.config.DB.AllPrivsWithDB())')
-    return {path: text, tests: expected, monitor: monitor_text}
+    mysqld = root / "go/vt/mysqlctl/mysqld.go"
+    mysqld_text = mysqld.read_text()
+    # exec.Cmd contains the complete environment. Database and backup
+    # credentials must never become process-command diagnostics.
+    for old, new in (
+        ('log.Infof("%v %#v", ts, cmd)',
+         'log.Infof("%v: starting local MySQL process", ts)'),
+        ('log.Infof("ApplyBinlogFile: running mysqlbinlog command: %#v with errfile=%v", mysqlbinlogCmd, mysqlbinlogErrFile.Name())',
+         'log.Info("ApplyBinlogFile: starting mysqlbinlog process")'),
+        ('log.Infof("ApplyBinlogFile: running mysql command: %#v with errfile=%v", mysqlCmd, mysqlErrFile.Name())',
+         'log.Info("ApplyBinlogFile: starting local MySQL process")'),
+        ('log.Infof("ApplyBinlogFile: running mysqlbinlog command: %#v", mysqlbinlogCmd)',
+         'log.Info("ApplyBinlogFile: starting binlog timestamp process")'),
+        ('log.Errorf("%v: not removing socket lock file: %v with pid %v for %q", ts, lockPath, p, name)',
+         'log.Errorf("%v: not removing socket lock file: %v with live pid %v", ts, lockPath, p)'),
+    ):
+        mysqld_text = replace(mysqld_text, old, new)
+    mysqld_text = replace(mysqld_text,
+                          '\t\t\tname := string(bytes.ReplaceAll(cmdline, []byte{0}, []byte(" ")))\n',
+                          '\t\t\t_ = cmdline // Do not log another process\'s command arguments.\n')
+    return {path: text, tests: expected, monitor: monitor_text, mysqld: mysqld_text}
 
 
 def operator_changes(root):
     changes = {}
+    path = root / "pkg/operator/vttablet/constants.go"
+    changes[path] = replace(path.read_text(),
+                            '\tvtRootVolumeName   = "vt-root"',
+                            '\tvtRootVolumeName   = "vt-root"\n\tvtSocketVolumeName = "rundir"')
+    path = root / "pkg/operator/vttablet/mysqlctld.go"
+    text = path.read_text()
+    text = replace(text, '''\t\treturn []corev1.Volume{
+\t\t\t{
+\t\t\t\tName: vtRootVolumeName,
+\t\t\t\tVolumeSource: corev1.VolumeSource{
+\t\t\t\t\tEmptyDir: &corev1.EmptyDirVolumeSource{},
+\t\t\t\t},
+\t\t\t},
+\t\t}''', '''\t\treturn []corev1.Volume{
+\t\t\t{
+\t\t\t\tName: vtRootVolumeName,
+\t\t\t\tVolumeSource: corev1.VolumeSource{
+\t\t\t\t\tEmptyDir: &corev1.EmptyDirVolumeSource{},
+\t\t\t\t},
+\t\t\t},
+\t\t\t{
+\t\t\t\tName: vtSocketVolumeName,
+\t\t\t\tVolumeSource: corev1.VolumeSource{
+\t\t\t\t\tEmptyDir: &corev1.EmptyDirVolumeSource{
+\t\t\t\t\t\tMedium: corev1.StorageMediumMemory,
+\t\t\t\t\t\tSizeLimit: resource.NewQuantity(16*1024*1024, resource.BinarySI),
+\t\t\t\t\t},
+\t\t\t\t},
+\t\t\t},
+\t\t}''')
+    text = replace(text, '''\t\t\t{
+\t\t\t\tName:      vtRootVolumeName,
+\t\t\t\tReadOnly:  false,
+\t\t\t\tMountPath: vtSocketPath,
+\t\t\t\tSubPath:   "socket",
+\t\t\t},''', '''\t\t\t{
+\t\t\t\tName:      vtSocketVolumeName,
+\t\t\t\tReadOnly:  false,
+\t\t\t\tMountPath: vtSocketPath,
+\t\t\t},''')
+    changes[path] = text
     path = root / "pkg/operator/vttablet/flags.go"
     changes[path] = replace(path.read_text(),
                             '"tablet_hostname": "$(POD_IP)",',
@@ -174,6 +235,55 @@ def operator_changes(root):
 \t}
 ''' + text[end:]
     changes[path] = text
+    pod = root / "pkg/operator/vttablet/pod.go"
+    pod_text = pod.read_text()
+    pod_text = replace(
+        pod_text,
+        '''ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					// We can't use /debug/health for vttablet as we do for
+					// other Vitess servers. On vttablet, that handler has been
+					// corrupted into a useless hybrid of readiness and liveness
+					// that can't be fixed because it would break legacy users.
+					// Instead, vttablet (and only vttablet) has /healthz for
+					// actual readiness.
+					Path: "/healthz",
+					Port: intstr.FromString(planetscalev2.DefaultWebPortName),
+				},
+			},
+		},''',
+        '''ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
+				"bash", "-ceu",
+				"curl --fail --silent --show-error --max-time 2 http://127.0.0.1:15000/healthz >/dev/null; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
+			}}},
+			TimeoutSeconds:   3,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			FailureThreshold: 3,
+		},''')
+    pod_text = replace(
+        pod_text,
+        '''ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					TCPSocket: &corev1.TCPSocketAction{
+						Port: intstr.FromInt(planetscalev2.DefaultMysqlPort),
+					},
+				},
+				PeriodSeconds: 2,
+			},''',
+        '''ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
+					"bash", "-ceu",
+					"exec 3<>/dev/tcp/127.0.0.1/3306; exec 3>&-; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
+				}}},
+				TimeoutSeconds:   1,
+				PeriodSeconds:    2,
+				SuccessThreshold: 1,
+				FailureThreshold: 3,
+			},''')
+    changes[pod] = pod_text
     return changes
 
 
@@ -190,6 +300,8 @@ def main():
     for template, target in (
         ("vitess-replication-tls-test.go.txt", vitess / "go/mysql/hakopod_replication_tls_test.go"),
         ("vitess-semisync-account-test.go.txt", vitess / "go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go"),
+        ("vitess-command-log-test.go.txt", vitess / "go/vt/mysqlctl/hakopod_command_log_test.go"),
+        ("vitess-shared-socket-test.go.txt", operator / "pkg/operator/vttablet/hakopod_shared_socket_test.go"),
         ("vitess-backup-schedule.go.txt", operator / "pkg/controller/vitessbackupschedule/hakopod_backup.go"),
         ("vitess-backup-schedule-test.go.txt", operator / "pkg/controller/vitessbackupschedule/hakopod_backup_test.go"),
         ("vitess-api-compatibility-test.go.txt", operator / "pkg/controller/vitessbackupschedule/hakopod_api_test.go"),

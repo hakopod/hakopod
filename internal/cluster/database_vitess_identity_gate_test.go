@@ -46,6 +46,50 @@ func vitessIdentityGatePod(d database.Resource, name, role, identity string, rea
 	}
 }
 
+func TestVitessIdentityRotationPreservesSharedSocketAnnotations(t *testing.T) {
+	d := vitessTestDatabase()
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(d.ID), UID: "namespace-uid", Labels: databaseLabels(d)}}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "database-tls", Namespace: ns.Name, Labels: databaseLabels(d), OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "Namespace", Name: ns.Name, UID: ns.UID}}},
+		Data:       map[string][]byte{"tls.crt": []byte("public-certificate-fixture")},
+	}
+	client := &Client{kube: kubefake.NewSimpleClientset(ns, secret)}
+	object, err := DatabaseObject(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutateVitessComponents(object, func(item map[string]any, role string) {
+		if role == "tablet" {
+			item["annotations"].(map[string]any)["operator.example/keep"] = "present"
+		}
+	})
+	for _, certificate := range []string{"public-certificate-fixture", "rotated-public-certificate-fixture"} {
+		secret.Data["tls.crt"] = []byte(certificate)
+		if _, err = client.kube.CoreV1().Secrets(ns.Name).Update(context.Background(), secret, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if err = client.applyVitessIdentity(context.Background(), d, object); err != nil {
+			t.Fatal(err)
+		}
+		want := fmt.Sprintf("%x", sha256.Sum256([]byte(certificate)))
+		mutateVitessComponents(object, func(item map[string]any, role string) {
+			annotations := item["annotations"].(map[string]any)
+			if annotations[vitessIdentityAnnotation] != want {
+				t.Errorf("%s identity was not rotated", role)
+			}
+			if role == "tablet" {
+				for key, value := range map[string]string{"dev.gvisor.spec.mount.rundir.share": "pod", "dev.gvisor.spec.mount.rundir.type": "tmpfs", "dev.gvisor.spec.mount.rundir.options": "rw,rprivate,size=16777216", "operator.example/keep": "present"} {
+					if annotations[key] != value {
+						t.Errorf("rotation removed tablet annotation %s", key)
+					}
+				}
+			} else if len(annotations) != 1 {
+				t.Errorf("%s received tablet socket annotations", role)
+			}
+		})
+	}
+}
+
 func TestVitessReadyIdentityCountsExcludeStaleRolloutPods(t *testing.T) {
 	d := vitessTestDatabase()
 	pods := []corev1.Pod{

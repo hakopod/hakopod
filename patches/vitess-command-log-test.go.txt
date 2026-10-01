@@ -1,0 +1,147 @@
+package mysqlctl
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+)
+
+func commandStateKey(value ast.Expr) string {
+	switch value := value.(type) {
+	case *ast.Ident:
+		return value.Name
+	case *ast.SelectorExpr:
+		if prefix := commandStateKey(value.X); prefix != "" { return prefix + "." + value.Sel.Name }
+	case *ast.ParenExpr:
+		return commandStateKey(value.X)
+	case *ast.UnaryExpr:
+		return commandStateKey(value.X)
+	}
+	return ""
+}
+
+// Inspect functions separately: a local name must not taint another function.
+// Command values, aliases, args, environment and redirected files are private.
+func commandLogState(file *ast.File) (int, []token.Pos) {
+	commands := 0
+	var violations []token.Pos
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil { continue }
+		tainted := map[string]bool{}
+		mark := func(value ast.Expr) bool {
+			key := commandStateKey(value)
+			if key == "" || key == "_" || tainted[key] { return false }
+			tainted[key] = true
+			return true
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			if item, ok := node.(*ast.ValueSpec); ok {
+				if pointer, ok := item.Type.(*ast.StarExpr); ok && commandStateKey(pointer.X) == "exec.Cmd" {
+					for _, name := range item.Names { if mark(name) { commands++ } }
+				}
+			}
+			return true
+		})
+		// Follow declarations and assignments to a fixed point. Return values
+		// from command methods, such as Wait errors, remain ordinary diagnostics.
+		for changed := true; changed; {
+			changed = false
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				var left, right []ast.Expr
+				switch item := node.(type) {
+				case *ast.AssignStmt: left, right = item.Lhs, item.Rhs
+				case *ast.ValueSpec:
+					for _, name := range item.Names { left = append(left, name) }
+					right = item.Values
+				default: return true
+				}
+				for index, value := range right {
+					if index >= len(left) { continue }
+					if call, ok := value.(*ast.CallExpr); ok {
+						constructor := commandStateKey(call.Fun)
+						if constructor == "os.ReadFile" {
+							privatePath := false
+							for _, argument := range call.Args {
+								ast.Inspect(argument, func(node ast.Node) bool {
+									if literal, ok := node.(*ast.BasicLit); ok && strings.Contains(literal.Value, "/proc/") && strings.Contains(literal.Value, "/cmdline") { privatePath = true }
+									return true
+								})
+							}
+							if privatePath && mark(left[index]) { commands++; changed = true }
+						}
+						if constructor == "exec.Command" || constructor == "exec.CommandContext" {
+							if mark(left[index]) { commands++; changed = true }
+							first := 1
+							if constructor == "exec.CommandContext" { first = 2 }
+							if len(call.Args) >= first {
+								for _, argument := range call.Args[first:] { changed = mark(argument) || changed }
+							}
+						}
+					}
+					key := commandStateKey(value)
+					private := tainted[key]
+					if selector, ok := value.(*ast.SelectorExpr); ok { private = private || tainted[commandStateKey(selector.X)] }
+					if private { changed = mark(left[index]) || changed }
+					if destination, ok := left[index].(*ast.SelectorExpr); ok && tainted[commandStateKey(destination.X)] {
+						switch destination.Sel.Name {
+						case "Args", "Env", "Stderr", "Stdout", "Stdin": changed = mark(value) || changed
+						}
+					}
+				}
+				return true
+			})
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || !strings.HasPrefix(commandStateKey(call.Fun), "log.") { return true }
+			for _, argument := range call.Args {
+				ast.Inspect(argument, func(value ast.Node) bool {
+					if expression, ok := value.(ast.Expr); ok && tainted[commandStateKey(expression)] {
+						violations = append(violations, call.Pos())
+						return false
+					}
+					return true
+				})
+			}
+			return true
+		})
+	}
+	return commands, violations
+}
+
+func TestHakopodProcessLogsExcludeCommandState(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "mysqld.go", nil, 0)
+	if err != nil { t.Fatal(err) }
+	commands, violations := commandLogState(file)
+	if commands == 0 { t.Fatal("MySQL process commands were not inspected") }
+	for _, position := range violations { t.Errorf("private command state in log at %s", fset.Position(position)) }
+}
+
+func TestHakopodProcessLogRegressionDetectsAliasesAndFields(t *testing.T) {
+	for _, body := range []string{
+		`cmd := exec.Command("mysql"); alias := cmd; log.Info(alias)`,
+		`cmd := exec.Command("mysql"); var alias = cmd; log.Info(alias.Env)`,
+		`cmd := exec.Command("mysql"); var environment = cmd.Env; log.Info(environment)`,
+		`holder.cmd = exec.Command("mysql"); log.Info(holder.cmd)`,
+		`var cmd *exec.Cmd; cmd = exec.Command("mysql"); log.Info(cmd)`,
+		`cmd := exec.Command("mysql", args...); log.Info(args)`,
+		`cmd := exec.CommandContext(ctx, "mysql", args...); log.Info(args)`,
+		`cmd := exec.Command("mysql"); cmd.Env = env; log.Info(env)`,
+		`cmd := exec.Command("mysql"); cmd.Stderr = errfile; log.Info(errfile.Name())`,
+		`cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); log.Info(string(cmdline))`,
+	} {
+		file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", "package fixture; func fixture() {"+body+"}", 0)
+		if err != nil { t.Fatal(err) }
+		commands, violations := commandLogState(file)
+		if commands == 0 || len(violations) == 0 { t.Fatal("unsafe command diagnostic escaped regression", body) }
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", `package fixture
+func start() { cmd := exec.Command("mysql"); err := cmd.Wait(); log.Info(err) }
+func separate() { cmd := "ordinary status"; log.Info(cmd) }`, 0)
+	if err != nil { t.Fatal(err) }
+	if _, violations := commandLogState(file); len(violations) != 0 { t.Fatal("ordinary diagnostics were rejected") }
+}

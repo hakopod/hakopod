@@ -152,7 +152,12 @@ func (c *Client) applyVitessIdentity(ctx context.Context, d database.Resource, o
 		return err
 	}
 	mutateVitessComponents(object, func(item map[string]any, _ string) {
-		item["annotations"] = map[string]any{vitessIdentityAnnotation: fingerprint}
+		annotations, ok := item["annotations"].(map[string]any)
+		if !ok {
+			annotations = map[string]any{}
+		}
+		annotations[vitessIdentityAnnotation] = fingerprint
+		item["annotations"] = annotations
 	})
 	return nil
 }
