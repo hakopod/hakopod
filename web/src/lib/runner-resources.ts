@@ -25,6 +25,6 @@ export function runnerReservation(resources: RunnerResources, replicas: number) 
 
 export function runnerReservationLabel(resources: RunnerResources, replicas: number) {
   const value = runnerReservation(resources, replicas)
-  if (!value) return 'Enter valid CPU and memory reservations to see the pool total.'
+  if (!value) return 'Enter a valid job count and resource reservations to see the pool total.'
   return `${Number(value.cpu.toFixed(3))} CPU cores and ${Number(value.memoryMiB.toFixed(3))} MiB memory reserved across ${replicas} ${replicas === 1 ? 'slot' : 'slots'}.`
 }

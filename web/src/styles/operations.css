@@ -568,19 +568,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ops-page .service-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
-  margin-bottom: 24px;
-}
 .ops-page .service-overview-grid > .panel {
-  border: 0;
-  border-radius: 0;
-  background: var(--card);
-  margin: 0;
+  @apply m-0 rounded-none border-0 bg-transparent p-0;
 }
 .ops-page .service-summary-panel {
   padding: 20px 24px;
@@ -1806,9 +1795,6 @@
   }
   .ops-summary-three > div:last-child {
     border-right: 0;
-  }
-  .ops-page .service-overview-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 640px) {

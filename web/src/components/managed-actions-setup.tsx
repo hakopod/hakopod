@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ReactNode } from 'react'
-import { Check, Minus, Plus, X } from 'lucide-react'
+import { Check, ChevronRight, Minus, Plus, X } from 'lucide-react'
 import { Badge } from '@hakopod/hatch-ui/components/badge'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -44,7 +44,13 @@ export function RunnerSteps({
   )
 }
 
-type Choice = { value: string; label: string; detail?: string; disabled?: boolean }
+type Choice = {
+  value: string
+  label: string
+  detail?: string
+  facts?: { label: string; value: string; detail?: string }[]
+  disabled?: boolean
+}
 
 export function RunnerChoices({
   label,
@@ -66,12 +72,12 @@ export function RunnerChoices({
     <fieldset className="grid min-w-0 gap-2" disabled={disabled}>
       <legend className="mb-2 text-sm font-medium">{label}</legend>
       <div
-        className={compact ? 'flex flex-wrap gap-2' : 'grid gap-2 sm:grid-cols-2 lg:grid-cols-3'}
+        className={compact ? 'flex flex-wrap gap-2' : 'grid gap-2 sm:grid-cols-2 xl:grid-cols-3'}
       >
         {options.map((option) => (
           <label
             key={option.value}
-            className={`relative min-w-0 ${option.disabled || disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+            className={`relative min-w-0 ${compact ? 'self-start' : ''} ${option.disabled || disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           >
             <input
               className="peer sr-only"
@@ -83,13 +89,24 @@ export function RunnerChoices({
               onChange={() => onChange(option.value)}
             />
             <span
-              className={`flex h-full min-h-11 items-start gap-2 border border-[var(--hairline)] text-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] peer-checked:border-[var(--accent)] peer-checked:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] ${compact ? 'items-center rounded-full px-4 py-2' : 'rounded-lg p-3'}`}
+              className={`flex min-h-11 items-start gap-2 border border-[var(--hairline)] text-sm transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] peer-checked:border-[var(--accent)] peer-checked:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] ${compact ? 'h-auto items-center rounded-full px-4 py-2' : 'h-full rounded-md px-3 py-2.5'}`}
             >
               <span className="min-w-0 flex-1">
                 <span className="block font-medium wrap-anywhere">{option.label}</span>
                 {option.detail && (
                   <span className="mt-1 block text-xs leading-5 muted-text wrap-anywhere">
                     {option.detail}
+                  </span>
+                )}
+                {option.facts && (
+                  <span className="mt-2 grid grid-cols-2 gap-2 border-t border-[var(--hairline)] pt-2">
+                    {option.facts.map((fact) => (
+                      <span key={fact.label} className="grid gap-0.5">
+                        <span className="text-xs muted-text">{fact.label}</span>
+                        <strong className="text-lg font-medium tabular-nums">{fact.value}</strong>
+                        {fact.detail && <span className="text-xs muted-text">{fact.detail}</span>}
+                      </span>
+                    ))}
                   </span>
                 )}
               </span>
@@ -112,24 +129,27 @@ export function RunnerChoices({
 export function RunnerCapacity({
   value,
   maximum,
+  reservationLabel,
   disabled,
   onChange,
 }: {
   value: string
   maximum: number
+  reservationLabel: string
   disabled: boolean
   onChange: (value: string) => void
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] p-3">
-      <div>
-        <span className="block text-sm font-medium">Concurrent jobs</span>
-        <span className="text-xs muted-text">One isolated runner for each job slot</span>
+    <div className="grid min-w-0 content-start gap-3 lg:row-span-3 lg:grid-rows-subgrid">
+      <div className="flex min-h-8 items-center gap-2 text-sm font-medium">
+        Concurrent jobs
+        <HeadingHelp title="Concurrent jobs">One isolated runner for each job slot.</HeadingHelp>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="grid min-h-12 grid-cols-[3rem_5rem_3rem_minmax(0,1fr)] content-start items-start gap-2 [&>.field-error]:col-span-full [&>.field-error]:row-start-2">
         <Button
           type="button"
-          size="sm"
+          size="icon"
+          className="col-start-1 row-start-1 h-12! w-12!"
           variant="ghost"
           disabled={disabled || Number(value) <= 1}
           aria-label="Fewer concurrent jobs"
@@ -138,7 +158,7 @@ export function RunnerCapacity({
           <Minus size={16} />
         </Button>
         <Input
-          className="w-16 text-center"
+          className="h-12! w-20 text-center"
           type="number"
           aria-label="Concurrent jobs"
           min={1}
@@ -150,7 +170,8 @@ export function RunnerCapacity({
         />
         <Button
           type="button"
-          size="sm"
+          size="icon"
+          className="col-start-3 row-start-1 h-12! w-12!"
           variant="ghost"
           disabled={disabled || Number(value) >= maximum}
           aria-label="More concurrent jobs"
@@ -159,7 +180,32 @@ export function RunnerCapacity({
           <Plus size={16} />
         </Button>
       </div>
+      <p className="text-sm muted-text" role="status">
+        {reservationLabel}
+      </p>
     </div>
+  )
+}
+
+export function RunnerField({
+  label,
+  help,
+  helpId,
+  children,
+}: {
+  label: string
+  help?: ReactNode
+  helpId?: string
+  children: ReactNode
+}) {
+  return (
+    <label className="grid min-w-0 content-start gap-2 text-sm sm:row-span-3 sm:grid-rows-subgrid">
+      <span>{label}</span>
+      <span className="grid min-w-0 content-start gap-2">{children}</span>
+      <span id={helpId} className="field-help">
+        {help}
+      </span>
+    </label>
   )
 }
 
@@ -319,6 +365,107 @@ export function RunnerFact({ label, children }: { label: string; children: React
   )
 }
 
+export function RunnerDisclosureSummary({
+  children,
+  inset = false,
+}: {
+  children: ReactNode
+  inset?: boolean
+}) {
+  return (
+    <summary
+      className={`flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden ${inset ? 'px-3' : ''}`}
+    >
+      <ChevronRight
+        className="size-4 shrink-0 transition-transform group-open:rotate-90"
+        aria-hidden="true"
+      />
+      <span className="flex-1">{children}</span>
+    </summary>
+  )
+}
+
+type RunnerPoolSummaryProps = {
+  provider: string
+  target: string
+  pool: string
+  architecture: string
+  replicas: string
+  placement: string
+  resources: string
+  workspace: string
+  labels: string[]
+  mode: 'mobile' | 'desktop'
+}
+
+function RunnerPoolSummaryBody({
+  provider,
+  target,
+  pool,
+  architecture,
+  replicas,
+  placement,
+  resources,
+  workspace,
+  labels,
+  mode: _mode,
+}: RunnerPoolSummaryProps) {
+  return (
+    <div className="grid gap-3 text-sm">
+      <dl className="grid gap-4">
+        <div className="grid min-w-0 gap-1">
+          <dt className="text-xs muted-text">Connection</dt>
+          <dd className="font-medium">{provider}</dd>
+          <dd className="text-xs muted-text wrap-anywhere">{target || 'Target not selected'}</dd>
+          <dd className="text-xs muted-text wrap-anywhere">{pool || 'Pool not named'}</dd>
+        </div>
+        <div className="grid min-w-0 gap-1 border-t border-[var(--hairline)] pt-3">
+          <dt className="text-xs muted-text">Compute</dt>
+          <dd className="font-medium">
+            {replicas || '0'} {replicas === '1' ? 'job slot' : 'job slots'} ·{' '}
+            {architecture || 'Automatic'}
+          </dd>
+          <dd className="text-xs muted-text wrap-anywhere">
+            {placement || 'Any eligible runner node'}
+          </dd>
+          <dd className="text-xs muted-text wrap-anywhere">{resources}</dd>
+        </div>
+        <div className="grid min-w-0 gap-1 border-t border-[var(--hairline)] pt-3">
+          <dt className="text-xs muted-text">Job workspace</dt>
+          <dd>{workspace}</dd>
+        </div>
+      </dl>
+      {labels.length > 0 && (
+        <div className="grid gap-2 border-t border-[var(--hairline)] pt-3">
+          <span className="text-xs muted-text">Workflow labels</span>
+          <RunnerLabelChips labels={labels} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function RunnerPoolSummary(props: RunnerPoolSummaryProps) {
+  if (props.mode === 'mobile')
+    return (
+      <details className="group rounded-md border border-[var(--hairline)] lg:hidden">
+        <RunnerDisclosureSummary inset>Pool summary</RunnerDisclosureSummary>
+        <div className="border-t border-[var(--hairline)] px-3 py-3">
+          <RunnerPoolSummaryBody {...props} />
+        </div>
+      </details>
+    )
+  return (
+    <aside
+      className="sticky top-4 hidden min-w-0 rounded-md border border-[var(--hairline)] p-4 lg:grid lg:gap-4"
+      aria-label="Pool summary"
+    >
+      <h2 className="text-sm font-semibold">Pool summary</h2>
+      <RunnerPoolSummaryBody {...props} />
+    </aside>
+  )
+}
+
 export function RunnerLabelChips({ labels }: { labels: string[] }) {
   return (
     <div className="flex min-w-0 flex-wrap gap-2" aria-label="Workflow labels">
@@ -352,14 +499,12 @@ export function RunnerResourceFields({
   return (
     <details
       open={expanded || undefined}
-      className="rounded border border-[var(--hairline)]"
+      className="group rounded border border-[var(--hairline)]"
       onInvalidCapture={(event) => {
         event.currentTarget.open = true
       }}
     >
-      <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-medium">
-        Adjust reservations and limits
-      </summary>
+      <RunnerDisclosureSummary inset>Adjust reservations and limits</RunnerDisclosureSummary>
       <p id="runner-resources-help" className="field-help px-3 pt-1">
         Reservations set aside capacity. Limits cap usage. Both include Docker and sandbox overhead.
         1000m CPU is one core; 1024Mi memory is 1Gi.
@@ -395,8 +540,7 @@ export function RunnerResourceFields({
             ],
           ] as const
         ).map(([key, label, help, pattern]) => (
-          <label key={key} className="grid gap-2 text-sm">
-            {label}
+          <RunnerField key={key} label={label} help={help} helpId={`runner-${key}-help`}>
             <Input
               required
               value={effective[key] ?? ''}
@@ -406,10 +550,7 @@ export function RunnerResourceFields({
               aria-describedby={`runner-resources-help runner-${key}-help`}
               onChange={(event) => onChange(key, event.target.value)}
             />
-            <span id={`runner-${key}-help`} className="field-help">
-              {help}
-            </span>
-          </label>
+          </RunnerField>
         ))}
       </div>
     </details>
@@ -441,8 +582,8 @@ export function RunnerPlacement({
   const missing = Boolean(value && !selected)
   const mismatch = Boolean(selected && architecture && selected.architecture !== architecture)
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center gap-2 text-sm">
+    <div className="grid min-w-0 content-start gap-3 lg:row-span-3 lg:grid-rows-subgrid">
+      <div className="flex min-h-8 items-center gap-2 text-sm font-medium">
         Run on node{' '}
         <HeadingHelp title="Runner placement">
           Use a separate worker node to reserve compute for CI. Only nodes allowed in this
@@ -473,40 +614,42 @@ export function RunnerPlacement({
           })),
         ]}
       />
-      {value && (
-        <p className="field-help">
-          This pool stays on {value}. If it is unavailable, jobs wait; they do not move to another
-          node.
-        </p>
-      )}
-      {loading && (
-        <p className="field-help" role="status">
-          Checking runner nodes…
-        </p>
-      )}
-      {failed && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span role="alert">Node choices could not be loaded. Your selection is preserved.</span>
-          <Button type="button" size="sm" disabled={refreshing} onClick={onRetry}>
-            Retry nodes
-          </Button>
-        </div>
-      )}
-      {nodes &&
-        !nodes.some(
-          (node) => node.available && (!architecture || node.architecture === architecture),
-        ) && (
-          <p role="status" className="field-help">
-            No eligible node is currently available for this architecture. Ask your operator to
-            prepare a runner node.
+      <div className="grid min-w-0 content-start gap-2">
+        {value && (
+          <p className="field-help">
+            This pool stays on {value}. If it is unavailable, jobs wait; they do not move to another
+            node.
           </p>
         )}
-      {nodes && (missing || mismatch || (selected && !selected.available)) && (
-        <p role="alert" className="field-help error">
-          The selected node cannot currently run this pool. Select another eligible node or
-          Automatic.
-        </p>
-      )}
+        {loading && (
+          <p className="field-help" role="status">
+            Checking runner nodes…
+          </p>
+        )}
+        {failed && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span role="alert">Node choices could not be loaded. Your selection is preserved.</span>
+            <Button type="button" size="sm" disabled={refreshing} onClick={onRetry}>
+              Retry nodes
+            </Button>
+          </div>
+        )}
+        {nodes &&
+          !nodes.some(
+            (node) => node.available && (!architecture || node.architecture === architecture),
+          ) && (
+            <p role="status" className="field-help">
+              No eligible node is currently available for this architecture. Ask your operator to
+              prepare a runner node.
+            </p>
+          )}
+        {nodes && (missing || mismatch || (selected && !selected.available)) && (
+          <p role="alert" className="field-help error">
+            The selected node cannot currently run this pool. Select another eligible node or
+            Automatic.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -522,20 +665,22 @@ export function RunnerWorkflowGuide({
 }) {
   const routingLabels = runnerWorkflowLabels(labels, provider, architecture)
   return (
-    <div className="grid gap-3">
-      <RunnerLabelChips labels={routingLabels} />
-      <pre
-        className="min-w-0 overflow-x-auto rounded border border-[var(--hairline)] p-3 text-xs"
-        aria-label="Workflow runner selection"
-      >
-        <code>
-          {provider === 'gitlab'
-            ? `tags: ${JSON.stringify(labels)}`
-            : provider === 'bitbucket'
-              ? `runs-on: ${JSON.stringify(routingLabels)}`
-              : `runs-on: ${JSON.stringify(labels)}`}
-        </code>
-      </pre>
+    <div className="grid content-start self-start gap-3">
+      <details className="group border-y border-[var(--hairline)]">
+        <RunnerDisclosureSummary>Workflow example</RunnerDisclosureSummary>
+        <pre
+          className="mb-3 min-w-0 overflow-x-auto rounded border border-[var(--hairline)] p-3 text-xs"
+          aria-label="Workflow runner selection"
+        >
+          <code>
+            {provider === 'gitlab'
+              ? `tags: ${JSON.stringify(labels)}`
+              : provider === 'bitbucket'
+                ? `runs-on: ${JSON.stringify(routingLabels)}`
+                : `runs-on: ${JSON.stringify(labels)}`}
+          </code>
+        </pre>
+      </details>
       <div className="flex items-center gap-2 text-sm">
         Dependency and build caches
         <HeadingHelp title="Caching between jobs">
