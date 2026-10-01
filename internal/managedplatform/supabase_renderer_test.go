@@ -667,7 +667,7 @@ func TestSupabaseRendererWiresDatabaseTLSWithoutPrivateKeyDisclosure(t *testing.
 			}
 			continue
 		}
-		needsCA := map[string]bool{"auth": true, "edge-runtime": true, "pooler": true, "postgres-meta": true, "realtime": true, "rest": true, "storage": true}
+		needsCA := map[string]bool{"auth": true, "pooler": true, "postgres-meta": true, "realtime": true, "rest": true, "storage": true}
 		if !needsCA[container.Name] {
 			continue
 		}
@@ -687,6 +687,9 @@ func TestSupabaseRendererWiresDatabaseTLSWithoutPrivateKeyDisclosure(t *testing.
 		if container.Name == "realtime" && (env["DB_SSL"].Value != "true" || env["DB_SSL_CA_CERT"].Value != "/etc/hakopod-database-ca/ca.crt") {
 			t.Fatal("Realtime TLS controls are incomplete")
 		}
+		if container.Name == "pooler" && (env["DATABASE_SSL_CA_CERT"].Value != "/etc/hakopod-database-ca/ca.crt" || env["DATABASE_SSL_SERVER_NAME"].Value != "db" || env["GLOBAL_UPSTREAM_CA_PATH"].Value != "/etc/hakopod-database-ca/ca.crt") {
+			t.Fatal("pooler TLS controls are incomplete")
+		}
 		if container.Name == "postgres-meta" {
 			root := env["PG_META_DB_SSL_ROOT_CERT"]
 			if env["PG_META_DB_SSL_MODE"].Value != "verify-full" || root.ValueFrom == nil || root.ValueFrom.SecretKeyRef == nil || root.ValueFrom.SecretKeyRef.Key != "ca.crt" {
@@ -698,6 +701,57 @@ func TestSupabaseRendererWiresDatabaseTLSWithoutPrivateKeyDisclosure(t *testing.
 			if root.ValueFrom == nil || root.ValueFrom.SecretKeyRef == nil || root.ValueFrom.SecretKeyRef.Key != "ca.crt" {
 				t.Fatal("Storage does not receive CA PEM")
 			}
+		}
+	}
+}
+
+func TestSupabaseRendererKeepsStudioAndEdgeRuntimeOffTheDatabaseNetwork(t *testing.T) {
+	manifests, err := RenderSupabase(rendererFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, object := range manifests.Objects {
+		deployment, ok := object.(*appsv1.Deployment)
+		if !ok {
+			continue
+		}
+		container := deployment.Spec.Template.Spec.Containers[0]
+		if container.Name != "edge-runtime" && container.Name != "studio" {
+			continue
+		}
+		seen[container.Name] = true
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == "database-ca" {
+				t.Fatalf("%s received a direct database CA mount", container.Name)
+			}
+		}
+		for _, env := range container.Env {
+			if env.Name == "SUPABASE_DB_URL" {
+				t.Fatalf("%s received an unsupported direct database URL", container.Name)
+			}
+		}
+	}
+	if !seen["edge-runtime"] || !seen["studio"] {
+		t.Fatal("edge-runtime or studio Deployment is missing")
+	}
+}
+
+func TestSupabasePoolerAssetRequiresVerifiedUpstreamTLS(t *testing.T) {
+	assets, err := PinnedSupabaseAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := assets["pooler/pooler.exs"]
+	for _, required := range []string{
+		`System.fetch_env!("DATABASE_SSL_CA_CERT")`,
+		`"upstream_ssl" => true`,
+		`"upstream_verify" => "peer"`,
+		`"upstream_tls_ca" => upstream_tls_ca`,
+		`"sni_hostname" => System.get_env("DATABASE_SSL_SERVER_NAME", "db")`,
+	} {
+		if !strings.Contains(asset, required) {
+			t.Fatalf("pooler asset lacks %s", required)
 		}
 	}
 }

@@ -6,11 +6,20 @@
     _ -> nil
   end
 
+{:ok, upstream_tls_ca} =
+  System.fetch_env!("DATABASE_SSL_CA_CERT")
+  |> File.read!()
+  |> Supavisor.Helpers.cert_to_bin()
+
 params = %{
   "external_id" => System.get_env("POOLER_TENANT_ID"),
   "db_host" => System.get_env("POSTGRES_HOST") || "db",
   "db_port" => System.get_env("POSTGRES_PORT"),
   "db_database" => System.get_env("POSTGRES_DB"),
+  "upstream_ssl" => true,
+  "upstream_verify" => "peer",
+  "upstream_tls_ca" => upstream_tls_ca,
+  "sni_hostname" => System.get_env("DATABASE_SSL_SERVER_NAME", "db"),
   "require_user" => false,
   "auth_query" => "SELECT * FROM pgbouncer.get_auth($1)",
   "default_max_clients" => System.get_env("POOLER_MAX_CLIENT_CONN"),

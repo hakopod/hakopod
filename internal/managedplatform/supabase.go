@@ -32,7 +32,6 @@ var supabaseSecretKeys = []string{
 	"database-owner-password",
 	"database-role-bootstrap",
 	"database-tls-certificate",
-	"edge-database-url",
 	"envoy-runtime-config",
 	"gateway-tls-certificate",
 	"jwt-secret",
@@ -180,7 +179,7 @@ func PlanSupabase(s Spec, images map[string]string) (Plan, error) {
 	add("api-gateway", []int32{8443}, []string{"envoy-runtime-config", "gateway-tls-certificate"}, nil)
 	add("auth", []int32{9999}, []string{"auth-database-url", "jwt-secret", "jwt-signing-keys"}, nil)
 	add("database", []int32{5432}, []string{"database-owner-password", "database-role-bootstrap", "database-tls-certificate"}, []string{"database", "database-encryption"})
-	add("edge-runtime", []int32{9000}, []string{"anon-key", "edge-database-url", "jwt-secret", "jwt-verification-keys", "publishable-key", "secret-key", "service-role-key"}, []string{"edge-functions"})
+	add("edge-runtime", []int32{9000}, []string{"anon-key", "jwt-secret", "jwt-verification-keys", "publishable-key", "secret-key", "service-role-key"}, []string{"edge-functions"})
 	add("image-proxy", []int32{5001}, nil, []string{"objects"})
 	add("pooler", []int32{4000, 5432, 6543}, []string{"jwt-secret", "secret-key-base", "supavisor-database-url", "vault-encryption-key"}, nil)
 	add("postgres-meta", []int32{8080}, []string{"pg-meta-crypto-key", "postgres-meta-database-password"}, nil)
