@@ -121,3 +121,35 @@ func TestIngressBackendHTTP2CoexistsWithTLSAnnotations(t *testing.T) {
 		t.Fatal("clearing backend HTTP/2 detached TLS", ing.Spec.TLS)
 	}
 }
+
+// Front proxies may terminate HTTPS before reaching a private HTTP ingress.
+func TestIngressTLSRedirectOperatorOptOut(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default", true: "private-front-proxy"}[disabled], func(t *testing.T) {
+			ctx := context.Background()
+			target := testTarget(t)
+			svc := target.Spec.Services["web"]
+			c := &Client{kube: fake.NewClientset(), options: Options{AppDomain: "apps.example.test", IngressClass: "haproxy", TLSIssuer: "hakopod-issuer", TLSRedirectDisabled: disabled}}
+			api := c.kube.NetworkingV1().Ingresses(Namespace(target.ApplicationID))
+			for i := 0; i < 2; i++ {
+				if err := c.applyIngress(ctx, target, "web", svc); err != nil {
+					t.Fatal(err)
+				}
+				ing, err := api.Get(ctx, "web", metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				redirect := "true"
+				if disabled {
+					redirect = "false"
+				}
+				if ing.Annotations["haproxy.org/ssl-redirect"] != redirect {
+					t.Fatalf("unexpected redirect annotation: %v", ing.Annotations)
+				}
+				if ing.Annotations["cert-manager.io/cluster-issuer"] != "hakopod-issuer" || len(ing.Spec.TLS) != 1 || ing.Spec.TLS[0].SecretName != "hakopod-tls-web" || len(ing.Spec.TLS[0].Hosts) == 0 {
+					t.Fatalf("redirect configuration changed TLS attachment: %#v", ing)
+				}
+			}
+		})
+	}
+}

@@ -88,3 +88,12 @@ shared default explicitly; customer requests cannot change it.
 See the [certificate controller setup](../deploy/cert-manager/README.md) for
 installation and bounded solver configuration. The generated OpenAPI schema
 and TypeScript SDK expose the same endpoints and issuer kinds.
+
+Trusted embedders can set `auth.RuntimeConfig.TLSRedirectDisabled` (forwarded to
+`cluster.Options`) only for a private ingress behind a front proxy that enforces
+HTTPS. This prevents redirect loops when that proxy terminates TLS and forwards
+HTTP to HAProxy. The flag changes only HAProxy's redirect annotation; issuer and
+certificate attachment remain enabled. The default keeps HTTPS redirects on.
+Self-hosted and tenant runtimes must leave the flag false, and the private ingress
+must not be publicly reachable over HTTP. This is not an application TOML or API
+setting.

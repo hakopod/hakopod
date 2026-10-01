@@ -64,9 +64,12 @@ type Options struct {
 	RolloutTimeout          time.Duration
 	// TLSIssuer must identify an operator-provisioned cert-manager ClusterIssuer.
 	// Empty leaves HTTP explicit; the local development cluster uses this mode.
-	TLSIssuer       string
-	PublicPort      int
-	PublicHTTPSPort int
+	TLSIssuer string
+	// TLSRedirectDisabled is trusted operator configuration for a private ingress
+	// behind a front proxy that enforces HTTPS. Tenant runtimes leave it false.
+	TLSRedirectDisabled bool
+	PublicPort          int
+	PublicHTTPSPort     int
 	// PolicySettleTime accounts for asynchronous CNI policy propagation before
 	// starting pods. It is a best-effort delay, not a hostile-tenant guarantee.
 	PolicySettleTime time.Duration
