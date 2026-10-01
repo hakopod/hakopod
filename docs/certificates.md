@@ -47,8 +47,14 @@ immutable ACME account key in the application's namespace. There are at most
 16 issuers/account reservations per application. Creation is serialized with
 deployment and deletion through PostgreSQL. Audit events record the request
 and configured issuer; account keys never enter the API response or audit.
-Repeating the same name and configuration reuses the issuer and key. To change
-the contact email or ACME environment, choose a new name. Application data
+Repeating the same name and configuration reuses the issuer and key. Older
+managed issuers that omit the solver seccomp profile are also reused when every
+other field matches. Retrying does not update them: an operator must correct
+those existing solver configurations to use `RuntimeDefault` before they can
+create solver pods in namespaces enforcing restricted Pod Security. New issuers
+include this profile. Explicitly different profiles remain a configuration
+conflict. To change the contact email or ACME environment, choose a new name.
+Application data
 retention also retains issuer credentials; reclaiming the namespace deletes
 them with the rest of the retained application data.
 
