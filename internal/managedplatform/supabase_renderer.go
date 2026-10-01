@@ -90,7 +90,7 @@ var supabaseAssetSHA256 = map[string]string{
 	"functions/hello/index.ts":            "65e7d7ce5d898dd285e660cbab54521fca4bf990c41370f51fad5b4d4cae5f42",
 	"functions/main/index.ts":             "ed402c31abf346198d71cc7bab3b7eead03b91d6b9d638b30fc5e5fada25802b",
 	"logs/vector.yml":                     "8f9fa080e3cd8107ac3e6d3bf8d6aa8959b6845d3cd8d5144fb8f28a45607a41",
-	"pooler/pooler.exs":                   "d844e49f8915021ccbf6af6b769fef7909a723346bfc8f94ddb0433a328e49b1",
+	"pooler/pooler.exs":                   "8d9f464bb31d1a92926d2301b2544d08cb93d1f8693c6770525f5d1038f178e5",
 	"proxy/caddy/Caddyfile":               "7c571b03cbc5ebdc10a0d7f05e5caae3ff3e6c4a4543624cf08a52ac654fb01e",
 	"proxy/nginx/supabase-nginx.conf.tpl": "f9dc5f45b6c4b3a3e3640c0711eb875a7f4ddb6530909c49b444035f30154a16",
 	"snippets/.gitkeep":                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -373,7 +373,7 @@ trap - EXIT HUP INT TERM`}, SecurityContext: security.DeepCopy(), Resources: con
 		initContainers = append(initContainers, tlsInit)
 		container.Args = []string{"postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "data_directory=" + postgresDataDirectory, "-c", "hba_file=/etc/postgresql-custom/hakopod-pg_hba.conf", "-c", "ssl=on", "-c", "ssl_min_protocol_version=TLSv1.2", "-c", "ssl_cert_file=/etc/postgresql-tls/current/tls.crt", "-c", "ssl_key_file=/etc/postgresql-tls/current/tls.key", "-c", "ssl_ca_file=/etc/postgresql-tls/current/ca.crt", "-c", "log_min_messages=fatal"}
 	}
-	databaseTLSClients := map[string]bool{"auth": true, "edge-runtime": true, "pooler": true, "postgres-meta": true, "realtime": true, "rest": true, "storage": true}
+	databaseTLSClients := map[string]bool{"auth": true, "pooler": true, "postgres-meta": true, "realtime": true, "rest": true, "storage": true}
 	if databaseTLSClients[component.Name] {
 		tlsRef := in.Spec.Secrets["database-tls-certificate"]
 		volumes = append(volumes, corev1.Volume{Name: "database-ca", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secretSnapshotName(tlsRef), DefaultMode: int32Ptr(0440), Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}}})
@@ -444,13 +444,13 @@ func supabasePolicies(meta func(string) metav1.ObjectMeta, labels map[string]str
 	dependencies := map[string]map[string][]int32{
 		"api-gateway":   {"auth": {9999}, "rest": {3000}, "realtime": {4000}, "storage": {5000}, "edge-runtime": {9000}, "postgres-meta": {8080}, "studio": {3000}},
 		"auth":          {"database": {5432}},
-		"edge-runtime":  {"database": {5432}, "api-gateway": {8443}},
+		"edge-runtime":  {"api-gateway": {8443}},
 		"pooler":        {"database": {5432}},
 		"postgres-meta": {"database": {5432}},
 		"realtime":      {"database": {5432}},
 		"rest":          {"database": {5432}},
 		"storage":       {"database": {5432}, "rest": {3000}, "image-proxy": {5001}},
-		"studio":        {"database": {5432}, "postgres-meta": {8080}, "api-gateway": {8443}},
+		"studio":        {"postgres-meta": {8080}, "api-gateway": {8443}},
 	}
 	peer := func(component string) networkingv1.NetworkPolicyPeer {
 		selector := componentSelectorLabels(labels["hakopod.io/managed-platform"], component)
@@ -623,7 +623,7 @@ func secretEnvironmentName(component, key string) string {
 	known := map[string]string{
 		"auth/auth-database-url": "GOTRUE_DB_DATABASE_URL", "auth/jwt-secret": "GOTRUE_JWT_SECRET", "auth/jwt-signing-keys": "GOTRUE_JWT_KEYS",
 		"database/database-owner-password": "POSTGRES_PASSWORD", "database/jwt-secret": "JWT_SECRET",
-		"edge-runtime/anon-key": "SUPABASE_ANON_KEY", "edge-runtime/edge-database-url": "SUPABASE_DB_URL", "edge-runtime/jwt-secret": "JWT_SECRET", "edge-runtime/jwt-verification-keys": "SUPABASE_JWKS", "edge-runtime/publishable-key": "SUPABASE_PUBLISHABLE_KEYS", "edge-runtime/secret-key": "SUPABASE_SECRET_KEYS", "edge-runtime/service-role-key": "SUPABASE_SERVICE_ROLE_KEY",
+		"edge-runtime/anon-key": "SUPABASE_ANON_KEY", "edge-runtime/jwt-secret": "JWT_SECRET", "edge-runtime/jwt-verification-keys": "SUPABASE_JWKS", "edge-runtime/publishable-key": "SUPABASE_PUBLISHABLE_KEYS", "edge-runtime/secret-key": "SUPABASE_SECRET_KEYS", "edge-runtime/service-role-key": "SUPABASE_SERVICE_ROLE_KEY",
 		"pooler/supavisor-database-url": "DATABASE_URL", "pooler/secret-key-base": "SECRET_KEY_BASE", "pooler/vault-encryption-key": "VAULT_ENC_KEY", "pooler/jwt-secret": "API_JWT_SECRET",
 		"postgres-meta/postgres-meta-database-password": "PG_META_DB_PASSWORD", "postgres-meta/pg-meta-crypto-key": "CRYPTO_KEY",
 		"realtime/anon-key": "ANON_KEY", "realtime/realtime-database-password": "DB_PASSWORD", "realtime/realtime-db-encryption-key": "DB_ENC_KEY", "realtime/secret-key-base": "SECRET_KEY_BASE", "realtime/jwt-secret": "API_JWT_SECRET", "realtime/jwt-verification-keys": "API_JWT_JWKS",
@@ -667,7 +667,7 @@ func supabasePublicEnvironment(s Spec, component string) []corev1.EnvVar {
 		"postgres-meta": {"PG_META_PORT": "8080", "PG_META_DB_HOST": "db", "PG_META_DB_PORT": "5432", "PG_META_DB_NAME": c.DatabaseName, "PG_META_DB_USER": "hakopod_meta", "PG_META_DB_SSL_MODE": "verify-full"},
 		"edge-runtime":  {"SUPABASE_URL": "https://api-gw:8443", "SUPABASE_PUBLIC_URL": c.PublicURL, "VERIFY_JWT": "true"},
 		"database":      {"POSTGRES_HOST": "/var/run/postgresql", "PGPORT": "5432", "POSTGRES_PORT": "5432", "PGDATABASE": c.DatabaseName, "POSTGRES_DB": c.DatabaseName, "JWT_EXP": strconv.Itoa(c.JWTExpirySeconds)},
-		"pooler":        {"PORT": "4000", "POSTGRES_PORT": "5432", "POSTGRES_HOST": "db", "POSTGRES_DB": c.DatabaseName, "CLUSTER_POSTGRES": "true", "REGION": "local", "ERL_AFLAGS": "-proto_dist inet_tcp", "POOLER_TENANT_ID": s.Name, "POOLER_DEFAULT_POOL_SIZE": strconv.Itoa(c.PoolSize), "POOLER_MAX_CLIENT_CONN": strconv.Itoa(c.PoolMaxClients), "POOLER_POOL_MODE": "transaction", "DB_POOL_SIZE": "5"},
+		"pooler":        {"PORT": "4000", "POSTGRES_PORT": "5432", "POSTGRES_HOST": "db", "POSTGRES_DB": c.DatabaseName, "CLUSTER_POSTGRES": "true", "REGION": "local", "ERL_AFLAGS": "-proto_dist inet_tcp", "POOLER_TENANT_ID": s.Name, "POOLER_DEFAULT_POOL_SIZE": strconv.Itoa(c.PoolSize), "POOLER_MAX_CLIENT_CONN": strconv.Itoa(c.PoolMaxClients), "POOLER_POOL_MODE": "transaction", "DB_POOL_SIZE": "5", "DATABASE_SSL_CA_CERT": "/etc/hakopod-database-ca/ca.crt", "DATABASE_SSL_SERVER_NAME": "db", "GLOBAL_UPSTREAM_CA_PATH": "/etc/hakopod-database-ca/ca.crt"},
 	}
 	names := make([]string, 0, len(values[component]))
 	for name := range values[component] {

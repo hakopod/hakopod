@@ -73,9 +73,14 @@ func TestSupabaseNetworkPoliciesRestrictComponentDependencies(t *testing.T) {
 		}
 		return ingress && egress
 	}
-	for _, pair := range [][2]string{{"auth", "database"}, {"pooler", "database"}, {"rest", "database"}, {"realtime", "database"}, {"edge-runtime", "database"}, {"postgres-meta", "database"}, {"storage", "database"}, {"studio", "database"}} {
+	for _, pair := range [][2]string{{"auth", "database"}, {"pooler", "database"}, {"rest", "database"}, {"realtime", "database"}, {"postgres-meta", "database"}, {"storage", "database"}} {
 		if !allowed(labels(pair[0]), labels(pair[1]), 5432) {
 			t.Fatalf("%s cannot use its database", pair[0])
+		}
+	}
+	for _, component := range []string{"edge-runtime", "studio"} {
+		if allowed(labels(component), labels("database"), 5432) {
+			t.Fatalf("%s has direct database access", component)
 		}
 	}
 	for _, c := range SupabaseComponentNames() {
