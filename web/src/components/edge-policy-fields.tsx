@@ -25,6 +25,7 @@ export function EdgePolicyFields({
   const sourceHelp = useId()
   const trustedHelp = useId()
   const countryHelp = useId()
+  const [newRuleKey, setNewRuleKey] = useState<string | null>(null)
   const trusted = draft.client_ip_source === 'trusted_proxy'
   const change = <K extends keyof EdgeDraft>(key: K, value: EdgeDraft[K]) =>
     onChange({ ...draft, [key]: value })
@@ -160,6 +161,7 @@ export function EdgePolicyFields({
               index={index}
               total={draft.rules.length}
               countryAvailable={trusted && Boolean(draft.country_header)}
+              initiallyOpen={rule.key === newRuleKey}
               onChange={(next) =>
                 change(
                   'rules',
@@ -185,7 +187,11 @@ export function EdgePolicyFields({
           <Button
             type="button"
             disabled={draft.rules.length >= 32}
-            onClick={() => change('rules', [...draft.rules, newEdgeRule(draft.rules)])}
+            onClick={() => {
+              const rule = newEdgeRule(draft.rules)
+              setNewRuleKey(rule.key)
+              change('rules', [...draft.rules, rule])
+            }}
           >
             <Icon name="plus" size={15} />
             Add rule
@@ -202,6 +208,7 @@ function RuleFields({
   index,
   total,
   countryAvailable,
+  initiallyOpen,
   onChange,
   onMove,
   onRemove,
@@ -210,6 +217,7 @@ function RuleFields({
   index: number
   total: number
   countryAvailable: boolean
+  initiallyOpen: boolean
   onChange: (value: EdgeRuleDraft) => void
   onMove: (offset: number) => void
   onRemove: () => void
@@ -225,7 +233,7 @@ function RuleFields({
   const change = <K extends keyof EdgeRuleDraft>(key: K, value: EdgeRuleDraft[K]) =>
     onChange({ ...rule, [key]: value })
   const label = rule.id || String(index + 1)
-  const [open, setOpen] = useState(index === 0)
+  const [open, setOpen] = useState(index === 0 || initiallyOpen)
   return (
     <details
       className="min-w-0 border-t border-border pt-4"
