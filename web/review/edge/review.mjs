@@ -452,7 +452,7 @@ try {
         const expected = scenario === 'loading'
           ? page.locator('main .hako-loading-stack')
           : scenario === 'error'
-            ? page.getByText('Synthetic fixture: HAProxy observations are unavailable.', { exact: true })
+            ? page.locator('[data-error-recovery]').getByText('Synthetic fixture: HAProxy observations are unavailable.', { exact: true })
             : page.getByRole('heading', { name: 'Saved traffic configuration', exact: true })
         await settled(page, expected, { loading: scenario === 'loading' })
         if (scenario === 'empty') await page.getByText('No traffic rules.', { exact: true }).waitFor()
