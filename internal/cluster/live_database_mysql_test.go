@@ -50,7 +50,9 @@ func newMySQLFixture(t *testing.T, ctx context.Context, c *Client, mode string) 
 		if t.Failed() && os.Getenv("HAKOPOD_KEEP_DATABASE_FIXTURES") == "1" {
 			return
 		}
-		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		// Namespace and volume controllers can need a five-minute resync after
+		// the last pod exits. Keep a bounded wait for actual volume reclamation.
+		cleanup, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 		defer cancel()
 		for cleanup.Err() == nil {
 			done, err := c.DeleteDatabase(cleanup, d, func() error { return nil })
