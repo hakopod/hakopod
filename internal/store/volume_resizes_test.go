@@ -226,3 +226,23 @@ func TestVolumeResizeRetainedOriginalAllowsRepairWithoutMoreStorage(t *testing.T
 		t.Fatal("repair allowed additional storage above quota")
 	}
 }
+
+func TestTLSIssuerClaimFencesVolumeResize(t *testing.T) {
+	s, p, a := resizeFixture(t)
+	ctx := context.Background()
+	claim, err := s.ClaimTLSIssuer(ctx, a.ID, a.Revision)
+	if err != nil || claim == nil {
+		t.Fatal("issuer claim", err)
+	}
+	defer claim.Release()
+	if _, err = s.StartVolumeResize(ctx, p, a.ID, "api-data", 5, a.Revision, "resize-issuer", JSON(map[string]string{"source_uid": "source"})); !errors.Is(err, ErrConflict) {
+		t.Fatal("resize overtook issuer claim", err)
+	}
+	claim.Release()
+	if _, err = s.StartVolumeResize(ctx, p, a.ID, "api-data", 5, a.Revision, "resize-issuer", JSON(map[string]string{"source_uid": "source"})); err != nil {
+		t.Fatal(err)
+	}
+	if claim, err = s.ClaimTLSIssuer(ctx, a.ID, a.Revision); err != nil || claim != nil {
+		t.Fatal("issuer setup overtook resize", err)
+	}
+}

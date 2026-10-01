@@ -93,6 +93,7 @@ func TestApplicationIssuersIsolationAndImmutableRetry(t *testing.T) {
 	if posts != 1 {
 		t.Fatalf("retry created %d issuers", posts)
 	}
+	assertIssuerSolverSecurityContext(t, issuer)
 	if _, err = c.CreateApplicationTLSIssuer(ctx, target, "custom", "changed@example.test", false); err == nil {
 		t.Fatal("changed immutable configuration")
 	}
@@ -180,4 +181,69 @@ func TestIssuerReadinessRequiresCurrentObservedGeneration(t *testing.T) {
 	if !issuerView(item).Ready {
 		t.Fatal("current issuer condition was ignored")
 	}
+}
+
+// Inspect the request sent to Kubernetes, not just the configuration helper.
+func assertIssuerSolverSecurityContext(t *testing.T, issuer map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Spec struct {
+			ACME struct {
+				Solvers []struct {
+					HTTP01 struct {
+						Ingress struct {
+							PodTemplate struct {
+								Spec struct{ SecurityContext corev1.PodSecurityContext }
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if err = json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Spec.ACME.Solvers) != 1 {
+		t.Fatal("expected one constrained HTTP01 solver")
+	}
+	security := document.Spec.ACME.Solvers[0].HTTP01.Ingress.PodTemplate.Spec.SecurityContext
+	if security.RunAsNonRoot == nil || !*security.RunAsNonRoot || security.RunAsUser == nil || *security.RunAsUser != 1001 {
+		t.Fatal("solver must retain its non-root identity")
+	}
+	if security.SeccompProfile == nil || security.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Fatal("solver must use RuntimeDefault seccomp for restricted pod admission")
+	}
+}
+
+func TestInstallationIssuerSolverSecurityContext(t *testing.T) {
+	var issuer map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/apis/cert-manager.io/v1/clusterissuers" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewDecoder(r.Body).Decode(&issuer); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(issuer)
+	}))
+	defer server.Close()
+	kube, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{kube: kube, options: Options{IngressClass: "haproxy"}}
+	if _, err = c.CreateTLSIssuer(context.Background(), "default", "fixture@example.test", false); err != nil {
+		t.Fatal(err)
+	}
+	assertIssuerSolverSecurityContext(t, issuer)
 }

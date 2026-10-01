@@ -383,7 +383,7 @@ func (c *Client) CreateTLSIssuer(ctx context.Context, name, email string, produc
 	if production {
 		server = "https://acme-v02.api.letsencrypt.org/directory"
 	}
-	ingress := map[string]any{"ingressClassName": c.options.IngressClass, "serviceType": "ClusterIP", "podTemplate": map[string]any{"spec": map[string]any{"securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1001}, "resources": map[string]any{"requests": map[string]string{"cpu": "50m", "memory": "64Mi"}, "limits": map[string]string{"cpu": "100m", "memory": "64Mi"}}}}}
+	ingress := map[string]any{"ingressClassName": c.options.IngressClass, "serviceType": "ClusterIP", "podTemplate": map[string]any{"spec": map[string]any{"securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1001, "seccompProfile": map[string]string{"type": "RuntimeDefault"}}, "resources": map[string]any{"requests": map[string]string{"cpu": "50m", "memory": "64Mi"}, "limits": map[string]string{"cpu": "100m", "memory": "64Mi"}}}}}
 	body := map[string]any{"apiVersion": "cert-manager.io/v1", "kind": "ClusterIssuer", "metadata": map[string]any{"name": name, "labels": map[string]string{managedBy: "hakopod"}}, "spec": map[string]any{"acme": map[string]any{"email": email, "server": server, "privateKeySecretRef": map[string]string{"name": "hp-acme-" + name}, "solvers": []any{map[string]any{"http01": map[string]any{"ingress": ingress}}}}}}
 	data, _ := json.Marshal(body)
 	client := c.restClient()

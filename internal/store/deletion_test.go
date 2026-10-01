@@ -57,6 +57,15 @@ func TestEmptyApplicationDeletionFencesAndHistory(t *testing.T) {
 		t.Fatal("active runtime claim deleted", err)
 	}
 	claim.Release()
+	issuer, err := db.ClaimTLSIssuer(ctx, d.ApplicationID, 2)
+	if err != nil || issuer == nil {
+		t.Fatal("issuer claim", err)
+	}
+	defer issuer.Release()
+	if err = db.DeleteEmptyApplication(ctx, p, d.ApplicationID, 2, app.Name); !errors.Is(err, ErrConflict) {
+		t.Fatal("active issuer claim deleted", err)
+	}
+	issuer.Release()
 	if err = db.DeleteEmptyApplication(ctx, p, d.ApplicationID, 2, app.Name); err != nil {
 		t.Fatal(err)
 	}
