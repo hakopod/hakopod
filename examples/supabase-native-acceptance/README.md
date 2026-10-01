@@ -14,10 +14,16 @@ waits for the exact namespace UID to disappear. Run `TestSupabaseLiveRefusesUncl
 it creates an exact-label namespace without a PostgreSQL UID claim and verifies
 the reconciler refuses it without creating child resources.
 
-On failure the harness stops its local port-forward but deliberately retains the
-disposable platform, operation rows and namespace for diagnosis. The operator
-must delete that exact platform through the API before reusing the fixture; do
-not remove its namespace directly because that would bypass UID-claim cleanup.
+The run also requires a tested backup destination and a separate empty
+Supabase target. It captures the source compound recovery artifact through the
+reviewed `/api/v1` recovery operation, restores that exact artifact to the
+revision-fenced target, and waits for both durable operations to succeed.
+
+After an accepted create operation, an early exit trap stops local processes and
+requests deletion of the exact owned platform through the API. It retains the
+protected work directory on failure for diagnosis. Cleanup verifies the scope,
+namespace absence and persistent-volume absence; it never deletes the namespace
+directly.
 
 The harness does not turn on any capability gate. The VM job may apply the
 separately delivered acceptance-only gate overlay to its disposable source
@@ -51,3 +57,13 @@ seccomp, and disabled service-account token mounting. It records the five PVC
 UID/PV bindings and storage properties, replaces every pod, requires those
 records to remain byte-for-byte equal, and reads both PostgreSQL and Storage
 data after replacement.
+
+The pooler must resolve `API_JWT_SECRET` from the independently generated
+`pooler-api-jwt-secret` snapshot. Native acceptance sends the service-role JWT
+to the controlled Supavisor administrative endpoint and requires a 403, sends
+the pooler administrative JWT and requires success, and then confirms the
+tenant still requires peer verification for the `db` hostname. NetworkPolicy
+must also continue to deny application workload access to port 4000.
+
+This source is a candidate harness. Native execution and qualification evidence
+remain pending; source review and shell checks do not qualify the Supabase gates.
