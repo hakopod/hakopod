@@ -330,8 +330,11 @@ func capacityTemplatesMatch(actual, planned corev1.PodTemplateSpec) bool {
 }
 
 func workloadRequestsMatch(spec corev1.PodSpec, expected managedplatform.Capacity) bool {
-	cpu, memory := podRequests(spec)
-	return cpu == expected.CPUMilli && memory+managedplatform.PodMemoryOverheadBytes == expected.MemoryBytes
+	cpu, memory, err := podCapacityUsage(spec)
+	if err != nil || addNodeCapacityUsage(&cpu, &memory, 0, managedplatform.PodMemoryOverheadBytes) != nil {
+		return false
+	}
+	return cpu == expected.CPUMilli && memory == expected.MemoryBytes
 }
 
 func (c *Client) managedPlatformPodReservation(ctx context.Context, pod corev1.Pod, ns *corev1.Namespace, owned managedplatform.CapacityNamespaceOwnership) (string, managedplatform.Capacity, bool, error) {
@@ -339,7 +342,7 @@ func (c *Client) managedPlatformPodReservation(ctx context.Context, pod corev1.P
 		return "", managedplatform.Capacity{}, false, nil
 	}
 	owner := pod.OwnerReferences[0]
-	if owner.UID == "" {
+	if owner.UID == "" || owner.Controller == nil || !*owner.Controller {
 		return "", managedplatform.Capacity{}, false, nil
 	}
 	reservation := func(key, uid string) (managedplatform.Capacity, bool) {
@@ -377,7 +380,7 @@ func (c *Client) managedPlatformPodReservation(ctx context.Context, pod corev1.P
 			return "", managedplatform.Capacity{}, false, nil
 		}
 		deploymentOwner := replica.OwnerReferences[0]
-		if deploymentOwner.APIVersion != "apps/v1" || deploymentOwner.Kind != "Deployment" || deploymentOwner.UID == "" {
+		if deploymentOwner.APIVersion != "apps/v1" || deploymentOwner.Kind != "Deployment" || deploymentOwner.UID == "" || deploymentOwner.Controller == nil || !*deploymentOwner.Controller {
 			return "", managedplatform.Capacity{}, false, nil
 		}
 		deployment, err := c.kube.AppsV1().Deployments(ns.Name).Get(ctx, deploymentOwner.Name, metav1.GetOptions{})
@@ -408,12 +411,13 @@ func addNodeCapacityUsage(cpu, memory *int64, usedCPU, usedMemory int64) error {
 }
 
 func capacityRequest(resources corev1.ResourceList) (int64, int64, error) {
-	cpu, cpuOK := resources.Cpu().AsScaledInt64(resource.Milli)
-	memory, memoryOK := resources.Memory().AsInt64()
-	if !cpuOK || !memoryOK || cpu < 0 || memory < 0 {
+	cpuQuantity, memoryQuantity := resources.Cpu(), resources.Memory()
+	// Check magnitude before rounded conversion: MilliValue can overflow and
+	// AsInt64 rejects valid decimal quantities even when their value fits.
+	if cpuQuantity.Sign() < 0 || memoryQuantity.Sign() < 0 || cpuQuantity.Cmp(*resource.NewMilliQuantity(math.MaxInt64, resource.DecimalSI)) > 0 || memoryQuantity.Cmp(*resource.NewQuantity(math.MaxInt64, resource.DecimalSI)) > 0 {
 		return 0, 0, fmt.Errorf("pod resource request exceeds its arithmetic bound")
 	}
-	return cpu, memory, nil
+	return cpuQuantity.MilliValue(), memoryQuantity.Value(), nil
 }
 
 func podCapacityUsage(spec corev1.PodSpec) (int64, int64, error) {

@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,12 +59,47 @@ func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 	replicas := int32(1)
 	podTemplate := corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: corev1.PodSpec{NodeSelector: map[string]string{corev1.LabelHostname: node.Name}, Containers: []corev1.Container{{Name: "auth", Image: "registry.example.test/supabase/auth@sha256:" + strings.Repeat("a", 64), Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "supabase-auth", Namespace: namespace.Name, UID: "deployment-uid", Labels: labels}, Spec: appsv1.DeploymentSpec{Replicas: &replicas, Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Template: podTemplate}}
-	replica := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "supabase-auth-rs", Namespace: namespace.Name, UID: "replicaset-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name, UID: deployment.UID}}}, Spec: appsv1.ReplicaSetSpec{Replicas: &replicas, Template: podTemplate}}
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "platform", Namespace: namespace.Name, UID: "pod-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: replica.Name, UID: replica.UID}}}, Spec: podTemplate.Spec}
+	replica := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "supabase-auth-rs", Namespace: namespace.Name, UID: "replicaset-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name, UID: deployment.UID, Controller: ptr(true)}}}, Spec: appsv1.ReplicaSetSpec{Replicas: &replicas, Template: podTemplate}}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "platform", Namespace: namespace.Name, UID: "pod-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: replica.Name, UID: replica.UID, Controller: ptr(true)}}}, Spec: podTemplate.Spec}
 	pod.Spec.NodeName = node.Name
 	c := &Client{kube: fake.NewClientset(node, namespace, deployment, replica, pod)}
 	workloadCapacity := managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512<<20 + managedplatform.PodMemoryOverheadBytes}
 	ownership := managedplatform.CapacityNamespaceOwnership{PlatformID: id, PlatformName: name, UID: "owned-uid", Controllers: map[string]string{"deployment." + deployment.Name: string(deployment.UID)}, Workloads: map[string]managedplatform.CapacityWorkloadOwnership{"deployment." + deployment.Name: {UID: string(deployment.UID), Nodes: map[string]managedplatform.Capacity{node.Name: workloadCapacity}}}}
+	for _, flag := range []*bool{nil, ptr(false)} {
+		uncontrolled := pod.DeepCopy()
+		uncontrolled.OwnerReferences[0].Controller = flag
+		if _, _, owned, err := c.managedPlatformPodReservation(ctx, *uncontrolled, namespace, ownership); err != nil || owned {
+			t.Fatal("non-controller Pod reference claimed a deployment reservation", err)
+		}
+		uncontrolledReplica := replica.DeepCopy()
+		uncontrolledReplica.OwnerReferences[0].Controller = flag
+		if _, err := c.kube.AppsV1().ReplicaSets(namespace.Name).Update(ctx, uncontrolledReplica, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, owned, err := c.managedPlatformPodReservation(ctx, *pod, namespace, ownership); err != nil || owned {
+			t.Fatal("non-controller ReplicaSet reference claimed a deployment reservation", err)
+		}
+	}
+	if _, err := c.kube.AppsV1().ReplicaSets(namespace.Name).Update(ctx, replica, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	set := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "supabase-database", Namespace: namespace.Name, UID: "statefulset-uid", Labels: labels}, Spec: appsv1.StatefulSetSpec{Replicas: &replicas, Template: podTemplate}}
+	if _, err := c.kube.AppsV1().StatefulSets(namespace.Name).Create(ctx, set, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	setPod := pod.DeepCopy()
+	setPod.Name = set.Name + "-0"
+	setPod.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "StatefulSet", Name: set.Name, UID: set.UID, Controller: ptr(true)}}
+	ownership.Workloads["statefulset."+set.Name] = managedplatform.CapacityWorkloadOwnership{UID: string(set.UID), Nodes: map[string]managedplatform.Capacity{node.Name: workloadCapacity}}
+	if _, _, owned, err := c.managedPlatformPodReservation(ctx, *setPod, namespace, ownership); err != nil || !owned {
+		t.Fatal("exact StatefulSet controller reference was rejected", err)
+	}
+	for _, flag := range []*bool{nil, ptr(false)} {
+		setPod.OwnerReferences[0].Controller = flag
+		if _, _, owned, err := c.managedPlatformPodReservation(ctx, *setPod, namespace, ownership); err != nil || owned {
+			t.Fatal("non-controller Pod reference claimed a StatefulSet reservation", err)
+		}
+	}
 	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1280 << 20}, Namespaces: map[string]managedplatform.CapacityNamespaceOwnership{namespace.Name: ownership}}
 	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
 		t.Fatal(err)
@@ -236,6 +272,62 @@ func TestCapacityHeadroomRejectsOverflow(t *testing.T) {
 	}}
 	if _, _, err := podCapacityUsage(huge); err == nil {
 		t.Fatal("pod resource request overflow was accepted")
+	}
+}
+
+func TestCapacityRequestRoundsDecimalQuantitiesWithoutOverflow(t *testing.T) {
+	for _, test := range []struct {
+		name, cpu, memory   string
+		wantCPU, wantMemory int64
+		invalid             bool
+	}{
+		{name: "decimal", cpu: "0.1255", memory: "512.1", wantCPU: 126, wantMemory: 513},
+		{name: "binary fraction", cpu: "1.5", memory: "1.5Gi", wantCPU: 1500, wantMemory: 1610612736},
+		{name: "maximum", cpu: "9223372036854775.807", memory: "9223372036854775807", wantCPU: math.MaxInt64, wantMemory: math.MaxInt64},
+		{name: "CPU rounding overflow", cpu: "9223372036854775.8071", memory: "1", invalid: true},
+		{name: "memory rounding overflow", cpu: "1m", memory: "9223372036854775807.1", invalid: true},
+		{name: "negative CPU", cpu: "-1m", memory: "1", invalid: true},
+		{name: "negative memory", cpu: "1m", memory: "-1", invalid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cpu, memory, err := capacityRequest(corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(test.cpu), corev1.ResourceMemory: resource.MustParse(test.memory)})
+			if (err != nil) != test.invalid || err == nil && (cpu != test.wantCPU || memory != test.wantMemory) {
+				t.Fatalf("capacity = (%d, %d), error = %v", cpu, memory, err)
+			}
+		})
+	}
+}
+
+func TestPodCapacityIncludesRestartableInitStagesAndOverhead(t *testing.T) {
+	container := func(cpu, memory string, restartable bool) corev1.Container {
+		c := corev1.Container{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}}
+		if restartable {
+			c.RestartPolicy = ptr(corev1.ContainerRestartPolicyAlways)
+		}
+		return c
+	}
+	spec := corev1.PodSpec{
+		Containers:     []corev1.Container{container("200m", "200", false)},
+		InitContainers: []corev1.Container{container("100m", "100", true), container("500m", "500", false), container("50m", "50", true)},
+		Overhead:       corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("25m"), corev1.ResourceMemory: resource.MustParse("25")},
+	}
+	cpu, memory, err := podCapacityUsage(spec)
+	if err != nil || cpu != 625 || memory != 625 {
+		t.Fatalf("initialization peak plus overhead = (%d, %d), error = %v", cpu, memory, err)
+	}
+	if !workloadRequestsMatch(spec, managedplatform.Capacity{CPUMilli: 625, MemoryBytes: 625 + managedplatform.PodMemoryOverheadBytes}) {
+		t.Fatal("valid scheduler request envelope was rejected")
+	}
+	spec.Overhead[corev1.ResourceMemory] = *resource.NewQuantity(math.MaxInt64, resource.DecimalSI)
+	if _, _, err := podCapacityUsage(spec); err == nil {
+		t.Fatal("Pod overhead overflow was accepted")
+	}
+	if workloadRequestsMatch(spec, managedplatform.Capacity{CPUMilli: 625, MemoryBytes: 625}) {
+		t.Fatal("overflowing requests matched a reserved workload")
+	}
+	maxMemory := corev1.PodSpec{Containers: []corev1.Container{container("1m", "9223372036854775807", false)}}
+	if workloadRequestsMatch(maxMemory, managedplatform.Capacity{CPUMilli: 1, MemoryBytes: math.MaxInt64}) {
+		t.Fatal("managed platform memory allowance overflow was accepted")
 	}
 }
 
