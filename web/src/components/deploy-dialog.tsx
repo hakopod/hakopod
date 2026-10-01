@@ -22,7 +22,7 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { actionsNeedTOML, actionsProviderName } from '../lib/actions-provider'
-import { FormPage, FormHint } from './form-page'
+import { FormPage } from './form-page'
 import { ComputeNotice } from './compute-notice'
 import { hostedComputeIssues } from '../lib/compute-limits'
 import { fieldError } from '../lib/form-errors'
@@ -31,6 +31,14 @@ import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Note, RequestError } from './shared'
 import { ServiceIcon } from './service-icon'
+
+const serviceSections = {
+  source: 'Image and runtime',
+  compute: 'Compute',
+  variables: 'Variables',
+  access: 'Access',
+} as const
+type ServiceSection = keyof typeof serviceSections
 
 type RuntimeDraft = { command: string; args: string; variables: EnvironmentRow[] }
 const runtimeDraft = (service: Service): RuntimeDraft => ({
@@ -95,6 +103,8 @@ export function DeploymentForm({
   )
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
+  const [activeService, setActiveService] = useState(serviceName || addedService?.name || '')
+  const [serviceSection, setServiceSection] = useState<ServiceSection>('source')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editorExpanded, setEditorExpanded] = useState(false)
@@ -102,6 +112,7 @@ export function DeploymentForm({
   const tomlEditor = useRef<HTMLTextAreaElement>(null)
   const focusGeneratedTOML = useRef(false)
   const requestKey = useRef('')
+  const editorBody = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (mode === 'toml' && focusGeneratedTOML.current) {
       focusGeneratedTOML.current = false
@@ -117,6 +128,8 @@ export function DeploymentForm({
         : newSpec()
       if (addedService) initial.services[addedService.name] = structuredClone(addedService.service)
       setSpec(initial)
+      setActiveService(serviceName || addedService?.name || Object.keys(initial.services)[0] || '')
+      setServiceSection('source')
       setRuntime(
         Object.fromEntries(
           Object.entries(initial.services).map(([name, service]) => [name, runtimeDraft(service)]),
@@ -130,6 +143,32 @@ export function DeploymentForm({
       setMode(tomlOnlyReason ? 'toml' : initialMode)
     }
   }, [application?.id, initialMode, serviceName, removeService, addedService, tomlOnlyReason])
+  useEffect(() => {
+    if (!error || mode !== 'form') return
+    const match = error.match(/services\.([a-z][a-z0-9-]*)\.([a-z_]+)/)
+    if (!match || !spec.services[match[1]]) return
+    setActiveService(match[1])
+    const field = match[2]
+    setServiceSection(
+      ['env', 'secrets'].includes(field)
+        ? 'variables'
+        : field === 'public'
+          ? 'access'
+          : ['image', 'registry_credential', 'command', 'args', 'function'].includes(field)
+            ? 'source'
+            : 'compute',
+    )
+  }, [error, mode, spec.services])
+  useEffect(() => {
+    if (!error || mode !== 'form') return
+    const frame = requestAnimationFrame(() => {
+      const invalid = Array.from(
+        editorBody.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]') || [],
+      ).find((control) => control.getClientRects().length > 0)
+      invalid?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [error, mode, activeService, serviceSection])
   const limitIssues = features.hostedCompute
     ? hostedComputeIssues(spec, features.hostedFree, features.hostedStorageGiB)
     : []
@@ -138,17 +177,31 @@ export function DeploymentForm({
     // Validate every environment and command draft before writing private
     // values, including fields belonging to later services in the form.
     for (const [name, service] of Object.entries(next.services)) {
+      if (serviceName && name !== serviceName) continue
       const draft = runtime[name]
       if (!draft) continue
-      parseProcessCommand(draft.command)
-      parseProcessCommand(draft.args)
-      prepareEnvironment(
-        draft.variables,
-        { project, environment, application: next.name },
-        service.secrets,
-      )
+      try {
+        parseProcessCommand(draft.command)
+        parseProcessCommand(draft.args)
+      } catch (error) {
+        setActiveService(name)
+        setServiceSection('source')
+        throw error
+      }
+      try {
+        prepareEnvironment(
+          draft.variables,
+          { project, environment, application: next.name },
+          service.secrets,
+        )
+      } catch (error) {
+        setActiveService(name)
+        setServiceSection('variables')
+        throw error
+      }
     }
     for (const [name, service] of Object.entries(next.services)) {
+      if (serviceName && name !== serviceName) continue
       const draft = runtime[name]
       if (!draft) continue
       const saved = draft.variables.some((row) => row.name || row.value)
@@ -299,17 +352,6 @@ export function DeploymentForm({
         { label: application ? 'Configure' : 'New application' },
       ]}
       icon="box"
-      help={
-        <>
-          <FormHint title="Start small">
-            Choose the smallest resource profile that fits. You can review a larger profile before
-            applying it later.
-          </FormHint>
-          <FormHint title="Review before deploy">
-            The next step shows the server-validated revision and every configuration change.
-          </FormHint>
-        </>
-      }
       title={
         plan
           ? 'Review your deployment'
@@ -332,7 +374,7 @@ export function DeploymentForm({
           <b>2</b>Review & deploy
         </span>
       </div>
-      <div className="form-body deploy-body">
+      <div ref={editorBody} className="form-body deploy-body">
         <ComputeNotice creatingApplication={!application} />
         {tomlOnlyReason && <Note>{tomlOnlyReason}</Note>}
         {serviceName && (
@@ -377,7 +419,7 @@ export function DeploymentForm({
                 const profile = serviceResources(service, plan.resource_profiles)
                 return profile ? (
                   <div key={name}>
-                    <strong>{name}</strong>
+                    <strong className="min-w-0 break-words">{name}</strong>
                     <span>
                       {service.job?.schedule
                         ? 'Scheduled job'
@@ -547,44 +589,48 @@ export function DeploymentForm({
               </div>
             ) : (
               <div className="field-stack">
-                <label>
-                  Application name
-                  <Input
-                    placeholder="my-application"
-                    value={spec.name}
-                    error={fieldError(error, 'name')}
-                    disabled={Boolean(application)}
-                    onChange={(event) =>
-                      setSpec((previous) => ({ ...previous, name: event.target.value }))
-                    }
-                    pattern="[a-z][a-z0-9\-]*"
-                    maxLength={40}
-                  />
-                </label>
-                <label>
-                  Automatic release recovery
-                  <SelectField
-                    disabled={busy}
-                    label="Automatic release recovery"
-                    aria-describedby="release-recovery-help"
-                    value={spec.recovery?.on_failure || 'safe'}
-                    onValueChange={(value) =>
-                      setSpec((previous) => ({
-                        ...previous,
-                        recovery: { on_failure: value as 'safe' | 'disabled' },
-                      }))
-                    }
-                    options={[
-                      { value: 'safe', label: 'Restore the last successful stateless release' },
-                      { value: 'disabled', label: 'Disabled' },
-                    ]}
-                  />
-                </label>
-                <p id="release-recovery-help" className="field-help">
-                  Automatic recovery skips jobs, volumes and service additions or removals. It
-                  restores workload configuration only; external data and secret values are
-                  unchanged.
-                </p>
+                {!serviceName && (
+                  <>
+                    <label>
+                      Application name
+                      <Input
+                        placeholder="my-application"
+                        value={spec.name}
+                        error={fieldError(error, 'name')}
+                        disabled={Boolean(application)}
+                        onChange={(event) =>
+                          setSpec((previous) => ({ ...previous, name: event.target.value }))
+                        }
+                        pattern="[a-z][a-z0-9\-]*"
+                        maxLength={40}
+                      />
+                    </label>
+                    <label>
+                      Automatic release recovery
+                      <SelectField
+                        disabled={busy}
+                        label="Automatic release recovery"
+                        aria-describedby="release-recovery-help"
+                        value={spec.recovery?.on_failure || 'safe'}
+                        onValueChange={(value) =>
+                          setSpec((previous) => ({
+                            ...previous,
+                            recovery: { on_failure: value as 'safe' | 'disabled' },
+                          }))
+                        }
+                        options={[
+                          { value: 'safe', label: 'Restore the last successful stateless release' },
+                          { value: 'disabled', label: 'Disabled' },
+                        ]}
+                      />
+                    </label>
+                    <p id="release-recovery-help" className="field-help">
+                      Automatic recovery skips jobs, volumes and service additions or removals. It
+                      restores workload configuration only; external data and secret values are
+                      unchanged.
+                    </p>
+                  </>
+                )}
                 {application && Object.keys(spec.services).length === 0 && (
                   <Note>
                     Deploying this revision removes every service and stops application traffic.
@@ -609,8 +655,57 @@ export function DeploymentForm({
                   <span>Services</span>
                   <span className="muted-text">Private network included</span>
                 </div>
+                {!serviceName && (
+                  <nav
+                    aria-label="Services in this draft"
+                    className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+                  >
+                    {Object.entries(spec.services).map(([name, service]) => (
+                      <Button
+                        key={name}
+                        type="button"
+                        variant="ghost"
+                        aria-pressed={(activeService || Object.keys(spec.services)[0]) === name}
+                        className={`h-auto! min-h-16 min-w-0 w-full flex-col items-start! whitespace-normal! normal-case! font-sans! border border-border text-left ${(activeService || Object.keys(spec.services)[0]) === name ? 'text-[var(--navigation-active)]!' : ''}`}
+                        onClick={() => {
+                          setActiveService(name)
+                          setServiceSection('source')
+                        }}
+                      >
+                        <strong className="min-w-0 break-words">{name}</strong>
+                        <span className="min-w-0 break-words text-xs text-muted-foreground">
+                          {service.image ? service.image.split('@')[0] : 'Image needed'} ·{' '}
+                          {service.size || 'small'} · {service.public ? 'Public' : 'Private'}
+                        </span>
+                      </Button>
+                    ))}
+                  </nav>
+                )}
+                <nav aria-label="Service settings" className="flex flex-wrap gap-2">
+                  {(Object.keys(serviceSections) as ServiceSection[]).map((section) => (
+                    <Button
+                      key={section}
+                      type="button"
+                      variant="ghost"
+                      aria-pressed={serviceSection === section}
+                      onClick={() => setServiceSection(section)}
+                      className={
+                        serviceSection === section ? 'text-[var(--navigation-active)]!' : ''
+                      }
+                    >
+                      {serviceSections[section]}
+                    </Button>
+                  ))}
+                </nav>
                 {Object.entries(spec.services)
-                  .filter(([name]) => !serviceName || name === serviceName)
+                  .filter(
+                    ([name]) =>
+                      name ===
+                      (serviceName ||
+                        (spec.services[activeService]
+                          ? activeService
+                          : Object.keys(spec.services)[0])),
+                  )
                   .map(([name, service]) => (
                     <div className="service-form" key={name}>
                       <div className="service-form-heading">
@@ -629,216 +724,233 @@ export function DeploymentForm({
                               variant="ghost"
                               aria-label={`Remove service ${name}`}
                               disabled={busy}
-                              onClick={() => setSpec((previous) => withoutService(previous, name))}
+                              onClick={() => {
+                                const next = withoutService(spec, name)
+                                setSpec(next)
+                                setActiveService(Object.keys(next.services)[0] || '')
+                                setServiceSection('source')
+                              }}
                             >
                               <Icon name="trash" size={14} />
                             </Button>
                           )}
                       </div>
-                      <ServiceExecutionFields
-                        name={name}
-                        service={service}
-                        project={project}
-                        environment={environment}
-                        application={spec.name}
-                        disabled={busy}
-                        error={error}
-                        onChange={(value) => updateService(name, value)}
-                        onStarter={(value) => {
-                          updateService(name, value)
-                          setRuntime((previous) => ({
-                            ...previous,
-                            [name]: runtimeDraft({ ...service, ...value }),
-                          }))
-                        }}
-                      />
-                      <FunctionEditor
-                        service={service}
-                        disabled={busy}
-                        onChange={(value) => updateService(name, value)}
-                      />
-                      <label>
-                        Container image
-                        <Input
-                          placeholder="nginx:1.29-alpine"
-                          value={service.image}
-                          error={fieldError(error, `services.${name}.image`)}
-                          onChange={(event) => updateService(name, { image: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        Registry credential
-                        <SelectField
+                      <div className={serviceSection === 'compute' ? 'grid gap-4' : 'hidden'}>
+                        <ServiceExecutionFields
+                          name={name}
+                          service={service}
+                          project={project}
+                          environment={environment}
+                          application={spec.name}
                           disabled={busy}
-                          label="Registry credential"
-                          value={service.registry_credential || ''}
-                          error={fieldError(error, `services.${name}.registry_credential`)}
-                          onValueChange={(value) =>
-                            updateService(name, {
-                              registry_credential: value || undefined,
-                            })
-                          }
-                          options={[
-                            {
-                              value: '',
-                              label: 'Automatic · public or matching saved credential',
-                            },
-                            ...(service.registry_credential &&
-                            !registries.data?.items.some(
-                              (item) => item.name === service.registry_credential,
-                            )
-                              ? [
-                                  {
-                                    value: service.registry_credential,
-                                    label: `${service.registry_credential} (saved reference)`,
-                                  },
-                                ]
-                              : []),
-                            ...(registries.data?.items.map((item) => ({
-                              value: item.name,
-                              label:
-                                item.name +
-                                ' · ' +
-                                item.registry +
-                                (item.synchronized ? '' : ' · pending sync'),
-                            })) ?? []),
-                          ]}
+                          error={error}
+                          onChange={(value) => updateService(name, value)}
+                          onStarter={(value) => {
+                            updateService(name, value)
+                            setRuntime((previous) => ({
+                              ...previous,
+                              [name]: runtimeDraft({ ...service, ...value }),
+                            }))
+                          }}
                         />
-                        {registries.error && (
-                          <span className="field-help">
-                            Registry credentials could not be loaded. Existing references are
-                            preserved.
-                          </span>
-                        )}
-                      </label>
-                      <div className="form-grid-three">
+                      </div>
+                      <div className={serviceSection === 'source' ? 'grid gap-4' : 'hidden'}>
+                        <FunctionEditor
+                          service={service}
+                          disabled={busy}
+                          onChange={(value) => updateService(name, value)}
+                        />
                         <label>
-                          Port
+                          Container image
                           <Input
-                            type="number"
-                            min={0}
-                            max={65535}
-                            placeholder="No port"
-                            disabled={Boolean(service.job)}
-                            value={service.port || ''}
-                            error={fieldError(error, `services.${name}.port`)}
-                            onChange={(event) =>
-                              updateService(name, {
-                                port: Number(event.target.value) || 0,
-                                ...(!Number(event.target.value) ? { public: false } : {}),
-                              })
-                            }
+                            placeholder="nginx:1.29-alpine"
+                            value={service.image}
+                            error={fieldError(error, `services.${name}.image`)}
+                            onChange={(event) => updateService(name, { image: event.target.value })}
                           />
                         </label>
                         <label>
-                          Size
+                          Registry credential
                           <SelectField
                             disabled={busy}
-                            label="Size"
-                            value={service.size || 'small'}
-                            error={fieldError(
-                              error || limitIssues.join('\n'),
-                              `services.${name}.size`,
-                            )}
-                            onValueChange={(value) => updateService(name, { size: value })}
+                            label="Registry credential"
+                            value={service.registry_credential || ''}
+                            error={fieldError(error, `services.${name}.registry_credential`)}
+                            onValueChange={(value) =>
+                              updateService(name, {
+                                registry_credential: value || undefined,
+                              })
+                            }
                             options={[
                               {
-                                value: 'small',
-                                label: 'Small',
+                                value: '',
+                                label: 'Automatic · public or matching saved credential',
                               },
-                              {
-                                value: 'medium',
-                                label: features.hostedFree
-                                  ? 'Medium · Requires your own server'
-                                  : 'Medium',
-                                disabled: features.hostedFree,
-                              },
-                              {
-                                value: 'large',
-                                label: features.hostedFree
-                                  ? 'Large · Requires your own server'
-                                  : 'Large',
-                                disabled: features.hostedFree,
-                              },
+                              ...(service.registry_credential &&
+                              !registries.data?.items.some(
+                                (item) => item.name === service.registry_credential,
+                              )
+                                ? [
+                                    {
+                                      value: service.registry_credential,
+                                      label: `${service.registry_credential} (saved reference)`,
+                                    },
+                                  ]
+                                : []),
+                              ...(registries.data?.items.map((item) => ({
+                                value: item.name,
+                                label:
+                                  item.name +
+                                  ' · ' +
+                                  item.registry +
+                                  (item.synchronized ? '' : ' · pending sync'),
+                              })) ?? []),
                             ]}
                           />
-                        </label>
-                        <label>
-                          Replicas
-                          <Input
-                            type="number"
-                            min={1}
-                            max={features.hostedFree ? 1 : features.hostedCompute ? 3 : 20}
-                            value={service.replicas ?? 1}
-                            error={fieldError(
-                              error || limitIssues.join('\n'),
-                              `services.${name}.replicas`,
-                            )}
-                            disabled={Boolean(service.job || service.serverless)}
-                            onChange={(event) =>
-                              updateService(name, { replicas: Number(event.target.value) })
-                            }
-                          />
+                          {registries.error && (
+                            <span className="field-help">
+                              Registry credentials could not be loaded. Existing references are
+                              preserved.
+                            </span>
+                          )}
                         </label>
                       </div>
-                      <ResourceFields
-                        name={name}
-                        resources={service.resources}
-                        disabled={busy}
-                        hostedFree={features.hostedFree}
-                        error={error}
-                        onChange={(resources) => updateService(name, { resources })}
-                      />
-                      <RunCommandFields
-                        label={name}
-                        disabled={busy}
-                        command={(runtime[name] || runtimeDraft(service)).command}
-                        args={(runtime[name] || runtimeDraft(service)).args}
-                        error={error}
-                        fieldPath={`services.${name}`}
-                        onChange={(value) =>
-                          setRuntime((previous) => ({
-                            ...previous,
-                            [name]: { ...(previous[name] || runtimeDraft(service)), ...value },
-                          }))
-                        }
-                      />
-                      <EnvironmentFields
-                        label={name}
-                        onBusyChange={setBusy}
-                        error={fieldError(error, `services.${name}.env`)}
-                        disabled={busy}
-                        rows={(runtime[name] || runtimeDraft(service)).variables}
-                        onChange={(variables) =>
-                          setRuntime((previous) => ({
-                            ...previous,
-                            [name]: { ...(previous[name] || runtimeDraft(service)), variables },
-                          }))
-                        }
-                      />
-                      <div className="service-exposure">
-                        <label className="checkbox-label">
-                          <Input
-                            type="checkbox"
-                            checked={service.public || false}
-                            disabled={Boolean(service.job) || !service.port}
-                            onChange={(event) =>
-                              updateService(name, { public: event.target.checked })
-                            }
-                          />
-                          <span>Public HTTP endpoint</span>
-                        </label>
-                        <span>
-                          {service.public
-                            ? 'Gets a generated URL'
-                            : service.port
-                              ? 'Private to this application'
-                              : service.job
-                                ? service.job.schedule
-                                  ? `Schedule: ${service.job.schedule.cron} · ${service.job.schedule.timezone || 'UTC'}`
-                                  : 'Deployment job · configure timeout and retries in TOML'
-                                : 'Background worker'}
-                        </span>
+                      <div className={serviceSection === 'compute' ? 'grid gap-4' : 'hidden'}>
+                        <div className="form-grid-three">
+                          <label>
+                            Port
+                            <Input
+                              type="number"
+                              min={0}
+                              max={65535}
+                              placeholder="No port"
+                              disabled={Boolean(service.job)}
+                              value={service.port || ''}
+                              error={fieldError(error, `services.${name}.port`)}
+                              onChange={(event) =>
+                                updateService(name, {
+                                  port: Number(event.target.value) || 0,
+                                  ...(!Number(event.target.value) ? { public: false } : {}),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Size
+                            <SelectField
+                              disabled={busy}
+                              label="Size"
+                              value={service.size || 'small'}
+                              error={fieldError(
+                                error || limitIssues.join('\n'),
+                                `services.${name}.size`,
+                              )}
+                              onValueChange={(value) => updateService(name, { size: value })}
+                              options={[
+                                {
+                                  value: 'small',
+                                  label: 'Small',
+                                },
+                                {
+                                  value: 'medium',
+                                  label: features.hostedFree
+                                    ? 'Medium · Requires your own server'
+                                    : 'Medium',
+                                  disabled: features.hostedFree,
+                                },
+                                {
+                                  value: 'large',
+                                  label: features.hostedFree
+                                    ? 'Large · Requires your own server'
+                                    : 'Large',
+                                  disabled: features.hostedFree,
+                                },
+                              ]}
+                            />
+                          </label>
+                          <label>
+                            Replicas
+                            <Input
+                              type="number"
+                              min={1}
+                              max={features.hostedFree ? 1 : features.hostedCompute ? 3 : 20}
+                              value={service.replicas ?? 1}
+                              error={fieldError(
+                                error || limitIssues.join('\n'),
+                                `services.${name}.replicas`,
+                              )}
+                              disabled={Boolean(service.job || service.serverless)}
+                              onChange={(event) =>
+                                updateService(name, { replicas: Number(event.target.value) })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <ResourceFields
+                          name={name}
+                          resources={service.resources}
+                          disabled={busy}
+                          hostedFree={features.hostedFree}
+                          error={error}
+                          onChange={(resources) => updateService(name, { resources })}
+                        />
+                      </div>
+                      <div className={serviceSection === 'source' ? 'grid gap-4' : 'hidden'}>
+                        <RunCommandFields
+                          label={name}
+                          disabled={busy}
+                          command={(runtime[name] || runtimeDraft(service)).command}
+                          args={(runtime[name] || runtimeDraft(service)).args}
+                          error={error}
+                          fieldPath={`services.${name}`}
+                          onChange={(value) =>
+                            setRuntime((previous) => ({
+                              ...previous,
+                              [name]: { ...(previous[name] || runtimeDraft(service)), ...value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className={serviceSection === 'variables' ? 'grid gap-4' : 'hidden'}>
+                        <EnvironmentFields
+                          label={name}
+                          onBusyChange={setBusy}
+                          error={fieldError(error, `services.${name}.env`)}
+                          disabled={busy}
+                          rows={(runtime[name] || runtimeDraft(service)).variables}
+                          onChange={(variables) =>
+                            setRuntime((previous) => ({
+                              ...previous,
+                              [name]: { ...(previous[name] || runtimeDraft(service)), variables },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className={serviceSection === 'access' ? '' : 'hidden'}>
+                        <div className="service-exposure">
+                          <label className="checkbox-label">
+                            <Input
+                              type="checkbox"
+                              checked={service.public || false}
+                              disabled={Boolean(service.job) || !service.port}
+                              onChange={(event) =>
+                                updateService(name, { public: event.target.checked })
+                              }
+                            />
+                            <span>Public HTTP endpoint</span>
+                          </label>
+                          <span>
+                            {service.public
+                              ? 'Gets a generated URL'
+                              : service.port
+                                ? 'Private to this application'
+                                : service.job
+                                  ? service.job.schedule
+                                    ? `Schedule: ${service.job.schedule.cron} · ${service.job.schedule.timezone || 'UTC'}`
+                                    : 'Deployment job · configure timeout and retries in TOML'
+                                  : 'Background worker'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -854,6 +966,8 @@ export function DeploymentForm({
                       let name = 'api'
                       let n = 2
                       while (spec.services[name]) name = `service-${n++}`
+                      setActiveService(name)
+                      setServiceSection('source')
                       setRuntime((previous) => {
                         const next = { ...previous }
                         delete next[name]

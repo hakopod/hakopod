@@ -28,6 +28,17 @@ const initial: DatabaseSpec = {
   memory: '512Mi',
   storage_gib: 5,
 }
+
+const resourcePresets = [
+  {
+    name: 'Starter',
+    cpu: '250m',
+    memory: '512Mi',
+    detail: 'Small development and low-traffic workloads',
+  },
+  { name: 'Standard', cpu: '500m', memory: '1Gi', detail: 'Steady application traffic' },
+  { name: 'Performance', cpu: '1', memory: '2Gi', detail: 'Heavier queries and cache workloads' },
+] as const
 export function DatabaseForm({
   project,
   environment,
@@ -42,6 +53,10 @@ export function DatabaseForm({
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showCustomResources, setShowCustomResources] = useState(
+    () =>
+      !resourcePresets.some((preset) => preset.cpu === spec.cpu && preset.memory === spec.memory),
+  )
   const key = useRef('')
   const navigate = useNavigate()
   const cache = useQueryClient()
@@ -209,26 +224,69 @@ export function DatabaseForm({
                 />
               </label>
             )}
-            <label>
-              CPU per member
-              <Input
-                required
-                value={spec.cpu}
-                disabled={busy}
-                onChange={(e) => update({ cpu: e.target.value })}
-              />
-              <span className="field-help">100m to 16 cores; 1000m is one core.</span>
-            </label>
-            <label>
-              Memory per member
-              <Input
-                required
-                value={spec.memory}
-                disabled={busy}
-                onChange={(e) => update({ memory: e.target.value })}
-              />
-              <span className="field-help">128Mi to 64Gi.</span>
-            </label>
+            <div className="sm:col-span-2 grid gap-2">
+              <span className="text-sm font-medium">Resources per member</span>
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))]">
+                {resourcePresets.map((preset) => {
+                  const selected = spec.cpu === preset.cpu && spec.memory === preset.memory
+                  return (
+                    <Button
+                      key={preset.name}
+                      type="button"
+                      variant={selected && !showCustomResources ? 'primary' : 'outline'}
+                      aria-pressed={selected && !showCustomResources}
+                      disabled={busy}
+                      className="h-auto min-h-11 min-w-0 justify-start! whitespace-normal! px-3 py-2 text-left normal-case! font-sans!"
+                      onClick={() => {
+                        setShowCustomResources(false)
+                        update({ cpu: preset.cpu, memory: preset.memory })
+                      }}
+                    >
+                      <span className="grid min-w-0 gap-0.5 whitespace-normal">
+                        <span className="break-words">{preset.name}</span>
+                        <span className="break-words text-xs font-normal opacity-80">
+                          {preset.cpu} CPU · {preset.memory} · {preset.detail}
+                        </span>
+                      </span>
+                    </Button>
+                  )
+                })}
+              </div>
+              <details
+                open={showCustomResources}
+                onToggle={(event) => setShowCustomResources(event.currentTarget.open)}
+              >
+                <summary>Custom CPU and memory</summary>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <label>
+                    CPU per member
+                    <Input
+                      required
+                      value={spec.cpu}
+                      disabled={busy}
+                      onChange={(e) => {
+                        setShowCustomResources(true)
+                        update({ cpu: e.target.value })
+                      }}
+                    />
+                    <span className="field-help">100m to 16 cores; 1000m is one core.</span>
+                  </label>
+                  <label>
+                    Memory per member
+                    <Input
+                      required
+                      value={spec.memory}
+                      disabled={busy}
+                      onChange={(e) => {
+                        setShowCustomResources(true)
+                        update({ memory: e.target.value })
+                      }}
+                    />
+                    <span className="field-help">128Mi to 64Gi.</span>
+                  </label>
+                </div>
+              </details>
+            </div>
             <label>
               Storage per member (GiB)
               <Input

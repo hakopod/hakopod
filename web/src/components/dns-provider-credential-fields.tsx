@@ -127,8 +127,8 @@ export function DNSProviderCredentialFields({
   return (
     <div className="grid gap-4">
       <FormSection
-        title="Credential"
-        description="Name this credential and choose the DNS provider that holds the zones."
+        title="Cloudflare credential"
+        description="Use a Cloudflare API token scoped to the permitted zones below."
       >
         <label>
           Name
@@ -147,7 +147,6 @@ export function DNSProviderCredentialFields({
               : 'Shown when someone picks a provider to create records with.'}
           </small>
         </label>
-        <p className="field-help">Cloudflare is the only supported DNS provider.</p>
         <label>
           API token
           <Input

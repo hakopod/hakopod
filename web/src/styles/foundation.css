@@ -128,7 +128,7 @@ label > .select-field-wrap {
   color: var(--foreground);
 }
 .input-wrap input {
-  height: 44px;
+  height: 48px;
 }
 .input-wrap input {
   margin: 0;
