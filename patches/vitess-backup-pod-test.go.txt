@@ -1,0 +1,30 @@
+package vttablet
+
+import (
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+)
+
+func TestHakopodBackupReceivesTLS(t *testing.T) {
+	resources := corev1.ResourceRequirements{Requests:corev1.ResourceList{corev1.ResourceCPU:resource.MustParse("100m"),corev1.ResourceMemory:resource.MustParse("256Mi")},Limits:corev1.ResourceList{corev1.ResourceCPU:resource.MustParse("100m"),corev1.ResourceMemory:resource.MustParse("256Mi")}}
+	spec := &Spec{
+		Images:planetscalev2.VitessKeyspaceImages{Vtbackup:"test-backup", Mysqld:&planetscalev2.MysqldImage{Mysql80Compatible:"test-mysql"}},
+		Vttablet:&planetscalev2.VttabletSpec{Resources:resources,ExtraFlags:map[string]string{"topo-etcd-tls-ca":"/trust/ca.crt","db-ssl-mode":"verify_identity","queryserver-config-pool-size":"32"}},
+		Mysqld:&planetscalev2.MysqldSpec{Resources:resources},
+		ExtraVolumes:[]corev1.Volume{{Name:"trust",VolumeSource:corev1.VolumeSource{Secret:&corev1.SecretVolumeSource{SecretName:"database-tls"}}}},
+		ExtraVolumeMounts:[]corev1.VolumeMount{{Name:"trust",MountPath:"/trust",ReadOnly:true}},
+	}
+	pod := NewBackupPod(client.ObjectKey{Namespace:"database",Name:"backup"},&BackupSpec{TabletSpec:spec,InitialBackup:true},"test-mysql")
+	args := strings.Join(pod.Spec.Containers[0].Args," ")
+	if !strings.Contains(args,"topo-etcd-tls-ca=/trust/ca.crt") || !strings.Contains(args,"db-ssl-mode=verify_identity") || strings.Contains(args,"queryserver-config-pool-size") { t.Fatal("backup TLS flags were dropped or unsupported tablet flags leaked") }
+	volume,mount:=false,false
+	for _,v:=range pod.Spec.Volumes { if v.Name=="trust" && v.Secret!=nil && v.Secret.SecretName=="database-tls" { volume=true } }
+	for _,v:=range pod.Spec.Containers[0].VolumeMounts { if v.Name=="trust" && v.MountPath=="/trust" && v.ReadOnly { mount=true } }
+	if !volume || !mount { t.Fatal("backup trust volume is absent") }
+	for _,c:=range pod.Spec.InitContainers { if c.Resources.Limits.Cpu().IsZero() || c.Resources.Limits.Memory().IsZero() { t.Fatal("backup init container has unbounded resources") } }
+}

@@ -42,7 +42,7 @@ export function ParentBackLink() {
     location.pathname !== dashboardEdition.home &&
     !dashboardEdition.scopedNavigation(location.pathname)
   )
-    return <ParentLink parent={{ to: dashboardEdition.home, label: 'All workspaces' }} />
+    return <ParentLink parent={parentNavigation(location.pathname, location.search) || { to: dashboardEdition.home, label: 'All workspaces' }} />
   return deployment ? (
     <DeploymentParent id={deployment[1]} />
   ) : (

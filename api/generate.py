@@ -28,7 +28,20 @@ schemas["Project"] = obj({"id": S, "name": S, "environments": array(obj({"name":
 schemas["Principal"] = obj({"id": S, "name": S, "admin": B, "permissions": array(S), "project": S, "environment": S, "application": S}, ["id", "name", "admin", "permissions", "project", "environment"])
 schemas["Node"] = obj({"name": S, "ready": B, "unschedulable": B, "architecture": S, "kubelet_version": S, "allocatable_cpu": S, "allocatable_memory": S, "pods": I}, ["name", "ready", "unschedulable", "architecture", "kubelet_version", "allocatable_cpu", "allocatable_memory", "pods"])
 schemas["KeyInput"] = obj({"name": S, "project": S, "environment": S, "application": S, "permissions": array(S), "expires_at": T}, ["name", "permissions", "expires_at"])
-schemas["Key"] = obj({**schemas["KeyInput"]["properties"], "id": S, "identity_id": S, "prefix": S, "created_at": T, "revoked_at": {"anyOf":[T,{"type":"null"}]}, "last_used_at": {"anyOf":[T,{"type":"null"}]}}, ["id", "identity_id", "name", "prefix", "permissions", "project", "environment", "expires_at", "created_at"])
+key_fields = {"name": S, "project": S, "environment": S, "application": S, "permissions": array(S)}
+bounded_lifetime = {"expires_at": T, "never_expires": {"type":"boolean", "const":False}}
+never_lifetime = {"expires_at": {"type":"null"}, "never_expires": {"type":"boolean", "const":True}}
+schemas["AutomationKeyInput"] = {"oneOf": [
+    obj({**key_fields, **bounded_lifetime}, ["name", "permissions", "expires_at"]),
+    obj({**key_fields, **never_lifetime}, ["name", "permissions", "never_expires"]),
+]}
+schemas["AutomationKeyInput"]["description"] = "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
+schemas["AutomationKeyLifetimeInput"] = {"oneOf": [
+    obj(bounded_lifetime, ["expires_at"]),
+    obj(never_lifetime, ["never_expires"]),
+]}
+schemas["AutomationKeyLifetimeInput"]["description"] = schemas["AutomationKeyInput"]["description"]
+schemas["Key"] = obj({**schemas["KeyInput"]["properties"], "expires_at": {"anyOf":[T,{"type":"null"}]}, "never_expires": B, "id": S, "identity_id": S, "prefix": S, "created_at": T, "revoked_at": {"anyOf":[T,{"type":"null"}]}, "last_used_at": {"anyOf":[T,{"type":"null"}]}}, ["id", "identity_id", "name", "prefix", "permissions", "project", "environment", "expires_at", "never_expires", "created_at"])
 schemas["KeyCreated"] = obj({"key": S, "metadata": ref("Key"), "previous_key_expires_within_seconds": I}, ["key", "metadata"])
 schemas["DeployInput"] = obj({"project": S, "environment": S, "spec": ref("Spec"), "toml": S, "service": S, "services": {"type": "array", "items": S, "minItems": 1, "maxItems": 20, "uniqueItems": True, "description": "Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment."}, "expected_revision": I}, ["project", "environment", "expected_revision"])
 schemas["PlanInput"] = obj(schemas["DeployInput"]["properties"], ["project", "environment"])
@@ -63,9 +76,9 @@ route("/applications/{id}/rollback","post","rollbackApplication",ref("Deployment
 route("/deployments/{id}/cancel","post","cancelDeployment",obj({"id":S,"status":S}),obj({}),"202")
 route("/nodes","get","listNodes",obj({"items":array(ref("Node")),"observed_at":T},["items","observed_at"]))
 route("/keys","get","listKeys",items("Key"))
-route("/keys","post","createKey",ref("KeyCreated"),ref("KeyInput"),"201")
+route("/keys","post","createKey",ref("KeyCreated"),ref("AutomationKeyInput"),"201")
 route("/keys/{id}","delete","revokeKey",obj({"status":S}))
-route("/keys/{id}/rotate","post","rotateKey",ref("KeyCreated"),obj({"expires_at":T},["expires_at"]),"201")
+route("/keys/{id}/rotate","post","rotateKey",ref("KeyCreated"),ref("AutomationKeyLifetimeInput"),"201")
 route("/audit","get","listAudit",items("Audit"))
 for endpoint, operation, content in [("/applications/{id}/logs","streamLogs","text/plain"),("/deployments/{id}/events","streamEvents","text/event-stream")]:
     route(endpoint,"get",operation,S)

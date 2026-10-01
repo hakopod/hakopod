@@ -72,8 +72,10 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ github.ref_name }}
+          HAKOPOD_REDIS_CONTROLLER_IMAGE: ${{ vars.HAKOPOD_REDIS_CONTROLLER_IMAGE }}
         run: |
           python3 release/build.py --version "$RELEASE_VERSION"
+          python3 -m pip install PyYAML==6.0.2
           python3 release/build-installer.py --version "$RELEASE_VERSION"
           python3 release/bootstrap-version.py ".local/installer-artifacts/$RELEASE_VERSION" "$RELEASE_VERSION"
           python3 release/publication.py assemble "$RELEASE_TAG"
@@ -96,6 +98,24 @@ jobs:
     with:
       version: ${{ needs.build.outputs.version }}
       artifact_name: release-assets
+  vitess:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify the qualified Vitess images and native evidence
+        run: |
+          python3 release/verify-vitess-runtime.py --output .local/vitess-qualified
+          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
+            --owner=0 --group=0 --numeric-owner -czf .local/managed-vitess-qualification.tar.gz \
+            -C .local vitess-qualified
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-vitess-qualification
+          path: .local/managed-vitess-qualification.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
   probe:
     needs: [build, smoke, hosts]
     strategy:
@@ -207,7 +227,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [build, smoke, hosts, probe-index]
+    needs: [build, smoke, hosts, probe-index, vitess]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -253,6 +273,22 @@ jobs:
           runpy.run_path('release/host-acceptance.py')['verify_reports'](directory, values, os.environ['RELEASE_VERSION'], os.environ['GITHUB_SHA'])
           target = directory / 'host-acceptance.json'
           target.write_text(json.dumps(values, indent=2) + '\n')
+          publication = runpy.run_path('release/publication.py')
+          (directory / 'SHA256SUMS').write_text(publication['manifest'](directory))
+          publication['verify'](directory)
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: managed-vitess-qualification
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - name: Include the verified Vitess provenance archive
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, runpy
+          from pathlib import Path
+          directory = Path('.local/publication') / os.environ['RELEASE_VERSION']
           publication = runpy.run_path('release/publication.py')
           (directory / 'SHA256SUMS').write_text(publication['manifest'](directory))
           publication['verify'](directory)

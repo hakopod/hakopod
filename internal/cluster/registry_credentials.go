@@ -199,15 +199,21 @@ func (c *Client) RefreshRegistryCopies(ctx context.Context, project, environment
 			}
 			continue
 		}
-		if secret.Name != "hp-registry-"+scope[:20] || secret.Labels[ownerKey] == "" || secret.Namespace != "hp-"+secret.Labels[ownerKey] || secret.Type != corev1.SecretTypeDockerConfigJson {
-			return updated, fmt.Errorf("credential copy ownership mismatch")
-		}
-		ns, err := c.kube.CoreV1().Namespaces().Get(ctx, secret.Namespace, metav1.GetOptions{})
-		if err != nil {
-			return updated, err
-		}
-		if ns.Labels[managedBy] != "hakopod" || ns.Labels[ownerKey] != secret.Labels[ownerKey] {
-			return updated, fmt.Errorf("credential namespace ownership mismatch")
+		if secret.Labels[databaseOwner] != "" {
+			if err = c.databaseRegistryCopyOwned(ctx, &secret, project, environment, scope); err != nil {
+				return updated, err
+			}
+		} else {
+			if secret.Name != "hp-registry-"+scope[:20] || secret.Labels[ownerKey] == "" || secret.Namespace != "hp-"+secret.Labels[ownerKey] || secret.Type != corev1.SecretTypeDockerConfigJson {
+				return updated, fmt.Errorf("credential copy ownership mismatch")
+			}
+			ns, nsErr := c.kube.CoreV1().Namespaces().Get(ctx, secret.Namespace, metav1.GetOptions{})
+			if nsErr != nil {
+				return updated, nsErr
+			}
+			if ns.Labels[managedBy] != "hakopod" || ns.Labels[ownerKey] != secret.Labels[ownerKey] {
+				return updated, fmt.Errorf("credential namespace ownership mismatch")
+			}
 		}
 		api := c.kube.CoreV1().Secrets(secret.Namespace)
 		if remove {
@@ -232,6 +238,9 @@ func (c *Client) RefreshRegistryCopies(ctx context.Context, project, environment
 
 // Deletion is refused while an owned workload still references the credential.
 func (c *Client) RegistryInUse(ctx context.Context, project, environment, name string) (bool, error) {
+	if used, err := c.databaseRegistryInUse(ctx, project, environment, RegistryScope(project, environment, name)); err != nil || used {
+		return used, err
+	}
 	selector := managedBy + "=hakopod," + registryScopeLabel + "=" + RegistryScope(project, environment, name)
 	deployments, err := c.kube.AppsV1().Deployments("").List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: 1})
 	if err != nil {

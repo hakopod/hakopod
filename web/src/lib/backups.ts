@@ -8,10 +8,12 @@ export type BackupSchedule = components['schemas']['BackupSchedule']
 export const sourceKey = (source: BackupSource) =>
   `${source.kind}/${source.managed_database_id || source.application_id || ''}/${source.service || ''}/${source.engine}`
 export const engineLabels: Record<string, string> = {
+  mongodb: 'MongoDB',
   postgresql: 'PostgreSQL',
   redis: 'Redis',
   mysql: 'MySQL',
   clickhouse: 'ClickHouse',
+  oracle: 'Oracle Database',
 }
 export const engineLabel = (engine: string) => engineLabels[engine] || engine
 // The server writes this format prefix only for a backup the database engine
@@ -25,8 +27,8 @@ export const engineManaged = (artifact: { format: string }) => artifact.format.s
 // artifact exists, so the artifact format cannot answer this mid-run.
 export const engineManagedEngines = ['clickhouse']
 
-export const engineManagedEngine = (engine?: string) =>
-  !!engine && engineManagedEngines.includes(engine)
+export const engineManagedSource = (source?: Pick<BackupSource, 'kind' | 'engine'>) =>
+  source?.kind === 'database' && engineManagedEngines.includes(source.engine)
 export const sourceLabel = (source: BackupSource) =>
   source.kind === 'management'
     ? 'Hakopod management database'

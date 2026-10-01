@@ -35,7 +35,9 @@ helm upgrade --install redis-operator "$work/redis-operator-0.26.0.tgz" \
  --set-string redisOperator.imageName="$redis_repository" --set-string redisOperator.imageTag="$redis_tag" \
  --set-string redisOperator.initContainerImageTag="$redis_tag" --set redisOperator.imagePullPolicy=IfNotPresent \
  --set-string 'redisOperator.podAnnotations.hakopod\.io/redis-controller-source=c5017206e75f7743d79e82db47ec8c39d7410816' \
+ --set-string 'redisOperator.podAnnotations.hakopod\.io/redis-tls-policy=ca-verified-v1' \
  --set featureGates.AvoidCommandLinePassword=null \
+ --set featureGates.GenerateConfigInInitContainer=true \
  --set manager.config.maxConcurrentReconciles=1 \
  --set manager.config.execCommandTimeout=20m \
  --set resources.requests.cpu=100m --set resources.requests.memory=128Mi \

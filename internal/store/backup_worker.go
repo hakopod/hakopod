@@ -249,6 +249,9 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if err = authorizeBackupJob(ctx, tx, p, backup.Job{DestinationID: schedule.DestinationID, Source: schedule.Source}); err != nil {
 		return schedule, err
 	}
+	if err = lockArchiveDestinationTx(ctx, tx, schedule.DestinationID); err != nil {
+		return schedule, err
+	}
 	schedule.Authority = backupAuthority(p)
 	if err = rejectPreviewBackup(ctx, tx, schedule.Source.ApplicationID); err != nil {
 		return schedule, err

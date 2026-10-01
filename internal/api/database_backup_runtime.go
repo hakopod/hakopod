@@ -43,7 +43,7 @@ func (r *backupRuntime) dumpManagedDatabase(ctx context.Context, target backup.T
 	if err != nil || observed.Status != "ready" || observed.TopologyFingerprint != target.RuntimeFingerprint {
 		return fmt.Errorf("managed database topology changed before backup")
 	}
-	if d.Spec.Engine == "postgresql" {
+	if d.Spec.Engine == "postgresql" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" {
 		found := false
 		for _, m := range observed.Members {
 			if m.Name == target.Pod && m.UID == target.PodUID && m.Name == observed.Primary {
@@ -51,7 +51,7 @@ func (r *backupRuntime) dumpManagedDatabase(ctx context.Context, target backup.T
 			}
 		}
 		if !found {
-			return fmt.Errorf("PostgreSQL primary changed before backup")
+			return fmt.Errorf("database primary changed before backup")
 		}
 	}
 	return r.server.Cluster.DumpDatabase(ctx, d, observed, out)
@@ -75,6 +75,24 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 	}
 	if d.Spec.Engine == "postgresql" {
 		return r.server.Cluster.RestorePostgresDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine == "mysql" {
+		return r.server.Cluster.RestoreMySQLDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine == "mongodb" {
+		return r.server.Cluster.RestoreMongoDBDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine == "clickhouse" {
+		return r.server.Cluster.RestoreClickHouseDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine == "oracle" {
+		return r.server.Cluster.RestoreOracleDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine == "vitess" {
+		return r.server.Cluster.RestoreVitessDatabase(ctx, d, observed, input)
+	}
+	if d.Spec.Engine != "redis" {
+		return fmt.Errorf("unsupported managed database recovery engine")
 	}
 	return r.server.Cluster.RestoreRedisDatabase(ctx, d, observed, input)
 }

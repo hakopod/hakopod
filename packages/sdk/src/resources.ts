@@ -10,6 +10,9 @@ import {
 import type {
   ApplicationSpec,
   DatabaseOperation,
+  DatabasePublicEndpointCapabilities,
+  DatabasePublicEndpointOperation,
+  DatabasePublicEndpointSpec,
   DatabaseSpec,
   Deployment,
   ManagedDatabase,
@@ -24,7 +27,7 @@ import type {
 
 export type ApplicationInput = Omit<ApplicationSpec, "name" | "schema_version">;
 export type DatabaseInput = {
-  engine: "postgresql" | "redis";
+  engine: DatabaseSpec["engine"];
   version?: string;
   mode?: "standalone" | "cluster";
   replicas?: number;
@@ -32,6 +35,10 @@ export type DatabaseInput = {
   cpu: string;
   memory: string;
   storageGiB: number;
+  placement?: DatabaseSpec["placement"];
+  pooling?: DatabaseSpec["pooling"];
+  oracle?: DatabaseSpec["oracle"];
+  vitess?: DatabaseSpec["vitess"];
 };
 export type NetworkInput = Pick<NetworkSpec, "segments"> & {
   description?: string;
@@ -77,14 +84,23 @@ export function db(input: DatabaseInput & { name: string }): DatabaseSpec {
     schema_version: 1,
     name: input.name,
     engine: input.engine,
-    version: input.version ?? (input.engine === "postgresql" ? "18" : "8"),
+    version:
+      input.version ??
+      { postgresql: "18", redis: "8", mysql: "8.4", mongodb: "8.0", clickhouse: "26.3", oracle: "23.26", vitess: "23" }[input.engine],
     mode,
-    replicas: input.replicas ?? (mode === "cluster" ? 1 : 0),
+    replicas:
+      input.replicas ??
+      (mode === "cluster" ? (["mysql", "mongodb"].includes(input.engine) ? 2 : 1) : 0),
     shards:
       input.shards ?? (mode === "cluster" && input.engine === "redis" ? 3 : 1),
     cpu: input.cpu,
     memory: input.memory,
     storage_gib: input.storageGiB,
+    tls: { mode: "required" },
+    ...(input.placement ? { placement: input.placement } : {}),
+    ...(input.pooling ? { pooling: input.pooling } : {}),
+    ...(input.engine === "oracle" ? { oracle: input.oracle ?? { edition: "free" } } : {}),
+    ...(input.engine === "vitess" && input.vitess ? { vitess: input.vitess } : {}),
   });
 }
 export function network(input: NetworkInput & { name: string }): NetworkSpec {
@@ -104,7 +120,7 @@ export function scope(context: Context): Readonly<Scope> {
     );
   return context.scope;
 }
-function assertScope(context: Context, resource: Scope): void {
+export function assertScope(context: Context, resource: Scope): void {
   if (
     context.scope &&
     (context.scope.project !== resource.project ||
@@ -151,7 +167,7 @@ export class Review<T, Result> {
   }
 }
 
-async function waitFor<T extends { id: string; status: string }>(
+export async function waitFor<T extends { id: string; status: string }>(
   id: string,
   read: (signal: AbortSignal) => Promise<T>,
   options: WaitOptions<T> = {},
@@ -620,6 +636,29 @@ export class DatabaseRun {
   }
 }
 
+export class DatabasePublicEndpointRun {
+  constructor(
+    private context: Context,
+    readonly id: string,
+    readonly databaseId: string,
+    readonly endpointId: string,
+    readonly idempotencyKey?: string,
+  ) {}
+  async get(options: RequestOptions = {}): Promise<DatabasePublicEndpointOperation> {
+    const operation = await this.context.transport.request<DatabasePublicEndpointOperation>(
+      "GET",
+      "/database-public-endpoint-operations/{id}",
+      { ...options, params: { id: this.id } },
+    );
+    if (operation.id !== this.id || operation.database_id !== this.databaseId || operation.endpoint_id !== this.endpointId)
+      throw new HakopodError("The API returned another database public endpoint operation.", "invalid_response");
+    return operation;
+  }
+  wait(options: WaitOptions<DatabasePublicEndpointOperation> = {}): Promise<DatabasePublicEndpointOperation> {
+    return waitFor(this.id, (signal) => this.get({ signal }), options);
+  }
+}
+
 export class DatabaseRef {
   #context: Context;
   #name?: string;
@@ -691,6 +730,138 @@ export class DatabaseRef {
       accepted.database_id,
       key,
     );
+  }
+  /** Public CA material only; private server and issuer keys never leave the cluster. */
+  async trust(
+    options: RequestOptions = {},
+  ): Promise<Schema["DatabasePublicTrust"]> {
+    const current = await this.get(options);
+    return this.#context.transport.request("GET", "/databases/{id}/trust", {
+      ...options,
+      params: { id: current.id },
+    });
+  }
+  async metrics(
+    range: "1h" | "6h" | "24h" = "1h",
+    options: RequestOptions = {},
+  ): Promise<Schema["DatabaseMetricHistory"]> {
+    const current = await this.get(options);
+    return this.#context.transport.request("GET", "/databases/{id}/metrics", {
+      ...options,
+      params: { id: current.id },
+      query: { range },
+    });
+  }
+  async connections(
+    options: RequestOptions = {},
+  ): Promise<Schema["DatabaseConnections"]> {
+    const current = await this.get(options);
+    return this.#context.transport.request(
+      "GET",
+      "/databases/{id}/connections",
+      {
+        ...options,
+        params: { id: current.id },
+      },
+    );
+  }
+  async publicEndpoints(options: RequestOptions = {}): Promise<Schema["DatabasePublicEndpoint"][]> {
+    const current = await this.get(options);
+    const result = await this.#context.transport.request<{ items: Schema["DatabasePublicEndpoint"][] }>(
+      "GET",
+      "/databases/{id}/public-endpoints",
+      { ...options, params: { id: current.id } },
+    );
+    if (result.items.length > 4 || result.items.some((endpoint) => endpoint.database_id !== current.id))
+      throw new HakopodError("The API returned invalid database public endpoint inventory.", "invalid_response");
+    return result.items;
+  }
+  async publicEndpointCapabilities(
+    options: RequestOptions = {},
+  ): Promise<DatabasePublicEndpointCapabilities> {
+    const current = await this.get(options);
+    const capabilities = await this.#context.transport.request<DatabasePublicEndpointCapabilities>(
+      "GET",
+      "/databases/{id}/public-endpoint-capabilities",
+      { ...options, params: { id: current.id } },
+    );
+    if (capabilities.engine !== current.spec.engine || capabilities.routes.length > 4)
+      throw new HakopodError(
+        "The API returned invalid database public endpoint capabilities.",
+        "invalid_response",
+      );
+    return capabilities;
+  }
+  /** Review an available server-approved listener. Applying the review closes the old route before publishing the new one. */
+  async publicEndpointPlan(
+    input: DatabasePublicEndpointSpec,
+    options: RequestOptions = {},
+  ): Promise<Review<Schema["DatabasePublicEndpointPlan"], DatabasePublicEndpointRun>> {
+    const current = await this.get(options);
+    const capabilities = await this.#context.transport.request<DatabasePublicEndpointCapabilities>(
+      "GET",
+      "/databases/{id}/public-endpoint-capabilities",
+      { ...options, params: { id: current.id } },
+    );
+    const requested = snapshot(input);
+    const route = capabilities.routes.find((candidate) => candidate.purpose === requested.purpose);
+    if (capabilities.engine !== current.spec.engine)
+      throw new HakopodError("The API returned capabilities for another database engine.", "invalid_response");
+    if (!capabilities.available)
+      throw new HakopodError(
+        capabilities.unavailable_reason || "Public database endpoints are not available for this database.",
+        "invalid_option",
+      );
+    if (!route)
+      throw new HakopodError("The selected public endpoint route is not available for this database.", "invalid_option");
+    const result = await this.#context.transport.request<Schema["DatabasePublicEndpointPlan"]>(
+      "POST",
+      "/databases/{id}/public-endpoint-plan",
+      { ...options, params: { id: current.id }, body: requested },
+    );
+    if (result.plan.database_id !== current.id || result.plan.project !== current.project || result.plan.environment !== current.environment || result.plan.database_revision !== current.revision || result.plan.spec.purpose !== requested.purpose || result.plan.spec.max_connections !== requested.max_connections)
+      throw new HakopodError("The API reviewed another database public endpoint.", "invalid_response");
+    const reviewedRoute = result.plan.route;
+    if (!reviewedRoute || reviewedRoute.purpose !== route.purpose || reviewedRoute.protocol !== route.protocol || reviewedRoute.routing !== route.routing || reviewedRoute.read_only !== route.read_only || reviewedRoute.pooled !== route.pooled)
+      throw new HakopodError("The API reviewed another public endpoint route.", "invalid_response");
+    return new Review(result, async (reviewed, applyOptions) => {
+      const key = idempotencyKey(applyOptions.idempotencyKey);
+      const accepted = await this.#context.transport.request<DatabasePublicEndpointOperation>(
+        "POST",
+        "/databases/{id}/public-endpoints",
+        {
+          ...applyOptions,
+          idempotencyKey: key,
+          params: { id: reviewed.plan.database_id },
+          body: {
+            review_id: reviewed.id,
+            expected_database_revision: reviewed.plan.database_revision,
+            expected_endpoint_revision: reviewed.plan.endpoint_revision,
+          },
+        },
+      );
+      if (accepted.database_id !== reviewed.plan.database_id || accepted.endpoint_id !== reviewed.plan.endpoint_id || accepted.kind !== "publish" || accepted.revision !== reviewed.plan.endpoint_revision + 1)
+        throw new HakopodError("The API accepted another database public endpoint operation.", "invalid_response");
+      return new DatabasePublicEndpointRun(this.#context, accepted.id, accepted.database_id, accepted.endpoint_id, key);
+    });
+  }
+  async revokePublicEndpoint(
+    endpointId: string,
+    expectedEndpointRevision: number,
+    options: RequestOptions = {},
+  ): Promise<DatabasePublicEndpointRun> {
+    const current = await this.get(options);
+    const id = required(endpointId, "database public endpoint ID");
+    const expected = integer(expectedEndpointRevision, 1, Number.MAX_SAFE_INTEGER, "expectedEndpointRevision");
+    const key = idempotencyKey(options.idempotencyKey);
+    const accepted = await this.#context.transport.request<DatabasePublicEndpointOperation>(
+      "DELETE",
+      "/databases/{id}/public-endpoints/{endpoint}",
+      { ...options, idempotencyKey: key, params: { id: current.id, endpoint: id }, body: { expected_endpoint_revision: expected } },
+    );
+    if (accepted.database_id !== current.id || accepted.endpoint_id !== id || accepted.kind !== "revoke" || accepted.revision !== expected + 1)
+      throw new HakopodError("The API accepted another database public endpoint operation.", "invalid_response");
+    return new DatabasePublicEndpointRun(this.#context, accepted.id, accepted.database_id, accepted.endpoint_id, key);
   }
   async credentials(
     options: RequestOptions = {},
@@ -832,7 +1003,12 @@ export class DatabaseRef {
       applicationId: string;
       service: string;
       variable: string;
-      endpoint?: "read_write" | "read_only" | "cluster";
+      endpoint?:
+        | "read_write"
+        | "read_only"
+        | "cluster"
+        | "pooled_read_write"
+        | "pooled_read_only";
       clusterAware?: boolean;
     },
     options: RequestOptions = {},
@@ -886,32 +1062,148 @@ export class DatabaseRef {
   /** Return a server-resolved binding, never a plaintext password or connection URL. */
   async binding(
     options: RequestOptions & {
-      endpoint?: "read_write" | "read_only" | "cluster";
+      endpoint?:
+        | "read_write"
+        | "read_only"
+        | "cluster"
+        | "pooled_read_write"
+        | "pooled_read_only";
       clusterAware?: boolean;
     } = {},
   ): Promise<Schema["ServiceBinding"]> {
     const current = await this.get(options);
+    const discovery = current.spec.engine === "mongodb" || ["redis", "clickhouse"].includes(current.spec.engine) && current.spec.mode === "cluster";
     if (
-      current.spec.engine === "redis" &&
-      current.spec.mode === "cluster" &&
+      discovery &&
       options.clusterAware !== true
     )
       throw new HakopodError(
-        "Redis Cluster requires a cluster-aware client. Set clusterAware only after configuring one.",
+        current.spec.engine === "mongodb" ? "MongoDB requires replica-set discovery. Set clusterAware only after configuring a compatible driver." : current.spec.engine === "clickhouse" ? "ClickHouse cluster endpoints balance connections. Set clusterAware after configuring Distributed tables or explicit shard routing." : "Redis Cluster requires a cluster-aware client. Set clusterAware only after configuring one.",
         "cluster_client_required",
+      );
+    const endpoint =
+      options.endpoint ??
+      (discovery
+        ? "cluster"
+        : "read_write");
+    const routes =
+      current.spec.engine === "oracle" ? ["read_write"] : current.spec.engine === "mongodb" ? ["cluster"] : ["redis", "clickhouse"].includes(current.spec.engine)
+        ? current.spec.mode === "cluster"
+          ? ["cluster"]
+          : ["read_write"]
+        : [
+            "read_write",
+            ...(current.spec.replicas > 0 ? ["read_only"] : []),
+            ...(current.spec.engine === "postgresql" && current.spec.pooling
+              ? [
+                  "pooled_read_write",
+                  ...(current.spec.pooling.read_only
+                    ? ["pooled_read_only"]
+                    : []),
+                ]
+              : []),
+          ];
+    if (
+      !routes.includes(endpoint) ||
+      (options.clusterAware && !discovery)
+    )
+      throw new HakopodError(
+        "Choose a connection route supported by this database configuration.",
+        "invalid_binding",
       );
     return {
       managed_database: current.id,
-      protocol: current.spec.engine === "postgresql" ? "postgres" : "redis",
-      endpoint:
-        options.endpoint ??
-        (current.spec.engine === "redis" && current.spec.mode === "cluster"
-          ? "cluster"
-          : "read_write"),
+      protocol:
+        current.spec.engine === "postgresql" ? "postgres" : current.spec.engine === "vitess" ? "mysql" : current.spec.engine,
+      endpoint,
       ...(options.clusterAware === undefined
         ? {}
         : { cluster_aware: options.clusterAware }),
     };
+  }
+  /** Review a graceful role change. Availability still depends on the gated Enterprise runtime. */
+  async switchoverPlan(
+    targetMember: string,
+    options: RequestOptions = {},
+  ): Promise<DeepReadonly<Schema["DatabaseOracleSwitchoverPlan"]>> {
+    const target = required(targetMember, "physical standby member");
+    if (target.length > 253)
+      throw new HakopodError("The standby member name is too long.", "invalid_option");
+    const current = await this.get(options);
+    this.#assertOracleCluster(current);
+    const result = await this.#context.transport.request<Schema["DatabaseOracleSwitchoverPlan"]>(
+      "POST", "/databases/{id}/switchover-plan", {
+        ...options,
+        params: { id: current.id },
+        body: { target_member: target },
+      },
+    );
+    if (result.plan.database_id !== current.id || result.plan.project !== current.project ||
+        result.plan.environment !== current.environment || result.plan.target !== target)
+      throw new HakopodError("The API reviewed another database or standby member.", "invalid_response");
+    if (result.plan.revision !== current.revision)
+      throw new APIError("The database changed while planning. Review it again.", "revision_conflict", 409);
+    return snapshot(result);
+  }
+  /** Submit the exact server review after reading its warnings. Existing connections close. */
+  async switchover(
+    input: { reviewId: string; expectedRevision: number; confirmName: string },
+    options: RequestOptions = {},
+  ): Promise<DatabaseRun> {
+    const reviewId = required(input.reviewId, "switchover review ID");
+    const expectedRevision = integer(input.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "expectedRevision");
+    const current = await this.get(options);
+    this.#assertOracleCluster(current);
+    this.#assertSwitchoverConfirmation(current, input.confirmName, expectedRevision);
+    const key = idempotencyKey(options.idempotencyKey);
+    const accepted = await this.#context.transport.request<DatabaseOperation>(
+      "POST", "/databases/{id}/switchover", {
+        ...options,
+        idempotencyKey: key,
+        params: { id: current.id },
+        body: { review_id: reviewId, expected_revision: expectedRevision, confirm_name: input.confirmName },
+      },
+    );
+    this.#assertSwitchoverOperation(accepted, current, expectedRevision);
+    return new DatabaseRun(this.#context, accepted.id, accepted.database_id, key);
+  }
+  /** Resume the same approved operation after a worker timeout; this cannot choose a new target. */
+  async retrySwitchover(
+    input: { operationId: string; expectedRevision: number; confirmName: string },
+    options: RequestOptions = {},
+  ): Promise<DatabaseRun> {
+    const operationId = required(input.operationId, "switchover operation ID");
+    const expectedRevision = integer(input.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "expectedRevision");
+    const current = await this.get(options);
+    this.#assertOracleCluster(current);
+    this.#assertSwitchoverConfirmation(current, input.confirmName, expectedRevision);
+    const accepted = await this.#context.transport.request<DatabaseOperation>(
+      "POST", "/databases/{id}/switchover-retry", {
+        ...options,
+        params: { id: current.id },
+        body: { operation_id: operationId, expected_revision: expectedRevision, confirm_name: input.confirmName },
+      },
+    );
+    this.#assertSwitchoverOperation(accepted, current, expectedRevision);
+    if (accepted.id !== operationId)
+      throw new HakopodError("The API resumed another switchover operation.", "invalid_response");
+    return new DatabaseRun(this.#context, accepted.id, accepted.database_id);
+  }
+  #assertOracleCluster(current: ManagedDatabase): void {
+    if (current.spec.engine !== "oracle" || current.spec.oracle?.edition !== "enterprise" || current.spec.mode !== "cluster")
+      throw new HakopodError("Switchover requires an Oracle Enterprise Data Guard cluster.", "invalid_option");
+  }
+  #assertSwitchoverConfirmation(current: ManagedDatabase, confirmName: string, expectedRevision: number): void {
+    if (confirmName !== current.spec.name)
+      throw new HakopodError("confirmName must match the database name. Existing connections will close.", "confirmation_required");
+    if (expectedRevision !== current.revision)
+      throw new APIError("The database changed. Review its current topology again.", "revision_conflict", 409);
+  }
+  #assertSwitchoverOperation(accepted: DatabaseOperation, current: ManagedDatabase, expectedRevision: number): void {
+    if (accepted.database_id !== current.id || accepted.revision !== expectedRevision || accepted.kind !== "switchover" ||
+        accepted.switchover?.database_id !== current.id || accepted.switchover.revision !== expectedRevision ||
+        accepted.switchover.project !== current.project || accepted.switchover.environment !== current.environment)
+      throw new HakopodError("The API returned another switchover operation.", "invalid_response");
   }
   async resizePlan(
     changes: Partial<
@@ -1027,6 +1319,43 @@ export class BackupRun {
     options: WaitOptions<Schema["BackupJob"]> = {},
   ): Promise<Schema["BackupJob"]> {
     return waitFor(this.id, (signal) => this.get({ signal }), options);
+  }
+}
+
+export class ManagedPlatformRun {
+  constructor(private context: Context, readonly id: string) { required(id, "managed platform operation ID"); }
+  get(options: RequestOptions = {}): Promise<Schema["ManagedPlatformOperation"]> {
+    return this.context.transport.request("GET", "/managed-platform-operations/{id}", { ...options, params: { id: this.id } });
+  }
+  wait(options: WaitOptions<Schema["ManagedPlatformOperation"]> = {}): Promise<Schema["ManagedPlatformOperation"]> {
+    return waitFor(this.id, (signal) => this.get({ signal }), options);
+  }
+}
+
+export class ManagedPlatformRef {
+  constructor(private context: Context, readonly id: string) { required(id, "managed platform ID"); }
+  get(options: RequestOptions = {}): Promise<Schema["ManagedPlatform"]> {
+    return this.context.transport.request("GET", "/managed-platforms/{id}", { ...options, params: { id: this.id } });
+  }
+  operations(options: RequestOptions = {}) {
+    return this.context.transport.request("GET", "/managed-platforms/{id}/operations", { ...options, params: { id: this.id } });
+  }
+  async review(spec: Schema["ManagedPlatformSpec"], expectedRevision: number, options: RequestOptions = {}) {
+    const current = await this.get(options);
+    assertScope(this.context, current);
+    return this.context.transport.request("POST", "/managed-platforms/reviews", { ...options, body: { id: this.id, ...scope(this.context), expected_revision: revision(expectedRevision), kind: "update", confirm_name: current.spec.name, spec } });
+  }
+  async reviewDelete(confirmName: string, options: RequestOptions = {}) {
+    const current = await this.get(options);
+    assertScope(this.context, current);
+    if (required(confirmName, "platform name") !== current.spec.name) {
+      throw new Error("platform name must exactly match the current resource");
+    }
+    return this.context.transport.request("POST", "/managed-platforms/reviews", {
+      ...options,
+      body: { id: this.id, ...scope(this.context), expected_revision: revision(current.revision),
+        kind: "delete", confirm_name: current.spec.name, spec: current.spec },
+    });
   }
 }
 

@@ -68,9 +68,33 @@ func (c *Client) DeleteWorkloadSecret(ctx context.Context, project, environment,
 }
 
 func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name string, s spec.Service) error {
+	if err := c.prepareDatabaseTrust(ctx, t, name); err != nil {
+		return err
+	}
 	api := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID))
 	if len(s.Secrets) == 0 && len(s.Bindings) == 0 {
-		return nil
+		current, err := api.Get(ctx, name+"-environment", metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err = owned(current, t); err != nil {
+			return err
+		}
+		if current.Labels[serviceKey] != name {
+			return fmt.Errorf("refusing to clear another service's environment Secret")
+		}
+		if len(current.Data) == 0 {
+			return nil
+		}
+		if err = beforeStep(ctx, t); err != nil {
+			return err
+		}
+		current.Data = map[string][]byte{}
+		_, err = api.Update(ctx, current, metav1.UpdateOptions{})
+		return err
 	}
 	data := map[string][]byte{}
 	total := 0
@@ -99,7 +123,7 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 		}
 	}
 	for key, binding := range s.Bindings {
-		if binding.ManagedDatabase != "" {
+		if binding.ManagedDatabase != "" || binding.ExternalDatabase != "" {
 			value, ok := t.databaseConnections[name][key]
 			if !ok {
 				return fmt.Errorf("managed database connection snapshot is incomplete")

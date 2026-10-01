@@ -16,6 +16,7 @@ import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as DatabasesRouteImport } from './routes/databases'
 import { Route as InfrastructureRouteImport } from './routes/infrastructure'
 import { Route as NetworksRouteImport } from './routes/networks'
+import { Route as PlatformsRouteImport } from './routes/platforms'
 import { Route as RequestsRouteImport } from './routes/requests'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -42,6 +43,7 @@ import { Route as LoginSignupRouteImport } from './routes/login.signup'
 import { Route as LoginVerifyRouteImport } from './routes/login.verify'
 import { Route as NetworksNetworkNameRouteImport } from './routes/networks.$networkName'
 import { Route as NetworksNewRouteImport } from './routes/networks.new'
+import { Route as PlatformsPlatformIdRouteImport } from './routes/platforms.$platformId'
 import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
 import { Route as SettingsDnsProvidersRouteImport } from './routes/settings.dns-providers'
 import { Route as SettingsEdgeRouteImport } from './routes/settings.edge'
@@ -61,11 +63,16 @@ import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.des
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
 import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databases.$databaseId.connect'
+import { Route as DatabasesDatabaseIdPublicEndpointsRouteImport } from './routes/databases.$databaseId.public-endpoints'
 import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
 import { Route as DatabasesDatabaseIdResizeRouteImport } from './routes/databases.$databaseId.resize'
+import { Route as DatabasesDatabaseIdSwitchoverRouteImport } from './routes/databases.$databaseId.switchover'
+import { Route as DatabasesExternalExternalDatabaseIdRouteImport } from './routes/databases.external.$externalDatabaseId'
+import { Route as DatabasesExternalNewRouteImport } from './routes/databases.external.new'
 import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
+import { Route as PlatformsPlatformIdDeleteRouteImport } from './routes/platforms.$platformId.delete'
 import { Route as SettingsDnsProvidersNewRouteImport } from './routes/settings.dns-providers.new'
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
@@ -77,6 +84,8 @@ import { Route as ApplicationsApplicationIdServicesNewRouteImport } from './rout
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
 import { Route as BackupsDestinationsDestinationIdEditRouteImport } from './routes/backups.destinations.$destinationId.edit'
 import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/backups.schedules.$scheduleId.edit'
+import { Route as DatabasesExternalExternalDatabaseIdConnectRouteImport } from './routes/databases.external.$externalDatabaseId.connect'
+import { Route as DatabasesExternalExternalDatabaseIdEditRouteImport } from './routes/databases.external.$externalDatabaseId.edit'
 import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
 import { Route as SettingsDnsProvidersProviderNameEditRouteImport } from './routes/settings.dns-providers.$providerName.edit'
 import { Route as SettingsGitConnectionsConnectionIdRouteImport } from './routes/settings.git.connections.$connectionId'
@@ -119,6 +128,11 @@ const InfrastructureRoute = InfrastructureRouteImport.update({
 const NetworksRoute = NetworksRouteImport.update({
   id: '/networks',
   path: '/networks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformsRoute = PlatformsRouteImport.update({
+  id: '/platforms',
+  path: '/platforms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RequestsRoute = RequestsRouteImport.update({
@@ -252,6 +266,11 @@ const NetworksNewRoute = NetworksNewRouteImport.update({
   path: '/new',
   getParentRoute: () => NetworksRoute,
 } as any)
+const PlatformsPlatformIdRoute = PlatformsPlatformIdRouteImport.update({
+  id: '/$platformId',
+  path: '/$platformId',
+  getParentRoute: () => PlatformsRoute,
+} as any)
 const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
   id: '/projects/$project',
   path: '/projects/$project',
@@ -354,6 +373,12 @@ const DatabasesDatabaseIdConnectRoute =
     path: '/connect',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdPublicEndpointsRoute =
+  DatabasesDatabaseIdPublicEndpointsRouteImport.update({
+    id: '/public-endpoints',
+    path: '/public-endpoints',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const DatabasesDatabaseIdRecoverRoute =
   DatabasesDatabaseIdRecoverRouteImport.update({
     id: '/recover',
@@ -366,6 +391,23 @@ const DatabasesDatabaseIdResizeRoute =
     path: '/resize',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdSwitchoverRoute =
+  DatabasesDatabaseIdSwitchoverRouteImport.update({
+    id: '/switchover',
+    path: '/switchover',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
+const DatabasesExternalExternalDatabaseIdRoute =
+  DatabasesExternalExternalDatabaseIdRouteImport.update({
+    id: '/external/$externalDatabaseId',
+    path: '/external/$externalDatabaseId',
+    getParentRoute: () => DatabasesRoute,
+  } as any)
+const DatabasesExternalNewRoute = DatabasesExternalNewRouteImport.update({
+  id: '/external/new',
+  path: '/external/new',
+  getParentRoute: () => DatabasesRoute,
+} as any)
 const InfrastructureRegistriesNameRoute =
   InfrastructureRegistriesNameRouteImport.update({
     id: '/registries/$name',
@@ -383,6 +425,12 @@ const NetworksNetworkNameConnectRoute =
     id: '/connect',
     path: '/connect',
     getParentRoute: () => NetworksNetworkNameRoute,
+  } as any)
+const PlatformsPlatformIdDeleteRoute =
+  PlatformsPlatformIdDeleteRouteImport.update({
+    id: '/delete',
+    path: '/delete',
+    getParentRoute: () => PlatformsPlatformIdRoute,
   } as any)
 const SettingsDnsProvidersNewRoute = SettingsDnsProvidersNewRouteImport.update({
   id: '/new',
@@ -447,6 +495,18 @@ const BackupsSchedulesScheduleIdEditRoute =
     path: '/schedules/$scheduleId/edit',
     getParentRoute: () => BackupsRoute,
   } as any)
+const DatabasesExternalExternalDatabaseIdConnectRoute =
+  DatabasesExternalExternalDatabaseIdConnectRouteImport.update({
+    id: '/connect',
+    path: '/connect',
+    getParentRoute: () => DatabasesExternalExternalDatabaseIdRoute,
+  } as any)
+const DatabasesExternalExternalDatabaseIdEditRoute =
+  DatabasesExternalExternalDatabaseIdEditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => DatabasesExternalExternalDatabaseIdRoute,
+  } as any)
 const InfrastructureNodesNodeTerminalRoute =
   InfrastructureNodesNodeTerminalRouteImport.update({
     id: '/nodes/$node/terminal',
@@ -503,6 +563,7 @@ export interface FileRoutesByFullPath {
   '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
+  '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -529,6 +590,7 @@ export interface FileRoutesByFullPath {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -548,11 +610,16 @@ export interface FileRoutesByFullPath {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
+  '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
+  '/databases/external/new': typeof DatabasesExternalNewRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -564,6 +631,8 @@ export interface FileRoutesByFullPath {
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
+  '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
@@ -581,6 +650,7 @@ export interface FileRoutesByTo {
   '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
+  '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -607,6 +677,7 @@ export interface FileRoutesByTo {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -626,11 +697,16 @@ export interface FileRoutesByTo {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
+  '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
+  '/databases/external/new': typeof DatabasesExternalNewRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -642,6 +718,8 @@ export interface FileRoutesByTo {
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
+  '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
@@ -660,6 +738,7 @@ export interface FileRoutesById {
   '/databases': typeof DatabasesRouteWithChildren
   '/infrastructure': typeof InfrastructureRouteWithChildren
   '/networks': typeof NetworksRouteWithChildren
+  '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -686,6 +765,7 @@ export interface FileRoutesById {
   '/login/verify': typeof LoginVerifyRoute
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
+  '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -705,11 +785,16 @@ export interface FileRoutesById {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
+  '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
+  '/databases/external/new': typeof DatabasesExternalNewRoute
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -721,6 +806,8 @@ export interface FileRoutesById {
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
   '/backups/destinations/$destinationId/edit': typeof BackupsDestinationsDestinationIdEditRoute
   '/backups/schedules/$scheduleId/edit': typeof BackupsSchedulesScheduleIdEditRoute
+  '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
+  '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
@@ -740,6 +827,7 @@ export interface FileRouteTypes {
     | '/databases'
     | '/infrastructure'
     | '/networks'
+    | '/platforms'
     | '/requests'
     | '/session'
     | '/settings'
@@ -766,6 +854,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/platforms/$platformId'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -785,11 +874,16 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/switchover'
+    | '/databases/external/$externalDatabaseId'
+    | '/databases/external/new'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/delete'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -801,6 +895,8 @@ export interface FileRouteTypes {
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
+    | '/databases/external/$externalDatabaseId/connect'
+    | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
@@ -818,6 +914,7 @@ export interface FileRouteTypes {
     | '/databases'
     | '/infrastructure'
     | '/networks'
+    | '/platforms'
     | '/requests'
     | '/session'
     | '/settings'
@@ -844,6 +941,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/platforms/$platformId'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -863,11 +961,16 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/switchover'
+    | '/databases/external/$externalDatabaseId'
+    | '/databases/external/new'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/delete'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -879,6 +982,8 @@ export interface FileRouteTypes {
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
+    | '/databases/external/$externalDatabaseId/connect'
+    | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
@@ -896,6 +1001,7 @@ export interface FileRouteTypes {
     | '/databases'
     | '/infrastructure'
     | '/networks'
+    | '/platforms'
     | '/requests'
     | '/session'
     | '/settings'
@@ -922,6 +1028,7 @@ export interface FileRouteTypes {
     | '/login/verify'
     | '/networks/$networkName'
     | '/networks/new'
+    | '/platforms/$platformId'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -941,11 +1048,16 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/switchover'
+    | '/databases/external/$externalDatabaseId'
+    | '/databases/external/new'
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/delete'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -957,6 +1069,8 @@ export interface FileRouteTypes {
     | '/backups/artifacts/$artifactId/restore'
     | '/backups/destinations/$destinationId/edit'
     | '/backups/schedules/$scheduleId/edit'
+    | '/databases/external/$externalDatabaseId/connect'
+    | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
@@ -975,6 +1089,7 @@ export interface RootRouteChildren {
   DatabasesRoute: typeof DatabasesRouteWithChildren
   InfrastructureRoute: typeof InfrastructureRouteWithChildren
   NetworksRoute: typeof NetworksRouteWithChildren
+  PlatformsRoute: typeof PlatformsRouteWithChildren
   RequestsRoute: typeof RequestsRoute
   SessionRoute: typeof SessionRoute
   SettingsRoute: typeof SettingsRouteWithChildren
@@ -1043,6 +1158,13 @@ declare module '@tanstack/react-router' {
       path: '/networks'
       fullPath: '/networks'
       preLoaderRoute: typeof NetworksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platforms': {
+      id: '/platforms'
+      path: '/platforms'
+      fullPath: '/platforms'
+      preLoaderRoute: typeof PlatformsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/requests': {
@@ -1227,6 +1349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NetworksNewRouteImport
       parentRoute: typeof NetworksRoute
     }
+    '/platforms/$platformId': {
+      id: '/platforms/$platformId'
+      path: '/$platformId'
+      fullPath: '/platforms/$platformId'
+      preLoaderRoute: typeof PlatformsPlatformIdRouteImport
+      parentRoute: typeof PlatformsRoute
+    }
     '/projects/$project': {
       id: '/projects/$project'
       path: '/projects/$project'
@@ -1360,6 +1489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdConnectRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
+    '/databases/$databaseId/public-endpoints': {
+      id: '/databases/$databaseId/public-endpoints'
+      path: '/public-endpoints'
+      fullPath: '/databases/$databaseId/public-endpoints'
+      preLoaderRoute: typeof DatabasesDatabaseIdPublicEndpointsRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
     '/databases/$databaseId/recover': {
       id: '/databases/$databaseId/recover'
       path: '/recover'
@@ -1373,6 +1509,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/databases/$databaseId/resize'
       preLoaderRoute: typeof DatabasesDatabaseIdResizeRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
+    }
+    '/databases/$databaseId/switchover': {
+      id: '/databases/$databaseId/switchover'
+      path: '/switchover'
+      fullPath: '/databases/$databaseId/switchover'
+      preLoaderRoute: typeof DatabasesDatabaseIdSwitchoverRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
+    '/databases/external/$externalDatabaseId': {
+      id: '/databases/external/$externalDatabaseId'
+      path: '/external/$externalDatabaseId'
+      fullPath: '/databases/external/$externalDatabaseId'
+      preLoaderRoute: typeof DatabasesExternalExternalDatabaseIdRouteImport
+      parentRoute: typeof DatabasesRoute
+    }
+    '/databases/external/new': {
+      id: '/databases/external/new'
+      path: '/external/new'
+      fullPath: '/databases/external/new'
+      preLoaderRoute: typeof DatabasesExternalNewRouteImport
+      parentRoute: typeof DatabasesRoute
     }
     '/infrastructure/registries/$name': {
       id: '/infrastructure/registries/$name'
@@ -1394,6 +1551,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/networks/$networkName/connect'
       preLoaderRoute: typeof NetworksNetworkNameConnectRouteImport
       parentRoute: typeof NetworksNetworkNameRoute
+    }
+    '/platforms/$platformId/delete': {
+      id: '/platforms/$platformId/delete'
+      path: '/delete'
+      fullPath: '/platforms/$platformId/delete'
+      preLoaderRoute: typeof PlatformsPlatformIdDeleteRouteImport
+      parentRoute: typeof PlatformsPlatformIdRoute
     }
     '/settings/dns-providers/new': {
       id: '/settings/dns-providers/new'
@@ -1471,6 +1635,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/backups/schedules/$scheduleId/edit'
       preLoaderRoute: typeof BackupsSchedulesScheduleIdEditRouteImport
       parentRoute: typeof BackupsRoute
+    }
+    '/databases/external/$externalDatabaseId/connect': {
+      id: '/databases/external/$externalDatabaseId/connect'
+      path: '/connect'
+      fullPath: '/databases/external/$externalDatabaseId/connect'
+      preLoaderRoute: typeof DatabasesExternalExternalDatabaseIdConnectRouteImport
+      parentRoute: typeof DatabasesExternalExternalDatabaseIdRoute
+    }
+    '/databases/external/$externalDatabaseId/edit': {
+      id: '/databases/external/$externalDatabaseId/edit'
+      path: '/edit'
+      fullPath: '/databases/external/$externalDatabaseId/edit'
+      preLoaderRoute: typeof DatabasesExternalExternalDatabaseIdEditRouteImport
+      parentRoute: typeof DatabasesExternalExternalDatabaseIdRoute
     }
     '/infrastructure/nodes/$node/terminal': {
       id: '/infrastructure/nodes/$node/terminal'
@@ -1594,29 +1772,57 @@ const BuildsRouteWithChildren =
 
 interface DatabasesDatabaseIdRouteChildren {
   DatabasesDatabaseIdConnectRoute: typeof DatabasesDatabaseIdConnectRoute
+  DatabasesDatabaseIdPublicEndpointsRoute: typeof DatabasesDatabaseIdPublicEndpointsRoute
   DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
   DatabasesDatabaseIdResizeRoute: typeof DatabasesDatabaseIdResizeRoute
+  DatabasesDatabaseIdSwitchoverRoute: typeof DatabasesDatabaseIdSwitchoverRoute
 }
 
 const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
   DatabasesDatabaseIdConnectRoute: DatabasesDatabaseIdConnectRoute,
+  DatabasesDatabaseIdPublicEndpointsRoute:
+    DatabasesDatabaseIdPublicEndpointsRoute,
   DatabasesDatabaseIdRecoverRoute: DatabasesDatabaseIdRecoverRoute,
   DatabasesDatabaseIdResizeRoute: DatabasesDatabaseIdResizeRoute,
+  DatabasesDatabaseIdSwitchoverRoute: DatabasesDatabaseIdSwitchoverRoute,
 }
 
 const DatabasesDatabaseIdRouteWithChildren =
   DatabasesDatabaseIdRoute._addFileChildren(DatabasesDatabaseIdRouteChildren)
 
+interface DatabasesExternalExternalDatabaseIdRouteChildren {
+  DatabasesExternalExternalDatabaseIdConnectRoute: typeof DatabasesExternalExternalDatabaseIdConnectRoute
+  DatabasesExternalExternalDatabaseIdEditRoute: typeof DatabasesExternalExternalDatabaseIdEditRoute
+}
+
+const DatabasesExternalExternalDatabaseIdRouteChildren: DatabasesExternalExternalDatabaseIdRouteChildren =
+  {
+    DatabasesExternalExternalDatabaseIdConnectRoute:
+      DatabasesExternalExternalDatabaseIdConnectRoute,
+    DatabasesExternalExternalDatabaseIdEditRoute:
+      DatabasesExternalExternalDatabaseIdEditRoute,
+  }
+
+const DatabasesExternalExternalDatabaseIdRouteWithChildren =
+  DatabasesExternalExternalDatabaseIdRoute._addFileChildren(
+    DatabasesExternalExternalDatabaseIdRouteChildren,
+  )
+
 interface DatabasesRouteChildren {
   DatabasesDatabaseIdRoute: typeof DatabasesDatabaseIdRouteWithChildren
   DatabasesImportRoute: typeof DatabasesImportRoute
   DatabasesNewRoute: typeof DatabasesNewRoute
+  DatabasesExternalExternalDatabaseIdRoute: typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
+  DatabasesExternalNewRoute: typeof DatabasesExternalNewRoute
 }
 
 const DatabasesRouteChildren: DatabasesRouteChildren = {
   DatabasesDatabaseIdRoute: DatabasesDatabaseIdRouteWithChildren,
   DatabasesImportRoute: DatabasesImportRoute,
   DatabasesNewRoute: DatabasesNewRoute,
+  DatabasesExternalExternalDatabaseIdRoute:
+    DatabasesExternalExternalDatabaseIdRouteWithChildren,
+  DatabasesExternalNewRoute: DatabasesExternalNewRoute,
 }
 
 const DatabasesRouteWithChildren = DatabasesRoute._addFileChildren(
@@ -1662,6 +1868,29 @@ const NetworksRouteChildren: NetworksRouteChildren = {
 
 const NetworksRouteWithChildren = NetworksRoute._addFileChildren(
   NetworksRouteChildren,
+)
+
+interface PlatformsPlatformIdRouteChildren {
+  PlatformsPlatformIdDeleteRoute: typeof PlatformsPlatformIdDeleteRoute
+}
+
+const PlatformsPlatformIdRouteChildren: PlatformsPlatformIdRouteChildren = {
+  PlatformsPlatformIdDeleteRoute: PlatformsPlatformIdDeleteRoute,
+}
+
+const PlatformsPlatformIdRouteWithChildren =
+  PlatformsPlatformIdRoute._addFileChildren(PlatformsPlatformIdRouteChildren)
+
+interface PlatformsRouteChildren {
+  PlatformsPlatformIdRoute: typeof PlatformsPlatformIdRouteWithChildren
+}
+
+const PlatformsRouteChildren: PlatformsRouteChildren = {
+  PlatformsPlatformIdRoute: PlatformsPlatformIdRouteWithChildren,
+}
+
+const PlatformsRouteWithChildren = PlatformsRoute._addFileChildren(
+  PlatformsRouteChildren,
 )
 
 interface SettingsDnsProvidersRouteChildren {
@@ -1802,6 +2031,7 @@ const rootRouteChildren: RootRouteChildren = {
   DatabasesRoute: DatabasesRouteWithChildren,
   InfrastructureRoute: InfrastructureRouteWithChildren,
   NetworksRoute: NetworksRouteWithChildren,
+  PlatformsRoute: PlatformsRouteWithChildren,
   RequestsRoute: RequestsRoute,
   SessionRoute: SessionRoute,
   SettingsRoute: SettingsRouteWithChildren,
@@ -1823,3 +2053,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

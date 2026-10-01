@@ -25,6 +25,10 @@ type publicTCPRuntime struct {
 }
 
 func (c *Client) publicTCPPoke(ctx context.Context, t Target) (map[string]publicTCPRuntime, error) {
+	return c.publicTCPPokePrefix(ctx, "tcpcr_"+Namespace(t.ApplicationID)+"_hp-"+ownerID(t.ApplicationID)+"-")
+}
+
+func (c *Client) publicTCPPokePrefix(ctx context.Context, prefix string) (map[string]publicTCPRuntime, error) {
 	if c.execConfig == nil || c.restClient() == nil {
 		return nil, fmt.Errorf("public TCP requires access to the owned ingress runtime for reload acknowledgement")
 	}
@@ -60,7 +64,7 @@ printf 'ACTIVE\n'
 printf 'show stat\n' | socat -t 2 - UNIX-CONNECT:/var/run/haproxy-runtime-api.sock | awk -F, -v prefix="$1" 'index($1,prefix)==1 && $2=="FRONTEND" && $18=="OPEN" {print $1}'
 printf 'END\n'
 `
-		command := []string{"sh", "-c", script, "public-tcp-probe", "tcpcr_" + Namespace(t.ApplicationID) + "_hp-" + ownerID(t.ApplicationID) + "-"}
+		command := []string{"sh", "-c", script, "public-tcp-probe", prefix}
 		request := c.restClient().Post().Resource("pods").Namespace(pod.Namespace).Name(pod.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{Container: "kubernetes-ingress-controller", Command: command, Stdout: true, Stderr: true}, scheme.ParameterCodec)
 		executor, e := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, request.URL())
 		if e != nil {

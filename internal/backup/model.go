@@ -47,8 +47,8 @@ func (s Source) Validate() error {
 		return fmt.Errorf("%w: external_name only belongs to imported archives", ErrInput)
 	}
 	if s.Kind == "managed_database" {
-		if !identifierID.MatchString(s.ManagedDatabaseID) || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis") {
-			return fmt.Errorf("%w: choose a managed PostgreSQL or Redis database", ErrInput)
+		if !identifierID.MatchString(s.ManagedDatabaseID) || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "vitess") {
+			return fmt.Errorf("%w: choose a managed PostgreSQL, Redis, MySQL, MongoDB, ClickHouse, Vitess or Oracle database", ErrInput)
 		}
 		return nil
 	}
@@ -275,6 +275,12 @@ type Repository interface {
 }
 
 func Scope(source Source) string {
+	if source.Engine == "oracle" {
+		return "Oracle Free Data Pump capture of the APP schema in FREEPDB1 at one SCN. Includes supported schema objects and data; excludes database users, grants, CDB configuration, wallets, archived redo, RMAN and point-in-time recovery. Concurrent DDL can invalidate capture. Restore runs with the APP schema account in a separate empty Free target of the same version after complete archive verification and session revocation. Application ingress stays closed until recovery is inspected."
+	}
+	if source.Engine == "mongodb" {
+		return "MongoDB BSON snapshot of app at one read timestamp. Preserves supported collection options, indexes, views, time-series data and BSON types; schema or topology changes invalidate capture. Excludes other databases, users, replica configuration, oplog and point-in-time recovery. Restore replaces members of a separate empty target to close existing sessions, then uses a loopback-only recovery account scoped to app while client access remains isolated."
+	}
 	if source.Engine == "redis" {
 		return "Redis RDB snapshots preserve values and absolute expiry. Each primary shard is captured consistently; different shards have different recovery points. Excludes server configuration, cluster membership, users and access-control lists. Redis Cluster requires a cluster-aware client."
 	}
@@ -282,9 +288,15 @@ func Scope(source Source) string {
 		return "Logical PostgreSQL dump of the Hakopod management database, including accounts, encrypted credential records, specifications, jobs and audit history. Excludes the authentication encryption key, installer configuration, Kubernetes state and secrets, application databases, persistent volumes, images and external object data. Recovery requires separately preserved encryption key/configuration and deliberate offline reconnection; restoring this dump does not activate another control plane."
 	}
 	if source.Engine == "clickhouse" {
+		if source.Kind == "managed_database" {
+			return "Encrypted native ClickHouse backups of app from one replica per shard. Tables and shards can have different capture times; this is not a transactionally consistent cross-table snapshot or point-in-time recovery. Excludes users, grants, server configuration and Keeper state. Restore requires a separate empty database with the same shard layout, isolated Keeper identity and enough staging space. Client access remains closed until recovery is inspected."
+		}
 		return "ClickHouse backup of one database, written to object storage by the ClickHouse server itself using its BACKUP command. It covers the tables ClickHouse includes in that database backup and their data as the server saw them at that moment. It excludes server users, grants, settings and other databases. Hakopod does not read, decrypt or verify these files: it records what the server reported and where the files were written, so completeness and consistency are the server's guarantees, not hakopod's. Restoring replays the files back through the server into the target database."
 	}
 	if source.Engine == "mysql" {
+		if source.Kind == "managed_database" {
+			return "Logical MySQL dump of app, including tables, views, triggers, routines and events. A global read lock blocks writes and DDL during capture to preserve a consistent snapshot. Excludes server users, grants, global settings, binlogs and point-in-time recovery. Restore uses the application account in a separate empty database."
+		}
 		return "Logical MySQL dump of one database using single-transaction/quick, including tables, triggers, routines and events. Transactional InnoDB data is consistent; concurrent DDL and non-transactional tables require an operator maintenance window. Excludes server users, grants, global settings, binlogs and point-in-time recovery."
 	}
 	return "PostgreSQL custom-format logical dump of one database. Includes schema and data; excludes global roles, tablespaces, server configuration, WAL and point-in-time recovery. Restores without original ownership or ACLs into a new database owned by the target connection user."

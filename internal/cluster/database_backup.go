@@ -15,6 +15,21 @@ func (c *Client) DumpDatabase(ctx context.Context, d database.Resource, observed
 	if observed.Status != "ready" || observed.Revision != d.Revision {
 		return fmt.Errorf("database backup requires verified current health")
 	}
+	if d.Spec.Engine == "vitess" {
+		return c.dumpVitessDatabase(ctx, d, observed, out)
+	}
+	if d.Spec.Engine == "mysql" {
+		return c.dumpMySQLDatabase(ctx, d, observed, out)
+	}
+	if d.Spec.Engine == "mongodb" {
+		return c.dumpMongoDBDatabase(ctx, d, observed, out)
+	}
+	if d.Spec.Engine == "clickhouse" {
+		return c.dumpClickHouseDatabase(ctx, d, observed, out)
+	}
+	if d.Spec.Engine == "oracle" {
+		return c.dumpOracleDatabase(ctx, d, observed, out)
+	}
 	if d.Spec.Engine == "postgresql" {
 		for _, m := range observed.Members {
 			if m.Name == observed.Primary {
@@ -22,6 +37,9 @@ func (c *Client) DumpDatabase(ctx context.Context, d database.Resource, observed
 			}
 		}
 		return fmt.Errorf("PostgreSQL primary is unavailable")
+	}
+	if d.Spec.Engine != "redis" {
+		return fmt.Errorf("unsupported managed database backup engine")
 	}
 	manifest := database.RedisArchive{SchemaVersion: 1, DatabaseID: d.ID, Revision: d.Revision, TopologyFingerprint: observed.TopologyFingerprint}
 	for _, m := range observed.Members {
@@ -34,6 +52,9 @@ func (c *Client) DumpDatabase(ctx context.Context, d database.Resource, observed
 		return fmt.Errorf("Redis credentials are unavailable")
 	}
 	err = database.WriteRedisArchive(out, manifest, func(m database.Member, w io.Writer) error {
+		if d.Spec.TLSRequired() {
+			return c.captureRedisTLSSnapshot(ctx, d, m, secret.Data["password"], w)
+		}
 		input := append(append([]byte(nil), secret.Data["password"]...), '\n')
 		// redis-cli's stdout mode retains a diskless replication EOF marker. A
 		// private temporary file lets the official tool truncate it correctly and
@@ -63,8 +84,23 @@ cat "$directory/snapshot.rdb"`
 }
 
 func (c *Client) DatabaseEmpty(ctx context.Context, d database.Resource, o database.Observation) error {
+	if d.Spec.Engine == "vitess" {
+		return c.vitessDatabaseEmpty(ctx, d, o)
+	}
 	if o.Status != "ready" {
 		return fmt.Errorf("database health is not ready")
+	}
+	if d.Spec.Engine == "mysql" {
+		return c.mysqlDatabaseEmpty(ctx, d, o)
+	}
+	if d.Spec.Engine == "mongodb" {
+		return c.mongodbDatabaseEmpty(ctx, d, o)
+	}
+	if d.Spec.Engine == "clickhouse" {
+		return c.clickhouseDatabaseEmpty(ctx, d, o)
+	}
+	if d.Spec.Engine == "oracle" {
+		return c.oracleDatabaseEmpty(ctx, d, o)
 	}
 	if d.Spec.Engine == "postgresql" {
 		for _, m := range o.Members {
@@ -81,6 +117,9 @@ func (c *Client) DatabaseEmpty(ctx context.Context, d database.Resource, o datab
 			}
 		}
 		return fmt.Errorf("PostgreSQL primary is unavailable")
+	}
+	if d.Spec.Engine != "redis" {
+		return fmt.Errorf("unsupported managed database recovery engine")
 	}
 	for _, m := range o.Members {
 		if m.Role == "primary" {
@@ -117,12 +156,35 @@ func (c *Client) RestorePostgresDatabase(ctx context.Context, d database.Resourc
 				return fmt.Errorf("recovery credentials are unavailable")
 			}
 			command := []string{"sh", "-c", `set -eu; IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_restore --host=127.0.0.1 --username=app --dbname=app --no-password --exit-on-error --single-transaction --no-owner --no-acl`}
+			if d.Spec.TLSRequired() {
+				trust, err := c.DatabaseTrust(ctx, d)
+				if err != nil {
+					return err
+				}
+				host := ""
+				for _, endpoint := range o.Endpoints {
+					if endpoint.Purpose == "read_write" {
+						host = endpoint.Host
+					}
+				}
+				if host == "" {
+					return fmt.Errorf("verified recovery endpoint is unavailable")
+				}
+				// Only public CA material travels in argv. The password is consumed
+				// from the first stdin line; the remaining binary archive is untouched.
+				command = []string{"sh", "-c", `set -eu
+IFS= read -r PGPASSWORD; export PGPASSWORD
+umask 077; work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+printf '%s' "$2" > "$work/ca.crt"
+export PGHOST="$1" PGSSLMODE=verify-full PGSSLROOTCERT="$work/ca.crt" PGCONNECT_TIMEOUT=5
+pg_restore --username=app --dbname=app --no-password --exit-on-error --single-transaction --no-owner --no-acl`, "restore-with-verified-tls", host, trust.CertificatePEM}
+			}
 			stream := io.MultiReader(bytes.NewReader(append(append([]byte(nil), secret.Data["password"]...), '\n')), input)
 			if err := c.DatabaseExec(ctx, d, m, command, stream, io.Discard); err != nil {
 				return err
 			}
-			d.Status = "ready"
-			return c.databaseNetworkPolicy(ctx, d, func() error { return nil })
+			// Application ingress reopens only after durable completion and inspection.
+			return nil
 		}
 	}
 	return fmt.Errorf("PostgreSQL recovery primary is unavailable")

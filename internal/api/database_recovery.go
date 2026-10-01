@@ -57,6 +57,9 @@ func (s *Server) managedDatabaseRestorePlan(w http.ResponseWriter, r *http.Reque
 	if d.Spec.Engine == "redis" {
 		plan.Warnings = append(plan.Warnings, "Redis archives preserve values and expiry consistently per shard, not across all shards. Redis Cluster needs a cluster-aware client.")
 	}
+	if d.Spec.Engine == "vitess" {
+		plan.Warnings = append(plan.Warnings, "Vitess captures each shard under its own read lock. Cross-shard transactions do not share one recovery point. The target must have the same shard map and table routing schema.")
+	}
 	if err = s.Store.SaveBackupRestorePlan(ctx, who(r), plan); err != nil {
 		backupFailure(w, err)
 		return

@@ -1,38 +1,66 @@
 import { DatabaseInspection } from '../components/database-inspection'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
+import { useActiveSection } from '../lib/use-active-section'
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
-import { useDatabase, databaseSummary, databaseHealth } from '../lib/databases'
+import {
+  useDatabase,
+  databaseSummary,
+  databaseHealth,
+  type ManagedDatabase,
+  useDatabaseOperations,
+} from '../lib/databases'
 import { useResourceScope, useScope, canAccess } from '../lib/scope'
 import { message, timestamp } from '../lib/api'
 import { Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Badge } from '../components/ui/surfaces'
 import { Icon } from '../components/icons'
+import {
+  DatabaseIdentity,
+  DatabaseSummary,
+  DatabaseTopology,
+  DatabaseMonitoring,
+  DatabaseMembers,
+} from '../components/database-cockpit'
+import { DatabaseBackups } from '../components/database-backups'
+import { DatabaseSecurity } from '../components/database-security'
+import { Copy, Status } from '../components/shared'
+import { endpointName, endpointAddress } from '../lib/database-view'
 
-export const Route = createFileRoute('/databases/$databaseId')({ component: DetailRoute })
+const databaseTabs = [
+  'overview',
+  'monitoring',
+  'connections',
+  'backups',
+  'activity',
+  'settings',
+] as const
+type DatabaseTab = (typeof databaseTabs)[number]
+export const Route = createFileRoute('/databases/$databaseId')({
+  validateSearch: (search: Record<string, unknown>): { tab?: DatabaseTab } => ({
+    tab: databaseTabs.includes(search.tab as DatabaseTab) ? (search.tab as DatabaseTab) : undefined,
+  }),
+  component: DetailRoute,
+})
 function DetailRoute() {
   const id = Route.useParams().databaseId
   return useLocation().pathname === `/databases/${id}` ? <Detail key={id} /> : <Outlet />
 }
 function Detail() {
+  const tab = Route.useSearch().tab || 'overview'
+  const navigationRoot = useActiveSection(tab, '.tab-list')
   const id = Route.useParams().databaseId
+  const [tick, setNow] = useState(Date.now)
+  const now = Math.max(tick, Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [])
   const query = useDatabase(id)
   useResourceScope(query.data)
-  const operations = useQuery({
-    queryKey: ['database-operations', id],
-    queryFn: ({ signal }) =>
-      unwrap(client.GET('/databases/{id}/operations', { signal, params: { path: { id } } })),
-    refetchInterval: 5000,
-    gcTime: 0,
-  })
-  const [credentials, setCredentials] = useState<{
-    username: string
-    password: string
-    database: string
-  } | null>(null)
+  const operations = useDatabaseOperations(id, tab === 'activity' && Boolean(query.data))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -40,10 +68,11 @@ function Detail() {
   const navigate = useNavigate()
   const { identity } = useScope()
   if (query.isPending) return <Loading />
-  if (query.error) return <ErrorState error={query.error} />
-  const d = query.data
+  if (query.error && !query.data) return <ErrorState error={query.error} />
+  const d = query.data!
   const canManage = !identity.application && canAccess(identity, d.project, 'deployments:write')
   const search = { project: d.project, environment: d.environment }
+  const canBackups = identity.admin || identity.can_manage_backups
   return (
     <div className="ops-page">
       <PageHeader
@@ -62,78 +91,324 @@ function Detail() {
                 </Link>
               </Button>
             )}
-            {canManage && d.status === 'ready' && (
+            {canManage && tab === 'settings' && d.status === 'ready' && (
               <Button asChild>
                 <Link
                   to="/databases/$databaseId/resize"
                   params={{ databaseId: id }}
                   search={search}
                 >
-                  Resize
+                  {['clickhouse', 'oracle', 'vitess'].includes(d.spec.engine) ? 'Capacity' : 'Resize'}
                 </Link>
               </Button>
             )}
-            {canManage && (
+            {canManage && tab === 'backups' && (
               <Button asChild>
                 <Link
                   to="/databases/$databaseId/recover"
                   params={{ databaseId: id }}
                   search={search}
                 >
-                  Recover into this database
+                  Recover
                 </Link>
               </Button>
             )}
           </div>
         }
       />
-      <div className="flex flex-wrap items-center gap-3 py-3">
-        <Badge>{d.status}</Badge>
-        <span>{databaseSummary(d.spec)}</span>
-        <span>Revision {d.revision}</span>
-        <span>
-          {d.spec.cpu} CPU · {d.spec.memory} · {d.spec.storage_gib} GiB per member
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+        <DatabaseIdentity database={d} />
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="db-kicker">Observed {timestamp(d.observation.observed_at)}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => {
+              void query.refetch()
+              if (tab === 'activity') void operations.refetch()
+            }}
+          >
+            <Icon name="refresh" size={14} />
+            Refresh
+          </Button>
+        </div>
       </div>
+      {query.error && <Note>Refresh failed. Showing the last received observation.</Note>}
       {d.observation.message && <Note>{d.observation.message}</Note>}
-      <p className="py-2">
-        Health: {databaseHealth(d)} · Last observed {timestamp(d.observation.observed_at)}
-      </p>
-      {d.recovery && (
+      {databaseHealth(d, now) === 'Observation stale' && (
         <Note>
-          Recovery job{' '}
-          <Link to="/backups/$jobId" params={{ jobId: d.recovery.job_id }}>
-            {d.recovery.job_id.slice(0, 8)}
-          </Link>
-          . Captured {timestamp(d.recovery.captured_at)}.{' '}
-          {d.recovery.restored_at
-            ? 'Recovery completed. Inspect the data before changing an application connection.'
-            : 'Recovery has not been confirmed complete.'}{' '}
-          Writes after the recovery point require a fresh capture before final cutover.
+          This observation is stale. Member readiness and topology show the last known state.
         </Note>
       )}
-      {canManage && <DatabaseInspection database={d} />}
-      <section className="py-4" aria-label="Private endpoints">
-        <h2>Private endpoints</h2>
-        {!d.observation.endpoints?.length ? (
-          <p>No verified endpoints yet.</p>
-        ) : (
-          <dl className="grid gap-2 py-2">
-            {d.observation.endpoints.map((e) => (
-              <div key={e.purpose} className="flex flex-wrap gap-x-3">
-                <dt>{e.purpose.replaceAll('_', ' ')}</dt>
-                <dd className="break-all font-mono">
-                  {e.host}:{e.port}
+      {error && (
+        <p role="alert" className="text-destructive py-3">
+          {error}
+        </p>
+      )}
+      <Tabs.Root
+        value={tab}
+        onValueChange={(value) => {
+          setError('')
+          void navigate({
+            to: '/databases/$databaseId',
+            params: { databaseId: id },
+            search: { ...search, tab: value as DatabaseTab },
+          })
+        }}
+      >
+        <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Database sections">
+          {databaseTabs.map((value) => (
+            <Tabs.Trigger key={value} className="tab-trigger" value={value}>
+              {
+                {
+                  overview: 'Overview',
+                  monitoring: 'Monitoring',
+                  connections: 'Connections & security',
+                  backups: 'Backups',
+                  activity: 'Activity',
+                  settings: 'Settings',
+                }[value]
+              }
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+        <Tabs.Content value="overview" className="tab-content">
+          <DatabaseSummary database={d} now={now} />
+          <DatabaseTopology database={d} now={now} receivedAt={query.dataUpdatedAt} />
+          <DatabaseMembers database={d} now={now} receivedAt={query.dataUpdatedAt} />
+        </Tabs.Content>
+        <Tabs.Content value="monitoring" className="tab-content">
+          <DatabaseMonitoring
+            key={`${d.id}-${d.revision}`}
+            database={d}
+            now={now}
+            receivedAt={query.dataUpdatedAt}
+          />
+        </Tabs.Content>
+        <Tabs.Content value="connections" className="tab-content">
+          <div className="grid gap-4">
+          <DatabaseConnections database={d} canManage={canManage} />
+          <DatabaseSecurity database={d} now={now} />
+          </div>
+        </Tabs.Content>
+        <Tabs.Content value="backups" className="tab-content">
+          {d.recovery && (
+            <div className="py-3">
+              <Note>
+                Recovery job{' '}
+                <Link to="/backups/$jobId" params={{ jobId: d.recovery.job_id }}>
+                  {d.recovery.job_id.slice(0, 8)}
+                </Link>
+                . Captured {timestamp(d.recovery.captured_at)}.{' '}
+                {d.recovery.restored_at
+                  ? 'Recovery completed. Inspect the data before changing an application connection.'
+                  : 'Recovery has not been confirmed complete.'}{' '}
+                Writes after the recovery point require a fresh capture before final cutover.
+              </Note>
+              {canManage && <DatabaseInspection database={d} />}
+            </div>
+          )}
+          {canBackups ? (
+            <DatabaseBackups database={d} />
+          ) : (
+            <section className="db-panel">
+              <div className="db-panel-heading">
+                <h2>Backups & recovery</h2>
+              </div>
+              <p className="db-inline-notice">Backup management requires backup access.</p>
+            </section>
+          )}
+        </Tabs.Content>
+        <Tabs.Content value="activity" className="tab-content">
+          <section className="db-panel" aria-label="Operations">
+            <div className="db-panel-heading">
+              <h2>Recent operations</h2>
+              <span className="db-kicker">
+                {operations.isPending
+                  ? 'Loading'
+                  : operations.error
+                    ? 'Unavailable'
+                    : `${operations.data?.items.length ?? 0} recorded`}
+              </span>
+            </div>
+            {operations.isPending ? (
+              <Loading rows={2} />
+            ) : operations.error ? (
+              <ErrorState error={operations.error} />
+            ) : !operations.data.items.length ? (
+              <Empty
+                title="No operations"
+                description="No database operations have been recorded."
+              />
+            ) : (
+              <ul>
+                {operations.data.items.map((op) => (
+                  <li key={op.id} className="db-operation">
+                    <div className="db-operation-header">
+                      <strong>{op.kind}</strong>
+                      <Status value={op.status} />
+                      <time dateTime={op.created_at}>{timestamp(op.created_at)}</time>
+                    </div>
+                    <div className="db-operation-meta">
+                      <span>Revision {op.revision}</span>
+                      <span>{op.phase}</span>
+                      {op.finished_at && <span>Finished {timestamp(op.finished_at)}</span>}
+                    </div>
+                    {op.message && <p>{op.message}</p>}
+                    {canManage && op.kind === 'switchover' && op.status === 'failed' && op.switchover && op.phase !== 'switchover' && <Button asChild><Link to="/databases/$databaseId/switchover" params={{ databaseId: id }} search={{ ...search, operation: op.phase === 'review' ? undefined : op.id }}>{op.phase === 'review' ? 'Review current topology' : 'Review retry'}</Link></Button>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </Tabs.Content>
+        <Tabs.Content value="settings" className="tab-content">
+          {d.spec.engine === 'oracle' && d.spec.oracle?.edition === 'enterprise' && d.spec.mode === 'cluster' && <div className="flex flex-wrap gap-2 pb-4"><Button asChild disabled={!canManage || d.status !== 'ready'}><Link to="/databases/$databaseId/switchover" params={{ databaseId: id }} search={search}>Switch primary</Link></Button></div>}
+          <section className="db-panel" aria-label="Database configuration">
+            <div className="db-panel-heading">
+              <h2>Configuration</h2>
+              <span className="db-kicker">Revision {d.revision}</span>
+            </div>
+            <dl className="db-facts px-4 py-4">
+              <div>
+                <dt>Project</dt>
+                <dd>{d.project}</dd>
+              </div>
+              <div>
+                <dt>Environment</dt>
+                <dd>{d.environment}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{timestamp(d.created_at)}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{timestamp(d.updated_at)}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt>Database ID</dt>
+                <dd className="flex items-center gap-2 font-mono text-xs">
+                  {d.id}
+                  <Copy value={d.id} />
                 </dd>
               </div>
-            ))}
-          </dl>
-        )}
-        {d.spec.engine === 'redis' && d.spec.mode === 'cluster' && (
-          <Note>
-            Use a cluster-aware Redis client. The database controller owns replication and failover.
-          </Note>
-        )}
+            </dl>
+          </section>
+          <div className="py-4">
+            <Button disabled={!canManage} variant="danger" onClick={() => setDeleting((v) => !v)}>
+              <Icon name="trash" size={14} />
+              Delete database
+            </Button>
+          </div>
+          {deleting && (
+            <form
+              className="grid gap-3 pb-4"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                setBusy(true)
+                setError('')
+                try {
+                  await unwrap(
+                    client.DELETE('/databases/{id}', {
+                      params: { path: { id }, header: { 'Idempotency-Key': crypto.randomUUID() } },
+                      body: { expected_revision: d.revision, confirm_name: confirmation },
+                    }),
+                  )
+                  void navigate({ to: '/databases', search })
+                } catch (err) {
+                  setError(message(err))
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <Note>
+                Deletion removes every database member and its data. Saved backups remain.
+              </Note>
+              <label>
+                Type {d.spec.name} to confirm
+                <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} />
+              </label>
+              <div>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  disabled={busy || confirmation !== d.spec.name}
+                >
+                  <Icon name="trash" size={14} />
+                  Delete database and data
+                </Button>
+              </div>
+            </form>
+          )}
+        </Tabs.Content>
+      </Tabs.Root>
+    </div>
+  )
+}
+
+function DatabaseConnections({
+  database: d,
+  canManage,
+}: {
+  database: ManagedDatabase
+  canManage: boolean
+}) {
+  const id = d.id
+  const [credentials, setCredentials] = useState<{
+    username: string
+    password: string
+    database: string
+  } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <section className="db-panel" aria-label="Private endpoints">
+      <div className="db-panel-heading">
+        <h2>Connections</h2>
+        <span className="db-kicker">Private network</span>
+      </div>
+      {!d.observation.endpoints?.length ? (
+        <p className="db-inline-notice">No verified endpoints yet.</p>
+      ) : (
+        <dl>
+          {d.observation.endpoints.map((e) => (
+            <div key={e.purpose} className="db-connection">
+              <dt>
+                {endpointName(e.purpose, d.spec.engine)}
+                <span className="text-muted-foreground">Port {e.port}</span>
+              </dt>
+              <dd>
+                <code>
+                  {endpointAddress(e, d.spec.engine)}
+                </code>
+                <Copy
+                  iconOnly
+                  value={endpointAddress(e, d.spec.engine)}
+                  label={`Copy ${endpointName(e.purpose, d.spec.engine).toLowerCase()}`}
+                />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {d.spec.engine === 'redis' && d.spec.mode === 'cluster' && (
+        <p className="db-inline-notice">
+          Use a cluster-aware Redis client. The controller owns replication and failover.
+        </p>
+      )}
+      {d.spec.engine === 'vitess' && <p className="db-inline-notice">Vitess uses the MySQL protocol on port 3306 through vtgate. Use app@primary for writes or app@replica for replica reads. Configure the driver with the mounted public CA and hostname verification. Native runtime acceptance remains incomplete; creation is unavailable.</p>}
+      {d.spec.engine === 'mysql' && <p className="db-inline-notice">MySQL Router provides explicit write{d.spec.replicas > 0 ? ' and replica' : ''} routes. Clients must reconnect after failover. Configure the driver with the public CA and hostname verification.</p>}
+      {d.spec.engine === 'mongodb' && <p className="db-inline-notice">Use a MongoDB driver with replica-set discovery, verified TLS and the public CA. The binding selects primary reads and majority acknowledgement. Retry failed transactions only when safe.</p>}
+      {d.spec.pooling && <div className="px-4 py-3 grid gap-3">
+        <h3 className="text-sm font-medium">PgBouncer</h3>
+        <dl className="db-facts"><div><dt>Pooling mode</dt><dd>{d.spec.pooling.mode}</dd></div><div><dt>Instances per route</dt><dd>{d.spec.pooling.instances}</dd></div><div><dt>Clients per instance</dt><dd>{d.spec.pooling.max_client_connections}</dd></div><div><dt>Server connections per instance</dt><dd>{d.spec.pooling.default_pool_size}</dd></div></dl>
+        <p className="text-xs text-muted-foreground">Write and replica routes are explicit. Existing sessions must reconnect after failover. Replica reads may lag.{d.spec.pooling.mode === 'transaction' ? ' Transaction pooling does not preserve session state between transactions.' : ' Session pooling retains the server connection for each client session.'}</p>
+        {d.observation.pooling?.message && <p role="status" className="text-sm">{d.observation.pooling.message}</p>}
+      </div>}
+      <div className="px-4 py-3">
         <Button
           disabled={busy || !canManage}
           onClick={async () => {
@@ -161,6 +436,11 @@ function Detail() {
         >
           {credentials ? 'Hide credentials' : 'Reveal credentials'}
         </Button>
+        {error && (
+          <p role="alert" className="text-destructive py-3">
+            {error}
+          </p>
+        )}
         {credentials && (
           <dl className="grid gap-2 py-3">
             <div>
@@ -177,109 +457,7 @@ function Detail() {
             </div>
           </dl>
         )}
-      </section>
-      <section className="py-4" aria-label="Members">
-        <h2>Members</h2>
-        {!d.observation.members?.length ? (
-          <p>No observed members yet.</p>
-        ) : (
-          <ul className="grid gap-2 py-2">
-            {d.observation.members.map((m) => (
-              <li key={m.uid} className="flex flex-wrap gap-3">
-                <span className="break-all font-mono">{m.name}</span>
-                <span>{m.role}</span>
-                <span>{m.ready ? 'Ready' : 'Not ready'}</span>
-                {m.node && <span>{m.node}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section className="py-4" aria-label="Backups">
-        <h2>Backups</h2>
-        <div className="flex flex-wrap gap-2 py-2">
-          <Button asChild>
-            <Link to="/backups/new">Run backup</Link>
-          </Button>
-          <Button asChild>
-            <Link to="/backups/schedules/new">Schedule backup</Link>
-          </Button>
-          <Button asChild>
-            <Link to="/backups" search={{ tab: 'artifacts' }}>
-              Stored backups
-            </Link>
-          </Button>
-        </div>
-      </section>
-      <section className="py-4" aria-label="Operations">
-        <h2>Operations</h2>
-        {operations.isPending ? (
-          <Loading rows={2} />
-        ) : operations.error ? (
-          <ErrorState error={operations.error} />
-        ) : !operations.data.items.length ? (
-          <Empty title="No operations" description="No database operations have been recorded." />
-        ) : (
-          <ul className="grid gap-2 py-2">
-            {operations.data.items.map((op) => (
-              <li key={op.id} className="flex flex-wrap gap-3">
-                <strong>{op.kind}</strong>
-                <span>r{op.revision}</span>
-                <Badge>{op.status}</Badge>
-                <span>{op.phase}</span>
-                <span>{timestamp(op.created_at)}</span>
-                {op.message && <span>{op.message}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      {error && (
-        <p role="alert" className="text-destructive py-3">
-          {error}
-        </p>
-      )}
-      <div className="py-4">
-        <Button disabled={!canManage} variant="danger" onClick={() => setDeleting((v) => !v)}>
-          <Icon name="trash" size={14} />
-          Delete database
-        </Button>
       </div>
-      {deleting && (
-        <form
-          className="grid gap-3 pb-4"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            setBusy(true)
-            setError('')
-            try {
-              await unwrap(
-                client.DELETE('/databases/{id}', {
-                  params: { path: { id }, header: { 'Idempotency-Key': crypto.randomUUID() } },
-                  body: { expected_revision: d.revision, confirm_name: confirmation },
-                }),
-              )
-              void navigate({ to: '/databases', search })
-            } catch (err) {
-              setError(message(err))
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          <Note>Deletion removes every database member and its data. Saved backups remain.</Note>
-          <label>
-            Type {d.spec.name} to confirm
-            <Input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} />
-          </label>
-          <div>
-            <Button type="submit" variant="danger" disabled={busy || confirmation !== d.spec.name}>
-              <Icon name="trash" size={14} />
-              Delete database and data
-            </Button>
-          </div>
-        </form>
-      )}
-    </div>
+    </section>
   )
 }

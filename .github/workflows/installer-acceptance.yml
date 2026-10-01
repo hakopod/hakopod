@@ -46,6 +46,8 @@ jobs:
         with:
           node-version: '24'
       - name: Build exact candidate packages
+        env:
+          HAKOPOD_REDIS_CONTROLLER_IMAGE: ${{ vars.HAKOPOD_REDIS_CONTROLLER_IMAGE }}
         run: |
           python3 release/publication.py version "v$RELEASE_VERSION"
           python3 scripts/ui-source.py restore
@@ -53,6 +55,7 @@ jobs:
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
           python3 release/build.py --version "$RELEASE_VERSION"
+          python3 -m pip install PyYAML==6.0.2
           python3 release/build-installer.py --version "$RELEASE_VERSION"
           python3 release/bootstrap-version.py ".local/installer-artifacts/$RELEASE_VERSION" "$RELEASE_VERSION"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

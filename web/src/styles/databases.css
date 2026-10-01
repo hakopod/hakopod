@@ -1,0 +1,506 @@
+.db-identity {
+  @apply flex min-w-0 items-center gap-3;
+}
+.db-identity > div {
+  @apply grid min-w-0 gap-1;
+}
+.db-identity strong {
+  @apply text-sm font-medium;
+}
+.db-identity span:not(.service-brand-icon) {
+  @apply text-xs text-muted-foreground;
+}
+.db-kicker {
+  @apply text-xs text-muted-foreground;
+}
+.db-summary {
+  @apply mb-4 grid grid-cols-2 gap-x-5 gap-y-4 border-y border-border py-4;
+}
+.db-summary > div {
+  @apply min-w-0;
+}
+.db-summary dt,
+.db-facts dt {
+  @apply mb-1 text-xs text-muted-foreground;
+}
+.db-summary dd {
+  @apply flex min-h-8 items-center gap-1 font-mono text-2xl;
+}
+.db-summary dd > span:not(.hako-status) {
+  @apply text-sm text-muted-foreground;
+}
+.db-summary small {
+  @apply mt-1 block text-xs text-muted-foreground;
+}
+.db-cockpit-grid {
+  @apply mb-4 grid min-w-0 items-start gap-4;
+}
+.db-panel {
+  @apply min-w-0 overflow-hidden border border-border bg-card;
+}
+.db-panel-heading {
+  @apply flex min-h-14 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3;
+}
+.db-panel-heading > div {
+  @apply flex min-w-0 items-center gap-2;
+}
+.db-panel-heading h2 {
+  @apply text-sm font-semibold;
+}
+.db-facts {
+  @apply grid grid-cols-2 gap-x-5 gap-y-4;
+}
+.db-endpoint-facts {
+  @apply gap-y-2;
+  @variant lg {
+    @apply grid-cols-4;
+  }
+}
+.db-facts > div {
+  @apply min-w-0;
+}
+.db-facts dd {
+  @apply text-sm [overflow-wrap:anywhere];
+}
+.db-topology-scroll {
+  @apply max-h-[660px] overflow-auto overscroll-contain;
+  background: radial-gradient(circle, var(--hairline) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.db-topology-scroll:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 55%, var(--foreground));
+  outline-offset: -2px;
+}
+.db-topology-art {
+  @apply block max-w-none;
+}
+.db-plane {
+  fill: color-mix(in srgb, var(--info) 6%, var(--card));
+  stroke: color-mix(in srgb, var(--info) 22%, var(--hairline));
+}
+.db-plane-side {
+  fill: color-mix(in srgb, var(--info) 20%, var(--card));
+}
+.db-plane-grid {
+  fill: none;
+  stroke: color-mix(in srgb, var(--info) 10%, transparent);
+  stroke-width: 1;
+}
+.db-stack {
+  --stack-color: var(--info);
+}
+.db-stack-primary {
+  --stack-color: var(--action);
+}
+.db-stack-unknown {
+  --stack-color: var(--muted);
+}
+.db-stack-side {
+  fill: color-mix(in srgb, var(--stack-color) 50%, var(--card));
+  stroke: color-mix(in srgb, var(--stack-color) 60%, var(--card));
+  stroke-width: 1;
+}
+.db-stack-top {
+  fill: color-mix(in srgb, var(--stack-color) 22%, var(--card));
+  stroke: color-mix(in srgb, var(--stack-color) 75%, var(--card));
+  stroke-width: 1.2;
+}
+.db-stack-core {
+  fill: var(--stack-color);
+  stroke: color-mix(in srgb, var(--stack-color) 35%, var(--card));
+  stroke-width: 5;
+}
+.db-stack-highlight {
+  fill: none;
+  stroke: color-mix(in srgb, var(--stack-color) 80%, var(--foreground));
+  stroke-width: 1;
+}
+.db-stack-shadow {
+  fill: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.db-stack-ring {
+  fill: none;
+  stroke: var(--stack-color);
+  opacity: 0.2;
+  stroke-width: 2;
+}
+.db-stack-selected .db-stack-ring {
+  opacity: 1;
+  stroke-width: 3;
+  stroke: color-mix(in srgb, var(--stack-color) 55%, var(--foreground));
+}
+.db-stack-led {
+  fill: var(--success);
+}
+.db-stack-led-off {
+  fill: var(--muted);
+}
+.db-stack-name {
+  fill: var(--foreground);
+  font: 12px var(--font-mono);
+}
+.db-stack-role {
+  fill: var(--muted);
+  font: 12px var(--font-mono);
+  letter-spacing: 1px;
+}
+.db-stack-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+}
+.db-topology-member {
+  cursor: pointer;
+  outline: none;
+}
+.db-topology-member:focus-visible .db-stack-hit {
+  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+}
+.db-topology-member:hover .db-stack-ring {
+  opacity: 1;
+}
+.db-replication-edge {
+  fill: none;
+  stroke: var(--info);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+.db-edge-stale {
+  opacity: 0.4;
+}
+.db-edge-label {
+  fill: var(--muted);
+  font: 12px var(--font-mono);
+  letter-spacing: 1px;
+}
+.db-topology-legend {
+  @apply flex flex-wrap items-center gap-4 px-4 py-2 text-xs text-muted-foreground;
+}
+.db-topology-legend > span {
+  @apply inline-flex items-center gap-2;
+}
+.db-topology-legend i {
+  @apply inline-block size-2 rounded-full;
+  background: var(--info);
+}
+.db-topology-legend .db-legend-primary {
+  background: var(--action);
+}
+.db-topology-legend .db-legend-unknown {
+  background: var(--muted);
+}
+.db-member-picker {
+  @apply px-4 pb-3;
+}
+.db-member-inspector {
+  @apply grid gap-3 border-t border-border bg-background/50 px-4 py-3;
+}
+.db-shard-toolbar {
+  @apply flex flex-wrap items-center gap-3 px-4 pt-3 text-xs text-muted-foreground;
+}
+.db-shard-toolbar > .select-field-wrap {
+  @apply w-40;
+}
+.db-topology-empty {
+  @apply flex min-h-64 items-center justify-center px-4 text-sm text-muted-foreground;
+}
+.db-monitor-values {
+  @apply grid gap-0;
+}
+.db-monitor-values .node-runtime-metric {
+  @apply min-w-0 border-x-0 border-t-0 border-b border-border px-4 py-4;
+}
+.db-monitor-values .node-runtime-metric > strong {
+  @apply text-2xl;
+}
+.db-monitor-values .node-runtime-chart {
+  @apply h-16;
+}
+.db-monitor-facts {
+  @apply px-4 py-4;
+}
+.db-inline-notice {
+  @apply px-4 py-3 text-sm text-muted-foreground;
+}
+.db-monitor-footnote {
+  @apply border-t border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground;
+}
+.db-inventory-member {
+  @apply border-b border-border;
+}
+.db-inventory-member:last-child {
+  @apply border-0;
+}
+.db-inventory-member summary {
+  @apply grid cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 px-4 py-3 text-xs;
+  list-style: none;
+}
+.db-inventory-member summary::-webkit-details-marker {
+  display: none;
+}
+.db-inventory-member summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 55%, var(--foreground));
+  outline-offset: -2px;
+}
+.db-inventory-member summary:hover {
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+.db-inventory-name {
+  @apply flex min-w-0 items-center gap-2;
+}
+.db-inventory-name strong {
+  @apply break-all font-mono font-medium;
+}
+.db-inventory-role {
+  @apply text-muted-foreground;
+}
+.db-inventory-node,
+.db-inventory-usage {
+  @apply break-all text-muted-foreground;
+}
+.db-expand-label {
+  @apply text-right text-muted-foreground;
+}
+.db-member-expanded {
+  @apply border-t border-border bg-background/50 px-4 py-4;
+}
+.db-image-id {
+  @apply flex items-start gap-2 font-mono text-xs;
+}
+.db-connection {
+  @apply grid gap-2 border-b border-border px-4 py-3;
+}
+.db-connection:last-child {
+  @apply border-b-0;
+}
+.db-connection dt {
+  @apply flex items-center justify-between gap-2 text-xs font-medium;
+}
+.db-connection dd {
+  @apply flex min-w-0 items-start gap-2 font-mono text-xs leading-relaxed;
+}
+.db-connection code {
+  @apply min-w-0 flex-1 break-all;
+}
+.db-secondary-grid {
+  @apply mt-4 grid items-start gap-4;
+}
+.db-operation {
+  @apply relative grid gap-2 border-b border-border px-4 py-3 text-xs;
+}
+.db-operation:last-child {
+  @apply border-b-0;
+}
+.db-operation-header {
+  @apply flex flex-wrap items-center gap-3;
+}
+.db-operation-header strong {
+  @apply capitalize;
+}
+.db-operation-header time {
+  @apply ml-auto text-muted-foreground;
+}
+.db-operation-meta {
+  @apply flex flex-wrap gap-3 text-muted-foreground;
+}
+.db-catalog {
+  @apply grid gap-4;
+}
+.db-catalog-card {
+  @apply grid min-w-0 gap-4 bg-card p-4;
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--info) 45%, transparent);
+}
+.db-catalog-card[data-engine='redis'] {
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--action) 65%, transparent);
+}
+.db-catalog-card-heading {
+  @apply flex items-start gap-3;
+}
+.db-catalog-card-heading > div {
+  @apply min-w-0 flex-1;
+}
+.db-catalog-card h2 {
+  @apply text-base font-semibold;
+}
+.db-catalog-card h2 a {
+  @apply break-words;
+  overflow-wrap: anywhere;
+}
+.db-catalog-card h2 a:hover {
+  color: var(--action);
+}
+.db-catalog-card h2 a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 55%, var(--foreground));
+  outline-offset: 4px;
+}
+.db-catalog-card-heading p {
+  @apply mt-1 text-xs text-muted-foreground;
+}
+.db-catalog-facts {
+  @apply grid grid-cols-2 gap-2 border-y border-border py-3 sm:grid-cols-3;
+}
+.db-catalog-facts dt {
+  @apply mb-1 text-xs text-muted-foreground;
+}
+.db-catalog-facts dd {
+  @apply min-w-0 break-words font-mono text-sm;
+  overflow-wrap: anywhere;
+}
+.db-catalog-host {
+  @apply break-words text-xs text-muted-foreground;
+  overflow-wrap: anywhere;
+}
+.db-catalog-member-strip {
+  @apply flex flex-wrap items-center gap-2 text-xs text-muted-foreground;
+}
+.db-catalog-member-strip i {
+  @apply size-2 rounded-sm bg-muted-foreground;
+}
+.db-catalog-member-strip i[data-ready='true'] {
+  background: var(--success);
+}
+.db-catalog-footer {
+  @apply flex flex-wrap items-center gap-2 text-xs text-muted-foreground;
+}
+@variant sm {
+  .db-catalog {
+    @apply grid-cols-2;
+  }
+  .db-inspector-facts {
+    @apply grid-cols-4;
+  }
+}
+@variant lg {
+  .db-monitor-values {
+    @apply grid-cols-2;
+  }
+  .db-summary {
+    @apply grid-cols-4;
+  }
+  .db-cockpit-grid {
+    grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr);
+  }
+  .db-secondary-grid {
+    @apply grid-cols-2;
+  }
+  .db-inventory-member summary {
+    grid-template-columns: minmax(150px, 1.2fr) 60px 90px minmax(140px, 1fr) minmax(150px, 1fr) 45px;
+  }
+  .db-catalog {
+    @apply grid-cols-3;
+  }
+}
+@variant xl {
+  .db-catalog {
+    @apply grid-cols-4;
+  }
+}
+@variant 2xl {
+  .db-catalog {
+    @apply grid-cols-5;
+  }
+}
+
+.db-routing-strip {
+  @apply flex flex-wrap gap-x-5 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground;
+}
+.db-topology-toolbar {
+  @apply flex flex-wrap items-end gap-3 border-b border-border px-4 py-3;
+}
+.db-topology-toolbar > .select-field-wrap {
+  @apply w-48 max-w-full;
+}
+.db-topology-search {
+  @apply grid w-64 max-w-full gap-1.5 text-xs text-muted-foreground;
+}
+.db-topology-paging {
+  @apply ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground;
+}
+.db-lane-title {
+  fill: var(--muted);
+  font: 12px var(--font-mono);
+  letter-spacing: 1px;
+}
+.db-lane-divider {
+  stroke: var(--hairline);
+  stroke-dasharray: 3 5;
+}
+.db-application-node,
+.db-endpoint-node {
+  cursor: pointer;
+  outline: none;
+}
+.db-application-box {
+  fill: var(--card);
+  stroke: color-mix(in srgb, var(--foreground) 28%, var(--card));
+}
+.db-node-selected .db-application-box,
+.db-application-node:focus-visible .db-application-box,
+.db-endpoint-node:focus-visible .db-application-box {
+  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+  stroke-width: 2;
+}
+.db-app-title {
+  fill: var(--foreground);
+  font: 12px var(--font-mono);
+}
+.db-app-cube {
+  fill: color-mix(in srgb, var(--info) 18%, var(--card));
+  stroke: var(--info);
+}
+.db-binding-edge,
+.db-route-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--foreground) 22%, var(--card));
+  stroke-width: 1;
+}
+.db-binding-edge-selected {
+  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+  stroke-width: 2;
+}
+.db-route-edge {
+  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+}
+.db-line-key {
+  @apply inline-block w-5 border-t;
+}
+.db-line-key-replication {
+  @apply border-dashed;
+  border-color: var(--info);
+}
+.db-binding-list {
+  @apply grid max-h-64 gap-2 overflow-y-auto;
+}
+.db-binding-detail {
+  @apply grid gap-1 border-b border-border py-2 text-xs [overflow-wrap:anywhere];
+}
+.db-binding-detail strong {
+  @apply font-mono font-normal;
+}
+.db-binding-detail small {
+  @apply text-xs text-muted-foreground;
+}
+
+.db-app-meta {
+  fill: var(--muted);
+  font: 12px var(--font-mono);
+}
+
+.db-line-key-route {
+  border-color: color-mix(in srgb, var(--action) 55%, var(--foreground));
+}
+
+.db-topology-picker {
+  @apply flex flex-wrap items-center gap-2 pt-3;
+}
+.db-topology-picker > .select-field-wrap {
+  @apply min-w-0 flex-1 basis-64;
+}
+
+.db-monitor-controls {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.db-monitor-controls > .select-field-wrap {
+  @apply w-40;
+}

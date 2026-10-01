@@ -1,4 +1,5 @@
 import { useDatabase } from '../lib/databases'
+import { useManagedPlatform } from '../lib/managed-platforms'
 import AccountSettings from './account-settings'
 import { Brand, brandLabel } from './brand'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -214,6 +215,8 @@ function Workspace({
   })
   const databasePath = /^\/databases\/([a-f0-9]{32})(?:\/|$)/.exec(location.pathname)?.[1]
   const database = useDatabase(databasePath)
+  const platformPath = /^\/platforms\/([a-f0-9]{32})(?:\/|$)/.exec(location.pathname)?.[1] || ''
+  const platform = useManagedPlatform(platformPath)
   const buildPath = /^\/builds\/([^/]+)/.exec(location.pathname)?.[1]
   const buildId = buildPath && buildPath !== 'new' ? buildPath : undefined
   const build = useQuery({
@@ -324,8 +327,8 @@ function Workspace({
   try {
     routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
   } catch {}
-  const databaseScopePage = /^\/databases(?:\/(?:new|import))?$/.test(location.pathname)
-  const routeScope = databaseScopePage
+  const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms)$/.test(location.pathname)
+  const routeScope = scopedListPage
     ? resolveProjectRouteScope(
         projects.data?.items,
         typeof location.search.project === 'string' ? location.search.project : '',
@@ -334,8 +337,12 @@ function Workspace({
     : projectPath
       ? resolveProjectRouteScope(projects.data?.items, routeProject, location.search.environment)
       : undefined
-  const resourcePage = Boolean(applicationId || deploymentId || buildId || databasePath)
-  const resourceData = databasePath
+  const resourcePage = Boolean(applicationId || deploymentId || buildId || databasePath || platformPath)
+  const resourceData = platformPath
+    ? platform.isError
+      ? undefined
+      : platform.data
+    : databasePath
     ? database.isError
       ? undefined
       : database.data
@@ -383,6 +390,7 @@ function Workspace({
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
     { to: '/databases', search: { project, environment }, icon: 'database', label: 'Databases' },
+    { to: '/platforms', search: { project, environment }, icon: 'server', label: 'Platforms' },
     { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/requests', icon: 'activity', label: 'Requests' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
@@ -681,7 +689,7 @@ function Workspace({
               overview ||
               projectPath ||
               resourcePage ||
-              databaseScopePage ? (
+              scopedListPage ? (
               children
             ) : !project && projects.isPending ? (
               <Loading />

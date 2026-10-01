@@ -57,7 +57,10 @@ func readRedisReply(in *bufio.Reader, depth int, budget *int) (any, error) {
 		return nil, fmt.Errorf("Redis reply exceeds its limit")
 	}
 	line, err := in.ReadSlice('\n')
-	if err != nil || len(line) < 3 || line[len(line)-2] != '\r' {
+	if err != nil {
+		return nil, fmt.Errorf("Redis reply transport failed: %w", err)
+	}
+	if len(line) < 3 || line[len(line)-2] != '\r' {
 		return nil, fmt.Errorf("Redis reply framing is invalid")
 	}
 	*budget -= len(line)
@@ -87,7 +90,10 @@ func readRedisReply(in *bufio.Reader, depth int, budget *int) (any, error) {
 			}
 			buf := make([]byte, n+2)
 			*budget -= len(buf)
-			if _, err := io.ReadFull(in, buf); err != nil || !bytes.Equal(buf[n:], []byte("\r\n")) {
+			if _, err := io.ReadFull(in, buf); err != nil {
+				return nil, fmt.Errorf("Redis bulk reply transport failed: %w", err)
+			}
+			if !bytes.Equal(buf[n:], []byte("\r\n")) {
 				return nil, fmt.Errorf("Redis bulk reply is truncated")
 			}
 			return buf[:n], nil

@@ -154,8 +154,11 @@ class BootstrapVersionTests(unittest.TestCase):
             state = dict(source_revision='a' * 40, source_dirty=False)
             with patch.object(builder, 'ROOT', root), patch.object(builder, 'git_source_state', return_value=state), \
                     patch.object(builder, 'package_runtime', return_value=0), \
+                    patch.object(builder.subprocess, 'run') as build_controllers, \
                     patch('sys.argv', ['build-installer.py', '--version', VERSION, '--release-dir', str(inputs), '--use-existing-dist']):
                 builder.main()
+            self.assertEqual(build_controllers.call_count, 1)
+            self.assertIn('--include-vitess', build_controllers.call_args.args[0])
             output = root / '.local/installer-artifacts' / VERSION
             self.assertEqual(bootstrap.verify_artifacts(output, VERSION), VERSION)
             provenance = json.loads((output / 'installer-provenance.json').read_text())

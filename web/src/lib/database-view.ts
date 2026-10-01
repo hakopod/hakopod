@@ -1,0 +1,80 @@
+import type { ManagedDatabase, DatabaseSpec } from './databases'
+import { runnerReservation } from './runner-resources'
+import { metricSampleAge, metricsStaleAfter } from './runtime-metrics'
+
+export const expectedMembers = (spec: DatabaseSpec) => spec.shards * (1 + spec.replicas)
+export const databaseCapacity = (spec: DatabaseSpec, members = expectedMembers(spec)) =>
+  runnerReservation({ cpu_request: spec.cpu, memory_request: spec.memory }, members)
+export const poolerInstances = (spec: DatabaseSpec) => spec.pooling ? spec.pooling.instances * (spec.pooling.read_only ? 2 : 1) : 0
+export const routerInstances = (spec: DatabaseSpec) => spec.engine === 'mysql' ? spec.mode === 'standalone' ? 1 : 2 : 0
+export const keeperInstances = (spec: DatabaseSpec) => spec.engine === 'clickhouse' && spec.mode === 'cluster' ? 3 : 0
+export const vitessGateways = (spec: DatabaseSpec) => spec.engine === 'vitess' ? spec.mode === 'standalone' ? 1 : 2 : 0
+export const vitessTopologyMembers = (spec: DatabaseSpec) => spec.engine === 'vitess' ? 3 : 0
+export const oracleBrokerInstances = (spec: DatabaseSpec) => spec.engine === 'oracle' && spec.oracle?.edition === 'enterprise' && spec.mode === 'cluster' ? 1 : 0
+export const placementDomains = (spec: DatabaseSpec) => Math.max(expectedMembers(spec), spec.pooling?.instances || 0, keeperInstances(spec), vitessTopologyMembers(spec))
+export const shardedDatabase = (engine: string) => ['redis', 'clickhouse', 'vitess'].includes(engine)
+export const votingDatabase = (engine: string) => engine === 'mysql' || engine === 'mongodb'
+export const databaseStorageGiB = (spec: DatabaseSpec) => (spec.storage_gib * (spec.engine === 'oracle' && spec.oracle?.edition === 'enterprise' ? 3 : ['clickhouse', 'oracle'].includes(spec.engine) ? 2 : 1) + (spec.engine === 'mongodb' ? 1 : 0)) * expectedMembers(spec) + keeperInstances(spec) + vitessTopologyMembers(spec) + (spec.engine === 'vitess' ? 2 * spec.shards * spec.storage_gib : 0)
+export const oracleFreeQuotaGiB = (storageGiB: number) => Math.max(0, Math.min(10, storageGiB - 8))
+export const databaseLayoutSummary = (spec: DatabaseSpec) => spec.engine === 'vitess' ? `${spec.shards} ${spec.shards === 1 ? 'shard' : 'shards'} · ${expectedMembers(spec)} tablets · ${vitessGateways(spec)} ${vitessGateways(spec) === 1 ? 'gateway' : 'gateways'}` : spec.mode === 'standalone' ? 'Standalone · 1 member' : spec.engine === 'clickhouse' ? `${spec.shards} shards · ${spec.replicas + 1} copies per shard · 3 Keeper members` : spec.engine === 'redis' ? `${spec.shards} shards · ${spec.replicas} replicas per shard` : `1 primary · ${spec.replicas} ${spec.replicas === 1 ? 'replica' : 'replicas'}`
+export function databaseMemberCapacity(spec: DatabaseSpec) {
+  const capacity = databaseCapacity(spec)
+  return capacity && (votingDatabase(spec.engine) || spec.engine === 'vitess') ? { ...capacity, cpu: capacity.cpu + expectedMembers(spec) * 0.1, memoryMiB: capacity.memoryMiB + expectedMembers(spec) * 256 } : capacity
+}
+export function databaseRequestedCapacity(spec: DatabaseSpec) {
+  const capacity = databaseMemberCapacity(spec)
+  if (!capacity) return null
+  const poolers = poolerInstances(spec)
+  if (spec.engine === 'vitess') return { ...capacity, cpu: capacity.cpu + vitessGateways(spec) * 0.25 + (spec.shards + 6) * 0.1, memoryMiB: capacity.memoryMiB + vitessGateways(spec) * 256 + (spec.shards + 1) * 128 + 3 * 256 + 256 + 128 }
+  return { ...capacity, cpu: capacity.cpu + (poolers + keeperInstances(spec)) * 0.25 + routerInstances(spec) * 0.1 + oracleBrokerInstances(spec) * 0.1, memoryMiB: capacity.memoryMiB + (poolers + keeperInstances(spec)) * 256 + routerInstances(spec) * 128 + oracleBrokerInstances(spec) * 256 }
+}
+export const engineName = (engine: string) => ({ postgresql: 'PostgreSQL', redis: 'Redis', mysql: 'MySQL', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess' })[engine] || engine
+export const endpointName = (purpose: string, engine?: string) => engine === 'vitess' && ['read_write', 'read_only'].includes(purpose) ? purpose === 'read_only' ? 'vtgate · app@replica' : 'vtgate · app@primary' : engine === 'clickhouse' && purpose === 'cluster' ? 'Cluster endpoint' :
+  ({ read_write: 'Read / write', read_only: 'Read only', cluster: 'Cluster discovery', pooled_read_write: 'Pooled write', pooled_read_only: 'Pooled read' })[purpose] ||
+  purpose.replaceAll('_', ' ')
+export const endpointAddress = (endpoint: { host: string; port: number; purpose: string }, engine: string) => `${endpoint.host}:${endpoint.port}${engine === 'vitess' ? endpoint.purpose === 'read_only' ? '/app@replica' : '/app@primary' : ''}`
+
+export function databaseMetricAge(sampledAt: string | undefined, observedAt: string, receivedAt: number, now: number) {
+  const age = metricSampleAge(sampledAt, observedAt, receivedAt, now)
+  const observed = Date.parse(observedAt)
+  if (age === null || !Number.isFinite(observed) || observed > now) return null
+  return age + Math.max(0, receivedAt - observed)
+}
+
+export function metricAvailable(
+  metrics: ManagedDatabase['observation']['metrics'],
+  observedAt: string,
+  receivedAt: number,
+  now: number,
+) {
+  const age = databaseMetricAge(metrics?.sampled_at, observedAt, receivedAt, now)
+  return Boolean(
+    metrics?.available &&
+    Number.isInteger(metrics.pods_expected) && metrics.pods_expected > 0 &&
+    metrics.pods_sampled === metrics.pods_expected &&
+    now - Date.parse(observedAt) <= 30_000 &&
+    Date.parse(observedAt) <= now &&
+    age !== null &&
+    age <= metricsStaleAfter &&
+    (metrics.cpu_millicores ?? -1) >= 0 &&
+    (metrics.memory_bytes ?? -1) >= 0 &&
+    Number.isFinite(metrics.cpu_millicores) &&
+    Number.isFinite(metrics.memory_bytes),
+  )
+}
+export function topologyGroups(d: ManagedDatabase) {
+  const members = d.observation.members || []
+  if (!shardedDatabase(d.spec.engine) || d.spec.mode !== 'cluster')
+    return [{ id: 'database', label: 'Database', members }]
+  const ids = [
+    ...new Set(members.map((m) => m.shard).filter((id): id is string => Boolean(id))),
+  ].sort()
+  const groups = ids.map((id) => ({
+    id,
+    label: `Shard ${id.slice(0, 10)}`,
+    members: members.filter((m) => m.shard === id),
+  }))
+  const unknown = members.filter((m) => !m.shard)
+  if (unknown.length) groups.push({ id: 'unknown', label: 'Unassigned', members: unknown })
+  return groups
+}

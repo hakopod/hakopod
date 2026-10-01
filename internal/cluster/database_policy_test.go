@@ -16,7 +16,7 @@ import (
 func developmentDatabaseOptions(t *testing.T) Options {
 	t.Helper()
 	if os.Getenv("HAKOPOD_TEST_HOSTED_DATABASES") != "1" {
-		return Options{}
+		return Options{ClickHouseSandbox: os.Getenv("HAKOPOD_TEST_CLICKHOUSE_SANDBOX") == "1"}
 	}
 	return Options{DatabasePolicy: func(context.Context, string, string, database.Spec) (DatabasePolicy, error) {
 		return DatabasePolicy{NodeName: "k3d-hakopod-dev-agent-0", Pool: "free", RuntimeClass: "runsc", StorageClass: "hakopod-hosted-development"}, nil
@@ -59,8 +59,16 @@ func TestDatabasePolicyRequiresVerifiedSandboxAndPinsControllers(t *testing.T) {
 				path = append(path, "redisLeader")
 			}
 			selector, _, _ := unstructured.NestedStringMap(object.Object, append(path, "nodeSelector")...)
-			if selector["kubernetes.io/hostname"] != "worker" || selector[DatabaseDefaultRuntimeLabel] != "runsc" {
+			if selector[DatabaseDefaultRuntimeLabel] != "runsc" || selector["hakopod.com/pool"] != "free" {
 				t.Fatal("controller escaped sandbox worker", selector)
+			}
+			affinityPath := append(path, "affinity", "nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution", "nodeSelectorTerms")
+			if engine == "postgresql" {
+				affinityPath = []string{"spec", "affinity", "nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution", "nodeSelectorTerms"}
+			}
+			terms, _, _ := unstructured.NestedSlice(object.Object, affinityPath...)
+			if len(terms) != 1 {
+				t.Fatal("controller node restriction is missing")
 			}
 		}
 	}

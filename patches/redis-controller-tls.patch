@@ -1,0 +1,101 @@
+--- a/internal/k8sutils/redis.go
++++ b/internal/k8sutils/redis.go
+@@ -454,7 +454,6 @@
+ 			cmd = append(cmd, "--cacert")
+ 			cmd = append(cmd, "/tls/"+caFile)
+ 		}
+-		cmd = append(cmd, "--insecure")
+ 	}
+ 	return cmd
+ }
+--- a/internal/k8sutils/secrets.go
++++ b/internal/k8sutils/secrets.go
+@@ -32,15 +32,18 @@
+ }
+ 
+ func getRedisTLSConfig(ctx context.Context, client kubernetes.Interface, namespace string, tlsConfig *commonapi.TLSConfig) *tls.Config {
+-	if tlsConfig == nil || tlsConfig.Secret.SecretName == "" {
++	if tlsConfig == nil {
+ 		return nil
++	}
++	if tlsConfig.Secret.SecretName == "" {
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	tlsSecretName := tlsConfig.Secret.SecretName
+-	secret, err := client.CoreV1().Secrets(namespace).Get(context.TODO(), tlsSecretName, metav1.GetOptions{})
++	secret, err := client.CoreV1().Secrets(namespace).Get(ctx, tlsSecretName, metav1.GetOptions{})
+ 	if err != nil {
+ 		logf.FromContext(ctx).Error(err, "Failed in getting TLS secret", "secretName", tlsSecretName, "namespace", namespace)
+-		return nil
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	caFile, certFile, keyFile := getTLSSecretKeys(tlsConfig)
+@@ -50,19 +53,19 @@
+ 
+ 	if !certExists || !keyExists {
+ 		logf.FromContext(ctx).Error(errors.New("required TLS cert or key is missing in the secret"), "Missing TLS cert/key in the secret")
+-		return nil
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	cert, err := tls.X509KeyPair(tlsClientCert, tlsClientKey)
+ 	if err != nil {
+ 		logf.FromContext(ctx).Error(err, "Couldn't load TLS client key pair", "secretName", tlsSecretName, "namespace", namespace)
+-		return nil
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	// If user explicitly set CA key and it is missing, treat this as misconfiguration.
+ 	if !caExists && tlsConfig.CaCertFile != "" {
+ 		logf.FromContext(ctx).Error(errors.New("configured TLS CA key file is missing in the secret"), "Missing configured TLS CA in the secret", "caKeyFile", tlsConfig.CaCertFile)
+-		return nil
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	if !caExists {
+@@ -70,7 +73,7 @@
+ 		systemCertPool, err := x509.SystemCertPool()
+ 		if err != nil {
+ 			logf.FromContext(ctx).Error(err, "Failed to load system certificate pool", "secretName", tlsSecretName)
+-			return nil
++			return rejectedRedisTLSConfig()
+ 		}
+ 		return newTLSConfigVerifyingChainWithoutHostname(cert, systemCertPool)
+ 	}
+@@ -79,10 +82,15 @@
+ 	ok := tlsCaCertificates.AppendCertsFromPEM(tlsCaCertificate)
+ 	if !ok {
+ 		logf.FromContext(ctx).Error(errors.New("invalid CA certificate"), "Invalid CA Certificates", "secretName", tlsSecretName, "namespace", namespace)
+-		return nil
++		return rejectedRedisTLSConfig()
+ 	}
+ 
+ 	return newTLSConfigVerifyingChainWithoutHostname(cert, tlsCaCertificates)
++}
++
++// A configured TLS connection must never fall back to sending AUTH in plaintext.
++func rejectedRedisTLSConfig() *tls.Config {
++ return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: x509.NewCertPool()}
+ }
+ 
+ // newTLSConfigVerifyingChainWithoutHostname builds a client *tls.Config that
+--- a/internal/agent/bootstrap/redis/config.go
++++ b/internal/agent/bootstrap/redis/config.go
+@@ -100,6 +100,15 @@
+ 				cfg.Append("cluster-announce-hostname", fqdnName)
+ 			}
+ 		}
++		// Hakopod advertises scoped .svc names so clients can verify member
++		// identities independently of the cluster's configured DNS domain.
++		if suffix := os.Getenv("HAKOPOD_REDIS_DNS_SUFFIX"); suffix != "" {
++			name, err := os.Hostname()
++			if err != nil { return err }
++			index := strings.LastIndex(name, "-")
++			if index < 1 { return fmt.Errorf("invalid Redis member hostname") }
++			cfg.Append("cluster-announce-hostname", name+"."+name[:index]+"-headless"+suffix)
++		}
+ 	} else {
+ 		fmt.Println("Setting up redis in standalone mode")
+ 	}

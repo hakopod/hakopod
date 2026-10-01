@@ -38,9 +38,9 @@ func Start(ctx context.Context, server *api.Server, domain string, rollout time.
 		db.ProtectedDomains = append(db.ProtectedDomains, strings.ToLower(dashboard.Hostname()))
 	}
 	handler := server.Handler()
-	worker := &worker.Worker{Store: db, Cluster: kube, Concurrency: 2, Timeout: rollout*3 + time.Minute}
+	worker := &worker.Worker{Store: db, Cluster: kube, ManagedPlatforms: server.ManagedPlatformRuntime, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunManagedDatabases, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests, server.RunActions} {
+	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunPlatformRecovery, server.RunManagedDatabases, server.RunExternalDatabases, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunRequests, server.RunActions} {
 		wg.Add(1)
 		go func(run func(context.Context)) { defer wg.Done(); run(ctx) }(run)
 	}

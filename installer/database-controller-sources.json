@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "postgresql": {
+    "url": "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml",
+    "sha256": "37237f145d8138256ea25ae830f87759255665ff08f8d552fdd8224a5ec032fb",
+    "image": "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"
+  },
+  "redis": {
+    "url": "https://ot-container-kit.github.io/helm-charts/redis-operator-0.26.0.tgz",
+    "sha256": "75c22256179e2d2e58bb9df23ffff3b69a90db0d7fe1384099bcf220a70c090b",
+    "source": "c5017206e75f7743d79e82db47ec8c39d7410816"
+  },
+  "mysql": {
+    "base": "https://raw.githubusercontent.com/mysql/mysql-operator/fd5c6bcf4bc3778dc4cb324c69053cac58e632ac/deploy/",
+    "files": {
+      "deploy-crds.yaml": "c706530ddef7192fb7383f5445aa169475c6ae2e4961a8f130f890efd99d23ce",
+      "deploy-operator.yaml": "115497b7e6b55e141b942b45f8dc1a4669fd5cb4381c06a873cfb454e3c5148d"
+    },
+    "image_sha256": "01ecaa57bf952850ff9ffd7caeb231a9c3335764fdb12488f132ea4605d8f364"
+  },
+  "mongodb": {
+    "base": "https://raw.githubusercontent.com/mongodb/mongodb-kubernetes/75fa89bca8c1395a1beb0f244723f255f67f8719/",
+    "files": {
+      "config/crd/bases/mongodb.com_mongodbsearch.yaml": "66bd0337d42b84388a1d7a41ce03fe400350d93130a9f941bc98cc6f77b55e01",
+      "config/crd/bases/mongodbcommunity.mongodb.com_mongodbcommunity.yaml": "92e68cbb8c40c8a67c04a7f9d0c2c6fe0f707f0fed94161cd8d0846f975a79c1",
+      "helm_chart/Chart.yaml": "4f4ec1dc11e61fd2fa810ff9599ef945fd6463f357e1b05337d464bd77beca49",
+      "helm_chart/templates/_helpers.tpl": "7ca373988aa34e96a94d7785e7be6b65326ab8111882a586f6547f2c015fb1e3",
+      "helm_chart/templates/database-roles.yaml": "0a834ca7a64149a24ee8906ad94c3befb8ff0481000ecf35f5afd708076086b1",
+      "helm_chart/templates/mongodbcommunity_cr_with_tls.yaml": "2a6c3f119a961533c12a4a8e1157bfa2df3531a5e6645d04220192ced805375d",
+      "helm_chart/templates/operator-roles-base.yaml": "f79ad6abaf222302d72a51648cf41947d3bb1576866dcd7bcbc4a88b2ce9d25f",
+      "helm_chart/templates/operator-roles-clustermongodbroles.yaml": "4dcaed8e0593e92b4f6810aacf28f7e0d68ba1ca20b8cfa60abe5c87df847202",
+      "helm_chart/templates/operator-roles-pvc-resize.yaml": "dbf4da952946db0866648525aafb9a4a10def047a673e6d93ee3381992e803df",
+      "helm_chart/templates/operator-roles-telemetry.yaml": "f18050f1b22b54c1e112de0ecdfc967a6b8b54be86778f273fa9aa733ff26a23",
+      "helm_chart/templates/operator-roles-webhook.yaml": "eeb3bb5def95823444f6c847d757d49416898f053f4050074b352280594805c0",
+      "helm_chart/templates/operator-sa.yaml": "d40e51a3af87c60473cd110a47a7259a9fe3c653700623ef075bbabc049232d3",
+      "helm_chart/templates/operator.yaml": "08b73ab9d168e70c2f115d2ac31b615350f2435c1d5906911dcf7595dcc682ee",
+      "helm_chart/templates/secret-config.yaml": "8c8bca9c959d9684e1b2261611f6afc6fea81674c7d77b66ab7e73e04341052b",
+      "helm_chart/values.yaml": "04f2e24d11c23bb91b298446ccdbb4b0b82fdbb0ca9913fa3ab223f0c18db1d4"
+    }
+  },
+  "clickhouse": {
+    "url": "https://raw.githubusercontent.com/Altinity/clickhouse-operator/release-0.27.4/deploy/operator/clickhouse-operator-install-bundle.yaml",
+    "sha256": "ec58d6c9215d4c8a6edbd8d55e720d7a3eb9643d7eda6fca1c62df286a8856b3",
+    "image": "docker.io/altinity/clickhouse-operator:0.27.4@sha256:c60c872fedd85017f843167dfdd2b900bb06b668a3deaf02b21782e59af859e3"
+  }
+}

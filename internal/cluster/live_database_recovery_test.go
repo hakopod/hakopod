@@ -13,11 +13,10 @@ import (
 
 	"github.com/hakopod/hakopod/internal/database"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func liveRecoveryClient(t *testing.T) (*Client, context.Context) {
+func liveRecoveryClient(t *testing.T, lifetime ...time.Duration) (*Client, context.Context) {
 	t.Helper()
 	if os.Getenv("HAKOPOD_DATABASE_RECOVERY_TEST") != "1" {
 		t.Skip("set HAKOPOD_DATABASE_RECOVERY_TEST=1 for named development cluster acceptance")
@@ -31,7 +30,11 @@ func liveRecoveryClient(t *testing.T) (*Client, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	duration := 15 * time.Minute
+	if len(lifetime) > 0 {
+		duration = lifetime[0]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	t.Cleanup(cancel)
 	return c, ctx
 }
@@ -42,7 +45,7 @@ func TestManagedRedisRecoveryLive(t *testing.T) {
 	connect := func(d database.Resource, o database.Observation) *database.RedisWire {
 		t.Helper()
 		member := o.Members[0]
-		conn, closeForward, err := c.databaseRedisConnection(ctx, DatabaseNamespace(d.ID), member.Name, types.UID(member.UID))
+		conn, closeForward, err := c.databaseRedisMemberConnection(ctx, d, member)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,15 +116,80 @@ func TestManagedRedisRecoveryLive(t *testing.T) {
 	if got := command(src, []byte("GET"), []byte("after-capture")); string(got.([]byte)) != "source-only" {
 		t.Fatal("source changed")
 	}
+	testRecoveryIngressGates(t, ctx, c, target)
+}
+
+// This checks the applied Kubernetes policy at each durable recovery gate.
+// Engine data checks and client transport checks remain separate assertions.
+func testRecoveryIngressGates(t *testing.T, ctx context.Context, c *Client, d database.Resource) {
+	t.Helper()
+	check := func(want bool) {
+		t.Helper()
+		policy, err := c.kube.NetworkingV1().NetworkPolicies(DatabaseNamespace(d.ID)).Get(ctx, "database", metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		open := false
+		for _, rule := range policy.Spec.Ingress {
+			for _, peer := range rule.From {
+				open = open || peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels["hakopod.io/database-access-"+d.ID] == "true"
+			}
+		}
+		if open != want {
+			t.Fatal("database application ingress disagrees with recovery completion and inspection")
+		}
+	}
+	if d.Recovery == nil {
+		t.Fatal("recovery acceptance is missing its durable job identity")
+	}
+	check(false)
+	stamp := time.Now().UTC()
+	d.Status, d.Recovery.RestoredAt = "ready", &stamp
+	if err := c.databaseNetworkPolicy(ctx, d, func() error { return ctx.Err() }); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ReconcileDatabaseRecoveryAccess(ctx, d, func() error { return ctx.Err() }); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
+	d.Recovery.InspectedAt = &stamp
+	if err := c.ReconcileDatabaseRecoveryAccess(ctx, d, func() error { return ctx.Err() }); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
 }
 
 func newRecoveryFixture(t *testing.T, ctx context.Context, c *Client, engine, version string, clustered ...bool) (database.Resource, database.Observation) {
+	return newRecoveryFixtureConfigured(t, ctx, c, engine, version, nil, clustered...)
+}
+
+func developmentRecoveryFixtureNodes(t *testing.T) []string {
+	t.Helper()
+	value := os.Getenv("HAKOPOD_DATABASE_FIXTURE_NODES")
+	if value == "" {
+		return nil
+	}
+	nodes := strings.Split(value, ",")
+	seen := make(map[string]bool, len(nodes))
+	for _, node := range nodes {
+		if (node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0") || seen[node] {
+			t.Fatal("recovery fixtures require distinct dedicated database development nodes")
+		}
+		seen[node] = true
+	}
+	return nodes
+}
+
+func newRecoveryFixtureConfigured(t *testing.T, ctx context.Context, c *Client, engine, version string, configure func(*database.Spec), clustered ...bool) (database.Resource, database.Observation) {
 	t.Helper()
 	random := make([]byte, 32)
 	if _, err := rand.Read(random); err != nil {
 		t.Fatal(err)
 	}
 	d := database.Resource{ID: hex.EncodeToString(random[:16]), Project: "demo", Environment: "development", Revision: 1, Spec: database.Spec{SchemaVersion: 1, Name: "database-recovery-development-fixture", Engine: engine, Version: version, Mode: "standalone", Shards: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1}}
+	if os.Getenv("HAKOPOD_DATABASE_TLS_TEST") == "1" {
+		d.Spec.TLS = &database.TLSConfig{Mode: "required"}
+	}
 	if len(clustered) > 0 && clustered[0] {
 		d.Spec.Mode = "cluster"
 		d.Spec.Replicas = 1
@@ -130,11 +198,33 @@ func newRecoveryFixture(t *testing.T, ctx context.Context, c *Client, engine, ve
 			d.Spec.Memory = "128Mi"
 		}
 	}
+	if configure != nil {
+		configure(&d.Spec)
+	}
+	if nodes := developmentRecoveryFixtureNodes(t); len(nodes) > 0 {
+		d.Spec.Placement.NodeNames = nodes
+	}
 	t.Logf("development fixture namespace %s", DatabaseNamespace(d.ID))
 	t.Cleanup(func() {
-		cleanup, stop := context.WithTimeout(context.Background(), time.Minute)
+		if t.Failed() && os.Getenv("HAKOPOD_KEEP_DATABASE_FIXTURES") == "1" {
+			return
+		}
+		cleanup, stop := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer stop()
-		_, _ = c.DeleteDatabase(cleanup, d, func() error { return nil })
+		for cleanup.Err() == nil {
+			done, err := c.DeleteDatabase(cleanup, d, func() error { return cleanup.Err() })
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if done {
+				return
+			}
+			if sleepContext(cleanup, 2*time.Second) != nil {
+				break
+			}
+		}
+		t.Error("recovery fixture deletion did not finish reclaiming its resources")
 	})
 	if err := c.ApplyDatabase(ctx, d, []byte(hex.EncodeToString(random)), func() error { return nil }); err != nil {
 		t.Fatal(err)
@@ -169,6 +259,7 @@ func TestManagedPostgresRecoveryAndUpgradeLive(t *testing.T) {
 	for _, version := range []string{"17", "18"} {
 		t.Run("restore-17-to-"+version, func(t *testing.T) {
 			target, health := newRecoveryFixture(t, ctx, c, "postgresql", version)
+			target.Status, target.Recovery = "restoring", &database.Recovery{JobID: source.ID}
 			if err := c.RestorePostgresDatabase(ctx, target, health, bytes.NewReader(archive.Bytes())); err != nil {
 				t.Fatal(err)
 			}
@@ -184,6 +275,7 @@ func TestManagedPostgresRecoveryAndUpgradeLive(t *testing.T) {
 			if got := query(source, sourceHealth, "SELECT count(*) FROM recovery_acceptance"); got != "2" {
 				t.Fatal("source changed during separate-target recovery")
 			}
+			testRecoveryIngressGates(t, ctx, c, target)
 		})
 	}
 }

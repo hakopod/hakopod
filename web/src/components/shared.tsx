@@ -163,14 +163,22 @@ export function Loading({ rows = 3 }: { rows?: number }) {
     </div>
   )
 }
-export function Copy({ value, label }: { value: string; label?: string }) {
+export function Copy({
+  value,
+  label,
+  iconOnly = false,
+}: {
+  value: string
+  label?: string
+  iconOnly?: boolean
+}) {
   const [copied, setCopied] = useState(false)
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timeout.current), [])
   return (
     <Button
       type="button"
-      size={label ? 'sm' : 'icon'}
+      size={label && !iconOnly ? 'sm' : 'icon'}
       variant="ghost"
       title="Copy to clipboard"
       aria-label={copied ? 'Copied' : label || 'Copy to clipboard'}
@@ -186,7 +194,7 @@ export function Copy({ value, label }: { value: string; label?: string }) {
       }}
     >
       <Icon name={copied ? 'check' : 'copy'} size={14} />
-      {label && (copied ? 'Copied' : label)}
+      {label && !iconOnly && (copied ? 'Copied' : label)}
     </Button>
   )
 }

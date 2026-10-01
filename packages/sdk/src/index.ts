@@ -17,13 +17,20 @@ import {
   BackupRun,
   DatabaseRef,
   DatabaseRun,
+  DatabasePublicEndpointRun,
   DeploymentRun,
   NetworkRef,
+  ManagedPlatformRef,
+  ManagedPlatformRun,
   planApplication,
   scope,
 } from "./resources.js";
 import type { Context, PlanOptions } from "./resources.js";
 import { HakopodError } from "./errors.js";
+import { ExternalDatabaseRef, ExternalDatabaseRun } from "./external-databases.js";
+
+export { ExternalDatabaseRef, ExternalDatabaseRun } from "./external-databases.js";
+export type { ExternalDatabaseCredentials } from "./external-databases.js";
 
 export * from "./errors.js";
 export * from "./types.js";
@@ -36,8 +43,11 @@ export {
   BackupRun,
   DatabaseRef,
   DatabaseRun,
+  DatabasePublicEndpointRun,
   DeploymentRun,
   NetworkRef,
+  ManagedPlatformRef,
+  ManagedPlatformRun,
   Review,
   ServiceRef,
 } from "./resources.js";
@@ -143,6 +153,38 @@ export class Hakopod {
       query: scope(this.#context),
     });
   }
+  listManagedPlatforms(options: RequestOptions = {}) {
+    return this.request("GET", "/managed-platforms", { ...options, query: this.#context.scope ?? {} });
+  }
+  reviewManagedPlatform(spec: Schema["ManagedPlatformSpec"], options: RequestOptions = {}) {
+    const selected = scope(this.#context);
+    return this.request("POST", "/managed-platforms/reviews", {
+      ...options,
+      body: { ...selected, expected_revision: 0, kind: "create", spec },
+    });
+  }
+  acceptManagedPlatform(intent: Schema["ManagedPlatformAcceptIntent"], options: RequestOptions & { idempotencyKey: string }) {
+    return this.request("POST", "/managed-platforms/operations", {
+      ...options,
+      idempotencyKey: required(options.idempotencyKey, "idempotencyKey"),
+      body: intent,
+    });
+  }
+  managedPlatform(id: string): ManagedPlatformRef {
+    return new ManagedPlatformRef(this.#context, id);
+  }
+  managedPlatformOperation(id: string): ManagedPlatformRun {
+    return new ManagedPlatformRun(this.#context, id);
+  }
+  databasePlacementNodes(options: RequestOptions = {}) {
+    return this.request("GET", "/database-placement/nodes", {
+      ...options,
+      query: scope(this.#context),
+    });
+  }
+  listExternalDatabases(options: RequestOptions = {}) {
+    return this.request("GET", "/external-databases", { ...options, query: scope(this.#context) });
+  }
   listNetworks(options: RequestOptions = {}) {
     return this.request("GET", "/virtual-networks", {
       ...options,
@@ -169,6 +211,16 @@ export class Hakopod {
   database(id: string): DatabaseRef {
     return new DatabaseRef(this.#context, { id });
   }
+  externalDB(name: string): ExternalDatabaseRef {
+    scope(this.#context);
+    return new ExternalDatabaseRef(this.#context, { name });
+  }
+  externalDatabase(id: string): ExternalDatabaseRef {
+    return new ExternalDatabaseRef(this.#context, { id });
+  }
+  externalDatabaseOperation(databaseId: string, operationId: string): ExternalDatabaseRun {
+    return new ExternalDatabaseRun(this.#context, operationId, databaseId);
+  }
   network(name: string): NetworkRef {
     scope(this.#context);
     return new NetworkRef(this.#context, name);
@@ -178,6 +230,9 @@ export class Hakopod {
   }
   databaseOperation(databaseId: string, operationId: string): DatabaseRun {
     return new DatabaseRun(this.#context, operationId, databaseId);
+  }
+  databasePublicEndpointOperation(databaseId: string, endpointId: string, operationId: string): DatabasePublicEndpointRun {
+    return new DatabasePublicEndpointRun(this.#context, operationId, databaseId, endpointId);
   }
   backup(id: string): BackupRun {
     return new BackupRun(this.#context, id);

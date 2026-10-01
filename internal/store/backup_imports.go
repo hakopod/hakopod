@@ -49,6 +49,9 @@ func (s *Store) PrepareBackupImport(ctx context.Context, p Principal, input back
 	if err = tx.QueryRow(ctx, "SELECT revision FROM backup_destinations WHERE id=$1 FOR SHARE", input.DestinationID).Scan(&d.Revision); err != nil {
 		return backup.Import{}, err
 	}
+	if err = vitessDestinationUnusedTx(ctx, tx, input.DestinationID); err != nil {
+		return backup.Import{}, err
+	}
 	var global int
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM backup_imports WHERE status IN ('pending','uploading','cleaning')").Scan(&global); err != nil {
 		return backup.Import{}, err

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
@@ -14,7 +13,7 @@ import (
 )
 
 const databaseCols = `id,project,environment,revision,spec,status,observation,created_at,updated_at,deleted_at,credentials,recovery`
-const databaseOperationCols = `id,database_id,revision,kind,status,phase,message,spec,created_at,started_at,finished_at,identity_id,key_id,lease,review`
+const databaseOperationCols = `id,database_id,revision,kind,status,phase,message,spec,created_at,started_at,finished_at,identity_id,key_id,lease,review,switchover`
 
 func scanDatabase(row scanner) (database.Resource, error) {
 	var d database.Resource
@@ -23,7 +22,7 @@ func scanDatabase(row scanner) (database.Resource, error) {
 }
 func scanDatabaseOperation(row scanner) (database.Operation, error) {
 	var o database.Operation
-	err := row.Scan(&o.ID, &o.DatabaseID, &o.Revision, &o.Kind, &o.Status, &o.Phase, &o.Message, &o.Spec, &o.CreatedAt, &o.StartedAt, &o.FinishedAt, &o.IdentityID, &o.KeyID, &o.Lease, &o.Review)
+	err := row.Scan(&o.ID, &o.DatabaseID, &o.Revision, &o.Kind, &o.Status, &o.Phase, &o.Message, &o.Spec, &o.CreatedAt, &o.StartedAt, &o.FinishedAt, &o.IdentityID, &o.KeyID, &o.Lease, &o.Review, &o.Switchover)
 	return o, err
 }
 func (p Principal) AllowsDatabase(project, environment string, write bool) bool {
@@ -122,6 +121,9 @@ func (s *Store) AcceptDatabaseResize(ctx context.Context, p Principal, d databas
 	return s.acceptDatabase(ctx, p, d, expected, idem, "resize", reviewID)
 }
 func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Resource, expected int64, idem, kind, reviewID string) (database.Operation, error) {
+	if expected == 0 && kind == "create" {
+		d.Spec = d.Spec.WithSecureDefaults()
+	}
 	if !p.AllowsDatabase(d.Project, d.Environment, true) {
 		return database.Operation{}, ErrForbidden
 	}
@@ -178,6 +180,22 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 	if current.Revision != expected || current.DeletedAt != nil {
 		return database.Operation{}, ErrConflict
 	}
+	if current.ID != "" {
+		var maintaining bool
+		if err = tx.QueryRow(ctx, "SELECT COALESCE(maintenance_lease_until>now(),false) FROM managed_databases WHERE id=$1", current.ID).Scan(&maintaining); err != nil {
+			return database.Operation{}, err
+		}
+		if maintaining {
+			return database.Operation{}, fmt.Errorf("%w: database certificate maintenance is in progress; retry the reviewed operation", ErrConflict)
+		}
+		var publicEndpointBusy bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM managed_database_public_endpoint_operations WHERE database_id=$1 AND status IN ('queued','running'))", current.ID).Scan(&publicEndpointBusy); err != nil {
+			return database.Operation{}, err
+		}
+		if publicEndpointBusy {
+			return database.Operation{}, fmt.Errorf("%w: a database public endpoint operation is in progress", ErrConflict)
+		}
+	}
 	var review *database.ResizePlan
 	if kind == "resize" {
 		var plan database.ResizePlan
@@ -188,7 +206,7 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 			}
 			return database.Operation{}, err
 		}
-		if !reflect.DeepEqual(plan.Current, current.Spec) || !reflect.DeepEqual(plan.Proposed, d.Spec) || plan.ExpectedRevision != expected || len(plan.BlockedReasons) > 0 || !plan.ExpiresAt.After(time.Now()) {
+		if !plan.Current.Equal(current.Spec) || !plan.Proposed.Equal(d.Spec) || plan.ExpectedRevision != expected || len(plan.BlockedReasons) > 0 || !plan.ExpiresAt.After(time.Now()) {
 			return database.Operation{}, ErrConflict
 		}
 		if _, err = tx.Exec(ctx, "UPDATE managed_database_reviews SET consumed_at=now() WHERE id=$1", reviewID); err != nil {
@@ -210,6 +228,9 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 		if d.ID == "" {
 			d.ID = NewID()
 		}
+		if err = s.validateVitessBackupTx(ctx, tx, p, d); err != nil {
+			return database.Operation{}, err
+		}
 		_, err = tx.Exec(ctx, "INSERT INTO managed_databases(id,project,environment,name,revision,spec,credentials) VALUES($1,$2,$3,$4,1,$5,$6)", d.ID, d.Project, d.Environment, d.Spec.Name, JSON(d.Spec), d.EncryptedCredentials)
 	} else {
 		var backingUp bool
@@ -222,12 +243,23 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 		if d.ID != current.ID || kind == "create" || current.Status == "pending" || current.Status == "deleting" || current.Status == "restoring" {
 			return database.Operation{}, ErrConflict
 		}
-		if d.Spec.Engine != current.Spec.Engine || d.Spec.Version != current.Spec.Version || d.Spec.Mode != current.Spec.Mode {
+		if d.Spec.Engine != current.Spec.Engine || d.Spec.Version != current.Spec.Version || d.Spec.Mode != current.Spec.Mode || !d.Spec.Placement.Equal(current.Spec.Placement) || d.Spec.TLSRequired() != current.Spec.TLSRequired() {
 			return database.Operation{}, ErrInput
+		}
+		if d.Spec.Engine == "oracle" && !d.Spec.Equal(current.Spec) {
+			return database.Operation{}, ErrInput
+		}
+		if database.PublicEndpointRequiresMembers(current.Spec) && !d.Spec.Equal(current.Spec) {
+			if err = ensureNoDatabasePublicEndpoints(ctx, tx, d.ID); err != nil {
+				return database.Operation{}, err
+			}
 		}
 		status := "pending"
 		if kind == "delete" {
 			if err = databaseUnreferenced(ctx, tx, d.ID); err != nil {
+				return database.Operation{}, err
+			}
+			if err = ensureNoDatabasePublicEndpoints(ctx, tx, d.ID); err != nil {
 				return database.Operation{}, err
 			}
 			status = "deleting"
@@ -342,11 +374,37 @@ func (s *Store) RecordDatabaseStep(ctx context.Context, o database.Operation, ob
 		// Redis retains removed shard PVCs. Keep storage charged until namespace
 		// deletion verifies reclamation; a successful resize alone is not evidence.
 	}
+	if err = recordDatabaseMetricPoint(ctx, tx, o.DatabaseID, o.Revision, observation); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 func (s *Store) ObserveDatabase(ctx context.Context, id string, revision int64, o database.Observation) error {
-	_, err := s.Pool.Exec(ctx, "UPDATE managed_databases SET observation=$3 WHERE id=$1 AND revision=$2 AND deleted_at IS NULL", id, revision, JSON(o))
-	return err
+	return s.observeDatabase(ctx, id, revision, "", o)
+}
+func (s *Store) observeDatabase(ctx context.Context, id string, revision int64, lease string, o database.Observation) error {
+	if o.Revision != revision || o.ObservedAt.IsZero() {
+		return ErrInput
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, "UPDATE managed_databases SET observation=$3 WHERE id=$1 AND revision=$2 AND deleted_at IS NULL AND COALESCE((observation->>'observed_at')::timestamptz,'epoch')<=$4 AND ($5='' OR ((status='ready' OR (status='failed' AND spec->>'engine'='vitess')) AND observation_lease=$5 AND observation_lease_until>clock_timestamp()))", id, revision, JSON(o), o.ObservedAt, lease)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if lease != "" {
+			return ErrClaimLost
+		}
+		return nil
+	}
+	if err = recordDatabaseMetricPoint(ctx, tx, id, revision, o); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 func (s *Store) DatabaseBackupEvidence(ctx context.Context, id string, revision int64) (*database.BackupEvidence, error) {
 	var e database.BackupEvidence
@@ -360,8 +418,14 @@ func (s *Store) SaveDatabaseReview(ctx context.Context, p Principal, d database.
 	if !p.AllowsDatabase(d.Project, d.Environment, true) {
 		return "", ErrForbidden
 	}
-	if kind != "resize" || expires.After(time.Now().Add(database.ReviewLifetime+time.Second)) || !expires.After(time.Now()) {
+	if kind != "resize" && kind != "switchover" || expires.After(time.Now().Add(database.ReviewLifetime+time.Second)) || !expires.After(time.Now()) {
 		return "", ErrInput
+	}
+	if kind == "switchover" {
+		plan, ok := payload.(database.OracleSwitchoverReview)
+		if !ok || !validOracleSwitchoverReview(d, plan) || !plan.ExpiresAt.Equal(expires) {
+			return "", ErrInput
+		}
 	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -399,10 +463,6 @@ func (s *Store) AuditDatabaseCredentials(ctx context.Context, p Principal, d dat
 	}
 	_, err := s.Pool.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'database.credentials.read',$3)", p.ID, p.KeyID, d.ID)
 	return err
-}
-
-func (s *Store) NextDatabaseObservation(ctx context.Context) (database.Resource, error) {
-	return scanDatabase(s.Pool.QueryRow(ctx, "SELECT "+databaseCols+" FROM managed_databases WHERE deleted_at IS NULL AND status='ready' AND COALESCE((observation->>'observed_at')::timestamptz,'epoch') < now()-interval '10 seconds' ORDER BY COALESCE((observation->>'observed_at')::timestamptz,'epoch'),id LIMIT 1"))
 }
 
 func (s *Store) BackupManagedDatabases(ctx context.Context) ([]database.Resource, error) {

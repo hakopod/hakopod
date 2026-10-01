@@ -3,11 +3,12 @@ import { useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useDatabase } from '../lib/databases'
+import { engineName } from '../lib/database-view'
 import { client, unwrap } from '../lib/client'
 import type { components } from '../lib/api.generated'
 import { message, timestamp } from '../lib/api'
 import { Empty, ErrorState, Loading, Note } from '../components/shared'
-import { FormPage, FormSection } from '../components/form-page'
+import { FormError, FormPage, FormSection } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
@@ -110,12 +111,12 @@ function Recover({ id }: { id: string }) {
       >
         <FormSection title="Archive and target">
           <p>
-            Target: {d.spec.name} · {d.spec.engine} {d.spec.version} · {d.project} / {d.environment}
+            Target: {d.spec.name} · {engineName(d.spec.engine)} {d.spec.version} · {d.project} / {d.environment}
           </p>
           {!eligible.length && (
             <Empty
               title="No eligible archives"
-              description="Create a matching PostgreSQL or Redis backup from another database before recovering into this target."
+              description="Create a backup from another database with a compatible engine and version before recovering into this target."
               action={
                 <Button asChild>
                   <Link to="/backups/new">Run backup</Link>
@@ -158,8 +159,7 @@ function Recover({ id }: { id: string }) {
             </Note>
           )}
           <Note>
-            The archive is authenticated before recovery. PostgreSQL 17 archives can be staged in a
-            separate PostgreSQL 18 database. Changes after the recovery point require a fresh
+            The archive is authenticated before recovery. {d.spec.engine === 'postgresql' && 'PostgreSQL 17 archives can be staged in a separate PostgreSQL 18 database. '}Changes after the recovery point require a fresh
             capture before final cutover.
           </Note>
         </FormSection>
@@ -172,7 +172,7 @@ function Recover({ id }: { id: string }) {
             </p>
             <p className="break-all font-mono">SHA-256: {selected?.sha256 || 'Not recorded'}</p>
             <p>
-              Target: {d.spec.name} · {d.spec.engine} {d.spec.version}
+              Target: {d.spec.name} · {engineName(d.spec.engine)} {d.spec.version}
             </p>
             <p>
               Review expires {timestamp(plan.expires_at)}.
@@ -202,9 +202,7 @@ function Recover({ id }: { id: string }) {
           </FormSection>
         )}
         {error && (
-          <p role="alert" className="text-destructive py-3">
-            {error}
-          </p>
+          <FormError>{error}</FormError>
         )}
         <div className="form-footer">
           <Button asChild>

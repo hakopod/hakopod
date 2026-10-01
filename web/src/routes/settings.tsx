@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
 import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
+import { keyLifetimeInput, keyLifetimeOptions } from '../lib/key-lifetime'
 import type { APIKey } from '../lib/types'
 import { useScope } from '../lib/scope'
 import { useInstallationAccess } from '../lib/installation-settings'
@@ -256,6 +257,8 @@ function Keys() {
                   <td>
                     {key.revoked_at ? (
                       <span className="revoked-label">Revoked</span>
+                    ) : key.never_expires && key.expires_at === null ? (
+                      'Never expires'
                     ) : (
                       timestamp(key.expires_at)
                     )}
@@ -374,7 +377,7 @@ function CreateKey({
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [application, setApplication] = useState('')
-  const [days, setDays] = useState(30)
+  const [lifetime, setLifetime] = useState('30')
   const [access, setAccess] = useState('deploy')
   const [reviewing, setReviewing] = useState(false)
   const permissions =
@@ -441,17 +444,17 @@ function CreateKey({
           setBusy(true)
           setError('')
           try {
-            const expires_at = new Date(Date.now() + days * 86400000).toISOString()
+            const expiry = keyLifetimeInput(lifetime, dashboardEdition.cloud)
             const result = rotation
               ? await unwrap(
                   client.POST('/keys/{id}/rotate', {
                     params: { path: { id: rotation.id } },
-                    body: { expires_at },
+                    body: expiry,
                   }),
                 )
               : await unwrap(
                   client.POST('/keys', {
-                    body: { name, project, environment, application, permissions, expires_at },
+                    body: { name, project, environment, application, permissions, ...expiry },
                   }),
                 )
             setCreated(result.key)
@@ -494,8 +497,8 @@ function CreateKey({
                     ? rotation.application || 'All in this environment'
                     : application || 'All in this environment'}
                 </dd>
-                <dt>Expires in</dt>
-                <dd>{days} days</dd>
+                <dt>Lifetime</dt>
+                <dd>{lifetime === 'never' ? 'Never expires' : `${lifetime} days`}</dd>
               </dl>
               <p className="text-sm break-words">
                 Permissions: {(rotation?.permissions || permissions).join(', ')}
@@ -504,6 +507,8 @@ function CreateKey({
                 Deployment access can run code, change databases and reveal database credentials.
                 Keep the key in a secret store. Existing workloads continue if the key expires or is
                 revoked.
+                {lifetime === 'never' &&
+                  ' This key has no expiry date. Revoke it when the CI workflow no longer needs it.'}
                 {rotation && ' The previous key expires within 15 minutes of rotation.'}
               </Note>
             </>
@@ -514,29 +519,12 @@ function CreateKey({
                 replacement before that overlap ends. Existing workloads keep running.
               </Note>
               <label>
-                Replacement expires in
+                Replacement lifetime
                 <SelectField
-                  label="Replacement expires in"
-                  value={String(days)}
-                  onValueChange={(value) => setDays(Number(value))}
-                  options={[
-                    {
-                      value: '7',
-                      label: '7 days',
-                    },
-                    {
-                      value: '30',
-                      label: '30 days',
-                    },
-                    {
-                      value: '60',
-                      label: '60 days',
-                    },
-                    {
-                      value: '89',
-                      label: '89 days',
-                    },
-                  ]}
+                  label="Replacement lifetime"
+                  value={lifetime}
+                  onValueChange={setLifetime}
+                  options={keyLifetimeOptions(dashboardEdition.cloud)}
                 />
               </label>
             </>
@@ -564,29 +552,12 @@ function CreateKey({
                   </label>
                 )}
                 <label>
-                  Expires in
+                  Lifetime
                   <SelectField
-                    label="Expires in"
-                    value={String(days)}
-                    onValueChange={(value) => setDays(Number(value))}
-                    options={[
-                      {
-                        value: '7',
-                        label: '7 days',
-                      },
-                      {
-                        value: '30',
-                        label: '30 days',
-                      },
-                      {
-                        value: '60',
-                        label: '60 days',
-                      },
-                      {
-                        value: '89',
-                        label: '89 days',
-                      },
-                    ]}
+                    label="Lifetime"
+                    value={lifetime}
+                    onValueChange={setLifetime}
+                    options={keyLifetimeOptions(dashboardEdition.cloud)}
                   />
                 </label>
               </div>

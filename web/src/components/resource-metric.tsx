@@ -25,12 +25,14 @@ export function ResourceMetric({
   used,
   total,
   samples,
+  capacityLabel = 'allocatable capacity',
 }: {
   label: string
   field: 'cpu' | 'memory'
   used?: number
   total?: number
   samples: MetricSample[]
+  capacityLabel?: string
 }) {
   const ratio =
     validMetricUsage(used) && validMetricUsage(total) && total > 0 ? (used / total) * 100 : null
@@ -47,7 +49,7 @@ export function ResourceMetric({
     .map((sample, index) => {
       const x = 2 + ((Date.parse(sample.at) - start) / duration) * 236
       const y = 50 - (sample[field] / maximum) * 46
-      return `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
+      return `${index && !sample.breakBefore ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
     })
     .join(' ')
   return (
@@ -63,12 +65,12 @@ export function ResourceMetric({
             className="node-runtime-meter"
             role={ratio === null ? undefined : 'meter'}
             aria-hidden={ratio === null ? true : undefined}
-            aria-label={ratio === null ? undefined : `${label} usage against allocatable capacity`}
+            aria-label={ratio === null ? undefined : `${label} usage against ${capacityLabel}`}
             aria-valuemin={ratio === null ? undefined : 0}
             aria-valuemax={ratio === null ? undefined : 100}
             aria-valuenow={ratio === null ? undefined : Math.min(100, ratio)}
             aria-valuetext={
-              ratio === null ? undefined : `${ratio.toFixed(1)} percent of allocatable capacity`
+              ratio === null ? undefined : `${ratio.toFixed(1)} percent of ${capacityLabel}`
             }
           >
             <i style={{ width: ratio === null ? 0 : `${Math.min(100, ratio)}%` }} />

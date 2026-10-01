@@ -581,7 +581,7 @@ def enable():
     for item in list(source.glob('*.py')) + [source / 'pins.json']:
         shutil.copyfile(item, destination / item.name)
         os.chmod(destination / item.name, 0o644)
-    for module in ('storage','cert-manager'):
+    for module in ('storage','cert-manager','database-controllers'):
         shutil.copytree(source.parent / 'deploy' / module, destination / 'modules' / module)
     shutil.copyfile(source / 'hakopod-maintenance.service', '/etc/systemd/system/hakopod-maintenance.service')
     command(['systemctl', 'daemon-reload'])

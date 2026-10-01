@@ -31,6 +31,14 @@ keys for their ready workspace; no installation administrator permission is
 granted. Cloud infers the key's workspace. An optional `HAKOPOD_WORKSPACE` must
 match it. Old Cloud CLI sessions do not grant SDK workload access.
 
+The pending Cloud key update adds **Never expires** for CI workflows. Select it
+when creating or rotating a key, then save the returned value as
+`HAKOPOD_API_KEY` in the CI secret store. No SDK or CLI flag is needed to use it.
+The key keeps its workspace and permission limits, and revocation still takes
+effect. Rotation gives the previous key at most 15 more minutes of access, even
+if it originally had no expiry date. This option requires the matching Cloud
+and engine release; it is not available in existing deployments yet.
+
 ```ts
 import { Hakopod, service } from "@hakopod/sdk";
 
@@ -104,7 +112,16 @@ inspectable. Database bindings below keep passwords out of the script.
 
 ## Databases
 
+The engine and installation support matrix is in [Managed databases](../../docs/managed-databases.md).
+Types describe the API contract; an engine field alone does not establish that
+the installed release or workspace can run it.
+
 Create a database once, then reference it by name or durable ID in later runs:
+
+Use `await hako.databasePlacementNodes()` to inspect the approved nodes in the
+selected project and environment. The result includes availability and reported
+zone, region and provider. Choose `placement.node_names` from those observations;
+a provider label alone does not prove that the nodes can survive a provider outage.
 
 ```ts
 const provisioning = await hako.db("main").create({
@@ -127,16 +144,24 @@ const edit = await hako
 await (await edit.apply()).wait();
 ```
 
-PostgreSQL defaults to version 18; Redis defaults to version 8. Standalone means
-one member. A cluster defaults to one replica; Redis also defaults to three
-shards. CPU, memory and storage apply **per member**. The server checks actual
+PostgreSQL defaults to version 18; Redis defaults to version 8. The development
+MySQL implementation defaults to 8.4; see its [current validation status](../../docs/managed-mysql.md).
+Standalone means one member. PostgreSQL and Redis clusters default to one
+replica; MySQL defaults to two voting replicas. Redis also defaults to three
+shards. CPU, memory and storage apply **per database member**; MySQL adds
+sidecars and Routers to the reservation. The server checks actual
 installation capability and Cloud quotas; a small Cloud workspace might not fit
 this cluster. Database replication is independent of application replicas.
 
 Redis Cluster needs a cluster-aware client. `database.binding({ clusterAware:
 true })` acknowledges that requirement; it does not configure your Redis client.
-PostgreSQL bindings support `read_write` and `read_only`; Redis Cluster uses
-`cluster`. Endpoints are private, and cannot generally be reached by a laptop.
+PostgreSQL and MySQL bindings support `read_write` and `read_only`; Redis Cluster
+uses `cluster`. Configured PostgreSQL pools add `pooled_read_write` and optionally
+`pooled_read_only`. Creation accepts `placement` and `pooling` with their API
+schema fields and requires TLS. MySQL clients must load the bound database's
+public CA from `/var/run/secrets/hakopod-database/<database-id>.crt`, verify the
+endpoint hostname, and reconnect after failover. The binding does not configure
+driver-specific TLS options. Endpoints are private and cannot generally be reached by a laptop.
 `credentials()` is an explicit password reveal requiring write permission.
 
 ```ts
@@ -150,6 +175,28 @@ and actual healthy slot ownership. The server rejects stale reviews and storage
 shrinks. Delete with `expectedRevision` and `confirmName`; the returned operation
 remains readable after the database disappears. Database names can be reused
 after deletion, so keep IDs for recovery and long-lived references.
+
+Oracle Enterprise Data Guard has a separate graceful switchover flow. Its
+runtime gate remains closed pending licensed-image acceptance; these methods
+do not make it available on an installation. When enabled, every member must
+be healthy and applications must reconnect as the primary role changes.
+
+```ts
+const review = await database.switchoverPlan(standbyMemberName);
+console.log(review.plan, review.warnings);
+const switchover = await database.switchover({
+  reviewId: review.id,
+  expectedRevision: review.plan.revision,
+  confirmName: "orders",
+}, { idempotencyKey: savedRetryKey });
+await switchover.wait();
+```
+
+Keep the review, revision and retry key before submitting. The server rejects
+expired or changed topology. After a worker timeout, `retrySwitchover({
+operationId, expectedRevision, confirmName })` resumes the existing approved
+operation and target. It does not force failover or choose another standby;
+a failed native broker operation still requires recovery review.
 
 ## Backups, recovery and upgrades
 
@@ -236,3 +283,9 @@ service. Use the existing Git build flow or deploy a container image.
 From `packages/sdk`: `npm ci`, `npm test`, `npm run check:generated`,
 `npm pack --dry-run`. Regenerate with `npm run generate` after updating the public
 OpenAPI contract. Tests use explicitly synthetic fixtures unless marked as live.
+
+Legacy external database records remain readable through `externalDatabase`.
+The SDK permits rotating their credentials, disconnecting their application
+bindings, refreshing an existing binding to the rotated credential revision,
+and deleting the record after those deployments finish. Creating, changing
+endpoint configuration or adding bindings is unavailable.

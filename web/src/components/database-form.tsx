@@ -10,11 +10,14 @@ import {
   type ManagedDatabase,
   type DatabaseResizeReview,
 } from '../lib/databases'
-import { FormPage, FormSection } from './form-page'
+import { FormError, FormPage, FormSection } from './form-page'
 import { Note } from './shared'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
+import { databaseVersions } from '../lib/database-create'
+import { DatabaseCreate } from './database-create'
+import { databaseRequestedCapacity, routerInstances, votingDatabase, databaseStorageGiB } from '../lib/database-view'
 
 const initial: DatabaseSpec = {
   schema_version: 1,
@@ -27,6 +30,7 @@ const initial: DatabaseSpec = {
   cpu: '250m',
   memory: '512Mi',
   storage_gib: 5,
+  tls: { mode: 'required' },
 }
 
 const resourcePresets = [
@@ -39,7 +43,10 @@ const resourcePresets = [
   { name: 'Standard', cpu: '500m', memory: '1Gi', detail: 'Steady application traffic' },
   { name: 'Performance', cpu: '1', memory: '2Gi', detail: 'Heavier queries and cache workloads' },
 ] as const
-export function DatabaseForm({
+export function DatabaseForm(props: { project: string; environment: string; database?: ManagedDatabase }) {
+  return props.database ? <DatabaseAllocationForm {...props} /> : <DatabaseCreate project={props.project} environment={props.environment} />
+}
+function DatabaseAllocationForm({
   project,
   environment,
   database,
@@ -49,6 +56,7 @@ export function DatabaseForm({
   database?: ManagedDatabase
 }) {
   const [spec, setSpec] = useState<DatabaseSpec>(database?.spec || initial)
+  const capacity = databaseRequestedCapacity(spec)
   const [review, setReview] = useState<{ id: string; plan?: DatabaseResizeReview } | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
@@ -75,6 +83,14 @@ export function DatabaseForm({
         Database changes require project deployment permission without an application-only scope.
       </Note>
     )
+  if (database && ['clickhouse', 'oracle', 'vitess'].includes(spec.engine)) return <FormPage title="Database capacity" description="Review the current engine's capacity policy." breadcrumbs={[]}>
+    <Note>{spec.engine === 'vitess' ? 'Vitess capacity and table routing' : spec.engine === 'clickhouse' ? 'ClickHouse topology and resources' : 'Oracle edition and resources'} are fixed at creation. Create a separate compatible database and recover into it to change capacity.</Note>
+    {spec.engine === 'vitess' && <>
+      <Note>Creation is unavailable while native replication and recovery acceptance remain incomplete. Vitess requires a dedicated operator-approved native backup destination.</Note>
+      <FormSection title="Vitess configuration"><dl className="db-create-facts"><div><dt>Table routing</dt><dd>{spec.shards === 1 ? 'Single shard; no sharding columns' : (spec.vitess?.tables || []).map((table) => `${table.name} / ${table.sharding_column}`).join(', ') || 'Not configured'}</dd></div><div><dt>Native backup destination</dt><dd>{spec.vitess?.backup_destination_id || 'Not configured'}{spec.vitess && ` · r${spec.vitess.backup_destination_revision}`}</dd></div></dl></FormSection>
+    </>}
+    <Button asChild><Link to="/databases/$databaseId" params={{ databaseId: database.id }} search={{ project: database.project, environment: database.environment }}>Back to database</Link></Button>
+  </FormPage>
   return (
     <FormPage
       title={database ? 'Resize database' : 'New database'}
@@ -133,6 +149,8 @@ export function DatabaseForm({
         }}
       >
         <FormSection title="Database and allocation">
+          {spec.engine === 'mysql' && <Note>MySQL member resources and storage are fixed at creation. Recover into a new database to change capacity. Clusters support 2, 4 or 6 voting replicas.</Note>}
+          {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change capacity. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes and the database's previous capacity reservation until the database is deleted.</Note>}
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
               Name
@@ -154,11 +172,13 @@ export function DatabaseForm({
                 options={[
                   { value: 'postgresql', label: 'PostgreSQL' },
                   { value: 'redis', label: 'Redis' },
+                  { value: 'mysql', label: 'MySQL' },
+                  { value: 'mongodb', label: 'MongoDB', disabled: !database },
                 ]}
                 onValueChange={(v) =>
                   update({
                     engine: v as DatabaseSpec['engine'],
-                    version: v === 'redis' ? '8' : '17',
+                    version: databaseVersions(v)[0],
                     shards: v === 'redis' && spec.mode === 'cluster' ? 3 : 1,
                   })
                 }
@@ -170,7 +190,7 @@ export function DatabaseForm({
                 label="Version"
                 value={spec.version}
                 disabled={Boolean(database) || busy}
-                options={(spec.engine === 'redis' ? ['8'] : ['17', '18']).map((value) => ({
+                options={databaseVersions(spec.engine).map((value) => ({
                   value,
                   label: value,
                 }))}
@@ -190,8 +210,9 @@ export function DatabaseForm({
                 onValueChange={(v) =>
                   update({
                     mode: v as DatabaseSpec['mode'],
-                    replicas: v === 'cluster' ? 1 : 0,
+                    replicas: v === 'cluster' ? votingDatabase(spec.engine) ? 2 : 1 : 0,
                     shards: v === 'cluster' && spec.engine === 'redis' ? 3 : 1,
+                    placement: { ...spec.placement, spread: v === 'cluster' ? 'nodes' : '' },
                   })
                 }
               />
@@ -201,8 +222,9 @@ export function DatabaseForm({
                 {spec.engine === 'redis' ? 'Replicas per shard' : 'Replicas'}
                 <Input
                   type="number"
-                  min={1}
-                  max={spec.engine === 'redis' ? 2 : 4}
+                  min={votingDatabase(spec.engine) ? 2 : 1}
+                  step={votingDatabase(spec.engine) ? 2 : 1}
+                  max={spec.engine === 'redis' ? 2 : 6}
                   required
                   value={spec.replicas}
                   disabled={busy}
@@ -235,7 +257,7 @@ export function DatabaseForm({
                       type="button"
                       variant={selected && !showCustomResources ? 'primary' : 'outline'}
                       aria-pressed={selected && !showCustomResources}
-                      disabled={busy}
+                      disabled={busy || votingDatabase(spec.engine)}
                       className="h-auto min-h-11 min-w-0 justify-start! whitespace-normal! px-3 py-2 text-left normal-case! font-sans!"
                       onClick={() => {
                         setShowCustomResources(false)
@@ -263,7 +285,7 @@ export function DatabaseForm({
                     <Input
                       required
                       value={spec.cpu}
-                      disabled={busy}
+                      disabled={busy || votingDatabase(spec.engine)}
                       onChange={(e) => {
                         setShowCustomResources(true)
                         update({ cpu: e.target.value })
@@ -276,13 +298,13 @@ export function DatabaseForm({
                     <Input
                       required
                       value={spec.memory}
-                      disabled={busy}
+                      disabled={busy || votingDatabase(spec.engine)}
                       onChange={(e) => {
                         setShowCustomResources(true)
                         update({ memory: e.target.value })
                       }}
                     />
-                    <span className="field-help">128Mi to 64Gi.</span>
+                    <span className="field-help">{votingDatabase(spec.engine) ? '1Gi' : '128Mi'} to 64Gi.</span>
                   </label>
                 </div>
               </details>
@@ -295,7 +317,7 @@ export function DatabaseForm({
                 min={database?.spec.storage_gib || 1}
                 max={1024}
                 value={spec.storage_gib}
-                disabled={busy}
+                disabled={busy || votingDatabase(spec.engine)}
                 onChange={(e) => update({ storage_gib: Number(e.target.value) })}
               />
             </label>
@@ -306,6 +328,41 @@ export function DatabaseForm({
               slot ownership and a verified backup captured within the last hour.
             </Note>
           )}
+        </FormSection>
+        <FormSection title="Placement">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {spec.mode === 'cluster' && (
+              <label>
+                Member separation
+                <SelectField
+                  label="Member separation"
+                  value={spec.placement?.spread || ''}
+                  disabled={Boolean(database) || busy}
+                  options={[
+                    { value: 'nodes', label: 'One member per node' },
+                    { value: 'zones', label: 'One member per zone' },
+                    { value: '', label: 'Scheduler defaults' },
+                  ]}
+                  onValueChange={(spread) =>
+                    update({
+                      placement: { ...spec.placement, spread: spread as '' | 'nodes' | 'zones' },
+                    })
+                  }
+                />
+                <span className="field-help">
+                  {spec.placement?.spread
+                    ? `Strict separation needs ${spec.shards * (1 + spec.replicas)} distinct ${spec.placement.spread === 'zones' ? 'zones' : 'nodes'}. Members wait if a suitable location is unavailable.`
+                    : 'The scheduler may place multiple members on one node.'}
+                </span>
+              </label>
+            )}
+            <div className="grid gap-2"><span className="text-sm">Eligible nodes</span><div className="flex flex-wrap gap-2">{spec.placement?.node_names?.length ? spec.placement.node_names.map((name) => <span key={name} className="max-w-full break-all rounded border border-border px-3 py-2 text-xs">{name}</span>) : <span className="text-sm text-muted-foreground">All approved nodes</span>}</div><p className="field-help">Node selection is fixed at creation. This resize preserves the saved placement.</p></div>
+          </div>
+          <Note>
+            Placement is fixed when the database is created. Nodes may belong to different providers
+            within one connected cluster. Independent clusters are not supported. Zone separation
+            alone does not guarantee failover or zero data loss.
+          </Note>
         </FormSection>
         {review && (
           <FormSection title="Review">
@@ -336,9 +393,25 @@ export function DatabaseForm({
             </p>
             <p>{databaseSummary(spec)}</p>
             <p>
+              {spec.placement?.spread === 'zones'
+                ? 'One member per zone'
+                : spec.placement?.spread === 'nodes'
+                  ? 'One member per node'
+                  : 'Scheduler defaults'}{' '}
+              · {spec.placement?.node_names?.join(', ') || 'All authorized nodes'}
+            </p>
+            <p>
               {spec.shards * (1 + spec.replicas)} members, each with {spec.cpu} CPU, {spec.memory}{' '}
               memory and {spec.storage_gib} GiB storage.
             </p>
+            {spec.engine === 'mysql' && capacity && <>
+              <p>Each member also has a 100m CPU / 256Mi sidecar. {routerInstances(spec)} Routers each use 100m CPU / 128Mi.</p>
+              <p>Total requested: {capacity.cpu.toLocaleString(undefined, { maximumFractionDigits: 3 })} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString(undefined, { maximumFractionDigits: 3 })} GiB memory · {spec.storage_gib * spec.shards * (1 + spec.replicas)} GiB storage. Additional capacity is reserved for replacement and recovery operations.</p>
+            </>}
+            {spec.engine === 'mongodb' && capacity && <>
+              <p>Each member also has a 100m CPU / 256Mi agent and a separate 1 GiB log volume.</p>
+              <p>Total requested: {capacity.cpu.toLocaleString()} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString()} GiB memory · {databaseStorageGiB(spec)} GiB storage. Additional capacity is reserved for replacement and recovery operations.</p>
+            </>}
             {review.plan?.backup && (
               <p>Verified backup captured {timestamp(review.plan.backup.captured_at)}.</p>
             )}
@@ -363,9 +436,7 @@ export function DatabaseForm({
           </FormSection>
         )}
         {error && (
-          <p role="alert" className="text-destructive py-3">
-            {error}
-          </p>
+          <FormError>{error}</FormError>
         )}
         <div className="form-footer">
           <Button asChild>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/hakopod/hakopod/internal/api"
+	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/management"
@@ -11,11 +12,41 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 	"net/http"
+	"strings"
 	"time"
 )
 
 type DatabaseSpec = database.Spec
 type DatabasePolicy = cluster.DatabasePolicy
+type DatabaseCapacity = database.Capacity
+type DatabaseNodeReservation = cluster.DatabaseNodeReservation
+type ManagedClusterNode = cluster.ManagedClusterNode
+type DatabasePublicEndpointAllocation = database.PublicEndpointAllocation
+type DatabasePublicEndpointMemberAllocation = database.PublicEndpointMemberAllocation
+type DatabasePublicEndpoint = database.PublicEndpoint
+type DatabasePublicEndpointReview = database.PublicEndpointReview
+type DatabasePublicEndpointOperation = database.PublicEndpointOperation
+type ManagedDatabaseResource = database.Resource
+
+func PublicEndpointAllocations(endpoint DatabasePublicEndpoint) ([]DatabasePublicEndpointMemberAllocation, error) {
+	return database.PublicEndpointAllocations(endpoint)
+}
+
+// DatabasePublicEndpointAuthority is trusted Cloud infrastructure authority.
+// Preflight is read-only. Mutations must invoke the supplied fence immediately
+// before every provider write.
+type DatabasePublicEndpointAuthority interface {
+	Preflight(context.Context, ManagedDatabaseResource, []DatabasePublicEndpointAllocation) (string, error)
+	Ensure(context.Context, DatabasePublicEndpointOperation, ManagedDatabaseResource, DatabasePublicEndpoint, func() error) error
+	Verify(context.Context, DatabasePublicEndpointOperation, ManagedDatabaseResource, DatabasePublicEndpoint) error
+	Delete(context.Context, DatabasePublicEndpointOperation, ManagedDatabaseResource, DatabasePublicEndpoint, func() error) error
+	VerifyDeleted(context.Context, DatabasePublicEndpointOperation, ManagedDatabaseResource, DatabasePublicEndpoint) error
+}
+
+func ValidateManagedClusterNodes(nodes []ManagedClusterNode) error {
+	return cluster.ValidateManagedClusterNodes(nodes)
+}
+
 type WorkloadPolicy = cluster.WorkloadPolicy
 type PlacementRequest = cluster.PlacementRequest
 type WorkloadSpec = spec.Application
@@ -40,12 +71,20 @@ func ValidateRuntimeResources(s WorkloadService, ceiling ResourceProfile) error 
 
 type BackupConfig = api.BackupConfig
 
+type VitessBackupApproval = backup.VitessBackupApproval
+
+func ReadVitessBackupApprovals(path string) ([]VitessBackupApproval, error) {
+	return backup.ReadVitessBackupApprovals(path)
+}
+
 // AdmissionPrincipal is canonical engine authorization, never client claims.
 type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
 type RuntimeConfig struct {
-	StorageBudgetTx func(context.Context, pgx.Tx, string, string) (int64, error)
+	// ClickHouseSandbox requires the operator-installed, attested runtime.
+	ClickHouseSandbox bool
+	StorageBudgetTx   func(context.Context, pgx.Tx, string, string) (int64, error)
 	// ActionsEntitled is trusted product state, never user TOML or headers.
 	ActionsEntitled          func(context.Context, string, string) (bool, error)
 	AuthorizeRetainedCleanup func(context.Context, AdmissionPrincipal, string, string) error
@@ -55,6 +94,10 @@ type RuntimeConfig struct {
 	AdmitDatabase            DeploymentAdmission
 	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
 	DatabasePolicy           cluster.DatabasePolicyResolver
+	DatabasePlacementPolicy  func(context.Context, string, string) (DatabasePolicy, error)
+	DatabaseCapacityBudget   func(context.Context, pgx.Tx, string, string) (DatabaseCapacity, error)
+	ManagedClusterNodes      []ManagedClusterNode
+	DatabaseNodeReservations map[string]DatabaseNodeReservation
 	CloudResourceCeiling     *ResourceProfile
 	Backups                  BackupConfig
 	BuildRegistry            string
@@ -69,12 +112,17 @@ type RuntimeConfig struct {
 	TLSIssuer    string
 	// TLSRedirectDisabled is operator-only for a private ingress behind an
 	// HTTPS-enforcing front proxy. Leave false for tenant and self-hosted runtimes.
-	TLSRedirectDisabled bool
-	PublicPort          int
-	PublicHTTPSPort     int
-	ProxyNamespace      string
-	ProxyConfigMap      string
-	ProxyRelease        string
+	TLSRedirectDisabled              bool
+	PublicPort                       int
+	PublicHTTPSPort                  int
+	ProxyNamespace                   string
+	ProxyConfigMap                   string
+	ProxyRelease                     string
+	DatabasePublicAddress            string
+	DatabasePublicDomain             string
+	DatabasePublicPorts              []int32
+	DatabasePublicAuthority          DatabasePublicEndpointAuthority
+	DatabasePublicEndpointsQualified bool
 }
 
 // StartRuntime shares the canonical database, API and reconciliation lifecycle.
@@ -99,7 +147,7 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		config.ProxyRelease = "hakopod-ingress"
 	}
 	rollout := 120 * time.Second
-	kube, err := cluster.New(config.Kubeconfig, cluster.Options{DatabasePolicy: config.DatabasePolicy, WorkloadPolicy: config.WorkloadPolicy, PlacementPolicy: config.PlacementPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, TLSRedirectDisabled: config.TLSRedirectDisabled, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease})
+	kube, err := cluster.New(config.Kubeconfig, cluster.Options{ManagedClusterNodes: config.ManagedClusterNodes, DatabasePlacementPolicy: config.DatabasePlacementPolicy, ClickHouseSandbox: config.ClickHouseSandbox, DatabasePolicy: config.DatabasePolicy, WorkloadPolicy: config.WorkloadPolicy, PlacementPolicy: config.PlacementPolicy, CloudResourceCeiling: config.CloudResourceCeiling, OperatorNodeLimit: config.NodeLimit, DeploymentMode: cluster.DeploymentManagedCloud, AppDomain: config.AppDomain, IngressClass: config.IngressClass, TLSIssuer: config.TLSIssuer, TLSRedirectDisabled: config.TLSRedirectDisabled, PublicPort: config.PublicPort, PublicHTTPSPort: config.PublicHTTPSPort, RolloutTimeout: rollout, ApprovedDomains: s.store.ApprovedDomains, RegistrySecretName: s.store.RegistrySecretName, RegistryCredentialNames: s.store.RegistryCredentialNames, VirtualNetworks: s.store.ResolveVirtualNetworks, ProxyNamespace: config.ProxyNamespace, ProxyConfigMap: config.ProxyConfigMap, ProxyRelease: config.ProxyRelease, DatabasePublicAddress: config.DatabasePublicAddress, DatabasePublicDomain: config.DatabasePublicDomain, DatabasePublicPorts: config.DatabasePublicPorts, ManagedDatabasePublicEndpoints: config.DatabasePublicAuthority != nil, ManagedDatabasePublicEndpointsQualified: config.DatabasePublicEndpointsQualified})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -128,12 +176,18 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	s.store.RequireDatabaseAdmission = true
 	s.store.AdmitDatabase = config.AdmitDatabase
 	s.store.ComputeBudget = config.ComputeBudget
+	s.store.DatabaseCapacityBudget = config.DatabaseCapacityBudget
 	s.store.StorageBudgetTx = config.StorageBudgetTx
 	s.store.AuthorizeBackup = config.AuthorizeBackup
 	s.store.StorageBudget = config.StorageBudget
 	s.store.AuthorizeRetainedCleanup = config.AuthorizeRetainedCleanup
-	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true}
-	server.ConfigureBackups(config.Backups)
+	if err = s.CheckDatabaseNodeReservations(ctx, config.DatabaseNodeReservations); err != nil {
+		return nil, nil, err
+	}
+	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true, DatabasePublicEndpointAuthority: config.DatabasePublicAuthority}
+	if err = server.ConfigureBackups(config.Backups); err != nil {
+		return nil, nil, err
+	}
 	if err := server.ConfigureBuildRegistry(ctx, config.BuildRegistry); err != nil {
 		return nil, nil, err
 	}
@@ -148,4 +202,30 @@ func (s *Service) CheckWorkloadPool(ctx context.Context, node, pool, runtime str
 	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return s.runtime.CheckWorkloadPool(bounded, node, pool, runtime)
+}
+
+func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservations map[string]DatabaseNodeReservation) error {
+	if s.runtime == nil {
+		return errors.New("runtime is unavailable")
+	}
+	seen := map[string]bool{}
+	for _, reservation := range reservations {
+		for _, scope := range reservation.Scopes {
+			if seen[scope] {
+				continue
+			}
+			seen[scope] = true
+			project, environment, ok := strings.Cut(scope, "/")
+			if !ok || len(seen) > 64 {
+				return errors.New("invalid database capacity scope")
+			}
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := s.store.CheckDatabaseCapacityReservation(bounded, project, environment)
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return s.runtime.CheckDatabaseNodeReservations(ctx, reservations)
 }

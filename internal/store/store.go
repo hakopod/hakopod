@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/backup"
+	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/license"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
@@ -32,7 +34,8 @@ var ErrForbidden = errors.New("credential does not allow this operation in the r
 type DeploymentAdmission func(context.Context, pgx.Tx, Principal, string, string, string) error
 
 type Store struct {
-	StorageBudgetTx func(context.Context, pgx.Tx, string, string) (int64, error)
+	VitessBackupApprovals []backup.VitessBackupApproval
+	StorageBudgetTx       func(context.Context, pgx.Tx, string, string) (int64, error)
 	// Trusted Cloud embedding policy. A managed installation without it fails closed.
 	ActionsAccess            func(context.Context, string, string) error
 	AuthorizeRetainedCleanup func(context.Context, Principal, string, string) error
@@ -43,6 +46,7 @@ type Store struct {
 	RequireDatabaseAdmission bool
 	AdmitDatabase            DeploymentAdmission
 	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
+	DatabaseCapacityBudget   func(context.Context, pgx.Tx, string, string) (database.Capacity, error)
 	ExternalFactorPolicy     func(context.Context, pgx.Tx, string) (bool, error)
 
 	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.
@@ -80,6 +84,13 @@ func Open(ctx context.Context, url string) (*Store, error) {
 }
 func (s *Store) Close() { s.Pool.Close() }
 func (s *Store) Migrate(ctx context.Context) error {
+	entries, err := migrations.ReadDir(".")
+	if err != nil {
+		return err
+	}
+	if err = validateMigrationVersions(entries); err != nil {
+		return err
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -97,10 +108,6 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if _, err = tx.Exec(ctx, "CREATE TABLE schema_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"); err != nil {
 			return err
 		}
-	}
-	entries, err := migrations.ReadDir(".")
-	if err != nil {
-		return err
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
@@ -220,18 +227,19 @@ func (p Principal) IsAdmin() bool {
 }
 
 type Key struct {
-	ID          string     `json:"id"`
-	IdentityID  string     `json:"identity_id"`
-	Name        string     `json:"name"`
-	Prefix      string     `json:"prefix"`
-	Project     string     `json:"project"`
-	Environment string     `json:"environment"`
-	Application string     `json:"application,omitempty"`
-	Permissions []string   `json:"permissions"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	RevokedAt   *time.Time `json:"revoked_at"`
-	LastUsedAt  *time.Time `json:"last_used_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID           string     `json:"id"`
+	IdentityID   string     `json:"identity_id"`
+	Name         string     `json:"name"`
+	Prefix       string     `json:"prefix"`
+	Project      string     `json:"project"`
+	Environment  string     `json:"environment"`
+	Application  string     `json:"application,omitempty"`
+	Permissions  []string   `json:"permissions"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	NeverExpires bool       `json:"never_expires"`
+	RevokedAt    *time.Time `json:"revoked_at"`
+	LastUsedAt   *time.Time `json:"last_used_at"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 type KeyInput struct {
 	Name        string    `json:"name"`
@@ -241,26 +249,53 @@ type KeyInput struct {
 	Permissions []string  `json:"permissions"`
 	ExpiresAt   time.Time `json:"expires_at"`
 }
+type BoundKeyInput struct {
+	Name         string     `json:"name"`
+	Project      string     `json:"project"`
+	Environment  string     `json:"environment"`
+	Application  string     `json:"application"`
+	Permissions  []string   `json:"permissions"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	NeverExpires bool       `json:"never_expires"`
+}
 
 func validKeyInput(in KeyInput) error {
-	if len(in.Name) < 1 || len(in.Name) > 100 {
-		return errors.New("name must contain 1–100 characters")
-	}
 	if in.ExpiresAt.Before(time.Now().Add(time.Minute)) || in.ExpiresAt.After(time.Now().Add(90*24*time.Hour)) {
 		return errors.New("expires_at must be between one minute and 90 days from now")
 	}
-	if len(in.Permissions) == 0 {
+	return validKeyFields(in.Name, in.Project, in.Environment, in.Application, in.Permissions)
+}
+
+func validBoundKeyInput(in BoundKeyInput, allowNeverExpires bool) error {
+	if in.NeverExpires {
+		if !allowNeverExpires {
+			return errors.New("never_expires is only available to the trusted Cloud automation issuer")
+		}
+		if in.ExpiresAt != nil {
+			return errors.New("expires_at must be omitted when never_expires is true")
+		}
+	} else if in.ExpiresAt == nil || in.ExpiresAt.Before(time.Now().Add(time.Minute)) || in.ExpiresAt.After(time.Now().Add(90*24*time.Hour)) {
+		return errors.New("expires_at must be between one minute and 90 days from now")
+	}
+	return validKeyFields(in.Name, in.Project, in.Environment, in.Application, in.Permissions)
+}
+
+func validKeyFields(name, project, environment, application string, permissions []string) error {
+	if len(name) < 1 || len(name) > 100 {
+		return errors.New("name must contain 1–100 characters")
+	}
+	if len(permissions) == 0 {
 		return errors.New("at least one permission is required")
 	}
-	for _, v := range in.Permissions {
+	for _, v := range permissions {
 		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
-	if !contains(in.Permissions, "admin") && (in.Project == "" || in.Environment == "") {
+	if !contains(permissions, "admin") && (project == "" || environment == "") {
 		return errors.New("machine keys require explicit project and environment")
 	}
-	if (contains(in.Permissions, "networks:write") || contains(in.Permissions, "git:manage") || contains(in.Permissions, "applications:manage")) && (in.Project == "" || in.Environment == "" || in.Application != "") {
+	if (contains(permissions, "networks:write") || contains(permissions, "git:manage") || contains(permissions, "applications:manage")) && (project == "" || environment == "" || application != "") {
 		return errors.New("scoped management keys require a project and environment without an application restriction")
 	}
 	return nil
@@ -310,7 +345,7 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND k.expires_at>now() AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine' AND EXISTS(SELECT 1 FROM automation_key_scopes s WHERE s.key_id=k.id))) AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
 	}
@@ -381,7 +416,8 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 		}
 	}
 	id, raw, digest := makeKey()
-	k := Key{ID: id, IdentityID: p.ID, Name: in.Name, Prefix: "hp_" + id[:8], Project: in.Project, Environment: in.Environment, Application: in.Application, Permissions: in.Permissions, ExpiresAt: in.ExpiresAt, CreatedAt: time.Now().UTC()}
+	expires := in.ExpiresAt.UTC()
+	k := Key{ID: id, IdentityID: p.ID, Name: in.Name, Prefix: "hp_" + id[:8], Project: in.Project, Environment: in.Environment, Application: in.Application, Permissions: in.Permissions, ExpiresAt: &expires, CreatedAt: time.Now().UTC()}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return k, "", err
@@ -399,7 +435,7 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 	return k, raw, err
 }
 func (s *Store) Keys(ctx context.Context) ([]Key, error) {
-	rows, err := s.Pool.Query(ctx, "SELECT id,identity_id,name,prefix,project,environment,application,permissions,expires_at,revoked_at,last_used_at,created_at FROM api_keys WHERE kind='machine' ORDER BY created_at DESC LIMIT 100")
+	rows, err := s.Pool.Query(ctx, "SELECT id,identity_id,name,prefix,project,environment,application,permissions,expires_at,never_expires,revoked_at,last_used_at,created_at FROM api_keys WHERE kind='machine' ORDER BY created_at DESC LIMIT 100")
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +443,7 @@ func (s *Store) Keys(ctx context.Context) ([]Key, error) {
 	out := []Key{}
 	for rows.Next() {
 		var k Key
-		if err = rows.Scan(&k.ID, &k.IdentityID, &k.Name, &k.Prefix, &k.Project, &k.Environment, &k.Application, &k.Permissions, &k.ExpiresAt, &k.RevokedAt, &k.LastUsedAt, &k.CreatedAt); err != nil {
+		if err = rows.Scan(&k.ID, &k.IdentityID, &k.Name, &k.Prefix, &k.Project, &k.Environment, &k.Application, &k.Permissions, &k.ExpiresAt, &k.NeverExpires, &k.RevokedAt, &k.LastUsedAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, k)

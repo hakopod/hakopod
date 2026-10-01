@@ -1,0 +1,95 @@
+package vitessbackupschedule
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strconv"
+	"time"
+
+	kbatch "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+	"planetscale.dev/vitess-operator/pkg/operator/vttablet"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+func configureScheduledBackup(spec *vttablet.BackupSpec, schedule planetscalev2.VitessBackupSchedule, strategy planetscalev2.VitessBackupScheduleStrategy) error {
+	if schedule.Spec.JobTimeoutMinutes < 1 || schedule.Spec.JobTimeoutMinutes > 120 {
+		return fmt.Errorf("backup job deadline must be 1 to 120 minutes")
+	}
+	for key, value := range strategy.ExtraFlags {
+		switch key {
+		case "min_retention_time":
+			duration, err := time.ParseDuration(value)
+			if err != nil || duration < 24*time.Hour || duration > 30*24*time.Hour { return fmt.Errorf("invalid backup retention duration") }
+			spec.MinRetentionTime = duration
+		case "min_retention_count":
+			count, err := strconv.Atoi(value)
+			if err != nil || count < 2 || count > 168 { return fmt.Errorf("invalid backup retention count") }
+			spec.MinRetentionCount = count
+		case "min_backup_interval":
+			duration, err := time.ParseDuration(value)
+			if err != nil || duration < time.Minute || duration > 24*time.Hour { return fmt.Errorf("invalid backup interval") }
+			spec.MinBackupInterval = duration
+		default:
+			return fmt.Errorf("unsupported scheduled backup flag %q", key)
+		}
+	}
+	if spec.MinRetentionTime == 0 || spec.MinRetentionCount < 2 { return fmt.Errorf("native backups require bounded retention and at least two copies") }
+	return nil
+}
+
+// Reserve at most two backup pods and claims per shard, including initial
+// backups and objects waiting for deletion. A stalled node must not let each
+// hourly run allocate another full copy of the database.
+func (r *ReconcileVitessBackupsSchedule) ensureScheduledBackupStorage(ctx context.Context, schedule *planetscalev2.VitessBackupSchedule, job *kbatch.Job, spec *vttablet.Spec) error {
+	selector := client.MatchingLabels{
+		planetscalev2.ClusterLabel: job.Labels[planetscalev2.ClusterLabel],
+		planetscalev2.KeyspaceLabel: job.Labels[planetscalev2.KeyspaceLabel],
+		planetscalev2.ShardLabel: job.Labels[planetscalev2.ShardLabel],
+		planetscalev2.ComponentLabel: planetscalev2.VtbackupComponentName,
+	}
+	var pods corev1.PodList
+	if err := r.client.List(ctx, &pods, client.InNamespace(job.Namespace), selector, client.Limit(3)); err != nil { return err }
+	if pods.Continue != "" || len(pods.Items) >= 2 { return fmt.Errorf("native backup pod capacity is still in use") }
+	var claims corev1.PersistentVolumeClaimList
+	if err := r.client.List(ctx, &claims, client.InNamespace(job.Namespace), selector, client.Limit(3)); err != nil { return err }
+	if claims.Continue != "" || len(claims.Items) > 2 { return fmt.Errorf("native backup storage inventory exceeds its bound") }
+	for _, claim := range claims.Items {
+		if claim.Name == job.Name || claim.DeletionTimestamp != nil || !metav1.IsControlledBy(&claim, schedule) || claim.CreationTimestamp.IsZero() || time.Since(claim.CreationTimestamp.Time) < 2*time.Hour { continue }
+		// The schedule can survive a crash between PVC and Job creation. Only
+		// reclaim a stale claim when its owner is this schedule and both the
+		// corresponding Job and any pod using it are absent.
+		used := false
+		for _, pod := range pods.Items {
+			for _, volume := range pod.Spec.Volumes {
+				if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == claim.Name { used = true }
+			}
+		}
+		if used { continue }
+		var oldJob kbatch.Job
+		err := r.client.Get(ctx, client.ObjectKey{Namespace: claim.Namespace, Name: claim.Name}, &oldJob)
+		if err == nil { continue }
+		if !apierrors.IsNotFound(err) { return err }
+		uid := claim.UID
+		if uid == "" { return fmt.Errorf("native backup claim has no immutable identity") }
+		if err = r.client.Delete(ctx, &claim, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); err != nil && !apierrors.IsNotFound(err) { return err }
+		return fmt.Errorf("waiting for abandoned native backup storage to be reclaimed")
+	}
+	key := client.ObjectKey{Namespace: job.Namespace, Name: job.Name}
+	want := vttablet.NewPVC(key, spec)
+	if err := ctrl.SetControllerReference(schedule, want, r.scheme); err != nil { return err }
+	var existing corev1.PersistentVolumeClaim
+	err := r.client.Get(ctx, key, &existing)
+	if err == nil {
+		if existing.DeletionTimestamp != nil || !metav1.IsControlledBy(&existing, schedule) || existing.Labels[planetscalev2.ComponentLabel] != planetscalev2.VtbackupComponentName || !reflect.DeepEqual(existing.Spec.Resources.Requests, want.Spec.Resources.Requests) || (want.Spec.StorageClassName != nil && !reflect.DeepEqual(existing.Spec.StorageClassName, want.Spec.StorageClassName)) || !reflect.DeepEqual(existing.Spec.AccessModes, want.Spec.AccessModes) { return fmt.Errorf("existing native backup storage differs from its owned allocation") }
+		return nil
+	}
+	if !apierrors.IsNotFound(err) { return err }
+	if len(claims.Items) >= 2 { return fmt.Errorf("native backup storage capacity is still in use") }
+	return r.client.Create(ctx, want)
+}

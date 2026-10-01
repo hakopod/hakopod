@@ -86,13 +86,23 @@ func run() error {
 	wait := fs.Bool("wait", false, "wait for final deployment outcome")
 	idem := fs.String("idempotency-key", "", "stable retry key (generated if omitted)")
 	revision := fs.Int64("revision", 0, "successful revision to restore")
-	reviewID := fs.String("review-id", "", "accepted database resize or recovery review")
+	reviewID := fs.String("review-id", "", "accepted database resize, recovery, connection or switchover review")
+	databaseTargetMember := fs.String("target-member", "", "physical standby member to review for Oracle switchover")
+	databaseOperation := fs.String("operation-id", "", "existing Oracle switchover operation to resume")
+	databasePublicEndpointID := fs.String("public-endpoint-id", "", "database public endpoint ID to revoke")
+	databasePublicEndpointPurpose := fs.String("purpose", "", "public database route purpose from database public-endpoint-capabilities")
+	databasePublicEndpointCIDRs := fs.String("source-cidrs", "", "comma-separated IPv4 CIDRs allowed to connect")
+	databasePublicEndpointRevision := fs.Int64("endpoint-revision", -1, "reviewed database public endpoint revision")
+	databasePublicEndpointMaxConnections := fs.Int64("max-connections", 32, "public database endpoint connection cap, 1–256")
 	databaseApplication := fs.String("application-id", "", "application ID for a managed database connection")
 	databaseVariable := fs.String("variable", "DATABASE_URL", "managed database connection environment variable")
 	databaseEndpoint := fs.String("endpoint", "read_write", "managed database endpoint: read_write, read_only or cluster")
+	databaseHistoryRange := fs.String("range", "1h", "database monitoring range: 1h, 6h or 24h")
 	databaseClusterAware := fs.Bool("cluster-aware", false, "acknowledge that the application uses a cluster-aware Redis client")
 	databaseRecoveryJob := fs.String("job-id", "", "completed database recovery job to inspect")
 	databaseInspected := fs.Bool("inspected", false, "attest that the recovered data was inspected")
+	externalCredentialsFile := fs.String("credentials-file", "", "legacy external database credentials JSON file with restricted permissions")
+	externalCredentialsStdin := fs.Bool("credentials-stdin", false, "read legacy external database credentials JSON from redirected stdin")
 	importDestination := fs.String("destination-id", "", "archive import S3 destination")
 	importEngine := fs.String("engine", "postgresql", "archive import engine: postgresql or redis")
 	importVersion := fs.String("source-version", "", "archive import source major version")
@@ -123,6 +133,18 @@ func run() error {
 	// to the end so `status APP --json` and `--json APP` behave consistently.
 	if err := fs.Parse(reorder(os.Args[2:])); err != nil {
 		return &exitError{2, err.Error()}
+	}
+	if command == "external-database" && *wait {
+		return &exitError{2, "use external-database operation OPERATION_ID to follow the accepted operation"}
+	}
+	if command != "external-database" && (*externalCredentialsFile != "" || *externalCredentialsStdin) {
+		return &exitError{2, "--credentials-file and --credentials-stdin apply only to external-database rotate"}
+	}
+	if command != "database" && (*databaseTargetMember != "" || *databaseOperation != "") {
+		return &exitError{2, "--target-member and --operation-id apply only to database"}
+	}
+	if command == "database" && *wait {
+		return &exitError{2, "use database operation OPERATION_ID to follow the accepted operation"}
 	}
 	explicitFile := false
 	fs.Visit(func(f *flag.Flag) { explicitFile = explicitFile || f.Name == "file" })
@@ -289,8 +311,12 @@ func run() error {
 		arg = fs.Arg(0)
 	}
 	switch command {
+	case "external-database":
+		return externalDatabaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), externalDatabaseFlags{CredentialsFile: *externalCredentialsFile, CredentialsStdin: *externalCredentialsStdin, IdempotencyKey: *idem, ReviewID: *reviewID, Name: *name, Revision: *revision, ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable})
 	case "database":
-		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, JobID: *databaseRecoveryJob, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
+		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, HistoryRange: *databaseHistoryRange, JobID: *databaseRecoveryJob, TargetMember: *databaseTargetMember, OperationID: *databaseOperation, PublicEndpointID: *databasePublicEndpointID, PublicEndpointPurpose: *databasePublicEndpointPurpose, PublicEndpointCIDRs: *databasePublicEndpointCIDRs, PublicEndpointRevision: *databasePublicEndpointRevision, PublicEndpointMaxConnections: *databasePublicEndpointMaxConnections, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
+	case "platform":
+		return managedPlatformCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *name)
 	case "previews", "preview-create", "preview-delete":
 		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
 	case "mcp":
@@ -699,7 +725,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -746,10 +772,27 @@ func help() {
   hakopod key-revoke KEY_ID
   hakopod cancel DEPLOYMENT_ID
   hakopod database list --project demo --environment development
+  hakopod platform list --project demo --environment development
+  hakopod platform review|apply --file supabase.toml --project demo --environment development
+  hakopod platform show|operations PLATFORM_ID
+  hakopod platform update PLATFORM_ID --file supabase.toml
+  hakopod platform delete PLATFORM_ID --name PLATFORM_NAME
+  hakopod platform operation OPERATION_ID
+  hakopod database nodes --project demo --environment development
   hakopod database create --file database.toml --project demo --environment development
   hakopod database show DATABASE_ID
   hakopod database resize-plan DATABASE_ID --file database.toml
   hakopod database resize DATABASE_ID --file database.toml --review-id REVIEW_ID --revision 1
+  hakopod database switchover-plan DATABASE_ID --target-member STANDBY_MEMBER
+  hakopod database switchover DATABASE_ID --review-id REVIEW_ID --revision 1 --name DATABASE_NAME --idempotency-key RETRY_KEY
+  hakopod database switchover-retry DATABASE_ID --operation-id OPERATION_ID --revision 1 --name DATABASE_NAME
+  hakopod database operation OPERATION_ID
+  hakopod database public-endpoint-capabilities DATABASE_ID
+  hakopod database public-endpoint-list DATABASE_ID
+  hakopod database public-endpoint-plan DATABASE_ID --purpose read_write --source-cidrs 192.0.2.0/24 --max-connections 32
+  hakopod database public-endpoint-publish DATABASE_ID --review-id REVIEW_ID --revision 1 --endpoint-revision 0 --idempotency-key RETRY_KEY
+  hakopod database public-endpoint-revoke DATABASE_ID --public-endpoint-id ENDPOINT_ID --endpoint-revision 1 --idempotency-key RETRY_KEY
+  hakopod database public-endpoint-operation OPERATION_ID
   hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write
   hakopod database connect DATABASE_ID --review-id REVIEW_ID --name APP_NAME
   hakopod database inspect DATABASE_ID --job-id JOB_ID --revision 1 --name DATABASE_NAME --inspected
@@ -757,6 +800,18 @@ func help() {
   hakopod database import IMPORT_ID --file DUMP --name docker-source
   hakopod database restore-plan DATABASE_ID --artifact-id ARTIFACT_ID
   hakopod database restore DATABASE_ID --artifact-id ARTIFACT_ID --review-id REVIEW_ID --name TARGET_NAME
+  hakopod external-database list --project demo --environment development
+  hakopod external-database show|trust|connections CONNECTION_ID
+  hakopod external-database operation OPERATION_ID
+  hakopod external-database rotate CONNECTION_ID --credentials-file credentials.json --revision 1 --name CONNECTION_NAME
+  hakopod external-database refresh-review CONNECTION_ID --application-id APP_ID --service api --variable DATABASE_URL
+  hakopod external-database refresh CONNECTION_ID --review-id REVIEW_ID --name APP_NAME
+  hakopod external-database disconnect-review CONNECTION_ID --application-id APP_ID --service api --variable DATABASE_URL
+  hakopod external-database disconnect CONNECTION_ID --review-id REVIEW_ID --name APP_NAME
+  hakopod external-database delete CONNECTION_ID --revision 1 --name CONNECTION_NAME
+
+External database credential rotation accepts JSON with username and password
+through a restricted --credentials-file or redirected --credentials-stdin.
 
 CI: set HAKOPOD_API_URL and HAKOPOD_API_KEY in the CI secret store.
 Previews: hakopod preview-create APP --name pr-123 --file preview.toml --ttl 24h --acknowledge-data-expiry

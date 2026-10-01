@@ -12,14 +12,16 @@ import (
 // Binding derives a private service URL at deployment time. Only references
 // enter revisions; resolved credentials remain in application-scoped Secrets.
 type Binding struct {
-	ManagedDatabase string     `json:"managed_database,omitempty" toml:"managed_database"`
-	Endpoint        string     `json:"endpoint,omitempty" toml:"endpoint"`
-	ClusterAware    bool       `json:"cluster_aware,omitempty" toml:"cluster_aware"`
-	Service         string     `json:"service,omitempty" toml:"service"`
-	Protocol        string     `json:"protocol" toml:"protocol"`
-	Database        string     `json:"database,omitempty" toml:"database"`
-	Username        string     `json:"username,omitempty" toml:"username"`
-	Password        *SecretRef `json:"password,omitempty" toml:"password"`
+	ExternalDatabase         string     `json:"external_database,omitempty" toml:"external_database"`
+	ExternalDatabaseRevision int64      `json:"external_database_revision,omitempty" toml:"external_database_revision"`
+	ManagedDatabase          string     `json:"managed_database,omitempty" toml:"managed_database"`
+	Endpoint                 string     `json:"endpoint,omitempty" toml:"endpoint"`
+	ClusterAware             bool       `json:"cluster_aware,omitempty" toml:"cluster_aware"`
+	Service                  string     `json:"service,omitempty" toml:"service"`
+	Protocol                 string     `json:"protocol" toml:"protocol"`
+	Database                 string     `json:"database,omitempty" toml:"database"`
+	Username                 string     `json:"username,omitempty" toml:"username"`
+	Password                 *SecretRef `json:"password,omitempty" toml:"password"`
 }
 
 func BindingSecretKey(name string) string { return "__binding_" + name }
@@ -42,18 +44,39 @@ func validateBindings(app Application) error {
 			if _, ok := s.Secrets[BindingSecretKey(key)]; ok {
 				return fmt.Errorf("services.%s.bindings: reserved secret key collision", name)
 			}
+			if b.ExternalDatabase != "" {
+				if err := validateExternalDatabaseBinding(app, s, b); err != nil {
+					return err
+				}
+				continue
+			}
+			if b.ExternalDatabaseRevision != 0 {
+				return fmt.Errorf("external_database_revision requires an external database")
+			}
 			if b.ManagedDatabase != "" {
 				if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ManagedDatabase) || b.Service != "" || b.Password != nil || b.Username != "" || b.Database != "" {
 					return fmt.Errorf("managed database bindings require only a database ID, protocol and endpoint")
 				}
-				if b.Protocol != "postgres" && b.Protocol != "redis" {
-					return fmt.Errorf("managed database protocol must be postgres or redis")
+				if b.Protocol != "postgres" && b.Protocol != "redis" && b.Protocol != "mysql" && b.Protocol != "mongodb" && b.Protocol != "clickhouse" && b.Protocol != "oracle" {
+					return fmt.Errorf("managed database protocol must be postgres, mysql, redis, mongodb, clickhouse or oracle")
 				}
-				if b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "cluster" {
+				if b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "cluster" && b.Endpoint != "pooled_read_write" && b.Endpoint != "pooled_read_only" {
 					return fmt.Errorf("choose a managed database endpoint")
 				}
-				if b.Protocol == "postgres" && (b.Endpoint == "cluster" || b.ClusterAware) || b.Protocol == "redis" && (b.Endpoint == "read_only" || (b.Endpoint == "cluster") != b.ClusterAware) {
+				if b.Protocol == "postgres" && (b.Endpoint == "cluster" || b.ClusterAware) || b.Protocol == "redis" && (b.Endpoint != "read_write" && b.Endpoint != "cluster" || (b.Endpoint == "cluster") != b.ClusterAware) {
 					return fmt.Errorf("database endpoint and cluster-aware acknowledgement do not match the protocol")
+				}
+				if b.Protocol == "mysql" && (b.ClusterAware || b.Endpoint != "read_write" && b.Endpoint != "read_only") {
+					return fmt.Errorf("MySQL bindings require a write or replica route")
+				}
+				if b.Protocol == "mongodb" && (b.Endpoint != "cluster" || !b.ClusterAware) {
+					return fmt.Errorf("MongoDB bindings require the replica set endpoint and a compatible driver")
+				}
+				if b.Protocol == "clickhouse" && (b.Endpoint != "read_write" && b.Endpoint != "cluster" || (b.Endpoint == "cluster") != b.ClusterAware) {
+					return fmt.Errorf("ClickHouse bindings require a write or cluster endpoint with matching acknowledgement")
+				}
+				if b.Protocol == "oracle" && (b.Endpoint != "read_write" || b.ClusterAware) {
+					return fmt.Errorf("Oracle Free bindings require the primary TCPS endpoint")
 				}
 				continue
 			}

@@ -1,0 +1,245 @@
+.db-create {
+  @apply min-w-0;
+}
+.db-create-steps {
+  @apply -mx-6 mb-5 border-b border-border px-6;
+}
+.db-create-steps ol {
+  @apply flex flex-wrap items-center gap-x-3 gap-y-1 pb-3;
+}
+.db-create-steps li {
+  @apply flex min-w-0 items-center gap-3 text-muted-foreground;
+}
+.db-create-steps button {
+  @apply flex min-h-11 items-center gap-2 bg-transparent text-sm;
+}
+.db-create-steps button:disabled {
+  @apply cursor-not-allowed bg-transparent;
+}
+.db-create-steps [aria-current='step'] {
+  color: var(--navigation-active);
+}
+.db-step-index {
+  @apply flex size-6 items-center justify-center font-mono text-xs;
+}
+.db-create-layout {
+  @apply grid min-w-0 items-start gap-5;
+}
+.db-create-stage {
+  @apply mb-4 grid gap-1;
+}
+.db-create-stage > span {
+  @apply text-xs text-muted-foreground;
+}
+.db-create-stage h2 {
+  @apply text-lg font-medium;
+}
+.db-engine-grid {
+  @apply grid min-w-0 grid-cols-1 gap-3;
+}
+.db-engine-card,
+.db-layout-card,
+.db-security-card {
+  @apply grid min-w-0 content-start gap-2 rounded-md border border-border bg-card p-4 text-left;
+}
+.db-engine-card,
+.db-layout-card {
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.db-engine-card:enabled:hover,
+.db-layout-card:enabled:hover {
+  border-color: color-mix(in srgb, var(--foreground) 35%, var(--hairline));
+}
+.db-engine-card[aria-pressed='true'],
+.db-layout-card[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--action) 60%, var(--foreground));
+  background: color-mix(in srgb, var(--action) 4%, var(--card));
+}
+.db-create button:focus-visible,
+.db-create-stage:focus-visible,
+.db-create-confirm input:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
+.db-engine-card:disabled {
+  @apply cursor-not-allowed;
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+}
+.db-engine-card-top {
+  @apply mb-1 flex items-center justify-between gap-3;
+}
+.db-engine-mark {
+  @apply flex size-12 items-center justify-center rounded-md border border-border bg-background;
+}
+.db-choice-indicator {
+  @apply flex size-5 items-center justify-center rounded-full border border-border;
+}
+.db-engine-card[aria-pressed='true'] .db-choice-indicator {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--action-fg);
+}
+.db-engine-card strong,
+.db-layout-card strong,
+.db-security-card strong {
+  @apply text-sm font-semibold;
+}
+.db-engine-description,
+.db-layout-card > span:not(.db-engine-tags),
+.db-security-card > span:not(.db-engine-tags) {
+  @apply text-xs leading-relaxed text-muted-foreground;
+}
+.db-engine-tags {
+  @apply mt-2 flex flex-wrap gap-1.5;
+}
+.db-engine-tags > span {
+  @apply rounded-sm border border-border px-2 py-1 text-[11px] leading-tight text-muted-foreground;
+}
+.db-create-summary {
+  @apply grid min-w-0 gap-4 rounded-md border border-border bg-card p-4;
+}
+.db-create-summary-title {
+  @apply flex items-center justify-between gap-2;
+}
+.db-create-summary-title h2 {
+  @apply text-sm font-medium;
+}
+.db-create-summary-identity {
+  @apply flex min-w-0 items-center gap-3;
+}
+.db-create-summary-identity > div {
+  @apply grid min-w-0 gap-1;
+}
+.db-create-summary-identity strong {
+  @apply text-sm [overflow-wrap:anywhere];
+}
+.db-create-summary-identity span:not(.service-brand-icon) {
+  @apply text-xs text-muted-foreground;
+}
+.db-create-topology {
+  @apply flex min-w-0 flex-col items-center rounded-md border border-border bg-background px-3 py-4;
+  background-image: radial-gradient(circle, var(--hairline) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+.db-create-topology-label {
+  @apply mb-4 text-[11px] text-muted-foreground;
+}
+.db-create-member {
+  @apply flex min-w-0 flex-col items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs;
+}
+.db-create-member > span {
+  @apply text-center text-[11px] leading-relaxed;
+}
+.db-create-connector {
+  @apply h-5 border-l border-dashed border-border;
+}
+.db-create-replicas {
+  @apply grid w-full grid-cols-2 gap-2;
+}
+.db-create-summary-facts {
+  @apply grid gap-3;
+}
+.db-create-summary-facts > div {
+  @apply flex flex-wrap items-center justify-between gap-2 text-xs;
+}
+.db-create-summary-facts dt {
+  @apply flex items-center gap-2 text-muted-foreground;
+}
+.db-create-summary-facts dd {
+  @apply font-mono;
+}
+.db-create-summary-security {
+  @apply grid grid-cols-[auto_1fr] items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground;
+}
+.db-create-facts {
+  @apply grid gap-0;
+}
+.db-create-facts > div {
+  @apply grid gap-2 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0;
+}
+.db-create-facts dt {
+  @apply text-xs text-muted-foreground;
+}
+.db-create-facts dd {
+  @apply text-sm [overflow-wrap:anywhere];
+}
+.db-allocation-total {
+  @apply flex items-start gap-3 rounded-md border border-border bg-card p-4;
+}
+.db-allocation-total > svg {
+  @apply mt-0.5 shrink-0;
+}
+.db-allocation-total > span {
+  @apply grid gap-2 text-sm;
+}
+.db-allocation-total > span > span {
+  @apply text-xs leading-relaxed text-muted-foreground;
+}
+.db-create-confirm {
+  @apply flex min-h-11 items-center gap-3 rounded-md border border-border bg-card p-4 text-sm;
+}
+.db-create-confirm input {
+  @apply size-4 shrink-0;
+  accent-color: var(--action);
+}
+.db-create-error {
+  @apply mt-4 text-sm;
+  color: var(--destructive);
+}
+.db-create-footer {
+  @apply mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border py-4;
+}
+.db-create-footer-progress {
+  @apply text-xs text-muted-foreground;
+}
+@variant sm {
+  .db-engine-grid {
+    @apply grid-cols-2;
+  }
+  .db-create-facts > div {
+    @apply grid-cols-[140px_minmax(0,1fr)];
+  }
+}
+@variant lg {
+  .db-create-layout {
+    @apply grid-cols-[minmax(0,1fr)_280px];
+  }
+  .db-create-summary {
+    @apply sticky top-4 col-start-2 row-start-1;
+  }
+  .db-create-footer {
+    @apply col-span-2 row-start-2;
+  }
+}
+@variant xl {
+  .db-engine-grid {
+    @apply grid-cols-3;
+  }
+  .db-create-layout {
+    @apply grid-cols-[minmax(0,1fr)_300px];
+  }
+}
+@variant max-sm {
+  .db-create-steps {
+    @apply -mx-4 px-4;
+  }
+  .db-create-steps li,
+  .db-create-steps ol {
+    @apply gap-x-1;
+  }
+  .db-create-steps li > svg {
+    @apply hidden;
+  }
+  .db-create-steps button {
+    @apply gap-1 px-1 text-xs;
+  }
+  .db-create-footer-progress {
+    @apply hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-engine-card,
+  .db-layout-card {
+    transition: none;
+  }
+}

@@ -77,6 +77,9 @@ export default function CommandPalette({
           },
         ]
       : []),
+    ...(project && environment
+      ? [{ id: 'platforms', label: 'Platforms', icon: 'server', group: 'Navigate', action: () => void navigate({ to: '/platforms', search: { project, environment } }) }]
+      : []),
     ...[
       { to: '/templates', icon: 'box', label: 'Catalog' },
       { to: '/builds', icon: 'branch', label: 'Builds' },

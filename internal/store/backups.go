@@ -119,6 +119,9 @@ func (s *Store) PutBackupDestination(ctx context.Context, p Principal, d backup.
 	if revision != expected {
 		return d, backup.ErrConflict
 	}
+	if err = vitessDestinationUnusedTx(ctx, tx, d.ID); err != nil {
+		return d, err
+	}
 	if expected > 0 {
 		var importing bool
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_imports WHERE spec->>'destination_id'=$1 AND status IN ('pending','uploading','cleaning'))", d.ID).Scan(&importing); err != nil {
@@ -169,6 +172,16 @@ func (s *Store) DeleteBackupDestination(ctx context.Context, p Principal, id str
 	}
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044230)"); err != nil {
+		return err
+	}
+	var lockedRevision int64
+	if err = tx.QueryRow(ctx, "SELECT revision FROM backup_destinations WHERE id=$1 FOR UPDATE", id).Scan(&lockedRevision); err != nil {
+		return backupError(err)
+	}
+	if lockedRevision != revision {
+		return backup.ErrConflict
+	}
+	if err = vitessDestinationUnusedTx(ctx, tx, id); err != nil {
 		return err
 	}
 	var used bool
@@ -257,6 +270,9 @@ func backupRequestHash(j backup.Job) string {
 	return hex.EncodeToString(sum[:])
 }
 func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, idem string) (backup.Job, error) {
+	if err := lockArchiveDestinationTx(ctx, tx, j.DestinationID); err != nil {
+		return j, err
+	}
 	if err := authorizeBackupJob(ctx, tx, p, j); err != nil {
 		return j, err
 	}
@@ -266,6 +282,11 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 			return j, backupError(err)
 		}
 		if status != "ready" {
+			return j, backup.ErrConflict
+		}
+		if idle, err := databaseMaintenanceIdle(ctx, tx, j.Source.ManagedDatabaseID); err != nil {
+			return j, err
+		} else if !idle {
 			return j, backup.ErrConflict
 		}
 	}
@@ -573,10 +594,18 @@ func validateManagedRestoreTarget(ctx context.Context, tx pgx.Tx, a backup.Artif
 	if err != nil {
 		return err
 	}
+	if idle, err := databaseMaintenanceIdle(ctx, tx, d.ID); err != nil {
+		return err
+	} else if !idle {
+		return backup.ErrConflict
+	}
 	if err = backup.ValidateManagedRecovery(a, d.Spec.Engine, d.Spec.Version); err != nil {
 		return err
 	}
 	if err = databaseUnreferenced(ctx, tx, d.ID); err != nil {
+		return err
+	}
+	if err = ensureNoDatabasePublicEndpoints(ctx, tx, d.ID); err != nil {
 		return err
 	}
 	if d.Revision != 1 || d.Revision != target.Revision || d.Status != "ready" || d.Recovery != nil || a.Source.ManagedDatabaseID == d.ID || d.Spec.Engine != a.Source.Engine || target.ManagedDatabaseName != d.Spec.Name {

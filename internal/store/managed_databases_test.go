@@ -15,6 +15,7 @@ func databaseFixture(t *testing.T) (*Store, Principal, database.Resource) {
 	s := isolatedDatabase(t)
 	p := bootstrapPrincipal(t, s)
 	d := database.Resource{ID: NewID(), Project: "demo", Environment: "development", Spec: database.Spec{SchemaVersion: 1, Name: "database-development-fixture", Engine: "postgresql", Version: "17", Mode: "standalone", Shards: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1}, EncryptedCredentials: []byte("sealed-test-fixture")}
+	d.Spec = d.Spec.WithSecureDefaults()
 	return s, p, d
 }
 func TestManagedDatabaseIdempotencyScopeAndLeases(t *testing.T) {
@@ -91,6 +92,7 @@ func TestManagedDatabaseResizeReviewIsBoundAndSingleUse(t *testing.T) {
 	}
 	next := d.Spec
 	next.CPU = "200m"
+	next.Placement.NodeNames = []string{} // JSON omits this empty list when persisting the review.
 	plan, err := database.PlanResize(d, next, nil, time.Now().UTC())
 	if err != nil || len(plan.BlockedReasons) > 0 {
 		t.Fatal("valid plan", plan, err)
@@ -112,7 +114,7 @@ func TestManagedDatabaseResizeReviewIsBoundAndSingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if op.Review == nil || op.Review.Proposed != next {
+	if op.Review == nil || !op.Review.Proposed.Equal(next) {
 		t.Fatal("immutable review missing")
 	}
 	replay, err := s.AcceptDatabaseResize(ctx, p, d, 1, "reviewed-resize", review)

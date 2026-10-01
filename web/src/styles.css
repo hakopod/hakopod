@@ -10,7 +10,14 @@
 @import './styles/code.css';
 @import './styles/alarms.css';
 @import './styles/errors.css';
+@import './styles/databases.css';
+@import './styles/database-create.css';
 
 /* Match the source set for browser and server builds. */
 @source './';
 @source '../../packages/ui/packages/ui/src';
+
+@theme inline {
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-fg);
+}

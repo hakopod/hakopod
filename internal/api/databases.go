@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
@@ -14,6 +15,8 @@ import (
 )
 
 func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
+	s.registerDatabasePublicEndpointRoutes(mux)
+	mux.HandleFunc("GET /api/v1/database-placement/nodes", s.databasePlacementNodes)
 	mux.HandleFunc("GET /api/v1/database-operations/{id}", s.databaseOperation)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connection-plan", s.databaseConnectionPlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connect", s.databaseConnect)
@@ -22,11 +25,17 @@ func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/databases", s.createDatabase)
 	mux.HandleFunc("GET /api/v1/databases/{id}", s.database)
 	mux.HandleFunc("GET /api/v1/databases/{id}/operations", s.databaseOperations)
+	mux.HandleFunc("GET /api/v1/databases/{id}/connections", s.databaseConnections)
+	mux.HandleFunc("GET /api/v1/databases/{id}/trust", s.databaseTrust)
+	mux.HandleFunc("GET /api/v1/databases/{id}/metrics", s.databaseMetricHistory)
 	mux.HandleFunc("POST /api/v1/databases/{id}/credentials", s.databaseCredentials)
 	mux.HandleFunc("DELETE /api/v1/databases/{id}", s.deleteDatabase)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize-plan", s.databaseResizePlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize", s.resizeDatabase)
 	mux.HandleFunc("POST /api/v1/databases/{id}/restore-plan", s.managedDatabaseRestorePlan)
+	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-plan", s.oracleSwitchoverPlan)
+	mux.HandleFunc("POST /api/v1/databases/{id}/switchover", s.oracleSwitchover)
+	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-retry", s.oracleSwitchoverRetry)
 }
 func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
 	op, err := s.Store.DatabaseOperation(r.Context(), who(r), r.PathValue("id"))
@@ -66,6 +75,7 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) {
 		failure(w, store.ErrForbidden)
 		return
 	}
+	in.Spec = in.Spec.WithSecureDefaults()
 	if err := in.Spec.Validate(); err != nil {
 		problem(w, 400, "invalid_request", err.Error())
 		return
@@ -124,6 +134,34 @@ func (s *Server) databaseOperations(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, map[string]any{"items": items})
 }
+func (s *Server) databaseConnections(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Store.DatabaseConnections(r.Context(), who(r), r.PathValue("id"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, http.StatusOK, items)
+}
+func (s *Server) databaseTrust(w http.ResponseWriter, r *http.Request) {
+	d, err := s.Store.Database(r.Context(), who(r), r.PathValue("id"), false)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if s.Cluster == nil || !d.Spec.TLSRequired() {
+		problem(w, 409, "database_tls_unavailable", "Verified database TLS has not been configured.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	trust, err := s.Cluster.DatabaseTrust(ctx, d)
+	if err != nil {
+		problem(w, 503, "database_trust_unavailable", err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	write(w, http.StatusOK, trust)
+}
 func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 	d, err := s.Store.Database(r.Context(), who(r), r.PathValue("id"), true)
 	if err != nil {
@@ -147,6 +185,12 @@ func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	username := "app"
 	name := "app"
+	if d.Spec.Engine == "oracle" {
+		username, name = "APP", "FREEPDB1"
+		if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {
+			name = "APPDB"
+		}
+	}
 	if d.Spec.Engine == "redis" {
 		username = "default"
 		name = "0"
@@ -229,17 +273,38 @@ func (s *Server) RunManagedDatabases(ctx context.Context) {
 	if s.Cluster == nil || s.Store == nil {
 		return
 	}
-	timer := time.NewTicker(time.Second)
-	defer timer.Stop()
-	for ctx.Err() == nil {
-		s.reconcileDatabase(ctx)
-		s.refreshDatabaseObservation(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-		}
+	var workers sync.WaitGroup
+	start := func(interval time.Duration, step func(context.Context)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			timer := time.NewTicker(interval)
+			defer timer.Stop()
+			for ctx.Err() == nil {
+				step(ctx)
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+				}
+			}
+		}()
 	}
+	// A slow engine probe must not occupy the lifecycle reconciliation lane.
+	// Durable claims prevent two observation workers from probing the same DB.
+	start(time.Second, s.reconcileDatabase)
+	start(time.Second, s.reconcileDatabasePublicEndpoint)
+	for range 4 {
+		start(time.Second, s.refreshDatabaseObservation)
+	}
+	start(30*time.Second, func(parent context.Context) {
+		bounded, cancel := context.WithTimeout(parent, 5*time.Second)
+		defer cancel()
+		_ = s.Store.RefreshDatabaseRecoveries(bounded)
+		_ = s.Store.PruneDatabaseMetrics(bounded)
+		_ = s.Store.ExpireDatabasePublicEndpointReviews(bounded)
+	})
+	workers.Wait()
 }
 func (s *Server) reconcileDatabase(parent context.Context) {
 	claim, cancel := context.WithTimeout(parent, 5*time.Second)
@@ -251,6 +316,19 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 	ctx, stop := context.WithTimeout(parent, 25*time.Second)
 	defer stop()
 	d, err := s.Store.DatabaseInternal(ctx, op.DatabaseID)
+	if err != nil {
+		return
+	}
+	names, err := s.Store.DatabasePublicEndpointNames(ctx, d.ID, "")
+	if err != nil {
+		return
+	}
+	d.PublicEndpointNames = names
+	d.PublicEndpointMembers, err = s.Store.DatabasePublicEndpointMembers(ctx, d.ID, "")
+	if err != nil {
+		return
+	}
+	d.PublicEndpointAccess, err = s.Store.DatabasePublicEndpointAccessRequired(ctx, d.ID)
 	if err != nil {
 		return
 	}
@@ -281,6 +359,10 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 		} else {
 			finish("queued", "deleting", "Waiting for owned database resources to be removed.", d.Observation)
 		}
+		return
+	}
+	if op.Kind == "switchover" {
+		s.reconcileOracleSwitchover(ctx, d, op, before, finish)
 		return
 	}
 	password, err := database.OpenCredentials(s.authEncryptionKey(), d)
@@ -358,17 +440,73 @@ func (s *Server) resizeDatabase(w http.ResponseWriter, r *http.Request) {
 	write(w, 202, op)
 }
 func (s *Server) refreshDatabaseObservation(parent context.Context) {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 50*time.Second)
 	defer cancel()
-	_ = s.Store.RefreshDatabaseRecoveries(ctx)
-	d, err := s.Store.NextDatabaseObservation(ctx)
+	d, lease, err := s.Store.ClaimDatabaseObservation(ctx)
 	if err != nil {
 		return
 	}
-	o, err := s.Cluster.ObserveDatabase(ctx, d)
+	defer s.Store.ReleaseDatabaseObservation(d.ID, lease)
+	names, err := s.Store.DatabasePublicEndpointNames(ctx, d.ID, "")
+	if err != nil {
+		return
+	}
+	d.PublicEndpointNames = names
+	d.PublicEndpointMembers, err = s.Store.DatabasePublicEndpointMembers(ctx, d.ID, "")
+	if err != nil {
+		return
+	}
+	d.PublicEndpointAccess, err = s.Store.DatabasePublicEndpointAccessRequired(ctx, d.ID)
+	if err != nil {
+		return
+	}
+	var identityErr, recoveryAccessErr, nativeStorageErr error
+	if d.Spec.Engine == "vitess" {
+		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
+		claim, e := s.Store.ClaimDatabaseNativeStorageMaintenance(maintenance, d.ID, d.Revision)
+		if e != nil {
+			nativeStorageErr = e
+		} else if claim == nil {
+			nativeStorageErr = store.ErrConflict
+		} else {
+			nativeStorageErr = s.Cluster.ReconcileVitessBackupAuthority(maintenance, d, func() error { return claim.Check(maintenance) })
+			claim.Release()
+		}
+		stop()
+	}
+	renewIdentity := d.Status == "ready" && nativeStorageErr == nil && (d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess") && d.Spec.TLSRequired()
+	reconcileRecoveryAccess := d.Status == "ready" && d.Recovery != nil
+	if renewIdentity || reconcileRecoveryAccess {
+		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
+		claim, e := s.Store.ClaimDatabaseMaintenance(maintenance, d.ID, d.Revision)
+		if e == nil && claim != nil {
+			if renewIdentity {
+				identityErr = s.Cluster.RenewDatabaseIdentity(maintenance, d, func() error { return claim.Check(maintenance) })
+			}
+			if reconcileRecoveryAccess {
+				recoveryAccessErr = s.Cluster.ReconcileDatabaseRecoveryAccess(maintenance, d, func() error { return claim.Check(maintenance) })
+			}
+			claim.Release()
+		}
+		stop()
+	}
+	observe, stop := context.WithTimeout(ctx, 25*time.Second)
+	defer stop()
+	o, err := s.Cluster.ObserveDatabase(observe, d)
 	if err != nil {
 		o.Status = "unknown"
 		o.Message = "Database health could not be verified."
 	}
-	_ = s.Store.ObserveDatabase(ctx, d.ID, d.Revision, o)
+	if identityErr != nil && o.TLS != nil {
+		o.TLS.Message = "Automatic certificate renewal could not complete. Check controller availability and certificate expiry."
+	}
+	if recoveryAccessErr != nil {
+		o.Status = "unknown"
+		o.Message = "Recovery network isolation could not be verified. Reconciliation will retry."
+	}
+	if nativeStorageErr != nil || d.Spec.Engine == "vitess" && identityErr != nil {
+		o.Status = "unknown"
+		o.Message = "Vitess recovery storage authority or certificate maintenance could not be verified. Reconciliation will retry."
+	}
+	_ = s.Store.ObserveClaimedDatabase(ctx, d.ID, d.Revision, lease, o)
 }

@@ -8,48 +8,84 @@ import (
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// Completed and evicted pods cannot serve traffic. Exclude their retained API
+// records before applying inventory limits; replacement pods still have to pass
+// ownership, readiness, endpoint and native engine checks.
+const activeDatabasePodFields = "status.phase!=Failed,status.phase!=Succeeded"
+
 func (c *Client) observePostgresDatabase(ctx context.Context, d database.Resource, o *database.Observation) error {
 	primaries := 0
 	for _, member := range o.Members {
-		output := &databaseBoundedWriter{limit: 4096}
-		query := "SELECT pg_is_in_recovery(), (SELECT count(*) FROM pg_stat_replication WHERE state='streaming'), (SELECT count(*) FROM pg_stat_wal_receiver WHERE status='streaming')"
-		if err := c.DatabaseExec(ctx, d, member, []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", query}, nil, output); err != nil {
-			return err
-		}
-		expected := "t|0|1"
 		if member.Name == o.Primary {
 			primaries++
-			expected = "f|" + strconv.Itoa(d.Spec.Replicas) + "|0"
-		}
-		if strings.TrimSpace(output.String()) != expected {
-			return fmt.Errorf("PostgreSQL primary or streaming replication is not healthy")
 		}
 	}
 	if primaries != 1 {
 		return fmt.Errorf("PostgreSQL has no unique observed primary")
 	}
-	return nil
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(3)
+	for _, member := range o.Members {
+		group.Go(func() error {
+			output := &databaseBoundedWriter{limit: 4096}
+			query := "SELECT pg_is_in_recovery(), (SELECT count(*) FROM pg_stat_replication WHERE state='streaming'), (SELECT count(*) FROM pg_stat_wal_receiver WHERE status='streaming')"
+			if err := c.DatabaseExec(ctx, d, member, []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", query}, nil, output); err != nil {
+				return err
+			}
+			expected := "t|0|1"
+			if member.Name == o.Primary {
+				expected = "f|" + strconv.Itoa(d.Spec.Replicas) + "|0"
+			}
+			if strings.TrimSpace(output.String()) != expected {
+				return fmt.Errorf("PostgreSQL primary or streaming replication is not healthy")
+			}
+			return nil
+		})
+	}
+	return group.Wait()
 }
 
 func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource, o database.Observation) error {
 	ns := DatabaseNamespace(d.ID)
 	for _, endpoint := range o.Endpoints {
+		members := o.Members
+		pooled := endpoint.Purpose == "pooled_read_write" || endpoint.Purpose == "pooled_read_only"
+		routed := d.Spec.Engine == "mysql" || d.Spec.Engine == "vitess"
+		if routed {
+			if o.Routing == nil || !o.Routing.Ready {
+				return fmt.Errorf("database routing observation is unavailable")
+			}
+			members = o.Routing.Members
+		}
+		if pooled {
+			if o.Pooling == nil || d.Spec.Pooling == nil {
+				return fmt.Errorf("pooler observation is unavailable")
+			}
+			members = o.Pooling.Members
+		}
 		name := strings.Split(endpoint.Host, ".")[0]
 		service, err := c.kube.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil || service.Spec.Type != corev1.ServiceTypeClusterIP || len(service.Spec.ExternalIPs) > 0 {
 			return fmt.Errorf("database private service is unavailable")
 		}
 		portOK := false
+		portName := ""
 		for _, port := range service.Spec.Ports {
 			if int(port.Port) == endpoint.Port && port.Protocol == corev1.ProtocolTCP {
+				if port.TargetPort.Type == intstr.Int && port.TargetPort.IntVal != int32(endpoint.Port) || port.TargetPort.Type == intstr.String && port.TargetPort.StrVal == "" {
+					return fmt.Errorf("database service points at an unexpected protocol port")
+				}
 				portOK = true
+				portName = port.Name
 			}
 		}
 		if !portOK {
@@ -61,6 +97,9 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 		}
 		found := map[string]bool{}
 		for _, slice := range slices.Items {
+			if !databaseEndpointSlicePortMatches(slice.Ports, portName, int32(endpoint.Port)) {
+				return fmt.Errorf("database endpoint discovery points at an unexpected protocol port")
+			}
 			owned := false
 			for _, owner := range slice.OwnerReferences {
 				if owner.UID == service.UID {
@@ -75,15 +114,18 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 					continue
 				}
 				matched := false
-				for _, member := range o.Members {
+				for _, member := range members {
 					if e.TargetRef == nil || e.TargetRef.Namespace != ns || e.TargetRef.Name != member.Name || string(e.TargetRef.UID) != member.UID {
 						continue
 					}
-					if endpoint.Purpose == "read_write" && member.Role != "primary" {
+					if !routed && endpoint.Purpose == "read_write" && member.Role != "primary" {
 						return fmt.Errorf("write endpoint points at a replica")
 					}
-					if endpoint.Purpose == "read_only" && member.Role != "replica" {
+					if !routed && endpoint.Purpose == "read_only" && member.Role != "replica" {
 						return fmt.Errorf("read endpoint points at a primary")
+					}
+					if pooled && member.Role != endpoint.Purpose {
+						return fmt.Errorf("pooler endpoint points at a different route")
 					}
 					found[member.UID] = true
 					matched = true
@@ -94,11 +136,23 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 			}
 		}
 		minimum := 1
+		if pooled {
+			minimum = d.Spec.Pooling.Instances
+		}
 		if endpoint.Purpose == "read_only" {
 			minimum = d.Spec.Replicas
 		}
 		if endpoint.Purpose == "cluster" {
 			minimum = d.Spec.Shards
+			if d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" {
+				minimum = d.Spec.Members()
+			}
+		}
+		if routed {
+			minimum = d.Spec.RouterInstances()
+			if d.Spec.Engine == "vitess" {
+				minimum = d.Spec.VitessGateways()
+			}
 		}
 		if len(found) != minimum {
 			return fmt.Errorf("database service has not published the expected ready members")
@@ -119,7 +173,11 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 				return fmt.Errorf("database storage is not ready")
 			}
 			size := claim.Status.Capacity[corev1.ResourceStorage]
-			if size.Cmp(resource.MustParse(fmt.Sprintf("%dGi", d.Spec.StorageGiB))) < 0 {
+			expectedSize := d.Spec.StorageGiB
+			if d.Spec.Engine == "mongodb" && volume.Name == "logs-volume" {
+				expectedSize = database.MongoDBLogStorageGiB
+			}
+			if size.Cmp(resource.MustParse(fmt.Sprintf("%dGi", expectedSize))) < 0 {
 				return fmt.Errorf("database storage has not reached the requested size")
 			}
 			volumes++
@@ -129,6 +187,26 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 		}
 	}
 	return nil
+}
+
+// A healthy pod and a valid certificate do not prove the Service routes to
+// that listener. Verify the named port's resolved target as well as its UID.
+func databaseEndpointSlicePortMatches(ports []discoveryv1.EndpointPort, name string, expected int32) bool {
+	matched := 0
+	for _, port := range ports {
+		actualName := ""
+		if port.Name != nil {
+			actualName = *port.Name
+		}
+		if actualName != name {
+			continue
+		}
+		if port.Port == nil || *port.Port != expected || port.Protocol == nil || *port.Protocol != corev1.ProtocolTCP {
+			return false
+		}
+		matched++
+	}
+	return matched == 1
 }
 
 // CNPG instance managers require Kubernetes API access. Resolve only the actual
@@ -185,6 +263,11 @@ func (c *Client) databaseAPIEgress(ctx context.Context) ([]networkingv1.NetworkP
 }
 
 func (c *Client) ValidateDatabaseResize(ctx context.Context, d database.Resource, next database.Spec) error {
+	placement := d
+	placement.Spec = next
+	if err := c.ValidateDatabasePlacement(ctx, placement); err != nil {
+		return err
+	}
 	if next.StorageGiB <= d.Spec.StorageGiB {
 		return nil
 	}

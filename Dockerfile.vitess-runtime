@@ -1,0 +1,19 @@
+FROM docker.io/vitess/lite:v23.0.6@sha256:4a6fee36e049abe76e442eb43d7d198f5fe285d480e1888ee36b3a22b1914a76
+
+COPY --chmod=0755 bin/vtctld bin/vtctldclient bin/vtgate bin/vttablet bin/vtorc bin/vtbackup bin/mysqlctld /vt/bin/
+
+# Keep the complete upstream filesystem without retaining the overwritten
+# binaries in a lower layer. Preserve the upstream runtime configuration below.
+FROM scratch
+COPY --from=0 / /
+
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
+      io.hakopod.vitess.upstream="0f1ed062dec171e0adfab796110549752901e299" \
+      io.hakopod.vitess.patch="replication-identity-v1"
+
+ENV PATH="/vt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    VTROOT="/vt" \
+    VTDATAROOT="/vt/vtdataroot"
+USER vitess
+VOLUME ["/vt/vtdataroot"]
+CMD ["bash"]

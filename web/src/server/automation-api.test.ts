@@ -3,6 +3,29 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { proxy } from './api-proxy.ts'
 
+test('external database automation routes keep method boundaries and exclude credential reads', async (t) => {
+  const id = 'e'.repeat(32)
+  const mock = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    assert.equal(new Headers(init?.headers).get('Cookie'), null)
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer hp_external_fixture')
+    return Response.json({ accepted: true })
+  })
+  for (const [path, method] of [
+    ['external-databases', 'POST'],
+    [`external-databases/${id}`, 'PUT'],
+    [`external-databases/${id}/trust`, 'GET'],
+    [`external-databases/${id}/connection-plan`, 'POST'],
+    [`external-database-operations/${id}`, 'GET'],
+  ]) {
+    const response = await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/${path}`, { method, headers: { Authorization: 'Bearer hp_external_fixture', Cookie: 'ambient-session', 'Idempotency-Key': 'external-fixture-key' }, ...(method !== 'GET' ? { body: '{}' } : {}) }))
+    assert.equal(response.status, 200, `${method} ${path}`)
+  }
+  assert.equal(mock.mock.callCount(), 5)
+  assert.equal((await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/external-databases/${id}/credentials`, { headers: { Authorization: 'Bearer hp_external_fixture' } }))).status, 404)
+  assert.equal((await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/external-databases/${id}/trust`, { method: 'POST', headers: { Authorization: 'Bearer hp_external_fixture' }, body: '{}' }))).status, 405)
+  assert.equal(mock.mock.callCount(), 5)
+})
+
 const app = '0ed1ea04daed35bba5a60f60fd029a7c'
 function request(path: string, method = 'GET', body?: string, headers = {}) {
   return proxy({
@@ -14,6 +37,75 @@ function request(path: string, method = 'GET', body?: string, headers = {}) {
     params: { _splat: 'v1/' + path.split('?')[0] },
   })
 }
+
+test('database CA trust follows the authenticated read-only API route', async (t) => {
+  const id = 'a'.repeat(32)
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    assert.equal(new URL(String(url)).pathname, `/api/v1/databases/${id}/trust`)
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer hp_fixture')
+    return Response.json({ certificate_pem: 'public CA fixture' })
+  })
+  assert.equal((await request(`databases/${id}/trust`)).status, 200)
+  assert.equal((await request(`databases/${id}/trust`, 'POST', '{}')).status, 405)
+  assert.equal(mocked.mock.callCount(), 1)
+})
+
+test('public endpoint automation preserves scoped authority, review bodies and method boundaries', async (t) => {
+  const id = 'a'.repeat(32)
+  const endpoint = 'b'.repeat(32)
+  const operation = 'c'.repeat(32)
+  const cases = [
+    [`databases/${id}/public-endpoint-capabilities`, 'GET'],
+    [`databases/${id}/public-endpoint-plan`, 'POST'],
+    [`databases/${id}/public-endpoints`, 'GET'],
+    [`databases/${id}/public-endpoints`, 'POST'],
+    [`databases/${id}/public-endpoints/${endpoint}`, 'DELETE'],
+    [`database-public-endpoint-operations/${operation}`, 'GET'],
+  ]
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    assert.ok(cases.some(([path, method]) => new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method))
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
+    assert.equal(headers.get('Cookie'), null)
+    assert.equal(headers.get('X-Hakopod-Workspace'), id)
+    assert.equal(headers.get('Idempotency-Key'), 'endpoint-fixture-key')
+    if (init?.method !== 'GET') assert.equal(new TextDecoder().decode(init?.body as Uint8Array), '{"expected_endpoint_revision":3}')
+    return Response.json({ accepted: true })
+  })
+  for (const [path, method] of cases) {
+    const response = await request(path, method, method === 'GET' ? undefined : '{"expected_endpoint_revision":3}', {
+      Cookie: 'ambient-session', 'X-Hakopod-Workspace': id, 'Idempotency-Key': 'endpoint-fixture-key',
+    })
+    assert.equal(response.status, 200, `${method} ${path}`)
+  }
+  assert.equal(mocked.mock.callCount(), cases.length)
+  for (const [path, method] of [
+    [`databases/${id}/public-endpoint-capabilities`, 'POST'],
+    [`databases/${id}/public-endpoint-plan`, 'GET'],
+    [`databases/${id}/public-endpoints`, 'DELETE'],
+    [`databases/${id}/public-endpoints/${endpoint}`, 'POST'],
+    [`database-public-endpoint-operations/${operation}`, 'DELETE'],
+  ]) assert.equal((await request(path, method, method === 'GET' ? undefined : '{}')).status, 405)
+  assert.equal((await request(`databases/${id}/public-endpoints/${endpoint}/credentials`)).status, 404)
+  assert.equal(mocked.mock.callCount(), cases.length)
+})
+
+test('database node discovery preserves explicit scope and is read-only', async (t) => {
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const target = new URL(String(url))
+    assert.equal(target.pathname, '/api/v1/database-placement/nodes')
+    assert.equal(target.search, '?project=orders&environment=staging')
+    assert.equal(init?.method, 'GET')
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer hp_fixture')
+    return Response.json({ items: [], limit: 48 })
+  })
+  const path = 'database-placement/nodes?project=orders&environment=staging'
+  const response = await request(path)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  for (const method of ['POST', 'PUT', 'DELETE']) assert.equal((await request(path, method, '{}')).status, 405)
+  assert.equal(mocked.mock.callCount(), 1)
+})
 
 test('CI fetches an application with its own key, without a browser session', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
@@ -146,6 +238,7 @@ test('SDK lifecycle routes forward scoped machine credentials and DELETE confirm
     ['POST', 'applications/' + app + '/rollback'],
     ['POST', 'databases'],
     ['GET', 'databases/db'],
+    ['GET', 'databases/db/connections'],
     ['DELETE', 'databases/db'],
     ['GET', 'database-operations/operation'],
     ['POST', 'databases/db/resize-plan'],

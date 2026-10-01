@@ -66,6 +66,12 @@ test('required empty selection and disabled fields retain form semantics', () =>
 })
 
 test('parent navigation uses route context without relying on browser history', () => {
+  assert.deepEqual(parentNavigation('/workspaces/database-review/cluster'), { to: '/workspaces/database-review', label: 'Back to workspace' })
+  const databaseScope = { project: 'connection-project', environment: 'staging' }
+  for (const route of ['/databases/external/new', '/databases/external/connection-id'])
+    assert.deepEqual(parentNavigation(route, {}, undefined, databaseScope), { to: '/databases', label: 'Back to databases', search: databaseScope })
+  for (const route of ['/databases/external/connection-id/edit', '/databases/external/connection-id/connect'])
+    assert.deepEqual(parentNavigation(route, { project: 'stale-project' }, undefined, databaseScope), { to: '/databases/external/connection-id', label: 'Back to connection', search: databaseScope })
   assert.equal(parentNavigation('/'), null)
   assert.equal(parentNavigation('/networks'), null)
   assert.deepEqual(parentNavigation('/settings/edge'), {

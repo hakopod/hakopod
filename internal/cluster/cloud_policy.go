@@ -15,19 +15,20 @@ var ErrCloudLimit = errors.New("managed-cloud limit exceeded")
 // CloudCapabilities describes enforced capacity for this runtime. Customers
 // retain the initial single-node BYO policy.
 type CloudCapabilities struct {
-	Version                int      `json:"version"`
-	Mode                   string   `json:"mode"`
-	Enforced               bool     `json:"enforced"`
-	NodeLimit              int      `json:"node_limit"`
-	NodeCount              int      `json:"node_count"`
-	NodeCountComplete      bool     `json:"node_count_complete"`
-	ServicesPerApplication int      `json:"services_per_application"`
-	ReplicasPerService     int32    `json:"replicas_per_service"`
-	Profiles               []string `json:"profiles"`
-	PublicTCP              bool     `json:"public_tcp"`
-	GPU                    bool     `json:"gpu"`
-	AWSIdentity            bool     `json:"aws_identity"`
-	ContainerDaemon        bool     `json:"container_daemon"`
+	Version                int                  `json:"version"`
+	Mode                   string               `json:"mode"`
+	Enforced               bool                 `json:"enforced"`
+	NodeLimit              int                  `json:"node_limit"`
+	NodeCount              int                  `json:"node_count"`
+	NodeCountComplete      bool                 `json:"node_count_complete"`
+	ServicesPerApplication int                  `json:"services_per_application"`
+	ReplicasPerService     int32                `json:"replicas_per_service"`
+	Profiles               []string             `json:"profiles"`
+	PublicTCP              bool                 `json:"public_tcp"`
+	GPU                    bool                 `json:"gpu"`
+	AWSIdentity            bool                 `json:"aws_identity"`
+	ContainerDaemon        bool                 `json:"container_daemon"`
+	ManagedClusterNodes    []ManagedClusterNode `json:"managed_cluster_nodes,omitempty"`
 }
 
 func (c *Client) CloudMode() bool { return c.options.DeploymentMode == DeploymentManagedCloud }
@@ -40,10 +41,16 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 		return CloudCapabilities{}, errors.New("Kubernetes client is unavailable")
 	}
 	limit := c.options.OperatorNodeLimit
+	if len(c.options.ManagedClusterNodes) > 0 {
+		if ValidateManagedClusterNodes(c.options.ManagedClusterNodes) != nil || c.options.DedicatedPublicTCPNode != "" {
+			return CloudCapabilities{}, fmt.Errorf("%w: invalid managed cluster enrollment", ErrCloudLimit)
+		}
+		limit = len(c.options.ManagedClusterNodes)
+	}
 	if limit == 0 {
 		limit = 1
 	}
-	if limit < 1 || limit > 3 {
+	if limit < 1 || limit > 3 && len(c.options.ManagedClusterNodes) == 0 {
 		return CloudCapabilities{}, fmt.Errorf("%w: invalid operator node limit", ErrCloudLimit)
 	}
 	result := CloudCapabilities{Version: 1, Mode: DeploymentManagedCloud, Enforced: true, NodeLimit: limit, ServicesPerApplication: 10, ReplicasPerService: 3, Profiles: []string{"small", "medium", "large"}}
@@ -59,6 +66,12 @@ func (c *Client) CloudCapabilities(ctx context.Context) (CloudCapabilities, erro
 	result.ContainerDaemon = result.PublicTCP
 	result.NodeCount = len(nodes.Items)
 	result.NodeCountComplete = nodes.Continue == ""
+	if len(c.options.ManagedClusterNodes) > 0 {
+		if !result.NodeCountComplete || !managedClusterMatches(c.options.ManagedClusterNodes, nodes.Items) {
+			return CloudCapabilities{}, fmt.Errorf("%w: registered nodes differ from the approved names and UIDs", ErrCloudLimit)
+		}
+		result.ManagedClusterNodes = append([]ManagedClusterNode(nil), c.options.ManagedClusterNodes...)
+	}
 	if result.NodeCount > limit+1 {
 		result.NodeCount = limit + 1
 		result.NodeCountComplete = false

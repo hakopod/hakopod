@@ -35,6 +35,7 @@ jobs:
       GOMEMLIMIT: 512MiB
       HAKOPOD_TEST_DATABASE_URL: postgres://hakopod_ci:ephemeral-ci-only@127.0.0.1:5432/postgres?sslmode=disable
       HAKOPOD_DEPLOY_ACTION_PATH: ${{ github.workspace }}/.local/deploy-action
+      TEST_KUBECTL: ${{ github.workspace }}/.local/bin/kubectl
     services:
       postgres:
         image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
@@ -65,6 +66,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
+      - name: Install the pinned client for offline Kubernetes streaming tests
+        run: |
+          mkdir -p .local/bin
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+            https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl -o "$TEST_KUBECTL"
+          echo '874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf  .local/bin/kubectl' | sha256sum --check --strict
+          chmod 0755 "$TEST_KUBECTL"
       - run: go test ./...
       - name: Check signup build policies
         run: |
@@ -81,6 +89,9 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
+          for test in scripts/test-development-*.py scripts/test-managed-oracle-wallet.py; do
+            python3 -B "$test"
+          done
           python3 -B scripts/actions/export-benchmark-test.py
           python3 -B scripts/actions/docker-acceptance-test.py
           python3 -B scripts/actions/runtime-workload-test.py

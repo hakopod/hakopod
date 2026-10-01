@@ -1,0 +1,37 @@
+package vitessbackupschedule
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+	"planetscale.dev/vitess-operator/pkg/operator/vtctld"
+	"planetscale.dev/vitess-operator/pkg/operator/vtgate"
+	"planetscale.dev/vitess-operator/pkg/operator/vtorc"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+func TestHakopodControlPodsReadGroupOnlySecrets(t *testing.T) {
+	key := client.ObjectKey{Namespace: "fixture", Name: "control"}
+	mode := int32(0440)
+	volumes := []corev1.Volume{{Name: "tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "fixture-tls", DefaultMode: &mode}}}}
+	mounts := []corev1.VolumeMount{{Name: "tls", MountPath: "/etc/hakopod/tls", ReadOnly: true}}
+	pods := map[string]*appsv1.Deployment{
+		"vtgate": vtgate.NewDeployment(key, &vtgate.Spec{Cell: &planetscalev2.VitessCellSpec{}, Authentication: &planetscalev2.VitessGatewayAuthentication{}, ExtraVolumes: volumes, ExtraVolumeMounts: mounts}, "mysql:8.4.6"),
+		"vtctld": vtctld.NewDeployment(key, &vtctld.Spec{Cell: &planetscalev2.VitessCellTemplate{}, GlobalLockserver: &planetscalev2.VitessLockserverParams{}, ExtraVolumes: volumes, ExtraVolumeMounts: mounts}, "mysql:8.4.6"),
+		"vtorc":  vtorc.NewDeployment(key, &vtorc.Spec{ExtraVolumes: volumes, ExtraVolumeMounts: mounts}),
+	}
+	for name, deployment := range pods {
+		pod := deployment.Spec.Template.Spec
+		if pod.SecurityContext == nil || pod.SecurityContext.FSGroup == nil || *pod.SecurityContext.FSGroup != planetscalev2.DefaultVitessFSGroup {
+			t.Fatalf("%s cannot read TLS files with group-only mode", name)
+		}
+		if len(pod.Containers) != 1 || pod.Containers[0].SecurityContext == nil || pod.Containers[0].SecurityContext.RunAsUser == nil || *pod.Containers[0].SecurityContext.RunAsUser == 0 {
+			t.Fatalf("%s lost its non-root process identity", name)
+		}
+		if len(pod.Volumes) != 1 || pod.Volumes[0].Secret == nil || *pod.Volumes[0].Secret.DefaultMode != mode || len(pod.Containers[0].VolumeMounts) != 1 || !pod.Containers[0].VolumeMounts[0].ReadOnly {
+			t.Fatalf("%s weakened its projected TLS volume", name)
+		}
+	}
+}

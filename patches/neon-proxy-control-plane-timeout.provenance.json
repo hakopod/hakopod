@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/neondatabase/neon.git",
+  "upstream_commit": "fa504217c61bbcaf5c512d75830564541f917f8f",
+  "patch": "neon-proxy-control-plane-timeout.patch",
+  "patch_sha256": "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6",
+  "behavior": "The production proxy ControlPlane client applies a two-second request timeout without middleware retries.",
+  "qualification": "The resulting proxy image must be built on the VM, recorded by digest, and used as images.proxy. The unpatched upstream image is not accepted."
+}

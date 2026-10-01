@@ -35,6 +35,8 @@ export function parentNavigation(
       ),
     }
   if (parts[0] === 'projects') return { to: '/', label: 'Back to projects' }
+  if (parts[0] === 'workspaces' && parts[1] && parts[2])
+    return { to: `/workspaces/${parts[1]}`, label: 'Back to workspace' }
   if (parts[0] === 'applications' && parts[1]) {
     if (['new', 'import'].includes(parts[1])) return applications
     if (parts[2]) {
@@ -66,6 +68,10 @@ export function parentNavigation(
     const databaseScope: Record<string, string> = scope?.project
       ? { project: scope.project, environment: scope.environment }
       : {}
+    if (parts[1] === 'external')
+      return parts[3] && parts[2] !== 'new'
+        ? { to: `/databases/external/${parts[2]}`, label: 'Back to connection', search: databaseScope }
+        : { to: '/databases', label: 'Back to databases', search: databaseScope }
     return parts[2]
       ? { to: `/databases/${parts[1]}`, label: 'Back to database', search: databaseScope }
       : { to: '/databases', label: 'Back to databases', search: databaseScope }

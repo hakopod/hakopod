@@ -24,18 +24,21 @@ def read(*args):
 def run(*args):
     subprocess.run(args,check=True,timeout=240)
 
-def main(module, workspace_profile=None):
+def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None):
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     # This broader lock also covers the ordinary qualification probe, after
     # runtime installation hands off its separate local maintenance lock.
     with open("/run/lock/hakopod-install.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return apply_module(module, workspace_profile)
+        options = {key: value for key, value in {'engines': engines, 'plan_path': plan_path, 'review_path': review_path}.items() if value is not None}
+        return apply_module(module, workspace_profile, **options)
 
-def apply_module(module, workspace_profile=None):
+def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None):
     if workspace_profile is not None and module != 'managed-actions':
         raise ValueError('Workspace profiles apply only to Managed Actions')
+    if any(value is not None for value in (engines, plan_path, review_path)) and module != 'managed-databases':
+        raise ValueError('Engine selection and reviewed plans apply only to Managed Databases')
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     config=json.loads(Path('/etc/hakopod/config.json').read_text())
@@ -45,6 +48,24 @@ def apply_module(module, workspace_profile=None):
     root=Path(__file__).resolve().parent/'modules'
     if not root.is_dir():root=Path(__file__).resolve().parents[1]/'deploy'
     ident=marker['id']
+    if module=='managed-databases':
+        from database_controllers import make_plan, apply_plan, write_plan
+        if bool(plan_path)==bool(review_path) or not engines:
+            raise ValueError('Select engines and either --plan or --apply-reviewed-plan')
+        bundle=root/'database-controllers'
+        if plan_path:
+            write_plan(Path(plan_path),make_plan(bundle,engines,ident,KUBE))
+            print('Review the saved controller resources and allocations before applying.')
+            return
+        review=json.loads(Path(review_path).read_text())
+        if review.get('installation')!=ident or review.get('engines')!=sorted(engines):
+            raise ValueError('The reviewed controller selection differs')
+        result=apply_plan(bundle,review,KUBE)
+        record=Path('/etc/hakopod/database-controllers.json')
+        record.write_text(json.dumps(result)+'\n');record.chmod(0o600)
+        print('Selected controllers are ready. Database workloads and runtime settings were not changed.')
+        return
+
     def owned(kind,name,namespace=''):
         args=['get',kind,name,'--ignore-not-found']
         if namespace:args+=['-n',namespace]
@@ -81,7 +102,9 @@ def apply_module(module, workspace_profile=None):
     print(module+' module is ready. Original installer resume inputs are unchanged.')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions'])
+    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases'])
     parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
-    options = parser.parse_args()
-    main(options.module, options.workspace_profile)
+    parser.add_argument('--engines', nargs='+', choices=['postgresql','redis','mysql','mongodb','clickhouse'])
+    parser.add_argument('--plan'); parser.add_argument('--apply-reviewed-plan')
+    args=parser.parse_args()
+    main(args.module, args.workspace_profile, engines=args.engines, plan_path=args.plan, review_path=args.apply_reviewed_plan)
