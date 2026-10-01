@@ -209,7 +209,9 @@ func newRecoveryFixtureConfigured(t *testing.T, ctx context.Context, c *Client, 
 		if t.Failed() && os.Getenv("HAKOPOD_KEEP_DATABASE_FIXTURES") == "1" {
 			return
 		}
-		cleanup, stop := context.WithTimeout(context.Background(), 3*time.Minute)
+		// Namespace and volume controllers can need a five-minute resync after
+		// the last pod exits. Keep a bounded wait for actual volume reclamation.
+		cleanup, stop := context.WithTimeout(context.Background(), 8*time.Minute)
 		defer stop()
 		for cleanup.Err() == nil {
 			done, err := c.DeleteDatabase(cleanup, d, func() error { return cleanup.Err() })
@@ -233,7 +235,7 @@ func newRecoveryFixtureConfigured(t *testing.T, ctx context.Context, c *Client, 
 }
 
 func TestManagedPostgresRecoveryAndUpgradeLive(t *testing.T) {
-	c, ctx := liveRecoveryClient(t)
+	c, ctx := liveRecoveryClient(t, 25*time.Minute)
 	source, sourceHealth := newRecoveryFixture(t, ctx, c, "postgresql", "17")
 	query := func(d database.Resource, o database.Observation, sql string) string {
 		t.Helper()

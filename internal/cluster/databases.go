@@ -449,6 +449,12 @@ func (c *Client) DeleteDatabase(ctx context.Context, d database.Resource, before
 	if ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		return false, fmt.Errorf("refusing to delete an unowned database namespace")
 	}
+	if d.Spec.Engine == "postgresql" {
+		removed, err := c.deletePostgresController(ctx, d, before)
+		if err != nil || !removed {
+			return false, err
+		}
+	}
 	if d.Spec.Engine == "mysql" && ns.DeletionTimestamp == nil {
 		removed, err := c.deleteMySQLController(ctx, d, before)
 		if err != nil || !removed {
@@ -470,14 +476,25 @@ func (c *Client) DeleteDatabase(ctx context.Context, d database.Resource, before
 	if ns.DeletionTimestamp != nil {
 		return false, nil
 	}
-	// The accepted delete explicitly removes this database's data. Change only
-	// PVs bound to the exact claims in its owned namespace, never the shared class.
-	claims, err := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).List(ctx, metav1.ListOptions{Limit: 1025})
-	if err != nil {
+	if err = c.prepareDatabaseVolumeDeletion(ctx, ns.Name, before); err != nil {
 		return false, err
 	}
+	if err = before(); err != nil {
+		return false, err
+	}
+	err = c.kube.CoreV1().Namespaces().Delete(ctx, ns.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: ptr(ns.UID)}})
+	return false, err
+}
+
+// The accepted delete explicitly removes this database's data. Change only
+// PVs bound to the exact claims in its owned namespace, never the shared class.
+func (c *Client) prepareDatabaseVolumeDeletion(ctx context.Context, namespace string, before func() error) error {
+	claims, err := c.kube.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{Limit: 1025})
+	if err != nil {
+		return err
+	}
 	if len(claims.Items) > 1024 || claims.Continue != "" {
-		return false, fmt.Errorf("database volume claim list exceeds its bound")
+		return fmt.Errorf("database volume claim list exceeds its bound")
 	}
 	volumes := make([]*corev1.PersistentVolume, 0, len(claims.Items))
 	for _, claim := range claims.Items {
@@ -486,11 +503,11 @@ func (c *Client) DeleteDatabase(ctx context.Context, d database.Resource, before
 		}
 		volume, err := c.kube.CoreV1().PersistentVolumes().Get(ctx, claim.Spec.VolumeName, metav1.GetOptions{})
 		if err != nil {
-			return false, err
+			return err
 		}
 		ref := volume.Spec.ClaimRef
-		if ref == nil || ref.Namespace != ns.Name || ref.Name != claim.Name || ref.UID != claim.UID || claim.UID == "" {
-			return false, fmt.Errorf("database volume claim identity changed")
+		if ref == nil || ref.Namespace != namespace || ref.Name != claim.Name || ref.UID != claim.UID || claim.UID == "" {
+			return fmt.Errorf("database volume claim identity changed")
 		}
 		if volume.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimDelete {
 			volumes = append(volumes, volume)
@@ -499,17 +516,13 @@ func (c *Client) DeleteDatabase(ctx context.Context, d database.Resource, before
 	for _, volume := range volumes {
 		volume.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
 		if err = before(); err != nil {
-			return false, err
+			return err
 		}
 		if _, err = c.kube.CoreV1().PersistentVolumes().Update(ctx, volume, metav1.UpdateOptions{}); err != nil {
-			return false, err
+			return err
 		}
 	}
-	if err = before(); err != nil {
-		return false, err
-	}
-	err = c.kube.CoreV1().Namespaces().Delete(ctx, ns.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: ptr(ns.UID)}})
-	return false, err
+	return nil
 }
 
 func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (result database.Observation, err error) {
