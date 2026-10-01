@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+FROM hexpm/elixir:1.18.2-erlang-27.2.1-debian-bullseye-20250203-slim@sha256:8723523aac87dca52da6bb5a8a766099aef6586c708627c51e82d71608ca8951 AS builder
+
+ARG DEBIAN_SNAPSHOT=20250203T000000Z
+ARG RUST_VERSION=1.84.1
+ARG HEX_VERSION=2.5.1
+ARG HEX_SHA512=b650af32db1d17fe2ec29334da8c511ef802eefbcede734a43f73a8815ca9a1e263801cb6bb6be5196f8c95a111475e7fbb3542ac1d9f6bd41b4347a3e833520
+ARG REBAR3_VERSION=3.24.0
+ARG REBAR3_SHA256=d2d31cfb98904b8e4917300a75f870de12cb5167cd6214d1043e973a56668a54
+
+RUN sed -i \
+  -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT|g" \
+  -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT|g" \
+  /etc/apt/sources.list \
+  && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99snapshot
+RUN apt-get update -y && apt-get install -y build-essential git curl cmake libclang-dev patch \
+  && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION"
+ENV PATH="/root/.cargo/bin:${PATH}" \
+    HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt \
+    MIX_REBAR3=/root/.mix/rebar3 \
+    MIX_ENV=prod
+
+WORKDIR /app
+ADD --checksum=sha256:8b883bd6cc72db080ac4e6abfa90f11ba433bae41e3e8e5e4618ff49199ab098 \
+  https://codeload.github.com/supabase/supavisor/tar.gz/e8719d9ac5a43604c46d2d9e15bb34c76dea8f12 /tmp/supavisor.tar.gz
+RUN tar -xzf /tmp/supavisor.tar.gz --strip-components=1 && rm /tmp/supavisor.tar.gz
+COPY patches/supavisor-v2.9.12-hakopod-tls.patch /tmp/supavisor.patch
+RUN patch -p1 < /tmp/supavisor.patch && rm /tmp/supavisor.patch
+
+RUN curl --proto '=https' --tlsv1.2 -fsSL "https://builds.hex.pm/installs/1.16.0/hex-$HEX_VERSION.ez" -o /tmp/hex.ez \
+  && echo "$HEX_SHA512  /tmp/hex.ez" | sha512sum -c - \
+  && mix archive.install /tmp/hex.ez --force \
+  && curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/erlang/rebar3/releases/download/$REBAR3_VERSION/rebar3" -o /tmp/rebar3 \
+  && echo "$REBAR3_SHA256  /tmp/rebar3" | sha256sum -c - \
+  && install -m 0755 /tmp/rebar3 /root/.mix/rebar3 \
+  && rm /tmp/hex.ez /tmp/rebar3
+
+RUN mix deps.get --only prod && mix deps.compile && mix compile && mix release supavisor
+
+FROM debian:bullseye-20250203-slim@sha256:e831d9a884d63734fe3dd9c491ed9a5a3d4c6a6d32c5b14f2067357c49b0b7e1
+ARG DEBIAN_SNAPSHOT=20250203T000000Z
+RUN sed -i \
+  -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT|g" \
+  -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT|g" \
+  /etc/apt/sources.list \
+  && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99snapshot
+RUN apt-get update -y \
+  && apt-get install -y libstdc++6 openssl libncurses5 locales vim curl htop postgresql-contrib sudo tini cmake libclang-dev \
+  && apt-get clean && rm -f /var/lib/apt/lists/*_*
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    MIX_ENV=prod \
+    RLIMIT_NOFILE=100000 \
+    ECTO_IPV6=true \
+    ERL_AFLAGS="-proto_dist inet6_tcp"
+WORKDIR /app
+RUN chown 65534:65534 /app
+COPY --from=builder --chown=65534:65534 /app/_build/prod/rel/supavisor ./
+COPY --from=builder --chown=65534:65534 /app/limits.sh /app/limits.sh
+USER 65534:65534
+ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--", "/app/limits.sh"]
+CMD ["/app/bin/server"]

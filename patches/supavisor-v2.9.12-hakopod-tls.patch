@@ -1,0 +1,250 @@
+diff --git a/Dockerfile b/Dockerfile
+index 2f957a1..0b9ff5b 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -15,26 +15,51 @@
+ ARG ELIXIR_VERSION=1.18.2
+ ARG OTP_VERSION=27.2.1
+ ARG DEBIAN_VERSION=bullseye-20250203-slim
++ARG DEBIAN_SNAPSHOT=20250203T000000Z
++ARG RUST_VERSION=1.84.1
++ARG HEX_VERSION=2.5.1
++ARG HEX_SHA512=b650af32db1d17fe2ec29334da8c511ef802eefbcede734a43f73a8815ca9a1e263801cb6bb6be5196f8c95a111475e7fbb3542ac1d9f6bd41b4347a3e833520
++ARG REBAR3_VERSION=3.24.0
++ARG REBAR3_SHA256=d2d31cfb98904b8e4917300a75f870de12cb5167cd6214d1043e973a56668a54
+ 
+ ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
+ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
+ 
+ FROM ${BUILDER_IMAGE} as builder
+ 
++ARG DEBIAN_SNAPSHOT
++ARG RUST_VERSION
++ARG HEX_VERSION
++ARG HEX_SHA512
++ARG REBAR3_VERSION
++ARG REBAR3_SHA256
++RUN sed -i \
++  -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT|g" \
++  -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT|g" \
++  /etc/apt/sources.list \
++  && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99snapshot
++
+ # Install build dependencies
+ RUN apt-get update -y && apt-get install -y build-essential git curl cmake libclang-dev\
+   && apt-get clean && rm -f /var/lib/apt/lists/*_*
+ 
+ # Install Rust
+-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
++RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION"
+ ENV PATH="/root/.cargo/bin:${PATH}"
++ENV HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
++ENV MIX_REBAR3=/root/.mix/rebar3
+ 
+ # Prepare build dir
+ WORKDIR /app
+ 
+ # Install hex + rebar
+-RUN mix local.hex --force && \
+-  mix local.rebar --force
++RUN curl --proto '=https' --tlsv1.2 -fsSL "https://builds.hex.pm/installs/1.16.0/hex-$HEX_VERSION.ez" -o /tmp/hex.ez && \
++  echo "$HEX_SHA512  /tmp/hex.ez" | sha512sum -c - && \
++  mix archive.install /tmp/hex.ez --force && \
++  curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/erlang/rebar3/releases/download/$REBAR3_VERSION/rebar3" -o /tmp/rebar3 && \
++  echo "$REBAR3_SHA256  /tmp/rebar3" | sha256sum -c - && \
++  install -m 0755 /tmp/rebar3 /root/.mix/rebar3 && \
++  rm -f /tmp/hex.ez /tmp/rebar3
+ 
+ # Set build ENV
+ ENV MIX_ENV="prod"
+@@ -64,6 +89,13 @@ RUN mix release supavisor
+ # Start a new build stage for the final image
+ FROM ${RUNNER_IMAGE}
+ 
++ARG DEBIAN_SNAPSHOT
++RUN sed -i \
++  -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT|g" \
++  -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT|g" \
++  /etc/apt/sources.list \
++  && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99snapshot
++
+ RUN apt-get update -y && apt-get install -y libstdc++6 openssl libncurses5 locales vim curl htop postgresql-contrib sudo tini cmake libclang-dev \
+   && apt-get clean && rm -f /var/lib/apt/lists/*_*
+ 
+@@ -85,6 +117,8 @@ COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/supavisor ./
+ 
+ ENV RLIMIT_NOFILE 100000
+ COPY limits.sh /app/limits.sh
++
++USER 65534:65534
+ ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--", "/app/limits.sh"]
+ 
+ CMD ["/app/bin/server"]
+diff --git a/config/runtime.exs b/config/runtime.exs
+index fe8f182..7693012 100644
+--- a/config/runtime.exs
++++ b/config/runtime.exs
+@@ -99,6 +99,12 @@ topologies =
+         url: System.get_env("DATABASE_URL", "ecto://postgres:postgres@localhost:6432/postgres"),
+         heartbeat_interval: 5_000,
+         channel_name: "supavisor_#{region}_#{maj}_#{min}",
++        ssl: true,
++        ssl_opts:
++          Supavisor.TLS.peer_options(
++            System.get_env("DATABASE_SSL_SERVER_NAME", "db"),
++            cacertfile: System.fetch_env!("DATABASE_SSL_CA_CERT")
++          ),
+         socket_options: db_socket_options
+       ]
+     ]
+@@ -224,12 +230,17 @@ if config_env() != :test do
+       Supavisor.Helpers.get_env_bool("NAMED_PREPARED_STATEMENTS_ENABLED", false)
+   }
+ 
++  database_ssl_ca_cert = System.fetch_env!("DATABASE_SSL_CA_CERT")
++  database_ssl_server_name = System.get_env("DATABASE_SSL_SERVER_NAME", "db")
++
+   config :supavisor, Supavisor.Repo,
+     url: System.get_env("DATABASE_URL", "ecto://postgres:postgres@localhost:6432/postgres"),
+     pool_size: System.get_env("DB_POOL_SIZE", "25") |> String.to_integer(),
+-    ssl_opts: [
+-      verify: :verify_none
+-    ],
++    ssl: true,
++    ssl_opts:
++      Supavisor.TLS.peer_options(database_ssl_server_name,
++        cacertfile: database_ssl_ca_cert
++      ),
+     parameters: [
+       application_name: "supavisor_meta"
+     ],
+diff --git a/lib/cluster/strategy/postgres.ex b/lib/cluster/strategy/postgres.ex
+index 84c32df..8882992 100644
+--- a/lib/cluster/strategy/postgres.ex
++++ b/lib/cluster/strategy/postgres.ex
+@@ -33,7 +33,8 @@ defmodule Cluster.Strategy.Postgres do
+       Ecto.Repo.Supervisor.parse_url(state.config[:url])
+       |> Keyword.put_new(:parameters, application_name: "cluster_node_#{node()}")
+       |> Keyword.put_new(:auto_reconnect, true)
+-      |> Keyword.put_new(:ssl_opts, verify: :verify_none)
++      |> Keyword.put_new(:ssl, state.config[:ssl] || false)
++      |> Keyword.put_new(:ssl_opts, state.config[:ssl_opts] || [verify: :verify_none])
+       |> Keyword.put_new(:socket_options, state.config[:socket_options] || [])
+ 
+     new_config =
+diff --git a/lib/supavisor/auth_query.ex b/lib/supavisor/auth_query.ex
+index 5dfd365..d3d4f7f 100644
+--- a/lib/supavisor/auth_query.ex
++++ b/lib/supavisor/auth_query.ex
+@@ -156,12 +156,9 @@ defmodule Supavisor.AuthQuery do
+   defp build_ssl_options(%Tenant{upstream_ssl: true, upstream_verify: :peer} = tenant) do
+     sni = tenant.sni_hostname || tenant.db_host
+ 
+-    [
+-      verify: :verify_peer,
+-      cacerts: [Helpers.upstream_cert(tenant.upstream_tls_ca)],
+-      server_name_indication: String.to_charlist(sni),
+-      customize_hostname_check: [{:match_fun, fn _, _ -> true end}]
+-    ]
++    Supavisor.TLS.peer_options(sni,
++      cacerts: [Helpers.upstream_cert(tenant.upstream_tls_ca)]
++    )
+   end
+ 
+   defp build_ssl_options(_tenant) do
+diff --git a/lib/supavisor/db_handler.ex b/lib/supavisor/db_handler.ex
+index cd5d92d..a14da0b 100644
+--- a/lib/supavisor/db_handler.ex
++++ b/lib/supavisor/db_handler.ex
+@@ -694,14 +694,11 @@ defmodule Supavisor.DbHandler do
+     opts =
+       case conn_params.upstream_verify do
+         :peer ->
+-          [
+-            verify: :verify_peer,
+-            cacerts: [conn_params.upstream_tls_ca],
+-            # unclear behavior on pg14
+-            server_name_indication: conn_params.sni_hostname || conn_params.host,
+-            customize_hostname_check: [{:match_fun, fn _, _ -> true end}],
+-            receiver_spawn_opts: [min_heap_size: 2048]
+-          ]
++          Supavisor.TLS.peer_options(
++            conn_params.sni_hostname || conn_params.host,
++            cacerts: [conn_params.upstream_tls_ca]
++          )
++          |> Keyword.put(:receiver_spawn_opts, min_heap_size: 2048)
+ 
+         :none ->
+           [verify: :verify_none, receiver_spawn_opts: [min_heap_size: 2048]]
+diff --git a/lib/supavisor/helpers.ex b/lib/supavisor/helpers.ex
+index 6149a6c..cc1346a 100644
+--- a/lib/supavisor/helpers.ex
++++ b/lib/supavisor/helpers.ex
+@@ -32,12 +32,9 @@ defmodule Supavisor.Helpers do
+ 
+       ssl_opts =
+         if upstream_ssl and upstream_verify == :peer do
+-          [
+-            verify: :verify_peer,
+-            cacerts: [upstream_cert(params["upstream_tls_ca"])],
+-            server_name_indication: String.to_charlist(params["db_host"]),
+-            customize_hostname_check: [{:match_fun, fn _, _ -> true end}]
+-          ]
++          Supavisor.TLS.peer_options(params["sni_hostname"] || params["db_host"],
++            cacerts: [upstream_cert(params["upstream_tls_ca"])]
++          )
+         else
+           [verify: :verify_none]
+         end
+diff --git a/lib/supavisor/tls.ex b/lib/supavisor/tls.ex
+new file mode 100644
+index 0000000..6ef7f12
+--- /dev/null
++++ b/lib/supavisor/tls.ex
+@@ -0,0 +1,17 @@
++defmodule Supavisor.TLS do
++  @moduledoc false
++
++  @tls_versions [:"tlsv1.2", :"tlsv1.3"]
++
++  @spec peer_options(String.t() | charlist(), keyword()) :: keyword()
++  def peer_options(server_name, trust_options) when is_list(trust_options) do
++    [
++      verify: :verify_peer,
++      versions: @tls_versions,
++      server_name_indication: to_charlist(server_name),
++      customize_hostname_check: [
++        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
++      ]
++    ] ++ trust_options
++  end
++end
+diff --git a/test/supavisor/tls_test.exs b/test/supavisor/tls_test.exs
+new file mode 100644
+index 0000000..0e30200
+--- /dev/null
++++ b/test/supavisor/tls_test.exs
+@@ -0,0 +1,23 @@
++defmodule Supavisor.TLSTest do
++  use ExUnit.Case, async: true
++
++  test "peer options require trusted TLS, HTTPS hostname verification, and TLS 1.2 or newer" do
++    options = Supavisor.TLS.peer_options("db", cacerts: [<<1, 2, 3>>])
++
++    assert options[:verify] == :verify_peer
++    assert options[:versions] == [:"tlsv1.2", :"tlsv1.3"]
++    assert options[:server_name_indication] == ~c"db"
++    assert options[:cacerts] == [<<1, 2, 3>>]
++
++    match_fun = options[:customize_hostname_check][:match_fun]
++    assert is_function(match_fun, 2)
++    refute match_fun.({:dns_id, ~c"other.example"}, {:dNSName, ~c"db"})
++  end
++
++  test "peer options support a CA certificate file for the metadata repository" do
++    options = Supavisor.TLS.peer_options("db", cacertfile: "/run/ca.crt")
++
++    assert options[:cacertfile] == "/run/ca.crt"
++    assert options[:server_name_indication] == ~c"db"
++  end
++end
