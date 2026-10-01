@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	MaxCapacityReservations       = 256
-	MaxCapacityPoolWorkloads      = 1000
-	PodMemoryOverheadBytes  int64 = 50 << 20
+	MaxCapacityReservations        = 256
+	MaxCapacityPoolWorkloads       = 1000
+	PodMemoryOverheadBytes   int64 = 50 << 20
 )
 
 type Capacity struct {
@@ -58,12 +58,14 @@ type CapacityWorkloadOwnership struct {
 }
 
 // CapacityPoolWorkload identifies one durable application or database whose
-// pods are already included in the shared pool grant.
+// pods are already included in the shared pool grant. Capacity is the retained
+// rollout envelope used to account for live drift without double counting it.
 type CapacityPoolWorkload struct {
 	Kind        string
 	ID          string
 	Project     string
 	Environment string
+	Capacity    Capacity
 }
 
 // CapacityPoolOwnership is the complete durable workload inventory for one

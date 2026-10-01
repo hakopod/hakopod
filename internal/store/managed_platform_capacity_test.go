@@ -108,7 +108,7 @@ func TestManagedCapacityScopesBackfillFromTrustedPolicyAndRejectPoolChange(t *te
 		t.Fatal("trusted startup reconciliation did not bind the legacy scope", pool, err)
 	}
 	ownership, err := s.ManagedCapacityPoolOwnership(ctx, policy.Pool)
-	if err != nil || len(ownership.Workloads) != 1 || ownership.Workloads[0].Kind != "application" || ownership.Workloads[0].ID != created.ID {
+	if err != nil || len(ownership.Workloads) != 1 || ownership.Workloads[0].Kind != "application" || ownership.Workloads[0].ID != created.ID || ownership.Workloads[0].Capacity.CPUMilli < 1 || ownership.Workloads[0].Capacity.MemoryBytes < 1 {
 		t.Fatal("pool ownership did not include the exact durable application", ownership, err)
 	}
 	s.ManagedCapacityPool = func(context.Context, pgx.Tx, string, string) (string, error) { return "changed", nil }
@@ -118,6 +118,67 @@ func TestManagedCapacityScopesBackfillFromTrustedPolicyAndRejectPoolChange(t *te
 	s.ManagedCapacityPool = nil
 	if err := s.ReconcileManagedCapacityScopes(ctx); err == nil {
 		t.Fatal("durable capacity scope silently became unmanaged")
+	}
+}
+
+func TestManagedCapacityPoolOwnershipIncludesCrossScopePlatforms(t *testing.T) {
+	s, p, item, plan := managedPlatformFixture(t)
+	ctx := context.Background()
+	enableManagedPlatformCapacity(s, "node-a", "node-b", "node-c")
+	plan.StorageClass = "encrypted-block"
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO environments(project,name) VALUES($1,'other')`, item.Project); err != nil {
+		t.Fatal(err)
+	}
+	ownedNamespaces := map[string]bool{}
+	for index, environment := range []string{item.Environment, "other"} {
+		current := item
+		current.ID = NewID()
+		current.Environment = environment
+		current.Name = fmt.Sprintf("capacity-owned-%d", index)
+		current.Spec.Name = current.Name
+		currentPlan := plan
+		currentPlan.Namespace = "managed-platform-" + current.ID
+		review := managedPlatformReview(t, s, p, current, currentPlan, 0, "create")
+		if _, err := s.AcceptManagedPlatform(ctx, p, current, currentPlan, []byte("sealed"), review, 0, "capacity-owned-"+environment, "create"); err != nil {
+			t.Fatal(err)
+		}
+		op, err := s.ClaimManagedPlatformOperation(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claim := PlatformResourceClaim{PlatformID: current.ID, PlatformRevision: op.Revision, Component: "namespace." + currentPlan.Namespace, Kind: "runtime_component", ResourceID: "namespace-uid-" + environment, ImmutableGeneration: 1, OwnerOperationID: op.ID}
+		if err = s.ClaimPlatformResource(ctx, op, claim); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "", nil); err != nil {
+			t.Fatal(err)
+		}
+		ownedNamespaces[currentPlan.Namespace] = true
+	}
+	app := emptyTestSpec()
+	app.Name = "capacity-owned-application"
+	created, err := s.Accept(ctx, p, item.Project, "other", app, 0, "capacity-owned-application")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownership, err := s.ManagedCapacityPoolOwnership(ctx, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownership.PlatformNamespaces) != len(ownedNamespaces) {
+		t.Fatalf("pool ownership omitted cross-scope platform namespaces: %#v", ownership.PlatformNamespaces)
+	}
+	for namespace := range ownedNamespaces {
+		if ownership.PlatformNamespaces[namespace].UID == "" {
+			t.Fatalf("pool ownership omitted namespace %s", namespace)
+		}
+	}
+	foundApplication := false
+	for _, workload := range ownership.Workloads {
+		foundApplication = foundApplication || workload.Kind == "application" && workload.ID == created.ID && workload.Environment == "other"
+	}
+	if !foundApplication {
+		t.Fatal("pool ownership omitted cross-scope durable application")
 	}
 }
 
@@ -323,6 +384,53 @@ func TestManagedPlatformCapacityRetainsOverlapAndContractsAfterSuccess(t *testin
 	}
 	if err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM managed_platform_capacity_reservations WHERE platform_id=$1 AND node_name=ANY($2)`, item.ID, []string{"node-a", "node-b", "node-c"}).Scan(&oldNodes); err != nil || oldNodes != 0 {
 		t.Fatalf("successful reconciliation did not contract old placement: %d %v", oldNodes, err)
+	}
+}
+
+func TestManagedPlatformCapacityContractionRejectsGrowthWithoutChangingRows(t *testing.T) {
+	s, p, item, plan := managedPlatformFixture(t)
+	ctx := context.Background()
+	enableManagedPlatformCapacity(s, "node-a", "node-b", "node-c")
+	plan.StorageClass = "encrypted-block"
+	review := managedPlatformReview(t, s, p, item, plan, 0, "create")
+	if _, err := s.AcceptManagedPlatform(ctx, p, item, plan, []byte("sealed-create"), review, 0, "capacity-growth-create", "create"); err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.ClaimManagedPlatformOperation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var beforeCount int
+	var beforeCPU, beforeMemory, beforeStorage int64
+	if err = s.Pool.QueryRow(ctx, `SELECT count(*),sum(cpu_milli),sum(memory_bytes),sum(storage_gib) FROM managed_platform_capacity_reservations WHERE platform_id=$1`, item.ID).Scan(&beforeCount, &beforeCPU, &beforeMemory, &beforeStorage); err != nil {
+		t.Fatal(err)
+	}
+	expanded := op
+	resources := expanded.Spec.Resources["broker"]
+	resources.CPU = "750m"
+	expanded.Spec.Resources["broker"] = resources
+	for index := range expanded.Plan.Components {
+		if expanded.Plan.Components[index].Name == "broker" {
+			expanded.Plan.Components[index].Resources = resources
+		}
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.contractManagedPlatformCapacity(ctx, tx, expanded); !errors.Is(err, ErrConflict) {
+		t.Fatalf("capacity contraction expanded its admitted envelope: %v", err)
+	}
+	if err = tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var afterCount int
+	var afterCPU, afterMemory, afterStorage int64
+	if err = s.Pool.QueryRow(ctx, `SELECT count(*),sum(cpu_milli),sum(memory_bytes),sum(storage_gib) FROM managed_platform_capacity_reservations WHERE platform_id=$1`, item.ID).Scan(&afterCount, &afterCPU, &afterMemory, &afterStorage); err != nil {
+		t.Fatal(err)
+	}
+	if beforeCount != afterCount || beforeCPU != afterCPU || beforeMemory != afterMemory || beforeStorage != afterStorage {
+		t.Fatal("rejected contraction changed retained reservation rows")
 	}
 }
 
