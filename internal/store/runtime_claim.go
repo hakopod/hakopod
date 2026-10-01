@@ -16,9 +16,21 @@ type RuntimeClaim struct {
 	revision    int64
 	OperationID string
 	actions     bool
+	tlsIssuer   bool
 }
 
 func (s *Store) ClaimRuntime(ctx context.Context, application string, revision int64) (*RuntimeClaim, error) {
+	return s.claimRuntime(ctx, application, revision, false)
+}
+
+// ClaimTLSIssuer permits provisioning after a failed or cancelled deployment so
+// an application can repair its certificate configuration before redeploying.
+// It retains the revision, deployment, deletion and volume resize fences.
+func (s *Store) ClaimTLSIssuer(ctx context.Context, application string, revision int64) (*RuntimeClaim, error) {
+	return s.claimRuntime(ctx, application, revision, true)
+}
+
+func (s *Store) claimRuntime(ctx context.Context, application string, revision int64, tlsIssuer bool) (*RuntimeClaim, error) {
 	conn, err := s.Pool.Acquire(ctx)
 	if err != nil {
 		return nil, err
@@ -32,7 +44,7 @@ func (s *Store) ClaimRuntime(ctx context.Context, application string, revision i
 		conn.Release()
 		return nil, nil
 	}
-	claim := &RuntimeClaim{conn: conn, application: application, revision: revision}
+	claim := &RuntimeClaim{conn: conn, application: application, revision: revision, tlsIssuer: tlsIssuer}
 	if err = claim.Check(ctx); err != nil {
 		claim.Release()
 		if err == ErrClaimLost {
@@ -63,10 +75,10 @@ func (c *RuntimeClaim) Check(ctx context.Context) error {
 	var operation string
 	err := c.conn.QueryRow(ctx, `SELECT EXISTS (
  SELECT 1 FROM applications a JOIN deployments d ON d.application_id=a.id AND d.revision=a.revision
- WHERE a.id=$1 AND a.revision=$2 AND d.status='succeeded'
+ WHERE a.id=$1 AND a.revision=$2 AND (d.status='succeeded' OR ($3 AND d.status IN ('failed','cancelled')))
  AND NOT EXISTS (SELECT 1 FROM volume_resizes vr WHERE vr.application_id=a.id AND `+resizeBlocking+`)
  AND NOT EXISTS (SELECT 1 FROM deployments pending WHERE pending.application_id=a.id AND pending.status IN ('queued','running'))
- ), COALESCE((SELECT id FROM deployments WHERE application_id=$1 AND revision=$2 AND status='succeeded'),'')`, c.application, c.revision).Scan(&eligible, &operation)
+ ), COALESCE((SELECT id FROM deployments WHERE application_id=$1 AND revision=$2 AND (status='succeeded' OR ($3 AND status IN ('failed','cancelled')))),'')`, c.application, c.revision, c.tlsIssuer).Scan(&eligible, &operation)
 	if err != nil {
 		return err
 	}

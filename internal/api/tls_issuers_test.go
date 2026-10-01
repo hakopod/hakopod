@@ -347,3 +347,60 @@ func TestCloudTLSIssuerOverloadLeavesAPIReadsAvailable(t *testing.T) {
 		t.Fatalf("overload created extra resources: %d writes", f.writes)
 	}
 }
+
+func TestCloudTLSIssuerCreationRepairsFailedDeployment(t *testing.T) {
+	f := newTLSAPIFixture(t)
+	ctx := context.Background()
+	dep, err := f.db.Accept(ctx, f.owner, f.app.Project, f.app.Environment, f.app.Spec, f.app.Revision, "issuer-failed-revision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/applications/" + f.app.ID + "/tls/issuers"
+	input := map[string]any{"name": "repair", "email": "app@example.test"}
+	f.request("POST", path, f.token, input, 409)
+	if f.writes != 0 {
+		t.Fatal("queued deployment created issuer resources")
+	}
+	deployment, err := f.db.Claim(ctx)
+	if err != nil || deployment == nil {
+		t.Fatal("claim failed revision", err)
+	}
+	if err = deployment.Finish(ctx, "failed", "certificate issuer does not exist", nil); err != nil {
+		t.Fatal(err)
+	}
+	deployment.Release()
+	reader := f.key("repair-reader", "issuer-app", "deployments:read")
+	f.request("POST", path, reader, input, 403)
+	f.request("POST", "/applications/"+f.other.ID+"/tls/issuers", f.token, input, 403)
+	if f.writes != 0 {
+		t.Fatal("unauthorized recovery created issuer resources")
+	}
+	f.request("POST", path, f.token, input, 201)
+	writes := f.writes
+	f.request("POST", path, f.token, input, 201)
+	if f.writes != writes {
+		t.Fatal("retry rewrote immutable issuer resources")
+	}
+	var issuers cluster.TLSIssuers
+	response := f.request("GET", path, f.token, nil, 200)
+	if err = json.Unmarshal(response.Body.Bytes(), &issuers); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, issuer := range issuers.Items {
+		if issuer.Name == "repair" && issuer.Kind == "Issuer" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("recovery issuer was not discoverable")
+	}
+	app, err := f.db.Application(ctx, f.app.ID)
+	if err != nil || app.Revision != dep.Revision {
+		t.Fatal("issuer setup changed application revision", err)
+	}
+	saved, err := f.db.Deployment(ctx, dep.ID)
+	if err != nil || saved.Status != "failed" || saved.Error != "certificate issuer does not exist" {
+		t.Fatal("issuer setup rewrote failed deployment", err)
+	}
+}

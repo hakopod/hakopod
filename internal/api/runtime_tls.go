@@ -203,13 +203,13 @@ func (s *Server) createApplicationTLSIssuer(w http.ResponseWriter, r *http.Reque
 	}
 	// The application runtime lock also fences deployment and deletion. It
 	// serializes the bounded issuer count and creation across API processes.
-	claim, err := s.Store.ClaimRuntime(ctx, a.ID, a.Revision)
+	claim, err := s.Store.ClaimTLSIssuer(ctx, a.ID, a.Revision)
 	if err != nil {
 		failure(w, err)
 		return
 	}
 	if claim == nil {
-		problem(w, 409, "application_busy", "wait for the current application deployment to succeed, then retry issuer creation")
+		problem(w, 409, "application_busy", "wait for active application work to finish, then retry issuer creation")
 		return
 	}
 	defer claim.Release()
