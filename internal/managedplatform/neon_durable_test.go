@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -223,9 +224,9 @@ func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
 	storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
 		case "GET /control/v1/hakopod/ownership":
-			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
+			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
 		case "GET /control/v1/tenant/" + testTenant:
-			_, _ = w.Write([]byte(`{"ownership_token":"ffffffffffffffffffffffffffffffff"}`))
+			_, _ = w.Write([]byte(`{"ownership_token":"ffffffffffffffffffffffffffffffff","ownership_state":"completed"}`))
 		case "POST /debug/v1/inspect":
 			_, _ = w.Write([]byte(`{"attachment":[7,11]}`))
 		default:
@@ -262,7 +263,7 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 	storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
 		case "GET /control/v1/hakopod/ownership":
-			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
+			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
 		case "GET /control/v1/tenant/" + testTenant:
 			if tenantCreated {
 				w.WriteHeader(http.StatusOK)
@@ -275,7 +276,7 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 			}
 			tenantCreated = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}],"ownership_token":"` + fixtureIntentID("tenant") + `"}`))
+			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}],"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
 		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			if timelineCreated {
 				_, _ = w.Write([]byte(`{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}]}`))
@@ -425,12 +426,19 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	}
 	lifecycle := &durableNeonFixture{op: op, claims: claims, intents: map[string]DurableResourceIntent{}, events: &events}
 	tenantPresent := true
-	timelinePresent := true
+	tenantOwnershipState := "completed"
+	tenantDeletionToken := ""
+	controllerTimelinePresent := true
+	safekeeperTimelinePresent := true
 	computeAttached := true
 	tenantDescribeCalls := 0
 	timelineDescribeCalls := 0
 	safekeeperTimelineCalls := 0
 	tenantDeletes := 0
+	tenantDeletePreflights := 0
+	tenantDeletePreparations := 0
+	rejectTenantDeletePreflight := true
+	rejectTenantDeletePreparation := true
 	timelineDeletes := 0
 	runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{
 		config: NeonRuntimeConfig{
@@ -447,11 +455,15 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 			status := http.StatusOK
 			switch {
 			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/hakopod/ownership":
-				body = `{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`
+				body = `{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`
 			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/tenant/"+testTenant:
 				tenantDescribeCalls++
 				if tenantPresent {
-					body = `{"ownership_token":"` + tenantToken + `"}`
+					body = `{"ownership_token":"` + tenantToken + `","ownership_state":"` + tenantOwnershipState + `"`
+					if tenantDeletionToken != "" {
+						body += `,"ownership_delete_token":"` + tenantDeletionToken + `"`
+					}
+					body += `}`
 				} else {
 					status = http.StatusNotFound
 				}
@@ -459,7 +471,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 				body = `{"attachment":[7,11]}`
 			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
 				timelineDescribeCalls++
-				if timelinePresent {
+				if controllerTimelinePresent {
 					body = `{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}],"ownership_token":"` + timelineToken + `"}`
 				} else {
 					status = http.StatusNotFound
@@ -477,7 +489,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 				body = `{"id":` + id + `}`
 			case strings.HasPrefix(request.URL.Host, "sk-") && request.Method == http.MethodGet && request.URL.Path == "/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
 				safekeeperTimelineCalls++
-				if timelinePresent {
+				if safekeeperTimelinePresent {
 					body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","mconf":{"generation":13,"members":[{"id":1,"host":"sk-0.test","pg_port":5454},{"id":2,"host":"sk-1.test","pg_port":5454},{"id":3,"host":"sk-2.test","pg_port":5454}],"new_members":null},"ownership_token":"` + timelineToken + `"}`
 				} else {
 					status = http.StatusNotFound
@@ -498,12 +510,39 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 				if request.Header.Get(neonOwnershipHeader) != timelineToken {
 					t.Fatal("timeline delete omitted its durable ownership token")
 				}
-				timelinePresent = false
+				controllerTimelinePresent = false
+				safekeeperTimelinePresent = false
 				status = http.StatusNoContent
 			case request.URL.Host == "storage.test" && request.Method == http.MethodDelete && request.URL.Path == "/v1/tenant/"+testTenant:
+				if request.URL.Query().Get("validate_only") == "true" {
+					tenantDeletePreflights++
+					if !computeAttached || request.Header.Get(neonOwnershipHeader) != tenantToken {
+						t.Fatal("tenant deletion preflight ran after mutation or omitted its durable ownership token")
+					}
+					if rejectTenantDeletePreflight {
+						status = http.StatusConflict
+						body = `{"msg":"foreign remote descendant"}`
+					}
+					break
+				}
+				if request.URL.Query().Get("prepare_delete") == "true" {
+					tenantDeletePreparations++
+					tenantOwnershipState = "deleting"
+					if !computeAttached || request.Header.Get(neonOwnershipHeader) != tenantToken {
+						t.Fatal("tenant deletion preparation ran after mutation or omitted its durable ownership token")
+					}
+					if rejectTenantDeletePreparation {
+						status = http.StatusConflict
+						body = `{"msg":"fence publication failed"}`
+					} else {
+						tenantDeletionToken = "55555555555555555555555555555555"
+						body = `{"schema_version":1,"digest":"` + strings.Repeat("a", 64) + `","delete_token":"` + tenantDeletionToken + `"}`
+					}
+					break
+				}
 				tenantDeletes++
-				if timelinePresent || request.Header.Get(neonOwnershipHeader) != tenantToken {
-					t.Fatal("tenant delete ran before timeline deletion or omitted its durable ownership token")
+				if controllerTimelinePresent || safekeeperTimelinePresent || request.Header.Get(neonOwnershipHeader) != tenantToken || request.Header.Get(neonDeletionHeader) != "55555555555555555555555555555555" {
+					t.Fatal("tenant delete ran before timeline deletion or omitted a durable token")
 				}
 				tenantPresent = false
 				status = http.StatusNoContent
@@ -513,11 +552,39 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 		})},
 	}}
+	claimsBefore := make(map[string]DurableResourceClaim, len(lifecycle.claims))
+	for component, claim := range lifecycle.claims {
+		claimsBefore[component] = claim
+	}
+	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+		t.Fatal("foreign remote descendant did not block deletion")
+	}
+	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 {
+		t.Fatal("failed tenant preflight mutated a known owned resource")
+	}
+	if !reflect.DeepEqual(lifecycle.claims, claimsBefore) || len(events) != 0 {
+		t.Fatal("failed tenant preflight advanced or released ownership claims")
+	}
+	if len(lifecycle.claims) != len(claims) {
+		t.Fatal("failed tenant preflight advanced or released ownership claims")
+	}
+	rejectTenantDeletePreflight = false
+	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+		t.Fatal("failed tenant deletion fence preparation did not block deletion")
+	}
+	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 || !reflect.DeepEqual(lifecycle.claims, claimsBefore) || len(events) != 0 {
+		t.Fatal("failed tenant deletion fence preparation mutated Hakopod claims or child resources")
+	}
+	rejectTenantDeletePreparation = false
+	// Resume the exact prepared deletion after a process stop that followed
+	// pageserver timeline teardown but preceded safekeeper cleanup.
+	tenantDeletionToken = "55555555555555555555555555555555"
+	controllerTimelinePresent = false
 	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
 		t.Fatal(err)
 	}
-	if tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 2 || timelineDescribeCalls != 2 || safekeeperTimelineCalls != 6 {
-		t.Fatalf("owned deletion did not recheck provider state: tenant deletes=%d timeline deletes=%d tenant describes=%d timeline describes=%d safekeeper timeline describes=%d", tenantDeletes, timelineDeletes, tenantDescribeCalls, timelineDescribeCalls, safekeeperTimelineCalls)
+	if tenantDeletePreflights != 3 || tenantDeletePreparations != 2 || tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 4 || timelineDescribeCalls != 4 || safekeeperTimelineCalls != 12 {
+		t.Fatalf("owned deletion did not preflight, prepare, and recheck provider state: tenant preflights=%d tenant preparations=%d tenant deletes=%d timeline deletes=%d tenant describes=%d timeline describes=%d safekeeper timeline describes=%d", tenantDeletePreflights, tenantDeletePreparations, tenantDeletes, timelineDeletes, tenantDescribeCalls, timelineDescribeCalls, safekeeperTimelineCalls)
 	}
 	if _, ok := lifecycle.claims["tenant"]; ok {
 		t.Fatal("tenant claim was not released after the verified delete")

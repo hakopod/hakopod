@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -164,5 +165,31 @@ func TestManagedPlatformRejectsUnqualifiedPlan(t *testing.T) {
 	plan.Capability.Available = false
 	if _, err := s.SaveManagedPlatformReview(context.Background(), p, item, plan, 0, "create"); !errors.Is(err, ErrForbidden) {
 		t.Fatal("unqualified platform was reviewed", err)
+	}
+}
+
+func TestManagedPlatformEncryptedSnapshotBoundPersistsAndReplays(t *testing.T) {
+	s, p, item, plan := managedPlatformFixture(t)
+	ctx := context.Background()
+	review := managedPlatformReview(t, s, p, item, plan, 0, "create")
+	oversized := bytes.Repeat([]byte{1}, managedplatform.MaxManagedPlatformEncryptedSnapshotBytes+1)
+	if _, err := s.AcceptManagedPlatform(ctx, p, item, plan, oversized, review, 0, "platform-oversized", "create"); !errors.Is(err, ErrInput) {
+		t.Fatalf("oversized encrypted snapshot was accepted: %v", err)
+	}
+	sealed := bytes.Repeat([]byte{2}, managedplatform.MaxManagedPlatformEncryptedSnapshotBytes)
+	accepted, err := s.AcceptManagedPlatform(ctx, p, item, plan, sealed, review, 0, "platform-large-snapshot", "create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := s.AcceptManagedPlatform(ctx, p, item, plan, bytes.Repeat([]byte{3}, len(sealed)), review, 0, "platform-large-snapshot", "create")
+	if err != nil || replayed.ID != accepted.ID {
+		t.Fatalf("large encrypted snapshot replay failed: %v", err)
+	}
+	claimed, err := s.ClaimManagedPlatformOperation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != accepted.ID || !bytes.Equal(claimed.EncryptedSnapshot, sealed) {
+		t.Fatal("durable operation recovery did not preserve the encrypted snapshot")
 	}
 }

@@ -163,6 +163,11 @@ func (c *Client) applyVitessIdentity(ctx context.Context, d database.Resource, o
 }
 
 func (c *Client) renewVitessIdentity(ctx context.Context, d database.Resource, before func() error) error {
+	names, err := database.NormalizePublicEndpointNames(d.PublicEndpointNames)
+	if err != nil {
+		return err
+	}
+	d.PublicEndpointNames = names
 	if err := c.ReconcileVitessBackupAuthority(ctx, d, before); err != nil {
 		return err
 	}

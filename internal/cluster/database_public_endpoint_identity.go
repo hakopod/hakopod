@@ -19,7 +19,7 @@ import (
 // names and ingress network-policy peer. The public TCP frontend remains closed
 // until both the issued leaf and the selected backend pass a native TLS probe.
 func (c *Client) ReconcileDatabasePublicEndpointAccess(ctx context.Context, d database.Resource, names []string, allowIngress bool, before func() error) error {
-	if (d.Spec.Engine != "postgresql" && d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb" && d.Spec.Engine != "clickhouse" && d.Spec.Engine != "oracle") || !d.Spec.TLSRequired() {
+	if (d.Spec.Engine != "postgresql" && d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb" && d.Spec.Engine != "clickhouse" && d.Spec.Engine != "oracle" && d.Spec.Engine != "redis" && d.Spec.Engine != "vitess") || !d.Spec.TLSRequired() {
 		return fmt.Errorf("database public endpoint identity requires a supported TLS database")
 	}
 	validated, err := database.NormalizePublicEndpointNames(names)
@@ -28,7 +28,11 @@ func (c *Client) ReconcileDatabasePublicEndpointAccess(ctx context.Context, d da
 	}
 	d.PublicEndpointNames = validated
 	d.PublicEndpointAccess = allowIngress
-	if d.Spec.Engine == "mongodb" {
+	if d.Spec.Engine == "vitess" {
+		err = c.reconcileVitessPublicNames(ctx, d, before)
+	} else if d.Spec.Engine == "redis" {
+		err = c.reconcileRedisPublicNames(ctx, d, before)
+	} else if d.Spec.Engine == "mongodb" {
 		err = c.reconcileMongoDBPublicNames(ctx, d, before)
 	} else if d.Spec.Engine == "oracle" {
 		err = c.reconcileOraclePublicNames(ctx, d, before)
@@ -132,8 +136,14 @@ func (c *Client) VerifyDatabasePublicEndpointBackend(ctx context.Context, d data
 	if err := database.PublicEndpointAvailability(d.Spec); err != nil {
 		return err
 	}
+	if d.Spec.Engine == "vitess" {
+		return c.verifyVitessPublicEndpointBackend(ctx, d, endpoint)
+	}
 	if d.Spec.Engine == "mysql" {
 		return c.verifyMySQLPublicEndpointBackend(ctx, d, endpoint)
+	}
+	if d.Spec.Engine == "redis" {
+		return c.verifyRedisPublicEndpointBackend(ctx, d, endpoint)
 	}
 	if d.Spec.Engine == "clickhouse" {
 		return c.verifyClickHousePublicEndpointBackend(ctx, d, endpoint)

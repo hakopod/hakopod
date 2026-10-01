@@ -312,7 +312,14 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 		if err = before(); err != nil {
 			return err
 		}
-		secret, err = c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "database-credentials", Namespace: ns, Labels: databaseLabels(d)}, Type: corev1.SecretTypeBasicAuth, Immutable: ptr(true), Data: map[string][]byte{"username": []byte("app"), "password": password}}, metav1.CreateOptions{})
+		metadata := metav1.ObjectMeta{Name: "database-credentials", Namespace: ns, Labels: databaseLabels(d)}
+		if d.Spec.Engine == "vitess" {
+			if existing.UID == "" || existing.DeletionTimestamp != nil {
+				return fmt.Errorf("Vitess credential namespace identity changed")
+			}
+			metadata = databaseIdentityMeta(d, existing.UID, "database-credentials")
+		}
+		secret, err = c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metadata, Type: corev1.SecretTypeBasicAuth, Immutable: ptr(true), Data: map[string][]byte{"username": []byte("app"), "password": password}}, metav1.CreateOptions{})
 	}
 	if err != nil {
 		return fmt.Errorf("database credentials could not be reconciled")
@@ -322,6 +329,11 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	}
 	if subtle.ConstantTimeCompare(secret.Data["password"], password) != 1 || string(secret.Data["username"]) != "app" {
 		return fmt.Errorf("database credential identity changed")
+	}
+	if d.Spec.Engine == "vitess" {
+		if err = c.reconcileVitessCredentialOwnership(ctx, d, existing, secret, password, before); err != nil {
+			return err
+		}
 	}
 	if err = c.databaseNetworkPolicy(ctx, d, before); err != nil {
 		return err

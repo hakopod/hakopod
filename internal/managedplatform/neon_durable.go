@@ -317,7 +317,7 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			return state, fmt.Errorf("Neon tenant ownership claim is invalid: %w", err)
 		}
 	}
-	tenantExists, tenantIdentity, tenantGeneration, observedTenantToken, err := r.inspectTenant(ctx, request.TenantID)
+	tenantExists, tenantIdentity, tenantGeneration, observedTenantToken, _, _, err := r.inspectTenant(ctx, request.TenantID)
 	if err != nil {
 		return state, err
 	}
@@ -731,7 +731,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		}
 	}
 
-	tenantExists, tenantIdentity, tenantGeneration, observedTenantToken, err := r.inspectTenant(ctx, request.TenantID)
+	tenantExists, tenantIdentity, tenantGeneration, observedTenantToken, tenantOwnershipState, observedDeletionToken, err := r.inspectTenant(ctx, request.TenantID)
 	if err != nil {
 		return err
 	}
@@ -741,7 +741,10 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		if tenantClaimed && ownershipRequired {
 			claimedIdentity, ownershipToken, err = parseNeonOwnedResourceID(tenantClaim.ResourceID)
 		}
-		if !tenantClaimed || err != nil || claimedIdentity != tenantIdentity || tenantClaim.ImmutableGeneration != tenantGeneration || ownershipRequired && ownershipToken != observedTenantToken {
+		if !tenantClaimed || err != nil || ownershipRequired && ownershipToken != observedTenantToken {
+			return fmt.Errorf("Neon tenant attachment identity changed or is unclaimed; deletion refused")
+		}
+		if tenantOwnershipState != "deleting" && (claimedIdentity != tenantIdentity || tenantClaim.ImmutableGeneration != tenantGeneration) {
 			return fmt.Errorf("Neon tenant attachment identity changed or is unclaimed; deletion refused")
 		}
 	}
@@ -753,19 +756,21 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	if err != nil {
 		return err
 	}
-	if timelineExists != safekeeperTimelineExists {
+	preparedDeletion := ownershipRequired && tenantOwnershipState == "deleting" && validNeonComputeOwnershipToken(observedDeletionToken)
+	if timelineExists != safekeeperTimelineExists && !preparedDeletion {
 		return fmt.Errorf("Neon controller and safekeeper timeline presence is inconsistent")
 	}
-	if timelineExists {
+	if timelineExists || safekeeperTimelineExists {
 		timelineClaim, timelineClaimed := claims["timeline"]
 		claimedIdentity, ownershipToken := timelineClaim.ResourceID, ""
 		if timelineClaimed && ownershipRequired {
 			claimedIdentity, ownershipToken, err = parseNeonOwnedResourceID(timelineClaim.ResourceID)
 		}
-		if !timelineClaimed || err != nil || claimedIdentity != timelineIdentity || timelineClaim.ImmutableGeneration != timelineGeneration || ownershipRequired && (ownershipToken != observedTimelineToken || ownershipToken != observedSafekeeperToken) {
+		if !timelineClaimed || err != nil || claimedIdentity != timelineIdentity || timelineClaim.ImmutableGeneration != timelineGeneration || ownershipRequired && (timelineExists && ownershipToken != observedTimelineToken || safekeeperTimelineExists && ownershipToken != observedSafekeeperToken) {
 			return fmt.Errorf("Neon timeline safekeeper identity changed; deletion refused")
 		}
 	}
+	timelineExists = timelineExists || safekeeperTimelineExists
 	for _, node := range r.control.config.Pageservers {
 		body, status, requestErr := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/node/"+strconv.FormatInt(node.NodeID, 10), nil)
 		if requestErr != nil {
@@ -850,6 +855,39 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			}
 		}
 	}
+	tenantDeletionToken := ""
+	if tenantExists && ownershipRequired {
+		_, ownershipToken, parseErr := parseNeonOwnedResourceID(claims["tenant"].ResourceID)
+		if parseErr != nil {
+			return parseErr
+		}
+		_, status, preflightErr := r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID+"?validate_only=true", nil, ownershipToken)
+		if preflightErr != nil {
+			return fmt.Errorf("preflight Neon tenant deletion: %w", preflightErr)
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("preflight Neon tenant deletion returned HTTP %d", status)
+		}
+		prepared, status, prepareErr := r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID+"?prepare_delete=true", nil, ownershipToken)
+		if prepareErr != nil {
+			return fmt.Errorf("prepare Neon tenant deletion: %w", prepareErr)
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("prepare Neon tenant deletion returned HTTP %d", status)
+		}
+		var preparation struct {
+			SchemaVersion int    `json:"schema_version"`
+			Digest        string `json:"digest"`
+			DeleteToken   string `json:"delete_token"`
+		}
+		if err = json.Unmarshal(prepared, &preparation); err != nil || preparation.SchemaVersion != 1 || !validLowerHex(preparation.Digest, 64) || !validNeonComputeOwnershipToken(preparation.DeleteToken) {
+			return fmt.Errorf("prepare Neon tenant deletion returned an invalid fence")
+		}
+		if observedDeletionToken != "" && observedDeletionToken != preparation.DeleteToken {
+			return fmt.Errorf("prepare Neon tenant deletion returned a conflicting retry token")
+		}
+		tenantDeletionToken = preparation.DeleteToken
+	}
 
 	for component, claim := range claims {
 		resourceID := claim.ResourceID
@@ -926,14 +964,14 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			if parseErr != nil {
 				return parseErr
 			}
-			_, status, deleteErr = r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID, nil, ownershipToken)
+			_, status, deleteErr = r.control.requestPreparedDelete(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID, nil, ownershipToken, tenantDeletionToken)
 		} else {
 			_, status, deleteErr = r.control.request(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID, nil)
 		}
 		if deleteErr != nil || status != http.StatusOK && status != http.StatusAccepted && status != http.StatusNoContent && status != http.StatusNotFound {
 			return fmt.Errorf("delete Neon tenant returned HTTP %d: %w", status, deleteErr)
 		}
-		tenantExists, _, _, _, err = r.inspectTenant(ctx, request.TenantID)
+		tenantExists, _, _, _, _, _, err = r.inspectTenant(ctx, request.TenantID)
 		if err != nil {
 			return err
 		}
@@ -1390,46 +1428,63 @@ func verifiedNeonTimelineIdentity(tenantID, timelineID string, generation int64,
 	return hex.EncodeToString(sum[:]), generation, hosts, nil
 }
 
-func (r *DurableNeonRuntime) inspectTenant(ctx context.Context, tenantID string) (bool, string, int64, string, error) {
+func (r *DurableNeonRuntime) inspectTenant(ctx context.Context, tenantID string) (bool, string, int64, string, string, string, error) {
 	described, status, err := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/tenant/"+tenantID, nil)
 	if err != nil {
-		return false, "", 0, "", err
+		return false, "", 0, "", "", "", err
 	}
 	if status == http.StatusNotFound {
-		return false, "", 0, "", nil
+		return false, "", 0, "", "", "", nil
 	}
 	if status != http.StatusOK {
-		return false, "", 0, "", fmt.Errorf("Neon tenant inspection returned HTTP %d", status)
+		return false, "", 0, "", "", "", fmt.Errorf("Neon tenant inspection returned HTTP %d", status)
 	}
 	ownershipToken := ""
+	ownershipState := ""
+	deletionToken := ""
 	if !r.control.config.allowUnqualifiedOwnershipProtocolForTest {
 		ownershipToken, err = neonOwnershipToken(described)
 		if err != nil {
-			return false, "", 0, "", fmt.Errorf("inspect Neon tenant ownership: %w", err)
+			return false, "", 0, "", "", "", fmt.Errorf("inspect Neon tenant ownership: %w", err)
+		}
+		var ownership struct {
+			State         string `json:"ownership_state"`
+			DeletionToken string `json:"ownership_delete_token"`
+		}
+		if err = json.Unmarshal(described, &ownership); err != nil || ownership.State != "completed" && ownership.State != "deleting" {
+			return false, "", 0, "", "", "", fmt.Errorf("inspect Neon tenant ownership state is missing or invalid")
+		}
+		ownershipState = ownership.State
+		deletionToken = ownership.DeletionToken
+		if deletionToken != "" && !validNeonComputeOwnershipToken(deletionToken) {
+			return false, "", 0, "", "", "", fmt.Errorf("inspect Neon tenant deletion token is missing or invalid")
+		}
+		if ownershipState == "deleting" {
+			return true, "", 0, ownershipToken, ownershipState, deletionToken, nil
 		}
 	}
 	body, err := r.control.doJSON(ctx, r.control.config.StorageController, http.MethodPost, "/debug/v1/inspect", map[string]string{"tenant_shard_id": tenantID}, http.StatusOK)
 	if err != nil {
-		return false, "", 0, "", err
+		return false, "", 0, "", "", "", err
 	}
 	var response struct {
 		Attachment []json.RawMessage `json:"attachment"`
 	}
 	if err = json.Unmarshal(body, &response); err != nil || len(response.Attachment) != 2 {
-		return false, "", 0, "", fmt.Errorf("Neon tenant inspect omitted the exact attachment identity")
+		return false, "", 0, "", "", "", fmt.Errorf("Neon tenant inspect omitted the exact attachment identity")
 	}
 	var generation int64
 	var node json.Number
 	if err = json.Unmarshal(response.Attachment[0], &generation); err != nil || generation < 1 {
-		return false, "", 0, "", fmt.Errorf("Neon tenant inspect returned an invalid generation")
+		return false, "", 0, "", "", "", fmt.Errorf("Neon tenant inspect returned an invalid generation")
 	}
 	if err = json.Unmarshal(response.Attachment[1], &node); err != nil {
-		return false, "", 0, "", fmt.Errorf("Neon tenant inspect returned an invalid node identity")
+		return false, "", 0, "", "", "", fmt.Errorf("Neon tenant inspect returned an invalid node identity")
 	}
 	if value, parseErr := strconv.ParseUint(node.String(), 10, 64); parseErr != nil || value == 0 {
-		return false, "", 0, "", fmt.Errorf("Neon tenant inspect returned an invalid node identity")
+		return false, "", 0, "", "", "", fmt.Errorf("Neon tenant inspect returned an invalid node identity")
 	}
-	return true, tenantID + "@" + node.String(), generation, ownershipToken, nil
+	return true, tenantID + "@" + node.String(), generation, ownershipToken, ownershipState, deletionToken, nil
 }
 
 func (r *DurableNeonRuntime) inspectTimeline(ctx context.Context, tenantID, timelineID string) (bool, string, error) {

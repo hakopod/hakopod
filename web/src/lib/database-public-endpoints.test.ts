@@ -24,6 +24,28 @@ test('public endpoint polling stops only on terminal operation states', () => {
     assert.equal(databasePublicEndpointOperationTerminal(status), false)
 })
 
+test('Redis public cluster routes disclose the required client address mapping', () => {
+  const route: DatabasePublicEndpointRoute = {
+    purpose: 'cluster',
+    protocol: 'redis',
+    routing: 'client_address_mapping',
+    read_only: false,
+    pooled: false,
+  }
+  assert.deepEqual(databasePublicEndpointRouteOptions([route]), [
+    { value: 'cluster', label: 'Redis cluster · Redis via Redis client address mapping required' },
+  ])
+  assert.equal(
+    databasePublicEndpointPublicationAvailable({
+      engine: 'redis',
+      available: false,
+      unavailable_reason: 'Native public acceptance is incomplete.',
+      routes: [route],
+    }),
+    false,
+  )
+})
+
 test('public endpoint routes retain the server-selected MySQL Router contract', () => {
   const routes: DatabasePublicEndpointRoute[] = [
     {
@@ -46,6 +68,29 @@ test('public endpoint routes retain the server-selected MySQL Router contract', 
     { value: 'read_write', label: 'Direct read and write · MySQL via MySQL Router' },
     { value: 'read_only', label: 'Direct read only · MySQL via MySQL Router' },
   ])
+})
+
+test('Vitess capabilities describe a gateway without inventing read-only access', () => {
+  const route: DatabasePublicEndpointRoute = {
+    purpose: 'read_write',
+    protocol: 'mysql',
+    routing: 'vitess_gateway',
+    read_only: false,
+    pooled: false,
+  }
+  assert.deepEqual(databasePublicEndpointRouteOptions([route]), [
+    { value: 'read_write', label: 'Direct read and write · MySQL via Vitess gateway' },
+  ])
+  assert.equal(databasePublicEndpointRouteForPurpose([route], 'read_only'), undefined)
+  assert.equal(
+    databasePublicEndpointPublicationAvailable({
+      engine: 'vitess',
+      available: false,
+      unavailable_reason: 'Native public acceptance is incomplete.',
+      routes: [route],
+    }),
+    false,
+  )
 })
 
 test('unavailable publication capability preserves endpoint inventory, revoke tracking and revocation', () => {

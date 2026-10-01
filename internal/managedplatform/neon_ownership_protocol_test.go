@@ -7,13 +7,17 @@ import (
 )
 
 func TestNeonOwnershipCapabilityRequiresEveryMutation(t *testing.T) {
-	complete := []byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`)
+	complete := []byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`)
 	if err := verifyNeonOwnershipCapability(complete); err != nil {
 		t.Fatal(err)
 	}
-	partial := []byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline"]}`)
+	partial := []byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline"]}`)
 	if err := verifyNeonOwnershipCapability(partial); err == nil {
 		t.Fatal("partial provider ownership support enabled creation")
+	}
+	withoutPrepare := []byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`)
+	if err := verifyNeonOwnershipCapability(withoutPrepare); err == nil {
+		t.Fatal("provider without prepared tenant deletion enabled creation")
 	}
 }
 

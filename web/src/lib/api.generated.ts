@@ -2130,7 +2130,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled. */
+        /** @description Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse, MongoDB, Redis, Vitess and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled. */
         get: operations["getDatabasePublicEndpointCapabilities"];
         put?: never;
         post?: never;
@@ -5763,7 +5763,7 @@ export interface components {
         };
         DatabasePublicEndpointSpec: {
             /** @enum {string} */
-            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https";
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https" | "cluster";
             source_cidrs: string[];
             max_connections: number;
         };
@@ -5779,12 +5779,20 @@ export interface components {
             member_uid: string;
             allocation: components["schemas"]["DatabasePublicEndpointAllocation"];
         };
+        DatabasePublicEndpointClientAddress: {
+            member_name: string;
+            member_uid: string;
+            advertised_addresses: string[];
+            public_host: string;
+            public_port: number;
+        };
         DatabasePublicEndpointObservation: {
             configured: boolean;
             externally_verified: boolean;
             message: string;
             /** Format: date-time */
             checked_at?: string;
+            client_address_map?: components["schemas"]["DatabasePublicEndpointClientAddress"][];
         };
         DatabasePublicEndpoint: {
             id: string;
@@ -5805,11 +5813,11 @@ export interface components {
         };
         DatabasePublicEndpointRoute: {
             /** @enum {string} */
-            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https";
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https" | "cluster";
             /** @enum {string} */
             protocol: "postgresql" | "mysql" | "clickhouse_native" | "https" | "oracle_tcps" | "mongodb" | "redis";
             /** @enum {string} */
-            routing: "direct" | "pgbouncer" | "mysql_router" | "replica_set_horizons" | "cluster_discovery";
+            routing: "direct" | "pgbouncer" | "mysql_router" | "vitess_gateway" | "replica_set_horizons" | "cluster_discovery" | "client_address_mapping";
             read_only: boolean;
             pooled: boolean;
         };

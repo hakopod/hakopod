@@ -43,8 +43,12 @@ func (c *Client) databaseNetworkPolicy(ctx context.Context, d database.Resource,
 	if !allowApplications {
 		policy.Spec.Ingress[0].From = []networkingv1.NetworkPolicyPeer{local, operators}
 	}
-	if d.Spec.Engine == "postgresql" && d.PublicEndpointAccess && allowApplications {
-		postgresPort := intstr.FromInt(5432)
+	if (d.Spec.Engine == "postgresql" || d.Spec.Engine == "redis") && d.PublicEndpointAccess && allowApplications {
+		portNumber := 5432
+		if d.Spec.Engine == "redis" {
+			portNumber = 6379
+		}
+		postgresPort := intstr.FromInt(portNumber)
 		haproxy := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": c.options.ProxyNamespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "kubernetes-ingress", "app.kubernetes.io/instance": c.options.ProxyRelease}}}
 		policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: []networkingv1.NetworkPolicyPeer{haproxy}, Ports: []networkingv1.NetworkPolicyPort{{Port: &postgresPort, Protocol: &tcp}}})
 	}

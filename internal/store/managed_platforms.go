@@ -168,16 +168,16 @@ func validateManagedPlatformIntentShape(item ManagedPlatform, plan managedplatfo
 		return fmt.Errorf("%w: %s", ErrInput, err)
 	}
 	if !managedPlatformID.MatchString(item.ID) || expected < 0 {
-		return ErrInput
+		return fmt.Errorf("%w: managed platform id or expected revision is invalid", ErrInput)
 	}
 	if kind != "create" && kind != "update" && kind != "delete" {
-		return ErrInput
+		return fmt.Errorf("%w: managed platform operation kind is invalid", ErrInput)
 	}
 	if len(plan.Components) < 1 || len(plan.Components) > managedplatform.MaxComponents || plan.Namespace == "" {
-		return ErrInput
+		return fmt.Errorf("%w: managed platform resolved plan shape is invalid", ErrInput)
 	}
 	if len(JSON(item.Spec)) > maxManagedPlatformPayloadBytes || len(JSON(plan)) > maxManagedPlatformPayloadBytes {
-		return ErrInput
+		return fmt.Errorf("%w: managed platform desired state exceeds the payload bound", ErrInput)
 	}
 	return nil
 }
@@ -358,7 +358,7 @@ func (s *Store) ValidateManagedPlatformReview(ctx context.Context, p Principal, 
 		return err
 	}
 	if !managedPlatformID.MatchString(review.ID) {
-		return ErrInput
+		return fmt.Errorf("%w: managed platform review id is invalid", ErrInput)
 	}
 	hash := managedPlatformRequestHash(item, plan, expected, kind)
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
@@ -484,7 +484,7 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 	if err := validateManagedPlatformIntentShape(item, plan, expected, kind); err != nil {
 		return empty, err
 	}
-	if !managedPlatformID.MatchString(review.ID) || len(encryptedSnapshot) < 1 || len(encryptedSnapshot) > maxManagedPlatformPayloadBytes || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+	if !managedPlatformID.MatchString(review.ID) || len(encryptedSnapshot) < 1 || len(encryptedSnapshot) > managedplatform.MaxManagedPlatformEncryptedSnapshotBytes || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return empty, ErrInput
 	}
 	hash := managedPlatformRequestHash(item, plan, expected, kind)

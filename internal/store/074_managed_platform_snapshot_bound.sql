@@ -1,0 +1,10 @@
+ALTER TABLE managed_platform_operations
+ DROP CONSTRAINT managed_platform_operations_encrypted_snapshot_check;
+
+ALTER TABLE managed_platform_operations
+ ADD CONSTRAINT managed_platform_operations_encrypted_snapshot_check
+ CHECK(octet_length(encrypted_snapshot) BETWEEN 1 AND 4194332)
+ NOT VALID;
+
+ALTER TABLE managed_platform_operations
+ VALIDATE CONSTRAINT managed_platform_operations_encrypted_snapshot_check;

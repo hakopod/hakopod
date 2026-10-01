@@ -384,6 +384,49 @@ function Page() {
                   {endpoint.observation.message && (
                     <p className="text-sm text-muted-foreground">{endpoint.observation.message}</p>
                   )}
+                  {endpoint.status === 'active' &&
+                    endpoint.observation.configured &&
+                    !!endpoint.observation.client_address_map?.length && (
+                      <details className="min-w-0 text-sm">
+                        <summary className="cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-ring">
+                          Redis client address map
+                        </summary>
+                        <p className="my-2 text-muted-foreground">
+                          Use a Redis Cluster client that supports address mapping. Connect to each
+                          public hostname with certificate verification. Refresh this map after a
+                          member changes.
+                        </p>
+                        <div
+                          className="max-h-80 min-w-0 overflow-y-auto px-1 focus-visible:outline-2 focus-visible:outline-ring"
+                          role="region"
+                          aria-label="Redis client addresses"
+                          tabIndex={0}
+                        >
+                          <ul className="grid min-w-0 gap-3">
+                            {endpoint.observation.client_address_map.map((member) => (
+                              <li key={member.member_uid} className="min-w-0">
+                                <strong className="break-all">{member.member_name}</strong>
+                                <div className="break-all text-muted-foreground">
+                                  {member.advertised_addresses.join(', ')}
+                                </div>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <code className="min-w-0 flex-1 break-all">
+                                    {member.public_host}:{member.public_port}
+                                  </code>
+                                  <span className="shrink-0">
+                                    <Copy
+                                      iconOnly
+                                      value={`${member.public_host}:${member.public_port}`}
+                                      label={`Copy public address for ${member.member_name}`}
+                                    />
+                                  </span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </details>
+                    )}
                   {!['review', 'pending', 'revoking'].includes(endpoint.status) && (
                     <div>
                       <Button

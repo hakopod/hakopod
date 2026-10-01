@@ -32,6 +32,7 @@ const oracleFreePublicEndpointsQualified = false
 
 const mongodbPublicEndpointsQualified = false
 const redisPublicEndpointsQualified = false
+const vitessPublicEndpointsQualified = false
 
 type PublicEndpointRoute struct {
 	Purpose         string `json:"purpose"`
@@ -47,7 +48,7 @@ type PublicEndpointRoute struct {
 }
 
 func (r PublicEndpointRoute) Equal(other PublicEndpointRoute) bool {
-	return r.Purpose == other.Purpose && r.Protocol == other.Protocol && r.Routing == other.Routing && r.ReadOnly == other.ReadOnly && r.Pooled == other.Pooled && r.BackendUser == other.BackendUser && r.BackendDatabase == other.BackendDatabase
+	return r.Purpose == other.Purpose && r.Protocol == other.Protocol && r.Routing == other.Routing && r.ReadOnly == other.ReadOnly && r.Pooled == other.Pooled
 }
 
 // The review binds the private backend mapping without offering service names
@@ -71,7 +72,7 @@ type PublicEndpointCapabilities struct {
 }
 
 func PublicEndpointAvailability(s Spec) error {
-	if s.Engine != "postgresql" && s.Engine != "mysql" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "mongodb" && s.Engine != "redis" {
+	if s.Engine != "postgresql" && s.Engine != "mysql" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "mongodb" && s.Engine != "redis" && s.Engine != "vitess" {
 		return fmt.Errorf("public endpoints are unavailable for this database engine")
 	}
 	if !s.TLSRequired() {
@@ -82,6 +83,9 @@ func PublicEndpointAvailability(s Spec) error {
 	}
 	if s.Engine == "redis" && !redisPublicEndpointsQualified {
 		return fmt.Errorf("Redis public endpoints are unavailable until native private and public member discovery, TLS, failover and revocation qualification is complete")
+	}
+	if s.Engine == "vitess" && !vitessPublicEndpointsQualified {
+		return fmt.Errorf("Vitess public endpoints are unavailable until native vtgate TLS, target routing, failover and revocation qualification is complete")
 	}
 	if s.Engine == "mysql" && !mysqlPublicEndpointsQualified {
 		return fmt.Errorf("MySQL public endpoints are unavailable until native Router TLS, routing and revocation qualification is complete")
@@ -124,6 +128,10 @@ func PublicEndpointRoutes(s Spec) []PublicEndpointRoute {
 		if s.Replicas > 0 {
 			add("read_only", "mysql", "mysql_router", "database", "mysql-ro", 6447, true, false)
 		}
+	case "vitess":
+		add("read_write", "mysql", "vitess_gateway", "database", "mysql", 3306, false, false)
+		routes[len(routes)-1].BackendUser = "app"
+		routes[len(routes)-1].BackendDatabase = "app@primary"
 	case "clickhouse":
 		add("native", "clickhouse_native", "direct", "database", "tcp-secure", 9440, false, false)
 		add("https", "https", "direct", "database", "https", 8443, false, false)
@@ -137,9 +145,9 @@ func PublicEndpointRoutes(s Spec) []PublicEndpointRoute {
 		add("read_write", "mongodb", "replica_set_horizons", "database-svc", "mongodb", 27017, false, false)
 	case "redis":
 		if s.Mode == "standalone" {
-			add("read_write", "redis", "direct", "database", "redis", 6379, false, false)
+			add("read_write", "redis", "direct", "database", "redis-client", 6379, false, false)
 		} else {
-			add("read_write", "redis", "cluster_discovery", "database", "redis", 6379, false, false)
+			add("cluster", "redis", "client_address_mapping", "database-leader", "redis", 6379, false, false)
 		}
 	}
 	return routes
@@ -196,7 +204,7 @@ type PublicEndpointSpec struct {
 }
 
 func (s PublicEndpointSpec) Normalize() (PublicEndpointSpec, error) {
-	if !slices.Contains(PostgreSQLPublicEndpointPurposes, s.Purpose) && s.Purpose != "native" && s.Purpose != "https" {
+	if !slices.Contains(PostgreSQLPublicEndpointPurposes, s.Purpose) && s.Purpose != "native" && s.Purpose != "https" && s.Purpose != "cluster" {
 		return s, fmt.Errorf("purpose must match one of the database's advertised public routes")
 	}
 	if len(s.SourceCIDRs) < 1 || len(s.SourceCIDRs) > 16 {
@@ -291,10 +299,21 @@ func PublicEndpointAllocationNames(endpoint PublicEndpoint) ([]string, error) {
 }
 
 type PublicEndpointObservation struct {
-	Configured         bool       `json:"configured"`
-	ExternallyVerified bool       `json:"externally_verified"`
-	Message            string     `json:"message"`
-	CheckedAt          *time.Time `json:"checked_at,omitempty"`
+	Configured         bool                          `json:"configured"`
+	ExternallyVerified bool                          `json:"externally_verified"`
+	Message            string                        `json:"message"`
+	CheckedAt          *time.Time                    `json:"checked_at,omitempty"`
+	ClientAddressMap   []PublicEndpointClientAddress `json:"client_address_map,omitempty"`
+}
+
+// Redis has one advertised address space. NAT-aware clients map every verified
+// private member destination to its dedicated public listener and TLS hostname.
+type PublicEndpointClientAddress struct {
+	MemberName          string   `json:"member_name"`
+	MemberUID           string   `json:"member_uid"`
+	AdvertisedAddresses []string `json:"advertised_addresses"`
+	PublicHost          string   `json:"public_host"`
+	PublicPort          int32    `json:"public_port"`
 }
 
 // PublicEndpoint is durable independently of the database revision. Revoking
@@ -346,6 +365,8 @@ func (r PublicEndpointReview) MatchesRoute(current PublicEndpointReview) bool {
 	if r.Route == nil {
 		return r.RouteFingerprint == "" && current.Route.Protocol == "postgresql" && r.Spec.Purpose == current.Route.Purpose
 	}
+	// The durable JSON descriptor omits private routing inputs. Its fingerprint
+	// binds those inputs, including the selected account and logical database.
 	return r.Route.Equal(*current.Route) && r.RouteFingerprint != "" && r.RouteFingerprint == current.RouteFingerprint
 }
 
@@ -473,6 +494,9 @@ func planPublicEndpoint(d Resource, spec PublicEndpointSpec, allocation PublicEn
 		DatabaseRevision: d.Revision, EndpointID: endpointID, EndpointRevision: endpointRevision,
 		Allocation: allocation, TopologyFingerprint: d.Observation.TopologyFingerprint,
 		BlockedReasons: []string{}, Warnings: []string{}, ExpiresAt: now.Add(PublicEndpointReviewLifetime),
+	}
+	if d.Spec.Engine == "redis" && d.Spec.Mode == "cluster" {
+		plan.Warnings = append(plan.Warnings, "Public Redis Cluster access requires a client that maps every advertised private member address to its dedicated public TLS listener. A Redis URI alone does not configure this mapping.")
 	}
 	var err error
 	plan.Spec, err = spec.Normalize()

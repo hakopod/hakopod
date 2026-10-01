@@ -20,13 +20,14 @@ schemas['DatabaseObservation']['properties']['tls'] = ref('DatabaseTLSObservatio
 schemas['DatabaseRecovery'] = obj({'artifact_id': S, 'job_id': S, 'source_id': S, 'source_revision': I, 'captured_at': T, 'restored_at': T, 'inspected_at': T}, ['artifact_id', 'job_id'])
 schemas['ManagedDatabase'] = obj({'id': S, 'project': S, 'environment': S, 'revision': I, 'spec': ref('ManagedDatabaseSpec'), 'status': S, 'observation': ref('DatabaseObservation'), 'recovery': ref('DatabaseRecovery'), 'created_at': T, 'updated_at': T, 'deleted_at': T}, ['id', 'project', 'environment', 'revision', 'spec', 'status', 'observation', 'created_at', 'updated_at'])
 schemas['DatabasePublicEndpointSpec'] = obj({
-    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https']},
+    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https', 'cluster']},
     'source_cidrs': {'type': 'array', 'items': {'type': 'string', 'format': 'ipv4'}, 'minItems': 1, 'maxItems': 16, 'uniqueItems': True},
     'max_connections': {'type': 'integer', 'minimum': 1, 'maximum': 256},
 }, ['purpose', 'source_cidrs', 'max_connections'])
 schemas['DatabasePublicEndpointAllocation'] = obj({'id': S, 'host': S, 'address': {'type': 'string', 'format': 'ipv4'}, 'port': {'type': 'integer', 'minimum': 1, 'maximum': 65535}}, ['id', 'host', 'address', 'port'])
 schemas['DatabasePublicEndpointMemberAllocation'] = obj({'member_name': S, 'member_uid': S, 'allocation': ref('DatabasePublicEndpointAllocation')}, ['member_name', 'member_uid', 'allocation'])
-schemas['DatabasePublicEndpointObservation'] = obj({'configured': B, 'externally_verified': B, 'message': S, 'checked_at': T}, ['configured', 'externally_verified', 'message'])
+schemas['DatabasePublicEndpointClientAddress'] = obj({'member_name': S, 'member_uid': S, 'advertised_addresses': {'type': 'array', 'items': S, 'minItems': 2, 'maxItems': 2}, 'public_host': S, 'public_port': {'type': 'integer', 'minimum': 1, 'maximum': 65535}}, ['member_name', 'member_uid', 'advertised_addresses', 'public_host', 'public_port'])
+schemas['DatabasePublicEndpointObservation'] = obj({'configured': B, 'externally_verified': B, 'message': S, 'checked_at': T, 'client_address_map': {'type': 'array', 'items': ref('DatabasePublicEndpointClientAddress'), 'maxItems': 48}}, ['configured', 'externally_verified', 'message'])
 schemas['DatabasePublicEndpoint'] = obj({
     'id': S, 'database_id': S, 'revision': {'type': 'integer', 'minimum': 0},
     'spec': ref('DatabasePublicEndpointSpec'), 'allocation': ref('DatabasePublicEndpointAllocation'),
@@ -35,9 +36,9 @@ schemas['DatabasePublicEndpoint'] = obj({
     'observation': ref('DatabasePublicEndpointObservation'), 'created_at': T, 'updated_at': T, 'revoked_at': T,
 }, ['id', 'database_id', 'revision', 'spec', 'allocation', 'status', 'observation', 'created_at', 'updated_at'])
 schemas['DatabasePublicEndpointRoute'] = obj({
-    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https']},
+    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https', 'cluster']},
     'protocol': {'type': 'string', 'enum': ['postgresql', 'mysql', 'clickhouse_native', 'https', 'oracle_tcps', 'mongodb', 'redis']},
-    'routing': {'type': 'string', 'enum': ['direct', 'pgbouncer', 'mysql_router', 'replica_set_horizons', 'cluster_discovery']},
+    'routing': {'type': 'string', 'enum': ['direct', 'pgbouncer', 'mysql_router', 'vitess_gateway', 'replica_set_horizons', 'cluster_discovery', 'client_address_mapping']},
     'read_only': B, 'pooled': B,
 }, ['purpose', 'protocol', 'routing', 'read_only', 'pooled'])
 schemas['DatabasePublicEndpointCapabilities'] = obj({
@@ -78,7 +79,7 @@ route('/databases/{id}', 'get', 'getManagedDatabase', ref('ManagedDatabase'))
 route('/databases/{id}', 'delete', 'deleteManagedDatabase', ref('DatabaseOperation'), obj({'expected_revision': I, 'confirm_name': S}, ['expected_revision', 'confirm_name']), '202', idem=True)
 route('/databases/{id}/operations', 'get', 'listDatabaseOperations', items('DatabaseOperation'))
 route('/databases/{id}/public-endpoint-capabilities', 'get', 'getDatabasePublicEndpointCapabilities', ref('DatabasePublicEndpointCapabilities'))
-paths['/databases/{id}/public-endpoint-capabilities']['get']['description'] = 'Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled.'
+paths['/databases/{id}/public-endpoint-capabilities']['get']['description'] = 'Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse, MongoDB, Redis, Vitess and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled.'
 route('/databases/{id}/public-endpoints', 'get', 'listDatabasePublicEndpoints', items('DatabasePublicEndpoint'))
 route('/databases/{id}/public-endpoint-plan', 'post', 'reviewDatabasePublicEndpoint', ref('DatabasePublicEndpointPlan'), ref('DatabasePublicEndpointSpec'))
 route('/databases/{id}/public-endpoints', 'post', 'publishDatabasePublicEndpoint', ref('DatabasePublicEndpointOperation'), obj({'review_id': S, 'expected_database_revision': {'type': 'integer', 'minimum': 1}, 'expected_endpoint_revision': {'type': 'integer', 'minimum': 0}}, ['review_id', 'expected_database_revision', 'expected_endpoint_revision']), '202', idem=True)

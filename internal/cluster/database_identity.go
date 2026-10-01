@@ -49,7 +49,7 @@ func (c *Client) prepareDatabaseIdentityForTransition(ctx context.Context, d dat
 	if d.Spec.Engine != "redis" && d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb" && d.Spec.Engine != "clickhouse" && d.Spec.Engine != "oracle" && d.Spec.Engine != "vitess" {
 		return fmt.Errorf("database identity engine is unsupported")
 	}
-	if d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
+	if d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
 		names, err := database.NormalizePublicEndpointNames(d.PublicEndpointNames)
 		if err != nil {
 			return err
@@ -285,5 +285,5 @@ func databaseIdentityNames(d database.Resource) []string {
 	for _, service := range []string{"database-headless", "database-leader-headless", "database-follower-headless"} {
 		names = append(names, "*."+service+"."+DatabaseNamespace(d.ID)+".svc")
 	}
-	return names
+	return append(names, d.PublicEndpointNames...)
 }

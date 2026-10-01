@@ -3,7 +3,9 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -65,5 +67,62 @@ func TestManagedCloudCapacityGuardFencesPlatformReconciliation(t *testing.T) {
 	err := runtime.ReconcileManagedPlatform(context.Background(), state, store.ManagedPlatformOperation{Kind: "update", PlatformID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
 	if !errors.Is(err, store.ErrConflict) || checks != 1 {
 		t.Fatalf("reconciliation did not recheck the current grant and physical node capacity: checks=%d err=%v", checks, err)
+	}
+}
+
+func TestManagedPlatformSnapshotBoundSupportsNativeRuntimeAndFailsClosed(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, 32)
+	op := store.ManagedPlatformOperation{PlatformID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Revision: 1, Kind: "create"}
+	names := managedplatform.SupabaseRequiredSecretKeys()
+	snapshots := make(map[string]map[string][]byte, len(names))
+	snapshotNames := make([]string, 0, len(names))
+	for i, name := range names {
+		snapshotName := fmt.Sprintf("native-runtime-%02d-r1", i)
+		snapshotNames = append(snapshotNames, snapshotName)
+		snapshots[snapshotName] = map[string][]byte{"value": bytes.Repeat([]byte{name[0]}, (64<<10)-len("value"))}
+	}
+	if err := validateSupabaseSecretSnapshot(snapshots, snapshotNames); err != nil {
+		t.Fatalf("test fixture violates the accepted Supabase secret contract: %v", err)
+	}
+	snapshot := ManagedPlatformSnapshot{ReviewedPlan: managedplatform.Plan{Namespace: "managed-platform-" + op.PlatformID}, Supabase: &SupabaseRuntimeRequest{Render: managedplatform.SupabaseRenderInput{PlatformID: op.PlatformID, Revision: 1}, SecretSnapshots: snapshots}}
+	plain, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) <= 60<<10 || len(plain) >= maxManagedPlatformSnapshotBytes {
+		t.Fatalf("valid contract snapshot size %d is outside the expanded bounded range", len(plain))
+	}
+	sealed, err := SealManagedPlatformSnapshot(key, op.PlatformID, op.Revision, op.Kind, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op.EncryptedSnapshot = sealed
+	opened, err := OpenManagedPlatformSnapshot(key, op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened.Supabase.SecretSnapshots) != len(snapshots) {
+		t.Fatal("large bounded snapshot did not round trip")
+	}
+	wrongAuthority := op
+	wrongAuthority.PlatformID = "cccccccccccccccccccccccccccccccc"
+	if _, err = OpenManagedPlatformSnapshot(key, wrongAuthority); err == nil {
+		t.Fatal("snapshot authenticated for the wrong platform authority")
+	}
+	tampered := op
+	tampered.EncryptedSnapshot = append([]byte(nil), sealed...)
+	tampered.EncryptedSnapshot[len(tampered.EncryptedSnapshot)-1] ^= 1
+	if _, err = OpenManagedPlatformSnapshot(key, tampered); err == nil {
+		t.Fatal("tampered snapshot authenticated")
+	}
+	oversized := snapshot
+	oversized.Supabase = &SupabaseRuntimeRequest{Render: snapshot.Supabase.Render, SecretSnapshots: map[string]map[string][]byte{"oversized-r1": {"value": bytes.Repeat([]byte("x"), maxManagedPlatformSnapshotBytes)}}}
+	if _, err = SealManagedPlatformSnapshot(key, op.PlatformID, op.Revision, op.Kind, oversized); err == nil {
+		t.Fatal("snapshot beyond the plaintext bound was sealed")
+	}
+	oversizedCiphertext := op
+	oversizedCiphertext.EncryptedSnapshot = make([]byte, maxManagedPlatformSnapshotBytes+12+16+1)
+	if _, err = OpenManagedPlatformSnapshot(key, oversizedCiphertext); err == nil {
+		t.Fatal("ciphertext beyond the encrypted snapshot bound was opened")
 	}
 }

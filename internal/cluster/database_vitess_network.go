@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func vitessNetworkPolicies(d database.Resource, uid types.UID, apiRules []networkingv1.NetworkPolicyEgressRule) []networkingv1.NetworkPolicy {
+func vitessNetworkPolicies(d database.Resource, uid types.UID, apiRules []networkingv1.NetworkPolicyEgressRule, options Options) []networkingv1.NetworkPolicy {
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	port := func(value int) networkingv1.NetworkPolicyPort {
 		p := intstr.FromInt(value)
@@ -37,6 +37,10 @@ func vitessNetworkPolicies(d database.Resource, uid types.UID, apiRules []networ
 	gateway := networkingv1.NetworkPolicy{ObjectMeta: databaseIdentityMeta(d, uid, "database-vitess-clients"), Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{vitessComponentLabel: "gateway"}}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}}}
 	if d.Status != "restoring" && (d.Recovery == nil || d.Recovery.RestoredAt != nil && d.Recovery.InspectedAt != nil) {
 		gateway.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"hakopod.io/database-access-" + d.ID: "true"}}}}, Ports: []networkingv1.NetworkPolicyPort{port(3306)}}}
+		if d.PublicEndpointAccess && options.ProxyNamespace != "" && options.ProxyRelease != "" {
+			peer := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": options.ProxyNamespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "kubernetes-ingress", "app.kubernetes.io/instance": options.ProxyRelease}}}
+			gateway.Spec.Ingress = append(gateway.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: []networkingv1.NetworkPolicyPeer{peer}, Ports: []networkingv1.NetworkPolicyPort{port(3306)}})
+		}
 	}
 	return []networkingv1.NetworkPolicy{base, operator, gateway, backupController}
 }
@@ -50,7 +54,7 @@ func (c *Client) vitessNetworkPolicy(ctx context.Context, d database.Resource, b
 	if err != nil {
 		return err
 	}
-	for _, policy := range vitessNetworkPolicies(d, ns.UID, rules) {
+	for _, policy := range vitessNetworkPolicies(d, ns.UID, rules, c.options) {
 		object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&policy)
 		if err != nil {
 			return err
