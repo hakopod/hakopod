@@ -11,7 +11,7 @@ import { ComposeImport, type ComposeDraft } from './compose-import'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
+import { TOMLEditor, type TOMLEditorHandle } from './toml-editor'
 import { SelectField } from './ui/select'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -108,8 +108,8 @@ export function DeploymentForm({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editorExpanded, setEditorExpanded] = useState(false)
-  const expandedEditor = useRef<HTMLTextAreaElement>(null)
-  const tomlEditor = useRef<HTMLTextAreaElement>(null)
+  const expandedEditor = useRef<TOMLEditorHandle>(null)
+  const tomlEditor = useRef<TOMLEditorHandle>(null)
   const focusGeneratedTOML = useRef(false)
   const requestKey = useRef('')
   const editorBody = useRef<HTMLDivElement>(null)
@@ -544,7 +544,7 @@ export function DeploymentForm({
             ) : mode === 'toml' ? (
               <div className="field-stack deploy-toml-field">
                 <div className="toml-editor-heading">
-                  <label htmlFor="toml-import">hakopod.toml</label>
+                  <span>hakopod.toml</span>
                   <Button
                     type="button"
                     size="sm"
@@ -556,17 +556,12 @@ export function DeploymentForm({
                     Expand editor
                   </Button>
                 </div>
-                <Textarea
-                  id="toml-import"
+                <TOMLEditor
                   ref={tomlEditor}
-                  className="code-editor"
+                  label="TOML configuration"
                   value={toml}
-                  onChange={(event) => setToml(event.target.value)}
-                  spellCheck={false}
-                  placeholder={
-                    'schema_version = 1\nname = "my-app"\n\n[services.web]\nimage = "nginx:1.29-alpine"\nport = 80\npublic = true'
-                  }
-                  maxLength={262144}
+                  onChange={setToml}
+                  disabled={busy}
                 />
                 <p className="field-help">
                   {tomlOnlyReason
@@ -1053,18 +1048,17 @@ export function DeploymentForm({
         description="Changes stay in this form until you review and deploy."
         onOpenAutoFocus={(event) => {
           event.preventDefault()
-          expandedEditor.current?.focus({ preventScroll: true })
+          expandedEditor.current?.focus()
         }}
       >
         <div className="toml-editor-body">
-          <Textarea
+          <TOMLEditor
             ref={expandedEditor}
-            aria-label="Expanded TOML configuration"
-            className="code-editor"
+            label="Expanded TOML configuration"
             value={toml}
-            onChange={(event) => setToml(event.target.value)}
-            spellCheck={false}
-            maxLength={262144}
+            onChange={setToml}
+            expanded
+            disabled={busy}
           />
         </div>
         <div className="dialog-footer toml-editor-footer">

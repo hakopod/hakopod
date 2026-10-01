@@ -1,3 +1,4 @@
+import '../lib/toml-language.test'
 import '../lib/framework-recipes.test'
 import '../lib/runner-resources.test'
 import '../lib/public-endpoints.test'
