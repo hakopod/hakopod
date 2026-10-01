@@ -88,6 +88,25 @@ func TestVitessIncompleteRuntimeFailsClosed(t *testing.T) {
 	}
 }
 
+func TestVitessControlRuntimeHasBoundedGoResources(t *testing.T) {
+	d := vitessTestDatabase()
+	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
+	control := object["vitessDashboard"].(map[string]any)
+	keyspace := object["keyspaces"].([]any)[0].(map[string]any)
+	orchestrator := keyspace["vitessOrchestrator"].(map[string]any)
+	for _, component := range []map[string]any{control, orchestrator} {
+		environment := component["extraEnv"].([]any)
+		values := map[string]string{}
+		for _, raw := range environment {
+			item := raw.(map[string]any)
+			values[item["name"].(string)] = item["value"].(string)
+		}
+		if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "192MiB" || len(values) != 2 {
+			t.Fatal("Vitess control Go runtime budget changed")
+		}
+	}
+}
+
 func TestVitessTopologyProbesDoNotDependOnReadyService(t *testing.T) {
 	d := vitessTestDatabase()
 	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))

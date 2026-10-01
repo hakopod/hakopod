@@ -117,8 +117,10 @@ func vitessDatabaseSpec(d database.Resource, resources map[string]any) map[strin
 	control := vitessComponent(d, "control", database.VitessControlCPU, database.VitessControlMemory)
 	control["cells"], control["replicas"] = []any{"local"}, int64(1)
 	control["extraFlags"] = vitessTabletTLSFlags(d)
+	control["extraEnv"] = []any{map[string]any{"name": "GOMAXPROCS", "value": "1"}, map[string]any{"name": "GOMEMLIMIT", "value": "192MiB"}}
 	orchestrator := vitessComponent(d, "orchestrator", database.VitessControlCPU, database.VitessControlMemory)
 	orchestrator["extraFlags"] = vitessTabletClientTLSFlags(d)
+	orchestrator["extraEnv"] = []any{map[string]any{"name": "GOMAXPROCS", "value": "1"}, map[string]any{"name": "GOMEMLIMIT", "value": "192MiB"}}
 	tablet := vitessComponent(d, "tablet", database.VitessTabletCPU, database.VitessTabletMemory)
 	delete(tablet, "resources")
 	// The patched operator mounts a Pod-local 16Mi tmpfs at /vt/socket

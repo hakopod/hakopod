@@ -269,7 +269,8 @@ are recorded. The source database is retained.
 
 Each MySQL member requires at least 500m CPU and 1Gi memory, plus 100m CPU and
 256Mi for vttablet. Each gateway adds 250m CPU and 256Mi. vtctld and each vtorc
-add 100m CPU and 128Mi. Each etcd voter adds 100m CPU, 256Mi and a 1Gi volume.
+add 500m CPU and 256Mi. Their Go runtime uses one processor and a 192MiB
+memory target within that allocation. Each etcd voter adds 100m CPU, 256Mi and a 1Gi volume.
 The namespace operator adds 100m CPU and 256Mi; its backup storage controller
 adds 100m CPU and 128Mi.
 
