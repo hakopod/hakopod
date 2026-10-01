@@ -183,7 +183,7 @@ async function runCase(name, theme, viewport, run) {
 }
 
 const patchCount = (page) => page.evaluate(() => window.__edgeFixture.patches.length)
-const labels = (page, name) => page.getByRole('textbox', { name: new RegExp(`^${name}`) })
+const labels = (page, name) => page.getByRole('textbox', { name: new RegExp(`^${name}`), includeHidden: true })
 
 async function choose(page, label, value, touch) {
   const trigger = page.getByRole('combobox', { name: label, exact: true })
@@ -228,6 +228,7 @@ async function keyboardFields(page, id) {
       const form = element?.closest('form')
       if (!form) return { outside: true }
       if (element.matches('button[type=submit]')) return { submit: true }
+      if (element.matches('summary')) return { summary: true, collapsed: !element.parentElement.open }
       if (!element.matches('input,textarea,[role=combobox]')) return {}
       const box = element.getBoundingClientRect()
       const x = box.x + box.width / 2
@@ -255,6 +256,10 @@ async function keyboardFields(page, id) {
     if (focus.submit) {
       reachedSubmit = true
       break
+    }
+    if (focus.summary) {
+      if (focus.collapsed) await page.keyboard.press('Space')
+      continue
     }
     if (!focus.tag) continue
     fields.push(focus)
