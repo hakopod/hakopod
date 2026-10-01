@@ -13,6 +13,7 @@ import (
 
 const (
 	MaxCapacityReservations       = 256
+	MaxCapacityPoolWorkloads      = 1000
 	PodMemoryOverheadBytes  int64 = 50 << 20
 )
 
@@ -54,6 +55,23 @@ type CapacityNamespaceOwnership struct {
 type CapacityWorkloadOwnership struct {
 	UID   string
 	Nodes map[string]Capacity
+}
+
+// CapacityPoolWorkload identifies one durable application or database whose
+// pods are already included in the shared pool grant.
+type CapacityPoolWorkload struct {
+	Kind        string
+	ID          string
+	Project     string
+	Environment string
+}
+
+// CapacityPoolOwnership is the complete durable workload inventory for one
+// shared capacity pool. Live node checks use it to avoid counting a reserved
+// workload a second time while retaining exact namespace ownership checks.
+type CapacityPoolOwnership struct {
+	Workloads          []CapacityPoolWorkload
+	PlatformNamespaces map[string]CapacityNamespaceOwnership
 }
 
 // CapacityPolicy is trusted operator configuration. It is never accepted from

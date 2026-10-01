@@ -216,13 +216,13 @@ func (s *Service) validateManagedPlatformCapacity(ctx context.Context, project, 
 	}
 	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	owned, err := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
+	owned, err := s.store.ManagedCapacityPoolOwnership(bounded, policy.Pool)
 	if err != nil {
 		return err
 	}
 	reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
 	for _, node := range policy.Nodes {
-		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Namespaces: owned}
+		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Ownership: owned}
 	}
 	return s.runtime.CheckManagedPlatformNodeReservations(bounded, reservations)
 }
@@ -243,6 +243,11 @@ func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservation
 	prepared := make(map[string]DatabaseNodeReservation, len(reservations))
 	for name, reservation := range reservations {
 		copy := reservation
+		copy.Ownership.Workloads = append([]managedplatform.CapacityPoolWorkload(nil), reservation.Ownership.Workloads...)
+		copy.Ownership.PlatformNamespaces = make(map[string]managedplatform.CapacityNamespaceOwnership, len(reservation.Ownership.PlatformNamespaces))
+		for namespace, ownership := range reservation.Ownership.PlatformNamespaces {
+			copy.Ownership.PlatformNamespaces[namespace] = ownership
+		}
 		copy.ManagedPlatformNamespaces = make(map[string]managedplatform.CapacityNamespaceOwnership, len(reservation.ManagedPlatformNamespaces))
 		for namespace, ownership := range reservation.ManagedPlatformNamespaces {
 			cloned := ownership
@@ -263,85 +268,86 @@ func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservation
 		}
 		prepared[name] = copy
 	}
-	seen := map[string]bool{}
-	ownedByScope := map[string]map[string]managedplatform.CapacityNamespaceOwnership{}
-	for _, reservation := range prepared {
+	checkedScopes := map[string]bool{}
+	checkedPlatformScopes := map[string]bool{}
+	poolOwnership := map[string]managedplatform.CapacityPoolOwnership{}
+	for name, reservation := range prepared {
+		workloads := map[string]bool{}
+		for _, workload := range reservation.Ownership.Workloads {
+			workloads[workload.Kind+"\x00"+workload.ID] = true
+		}
+		if reservation.Ownership.PlatformNamespaces == nil {
+			reservation.Ownership.PlatformNamespaces = map[string]managedplatform.CapacityNamespaceOwnership{}
+		}
+		pools := map[string]bool{}
 		for _, scope := range reservation.Scopes {
-			if seen[scope] {
-				continue
-			}
-			seen[scope] = true
 			project, environment, ok := strings.Cut(scope, "/")
-			if !ok || len(seen) > 64 {
+			if !ok || project == "" || environment == "" || !checkedScopes[scope] && len(checkedScopes) >= 64 {
 				return errors.New("invalid database capacity scope")
 			}
-			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := s.store.CheckDatabaseCapacityReservation(bounded, project, environment)
-			cancel()
-			if err != nil {
-				return err
-			}
-			if s.store.ManagedPlatformCapacityBudget != nil {
-				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
-				hasPlatforms, platformErr := s.store.HasManagedPlatforms(bounded, project, environment)
-				cancel()
-				if platformErr != nil {
-					return platformErr
-				}
-				if !hasPlatforms {
-					continue
-				}
-				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
-				err = s.store.CheckManagedPlatformCapacityReservation(bounded, project, environment)
+			if !checkedScopes[scope] {
+				bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+				err := s.store.CheckDatabaseCapacityReservation(bounded, project, environment)
 				cancel()
 				if err != nil {
 					return err
 				}
-				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
-				owned, ownershipErr := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
-				cancel()
-				if ownershipErr != nil {
-					return ownershipErr
-				}
-				ownedByScope[scope] = owned
+				checkedScopes[scope] = true
 			}
-		}
-	}
-	if s.store.ManagedPlatformCapacityBudget != nil {
-		bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
-		platformScopes, scopeErr := s.store.ManagedPlatformCapacityScopes(bounded)
-		cancel()
-		if scopeErr != nil {
-			return scopeErr
-		}
-		for _, scope := range platformScopes {
-			if seen[scope] {
+			if s.store.ManagedCapacityPool == nil {
 				continue
 			}
-			project, environment, ok := strings.Cut(scope, "/")
-			if !ok {
-				return errors.New("invalid managed platform capacity scope")
-			}
-			bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
-			err := s.store.CheckManagedPlatformCapacityReservation(bounded, project, environment)
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			pool, err := s.store.ManagedCapacityScopePool(bounded, project, environment)
 			cancel()
 			if err != nil {
 				return err
 			}
-			bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
-			owned, ownershipErr := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
-			cancel()
-			if ownershipErr != nil {
-				return ownershipErr
+			if pools[pool] {
+				continue
 			}
-			ownedByScope[scope] = owned
-			seen[scope] = true
-		}
-	}
-	for name, reservation := range prepared {
-		for _, owned := range ownedByScope {
-			for namespace, uid := range owned {
-				reservation.ManagedPlatformNamespaces[namespace] = uid
+			pools[pool] = true
+			owned, loaded := poolOwnership[pool]
+			if !loaded {
+				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+				platformScopes, scopeErr := s.store.ManagedCapacityPoolPlatformScopes(bounded, pool)
+				cancel()
+				if scopeErr != nil {
+					return scopeErr
+				}
+				for _, platformScope := range platformScopes {
+					if checkedPlatformScopes[platformScope] {
+						continue
+					}
+					platformProject, platformEnvironment, ok := strings.Cut(platformScope, "/")
+					if !ok {
+						return errors.New("invalid managed platform capacity scope")
+					}
+					bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+					err = s.store.CheckManagedPlatformCapacityReservation(bounded, platformProject, platformEnvironment)
+					cancel()
+					if err != nil {
+						return err
+					}
+					checkedPlatformScopes[platformScope] = true
+				}
+				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+				owned, err = s.store.ManagedCapacityPoolOwnership(bounded, pool)
+				cancel()
+				if err != nil {
+					return err
+				}
+				poolOwnership[pool] = owned
+			}
+			for _, workload := range owned.Workloads {
+				key := workload.Kind + "\x00" + workload.ID
+				if !workloads[key] {
+					reservation.Ownership.Workloads = append(reservation.Ownership.Workloads, workload)
+					workloads[key] = true
+				}
+			}
+			for namespace, ownership := range owned.PlatformNamespaces {
+				reservation.Ownership.PlatformNamespaces[namespace] = ownership
 			}
 		}
 		prepared[name] = reservation

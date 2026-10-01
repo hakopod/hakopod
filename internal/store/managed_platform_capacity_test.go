@@ -28,6 +28,21 @@ func enableManagedPlatformCapacity(s *Store, nodes ...string) managedplatform.Ca
 	return policy
 }
 
+func TestManagedPlatformCapacityContractionCannotExpandEnvelope(t *testing.T) {
+	retained := []managedplatform.CapacityReservation{{Key: "workload/database", NodeName: "node-a", Capacity: managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 1 << 30, StorageGiB: 10}}}
+	if !managedPlatformReservationsContained(retained, []managedplatform.CapacityReservation{{Key: "workload/database", NodeName: "node-a", Capacity: managedplatform.Capacity{CPUMilli: 400, MemoryBytes: 512 << 20, StorageGiB: 10}}}) {
+		t.Fatal("contained reservation was rejected")
+	}
+	for _, expanded := range []managedplatform.CapacityReservation{
+		{Key: "workload/database", NodeName: "node-a", Capacity: managedplatform.Capacity{CPUMilli: 501, MemoryBytes: 1 << 30, StorageGiB: 10}},
+		{Key: "workload/database", NodeName: "node-b", Capacity: managedplatform.Capacity{CPUMilli: 400, MemoryBytes: 512 << 20, StorageGiB: 10}},
+	} {
+		if managedPlatformReservationsContained(retained, []managedplatform.CapacityReservation{expanded}) {
+			t.Fatal("reservation outside the admitted envelope was accepted")
+		}
+	}
+}
+
 func TestManagedPlatformCapacityControllerMapping(t *testing.T) {
 	cases := map[string]struct {
 		kind string
@@ -80,7 +95,8 @@ func TestManagedCapacityScopesBackfillFromTrustedPolicyAndRejectPoolChange(t *te
 	s.ValidateDeployment = func(context.Context, Application, spec.Application) error { return nil }
 	app := emptyTestSpec()
 	app.Name = "capacity-scope-backfill"
-	if _, err := s.Accept(ctx, p, item.Project, item.Environment, app, 0, "capacity-scope-backfill"); err != nil {
+	created, err := s.Accept(ctx, p, item.Project, item.Environment, app, 0, "capacity-scope-backfill")
+	if err != nil {
 		t.Fatal(err)
 	}
 	policy := enableManagedPlatformCapacity(s, "node-a")
@@ -90,6 +106,10 @@ func TestManagedCapacityScopesBackfillFromTrustedPolicyAndRejectPoolChange(t *te
 	var pool string
 	if err := s.Pool.QueryRow(ctx, `SELECT capacity_pool FROM managed_capacity_scopes WHERE project=$1 AND environment=$2`, item.Project, item.Environment).Scan(&pool); err != nil || pool != policy.Pool {
 		t.Fatal("trusted startup reconciliation did not bind the legacy scope", pool, err)
+	}
+	ownership, err := s.ManagedCapacityPoolOwnership(ctx, policy.Pool)
+	if err != nil || len(ownership.Workloads) != 1 || ownership.Workloads[0].Kind != "application" || ownership.Workloads[0].ID != created.ID {
+		t.Fatal("pool ownership did not include the exact durable application", ownership, err)
 	}
 	s.ManagedCapacityPool = func(context.Context, pgx.Tx, string, string) (string, error) { return "changed", nil }
 	if err := s.ReconcileManagedCapacityScopes(ctx); err == nil {

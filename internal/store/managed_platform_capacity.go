@@ -158,6 +158,21 @@ func mergeManagedPlatformReservations(old, next []managedplatform.CapacityReserv
 	return result
 }
 
+func managedPlatformReservationsContained(retained, next []managedplatform.CapacityReservation) bool {
+	key := func(r managedplatform.CapacityReservation) string { return r.Key + "\x00" + r.NodeName }
+	envelope := make(map[string]managedplatform.Capacity, len(retained))
+	for _, reservation := range retained {
+		envelope[key(reservation)] = reservation.Capacity
+	}
+	for _, reservation := range next {
+		capacity, ok := envelope[key(reservation)]
+		if !ok || !reservation.Capacity.Fits(capacity) {
+			return false
+		}
+	}
+	return true
+}
+
 func platformCapacityUsed(ctx context.Context, tx pgx.Tx, project, environment, except string) (managedplatform.Capacity, error) {
 	var used managedplatform.Capacity
 	err := tx.QueryRow(ctx, `SELECT COALESCE(sum(reserved_cpu_milli),0),COALESCE(sum(reserved_memory_bytes),0),COALESCE(sum(reserved_storage_gib),0) FROM managed_platforms WHERE project=$1 AND environment=$2 AND id<>$3 AND deleted_at IS NULL`, project, environment, except).Scan(&used.CPUMilli, &used.MemoryBytes, &used.StorageGiB)
@@ -365,16 +380,19 @@ func (s *Store) contractManagedPlatformCapacity(ctx context.Context, tx pgx.Tx, 
 		_, err := tx.Exec(ctx, `UPDATE managed_platforms SET reserved_cpu_milli=0,reserved_memory_bytes=0,reserved_storage_gib=0 WHERE id=$1`, op.PlatformID)
 		return err
 	}
-	reservations, pool, err := loadManagedPlatformReservations(ctx, tx, op.PlatformID)
+	retained, pool, err := loadManagedPlatformReservations(ctx, tx, op.PlatformID)
 	if err != nil {
 		return err
 	}
 	if pool == "" {
 		return fmt.Errorf("managed platform capacity reservation pool is unavailable")
 	}
-	reservations, err = managedplatform.CapacityReservations(op.Spec, op.Plan)
+	reservations, err := managedplatform.CapacityReservations(op.Spec, op.Plan)
 	if err != nil {
 		return err
+	}
+	if !managedPlatformReservationsContained(retained, reservations) {
+		return fmt.Errorf("%w: completed managed platform reservation is not contained by its admitted envelope", ErrConflict)
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM managed_platform_capacity_reservations WHERE platform_id=$1`, op.PlatformID); err != nil {
 		return err
@@ -740,6 +758,97 @@ func (s *Store) ManagedPlatformCapacityScopes(ctx context.Context) ([]string, er
 		return nil, fmt.Errorf("managed platform capacity scope inventory exceeds its bound")
 	}
 	return scopes, nil
+}
+
+// ManagedCapacityPoolOwnership returns every active application, database and
+// reconciled managed-platform namespace whose durable reservation is included
+// in one shared capacity pool.
+func (s *Store) ManagedCapacityPoolOwnership(ctx context.Context, pool string) (managedplatform.CapacityPoolOwnership, error) {
+	var result managedplatform.CapacityPoolOwnership
+	if len(validation.IsDNS1123Label(pool)) != 0 {
+		return result, fmt.Errorf("managed capacity pool is invalid")
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT kind,id,project,environment FROM (
+		SELECT 'application' AS kind,a.id,a.project,a.environment FROM applications a
+		JOIN managed_capacity_scopes s ON s.project=a.project AND s.environment=a.environment WHERE s.capacity_pool=$1
+		UNION ALL
+		SELECT 'database' AS kind,d.id,d.project,d.environment FROM managed_databases d
+		JOIN managed_capacity_scopes s ON s.project=d.project AND s.environment=d.environment WHERE s.capacity_pool=$1 AND d.deleted_at IS NULL
+	) workloads ORDER BY kind,id LIMIT $2`, pool, managedplatform.MaxCapacityPoolWorkloads+1)
+	if err != nil {
+		return result, err
+	}
+	for rows.Next() {
+		var workload managedplatform.CapacityPoolWorkload
+		if err = rows.Scan(&workload.Kind, &workload.ID, &workload.Project, &workload.Environment); err != nil {
+			rows.Close()
+			return result, err
+		}
+		result.Workloads = append(result.Workloads, workload)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return result, err
+	}
+	if len(result.Workloads) > managedplatform.MaxCapacityPoolWorkloads {
+		return result, fmt.Errorf("managed capacity pool workload inventory exceeds its bound")
+	}
+	platformScopes, err := s.ManagedCapacityPoolPlatformScopes(ctx, pool)
+	if err != nil {
+		return result, err
+	}
+	result.PlatformNamespaces = map[string]managedplatform.CapacityNamespaceOwnership{}
+	for _, scope := range platformScopes {
+		project, environment, _ := strings.Cut(scope, "/")
+		namespaces, ownershipErr := s.ManagedPlatformNamespaceReservations(ctx, project, environment)
+		if ownershipErr != nil {
+			return result, ownershipErr
+		}
+		for namespace, ownership := range namespaces {
+			if _, exists := result.PlatformNamespaces[namespace]; exists {
+				return result, fmt.Errorf("managed platform namespace belongs to more than one capacity scope")
+			}
+			result.PlatformNamespaces[namespace] = ownership
+			if len(result.PlatformNamespaces) > managedplatform.MaxCapacityPoolWorkloads {
+				return result, fmt.Errorf("managed capacity pool platform namespace inventory exceeds its bound")
+			}
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) ManagedCapacityPoolPlatformScopes(ctx context.Context, pool string) ([]string, error) {
+	if len(validation.IsDNS1123Label(pool)) != 0 {
+		return nil, fmt.Errorf("managed capacity pool is invalid")
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT p.project,p.environment FROM managed_platforms p
+		JOIN managed_capacity_scopes s ON s.project=p.project AND s.environment=p.environment
+		WHERE s.capacity_pool=$1 AND p.deleted_at IS NULL ORDER BY p.project,p.environment LIMIT $2`, pool, maxManagedPlatformCapacityScopes+1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var project, environment string
+		if err = rows.Scan(&project, &environment); err != nil {
+			return nil, err
+		}
+		result = append(result, project+"/"+environment)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) > maxManagedPlatformCapacityScopes {
+		return nil, fmt.Errorf("managed platform capacity scope inventory exceeds its bound")
+	}
+	return result, nil
+}
+
+func (s *Store) ManagedCapacityScopePool(ctx context.Context, project, environment string) (string, error) {
+	var pool string
+	err := s.Pool.QueryRow(ctx, `SELECT capacity_pool FROM managed_capacity_scopes WHERE project=$1 AND environment=$2`, project, environment).Scan(&pool)
+	return pool, err
 }
 
 func (s *Store) HasManagedPlatforms(ctx context.Context, project, environment string) (bool, error) {

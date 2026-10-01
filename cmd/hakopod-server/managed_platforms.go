@@ -176,33 +176,32 @@ func configureManagedPlatforms(path string, db *store.Store, kube *cluster.Clien
 			return nil, nil, nil, err
 		}
 		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		scopes, scopeErr := db.ManagedPlatformCapacityScopes(bounded)
+		platformScopes, scopeErr := db.ManagedCapacityPoolPlatformScopes(bounded, config.Capacity.Pool)
 		cancel()
 		if scopeErr != nil {
 			return nil, nil, nil, scopeErr
 		}
-		owned := map[string]managedplatform.CapacityNamespaceOwnership{}
-		for _, scope := range scopes {
-			project, environment, _ := strings.Cut(scope, "/")
+		for _, scope := range platformScopes {
+			project, environment, ok := strings.Cut(scope, "/")
+			if !ok {
+				return nil, nil, nil, fmt.Errorf("managed platform capacity scope is invalid")
+			}
 			bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 			scopeErr = db.CheckManagedPlatformCapacityReservation(bounded, project, environment)
 			cancel()
 			if scopeErr != nil {
 				return nil, nil, nil, scopeErr
 			}
-			bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-			namespaces, ownershipErr := db.ManagedPlatformNamespaceReservations(bounded, project, environment)
-			cancel()
-			if ownershipErr != nil {
-				return nil, nil, nil, ownershipErr
-			}
-			for namespace, uid := range namespaces {
-				owned[namespace] = uid
-			}
+		}
+		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		owned, ownershipErr := db.ManagedCapacityPoolOwnership(bounded, config.Capacity.Pool)
+		cancel()
+		if ownershipErr != nil {
+			return nil, nil, nil, ownershipErr
 		}
 		reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(config.Capacity.Nodes))
 		for _, node := range config.Capacity.Nodes {
-			reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: config.Capacity.Capacity, Namespaces: owned}
+			reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: config.Capacity.Capacity, Ownership: owned}
 		}
 		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		err = kube.CheckManagedPlatformNodeReservations(bounded, reservations)
@@ -213,13 +212,13 @@ func configureManagedPlatforms(path string, db *store.Store, kube *cluster.Clien
 		db.ValidateManagedPlatformCapacity = func(ctx context.Context, project, environment string, policy managedplatform.CapacityPolicy) error {
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			namespaces, ownershipErr := db.ManagedPlatformNamespaceReservations(bounded, project, environment)
+			owned, ownershipErr := db.ManagedCapacityPoolOwnership(bounded, policy.Pool)
 			if ownershipErr != nil {
 				return ownershipErr
 			}
 			current := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
 			for _, node := range policy.Nodes {
-				current[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Namespaces: namespaces}
+				current[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Ownership: owned}
 			}
 			return kube.CheckManagedPlatformNodeReservations(bounded, current)
 		}
