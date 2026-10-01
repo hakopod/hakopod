@@ -21,6 +21,7 @@ import (
 
 func newMySQLFixture(t *testing.T, ctx context.Context, c *Client, mode string) (database.Resource, []byte) {
 	t.Helper()
+	operator := mysqlFixtureOperatorProcesses(t, ctx, c)
 	id, password := make([]byte, 16), make([]byte, 32)
 	if _, err := rand.Read(id); err != nil {
 		t.Fatal(err)
@@ -68,6 +69,21 @@ func newMySQLFixture(t *testing.T, ctx context.Context, c *Client, mode string) 
 			}
 		}
 		t.Error("MySQL fixture deletion did not finish reclaiming its resources")
+	})
+	t.Cleanup(func() {
+		check, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		latest := mysqlFixtureOperatorProcesses(t, check, c)
+		if len(latest) != len(operator) {
+			t.Error("MySQL operator process inventory changed during the fixture")
+			return
+		}
+		for uid, restarts := range operator {
+			if got, exists := latest[uid]; !exists || got != restarts {
+				t.Error("MySQL operator restarted or was replaced; its full fixture log history cannot be verified")
+				return
+			}
+		}
 	})
 	return d, passwordText
 }
@@ -302,5 +318,7 @@ func TestManagedMySQLRecoveryLive(t *testing.T) {
 		t.Fatal("MySQL accepted a nonempty recovery target")
 	}
 	testRecoveryIngressGates(t, ctx, c, target)
+	testMySQLCredentialLogs(t, ctx, c, d)
+	testMySQLCredentialLogs(t, ctx, c, target)
 	t.Log("MySQL clustered logical recovery preserved binary data, views and routines; retained source and nonempty-target refusal verified")
 }

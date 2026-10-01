@@ -111,7 +111,7 @@ func TestManagedMySQLRouterBackendTLSLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := server.Name + ".database-instances." + DatabaseNamespace(d.ID) + ".svc.cluster.local"
-	for _, fault := range []struct {
+	for i, fault := range []struct {
 		name, host string
 		ca         *x509.Certificate
 		signer     crypto.Signer
@@ -120,6 +120,25 @@ func TestManagedMySQLRouterBackendTLSLive(t *testing.T) {
 		{"hostname mismatch", "wrong-host.invalid", trustedCA, trustedSigner},
 	} {
 		t.Run(fault.name, func(t *testing.T) {
+			if i > 0 {
+				// Router suppresses repeated metadata errors with the same MySQL
+				// error number. A fresh process gives each certificate fault its
+				// own evidence, without enabling DEBUG or changing TLS policy.
+				testMySQLCredentialLogs(t, ctx, c, d)
+				pod, err := c.kube.CoreV1().Pods(DatabaseNamespace(d.ID)).Get(ctx, router.Name, metav1.GetOptions{})
+				if err != nil || string(pod.UID) != router.UID {
+					t.Fatal("Router identity changed before certificate fault reset")
+				}
+				if err = c.kube.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pod.UID}}); err != nil {
+					t.Fatal("could not reset the owned fixture Router")
+				}
+				o = waitMySQLFixture(t, ctx, c, d, password)
+				if o.Routing == nil || len(o.Routing.Members) != 1 || o.Routing.Members[0].UID == router.UID {
+					t.Fatal("Router process was not replaced before the next certificate fault")
+				}
+				router = o.Routing.Members[0]
+				verifyMySQLRouterTLSConfiguration(t, ctx, c, d, router)
+			}
 			beforeLogs, beforeRestarts := mysqlRouterFaultLogs(t, ctx, c, d, router)
 			key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 			if err != nil {
@@ -202,12 +221,18 @@ head -c 2048 "$work/error"`
 				if !strings.Contains(refusal.String(), "ERROR 2003") || !strings.Contains(refusal.String(), "(111)") {
 					t.Fatal("Router refusal was neither a certificate error nor a closed listener")
 				}
-				afterLogs, afterRestarts := mysqlRouterFaultLogs(t, ctx, c, d, router)
-				if beforeRestarts != afterRestarts || !bytes.HasPrefix(afterLogs, beforeLogs) {
-					t.Fatal("Router restarted or its logs changed during certificate fault acceptance")
-				}
-				if !mysqlRouterCertificateFailure(afterLogs[len(beforeLogs):]) {
-					t.Fatal("closed Router listener has no new certificate-verification failure evidence")
+				deadline := time.Now().Add(10 * time.Second)
+				for {
+					afterLogs, afterRestarts := mysqlRouterFaultLogs(t, ctx, c, d, router)
+					if beforeRestarts != afterRestarts || !bytes.HasPrefix(afterLogs, beforeLogs) {
+						t.Fatal("Router restarted or its logs changed during certificate fault acceptance")
+					}
+					if mysqlRouterCertificateFailure(afterLogs[len(beforeLogs):]) {
+						break
+					}
+					if time.Now().After(deadline) || sleepContext(ctx, 250*time.Millisecond) != nil {
+						t.Fatal("closed Router listener has no new certificate-verification failure evidence")
+					}
 				}
 				t.Log("Router refused the query and recorded a new certificate-verification failure before closing its listener")
 			}
@@ -223,6 +248,7 @@ head -c 2048 "$work/error"`
 					t.Fatal("Router did not recover after restoring the original certificate")
 				}
 			}
+			testMySQLCredentialLogs(t, ctx, c, d)
 		})
 		if t.Failed() {
 			break
@@ -301,7 +327,8 @@ function trim(s) {gsub(/^[ \t]+|[ \t]+$/, "", s); return s}
 /^[ \t]*server_ssl_mode[ \t]*=/ {if(trim($2)!="REQUIRED") exit 1; mode++}
 /^[ \t]*server_ssl_verify[ \t]*=/ {if(trim($2)!="VERIFY_IDENTITY") exit 1; verify++}
 /^[ \t]*server_ssl_ca[ \t]*=/ {if(trim($2)!="/router-ssl/ca/ca.crt") exit 1; ca++}
-END {if(mode<1 || verify<1 || ca<1) exit 1}
+/^[ \t]*level[ \t]*=/ {if(trim($2)!="WARNING") exit 1; logger++}
+END {if(mode<1 || verify<1 || ca<1 || logger!=1) exit 1}
 ' /tmp/mysqlrouter/mysqlrouter.conf
 test -s /router-ssl/ca/ca.crt`
 	command := exec.CommandContext(ctx, "kubectl", "--kubeconfig", os.Getenv("HAKOPOD_TEST_KUBECONFIG"), "--context", "k3d-hakopod-dev", "-n", pod.Namespace, "exec", pod.Name, "-c", "router", "--", "sh", "-c", check)

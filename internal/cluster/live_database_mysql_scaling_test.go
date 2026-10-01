@@ -53,6 +53,7 @@ func TestManagedMySQLScalingLive(t *testing.T) {
 		}
 		t.Log("Verified MySQL voting member count", replicas+1)
 	}
+	testMySQLCredentialLogs(t, ctx, c, d)
 	router := health.Routing.Members[0]
 	pod, err := c.kube.CoreV1().Pods(DatabaseNamespace(d.ID)).Get(ctx, router.Name, metav1.GetOptions{})
 	if err != nil || string(pod.UID) != router.UID {

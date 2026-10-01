@@ -81,8 +81,10 @@ func mysqlDatabaseSpec(d database.Resource, resources map[string]any) map[string
 		"mycnf":                      "[mysqld]\nrequire_secure_transport=ON\ntls_version=TLSv1.2,TLSv1.3\ngeneral_log=OFF\nslow_query_log=OFF\nlocal_infile=OFF\nmax_connections=200\ninnodb_buffer_pool_size=268435456\nlog_bin_trust_function_creators=ON\ngroup_replication_consistency=BEFORE_ON_PRIMARY_FAILOVER\n",
 		"router": map[string]any{
 			"instances": int64(d.Spec.RouterInstances()), "version": "8.4.10", "tlsSecretName": "database-tls",
-			"podLabels":        map[string]any{databaseRouterLabel: "true", databaseOwner: d.ID},
-			"bootstrapOptions": []any{"--ssl-mode=VERIFY_IDENTITY", "--client-ssl-mode=REQUIRED", "--server-ssl-mode=REQUIRED", "--conf-set-option=routing:bootstrap_rw_split.server_ssl_mode=REQUIRED", "--conf-set-option=DEFAULT.max_total_connections=200", "--conf-set-option=logger.level=ERROR", "--conf-set-option=routing:bootstrap_ro.routing_strategy=round-robin"},
+			"podLabels": map[string]any{databaseRouterLabel: "true", databaseOwner: d.ID},
+			// Router reports metadata certificate failures at WARNING. ERROR
+			// hides the cause when verification closes its client listeners.
+			"bootstrapOptions": []any{"--ssl-mode=VERIFY_IDENTITY", "--client-ssl-mode=REQUIRED", "--server-ssl-mode=REQUIRED", "--conf-set-option=routing:bootstrap_rw_split.server_ssl_mode=REQUIRED", "--conf-set-option=DEFAULT.max_total_connections=200", "--conf-set-option=logger.level=WARNING", "--conf-set-option=routing:bootstrap_ro.routing_strategy=round-robin"},
 			"podSpec":          map[string]any{"automountServiceAccountToken": false, "nodeSelector": map[string]any{corev1.LabelArchStable: "amd64"}, "containers": []any{map[string]any{"name": "router", "image": mysqlRouterImage, "resources": mysqlResources(database.MySQLRouterCPU, database.MySQLRouterMemory)}}},
 		},
 	}
