@@ -279,6 +279,25 @@ func TestObserveSupabaseRefusesReplacementUID(t *testing.T) {
 	}
 }
 
+func TestObserveSupabaseWaitsForOldDeploymentPod(t *testing.T) {
+	ctx := context.Background()
+	op := supabaseTestOperation(2)
+	ns := supabaseTestNamespace(op)
+	one := int32(1)
+	deployment := &appsv1.Deployment{ObjectMeta: supabaseTestMeta(op, ns, "supabase-auth"), Spec: appsv1.DeploymentSpec{Replicas: &one}, Status: appsv1.DeploymentStatus{ObservedGeneration: 1, Replicas: 2, UpdatedReplicas: 1, AvailableReplicas: 1}}
+	deployment.Generation = 1
+	client := &Client{kube: fake.NewSimpleClientset(ns, deployment)}
+	manifests := managedplatform.SupabaseManifests{Namespace: *ns, ExpectedUID: ns.UID, Objects: []runtime.Object{deployment}}
+	claims := map[string]store.PlatformResourceClaim{supabaseClaimKey("namespace", ns.Name): {ResourceID: string(ns.UID), ImmutableGeneration: 1}, supabaseClaimKey("deployment", deployment.Name): {ResourceID: string(deployment.UID), ImmutableGeneration: 1}}
+	observation, err := client.ObserveSupabase(ctx, op, manifests, claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.Status != "pending" || len(observation.Pending) != 1 {
+		t.Fatalf("old deployment pod allowed capacity contraction: %#v", observation)
+	}
+}
+
 func TestSupabaseDeleteRequeuesThenReleasesAfterNamespaceIsAbsent(t *testing.T) {
 	ctx := context.Background()
 	op := supabaseTestOperation(2)

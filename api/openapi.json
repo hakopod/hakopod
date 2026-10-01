@@ -24779,6 +24779,9 @@
           "authority_fingerprint": {
             "type": "string"
           },
+          "capacity_fingerprint": {
+            "type": "string"
+          },
           "expires_at": {
             "type": "string",
             "format": "date-time"
@@ -24874,6 +24877,15 @@
           "observation": {
             "$ref": "#/components/schemas/ManagedPlatformObservation"
           },
+          "reserved_cpu_milli": {
+            "type": "integer"
+          },
+          "reserved_memory_bytes": {
+            "type": "integer"
+          },
+          "reserved_storage_gib": {
+            "type": "integer"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -24902,6 +24914,9 @@
           "spec",
           "status",
           "observation",
+          "reserved_cpu_milli",
+          "reserved_memory_bytes",
+          "reserved_storage_gib",
           "created_at",
           "updated_at"
         ]

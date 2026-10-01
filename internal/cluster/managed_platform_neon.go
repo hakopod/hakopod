@@ -448,14 +448,14 @@ func neonBootstrapRequiresReadiness(name string) bool {
 }
 
 func neonDeploymentObserved(item *appsv1.Deployment, serving bool) bool {
-	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.UpdatedReplicas != *item.Spec.Replicas {
+	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas {
 		return false
 	}
 	return !serving || item.Status.AvailableReplicas == *item.Spec.Replicas
 }
 
 func neonStatefulSetObserved(item *appsv1.StatefulSet, serving bool) bool {
-	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
+	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
 		return false
 	}
 	return !serving || item.Status.ReadyReplicas == *item.Spec.Replicas

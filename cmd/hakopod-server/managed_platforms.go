@@ -11,11 +11,13 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -45,6 +47,7 @@ type managedPlatformFile struct {
 	NeonProxyToken                string                                             `toml:"neon_proxy_token"`
 	NeonProxyEndpoints            map[string]api.NeonProxyBootstrapConfig            `toml:"neon_proxy_endpoints"`
 	Secrets                       map[string]map[string]map[string]map[string]string `toml:"secrets"`
+	Capacity                      managedplatform.CapacityPolicy                     `toml:"capacity"`
 }
 
 func validateManagedPlatformInventories(config managedPlatformFile) (bool, bool, error) {
@@ -153,6 +156,74 @@ func configureManagedPlatforms(path string, db *store.Store, kube *cluster.Clien
 		}
 	}
 	planner := &api.NativeManagedPlatformPlanner{Store: db, EncryptionKey: key, SupabaseImages: config.Images, SupabaseIdentities: config.Identities, ApprovedEncryptedStorageClass: config.ApprovedEncryptedStorageClass, SharedStorageGID: config.SharedStorageGID, ApprovedExternalHTTPSCIDRs: config.ApprovedExternalHTTPSCIDRs, ResolveSupabaseSecret: resolver, NeonImages: config.NeonImages, NeonIdentities: config.NeonIdentities, NeonProxyControlPlaneOrigin: config.NeonProxyControlPlaneOrigin, NeonControlPlaneNamespace: config.NeonControlPlaneNamespace, NeonControlPlanePodLabels: config.NeonControlPlanePodLabels, NeonProxyToken: config.NeonProxyToken, NeonProxyEndpoints: config.NeonProxyEndpoints, ResolveNeonSecret: resolver}
+	if config.Capacity.Enabled {
+		if err = config.Capacity.Validate(); err != nil {
+			return nil, nil, nil, err
+		}
+		if config.Capacity.StorageClass != config.ApprovedEncryptedStorageClass {
+			return nil, nil, nil, fmt.Errorf("managed platform capacity must use the approved encrypted StorageClass")
+		}
+		db.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
+			return config.Capacity, nil
+		}
+		db.ManagedCapacityPool = func(context.Context, pgx.Tx, string, string) (string, error) {
+			return config.Capacity.Pool, nil
+		}
+		bounded, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = db.ReconcileManagedCapacityScopes(bounded)
+		cancel()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		scopes, scopeErr := db.ManagedPlatformCapacityScopes(bounded)
+		cancel()
+		if scopeErr != nil {
+			return nil, nil, nil, scopeErr
+		}
+		owned := map[string]managedplatform.CapacityNamespaceOwnership{}
+		for _, scope := range scopes {
+			project, environment, _ := strings.Cut(scope, "/")
+			bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			scopeErr = db.CheckManagedPlatformCapacityReservation(bounded, project, environment)
+			cancel()
+			if scopeErr != nil {
+				return nil, nil, nil, scopeErr
+			}
+			bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			namespaces, ownershipErr := db.ManagedPlatformNamespaceReservations(bounded, project, environment)
+			cancel()
+			if ownershipErr != nil {
+				return nil, nil, nil, ownershipErr
+			}
+			for namespace, uid := range namespaces {
+				owned[namespace] = uid
+			}
+		}
+		reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(config.Capacity.Nodes))
+		for _, node := range config.Capacity.Nodes {
+			reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: config.Capacity.Capacity, Namespaces: owned}
+		}
+		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		err = kube.CheckManagedPlatformNodeReservations(bounded, reservations)
+		cancel()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		db.ValidateManagedPlatformCapacity = func(ctx context.Context, project, environment string, policy managedplatform.CapacityPolicy) error {
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			namespaces, ownershipErr := db.ManagedPlatformNamespaceReservations(bounded, project, environment)
+			if ownershipErr != nil {
+				return ownershipErr
+			}
+			current := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
+			for _, node := range policy.Nodes {
+				current[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Namespaces: namespaces}
+			}
+			return kube.CheckManagedPlatformNodeReservations(bounded, current)
+		}
+	}
 	var authority api.NeonProxyAuthority
 	if neonConfigured {
 		authority, err = api.NewDatabaseNeonProxyAuthority(db, config.NeonProxyToken, key)

@@ -11,6 +11,7 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/platformbackup"
+	"github.com/jackc/pgx/v5"
 )
 
 func recoveryStoreFixture(t *testing.T) (*Store, Principal, ManagedPlatform, managedplatform.Plan, backup.Destination) {
@@ -37,8 +38,10 @@ func recoveryStoreFixture(t *testing.T) (*Store, Principal, ManagedPlatform, man
 	}
 	plan.Capability.Available = true
 	plan.Capability.ClusterQualified = true
+	plan.StorageClass = "encrypted-block"
 	item := ManagedPlatform{ID: NewID(), Project: "demo", Environment: "development", Spec: spec}
 	ctx := context.Background()
+	enableManagedPlatformCapacity(s, "fixture-node")
 	review := managedPlatformReview(t, s, p, item, plan, 0, "create")
 	if _, err = s.AcceptManagedPlatform(ctx, p, item, plan, []byte("sealed"), review, 0, "recovery-platform-create", "create"); err != nil {
 		t.Fatal(err)
@@ -56,6 +59,105 @@ func recoveryStoreFixture(t *testing.T) (*Store, Principal, ManagedPlatform, man
 		t.Fatal(err)
 	}
 	return s, p, item, plan, destination
+}
+
+func TestPlatformRecoveryRechecksAdmissionGrantAndCapacity(t *testing.T) {
+	s, p, item, _, destination := recoveryStoreFixture(t)
+	ctx := context.Background()
+	intent := backupRecoveryIntent(item, destination)
+	review, err := s.SavePlatformRecoveryReview(ctx, p, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RequireManagedPlatformAdmission = true
+	admissions, validations := 0, 0
+	s.AdmitManagedPlatform = func(_ context.Context, _ pgx.Tx, principal Principal, project, environment, idem string) error {
+		admissions++
+		if principal.ID != p.ID || project != item.Project || environment != item.Environment || idem != "recovery-capacity-recheck" {
+			return ErrForbidden
+		}
+		return nil
+	}
+	s.ValidateManagedPlatformCapacity = func(_ context.Context, project, environment string, policy managedplatform.CapacityPolicy) error {
+		validations++
+		if project != item.Project || environment != item.Environment || len(policy.Nodes) != 1 || policy.Nodes[0].UID != "uid-fixture-node" {
+			return ErrConflict
+		}
+		return nil
+	}
+	if _, err = s.AcceptPlatformRecovery(ctx, p, intent, review, "recovery-capacity-recheck"); err != nil {
+		t.Fatal(err)
+	}
+	if admissions != 1 || validations != 1 {
+		t.Fatalf("recovery skipped current admission or capacity validation: admissions=%d validations=%d", admissions, validations)
+	}
+}
+
+func TestPlatformRestoreRechecksSourceAndTargetCapacity(t *testing.T) {
+	s, p, source, sourcePlan, destination := recoveryStoreFixture(t)
+	ctx := context.Background()
+	targetSpec := source.Spec
+	targetSpec.Name = "supabase-restore-target"
+	images := make(map[string]string, len(sourcePlan.Components))
+	for _, component := range sourcePlan.Components {
+		images[component.Name] = component.Image
+	}
+	targetPlan, err := managedplatform.PlanSupabase(targetSpec, images)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPlan.Capability.Available = true
+	targetPlan.Capability.ClusterQualified = true
+	targetPlan.StorageClass = sourcePlan.StorageClass
+	target := ManagedPlatform{ID: NewID(), Project: source.Project, Environment: source.Environment, Spec: targetSpec}
+	targetReview := managedPlatformReview(t, s, p, target, targetPlan, 0, "create")
+	if _, err = s.AcceptManagedPlatform(ctx, p, target, targetPlan, []byte("sealed-target"), targetReview, 0, "recovery-target-create", "create"); err != nil {
+		t.Fatal(err)
+	}
+	targetClaim, err := s.ClaimManagedPlatformOperation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordManagedPlatformStep(ctx, targetClaim, "succeeded", "ready", "", map[string]any{"status": "ready"}); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := recoveryManifestFixture(source.ID, destination.ID)
+	artifactID := NewID()
+	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now())`, artifactID, source.ID, int64(1), destination.ID, "fixtures/restore-target", int64(123), strings.Repeat("e", 64), JSON(manifest), manifest.Digest()); err != nil {
+		t.Fatal(err)
+	}
+	restore := platformbackup.Intent{Kind: "restore", Project: source.Project, Environment: source.Environment, SourcePlatformID: source.ID, TargetPlatformID: target.ID, ArtifactID: artifactID, ExpectedSourceRevision: 1, ExpectedTargetRevision: 1}
+	review, err := s.SavePlatformRecoveryReview(ctx, p, restore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RequireManagedPlatformAdmission = true
+	admissions, validations := 0, 0
+	s.AdmitManagedPlatform = func(_ context.Context, _ pgx.Tx, principal Principal, project, environment, idem string) error {
+		admissions++
+		if principal.ID != p.ID || project != source.Project || environment != source.Environment || idem != "restore-capacity-recheck" {
+			return ErrForbidden
+		}
+		return nil
+	}
+	s.ValidateManagedPlatformCapacity = func(_ context.Context, project, environment string, policy managedplatform.CapacityPolicy) error {
+		validations++
+		var reservedPlatforms int
+		if err := s.Pool.QueryRow(ctx, `SELECT count(DISTINCT platform_id) FROM managed_platform_capacity_reservations`).Scan(&reservedPlatforms); err != nil {
+			return err
+		}
+		if project != source.Project || environment != source.Environment || len(policy.Nodes) != 1 || reservedPlatforms != 2 {
+			return ErrConflict
+		}
+		return nil
+	}
+	if _, err = s.AcceptPlatformRecovery(ctx, p, restore, review, "restore-capacity-recheck"); err != nil {
+		t.Fatal(err)
+	}
+	if admissions != 1 || validations != 1 {
+		t.Fatalf("restore skipped current admission or source/target capacity validation: admissions=%d validations=%d", admissions, validations)
+	}
 }
 
 func backupRecoveryIntent(item ManagedPlatform, destination backup.Destination) platformbackup.Intent {

@@ -18,6 +18,7 @@ import (
 
 const (
 	MaxManagedPlatforms                = 64
+	maxManagedPlatformCapacityScopes   = 1000
 	MaxManagedPlatformReviews          = 4
 	MaxManagedPlatformObservationBytes = 64 << 10
 	MaxManagedPlatformResources        = managedplatform.MaxComponents * 5
@@ -40,16 +41,19 @@ func lockManagedPlatformMutations(ctx context.Context, tx pgx.Tx, ids ...string)
 }
 
 type ManagedPlatform struct {
-	ID          string               `json:"id"`
-	Project     string               `json:"project"`
-	Environment string               `json:"environment"`
-	Revision    int64                `json:"revision"`
-	Spec        managedplatform.Spec `json:"spec"`
-	Status      string               `json:"status"`
-	Observation map[string]any       `json:"observation"`
-	CreatedAt   time.Time            `json:"created_at"`
-	UpdatedAt   time.Time            `json:"updated_at"`
-	DeletedAt   *time.Time           `json:"deleted_at,omitempty"`
+	ID                  string               `json:"id"`
+	Project             string               `json:"project"`
+	Environment         string               `json:"environment"`
+	Revision            int64                `json:"revision"`
+	Spec                managedplatform.Spec `json:"spec"`
+	Status              string               `json:"status"`
+	Observation         map[string]any       `json:"observation"`
+	ReservedCPUMilli    int64                `json:"reserved_cpu_milli"`
+	ReservedMemoryBytes int64                `json:"reserved_memory_bytes"`
+	ReservedStorageGiB  int64                `json:"reserved_storage_gib"`
+	CreatedAt           time.Time            `json:"created_at"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	DeletedAt           *time.Time           `json:"deleted_at,omitempty"`
 }
 
 type ManagedPlatformOperation struct {
@@ -82,6 +86,7 @@ type ManagedPlatformReview struct {
 	Kind                 string    `json:"kind"`
 	RequestHash          string    `json:"request_hash"`
 	AuthorityFingerprint string    `json:"authority_fingerprint"`
+	CapacityFingerprint  string    `json:"capacity_fingerprint,omitempty"`
 	ExpiresAt            time.Time `json:"expires_at"`
 	BlockedReasons       []string  `json:"blocked_reasons"`
 }
@@ -113,12 +118,12 @@ type PlatformResourceIntent struct {
 	ReleasedAt       *time.Time
 }
 
-const managedPlatformColumns = `id,project,environment,revision,desired_spec,status,observation,created_at,updated_at,deleted_at`
+const managedPlatformColumns = `id,project,environment,revision,desired_spec,status,observation,reserved_cpu_milli,reserved_memory_bytes,reserved_storage_gib,created_at,updated_at,deleted_at`
 const managedPlatformOperationColumns = `id,platform_id,revision,kind,status,phase,message,desired_spec,resolved_plan,encrypted_snapshot,review,review_id,authority_fingerprint,created_at,started_at,finished_at,identity_id,key_id,lease,lease_until,attempt`
 
 func scanManagedPlatform(row scanner) (ManagedPlatform, error) {
 	var item ManagedPlatform
-	err := row.Scan(&item.ID, &item.Project, &item.Environment, &item.Revision, &item.Spec, &item.Status, &item.Observation, &item.CreatedAt, &item.UpdatedAt, &item.DeletedAt)
+	err := row.Scan(&item.ID, &item.Project, &item.Environment, &item.Revision, &item.Spec, &item.Status, &item.Observation, &item.ReservedCPUMilli, &item.ReservedMemoryBytes, &item.ReservedStorageGiB, &item.CreatedAt, &item.UpdatedAt, &item.DeletedAt)
 	return item, err
 }
 
@@ -311,6 +316,17 @@ func (s *Store) SaveManagedPlatformReview(ctx context.Context, p Principal, item
 			}
 		}
 	}
+	capacityFingerprint := ""
+	if kind != "delete" && (s.RequireManagedPlatformAdmission || s.ManagedPlatformCapacityBudget != nil) {
+		policy, fingerprint, capacityErr := s.managedPlatformCapacityPolicyTx(ctx, tx, item.Project, item.Environment)
+		if capacityErr != nil {
+			return review, capacityErr
+		}
+		if capacityErr = policy.Allows(item.Spec, plan); capacityErr != nil {
+			return review, capacityErr
+		}
+		capacityFingerprint = capacityFingerprintHex(fingerprint)
+	}
 	if _, err = tx.Exec(ctx, "DELETE FROM managed_platform_reviews WHERE identity_id=$1 AND platform_id=$2 AND consumed_at IS NULL AND expires_at<=clock_timestamp()", p.ID, item.ID); err != nil {
 		return review, err
 	}
@@ -322,7 +338,7 @@ func (s *Store) SaveManagedPlatformReview(ctx context.Context, p Principal, item
 		return review, fmt.Errorf("%w: wait for an existing managed platform review to expire", ErrConflict)
 	}
 	hash := managedPlatformRequestHash(item, plan, expected, kind)
-	review = ManagedPlatformReview{ID: NewID(), ExpectedRevision: expected, Kind: kind, RequestHash: hex.EncodeToString(hash[:]), AuthorityFingerprint: hex.EncodeToString(fingerprint), ExpiresAt: time.Now().UTC().Add(10 * time.Minute), BlockedReasons: []string{}}
+	review = ManagedPlatformReview{ID: NewID(), ExpectedRevision: expected, Kind: kind, RequestHash: hex.EncodeToString(hash[:]), AuthorityFingerprint: hex.EncodeToString(fingerprint), CapacityFingerprint: capacityFingerprint, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), BlockedReasons: []string{}}
 	if _, err = tx.Exec(ctx, `INSERT INTO managed_platform_reviews(id,identity_id,key_id,project,environment,platform_id,platform_name,kind,expected_revision,request_hash,authority_fingerprint,desired_spec,resolved_plan,payload,expires_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, review.ID, p.ID, p.KeyID, item.Project, item.Environment, item.ID, item.Spec.Name, kind, expected, hash[:], fingerprint, JSON(item.Spec), JSON(plan), JSON(review), review.ExpiresAt); err != nil {
 		return ManagedPlatformReview{}, err
@@ -386,6 +402,15 @@ func (s *Store) ValidateManagedPlatformReview(ctx context.Context, p Principal, 
 	}
 	if current.Revision != expected {
 		return ErrConflict
+	}
+	if kind != "delete" && (s.RequireManagedPlatformAdmission || s.ManagedPlatformCapacityBudget != nil) {
+		policy, fingerprint, capacityErr := s.managedPlatformCapacityPolicyTx(ctx, tx, item.Project, item.Environment)
+		if capacityErr != nil {
+			return capacityErr
+		}
+		if capacityErr = policy.Allows(item.Spec, plan); capacityErr != nil || review.CapacityFingerprint != capacityFingerprintHex(fingerprint) {
+			return ErrConflict
+		}
 	}
 	if expected == 0 {
 		if kind != "create" || current.ID != "" {
@@ -463,7 +488,7 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 		return empty, ErrInput
 	}
 	hash := managedPlatformRequestHash(item, plan, expected, kind)
-	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return empty, err
 	}
@@ -499,6 +524,16 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 	}
 	if err = validateManagedPlatformIntent(item, plan, expected, kind); err != nil {
 		return empty, err
+	}
+	if kind != "delete" {
+		if s.RequireManagedPlatformAdmission && s.AdmitManagedPlatform == nil {
+			return empty, fmt.Errorf("%w: managed platform admission must be configured", ErrForbidden)
+		}
+		if s.AdmitManagedPlatform != nil {
+			if err = s.AdmitManagedPlatform(ctx, tx, p, item.Project, item.Environment, idempotencyKey); err != nil {
+				return empty, err
+			}
+		}
 	}
 
 	var stored ManagedPlatformReview
@@ -580,6 +615,18 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 	}
 	if err != nil {
 		return empty, err
+	}
+	if kind != "delete" && (s.RequireManagedPlatformAdmission || s.ManagedPlatformCapacityBudget != nil) {
+		policy, capacityFingerprint, capacityErr := s.managedPlatformCapacityPolicyTx(ctx, tx, item.Project, item.Environment)
+		if capacityErr != nil {
+			return empty, capacityErr
+		}
+		if review.CapacityFingerprint != capacityFingerprintHex(capacityFingerprint) {
+			return empty, ErrConflict
+		}
+		if capacityErr = s.reserveManagedPlatformCapacity(ctx, tx, item, plan, policy, kind); capacityErr != nil {
+			return empty, capacityErr
+		}
 	}
 	if _, err = tx.Exec(ctx, "UPDATE managed_platform_reviews SET consumed_at=now() WHERE id=$1 AND consumed_at IS NULL", review.ID); err != nil {
 		return empty, err

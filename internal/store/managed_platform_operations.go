@@ -165,6 +165,11 @@ func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatfor
 			return fmt.Errorf("%w: managed platform resources remain owned", ErrConflict)
 		}
 	}
+	if status == "succeeded" && (s.RequireManagedPlatformAdmission || s.ManagedPlatformCapacityBudget != nil) {
+		if err = s.contractManagedPlatformCapacity(ctx, tx, op); err != nil {
+			return err
+		}
+	}
 	tag, err := tx.Exec(ctx, "UPDATE managed_platform_operations SET status=$3,phase=$4,message=$5,next_attempt_at=clock_timestamp()+interval '3 seconds',lease='',lease_until=NULL,finished_at=CASE WHEN $3='queued' THEN NULL ELSE now() END WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.ID, op.Lease, status, phase, message)
 	if err != nil {
 		return err

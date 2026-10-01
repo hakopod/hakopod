@@ -88,7 +88,7 @@ func (s *Server) reviewPlatformRecovery(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if s.Store != nil && s.Store.ManagedCloud {
+	if s.Store != nil && s.Store.ManagedCloud && (s.Store.ManagedPlatformCapacityBudget == nil || s.Store.AdmitManagedPlatform == nil) {
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform recovery remains unavailable until durable capacity admission is configured")
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Server) acceptPlatformRecovery(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if s.Store != nil && s.Store.ManagedCloud {
+	if s.Store != nil && s.Store.ManagedCloud && (s.Store.ManagedPlatformCapacityBudget == nil || s.Store.AdmitManagedPlatform == nil) {
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform recovery remains unavailable until durable capacity admission is configured")
 		return
 	}

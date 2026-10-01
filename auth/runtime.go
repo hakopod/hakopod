@@ -7,6 +7,7 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/management"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -27,6 +28,9 @@ type DatabasePublicEndpoint = database.PublicEndpoint
 type DatabasePublicEndpointReview = database.PublicEndpointReview
 type DatabasePublicEndpointOperation = database.PublicEndpointOperation
 type ManagedDatabaseResource = database.Resource
+type ManagedPlatformCapacity = managedplatform.Capacity
+type ManagedPlatformCapacityNode = managedplatform.CapacityNode
+type ManagedPlatformCapacityPolicy = managedplatform.CapacityPolicy
 
 func PublicEndpointAllocations(endpoint DatabasePublicEndpoint) ([]DatabasePublicEndpointMemberAllocation, error) {
 	return database.PublicEndpointAllocations(endpoint)
@@ -86,24 +90,27 @@ type RuntimeConfig struct {
 	ClickHouseSandbox bool
 	StorageBudgetTx   func(context.Context, pgx.Tx, string, string) (int64, error)
 	// ActionsEntitled is trusted product state, never user TOML or headers.
-	ActionsEntitled          func(context.Context, string, string) (bool, error)
-	AuthorizeRetainedCleanup func(context.Context, AdmissionPrincipal, string, string) error
-	StorageBudget            func(context.Context, string, string) (int64, error)
-	AuthorizeBackup          func(context.Context, string, string, string) error
-	AdmitDeployment          DeploymentAdmission
-	AdmitDatabase            DeploymentAdmission
-	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
-	DatabasePolicy           cluster.DatabasePolicyResolver
-	DatabasePlacementPolicy  func(context.Context, string, string) (DatabasePolicy, error)
-	DatabaseCapacityBudget   func(context.Context, pgx.Tx, string, string) (DatabaseCapacity, error)
-	ManagedClusterNodes      []ManagedClusterNode
-	DatabaseNodeReservations map[string]DatabaseNodeReservation
-	CloudResourceCeiling     *ResourceProfile
-	Backups                  BackupConfig
-	BuildRegistry            string
-	WorkloadPolicy           cluster.WorkloadPolicyResolver
-	PlacementPolicy          cluster.PlacementPolicyResolver
-	ApplicationLimit         func(context.Context, string, string) (int, error)
+	ActionsEntitled               func(context.Context, string, string) (bool, error)
+	AuthorizeRetainedCleanup      func(context.Context, AdmissionPrincipal, string, string) error
+	StorageBudget                 func(context.Context, string, string) (int64, error)
+	AuthorizeBackup               func(context.Context, string, string, string) error
+	AdmitDeployment               DeploymentAdmission
+	AdmitDatabase                 DeploymentAdmission
+	AdmitManagedPlatform          DeploymentAdmission
+	ComputeBudget                 func(context.Context, pgx.Tx, string, string) (int64, error)
+	DatabasePolicy                cluster.DatabasePolicyResolver
+	DatabasePlacementPolicy       func(context.Context, string, string) (DatabasePolicy, error)
+	DatabaseCapacityBudget        func(context.Context, pgx.Tx, string, string) (DatabaseCapacity, error)
+	ManagedPlatformCapacityBudget func(context.Context, pgx.Tx, string, string) (ManagedPlatformCapacityPolicy, error)
+	ManagedCapacityPool           func(context.Context, pgx.Tx, string, string) (string, error)
+	ManagedClusterNodes           []ManagedClusterNode
+	DatabaseNodeReservations      map[string]DatabaseNodeReservation
+	CloudResourceCeiling          *ResourceProfile
+	Backups                       BackupConfig
+	BuildRegistry                 string
+	WorkloadPolicy                cluster.WorkloadPolicyResolver
+	PlacementPolicy               cluster.PlacementPolicyResolver
+	ApplicationLimit              func(context.Context, string, string) (int, error)
 	// NodeLimit bounds the private operator cluster. Zero defaults to one.
 	NodeLimit    int
 	Kubeconfig   string
@@ -177,10 +184,18 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	s.store.AdmitDatabase = config.AdmitDatabase
 	s.store.ComputeBudget = config.ComputeBudget
 	s.store.DatabaseCapacityBudget = config.DatabaseCapacityBudget
+	s.store.RequireManagedPlatformAdmission = true
+	s.store.AdmitManagedPlatform = config.AdmitManagedPlatform
+	s.store.ManagedPlatformCapacityBudget = config.ManagedPlatformCapacityBudget
+	s.store.ManagedCapacityPool = config.ManagedCapacityPool
+	s.store.ValidateManagedPlatformCapacity = s.validateManagedPlatformCapacity
 	s.store.StorageBudgetTx = config.StorageBudgetTx
 	s.store.AuthorizeBackup = config.AuthorizeBackup
 	s.store.StorageBudget = config.StorageBudget
 	s.store.AuthorizeRetainedCleanup = config.AuthorizeRetainedCleanup
+	if err = s.store.ReconcileManagedCapacityScopes(ctx); err != nil {
+		return nil, nil, err
+	}
 	if err = s.CheckDatabaseNodeReservations(ctx, config.DatabaseNodeReservations); err != nil {
 		return nil, nil, err
 	}
@@ -193,6 +208,23 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	}
 	handler, wait := management.Start(ctx, server, config.AppDomain, rollout)
 	return handler, wait, nil
+}
+
+func (s *Service) validateManagedPlatformCapacity(ctx context.Context, project, environment string, policy managedplatform.CapacityPolicy) error {
+	if s.runtime == nil {
+		return errors.New("runtime is unavailable")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	owned, err := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
+	if err != nil {
+		return err
+	}
+	reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
+	for _, node := range policy.Nodes {
+		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Namespaces: owned}
+	}
+	return s.runtime.CheckManagedPlatformNodeReservations(bounded, reservations)
 }
 
 func (s *Service) CheckWorkloadPool(ctx context.Context, node, pool, runtime string) error {
@@ -208,8 +240,32 @@ func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservation
 	if s.runtime == nil {
 		return errors.New("runtime is unavailable")
 	}
+	prepared := make(map[string]DatabaseNodeReservation, len(reservations))
+	for name, reservation := range reservations {
+		copy := reservation
+		copy.ManagedPlatformNamespaces = make(map[string]managedplatform.CapacityNamespaceOwnership, len(reservation.ManagedPlatformNamespaces))
+		for namespace, ownership := range reservation.ManagedPlatformNamespaces {
+			cloned := ownership
+			cloned.Controllers = make(map[string]string, len(ownership.Controllers))
+			for component, uid := range ownership.Controllers {
+				cloned.Controllers[component] = uid
+			}
+			cloned.Workloads = make(map[string]managedplatform.CapacityWorkloadOwnership, len(ownership.Workloads))
+			for component, workload := range ownership.Workloads {
+				workloadCopy := workload
+				workloadCopy.Nodes = make(map[string]managedplatform.Capacity, len(workload.Nodes))
+				for node, capacity := range workload.Nodes {
+					workloadCopy.Nodes[node] = capacity
+				}
+				cloned.Workloads[component] = workloadCopy
+			}
+			copy.ManagedPlatformNamespaces[namespace] = cloned
+		}
+		prepared[name] = copy
+	}
 	seen := map[string]bool{}
-	for _, reservation := range reservations {
+	ownedByScope := map[string]map[string]managedplatform.CapacityNamespaceOwnership{}
+	for _, reservation := range prepared {
 		for _, scope := range reservation.Scopes {
 			if seen[scope] {
 				continue
@@ -225,7 +281,70 @@ func (s *Service) CheckDatabaseNodeReservations(ctx context.Context, reservation
 			if err != nil {
 				return err
 			}
+			if s.store.ManagedPlatformCapacityBudget != nil {
+				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+				hasPlatforms, platformErr := s.store.HasManagedPlatforms(bounded, project, environment)
+				cancel()
+				if platformErr != nil {
+					return platformErr
+				}
+				if !hasPlatforms {
+					continue
+				}
+				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+				err = s.store.CheckManagedPlatformCapacityReservation(bounded, project, environment)
+				cancel()
+				if err != nil {
+					return err
+				}
+				bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+				owned, ownershipErr := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
+				cancel()
+				if ownershipErr != nil {
+					return ownershipErr
+				}
+				ownedByScope[scope] = owned
+			}
 		}
 	}
-	return s.runtime.CheckDatabaseNodeReservations(ctx, reservations)
+	if s.store.ManagedPlatformCapacityBudget != nil {
+		bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+		platformScopes, scopeErr := s.store.ManagedPlatformCapacityScopes(bounded)
+		cancel()
+		if scopeErr != nil {
+			return scopeErr
+		}
+		for _, scope := range platformScopes {
+			if seen[scope] {
+				continue
+			}
+			project, environment, ok := strings.Cut(scope, "/")
+			if !ok {
+				return errors.New("invalid managed platform capacity scope")
+			}
+			bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+			err := s.store.CheckManagedPlatformCapacityReservation(bounded, project, environment)
+			cancel()
+			if err != nil {
+				return err
+			}
+			bounded, cancel = context.WithTimeout(ctx, 5*time.Second)
+			owned, ownershipErr := s.store.ManagedPlatformNamespaceReservations(bounded, project, environment)
+			cancel()
+			if ownershipErr != nil {
+				return ownershipErr
+			}
+			ownedByScope[scope] = owned
+			seen[scope] = true
+		}
+	}
+	for name, reservation := range prepared {
+		for _, owned := range ownedByScope {
+			for namespace, uid := range owned {
+				reservation.ManagedPlatformNamespaces[namespace] = uid
+			}
+		}
+		prepared[name] = reservation
+	}
+	return s.runtime.CheckDatabaseNodeReservations(ctx, prepared)
 }

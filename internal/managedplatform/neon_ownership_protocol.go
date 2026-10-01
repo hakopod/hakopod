@@ -10,7 +10,7 @@ import (
 )
 
 const neonOwnershipProtocolV1 = "hakopod-ownership-v1"
-const neonComputeOwnershipHeader = "Hakopod-Ownership-Token"
+const neonOwnershipHeader = "Hakopod-Ownership-Token"
 
 // neonOwnershipCapability is returned by the storage controller capability
 // endpoint. Provisioning must stay disabled unless all provider mutations are
@@ -40,6 +40,57 @@ func verifyNeonOwnershipCapability(body []byte) error {
 		}
 	}
 	return nil
+}
+
+func neonOwnershipToken(body []byte) (string, error) {
+	var response struct {
+		Token string `json:"ownership_token"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("decode Neon ownership identity: %w", err)
+	}
+	if !validNeonComputeOwnershipToken(response.Token) {
+		return "", fmt.Errorf("Neon ownership identity is missing or invalid")
+	}
+	return response.Token, nil
+}
+
+func verifyNeonOwnershipToken(body []byte, expected string) error {
+	if !validNeonComputeOwnershipToken(expected) {
+		return fmt.Errorf("expected Neon ownership token is invalid")
+	}
+	observed, err := neonOwnershipToken(body)
+	if err != nil {
+		return err
+	}
+	if observed != expected {
+		return fmt.Errorf("Neon ownership token does not match")
+	}
+	return nil
+}
+
+// encodeNeonOwnedResourceID keeps the provider identity and its immutable
+// ownership token together across Hakopod operation revisions.
+func encodeNeonOwnedResourceID(identity, token string) (string, error) {
+	if identity == "" || len(identity) > 222 || strings.Contains(identity, ":") {
+		return "", fmt.Errorf("Neon provider identity is invalid")
+	}
+	if !validNeonComputeOwnershipToken(token) {
+		return "", fmt.Errorf("Neon ownership token is invalid")
+	}
+	return identity + ":" + token, nil
+}
+
+func parseNeonOwnedResourceID(resourceID string) (string, string, error) {
+	separator := strings.LastIndexByte(resourceID, ':')
+	if separator < 1 || separator != len(resourceID)-33 {
+		return "", "", fmt.Errorf("Neon ownership claim is malformed")
+	}
+	identity, token := resourceID[:separator], resourceID[separator+1:]
+	if len(identity) > 222 || strings.Contains(identity, ":") || !validNeonComputeOwnershipToken(token) {
+		return "", "", fmt.Errorf("Neon ownership claim is malformed")
+	}
+	return identity, token, nil
 }
 
 // neonOwnedRequestHash binds a provider token to the exact mutation. The
@@ -96,18 +147,12 @@ func encodeNeonComputeClaimResourceID(endpointIdentity, token string) (string, e
 	if !validLowerHex(endpointIdentity, 64) {
 		return "", fmt.Errorf("Neon compute endpoint identity is invalid")
 	}
-	if !validNeonComputeOwnershipToken(token) {
-		return "", fmt.Errorf("Neon compute ownership token is invalid")
-	}
-	return endpointIdentity + ":" + token, nil
+	return encodeNeonOwnedResourceID(endpointIdentity, token)
 }
 
 func parseNeonComputeClaimResourceID(resourceID string) (string, string, error) {
-	if len(resourceID) != 97 || resourceID[64] != ':' {
-		return "", "", fmt.Errorf("Neon compute ownership claim is malformed")
-	}
-	endpointIdentity, token := resourceID[:64], resourceID[65:]
-	if !validLowerHex(endpointIdentity, 64) || !validNeonComputeOwnershipToken(token) {
+	endpointIdentity, token, err := parseNeonOwnedResourceID(resourceID)
+	if err != nil || !validLowerHex(endpointIdentity, 64) {
 		return "", "", fmt.Errorf("Neon compute ownership claim is malformed")
 	}
 	return endpointIdentity, token, nil

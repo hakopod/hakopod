@@ -64,6 +64,30 @@ func TestNeonComputeClaimResourceIDPreservesStableOwnershipToken(t *testing.T) {
 	}
 }
 
+func TestNeonOwnedResourceIDAndDescribeTokenStayBound(t *testing.T) {
+	identity := "11111111111111111111111111111111@7"
+	token := "33333333333333333333333333333333"
+	resourceID, err := encodeNeonOwnedResourceID(identity, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedIdentity, parsedToken, err := parseNeonOwnedResourceID(resourceID)
+	if err != nil || parsedIdentity != identity || parsedToken != token {
+		t.Fatalf("owned resource claim did not preserve identity and token: %q %q %v", parsedIdentity, parsedToken, err)
+	}
+	if err = verifyNeonOwnershipToken([]byte(`{"ownership_token":"`+token+`"}`), token); err != nil {
+		t.Fatal(err)
+	}
+	if err = verifyNeonOwnershipToken([]byte(`{"ownership_token":"44444444444444444444444444444444"}`), token); err == nil {
+		t.Fatal("foreign provider ownership token was accepted")
+	}
+	for _, malformed := range []string{"", identity, identity + ":" + strings.Repeat("0", 32), identity + ":short"} {
+		if _, _, err = parseNeonOwnedResourceID(malformed); err == nil {
+			t.Fatalf("malformed owned resource claim was accepted: %q", malformed)
+		}
+	}
+}
+
 func TestNeonOwnedRequestHashBindsKindKeyAndParameters(t *testing.T) {
 	a, err := neonOwnedRequestHash("tenant", "key", []byte(`{"a":1,"b":2}`))
 	if err != nil {

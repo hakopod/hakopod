@@ -6261,6 +6261,7 @@ export interface components {
             kind: "create" | "update" | "delete";
             request_hash: string;
             authority_fingerprint?: string;
+            capacity_fingerprint?: string;
             /** Format: date-time */
             expires_at: string;
             blocked_reasons: string[];
@@ -6288,6 +6289,9 @@ export interface components {
             spec: components["schemas"]["ManagedPlatformSpec"];
             status: string;
             observation: components["schemas"]["ManagedPlatformObservation"];
+            reserved_cpu_milli: number;
+            reserved_memory_bytes: number;
+            reserved_storage_gib: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

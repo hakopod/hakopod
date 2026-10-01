@@ -76,7 +76,7 @@ func TestAllocationRetainsLiveAndFailedDeploymentMemory(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer tx.Rollback(ctx)
-		got, err := allocationMemory(ctx, tx, d.Project, d.Environment, "", nil, "")
+		got, err := allocationMemory(ctx, tx, d.Project, d.Environment, "", nil, "", "")
 		if err != nil || got != want {
 			t.Fatalf("reserved %d want %d: %v", got, want, err)
 		}

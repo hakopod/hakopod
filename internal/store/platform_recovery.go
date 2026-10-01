@@ -126,7 +126,7 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 		return op, ErrInput
 	}
 	requestHash := platformRecoveryHash(intent)
-	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return op, err
 	}
@@ -140,6 +140,23 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 	}
 	if authority.Principal.ID != p.ID || !authority.Principal.AllowsManagedPlatform(intent.Project, intent.Environment, true) {
 		return op, ErrForbidden
+	}
+	if s.RequireManagedPlatformAdmission && s.AdmitManagedPlatform == nil {
+		return op, ErrForbidden
+	}
+	if s.AdmitManagedPlatform != nil {
+		if err = s.AdmitManagedPlatform(ctx, tx, p, intent.Project, intent.Environment, idem); err != nil {
+			return op, err
+		}
+	}
+	if s.RequireManagedPlatformAdmission || s.ManagedPlatformCapacityBudget != nil {
+		var environment string
+		if err = tx.QueryRow(ctx, "SELECT name FROM environments WHERE project=$1 AND name=$2 FOR UPDATE", intent.Project, intent.Environment).Scan(&environment); err != nil {
+			return op, err
+		}
+		if err = s.checkManagedPlatformCapacityReservationTx(ctx, tx, intent.Project, intent.Environment); err != nil {
+			return op, err
+		}
 	}
 	if existing, e := scanPlatformRecovery(tx.QueryRow(ctx, "SELECT "+platformRecoveryColumns+" FROM managed_platform_recovery_operations WHERE identity_id=$1 AND idempotency_key=$2", p.ID, idem)); e == nil {
 		var stored, storedAuthority []byte

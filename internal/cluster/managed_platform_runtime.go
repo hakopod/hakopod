@@ -73,15 +73,30 @@ func OpenManagedPlatformSnapshot(key []byte, op store.ManagedPlatformOperation) 
 }
 
 type ManagedPlatformRuntime struct {
-	Cluster       *Client
-	EncryptionKey []byte
+	Cluster                         *Client
+	EncryptionKey                   []byte
+	validateManagedPlatformCapacity func(context.Context, *store.Store, string) error
 }
 
 func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, state *store.Store, op store.ManagedPlatformOperation) error {
-	if state != nil && state.ManagedCloud && op.Kind != "delete" {
-		return fmt.Errorf("managed platform reconciliation requires durable capacity admission")
+	if r == nil {
+		return fmt.Errorf("managed platform cluster runtime is unavailable")
 	}
-	if r == nil || r.Cluster == nil {
+	if state != nil && state.ManagedCloud && op.Kind != "delete" {
+		if state.ManagedPlatformCapacityBudget == nil || state.ValidateManagedPlatformCapacity == nil {
+			return fmt.Errorf("managed platform reconciliation requires durable capacity admission")
+		}
+		validate := r.validateManagedPlatformCapacity
+		if validate == nil {
+			validate = func(ctx context.Context, state *store.Store, platformID string) error {
+				return state.CheckManagedPlatformOperationCapacity(ctx, platformID)
+			}
+		}
+		if err := validate(ctx, state, op.PlatformID); err != nil {
+			return fmt.Errorf("managed platform reconciliation capacity admission failed: %w", err)
+		}
+	}
+	if r.Cluster == nil {
 		return fmt.Errorf("managed platform cluster runtime is unavailable")
 	}
 	snapshot, err := OpenManagedPlatformSnapshot(r.EncryptionKey, op)

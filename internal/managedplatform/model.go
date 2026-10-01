@@ -198,5 +198,6 @@ type Plan struct {
 	Namespace     string      `json:"namespace"`
 	Components    []Component `json:"components"`
 	PublicService string      `json:"public_service"`
+	StorageClass  string      `json:"storage_class"`
 	Capability    Capability  `json:"capability"`
 }

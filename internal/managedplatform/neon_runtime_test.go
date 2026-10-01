@@ -56,7 +56,7 @@ func TestNeonRuntimeCreatesStorageBeforeAttachingComputeAndPersistsNoSecret(t *t
 	if err := os.Chmod(stateDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewNeonRuntime(NeonRuntimeConfig{StorageController: NeonControlTarget{Name: "storage", Origin: storage.URL, Token: "storage-secret-token"}, Computes: []NeonControlTarget{{Name: "primary", Origin: compute.URL, Token: "compute-secret-token"}}, StateDirectory: stateDirectory, RequestTimeout: time.Second, RootCAs: pool, TestOnlyFileState: true})
+	runtime, err := NewNeonRuntime(NeonRuntimeConfig{StorageController: NeonControlTarget{Name: "storage", Origin: storage.URL, Token: "storage-secret-token"}, Computes: []NeonControlTarget{{Name: "primary", Origin: compute.URL, Token: "compute-secret-token"}}, StateDirectory: stateDirectory, RequestTimeout: time.Second, RootCAs: pool, TestOnlyFileState: true, allowUnqualifiedOwnershipProtocolForTest: true})
 	if err != nil {
 		t.Fatal(err)
 	}

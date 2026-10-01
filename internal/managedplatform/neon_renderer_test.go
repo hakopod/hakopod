@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,19 +33,29 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 	wanted := map[string]bool{"neon-broker": false, "neon-controller-database": false, "neon-storage-controller": false, "neon-pageserver-0": false, "neon-pageserver-1": false, "neon-safekeeper-0": false, "neon-safekeeper-1": false, "neon-safekeeper-2": false, "neon-compute-0": false, "neon-proxy": false}
 	services := map[string]*corev1.Service{}
 	policies := map[string]*networkingv1.NetworkPolicy{}
+	ownershipModes := map[string]bool{"pageserver": false, "storage-controller": false, "safekeeper": false}
 	for _, object := range manifests.Objects {
 		switch value := object.(type) {
 		case *appsv1.Deployment:
+			if value.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType || value.Spec.Strategy.RollingUpdate != nil {
+				t.Fatalf("managed platform deployment %s can overlap old and new pods", value.Name)
+			}
 			if _, ok := wanted[value.Name]; ok {
 				wanted[value.Name] = true
 			}
 			if value.Name == "neon-proxy" && !strings.Contains(strings.Join(value.Spec.Template.Spec.Containers[0].Args, " "), "--auth-endpoint=https://control.example.test/api/v1/internal/neon/proxy") {
 				t.Fatal("proxy does not use the trusted server control-plane origin")
 			}
+			if value.Name == "neon-storage-controller" && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
+				ownershipModes["storage-controller"] = true
+			}
 			if value.Spec.Template.Spec.NodeName != "node-a" || len(value.Spec.Template.Spec.NodeSelector) != 0 {
 				t.Fatalf("deployment %s does not use its exact trusted Node name", value.Name)
 			}
 		case *appsv1.StatefulSet:
+			if value.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+				t.Fatalf("managed platform StatefulSet %s does not replace one stable ordinal at a time", value.Name)
+			}
 			if _, ok := wanted[value.Name]; ok {
 				wanted[value.Name] = true
 			}
@@ -53,6 +64,13 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 			}
 			if value.Name == "neon-pageserver-1" && (value.Spec.Template.Spec.NodeName != "node-b" || len(value.Spec.Template.Spec.NodeSelector) != 0) {
 				t.Fatal("Neon storage placement treated a Node name as an unrelated hostname label")
+			}
+			if strings.HasPrefix(value.Name, "neon-safekeeper-") && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
+				ownershipModes["safekeeper"] = true
+			}
+		case *corev1.ConfigMap:
+			if strings.HasPrefix(value.Name, "neon-pageserver-") && strings.Contains(value.Data["pageserver.toml"], "hakopod_ownership_v1=true") {
+				ownershipModes["pageserver"] = true
 			}
 		case *corev1.Service:
 			services[value.Name] = value
@@ -127,6 +145,11 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 	for name, found := range wanted {
 		if !found {
 			t.Fatalf("missing native Neon workload %s", name)
+		}
+	}
+	for component, enabled := range ownershipModes {
+		if !enabled {
+			t.Fatalf("Neon %s ownership strict mode is disabled", component)
 		}
 	}
 	if len(manifests.Objects) > maxNeonRenderedObjects {
