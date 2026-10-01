@@ -144,7 +144,7 @@ export function ErrorState({
         {(setup || retry) && actions}
       </RequestError>
       <div className="flex min-w-0 flex-wrap items-center gap-2 py-3 text-sm" data-error-recovery>
-        <p className="mr-auto text-muted-foreground">{title}</p>
+        <p className="mr-auto min-w-0 [overflow-wrap:anywhere]">{message(error)}</p>
         {actions}
         <Button size="sm" variant="ghost" onClick={show}>
           Show error
@@ -202,7 +202,7 @@ export function HeadingHelp({ title, children }: { title: string; children: Reac
   const [open, setOpen] = useState(false)
   const activationOpen = useRef<boolean | null>(null)
   return (
-    <Tooltip content={children} side="bottom" open={open} onOpenChange={setOpen}>
+    <Tooltip content={children} side="top" open={open} onOpenChange={setOpen}>
       <Button
         type="button"
         variant="ghost"
@@ -243,7 +243,7 @@ export function PageHeader({
     <header className="page-heading hako-page-heading">
       <div className="hako-page-heading-title">
         {eyebrow && <span className="sr-only">{eyebrow}</span>}
-        <h1 className="min-w-0 break-words">{title}</h1>
+        <h1 className="min-w-0 [overflow-wrap:anywhere]">{title}</h1>
         {description && <HeadingHelp title={title}>{description}</HeadingHelp>}
       </div>
       {action && <div className="heading-action">{action}</div>}

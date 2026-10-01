@@ -57,6 +57,7 @@ test('error messages survive normalization and rendering across form boundaries'
   const cause = new APIError(text, 400, 'domain_verification_required')
   assert.equal(message(message(cause)), text)
   const recovery = renderToStaticMarkup(<ErrorState error={cause} retry={() => {}} />)
+  assert.ok(recovery.includes(text), 'recovery instructions remain visible after the toast closes')
   assert.ok(recovery.includes('Show error'))
   assert.ok(recovery.includes('Retry'))
   assert.ok(
