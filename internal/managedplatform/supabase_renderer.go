@@ -194,7 +194,7 @@ func RenderSupabase(in SupabaseRenderInput) (SupabaseManifests, error) {
 	for _, component := range plan.Components {
 		pod := supabasePod(in, component, labels, configName)
 		if component.Name == "database" {
-			objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("supabase-database"), Spec: appsv1.StatefulSetSpec{ServiceName: serviceName(component.Name), Replicas: int32Ptr(1), Selector: &metav1.LabelSelector{MatchLabels: componentSelectorLabels(in.Spec.Name, component.Name)}, Template: pod}})
+			objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("supabase-database"), Spec: appsv1.StatefulSetSpec{ServiceName: serviceName(component.Name), Replicas: int32Ptr(1), UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.RollingUpdateStatefulSetStrategyType}, Selector: &metav1.LabelSelector{MatchLabels: componentSelectorLabels(in.Spec.Name, component.Name)}, Template: pod}})
 		} else {
 			objects = append(objects, &appsv1.Deployment{ObjectMeta: meta("supabase-" + component.Name), Spec: appsv1.DeploymentSpec{Replicas: int32Ptr(1), Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Selector: &metav1.LabelSelector{MatchLabels: componentSelectorLabels(in.Spec.Name, component.Name)}, Template: pod}})
 		}

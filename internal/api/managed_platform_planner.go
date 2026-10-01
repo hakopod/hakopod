@@ -38,10 +38,12 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(_ context.Context, _ 
 	case "supabase":
 		plan, err := managedplatform.PlanSupabase(item.Spec, p.SupabaseImages)
 		plan.Namespace = "managed-platform-" + item.ID
+		plan.StorageClass = p.ApprovedEncryptedStorageClass
 		return plan, err
 	case "neon":
 		plan, err := managedplatform.PlanNeon(item.Spec, p.NeonImages)
 		plan.Namespace = "managed-platform-" + item.ID
+		plan.StorageClass = p.ApprovedEncryptedStorageClass
 		return plan, err
 	default:
 		return managedplatform.Plan{}, fmt.Errorf("managed platform kind is not configured")

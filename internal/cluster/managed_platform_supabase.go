@@ -975,7 +975,7 @@ func (c *Client) ObserveSupabase(ctx context.Context, op store.ManagedPlatformOp
 					return result, fmt.Errorf("Supabase Deployment revision changed")
 				}
 			}
-			if e != nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.AvailableReplicas != *item.Spec.Replicas {
+			if e != nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.AvailableReplicas != *item.Spec.Replicas {
 				result.Pending = append(result.Pending, "deployment/"+desired.Name)
 			} else {
 				result.ReadyComponents++
@@ -997,7 +997,7 @@ func (c *Client) ObserveSupabase(ctx context.Context, op store.ManagedPlatformOp
 					return result, fmt.Errorf("Supabase StatefulSet revision changed")
 				}
 			}
-			if e != nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.ReadyReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
+			if e != nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.ReadyReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
 				result.Pending = append(result.Pending, "statefulset/"+desired.Name)
 			} else {
 				result.ReadyComponents++

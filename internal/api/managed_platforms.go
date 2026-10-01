@@ -103,7 +103,7 @@ func (s *Server) reviewManagedPlatform(w http.ResponseWriter, r *http.Request) {
 		failure(w, store.ErrForbidden)
 		return
 	}
-	if s.Store != nil && s.Store.ManagedCloud && in.Kind != "delete" {
+	if s.Store != nil && s.Store.ManagedCloud && in.Kind != "delete" && (s.Store.ManagedPlatformCapacityBudget == nil || s.Store.AdmitManagedPlatform == nil) {
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform changes remain unavailable until durable capacity admission is configured")
 		return
 	}
@@ -169,7 +169,7 @@ func (s *Server) acceptManagedPlatform(w http.ResponseWriter, r *http.Request) {
 		failure(w, store.ErrForbidden)
 		return
 	}
-	if s.Store != nil && s.Store.ManagedCloud && in.Kind != "delete" {
+	if s.Store != nil && s.Store.ManagedCloud && in.Kind != "delete" && (s.Store.ManagedPlatformCapacityBudget == nil || s.Store.AdmitManagedPlatform == nil) {
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform changes remain unavailable until durable capacity admission is configured")
 		return
 	}

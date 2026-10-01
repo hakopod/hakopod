@@ -4,9 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/managedplatform"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +42,59 @@ func TestManagedClusterPinsEveryNodeUID(t *testing.T) {
 	c.options.ManagedClusterNodes = nil
 	if c.ValidateCloudCapacity(ctx) == nil {
 		t.Fatal("default node limit relaxed")
+	}
+}
+
+func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
+	ctx := context.Background()
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	name := "supabase-fixture"
+	labels := map[string]string{managedBy: "hakopod", "hakopod.io/managed-platform-id": id, "hakopod.io/managed-platform": name, "app.kubernetes.io/name": "supabase-auth", "app.kubernetes.io/component": "auth"}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "managed-platform-" + id, UID: "owned-uid", Labels: labels}}
+	replicas := int32(1)
+	podTemplate := corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: corev1.PodSpec{NodeSelector: map[string]string{corev1.LabelHostname: node.Name}, Containers: []corev1.Container{{Name: "auth", Image: "registry.example.test/supabase/auth@sha256:" + strings.Repeat("a", 64), Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
+	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "supabase-auth", Namespace: namespace.Name, UID: "deployment-uid", Labels: labels}, Spec: appsv1.DeploymentSpec{Replicas: &replicas, Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Template: podTemplate}}
+	replica := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "supabase-auth-rs", Namespace: namespace.Name, UID: "replicaset-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: deployment.Name, UID: deployment.UID}}}, Spec: appsv1.ReplicaSetSpec{Replicas: &replicas, Template: podTemplate}}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "platform", Namespace: namespace.Name, UID: "pod-uid", Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: replica.Name, UID: replica.UID}}}, Spec: podTemplate.Spec}
+	pod.Spec.NodeName = node.Name
+	c := &Client{kube: fake.NewClientset(node, namespace, deployment, replica, pod)}
+	workloadCapacity := managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512<<20 + managedplatform.PodMemoryOverheadBytes}
+	ownership := managedplatform.CapacityNamespaceOwnership{PlatformID: id, PlatformName: name, UID: "owned-uid", Controllers: map[string]string{"deployment." + deployment.Name: string(deployment.UID)}, Workloads: map[string]managedplatform.CapacityWorkloadOwnership{"deployment." + deployment.Name: {UID: string(deployment.UID), Nodes: map[string]managedplatform.Capacity{node.Name: workloadCapacity}}}}
+	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1280 << 20}, Namespaces: map[string]managedplatform.CapacityNamespaceOwnership{namespace.Name: ownership}}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
+		t.Fatal(err)
+	}
+	spoof := pod.DeepCopy()
+	spoof.Name, spoof.UID, spoof.OwnerReferences = "unowned", "unowned-pod-uid", nil
+	if _, err := c.kube.CoreV1().Pods(namespace.Name).Create(ctx, spoof, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("unclaimed pod in an owned namespace was excluded from external workload usage")
+	}
+	if err := c.kube.CoreV1().Pods(namespace.Name).Delete(ctx, spoof.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	extra := pod.DeepCopy()
+	extra.Name, extra.UID = "platform-extra", "extra-pod-uid"
+	if _, err := c.kube.CoreV1().Pods(namespace.Name).Create(ctx, extra, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("extra pod from a claimed controller disappeared from capacity accounting")
+	}
+	if err := c.kube.CoreV1().Pods(namespace.Name).Delete(ctx, extra.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	mutated := pod.DeepCopy()
+	mutated.Name, mutated.UID = "platform-mutated", "mutated-pod-uid"
+	mutated.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("750m")
+	if _, err := c.kube.CoreV1().Pods(namespace.Name).Create(ctx, mutated, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err == nil {
+		t.Fatal("pod that differs from its claimed controller template disappeared from capacity accounting")
 	}
 }
 func TestManagedClusterFileIsStrictAndBounded(t *testing.T) {

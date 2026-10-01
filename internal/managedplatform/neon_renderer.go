@@ -136,7 +136,7 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 			for i := 0; i < count; i++ {
 				name := component.Name + "-" + strconv.Itoa(i)
 				pod := neonPod(in, component, labels, i)
-				objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("neon-" + name), Spec: appsv1.StatefulSetSpec{ServiceName: "neon-" + name, Replicas: neonInt32(1), Selector: &metav1.LabelSelector{MatchLabels: neonSelector(in.Spec.Name, name)}, Template: pod}})
+				objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("neon-" + name), Spec: appsv1.StatefulSetSpec{ServiceName: "neon-" + name, Replicas: neonInt32(1), UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.RollingUpdateStatefulSetStrategyType}, Selector: &metav1.LabelSelector{MatchLabels: neonSelector(in.Spec.Name, name)}, Template: pod}})
 				if component.Name == "compute" {
 					objects = append(objects, neonService(meta, in.Spec.Name, name, []int32{55433}, false))
 					objects = append(objects, neonNamedService(meta, in.Spec.Name, name+"-control", name, []int32{3081}, true))
@@ -148,7 +148,7 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 		}
 		pod := neonPod(in, component, labels, 0)
 		if component.Name == "controller-database" {
-			objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("neon-controller-database"), Spec: appsv1.StatefulSetSpec{ServiceName: "neon-controller-database", Replicas: neonInt32(1), Selector: &metav1.LabelSelector{MatchLabels: neonSelector(in.Spec.Name, component.Name)}, Template: pod}})
+			objects = append(objects, &appsv1.StatefulSet{ObjectMeta: meta("neon-controller-database"), Spec: appsv1.StatefulSetSpec{ServiceName: "neon-controller-database", Replicas: neonInt32(1), UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.RollingUpdateStatefulSetStrategyType}, Selector: &metav1.LabelSelector{MatchLabels: neonSelector(in.Spec.Name, component.Name)}, Template: pod}})
 		} else {
 			objects = append(objects, &appsv1.Deployment{ObjectMeta: meta("neon-" + component.Name), Spec: appsv1.DeploymentSpec{Replicas: neonInt32(1), Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Selector: &metav1.LabelSelector{MatchLabels: neonSelector(in.Spec.Name, component.Name)}, Template: pod}})
 		}
@@ -219,7 +219,7 @@ func neonPVC(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name, stor
 func neonConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name string, ordinal int) *corev1.ConfigMap {
 	c := in.Spec.Neon
 	remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/pageserver-%d'}", c.ObjectStorageURL, c.ObjectStorageBucket, c.ObjectStorageRegion, strings.Trim(c.ObjectStoragePrefix, "/"), ordinal)
-	config := fmt.Sprintf("listen_pg_addr='0.0.0.0:6400'\nlisten_http_addr='127.0.0.1:9897'\nlisten_https_addr='0.0.0.0:9898'\nssl_key_file='/var/run/secrets/hakopod/pageserver-auth/tls.key'\nssl_cert_file='/var/run/secrets/hakopod/pageserver-auth/tls.crt'\nssl_ca_file='/var/run/secrets/hakopod/pageserver-auth/ca.crt'\nbroker_endpoint='http://neon-broker:50051'\ncontrol_plane_api='https://neon-storage-controller:6699'\nauth_validation_public_key_path='/var/run/secrets/hakopod/pageserver-auth/public-key.pem'\nremote_storage=%s\n", remote)
+	config := fmt.Sprintf("listen_pg_addr='0.0.0.0:6400'\nlisten_http_addr='127.0.0.1:9897'\nlisten_https_addr='0.0.0.0:9898'\nssl_key_file='/var/run/secrets/hakopod/pageserver-auth/tls.key'\nssl_cert_file='/var/run/secrets/hakopod/pageserver-auth/tls.crt'\nssl_ca_file='/var/run/secrets/hakopod/pageserver-auth/ca.crt'\nbroker_endpoint='http://neon-broker:50051'\ncontrol_plane_api='https://neon-storage-controller:6699'\nauth_validation_public_key_path='/var/run/secrets/hakopod/pageserver-auth/public-key.pem'\nhakopod_ownership_v1=true\nremote_storage=%s\n", remote)
 	return &corev1.ConfigMap{ObjectMeta: meta("neon-" + name + "-r" + strconv.FormatInt(in.Revision, 10)), Immutable: neonBool(true), Data: map[string]string{"identity.toml": fmt.Sprintf("id=%d\n", ordinal+1), "pageserver.toml": config}}
 }
 
@@ -259,7 +259,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.Args = []string{"--listen-addr=0.0.0.0:50051"}
 	} else if logicalName == "storage-controller" {
 		container.Command = []string{"storage_controller"}
-		container.Args = []string{"--listen-https=0.0.0.0:6699", "--ssl-key-file=/var/run/secrets/hakopod/controller-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/controller-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/controller-auth/ca.crt", "--timelines-onto-safekeepers=true", "--use-https-pageserver-api=true", "--use-https-safekeeper-api=true", "--reconciler-concurrency=4", "--priority-reconciler-concurrency=2", "--safekeeper-reconciler-concurrency=2"}
+		container.Args = []string{"--listen-https=0.0.0.0:6699", "--ssl-key-file=/var/run/secrets/hakopod/controller-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/controller-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/controller-auth/ca.crt", "--timelines-onto-safekeepers=true", "--use-https-pageserver-api=true", "--use-https-safekeeper-api=true", "--hakopod-ownership-v1", "--reconciler-concurrency=4", "--priority-reconciler-concurrency=2", "--safekeeper-reconciler-concurrency=2"}
 		container.Env = append(container.Env, corev1.EnvVar{Name: "DATABASE_URL", Value: "postgresql://storage_controller@neon-controller-database:5432/storage_controller"}, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "PGPASSWORD", "value"), neonSecretEnv(in.Spec.Secrets["controller-auth"], "PUBLIC_KEY", "public-key.pem"), neonSecretEnv(in.Spec.Secrets["pageserver-auth"], "PAGESERVER_JWT_TOKEN", "token"), neonSecretEnv(in.Spec.Secrets["safekeeper-auth"], "SAFEKEEPER_JWT_TOKEN", "token"))
 	} else if logicalName == "pageserver" {
 		configName := "neon-" + instanceName + "-r" + strconv.FormatInt(in.Revision, 10)
@@ -273,7 +273,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/neon"})
 		remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/safekeeper-%d'}", in.Spec.Neon.ObjectStorageURL, in.Spec.Neon.ObjectStorageBucket, in.Spec.Neon.ObjectStorageRegion, strings.Trim(in.Spec.Neon.ObjectStoragePrefix, "/"), ordinal)
 		container.Command = []string{"safekeeper"}
-		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/safekeeper-auth/ca.crt", "--broker-endpoint=http://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token"}
+		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/safekeeper-auth/ca.crt", "--broker-endpoint=http://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token", "--hakopod-ownership-v1"}
 		container.Env = append(container.Env, neonObjectStorageEnv(in.Spec.Secrets["object-storage"])...)
 	} else if logicalName == "compute" {
 		configName := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)

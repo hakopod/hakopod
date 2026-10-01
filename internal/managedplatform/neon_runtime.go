@@ -53,8 +53,8 @@ type NeonRuntimeConfig struct {
 	RequestTimeout                           time.Duration
 	RootCAs                                  *x509.CertPool
 	DeprovisionOnly                          bool
-	AllowMissingStorageRegistrationsForTest  bool
-	AllowUnqualifiedOwnershipProtocolForTest bool
+	allowMissingStorageRegistrationsForTest  bool
+	allowUnqualifiedOwnershipProtocolForTest bool
 	// TestOnlyFileState must never be enabled by the API or reconciler. The
 	// production adapter requires PostgreSQL ownership fencing instead.
 	TestOnlyFileState bool
@@ -191,6 +191,9 @@ func validateNeonTarget(target NeonControlTarget, role string) error {
 func (r *NeonRuntime) Provision(ctx context.Context, request NeonLifecycleRequest) (state NeonLifecycleState, err error) {
 	digest, err := validateNeonLifecycleRequest(request, r.config.Computes)
 	if err != nil {
+		return state, err
+	}
+	if err = r.verifyOwnershipCapability(ctx); err != nil {
 		return state, err
 	}
 	configSum := sha256.Sum256([]byte(digest + "\x00" + r.config.StorageController.Name + "\x00" + r.config.StorageController.Origin))
@@ -516,6 +519,35 @@ func (r *NeonRuntime) doJSON(ctx context.Context, target NeonControlTarget, meth
 	return r.doRawJSON(ctx, target, method, path, raw, expected)
 }
 
+func (r *NeonRuntime) doJSONOwned(ctx context.Context, target NeonControlTarget, method, path string, body any, ownershipToken string, expected int) ([]byte, error) {
+	var raw []byte
+	if body != nil {
+		var err error
+		raw, err = json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return r.doRawJSONOwned(ctx, target, method, path, raw, ownershipToken, expected)
+}
+
+func (r *NeonRuntime) verifyOwnershipCapability(ctx context.Context) error {
+	if r.config.allowUnqualifiedOwnershipProtocolForTest {
+		return nil
+	}
+	body, status, err := r.request(ctx, r.config.StorageController, http.MethodGet, "/control/v1/hakopod/ownership", nil)
+	if err != nil {
+		return fmt.Errorf("verify Neon provider ownership protocol: %w", err)
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("verify Neon provider ownership protocol returned HTTP %d", status)
+	}
+	if err = verifyNeonOwnershipCapability(body); err != nil {
+		return fmt.Errorf("verify Neon provider ownership protocol: %w", err)
+	}
+	return nil
+}
+
 func (r *NeonRuntime) doRawJSON(ctx context.Context, target NeonControlTarget, method, path string, body []byte, expected int) ([]byte, error) {
 	response, status, err := r.request(ctx, target, method, path, body)
 	if err != nil {
@@ -570,7 +602,7 @@ func (r *NeonRuntime) requestWithOwnership(ctx context.Context, target NeonContr
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if ownershipToken != "" {
-		req.Header.Set(neonComputeOwnershipHeader, ownershipToken)
+		req.Header.Set(neonOwnershipHeader, ownershipToken)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {

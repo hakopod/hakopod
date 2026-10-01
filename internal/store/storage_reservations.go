@@ -59,7 +59,7 @@ func (s *Store) reserveStorage(ctx context.Context, tx pgx.Tx, a Application, ne
 		}
 	}
 	var total int64
-	if err = tx.QueryRow(ctx, "SELECT COALESCE((SELECT sum(size_gib) FROM storage_reservations WHERE project=$1 AND environment=$2),0)+COALESCE((SELECT sum(reserved_storage_gib) FROM managed_databases WHERE project=$1 AND environment=$2 AND deleted_at IS NULL),0)", a.Project, a.Environment).Scan(&total); err != nil {
+	if err = tx.QueryRow(ctx, "SELECT COALESCE((SELECT sum(size_gib) FROM storage_reservations WHERE project=$1 AND environment=$2),0)+COALESCE((SELECT sum(reserved_storage_gib) FROM managed_databases WHERE project=$1 AND environment=$2 AND deleted_at IS NULL),0)+COALESCE((SELECT sum(reserved_storage_gib) FROM managed_platforms WHERE project=$1 AND environment=$2 AND deleted_at IS NULL),0)", a.Project, a.Environment).Scan(&total); err != nil {
 		return err
 	}
 	credit := int64(0)

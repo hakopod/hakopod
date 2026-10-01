@@ -17,6 +17,7 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/license"
+	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,17 +38,22 @@ type Store struct {
 	VitessBackupApprovals []backup.VitessBackupApproval
 	StorageBudgetTx       func(context.Context, pgx.Tx, string, string) (int64, error)
 	// Trusted Cloud embedding policy. A managed installation without it fails closed.
-	ActionsAccess            func(context.Context, string, string) error
-	AuthorizeRetainedCleanup func(context.Context, Principal, string, string) error
-	DeviceScopes             func(context.Context, Principal) ([]DeviceScope, error)
-	StorageBudget            func(context.Context, string, string) (int64, error)
-	AuthorizeBackup          func(context.Context, string, string, string) error
-	AdmitDeployment          DeploymentAdmission
-	RequireDatabaseAdmission bool
-	AdmitDatabase            DeploymentAdmission
-	ComputeBudget            func(context.Context, pgx.Tx, string, string) (int64, error)
-	DatabaseCapacityBudget   func(context.Context, pgx.Tx, string, string) (database.Capacity, error)
-	ExternalFactorPolicy     func(context.Context, pgx.Tx, string) (bool, error)
+	ActionsAccess                   func(context.Context, string, string) error
+	AuthorizeRetainedCleanup        func(context.Context, Principal, string, string) error
+	DeviceScopes                    func(context.Context, Principal) ([]DeviceScope, error)
+	StorageBudget                   func(context.Context, string, string) (int64, error)
+	AuthorizeBackup                 func(context.Context, string, string, string) error
+	AdmitDeployment                 DeploymentAdmission
+	RequireDatabaseAdmission        bool
+	AdmitDatabase                   DeploymentAdmission
+	RequireManagedPlatformAdmission bool
+	AdmitManagedPlatform            DeploymentAdmission
+	ComputeBudget                   func(context.Context, pgx.Tx, string, string) (int64, error)
+	DatabaseCapacityBudget          func(context.Context, pgx.Tx, string, string) (database.Capacity, error)
+	ManagedPlatformCapacityBudget   func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error)
+	ManagedCapacityPool             func(context.Context, pgx.Tx, string, string) (string, error)
+	ValidateManagedPlatformCapacity func(context.Context, string, string, managedplatform.CapacityPolicy) error
+	ExternalFactorPolicy            func(context.Context, pgx.Tx, string) (bool, error)
 
 	// ApplicationLimit is a trusted embedding policy, checked under the environment lock.
 	ApplicationLimit func(context.Context, string, string) (int, error)

@@ -2,7 +2,9 @@ package managedplatform
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -19,10 +21,12 @@ func (f neonRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 type durableNeonFixture struct {
-	op      DurableOperation
-	claims  map[string]DurableResourceClaim
-	intents map[string]DurableResourceIntent
-	events  *[]string
+	op           DurableOperation
+	claims       map[string]DurableResourceClaim
+	intents      map[string]DurableResourceIntent
+	events       *[]string
+	claimsCalls  int
+	intentsCalls int
 }
 
 func (f *durableNeonFixture) Operation() DurableOperation { return f.op }
@@ -31,6 +35,7 @@ func (f *durableNeonFixture) Heartbeat(context.Context) error {
 	return nil
 }
 func (f *durableNeonFixture) Claims(_ context.Context, revision int64) ([]DurableResourceClaim, error) {
+	f.claimsCalls++
 	result := []DurableResourceClaim{}
 	for _, claim := range f.claims {
 		if claim.PlatformRevision == revision {
@@ -43,12 +48,18 @@ func (f *durableNeonFixture) Reserve(_ context.Context, intent DurableResourceIn
 	if existing, ok := f.intents[intent.Component]; ok {
 		return existing, nil
 	}
-	intent.ID = strings.Repeat("a", 32)
+	intent.ID = fixtureIntentID(intent.Component)
 	f.intents[intent.Component] = intent
 	*f.events = append(*f.events, "reserve:"+intent.Component)
 	return intent, nil
 }
+
+func fixtureIntentID(component string) string {
+	sum := sha256.Sum256([]byte(component))
+	return hex.EncodeToString(sum[:16])
+}
 func (f *durableNeonFixture) Intents(_ context.Context, revision int64) ([]DurableResourceIntent, error) {
+	f.intentsCalls++
 	result := []DurableResourceIntent{}
 	for _, intent := range f.intents {
 		if intent.PlatformRevision == revision {
@@ -90,12 +101,50 @@ func durableNeonRequest() NeonLifecycleRequest {
 	return NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{"primary": raw}}
 }
 
+func TestDurableNeonProvisionChecksCompleteOwnershipCapabilityBeforeState(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "missing", status: http.StatusNotFound},
+		{name: "partial", status: http.StatusOK, body: `{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline"]}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			events := []string{}
+			lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
+			requests := 0
+			runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{
+				config: NeonRuntimeConfig{
+					StorageController: NeonControlTarget{Name: "storage", Origin: "https://storage.test", Token: "storage-secret-token"},
+					Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.test", Token: "compute-secret-token"}},
+					RequestTimeout:    time.Second,
+				},
+				client: &http.Client{Transport: neonRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+					requests++
+					if request.Method != http.MethodGet || request.URL.Path != "/control/v1/hakopod/ownership" || request.Header.Get("Authorization") != "Bearer storage-secret-token" {
+						t.Fatalf("unexpected capability request %s %s", request.Method, request.URL.Path)
+					}
+					return &http.Response{StatusCode: test.status, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header)}, nil
+				})},
+			}}
+			if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil {
+				t.Fatal("provisioning continued without complete provider ownership support")
+			}
+			if requests != 1 || lifecycle.claimsCalls != 0 || lifecycle.intentsCalls != 0 || len(events) != 0 {
+				t.Fatalf("capability failure touched lifecycle state: requests=%d claims=%d intents=%d events=%v", requests, lifecycle.claimsCalls, lifecycle.intentsCalls, events)
+			}
+		})
+	}
+}
+
 func durableNeonRuntimeForTest(t *testing.T, storage, compute *httptest.Server, lifecycle DurableLifecycle) *DurableNeonRuntime {
 	t.Helper()
 	roots := x509.NewCertPool()
 	roots.AddCert(storage.Certificate())
 	roots.AddCert(compute.Certificate())
-	runtime, err := NewDurableNeonRuntime(NeonRuntimeConfig{StorageController: NeonControlTarget{Name: "storage", Origin: storage.URL, Token: "storage-secret-token"}, Computes: []NeonControlTarget{{Name: "primary", Origin: compute.URL, Token: "compute-secret-token"}}, RequestTimeout: time.Second, RootCAs: roots, AllowMissingStorageRegistrationsForTest: true, AllowUnqualifiedOwnershipProtocolForTest: true}, lifecycle)
+	runtime, err := NewDurableNeonRuntime(NeonRuntimeConfig{StorageController: NeonControlTarget{Name: "storage", Origin: storage.URL, Token: "storage-secret-token"}, Computes: []NeonControlTarget{{Name: "primary", Origin: compute.URL, Token: "compute-secret-token"}}, RequestTimeout: time.Second, RootCAs: roots, allowMissingStorageRegistrationsForTest: true, allowUnqualifiedOwnershipProtocolForTest: true}, lifecycle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,12 +218,51 @@ func TestDurableNeonRejectsForeignExistingTenantWithoutPendingIntent(t *testing.
 	}
 }
 
+func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
+	events := []string{}
+	storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.Method + " " + request.URL.Path {
+		case "GET /control/v1/hakopod/ownership":
+			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
+		case "GET /control/v1/tenant/" + testTenant:
+			_, _ = w.Write([]byte(`{"ownership_token":"ffffffffffffffffffffffffffffffff"}`))
+		case "POST /debug/v1/inspect":
+			_, _ = w.Write([]byte(`{"attachment":[7,11]}`))
+		default:
+			t.Fatalf("unexpected storage request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer storage.Close()
+	compute := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		t.Fatalf("unexpected compute request %s", request.URL.Path)
+	}))
+	defer compute.Close()
+	lifecycle := &durableNeonFixture{
+		op:     DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"},
+		claims: map[string]DurableResourceClaim{},
+		intents: map[string]DurableResourceIntent{"tenant": {
+			ID: fixtureIntentID("tenant"), PlatformID: strings.Repeat("4", 32), PlatformRevision: 1, Component: "tenant", Kind: "neon_tenant", ExternalKey: testTenant, OwnerOperationID: testOperation,
+		}},
+		events: &events,
+	}
+	runtime := durableNeonRuntimeForTest(t, storage, compute, lifecycle)
+	runtime.control.config.allowUnqualifiedOwnershipProtocolForTest = false
+	if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil || !strings.Contains(err.Error(), "different ownership token") {
+		t.Fatalf("foreign provider ownership was accepted: %v", err)
+	}
+	if lifecycle.intents["tenant"].Confirmed || len(lifecycle.claims) != 0 || len(events) != 0 {
+		t.Fatal("foreign provider ownership was converted into a durable claim")
+	}
+}
+
 func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing.T) {
 	events := []string{}
 	tenantCreated := false
 	timelineCreated := false
 	storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
+		case "GET /control/v1/hakopod/ownership":
+			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
 		case "GET /control/v1/tenant/" + testTenant:
 			if tenantCreated {
 				w.WriteHeader(http.StatusOK)
@@ -182,9 +270,12 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 				w.WriteHeader(http.StatusNotFound)
 			}
 		case "POST /v1/tenant":
+			if request.Header.Get(neonOwnershipHeader) != fixtureIntentID("tenant") {
+				t.Fatal("tenant create omitted its durable ownership token")
+			}
 			tenantCreated = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}]}`))
+			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}],"ownership_token":"` + fixtureIntentID("tenant") + `"}`))
 		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			if timelineCreated {
 				_, _ = w.Write([]byte(`{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}]}`))
@@ -192,9 +283,12 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 				w.WriteHeader(http.StatusNotFound)
 			}
 		case "POST /v1/tenant/" + testTenant + "/timeline":
+			if request.Header.Get(neonOwnershipHeader) != fixtureIntentID("timeline") {
+				t.Fatal("timeline create omitted its durable ownership token")
+			}
 			timelineCreated = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","safekeepers":{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","generation":13,"safekeepers":[{"id":1,"hostname":"sk-1"},{"id":2,"hostname":"sk-2"},{"id":3,"hostname":"sk-3"}]}}`))
+			_, _ = w.Write([]byte(`{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","safekeepers":{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","generation":13,"safekeepers":[{"id":1,"hostname":"sk-1"},{"id":2,"hostname":"sk-2"},{"id":3,"hostname":"sk-3"}]},"ownership_token":"` + fixtureIntentID("timeline") + `"}`))
 		default:
 			t.Fatalf("unexpected storage request %s %s", request.Method, request.URL.Path)
 		}
@@ -203,7 +297,7 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 	computeAttached := false
 	compute := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/configure" {
-			if request.Header.Get(neonComputeOwnershipHeader) != strings.Repeat("a", 32) {
+			if request.Header.Get(neonOwnershipHeader) != fixtureIntentID("compute-primary") {
 				t.Fatal("compute configure omitted the durable intent ownership token")
 			}
 			var config struct {
@@ -214,7 +308,7 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 			if err := json.NewDecoder(request.Body).Decode(&config); err != nil {
 				t.Fatal(err)
 			}
-			if config.Spec.OperationUUID != strings.Repeat("a", 32) {
+			if config.Spec.OperationUUID != fixtureIntentID("compute-primary") {
 				t.Fatal("compute spec did not bind the durable intent ownership token")
 			}
 			computeAttached = true
@@ -225,19 +319,23 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 			_, _ = w.Write([]byte(`{"tenant":"","timeline":"","status":"empty"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","operation_uuid":"` + strings.Repeat("a", 32) + `","status":"running"}`))
+		_, _ = w.Write([]byte(`{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","operation_uuid":"` + fixtureIntentID("compute-primary") + `","status":"running"}`))
 	}))
 	defer compute.Close()
 	lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
-	state, err := durableNeonRuntimeForTest(t, storage, compute, lifecycle).Provision(context.Background(), durableNeonRequest())
+	runtime := durableNeonRuntimeForTest(t, storage, compute, lifecycle)
+	runtime.control.config.allowUnqualifiedOwnershipProtocolForTest = false
+	state, err := runtime.Provision(context.Background(), durableNeonRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.Complete || lifecycle.claims["tenant"].ResourceID != testTenant+"@11" || lifecycle.claims["tenant"].ImmutableGeneration != 7 || lifecycle.claims["timeline"].ImmutableGeneration != 13 || lifecycle.claims["compute-primary"].ResourceID == "primary" {
+	tenantIdentity, tenantToken, tenantErr := parseNeonOwnedResourceID(lifecycle.claims["tenant"].ResourceID)
+	timelineIdentity, timelineToken, timelineErr := parseNeonOwnedResourceID(lifecycle.claims["timeline"].ResourceID)
+	if !state.Complete || tenantErr != nil || tenantIdentity != testTenant+"@11" || tenantToken != fixtureIntentID("tenant") || lifecycle.claims["tenant"].ImmutableGeneration != 7 || timelineErr != nil || len(timelineIdentity) != 64 || timelineToken != fixtureIntentID("timeline") || lifecycle.claims["timeline"].ImmutableGeneration != 13 || lifecycle.claims["compute-primary"].ResourceID == "primary" {
 		t.Fatal("provider identities were not persisted exactly")
 	}
 	_, computeToken, err := parseNeonComputeClaimResourceID(lifecycle.claims["compute-primary"].ResourceID)
-	if err != nil || computeToken != strings.Repeat("a", 32) || computeToken == lifecycle.claims["compute-primary"].OwnerOperationID {
+	if err != nil || computeToken != fixtureIntentID("compute-primary") || computeToken == lifecycle.claims["compute-primary"].OwnerOperationID {
 		t.Fatal("compute claim did not preserve the durable intent token independently of operation ownership")
 	}
 }
@@ -275,6 +373,160 @@ func TestDurableNeonDeletionRejectsChangedTenantAttachmentBeforeMutation(t *test
 	}, intents: map[string]DurableResourceIntent{}, events: &events}
 	if err = durableNeonRuntimeForTest(t, storage, compute, lifecycle).Deprovision(context.Background(), durableNeonRequest()); err == nil {
 		t.Fatal("changed tenant generation and node did not block deletion")
+	}
+}
+
+func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *testing.T) {
+	events := []string{}
+	op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete"}
+	tenantToken := strings.Repeat("a", 32)
+	timelineToken := strings.Repeat("b", 32)
+	computeToken := strings.Repeat("c", 32)
+	safekeepers := []NeonSafekeeperRegistration{
+		{Name: "0", NodeID: 1, Generation: 1, Host: "sk-0.test", AvailabilityZone: "zone-a"},
+		{Name: "1", NodeID: 2, Generation: 1, Host: "sk-1.test", AvailabilityZone: "zone-b"},
+		{Name: "2", NodeID: 3, Generation: 1, Host: "sk-2.test", AvailabilityZone: "zone-c"},
+	}
+	members := []neonTimelineMember{{ID: "1", Host: "sk-0.test"}, {ID: "2", Host: "sk-1.test"}, {ID: "3", Host: "sk-2.test"}}
+	timelineIdentity, _, _, err := verifiedNeonTimelineIdentity(testTenant, testTimeline, 13, members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	computeTarget := NeonControlTarget{Name: "primary", Origin: "https://compute.test", Token: "compute-secret-token"}
+	_, computeIdentity, err := neonComputeIdentity(computeTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantClaimID, err := encodeNeonOwnedResourceID(testTenant+"@11", tenantToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timelineClaimID, err := encodeNeonOwnedResourceID(timelineIdentity, timelineToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	computeClaimID, err := encodeNeonComputeClaimResourceID(computeIdentity, computeToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := map[string]DurableResourceClaim{
+		"tenant":          {PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: "tenant", Kind: "neon_tenant", ResourceID: tenantClaimID, ImmutableGeneration: 7, OwnerOperationID: op.ID},
+		"timeline":        {PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: "timeline", Kind: "neon_timeline", ResourceID: timelineClaimID, ImmutableGeneration: 13, OwnerOperationID: op.ID},
+		"compute-primary": {PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: "compute-primary", Kind: "runtime_component", ResourceID: computeClaimID, ImmutableGeneration: 1, OwnerOperationID: op.ID},
+	}
+	for _, node := range safekeepers {
+		component := "safekeeper-registration-" + node.Name
+		token := fixtureIntentID(component)
+		identity, encodeErr := encodeNeonOwnedResourceID(neonStorageIdentity("safekeeper", node.Name, node.NodeID, node.Generation, node.Host, node.AvailabilityZone), token)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		claims[component] = DurableResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: component, Kind: "runtime_component", ResourceID: identity, ImmutableGeneration: node.Generation, OwnerOperationID: op.ID}
+	}
+	lifecycle := &durableNeonFixture{op: op, claims: claims, intents: map[string]DurableResourceIntent{}, events: &events}
+	tenantPresent := true
+	timelinePresent := true
+	computeAttached := true
+	tenantDescribeCalls := 0
+	timelineDescribeCalls := 0
+	safekeeperTimelineCalls := 0
+	tenantDeletes := 0
+	timelineDeletes := 0
+	runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{
+		config: NeonRuntimeConfig{
+			StorageController:                       NeonControlTarget{Name: "storage", Origin: "https://storage.test", Token: "storage-secret-token"},
+			Computes:                                []NeonControlTarget{computeTarget},
+			Safekeepers:                             safekeepers,
+			SafekeeperToken:                         "safekeeper-secret-token",
+			RequestTimeout:                          time.Second,
+			DeprovisionOnly:                         true,
+			allowMissingStorageRegistrationsForTest: true,
+		},
+		client: &http.Client{Transport: neonRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			body := ""
+			status := http.StatusOK
+			switch {
+			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/hakopod/ownership":
+				body = `{"protocol":"hakopod-ownership-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`
+			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/tenant/"+testTenant:
+				tenantDescribeCalls++
+				if tenantPresent {
+					body = `{"ownership_token":"` + tenantToken + `"}`
+				} else {
+					status = http.StatusNotFound
+				}
+			case request.URL.Host == "storage.test" && request.Method == http.MethodPost && request.URL.Path == "/debug/v1/inspect":
+				body = `{"attachment":[7,11]}`
+			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && request.URL.Path == "/control/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
+				timelineDescribeCalls++
+				if timelinePresent {
+					body = `{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}],"ownership_token":"` + timelineToken + `"}`
+				} else {
+					status = http.StatusNotFound
+				}
+			case request.URL.Host == "storage.test" && request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/control/v1/safekeeper/"):
+				id := strings.TrimPrefix(request.URL.Path, "/control/v1/safekeeper/")
+				index := map[string]int{"1": 0, "2": 1, "3": 2}[id]
+				node := safekeepers[index]
+				body = `{"id":` + id + `,"region_id":"hakopod","version":1,"host":"` + node.Host + `","port":5454,"http_port":7677,"https_port":7676,"availability_zone_id":"` + node.AvailabilityZone + `","ownership_token":"` + fixtureIntentID("safekeeper-registration-"+node.Name) + `"}`
+			case strings.HasPrefix(request.URL.Host, "sk-") && request.Method == http.MethodGet && request.URL.Path == "/v1/status":
+				if request.Header.Get("Authorization") != "Bearer safekeeper-secret-token" {
+					t.Fatal("safekeeper status omitted its bearer token")
+				}
+				id := map[string]string{"sk-0.test:7676": "1", "sk-1.test:7676": "2", "sk-2.test:7676": "3"}[request.URL.Host]
+				body = `{"id":` + id + `}`
+			case strings.HasPrefix(request.URL.Host, "sk-") && request.Method == http.MethodGet && request.URL.Path == "/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
+				safekeeperTimelineCalls++
+				if timelinePresent {
+					body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","mconf":{"generation":13,"members":[{"id":1,"host":"sk-0.test","pg_port":5454},{"id":2,"host":"sk-1.test","pg_port":5454},{"id":3,"host":"sk-2.test","pg_port":5454}],"new_members":null},"ownership_token":"` + timelineToken + `"}`
+				} else {
+					status = http.StatusNotFound
+				}
+			case request.URL.Host == "compute.test" && request.Method == http.MethodGet && request.URL.Path == "/status":
+				if computeAttached {
+					body = `{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","operation_uuid":"` + computeToken + `","status":"running"}`
+				} else {
+					body = `{"tenant":"","timeline":"","operation_uuid":"` + computeToken + `","status":"terminated"}`
+				}
+			case request.URL.Host == "compute.test" && request.Method == http.MethodPost && request.URL.Path == "/terminate":
+				if request.URL.RawQuery != "mode=immediate" || request.Header.Get(neonOwnershipHeader) != computeToken {
+					t.Fatal("compute termination omitted its durable ownership token")
+				}
+				computeAttached = false
+			case request.URL.Host == "storage.test" && request.Method == http.MethodDelete && request.URL.Path == "/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
+				timelineDeletes++
+				if request.Header.Get(neonOwnershipHeader) != timelineToken {
+					t.Fatal("timeline delete omitted its durable ownership token")
+				}
+				timelinePresent = false
+				status = http.StatusNoContent
+			case request.URL.Host == "storage.test" && request.Method == http.MethodDelete && request.URL.Path == "/v1/tenant/"+testTenant:
+				tenantDeletes++
+				if timelinePresent || request.Header.Get(neonOwnershipHeader) != tenantToken {
+					t.Fatal("tenant delete ran before timeline deletion or omitted its durable ownership token")
+				}
+				tenantPresent = false
+				status = http.StatusNoContent
+			default:
+				t.Fatalf("unexpected Neon deletion request %s %s%s", request.Method, request.URL.Host, request.URL.RequestURI())
+			}
+			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		})},
+	}}
+	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+		t.Fatal(err)
+	}
+	if tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 2 || timelineDescribeCalls != 2 || safekeeperTimelineCalls != 6 {
+		t.Fatalf("owned deletion did not recheck provider state: tenant deletes=%d timeline deletes=%d tenant describes=%d timeline describes=%d safekeeper timeline describes=%d", tenantDeletes, timelineDeletes, tenantDescribeCalls, timelineDescribeCalls, safekeeperTimelineCalls)
+	}
+	if _, ok := lifecycle.claims["tenant"]; ok {
+		t.Fatal("tenant claim was not released after the verified delete")
+	}
+	if _, ok := lifecycle.claims["timeline"]; ok {
+		t.Fatal("timeline claim was not released after the verified delete")
+	}
+	if _, ok := lifecycle.claims["compute-primary"]; ok {
+		t.Fatal("compute claim was not released after the verified termination")
 	}
 }
 
@@ -348,7 +600,7 @@ func TestTerminateOwnedComputeSendsOwnershipHeader(t *testing.T) {
 		requestCount++
 		body := `{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","operation_uuid":"` + token + `","status":"running"}`
 		if request.Method == http.MethodPost {
-			if request.Header.Get(neonComputeOwnershipHeader) != token {
+			if request.Header.Get(neonOwnershipHeader) != token {
 				t.Fatal("terminate omitted the stable provider token")
 			}
 			body = `{}`
@@ -389,7 +641,7 @@ func TestDurableNeonRequestTimeoutLeavesLeaseMargin(t *testing.T) {
 	config := NeonRuntimeConfig{
 		StorageController: NeonControlTarget{Name: "storage", Origin: "https://storage.example.test", Token: "storage-secret-token"},
 		Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.example.test", Token: "compute-secret-token"}},
-		RequestTimeout:    21 * time.Second, RootCAs: x509.NewCertPool(), AllowMissingStorageRegistrationsForTest: true,
+		RequestTimeout:    21 * time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
 	}
 	if _, err := NewDurableNeonRuntime(config, lifecycle); err == nil {
 		t.Fatal("provider request timeout was allowed to consume the 30-second operation lease")
@@ -406,24 +658,33 @@ func TestDurableNeonRegistersAndReobservesStorageNodesBeforeUse(t *testing.T) {
 	events := []string{}
 	registeredPageserver, registeredSafekeeper := false, false
 	storage := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		pageserverToken := fixtureIntentID("pageserver-registration-0")
+		safekeeperToken := fixtureIntentID("safekeeper-registration-0")
 		switch request.Method + " " + request.URL.Path {
 		case "GET /control/v1/node/1":
 			if !registeredPageserver {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":1,"availability_zone_id":"zone-a","listen_http_addr":"neon-pageserver-0.ns.svc","listen_http_port":9897,"listen_https_port":9898,"listen_pg_addr":"neon-pageserver-0.ns.svc","listen_pg_port":6400}`))
+			_, _ = w.Write([]byte(`{"id":1,"availability_zone_id":"zone-a","listen_http_addr":"neon-pageserver-0.ns.svc","listen_http_port":9897,"listen_https_port":9898,"listen_pg_addr":"neon-pageserver-0.ns.svc","listen_pg_port":6400,"ownership_token":"` + pageserverToken + `"}`))
 		case "POST /control/v1/node":
+			if request.Header.Get(neonOwnershipHeader) != pageserverToken {
+				t.Fatal("pageserver registration omitted its durable ownership token")
+			}
 			registeredPageserver = true
+			_, _ = w.Write([]byte(`{"id":1,"availability_zone_id":"zone-a","listen_http_addr":"neon-pageserver-0.ns.svc","listen_http_port":9897,"listen_https_port":9898,"listen_pg_addr":"neon-pageserver-0.ns.svc","listen_pg_port":6400,"ownership_token":"` + pageserverToken + `"}`))
 		case "GET /control/v1/safekeeper/1":
 			if !registeredSafekeeper {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":1,"region_id":"hakopod","version":1,"host":"neon-safekeeper-0.ns.svc","port":5454,"http_port":7677,"https_port":7676,"availability_zone_id":"zone-a"}`))
+			_, _ = w.Write([]byte(`{"id":1,"region_id":"hakopod","version":1,"host":"neon-safekeeper-0.ns.svc","port":5454,"http_port":7677,"https_port":7676,"availability_zone_id":"zone-a","ownership_token":"` + safekeeperToken + `"}`))
 		case "POST /control/v1/safekeeper/1":
+			if request.Header.Get(neonOwnershipHeader) != safekeeperToken {
+				t.Fatal("safekeeper registration omitted its durable ownership token")
+			}
 			registeredSafekeeper = true
-			w.WriteHeader(http.StatusNoContent)
+			_, _ = w.Write([]byte(`{"id":1,"region_id":"hakopod","version":1,"host":"neon-safekeeper-0.ns.svc","port":5454,"http_port":7677,"https_port":7676,"availability_zone_id":"zone-a","ownership_token":"` + safekeeperToken + `"}`))
 		default:
 			t.Fatalf("unexpected storage request %s %s", request.Method, request.URL.Path)
 		}
@@ -446,6 +707,12 @@ func TestDurableNeonRegistersAndReobservesStorageNodesBeforeUse(t *testing.T) {
 	if len(lifecycle.claims) != 2 || !registeredPageserver || !registeredSafekeeper {
 		t.Fatalf("storage registration was not durably confirmed: %#v", lifecycle.claims)
 	}
+	for component, claim := range lifecycle.claims {
+		_, token, parseErr := parseNeonOwnedResourceID(claim.ResourceID)
+		if parseErr != nil || token != fixtureIntentID(component) {
+			t.Fatalf("%s claim did not preserve its provider ownership token: %v", component, parseErr)
+		}
+	}
 }
 
 func TestDurableNeonReobservesIdenticalSafekeeperMembership(t *testing.T) {
@@ -456,8 +723,9 @@ func TestDurableNeonReobservesIdenticalSafekeeperMembership(t *testing.T) {
 	mismatch := false
 	runtime := &DurableNeonRuntime{control: &NeonRuntime{
 		config: NeonRuntimeConfig{
-			SafekeeperToken: "safekeeper-secret-token",
-			RequestTimeout:  time.Second,
+			SafekeeperToken:                          "safekeeper-secret-token",
+			RequestTimeout:                           time.Second,
+			allowUnqualifiedOwnershipProtocolForTest: true,
 			Safekeepers: []NeonSafekeeperRegistration{
 				{Name: "0", NodeID: 1, Generation: 1, Host: "neon-safekeeper-0.ns.svc", AvailabilityZone: "zone-a"},
 				{Name: "1", NodeID: 2, Generation: 1, Host: "neon-safekeeper-1.ns.svc", AvailabilityZone: "zone-b"},
@@ -486,7 +754,7 @@ func TestDurableNeonReobservesIdenticalSafekeeperMembership(t *testing.T) {
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 		})},
 	}}
-	exists, identity, generation, hosts, err := runtime.inspectSafekeeperTimeline(context.Background(), tenantID, timelineID)
+	exists, identity, generation, hosts, _, err := runtime.inspectSafekeeperTimeline(context.Background(), tenantID, timelineID)
 	if err != nil || !exists || requests != 6 || generation != 4 || len(hosts) != 3 {
 		t.Fatal("safekeeper membership was not fully observed", exists, generation, hosts, requests, err)
 	}
@@ -495,7 +763,7 @@ func TestDurableNeonReobservesIdenticalSafekeeperMembership(t *testing.T) {
 		t.Fatal("safekeeper observation did not recover the creation identity", err)
 	}
 	mismatch = true
-	if _, _, _, _, err = runtime.inspectSafekeeperTimeline(context.Background(), tenantID, timelineID); err == nil || !strings.Contains(err.Error(), "membership is inconsistent") {
+	if _, _, _, _, _, err = runtime.inspectSafekeeperTimeline(context.Background(), tenantID, timelineID); err == nil || !strings.Contains(err.Error(), "membership is inconsistent") {
 		t.Fatal("inconsistent safekeeper membership was accepted", err)
 	}
 }
@@ -521,13 +789,21 @@ func TestDurableNeonDeletionResumesAfterClaimsWereReleased(t *testing.T) {
 		component := "safekeeper-registration-" + node.Name
 		claims[component] = DurableResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: component, Kind: "runtime_component", ResourceID: neonStorageIdentity("safekeeper", node.Name, node.NodeID, node.Generation, node.Host, node.AvailabilityZone), ImmutableGeneration: node.Generation, OwnerOperationID: op.ID}
 	}
+	deletePageservers := append([]NeonPageserverRegistration(nil), pageservers...)
+	for i := range deletePageservers {
+		deletePageservers[i].AvailabilityZone = ""
+	}
+	deleteSafekeepers := append([]NeonSafekeeperRegistration(nil), safekeepers...)
+	for i := range deleteSafekeepers {
+		deleteSafekeepers[i].AvailabilityZone = ""
+	}
 	lifecycle := &durableNeonFixture{op: op, claims: claims, intents: map[string]DurableResourceIntent{}, events: &events}
 	attached := false
 	registrationsPresent := true
 	runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{config: NeonRuntimeConfig{
 		StorageController: NeonControlTarget{Name: "storage", Origin: "https://controller.test", Token: "storage-secret-token"},
 		Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.test", Token: "compute-secret-token"}},
-		Pageservers:       pageservers, Safekeepers: safekeepers, SafekeeperToken: "safekeeper-secret-token", RequestTimeout: time.Second, DeprovisionOnly: true,
+		Pageservers:       deletePageservers, Safekeepers: deleteSafekeepers, SafekeeperToken: "safekeeper-secret-token", RequestTimeout: time.Second, DeprovisionOnly: true, allowUnqualifiedOwnershipProtocolForTest: true,
 	}, client: &http.Client{Transport: neonRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body, status := "", http.StatusNotFound
 		if registrationsPresent && request.URL.Host == "controller.test" && strings.HasPrefix(request.URL.Path, "/control/v1/node/") {

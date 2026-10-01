@@ -54,6 +54,12 @@ func TestSupabaseRendererProducesOwnedPrivateDeterministicObjects(t *testing.T) 
 		if service, ok := first.Objects[i].(*corev1.Service); ok && service.Spec.Type != corev1.ServiceTypeClusterIP {
 			t.Fatal("renderer exposed a public service")
 		}
+		if deployment, ok := first.Objects[i].(*appsv1.Deployment); ok && (deployment.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType || deployment.Spec.Strategy.RollingUpdate != nil) {
+			t.Fatalf("managed platform deployment %s can overlap old and new pods", deployment.Name)
+		}
+		if stateful, ok := first.Objects[i].(*appsv1.StatefulSet); ok && stateful.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+			t.Fatalf("managed platform StatefulSet %s does not replace one stable ordinal at a time", stateful.Name)
+		}
 	}
 }
 

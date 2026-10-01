@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/store"
@@ -26,7 +27,7 @@ func (s neonClaimReadStore) PlatformResourceClaims(_ context.Context, _ store.Ma
 
 func TestNeonColdStartSeparatesBootstrapAndServingReadiness(t *testing.T) {
 	replicas := int32(1)
-	compute := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "neon-compute-0"}, Spec: appsv1.StatefulSetSpec{Replicas: &replicas}, Status: appsv1.StatefulSetStatus{ObservedGeneration: 1, UpdatedReplicas: 1, CurrentRevision: "r1", UpdateRevision: "r1"}}
+	compute := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "neon-compute-0"}, Spec: appsv1.StatefulSetSpec{Replicas: &replicas}, Status: appsv1.StatefulSetStatus{ObservedGeneration: 1, Replicas: 1, UpdatedReplicas: 1, CurrentRevision: "r1", UpdateRevision: "r1"}}
 	compute.Generation = 1
 	if !neonStatefulSetObserved(compute, false) || neonStatefulSetObserved(compute, true) || neonBootstrapRequiresReadiness(compute.Name) {
 		t.Fatal("detached compute did not pass bootstrap while remaining unready for serving")
@@ -41,10 +42,15 @@ func TestNeonColdStartSeparatesBootstrapAndServingReadiness(t *testing.T) {
 	if !neonBootstrapRequiresReadiness(controller.Name) || neonStatefulSetObserved(controller, true) || neonStatefulSetObserved(controller, neonBootstrapRequiresReadiness(controller.Name)) {
 		t.Fatal("controller database bypassed bootstrap readiness")
 	}
-	proxy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "neon-proxy"}, Spec: appsv1.DeploymentSpec{Replicas: &replicas}, Status: appsv1.DeploymentStatus{ObservedGeneration: 1, UpdatedReplicas: 1}}
+	proxy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "neon-proxy"}, Spec: appsv1.DeploymentSpec{Replicas: &replicas}, Status: appsv1.DeploymentStatus{ObservedGeneration: 1, Replicas: 1, UpdatedReplicas: 1}}
 	proxy.Generation = 1
 	if !neonDeploymentObserved(proxy, false) || neonDeploymentObserved(proxy, true) || neonBootstrapRequiresReadiness(proxy.Name) {
 		t.Fatal("proxy readiness phases are not separated")
+	}
+	compute.Status.Replicas = 2
+	proxy.Status.Replicas = 2
+	if neonStatefulSetObserved(compute, false) || neonDeploymentObserved(proxy, false) {
+		t.Fatal("old workload replicas allowed capacity contraction")
 	}
 }
 
@@ -73,6 +79,38 @@ func TestNeonDeleteDoesNotDependOnLiveNodeReadiness(t *testing.T) {
 	}
 	if _, err = client.neonLifecycleZones(context.Background(), "create", spec); err == nil {
 		t.Fatal("create bypassed trusted live availability-zone discovery")
+	}
+}
+
+func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
+	platformID := strings.Repeat("4", 32)
+	op := store.ManagedPlatformOperation{ID: strings.Repeat("5", 32), PlatformID: platformID, Revision: 2, Kind: "delete"}
+	spec := managedplatform.Spec{
+		Kind: "neon",
+		Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3},
+		Secrets: map[string]managedplatform.SecretReference{
+			"controller-auth": {Name: "controller-auth", Revision: 1},
+			"compute-auth":    {Name: "compute-auth", Revision: 1},
+			"safekeeper-auth": {Name: "safekeeper-auth", Revision: 1},
+		},
+	}
+	ca := supabaseGatewayCertificateFixture(t, []string{"neon.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
+	request := NeonRuntimeRequest{
+		Operation: op,
+		Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
+		SecretSnapshots: map[string]map[string][]byte{
+			"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
+			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{},"compute_ctl_config":{}}`)},
+			"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
+		},
+		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
+	}
+	lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(request, neonClaimReadStore{}, nil, nil)
+	if err != nil {
+		t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
+	}
+	if lifecycle == nil || lifecycleRequest.OperationID != op.ID || route.EndpointID != platformID {
+		t.Fatal("delete factory did not reconstruct the durable Neon lifecycle")
 	}
 }
 

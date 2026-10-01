@@ -3,11 +3,13 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestManagedPlatformSnapshotIsAuthenticatedAndDoesNotExposeSecrets(t *testing.T) {
@@ -47,5 +49,21 @@ func TestManagedCloudCapacityGuardFencesPlatformReconciliation(t *testing.T) {
 	}
 	if err := runtime.ReconcileManagedPlatform(context.Background(), state, store.ManagedPlatformOperation{Kind: "delete"}); err == nil || strings.Contains(err.Error(), "capacity admission") {
 		t.Fatalf("delete reconciliation was capacity fenced: %v", err)
+	}
+	state.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
+		return managedplatform.CapacityPolicy{}, nil
+	}
+	state.ValidateManagedPlatformCapacity = func(context.Context, string, string, managedplatform.CapacityPolicy) error { return nil }
+	checks := 0
+	runtime.validateManagedPlatformCapacity = func(_ context.Context, _ *store.Store, platformID string) error {
+		checks++
+		if platformID != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+			t.Fatal("reconciliation capacity check used the wrong platform")
+		}
+		return store.ErrConflict
+	}
+	err := runtime.ReconcileManagedPlatform(context.Background(), state, store.ManagedPlatformOperation{Kind: "update", PlatformID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	if !errors.Is(err, store.ErrConflict) || checks != 1 {
+		t.Fatalf("reconciliation did not recheck the current grant and physical node capacity: checks=%d err=%v", checks, err)
 	}
 }
