@@ -106,3 +106,37 @@ excluded from product geometry. One mobile focus record had a one-pixel body
 width discrepancy at 67 percent browser zoom, so it does not establish clean
 document overflow. The local reports retain the exact accepted records and
 exclusions. Native runtime acceptance is recorded separately in the engine guides.
+
+## Release review, 2 October 2026
+
+An independent reviewer rendered final dashboard source `c0bf711` on the
+isolated Regular development VM. All records were marked as artificial fixture
+data. This review did not contact a production API, expose credentials or
+qualify a database runtime.
+
+The database review recorded 110 cases: 54 dark-theme renders, 54 Paper-theme
+renders, a keyboard-focus check and an emulated-touch check. The matrix covered
+320, 390 and 1440 pixel widths for the populated list, unavailable scope, all
+six shipped creation guides, and dense PostgreSQL, Redis, MySQL, MongoDB,
+ClickHouse and Oracle Database Free details. All six detail tabs rendered at
+390 and 1440 pixels in both themes. The dense PostgreSQL fixture contained 15
+application bindings, one primary and six replicas. Every case had one page
+heading, no document overflow and no browser console or page error. The skip
+link received a visible two-pixel outline, and touch selection changed the
+guided engine.
+
+The managed-platform review recorded 60 more renders. It covered blocked,
+ready, rejected, expired, unavailable-catalog, empty, missing-input, viewer and
+application-key creation states in both themes at 390 and 1440 pixels. Platform
+lists and ready, pending and failed details were checked at 320, 390 and 1440
+pixels, with missing scope at 390 pixels. All cases loaded without document
+overflow or browser errors.
+
+The reviewer inspected full-page captures, including corrected Paper-theme
+captures after rejecting an initial reviewer URL that left the fixture in dark
+mode. Desktop and mobile catalog cards remained aligned, selected tabs stayed
+visible in the horizontal mobile tab row, topology labels remained readable in
+the horizontal canvas, and 320-pixel guided forms retained usable controls and
+summaries. No actionable UI defect remained. Evidence is retained on the review
+VM under `ui-release-c0bf711/reviewer/database-review/` and
+`ui-release-c0bf711/reviewer/review/` within the owned scratch directory.
