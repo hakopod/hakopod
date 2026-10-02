@@ -147,7 +147,8 @@ def accepted_test_events(events, required_tests=REQUIRED_TESTS):
 
 def validate_native_environment(environment, case, images):
     if not isinstance(environment, dict) or set(environment) != {
-            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'host_filesystem', 'nodes', 'cluster'}:
+            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'required_cpu_milli',
+            'cpu_shortfall_milli', 'host_filesystem', 'nodes', 'cluster'}:
         raise ValueError('Vitess native environment evidence is missing or malformed')
     if type(environment['schema_version']) is not int or environment['schema_version'] != 1 or environment['case'] != case:
         raise ValueError('Vitess native environment evidence belongs to another case or schema')
@@ -156,6 +157,9 @@ def validate_native_environment(environment, case, images):
         raise ValueError('Vitess native acceptance requires a 12 GiB filesystem reserve')
     if type(budget) is not int or not 1024 ** 3 <= budget <= 64 * 1024 ** 3:
         raise ValueError('Vitess native acceptance requires a separate fixture disk budget')
+    expected_cpu = {'lifecycle': 8450, 'recovery': 16900, 'reseed': 6350, 'revocation': 4900}
+    if environment['required_cpu_milli'] != expected_cpu.get(case) or environment['cpu_shortfall_milli'] != 0:
+        raise ValueError('Vitess native acceptance lacks the fixed case CPU envelope')
 
     def capacity(filesystem, high_water=85):
         if not isinstance(filesystem, dict) or set(filesystem) != {'capacity_bytes', 'available_bytes'}:
@@ -201,10 +205,15 @@ def validate_native_environment(environment, case, images):
         expected_images.add(repository + '@' + digest)
     for node in nodes:
         if set(node) != {'name', 'architecture', 'operating_system', 'schedulable', 'conditions',
-                         'image_gc_high_threshold_percent', 'filesystems', 'cached_images'}:
+                         'image_gc_high_threshold_percent', 'filesystems', 'cached_images',
+                         'allocatable_cpu_milli', 'requested_cpu_milli', 'available_cpu_milli'}:
             raise ValueError('Vitess native node evidence is malformed')
         if node['architecture'] != 'amd64' or node['operating_system'] != 'linux' or node['schedulable'] is not True:
             raise ValueError('Vitess native acceptance requires schedulable Linux amd64 nodes')
+        if (type(node['allocatable_cpu_milli']) is not int or type(node['requested_cpu_milli']) is not int
+                or type(node['available_cpu_milli']) is not int or node['allocatable_cpu_milli'] < 1
+                or node['requested_cpu_milli'] < 0 or node['available_cpu_milli'] != node['allocatable_cpu_milli'] - node['requested_cpu_milli']):
+            raise ValueError('Vitess native CPU capacity evidence is invalid')
         if node['conditions'] != {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'}:
             raise ValueError('Vitess native acceptance requires healthy development nodes without pressure')
         high_water = node['image_gc_high_threshold_percent']
@@ -217,6 +226,8 @@ def validate_native_environment(environment, case, images):
         cached = node['cached_images']
         if not isinstance(cached, list) or len(cached) != len(expected_images) or any(not isinstance(item, str) for item in cached) or set(cached) != expected_images:
             raise ValueError('Vitess native acceptance requires every canonical image digest cached on every selected node')
+    if sum(node['available_cpu_milli'] for node in nodes) < environment['required_cpu_milli']:
+        raise ValueError('Vitess native acceptance lacks selected-node CPU capacity')
 
 
 def validate_metadata(directory, root=ROOT):
