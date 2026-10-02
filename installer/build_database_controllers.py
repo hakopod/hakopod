@@ -68,7 +68,7 @@ def render(engine, pin, root, redis_image, helm):
             if obj['kind']=='Secret':
                 obj.pop('data',None);obj.pop('stringData',None)
                 meta.setdefault('annotations',{})['hakopod.io/generate-controller-credential']='clickhouse-v1'
-            if obj['kind']=='ConfigMap' and 'config.yaml' in obj.get('data',{}):
+            if obj['kind']=='ConfigMap' and 'config.yaml' in (obj.get('data') or {}):
                 config=yaml.safe_load(obj['data']['config.yaml'])
                 config['watch']['namespaces']['include']=['^hdb-[a-f0-9]{32}$']
                 config['clickhouse']['access'].update({'scheme':'https','port':8443})
