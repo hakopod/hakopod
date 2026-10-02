@@ -1,8 +1,10 @@
 # Managed MySQL
 
-Status: development implementation. This guide describes the current source;
-release acceptance is still being completed.
-It does not announce a released or production-ready service.
+Status: included in the `v0.1.0-alpha.47` self-hosted candidate, pending
+publication. Lifecycle, Router TLS and private application binding checks have
+passed. The latest scaling and recovery-ingress acceptance remains pending, as
+recorded below. This status does not claim production or independent-zone
+availability.
 
 ## Choose a layout
 
