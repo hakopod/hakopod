@@ -21,7 +21,9 @@ func TestManagedMongoDBBindingLive(t *testing.T) {
 	if os.Getenv("HAKOPOD_DATABASE_MONGODB_TEST") != "1" {
 		t.Skip("set HAKOPOD_DATABASE_MONGODB_TEST=1")
 	}
-	c, ctx := liveRecoveryClient(t, 20*time.Minute)
+	// Initial replica-set provisioning, application rollout and certificate
+	// renewal each need their own bounded convergence time.
+	c, ctx := liveRecoveryClient(t, 30*time.Minute)
 	d, password := newMongoDBFixture(t, ctx, c, "cluster")
 	health := waitMongoDBFixture(t, ctx, c, d, password)
 	endpoint := health.Endpoints[0]
