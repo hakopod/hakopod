@@ -18,10 +18,19 @@ docker run --rm --entrypoint redis-server "$image" --version | grep -F 'v=8.2.10
 docker run --rm --entrypoint redis-server "$image" --version | grep -F 'malloc=jemalloc'
 docker run --rm --entrypoint sh "$image" -ec \
   'test -x /usr/bin/healthcheck.sh && test -x /usr/bin/setupMasterSlave.sh'
+docker run --rm -e SETUP_MODE=cluster -e REDIS_MAJOR_VERSION=v8 \
+  -e REDIS_PASSWORD=runtime-smoke -e TLS_MODE=true \
+  -e REDIS_TLS_CERT=/tls/server.crt -e REDIS_TLS_CERT_KEY=/tls/server.key -e REDIS_TLS_CA_KEY=/tls/ca.crt \
+  --entrypoint bash "$image" -ec '
+    mkdir /tmp/bin
+    printf "#!/bin/sh\ngrep -q \"^requirepass \" /etc/redis/redis.conf\ngrep -Fx \"cluster-enabled yes\" /etc/redis/redis.conf\ngrep -Fx \"tls-cluster yes\" /etc/redis/redis.conf\ngrep -Fx \"port 0\" /etc/redis/redis.conf\n" >/tmp/bin/redis-server
+    chmod +x /tmp/bin/redis-server
+    PATH=/tmp/bin:$PATH /usr/bin/entrypoint.sh'
 
-plain=$(docker run -d -e SETUP_MODE=standalone -e REDIS_PASSWORD=runtime-smoke "$image")
+plain=$(docker run -d --entrypoint redis-server "$image" /etc/redis/redis.conf \
+  --port 6379 --protected-mode no --requirepass runtime-smoke)
 for _ in $(seq 1 30); do
-  if docker exec -e REDIS_PASSWORD=runtime-smoke "$plain" /usr/bin/healthcheck.sh | grep -q PONG; then break; fi
+  if docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli -h 127.0.0.1 ping | grep -q PONG; then break; fi
   sleep 1
 done
 test "$(docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli get runtime-smoke)" = ''
@@ -30,21 +39,24 @@ test "$(docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli get runtim
 docker rm -f "$plain" >/dev/null
 plain=
 
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=redis-runtime \
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=redis-runtime-ca \
+  -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout "$work/ca.key" -out "$work/ca.crt" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -subj /CN=redis-runtime \
   -addext 'subjectAltName=DNS:redis-runtime,DNS:localhost,IP:127.0.0.1' \
-  -keyout "$work/tls.key" -out "$work/tls.crt" >/dev/null 2>&1
-chmod 0644 "$work/tls.key" "$work/tls.crt"
-tls=$(docker run -d --hostname redis-runtime \
-  -e SETUP_MODE=standalone -e REDIS_PASSWORD=runtime-smoke -e TLS_MODE=true \
-  -e REDIS_TLS_CERT=/tls/tls.crt -e REDIS_TLS_CERT_KEY=/tls/tls.key -e REDIS_TLS_CA_KEY=/tls/tls.crt \
-  -v "$work:/tls:ro" "$image")
+  -keyout "$work/server.key" -out "$work/server.csr" >/dev/null 2>&1
+printf 'subjectAltName=DNS:redis-runtime,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth,clientAuth\n' >"$work/server.ext"
+openssl x509 -req -days 1 -in "$work/server.csr" -CA "$work/ca.crt" -CAkey "$work/ca.key" \
+  -CAcreateserial -extfile "$work/server.ext" -out "$work/server.crt" >/dev/null 2>&1
+chmod 0644 "$work/ca.crt" "$work/server.key" "$work/server.crt"
+tls=$(docker run -d --hostname redis-runtime -v "$work:/tls:ro" --entrypoint redis-server "$image" \
+  /etc/redis/redis.conf --port 0 --tls-port 6379 --tls-cert-file /tls/server.crt \
+  --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients optional \
+  --protected-mode no --requirepass runtime-smoke)
 for _ in $(seq 1 30); do
-  if docker exec -e REDIS_PASSWORD=runtime-smoke -e TLS_MODE=true \
-    -e REDIS_TLS_CERT=/tls/tls.crt -e REDIS_TLS_CERT_KEY=/tls/tls.key -e REDIS_TLS_CA_KEY=/tls/tls.crt \
-    "$tls" /usr/bin/healthcheck.sh | grep -q PONG; then break; fi
+  if docker exec -e REDISCLI_AUTH=runtime-smoke "$tls" redis-cli --tls --cacert /tls/ca.crt \
+    -h redis-runtime ping | grep -q PONG; then break; fi
   sleep 1
 done
-docker exec "$tls" grep -Fx 'port 0' /etc/redis/redis.conf
-docker exec "$tls" grep -Fx 'tls-replication yes' /etc/redis/redis.conf
-docker exec "$tls" redis-cli --tls --cert /tls/tls.crt --key /tls/tls.key --cacert /tls/tls.crt \
-  -h redis-runtime -a runtime-smoke --no-auth-warning ping | grep -q PONG
+docker exec -e REDISCLI_AUTH=runtime-smoke "$tls" redis-cli --tls --cacert /tls/ca.crt \
+  -h redis-runtime ping | grep -q PONG
