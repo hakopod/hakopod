@@ -25,7 +25,21 @@ export function databaseRequestedCapacity(spec: DatabaseSpec) {
   const capacity = databaseMemberCapacity(spec)
   if (!capacity) return null
   const poolers = poolerInstances(spec)
-  if (spec.engine === 'vitess') return { ...capacity, cpu: capacity.cpu + vitessGateways(spec) * 0.25 + (spec.shards + 6) * 0.1, memoryMiB: capacity.memoryMiB + vitessGateways(spec) * 256 + (spec.shards + 1) * 128 + 3 * 256 + 256 + 128 }
+  if (spec.engine === 'vitess') {
+    const members = expectedMembers(spec)
+    const memberCPU = capacity.cpu / members - 0.1
+    const memberMemoryMiB = capacity.memoryMiB / members - 256
+    return {
+      ...capacity,
+      cpu: capacity.cpu + memberCPU * (1 + 2 * spec.shards) + 0.1 +
+        (vitessGateways(spec) + 1) * 0.25 + (spec.shards + 2) * 0.5 +
+        (vitessTopologyMembers(spec) + 1) * 0.1 + 2 * 0.1 + 0.1,
+      memoryMiB: capacity.memoryMiB + memberMemoryMiB * (1 + 2 * spec.shards) +
+        (members + 1 + 2 * spec.shards) * 50 + 128 + 256 +
+        (vitessGateways(spec) + 1) * (256 + 50) + (spec.shards + 2) * (256 + 50) +
+        (vitessTopologyMembers(spec) + 1) * (256 + 50) + 2 * (256 + 50) + (128 + 50),
+    }
+  }
   return { ...capacity, cpu: capacity.cpu + (poolers + keeperInstances(spec)) * 0.25 + routerInstances(spec) * 0.1 + oracleBrokerInstances(spec) * 0.1, memoryMiB: capacity.memoryMiB + (poolers + keeperInstances(spec)) * 256 + routerInstances(spec) * 128 + oracleBrokerInstances(spec) * 256 }
 }
 export const engineName = (engine: string) => ({ postgresql: 'PostgreSQL', redis: 'Redis', mysql: 'MySQL', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess' })[engine] || engine

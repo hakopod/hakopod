@@ -2694,6 +2694,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/managed-platforms/{id}/recovery-operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listManagedPlatformRecoveryOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platform-recovery-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getManagedPlatformRecoveryOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platform-recovery/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewManagedPlatformRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platform-recovery/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acceptManagedPlatformRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/managed-platform-recovery-operations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelManagedPlatformRecoveryOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/provenance": {
         parameters: {
             query?: never;
@@ -6358,6 +6438,7 @@ export interface components {
         ManagedPlatformCatalogNode: {
             name: string;
             uid: string;
+            architecture: string;
         };
         ManagedPlatformCatalogEntry: {
             /** @enum {string} */
@@ -6468,6 +6549,52 @@ export interface components {
             plan: components["schemas"]["ManagedPlatformPlan"];
             review: components["schemas"]["ManagedPlatformReview"] | null;
             blocked: boolean;
+        };
+        ManagedPlatformRecoveryIntent: {
+            /** @enum {string} */
+            kind: "backup" | "restore";
+            project: string;
+            environment: string;
+            source_platform_id: string;
+            target_platform_id?: string;
+            artifact_id?: string;
+            destination_id?: string;
+            destination_revision?: number;
+            expected_source_revision: number;
+            expected_target_revision?: number;
+        };
+        ManagedPlatformRecoveryReview: {
+            id: string;
+            intent: components["schemas"]["ManagedPlatformRecoveryIntent"];
+            request_hash: string;
+            authority_fingerprint: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        ManagedPlatformRecoveryRequest: components["schemas"]["ManagedPlatformRecoveryIntent"] & {
+            confirm_target_name?: string;
+        };
+        ManagedPlatformRecoveryAcceptRequest: components["schemas"]["ManagedPlatformRecoveryRequest"] & {
+            review: components["schemas"]["ManagedPlatformRecoveryReview"];
+        };
+        ManagedPlatformRecoveryOperation: {
+            id: string;
+            /** @enum {string} */
+            kind: "backup" | "restore";
+            project: string;
+            environment: string;
+            status: string;
+            phase: string;
+            message: string;
+            source_platform_id: string;
+            target_platform_id?: string;
+            artifact_id?: string;
+            result_artifact_id?: string;
+            destination_id?: string;
+            destination_revision?: number;
+            expected_source_revision: number;
+            expected_target_revision?: number;
+            cancel_requested: boolean;
         };
         BuildProvenance: {
             /** @enum {string} */
@@ -14540,6 +14667,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManagedPlatformOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listManagedPlatformRecoveryOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ManagedPlatformRecoveryOperation"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedPlatformRecoveryOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformRecoveryOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewManagedPlatformRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedPlatformRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformRecoveryReview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    acceptManagedPlatformRecovery: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedPlatformRecoveryAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformRecoveryOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelManagedPlatformRecoveryOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        cancel_requested: boolean;
+                    };
                 };
             };
             /** @description Error */

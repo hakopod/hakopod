@@ -55,9 +55,10 @@ export const byteSize = (bytes?: number) =>
       : bytes >= 1024 ** 2
         ? `${(bytes / 1024 ** 2).toFixed(1)} MiB`
         : `${(bytes / 1024).toFixed(1)} KiB`
-export function useBackupDestinations() {
+export function useBackupDestinations(enabled = true) {
   return useQuery({
     queryKey: ['backup-destinations'],
+    enabled,
     queryFn: ({ signal }) => unwrap(client.GET('/backup-destinations', { signal })),
     gcTime: 0,
   })

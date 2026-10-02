@@ -9,12 +9,85 @@ export type ManagedPlatformDefaults = components['schemas']['ManagedPlatformDefa
 export type ManagedPlatformCatalog = components['schemas']['ManagedPlatformCatalog']
 export type ManagedPlatformCatalogEntry = components['schemas']['ManagedPlatformCatalogEntry']
 export type ManagedPlatformReviewResponse = components['schemas']['ManagedPlatformReviewResponse']
-export const managedPlatformName = (kind: string) => kind === 'neon' ? 'Neon' : kind === 'supabase' ? 'Supabase' : 'Managed platform'
-export const platformSearch = (search: Record<string, unknown>) => ({ project: typeof search.project === 'string' ? search.project : '', environment: typeof search.environment === 'string' ? search.environment : '' })
+export type ManagedPlatformRecoveryRequest = components['schemas']['ManagedPlatformRecoveryRequest']
+export type ManagedPlatformRecoveryReview = components['schemas']['ManagedPlatformRecoveryReview']
+export type ManagedPlatformRecoveryOperation =
+  components['schemas']['ManagedPlatformRecoveryOperation']
+export const managedPlatformName = (kind: string) =>
+  kind === 'neon' ? 'Neon' : kind === 'supabase' ? 'Supabase' : 'Managed platform'
+export const platformSearch = (search: Record<string, unknown>) => ({
+  project: typeof search.project === 'string' ? search.project : '',
+  environment: typeof search.environment === 'string' ? search.environment : '',
+})
 export function availableManagedPlatformEntries(catalog: ManagedPlatformCatalog) {
-  return catalog.items.filter(item => item.capability.available && item.capability.cluster_qualified)
+  return catalog.items.filter(
+    (item) => item.capability.available && item.capability.cluster_qualified,
+  )
 }
-export function useManagedPlatforms(project: string, environment: string, enabled = true) { return useQuery({ queryKey: ['managed-platforms', project, environment], queryFn: ({signal}) => unwrap(client.GET('/managed-platforms', { signal, params: { query: project || environment ? { project, environment } : {} } })), enabled, refetchInterval: 5000, gcTime: 0 }) }
-export function useManagedPlatformCatalog(project: string, environment: string, enabled = true) { return useQuery({ queryKey: ['managed-platform-catalog', project, environment], queryFn: ({signal}) => unwrap(client.GET('/managed-platforms/catalog', { signal, params: { query: { project, environment } } })), enabled: Boolean(enabled && project && environment), staleTime: 30_000, gcTime: 0 }) }
-export function useManagedPlatform(id: string) { return useQuery({ queryKey: ['managed-platform', id], queryFn: ({signal}) => unwrap(client.GET('/managed-platforms/{id}', { signal, params: { path: { id } } })), enabled: Boolean(id), refetchInterval: 5000, gcTime: 0 }) }
-export function useManagedPlatformOperations(id: string) { return useQuery({ queryKey: ['managed-platform-operations', id], queryFn: ({signal}) => unwrap(client.GET('/managed-platforms/{id}/operations', { signal, params: { path: { id } } })), enabled: Boolean(id), refetchInterval: 5000, gcTime: 0 }) }
+export function useManagedPlatforms(project: string, environment: string, enabled = true) {
+  return useQuery({
+    queryKey: ['managed-platforms', project, environment],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/managed-platforms', {
+          signal,
+          params: { query: project || environment ? { project, environment } : {} },
+        }),
+      ),
+    enabled,
+    refetchInterval: 5000,
+    gcTime: 0,
+  })
+}
+export function useManagedPlatformCatalog(project: string, environment: string, enabled = true) {
+  return useQuery({
+    queryKey: ['managed-platform-catalog', project, environment],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/managed-platforms/catalog', {
+          signal,
+          params: { query: { project, environment } },
+        }),
+      ),
+    enabled: Boolean(enabled && project && environment),
+    staleTime: 30_000,
+    gcTime: 0,
+  })
+}
+export function useManagedPlatform(id: string) {
+  return useQuery({
+    queryKey: ['managed-platform', id],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/managed-platforms/{id}', { signal, params: { path: { id } } })),
+    enabled: Boolean(id),
+    refetchInterval: 5000,
+    gcTime: 0,
+  })
+}
+export function useManagedPlatformOperations(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['managed-platform-operations', id],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/managed-platforms/{id}/operations', { signal, params: { path: { id } } }),
+      ),
+    enabled: Boolean(id) && enabled,
+    refetchInterval: 5000,
+    gcTime: 0,
+  })
+}
+export function useManagedPlatformRecoveryOperations(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['managed-platform-recovery-operations', id],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/managed-platforms/{id}/recovery-operations', {
+          signal,
+          params: { path: { id } },
+        }),
+      ),
+    enabled: Boolean(id) && enabled,
+    refetchInterval: 5000,
+    gcTime: 0,
+  })
+}

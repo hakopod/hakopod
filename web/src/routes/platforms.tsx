@@ -2,10 +2,123 @@ import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-rout
 import { Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
+import { ServiceIcon } from '../components/service-icon'
+import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
 import { useScope, canAccess } from '../lib/scope'
-import { availableManagedPlatformEntries, managedPlatformName, platformSearch, useManagedPlatformCatalog, useManagedPlatforms } from '../lib/managed-platforms'
+import {
+  availableManagedPlatformEntries,
+  managedPlatformName,
+  platformSearch,
+  useManagedPlatformCatalog,
+  useManagedPlatforms,
+} from '../lib/managed-platforms'
 import { projectRouteScopeMatches } from '../lib/projects'
 
-export const Route = createFileRoute('/platforms')({ validateSearch: platformSearch, component: Page })
-function Page(){return useLocation().pathname==='/platforms'?<Platforms/>:<Outlet/>}
-function Platforms(){const scope=Route.useSearch();const workspace=useScope();const requestedScope=Boolean(scope.project||scope.environment);const scopeMatches=!requestedScope||projectRouteScopeMatches(workspace,scope);const query=useManagedPlatforms(scope.project,scope.environment,scopeMatches);const canManage=scopeMatches&&!workspace.identity.application&&canAccess(workspace.identity,scope.project,'deployments:write');const catalog=useManagedPlatformCatalog(scope.project,scope.environment,canManage);const canCreate=Boolean(catalog.data&&availableManagedPlatformEntries(catalog.data).length);return <div className="ops-page"><PageHeader title="Platforms" description="Owned application platforms with durable revisions and operations." action={scopeMatches?<div className="flex flex-wrap gap-2">{canCreate&&scope.project&&scope.environment&&<Button asChild variant="primary"><Link to="/platforms/new" search={scope}>New platform</Link></Button>}<Button onClick={()=>void query.refetch()} disabled={query.isFetching}><Icon name="refresh" size={14}/>Refresh</Button></div>:undefined}/>{!scopeMatches?<Empty title="Workspace unavailable" description="Choose an accessible project and environment above."/>:<>{query.error&&query.data&&<Note>Refresh failed. Showing the last received platform list.</Note>}{query.isPending?<Loading/>:query.error&&!query.data?<ErrorState error={query.error}/>:!query.data.items.length?<Empty title="No managed platforms" description={'No managed platforms are available in your accessible projects.'}/>:<div className="db-catalog">{query.data.items.map((item)=><article className="db-catalog-card" key={item.id}><div className="db-catalog-card-heading"><Icon name="server" size={28}/><div className="min-w-0"><h2><Link to="/platforms/$platformId" params={{platformId:item.id}} search={{project:item.project,environment:item.environment}}>{item.spec.name}</Link></h2><p className="[overflow-wrap:anywhere]" title={item.spec.version}>{managedPlatformName(item.spec.kind)} {item.spec.kind==='neon'?item.spec.version.slice(0,12):item.spec.version}</p></div><Status value={item.status}/></div><div className="db-catalog-footer"><span>{typeof item.observation.ready_components==='number'&&typeof item.observation.expected_components==='number'?`${item.observation.ready_components} / ${item.observation.expected_components} ready`:'Not observed'}</span><span>{item.project} / {item.environment}</span><span className="ml-auto">r{item.revision}</span></div></article>)}</div>}</>}</div>}
+export const Route = createFileRoute('/platforms')({
+  validateSearch: platformSearch,
+  component: Page,
+})
+function Page() {
+  return useLocation().pathname === '/platforms' ? <Platforms /> : <Outlet />
+}
+function Platforms() {
+  const scope = Route.useSearch()
+  const workspace = useScope()
+  const requestedScope = Boolean(scope.project || scope.environment)
+  const scopeMatches = !requestedScope || projectRouteScopeMatches(workspace, scope)
+  const query = useManagedPlatforms(scope.project, scope.environment, scopeMatches)
+  const canManage =
+    scopeMatches &&
+    !workspace.identity.application &&
+    canAccess(workspace.identity, scope.project, 'deployments:write')
+  const catalog = useManagedPlatformCatalog(scope.project, scope.environment, canManage)
+  const canCreate = Boolean(catalog.data && availableManagedPlatformEntries(catalog.data).length)
+  return (
+    <div className="ops-page">
+      <PageHeader
+        title="Platforms"
+        description="Owned application platforms with durable revisions and operations."
+        action={
+          scopeMatches ? (
+            <div className="flex flex-wrap gap-2">
+              {canCreate && scope.project && scope.environment && (
+                <Button asChild variant="primary">
+                  <Link to="/platforms/new" search={scope}>
+                    New platform
+                  </Link>
+                </Button>
+              )}
+              <Button onClick={() => void query.refetch()} disabled={query.isFetching}>
+                <Icon name="refresh" size={14} />
+                Refresh
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+      <DatabaseResourceNavigation active="platforms" scope={scope} />
+      {!scopeMatches ? (
+        <Empty
+          title="Workspace unavailable"
+          description="Choose an accessible project and environment above."
+        />
+      ) : (
+        <>
+          {query.error && query.data && (
+            <Note>Refresh failed. Showing the last received platform list.</Note>
+          )}
+          {query.isPending ? (
+            <Loading />
+          ) : query.error && !query.data ? (
+            <ErrorState error={query.error} />
+          ) : !query.data.items.length ? (
+            <Empty
+              title="No managed platforms"
+              description={'No managed platforms are available in your accessible projects.'}
+            />
+          ) : (
+            <div className="db-catalog">
+              {query.data.items.map((item) => (
+                <article className="db-catalog-card" key={item.id}>
+                  <div className="db-catalog-card-heading">
+                    <ServiceIcon name={item.spec.kind} size={28} />
+                    <div className="min-w-0">
+                      <h2>
+                        <Link
+                          to="/platforms/$platformId"
+                          params={{ platformId: item.id }}
+                          search={{ project: item.project, environment: item.environment }}
+                        >
+                          {item.spec.name}
+                        </Link>
+                      </h2>
+                      <p className="[overflow-wrap:anywhere]" title={item.spec.version}>
+                        {managedPlatformName(item.spec.kind)}{' '}
+                        {item.spec.kind === 'neon'
+                          ? item.spec.version.slice(0, 12)
+                          : item.spec.version}
+                      </p>
+                    </div>
+                    <Status value={item.status} />
+                  </div>
+                  <div className="db-catalog-footer">
+                    <span>
+                      {typeof item.observation.ready_components === 'number' &&
+                      typeof item.observation.expected_components === 'number'
+                        ? `${item.observation.ready_components} / ${item.observation.expected_components} ready`
+                        : 'Not observed'}
+                    </span>
+                    <span>
+                      {item.project} / {item.environment}
+                    </span>
+                    <span className="ml-auto">r{item.revision}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
