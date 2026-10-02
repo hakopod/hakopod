@@ -1,13 +1,21 @@
-# Managed PostgreSQL and Redis
+# Managed databases
 
 Managed databases have their own project and environment, resource allocation, credentials, revision history, operation progress and lifecycle. Application replicas do not control database replication. The PostgreSQL and Redis controllers own replication and recovery of failed members.
 
-Managed databases are included in the self-hosted development release starting with `v0.1.0-alpha.37`. Provisioning requires the controller installation described below; upgrading Hakopod does not install those controllers. Cloud workspace admission, quotas, trusted placement and approvals require the corresponding Cloud integration and a separate operator rollout. This OSS release does not enable hosted provisioning.
+PostgreSQL and Redis are included in the self-hosted development release starting
+with `v0.1.0-alpha.37`. MySQL, MongoDB, ClickHouse and Oracle Database Free are
+included in the `v0.1.0-alpha.47` candidate, which is pending publication.
+Provisioning requires the controller installation described below; upgrading
+Hakopod does not install missing controllers. Cloud workspace admission, quotas,
+trusted placement and approvals require the corresponding Cloud integration and
+a separate operator rollout. This OSS release does not enable hosted provisioning.
 
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md) and [Oracle Database](managed-oracle.md)
-implementations have separate development guides and acceptance status. Those
-guides do not announce released support.
+implementations have separate guides with their exact development evidence and
+remaining limits. Managed Vitess, Neon and Supabase remain unavailable. Oracle
+Enterprise and Data Guard, and public endpoints for the expanded engines, also
+remain unavailable in this candidate.
 
 ## Database configuration
 

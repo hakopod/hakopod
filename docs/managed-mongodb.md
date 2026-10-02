@@ -1,9 +1,10 @@
 # Managed MongoDB
 
-MongoDB 8.0 standalone databases and three-, five- and seven-member replica sets
-have passed native development acceptance. Creation requires the qualified,
-digest-pinned controller. The implementation remains unreleased; these results
-do not establish production or independent-zone availability.
+MongoDB 8.0 is included in the `v0.1.0-alpha.47` self-hosted candidate, pending
+publication. Standalone databases and three-, five- and seven-member replica
+sets have passed the native development acceptance recorded below. Creation
+requires the qualified, digest-pinned controller. These results do not establish
+production or independent-zone availability.
 
 ## Layout and placement
 

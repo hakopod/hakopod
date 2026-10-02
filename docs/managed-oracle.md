@@ -1,8 +1,9 @@
 # Managed Oracle Database
 
-Oracle Database Free standalone has passed native development checks for
-lifecycle, TCPS renewal, application bindings and isolated schema recovery.
-These checks do not establish production availability.
+Oracle Database Free is included in the `v0.1.0-alpha.47` self-hosted candidate,
+pending publication. Standalone has passed native development checks for
+lifecycle, TCPS renewal, private application bindings and isolated schema
+recovery. These checks do not establish production availability.
 Enterprise and Data Guard have a separate source implementation. Their runtime
 gate stays closed until the hardened controller and a licensed customer image
 pass native acceptance. Passing the Free tests does not open that gate.
