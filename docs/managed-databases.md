@@ -3,8 +3,8 @@
 Managed databases have their own project and environment, resource allocation, credentials, revision history, operation progress and lifecycle. Application replicas do not control database replication. The PostgreSQL and Redis controllers own replication and recovery of failed members.
 
 PostgreSQL and Redis are included in the self-hosted development release starting
-with `v0.1.0-alpha.37`. MySQL, MongoDB, ClickHouse and Oracle Database Free are
-included in the `v0.1.0-alpha.47` self-hosted release. Use a published release's
+with `v0.1.0-alpha.37`. MongoDB joins them in the `v0.1.0-alpha.47`
+self-hosted release. Use a published release's
 verified assets; a tag or candidate build alone is not an installation package.
 Provisioning requires the controller installation described below; upgrading
 Hakopod does not install missing controllers. Cloud workspace admission, quotas,
@@ -14,9 +14,11 @@ a separate operator rollout. This OSS release does not enable hosted provisionin
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their exact development evidence and
-remaining limits. Managed Vitess, Neon and Supabase remain unavailable. Oracle
-Enterprise and Data Guard, and public endpoints for the expanded engines, also
-remain unavailable in this release.
+remaining limits. MySQL, ClickHouse, Oracle Database, Vitess, Neon and Supabase
+remain unavailable while native qualification is incomplete. MongoDB public
+endpoints also remain unavailable in this release. See the
+[release acceptance record](managed-database-release-acceptance.md) for tested
+source revisions and immutable runtime references.
 
 ## Database configuration
 
@@ -273,11 +275,10 @@ it does not display those members as running before creation. You can return to
 earlier steps without losing entered values. A failed request keeps the reviewed
 configuration and its retry key until you change the configuration.
 
-The development creation flow supports PostgreSQL, Redis, MySQL, MongoDB,
-ClickHouse and Oracle Database Free. Their engine guides describe the supported
-layouts, completed checks and remaining acceptance work. Managed Vitess remains
-disabled pending qualification. Oracle Enterprise and Data Guard remain gated.
-Enabling a form in development does not announce a release.
+The creation flow supports PostgreSQL, Redis and MongoDB. MySQL, ClickHouse,
+Oracle Database and Vitess cards remain disabled pending qualification; the
+backend rejects their creation too. Their engine guides describe implementation
+details and incomplete acceptance separately from released availability.
 
 ## Monitoring history
 

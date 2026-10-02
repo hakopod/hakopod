@@ -1,9 +1,10 @@
 # Managed ClickHouse
 
-ClickHouse is included in the `v0.1.0-alpha.47` self-hosted release.
-Standalone and replicated deployments have passed the native
-development checks recorded below. Production deployment and independent-zone
-availability are not established.
+ClickHouse is unavailable in `v0.1.0-alpha.47`. Earlier native development
+checks passed, but the October 2 qualification run failed binding and Keeper
+quorum checks and timed out before clustered recovery completed. Creation
+remains disabled in the API and dashboard. The implementation and earlier
+evidence below do not establish released or production availability.
 
 ClickHouse stores analytical tables. A standalone deployment runs one data
 server. A clustered deployment has one to eight shards, each with two to six
