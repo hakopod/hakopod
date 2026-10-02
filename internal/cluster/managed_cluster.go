@@ -16,8 +16,10 @@ import (
 // ManagedClusterNode identifies an operator-enrolled member. A replacement with
 // the same name has a different UID and needs a reviewed configuration update.
 type ManagedClusterNode struct {
-	Name string `json:"name" toml:"name"`
-	UID  string `json:"uid" toml:"uid"`
+	Name            string `json:"name" toml:"name"`
+	UID             string `json:"uid" toml:"uid"`
+	Architecture    string `json:"architecture,omitempty" toml:"architecture"`
+	OperatingSystem string `json:"operating_system,omitempty" toml:"operating_system"`
 }
 
 func ValidateManagedClusterNodes(nodes []ManagedClusterNode) error {
@@ -29,6 +31,9 @@ func ValidateManagedClusterNodes(nodes []ManagedClusterNode) error {
 	for _, n := range nodes {
 		if len(validation.IsDNS1123Subdomain(n.Name)) != 0 || n.UID == "" || len(n.UID) > 128 || len(validation.IsDNS1123Subdomain(n.UID)) != 0 || seen[n.Name] || uids[n.UID] {
 			return fmt.Errorf("managed cluster inventory requires distinct node names and UIDs")
+		}
+		if (n.Architecture != "" && len(validation.IsQualifiedName(n.Architecture)) != 0) || (n.OperatingSystem != "" && len(validation.IsQualifiedName(n.OperatingSystem)) != 0) {
+			return fmt.Errorf("managed cluster node platform is invalid")
 		}
 		seen[n.Name], uids[n.UID] = true, true
 	}
@@ -81,7 +86,9 @@ func managedClusterMatches(approved []ManagedClusterNode, nodes []corev1.Node) b
 		return false
 	}
 	for _, n := range nodes {
-		if !slices.Contains(approved, ManagedClusterNode{Name: n.Name, UID: string(n.UID)}) {
+		if !slices.ContainsFunc(approved, func(a ManagedClusterNode) bool {
+			return a.Name == n.Name && a.UID == string(n.UID) && (a.Architecture == "" || a.Architecture == n.Status.NodeInfo.Architecture) && (a.OperatingSystem == "" || a.OperatingSystem == n.Status.NodeInfo.OperatingSystem)
+		}) {
 			return false
 		}
 	}

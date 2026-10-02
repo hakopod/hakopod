@@ -289,7 +289,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.Ports = []corev1.ContainerPort{{Name: "http-control", ContainerPort: 3080}, {Name: "postgres", ContainerPort: 55433}}
 		podContainers := []corev1.Container{container, proxy}
 		policy := corev1.FSGroupChangeOnRootMismatch
-		return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), FSGroup: &identity.GID, SupplementalGroups: []int64{identity.GID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: []corev1.Container{ownershipInit}, Containers: podContainers, Volumes: volumes}}
+		return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), FSGroup: &identity.GID, SupplementalGroups: []int64{identity.GID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: []corev1.Container{ownershipInit}, Containers: podContainers, Volumes: volumes}}
 	} else if logicalName == "proxy" {
 		origin := strings.TrimSuffix(in.ProxyControlPlaneOrigin, "/")
 		container.Command = []string{"proxy"}
@@ -297,7 +297,11 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["proxy-auth"], "NEON_PROXY_TO_CONTROLPLANE_TOKEN", "token"))
 	}
 	policy := corev1.FSGroupChangeOnRootMismatch
-	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &in.SharedStorageGID, SupplementalGroups: []int64{in.SharedStorageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container}, Volumes: volumes}}
+	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &in.SharedStorageGID, SupplementalGroups: []int64{in.SharedStorageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container}, Volumes: volumes}}
+}
+
+func neonPlatformNodeSelector() map[string]string {
+	return map[string]string{"kubernetes.io/os": "linux", "kubernetes.io/arch": "amd64"}
 }
 
 func ValidateNeonNetworkTrust(controlNamespace string, controlPodLabels map[string]string, externalHTTPS []string) error {

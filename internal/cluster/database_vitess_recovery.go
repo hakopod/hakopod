@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -47,6 +48,45 @@ func vitessObservedPrimaries(d database.Resource, o database.Observation) ([]dat
 		}
 	}
 	return primaries, nil
+}
+
+func sameVitessTabletSet(before, after []database.Member) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	want := make(map[string]struct{}, len(before))
+	for _, member := range before {
+		want[member.Shard+"\x00"+member.Name+"\x00"+member.UID] = struct{}{}
+	}
+	for _, member := range after {
+		key := member.Shard + "\x00" + member.Name + "\x00" + member.UID
+		if _, ok := want[key]; !ok {
+			return false
+		}
+		delete(want, key)
+	}
+	return len(want) == 0
+}
+
+var vitessGTIDSet = regexp.MustCompile(`^[0-9a-fA-F:-]+(?:,[0-9a-fA-F:-]+)*$`)
+
+func vitessWaitForGTIDQuery(gtid string) (string, error) {
+	gtid = strings.TrimSpace(gtid)
+	if len(gtid) == 0 || len(gtid) > 64<<10 {
+		return "", fmt.Errorf("Vitess recovery transaction identity is invalid")
+	}
+	gtid = strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n':
+			return -1
+		default:
+			return r
+		}
+	}, gtid)
+	if len(gtid) == 0 || !vitessGTIDSet.MatchString(gtid) {
+		return "", fmt.Errorf("Vitess recovery transaction identity is invalid")
+	}
+	return "SELECT WAIT_FOR_EXECUTED_GTID_SET(CONVERT(0x" + hex.EncodeToString([]byte(gtid)) + " USING utf8mb4),30)", nil
 }
 
 func vitessLocalCommand(user, query string) []string {
@@ -207,7 +247,8 @@ func (c *Client) RestoreVitessDatabase(ctx context.Context, d database.Resource,
 	if err = c.vitessDatabaseEmpty(ctx, d, o); err != nil {
 		return err
 	}
-	for _, m := range members {
+	gtids := make([]string, len(members))
+	for i, m := range members {
 		role := &databaseBoundedWriter{limit: 32}
 		if err = c.DatabaseExec(ctx, d, m, vitessLocalCommand("vt_dba", "SELECT @@super_read_only"), nil, role); err != nil || strings.TrimSpace(role.String()) != "0" {
 			return fmt.Errorf("Vitess recovery primary changed")
@@ -216,10 +257,42 @@ func (c *Client) RestoreVitessDatabase(ctx context.Context, d database.Resource,
 		if err = c.DatabaseExec(ctx, d, m, command, nil, io.Discard); err != nil {
 			return fmt.Errorf("Vitess shard import failed")
 		}
+		executed := &databaseBoundedWriter{limit: 64 << 10}
+		if err = c.DatabaseExec(ctx, d, m, vitessLocalCommand("vt_dba", "SELECT @@GLOBAL.gtid_executed"), nil, executed); err != nil {
+			return fmt.Errorf("Vitess recovery transaction identity is unavailable")
+		}
+		gtids[i] = strings.TrimSpace(executed.String())
 	}
 	after, err := c.ObserveDatabase(ctx, d)
-	if err != nil || after.Status != "ready" || after.TopologyFingerprint != o.TopologyFingerprint {
+	if err != nil || after.Status != "ready" || !sameVitessTabletSet(o.Members, after.Members) {
 		return fmt.Errorf("Vitess topology changed during recovery")
+	}
+	current, err := vitessObservedPrimaries(d, after)
+	if err != nil {
+		return fmt.Errorf("Vitess topology changed during recovery")
+	}
+	for i, member := range current {
+		query, queryErr := vitessWaitForGTIDQuery(gtids[i])
+		if queryErr != nil {
+			return queryErr
+		}
+		waited := &databaseBoundedWriter{limit: 32}
+		if err = c.DatabaseExec(ctx, d, member, vitessLocalCommand("vt_dba", query), nil, waited); err != nil || strings.TrimSpace(waited.String()) != "0" {
+			return fmt.Errorf("Vitess recovery transaction was not durable on the current primary")
+		}
+	}
+	final, err := c.ObserveDatabase(ctx, d)
+	if err != nil || final.Status != "ready" || !sameVitessTabletSet(after.Members, final.Members) {
+		return fmt.Errorf("Vitess topology changed during recovery")
+	}
+	finalPrimaries, err := vitessObservedPrimaries(d, final)
+	if err != nil {
+		return fmt.Errorf("Vitess topology changed during recovery")
+	}
+	for i := range current {
+		if finalPrimaries[i].UID != current[i].UID {
+			return fmt.Errorf("Vitess primary changed during recovery durability verification")
+		}
 	}
 	return nil
 }

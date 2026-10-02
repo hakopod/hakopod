@@ -99,8 +99,9 @@ func sanitizeRecoveryTar(input io.Reader, expected int64) (*os.File, error) {
 }
 
 type SupabaseRecoveryRuntime struct {
-	Cluster *Client
-	Store   *store.Store
+	Cluster               *Client
+	Store                 *store.Store
+	ValidateQualification func(context.Context, platformbackup.Operation) error
 }
 
 var supabaseRecoveryCryptographicSecretKeys = []string{"anon-key", "jwt-secret", "jwt-signing-keys", "jwt-verification-keys", "pg-meta-crypto-key", "pooler-api-jwt-secret", "publishable-key", "realtime-db-encryption-key", "secret-key-base", "service-role-key", "secret-key", "vault-encryption-key"}
@@ -126,6 +127,12 @@ func (r *SupabaseRecoveryRuntime) fence(ctx context.Context) error {
 	}
 	if platformbackup.RecoveryCleanupFromContext(ctx) {
 		return r.Store.FencePlatformRecoveryCleanup(ctx, op)
+	}
+	if r.ValidateQualification == nil {
+		return fmt.Errorf("Supabase recovery qualification is unavailable")
+	}
+	if err := r.ValidateQualification(ctx, op); err != nil {
+		return err
 	}
 	cancelled, err := r.Store.HeartbeatPlatformRecovery(ctx, op)
 	if err != nil {

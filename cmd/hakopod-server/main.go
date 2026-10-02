@@ -23,7 +23,6 @@ import (
 	"github.com/hakopod/hakopod/internal/cluster"
 	runtime "github.com/hakopod/hakopod/internal/management"
 	"github.com/hakopod/hakopod/internal/nativeacceptance"
-	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/store"
 )
@@ -197,11 +196,9 @@ func run() error {
 		return err
 	}
 	management := &api.Server{Store: db, Cluster: kube, Auth: identityConfig, ProcessLogs: processLogs}
-	planner, managedRuntime, neonProxyAuthority, err := configureManagedPlatforms(os.Getenv("HAKOPOD_MANAGED_PLATFORM_CONFIG_FILE"), db, kube, identityConfig.EncryptionKey)
-	if err != nil {
+	if err = configureManagedPlatforms(management, os.Getenv("HAKOPOD_MANAGED_PLATFORM_CONFIG_FILE"), identityConfig.EncryptionKey); err != nil {
 		return err
 	}
-	management.ManagedPlatformPlanner, management.ManagedPlatformRuntime, management.NeonProxyAuthority = planner, managedRuntime, neonProxyAuthority
 	if err = management.ConfigureBuildRegistry(ctx, os.Getenv("HAKOPOD_BUILD_REGISTRY")); err != nil {
 		return err
 	}
@@ -209,14 +206,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var neonRecovery platformbackup.Runtime
-	if managedRuntime != nil {
-		neonRecovery, err = cluster.NewNeonRecoveryRuntime(db, kube, managedRuntime.EncryptionKey)
-		if err != nil {
-			return err
-		}
-	}
-	if err = management.ConfigureBackups(api.BackupConfig{VitessApprovals: vitessApprovals, DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true", NeonRecovery: neonRecovery}); err != nil {
+	if err = management.ConfigureBackups(api.BackupConfig{VitessApprovals: vitessApprovals, DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true"}); err != nil {
 		return err
 	}
 	var gatewayServer *http.Server

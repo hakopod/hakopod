@@ -18,10 +18,12 @@ import (
 )
 
 type ManagedPlatformNodeReservation struct {
-	UID        string
-	Capacity   managedplatform.Capacity
-	Ownership  managedplatform.CapacityPoolOwnership
-	Namespaces map[string]managedplatform.CapacityNamespaceOwnership
+	UID             string
+	Architecture    string
+	OperatingSystem string
+	Capacity        managedplatform.Capacity
+	Ownership       managedplatform.CapacityPoolOwnership
+	Namespaces      map[string]managedplatform.CapacityNamespaceOwnership
 }
 
 // DatabaseNodeReservation covers all grants sharing this node. Scopes identify
@@ -613,7 +615,7 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 	}
 	for name, reservation := range reservations {
 		node, err := c.kube.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
-		if err != nil || reservation.UID == "" || string(node.UID) != reservation.UID || reservation.Capacity.CPUMilli < 1 || reservation.Capacity.MemoryBytes < 1 || len(reservation.Namespaces) > managedplatform.MaxCapacityReservations {
+		if err != nil || reservation.UID == "" || string(node.UID) != reservation.UID || reservation.Architecture == "" || node.Status.NodeInfo.Architecture != reservation.Architecture || reservation.OperatingSystem == "" || node.Status.NodeInfo.OperatingSystem != reservation.OperatingSystem || reservation.Capacity.CPUMilli < 1 || reservation.Capacity.MemoryBytes < 1 || len(reservation.Namespaces) > managedplatform.MaxCapacityReservations {
 			return fmt.Errorf("managed platform reservation node is unavailable or invalid")
 		}
 		ownership, ownershipErr := capacityOwnership(reservation.Ownership, reservation.Namespaces)

@@ -37,6 +37,7 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 	for _, object := range manifests.Objects {
 		switch value := object.(type) {
 		case *appsv1.Deployment:
+			assertNeonLinuxAMD64Scheduling(t, value.Name, value.Spec.Template.Spec)
 			if value.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType || value.Spec.Strategy.RollingUpdate != nil {
 				t.Fatalf("managed platform deployment %s can overlap old and new pods", value.Name)
 			}
@@ -49,10 +50,11 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 			if value.Name == "neon-storage-controller" && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
 				ownershipModes["storage-controller"] = true
 			}
-			if value.Spec.Template.Spec.NodeName != "node-a" || len(value.Spec.Template.Spec.NodeSelector) != 0 {
+			if value.Spec.Template.Spec.NodeName != "node-a" {
 				t.Fatalf("deployment %s does not use its exact trusted Node name", value.Name)
 			}
 		case *appsv1.StatefulSet:
+			assertNeonLinuxAMD64Scheduling(t, value.Name, value.Spec.Template.Spec)
 			if value.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
 				t.Fatalf("managed platform StatefulSet %s does not replace one stable ordinal at a time", value.Name)
 			}
@@ -62,7 +64,7 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 			if value.Name == "neon-compute-0" {
 				assertNeonComputeOwnershipStorage(t, value.Spec.Template.Spec, identities["compute"])
 			}
-			if value.Name == "neon-pageserver-1" && (value.Spec.Template.Spec.NodeName != "node-b" || len(value.Spec.Template.Spec.NodeSelector) != 0) {
+			if value.Name == "neon-pageserver-1" && value.Spec.Template.Spec.NodeName != "node-b" {
 				t.Fatal("Neon storage placement treated a Node name as an unrelated hostname label")
 			}
 			if strings.HasPrefix(value.Name, "neon-safekeeper-") && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
@@ -226,6 +228,14 @@ func assertNeonPodSecurity(t *testing.T, pod corev1.PodSpec) {
 		if security == nil || security.RunAsNonRoot == nil || !*security.RunAsNonRoot || security.ReadOnlyRootFilesystem == nil || !*security.ReadOnlyRootFilesystem || security.AllowPrivilegeEscalation == nil || *security.AllowPrivilegeEscalation {
 			t.Fatal("Neon pod security contract is incomplete")
 		}
+	}
+}
+
+func assertNeonLinuxAMD64Scheduling(t *testing.T, name string, pod corev1.PodSpec) {
+	t.Helper()
+	want := map[string]string{"kubernetes.io/os": "linux", "kubernetes.io/arch": "amd64"}
+	if !reflect.DeepEqual(pod.NodeSelector, want) {
+		t.Fatalf("Neon workload %s is not restricted to Linux AMD64 nodes: %#v", name, pod.NodeSelector)
 	}
 }
 

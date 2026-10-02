@@ -2,6 +2,7 @@ package managedplatform
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"regexp"
@@ -26,18 +27,19 @@ const supabasePostgresHBA = "local all all trust\nhostnossl all all 0.0.0.0/0 re
 // SupabaseRenderInput contains only public desired state. Secret bodies are
 // resolved into immutable Kubernetes Secrets before this renderer is called.
 type SupabaseRenderInput struct {
-	Spec                          Spec
-	PlatformID                    string
-	Images                        map[string]string
-	Revision                      int64
-	NamespaceUID                  types.UID
-	Assets                        map[string]string
-	Identities                    map[string]RuntimeIdentity
-	ApprovedEncryptedStorageClass string
-	DatabaseClaim                 ObservedClaimState
-	PreviousSpec                  *Spec
-	SharedStorageGID              int64
-	ApprovedExternalHTTPSCIDRs    []string
+	Spec                           Spec
+	PlatformID                     string
+	Images                         map[string]string
+	Revision                       int64
+	NamespaceUID                   types.UID
+	Assets                         map[string]string
+	Identities                     map[string]RuntimeIdentity
+	ApprovedEncryptedStorageClass  string
+	DatabaseClaim                  ObservedClaimState
+	DatabaseClaimFromCurrentCreate bool
+	PreviousSpec                   *Spec
+	SharedStorageGID               int64
+	ApprovedExternalHTTPSCIDRs     []string
 }
 
 // RuntimeIdentity is qualified with the pinned image before rendering. The
@@ -109,6 +111,12 @@ var databaseAssetTargets = []struct{ Source, Target string }{
 var envoyPublicAssetPaths = []string{"api/envoy/cds.yaml", "api/envoy/envoy.yaml"}
 var functionAssetPaths = []string{"functions/deno.jsonc", "functions/hello/index.ts", "functions/main/index.ts"}
 var poolerAssetPaths = []string{"pooler/pooler.exs"}
+
+var supabaseDatabaseCredentialKeys = []string{
+	"auth-database-url", "database-owner-password", "database-role-bootstrap",
+	"postgres-meta-database-password", "realtime-database-password",
+	"rest-database-url", "storage-database-url", "supavisor-database-url",
+}
 
 func SupabaseAssetNames() []string { return append([]string(nil), supabaseAssetNames...) }
 
@@ -185,6 +193,9 @@ func RenderSupabase(in SupabaseRenderInput) (SupabaseManifests, error) {
 			data["pg_hba.conf"] = supabasePostgresHBA
 		}
 		objects = append(objects, &corev1.ConfigMap{ObjectMeta: meta(configName(group.name)), Immutable: boolPtr(true), Data: data})
+	}
+	if in.PreviousSpec != nil && SupabaseDatabaseSettingsChanged(*in.PreviousSpec, in.Spec) {
+		objects = append(objects, &corev1.ConfigMap{ObjectMeta: meta(configName("supabase-database-credentials")), Immutable: boolPtr(true), Data: map[string]string{"reference_fingerprint": supabaseDatabaseCredentialFingerprint(in.Spec)}})
 	}
 
 	for _, key := range SupabaseRequiredStorageKeys() {
@@ -432,7 +443,7 @@ exec /app/bin/server`}
 	if component.Name == "database" {
 		storageGID = identity.GID
 	}
-	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: componentLabels(labels, component.Name)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: boolPtr(false), EnableServiceLinks: boolPtr(false), NodeSelector: map[string]string{"kubernetes.io/hostname": in.Spec.Placement.NodeNames[0]}, TerminationGracePeriodSeconds: int64Ptr(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: boolPtr(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &storageGID, SupplementalGroups: []int64{storageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: initContainers, Containers: []corev1.Container{container}, Volumes: volumes}}
+	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: componentLabels(labels, component.Name)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: boolPtr(false), EnableServiceLinks: boolPtr(false), NodeSelector: map[string]string{"kubernetes.io/hostname": in.Spec.Placement.NodeNames[0], "kubernetes.io/arch": "amd64", "kubernetes.io/os": "linux"}, TerminationGracePeriodSeconds: int64Ptr(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: boolPtr(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &storageGID, SupplementalGroups: []int64{storageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: initContainers, Containers: []corev1.Container{container}, Volumes: volumes}}
 }
 
 func supabasePolicies(meta func(string) metav1.ObjectMeta, labels map[string]string, components []Component, externalHTTPS []string) []runtime.Object {
@@ -710,27 +721,79 @@ func validateSecretRotation(in SupabaseRenderInput) error {
 		return fmt.Errorf("rendering requires an observed database claim state")
 	}
 	if in.DatabaseClaim.UID == "" {
+		if in.DatabaseClaimFromCurrentCreate {
+			return fmt.Errorf("initial provisioning cannot bind a missing database claim")
+		}
 		if in.Revision != 1 || in.PreviousSpec != nil {
 			return fmt.Errorf("initial provisioning requires revision 1 and no previous spec")
+		}
+		return nil
+	}
+	if in.DatabaseClaimFromCurrentCreate {
+		if in.Revision != 1 || in.PreviousSpec != nil {
+			return fmt.Errorf("current create database claim requires revision 1 and no previous spec")
 		}
 		return nil
 	}
 	if in.PreviousSpec == nil {
 		return fmt.Errorf("an observed database claim requires the complete previous spec")
 	}
-	if in.PreviousSpec.Supabase == nil || in.PreviousSpec.Supabase.DatabaseName != in.Spec.Supabase.DatabaseName || in.PreviousSpec.Supabase.JWTExpirySeconds != in.Spec.Supabase.JWTExpirySeconds {
-		return fmt.Errorf("database_name and jwt_expiry_seconds cannot change until transactional database settings migration is implemented")
+	if in.PreviousSpec.Supabase == nil || in.PreviousSpec.Supabase.DatabaseName != in.Spec.Supabase.DatabaseName {
+		return fmt.Errorf("database_name is immutable after initial provisioning")
 	}
 	if err := exactKeys(in.PreviousSpec.Secrets, supabaseSecretKeys, "previous secrets"); err != nil {
 		return fmt.Errorf("updates require the complete previous secret inventory: %w", err)
 	}
-	for _, key := range supabaseSecretKeys {
-		previous, current := in.PreviousSpec.Secrets[key], in.Spec.Secrets[key]
-		if previous != current {
-			return fmt.Errorf("secret rotation for %s is unavailable until transactional database and client rotation is implemented", key)
+	databaseChanged := 0
+	databaseKeys := map[string]bool{}
+	for _, key := range supabaseDatabaseCredentialKeys {
+		databaseKeys[key] = true
+		if in.PreviousSpec.Secrets[key] != in.Spec.Secrets[key] {
+			databaseChanged++
 		}
 	}
+	if databaseChanged != 0 && databaseChanged != len(supabaseDatabaseCredentialKeys) {
+		return fmt.Errorf("secret rotation for database-owner-password is unavailable unless database-role-bootstrap and every database client reference rotate together")
+	}
+	allowed := map[string]bool{"database-tls-certificate": true, "gateway-tls-certificate": true, "envoy-runtime-config": true}
+	for _, key := range supabaseSecretKeys {
+		if in.PreviousSpec.Secrets[key] == in.Spec.Secrets[key] || databaseKeys[key] || allowed[key] {
+			continue
+		}
+		return fmt.Errorf("secret rotation for %s requires a separate migration protocol", key)
+	}
+	if (in.PreviousSpec.Secrets["gateway-tls-certificate"] != in.Spec.Secrets["gateway-tls-certificate"]) != (in.PreviousSpec.Secrets["envoy-runtime-config"] != in.Spec.Secrets["envoy-runtime-config"]) {
+		return fmt.Errorf("gateway TLS certificate and Envoy runtime configuration must rotate together")
+	}
 	return nil
+}
+
+// SupabaseDatabaseCredentialsChanged reports whether an admitted update needs
+// the database role migration before its client workloads may roll forward.
+func SupabaseDatabaseCredentialsChanged(previous, current Spec) bool {
+	for _, key := range supabaseDatabaseCredentialKeys {
+		if previous.Secrets[key] != current.Secrets[key] {
+			return true
+		}
+	}
+	return false
+}
+
+// SupabaseDatabaseSettingsChanged reports whether an admitted update needs a
+// journaled database transaction before its client workloads may roll forward.
+func SupabaseDatabaseSettingsChanged(previous, current Spec) bool {
+	return SupabaseDatabaseCredentialsChanged(previous, current) || previous.Supabase.JWTExpirySeconds != current.Supabase.JWTExpirySeconds
+}
+
+func supabaseDatabaseCredentialFingerprint(spec Spec) string {
+	values := make([]string, 0, len(supabaseDatabaseCredentialKeys))
+	for _, key := range supabaseDatabaseCredentialKeys {
+		ref := spec.Secrets[key]
+		values = append(values, key+"="+ref.Name+"@"+strconv.FormatInt(ref.Revision, 10))
+	}
+	values = append(values, "jwt_expiry_seconds="+strconv.Itoa(spec.Supabase.JWTExpirySeconds))
+	digest := sha256.Sum256([]byte(strings.Join(values, "\n")))
+	return hex.EncodeToString(digest[:])
 }
 func validateSupabaseAssets(assets map[string]string) error {
 	if len(assets) != len(supabaseAssetNames) {

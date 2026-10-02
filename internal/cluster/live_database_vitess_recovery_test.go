@@ -21,7 +21,7 @@ func TestManagedVitessRecoveryLive(t *testing.T) {
 	if err := c.DumpDatabase(ctx, source, health, archive); err != nil {
 		t.Fatal("Vitess archive capture failed", err)
 	}
-	if _, err := client.ExecContext(ctx, "INSERT INTO records VALUES (99,0xCAFE,'source-only')"); err != nil {
+	if _, err := client.ExecContext(ctx, "INSERT INTO records (id, payload, label) VALUES (99,0xCAFE,'source-only')"); err != nil {
 		t.Fatal(err)
 	}
 	target, targetPassword := newVitessFixture(t, ctx, fixtures, "recovery-target", 2)
