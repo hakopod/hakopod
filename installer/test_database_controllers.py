@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 
 import database_controllers as controllers
 
@@ -115,6 +115,41 @@ class ControllerPlanTests(unittest.TestCase):
         with patch.object(controllers,'make_plan',return_value=plan),patch.object(controllers,'load_bundle',return_value=('a',[secret])),patch.object(controllers,'current',return_value=existing),patch.object(controllers.subprocess,'run') as run:
             controllers.apply_plan(Path('/unused'),plan,['kubectl'])
             run.assert_not_called()
+
+    def test_failed_apply_uses_review_bound_replace_and_preserves_foreign_fields(self):
+        desired={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'controller','namespace':'operators','annotations':{'hakopod.io/policy':'reviewed'}},'spec':{'template':{'metadata':{'annotations':{'hakopod.io/runtime':'reviewed'}},'spec':{'containers':[{'name':'controller','image':'example.invalid/controller:new'}]}}}}
+        existing={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'controller','namespace':'operators','uid':'stable','resourceVersion':'5','labels':{controllers.OWNER:'owned','app.kubernetes.io/managed-by':'hakopod','foreign':'preserved'},'annotations':{'hakopod.io/policy':'reviewed','foreign':'preserved'},'managedFields':[{'manager':'another'}]},'spec':{'template':{'metadata':{'annotations':{'hakopod.io/runtime':'reviewed','foreign':'preserved'}},'spec':{'containers':[{'name':'controller','image':'example.invalid/controller:old','env':[{'name':'FOREIGN','value':'preserved'}]},{'name':'foreign-sidecar','image':'example.invalid/sidecar:1'}]}}},'status':{'availableReplicas':1}}
+        plan={'schema_version':1,'created_at':int(time.time()),'installation':'owned','cluster_uid':'cluster-a','bundle_sha256':'a','engines':['clickhouse'],'resources':[{'identity':list(controllers.key(desired)),'existing':{'uid':'stable','resource_version':'5'}}]}
+        results=[Mock(returncode=1),Mock(returncode=0),Mock(returncode=0)]
+        with patch.object(controllers,'make_plan',return_value=plan),patch.object(controllers,'load_bundle',return_value=('a',[desired])),patch.object(controllers,'current',side_effect=[existing,existing]),patch.object(controllers.subprocess,'run',side_effect=results) as run:
+            controllers.apply_plan(Path('/unused'),plan,['kubectl'])
+        self.assertIn('apply',run.call_args_list[0].args[0])
+        self.assertNotIn('--force-conflicts',run.call_args_list[0].args[0])
+        self.assertIn('replace',run.call_args_list[1].args[0])
+        replacement=json.loads(run.call_args_list[1].kwargs['input'])
+        self.assertEqual(replacement['metadata']['uid'],'stable')
+        self.assertEqual(replacement['metadata']['resourceVersion'],'5')
+        self.assertEqual(replacement['metadata']['labels']['foreign'],'preserved')
+        self.assertEqual(replacement['metadata']['annotations']['foreign'],'preserved')
+        self.assertNotIn('managedFields',replacement['metadata'])
+        self.assertNotIn('status',replacement)
+        containers={item['name']:item for item in replacement['spec']['template']['spec']['containers']}
+        self.assertEqual(containers['controller']['image'],'example.invalid/controller:new')
+        self.assertEqual(containers['controller']['env'],[{'name':'FOREIGN','value':'preserved'}])
+        self.assertEqual(containers['foreign-sidecar']['image'],'example.invalid/sidecar:1')
+
+    def test_replace_fallback_rejects_identity_ownership_and_annotation_changes(self):
+        desired={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'controller','namespace':'operators','labels':{controllers.OWNER:'owned','app.kubernetes.io/managed-by':'hakopod'},'annotations':{'hakopod.io/policy':'reviewed'}}}
+        existing={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'controller','namespace':'operators','uid':'stable','resourceVersion':'5','labels':{controllers.OWNER:'owned','app.kubernetes.io/managed-by':'hakopod'},'annotations':{'hakopod.io/policy':'reviewed'}}}
+        reviewed={'uid':'stable','resource_version':'5'}
+        changed=[
+            dict(existing,metadata=dict(existing['metadata'],resourceVersion='6')),
+            dict(existing,metadata=dict(existing['metadata'],labels={controllers.OWNER:'owned','app.kubernetes.io/managed-by':'foreign'})),
+            dict(existing,metadata=dict(existing['metadata'],annotations={'hakopod.io/policy':'changed'})),
+        ]
+        for current in changed:
+            with self.subTest(current=current),self.assertRaisesRegex(ValueError,'replace fallback|changed'):
+                controllers.owned_replace_object(current,desired,'owned',reviewed)
 
     def test_expired_plan_does_not_contact_cluster(self):
         with patch.object(controllers,'make_plan') as make:

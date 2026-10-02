@@ -136,6 +136,42 @@ def make_plan(bundle,engines,installation,kube):
     return {'schema_version':1,'installation':installation,'cluster_uid':cluster,'bundle_sha256':sha,'engines':sorted(engines),'created_at':int(time.time()),'resources':resources,'scope':'Controller infrastructure only. No workload, volume, runtime restart or Cloud admission change. Review aggregate controller requests and limits before applying.'}
 
 
+def merge_preserving_foreign(current_value,desired_value):
+    if isinstance(current_value,dict) and isinstance(desired_value,dict):
+        merged=copy.deepcopy(current_value)
+        for name,value in desired_value.items():
+            merged[name]=merge_preserving_foreign(current_value.get(name),value) if name in current_value else copy.deepcopy(value)
+        return merged
+    if isinstance(current_value,list) and isinstance(desired_value,list) and desired_value and all(isinstance(item,dict) and isinstance(item.get('name'),str) for item in desired_value) and all(isinstance(item,dict) and isinstance(item.get('name'),str) for item in current_value):
+        merged=copy.deepcopy(current_value)
+        positions={item['name']:index for index,item in enumerate(current_value)}
+        for item in desired_value:
+            if item['name'] in positions:
+                index=positions[item['name']]
+                merged[index]=merge_preserving_foreign(current_value[index],item)
+            else:
+                positions[item['name']]=len(merged);merged.append(copy.deepcopy(item))
+        return merged
+    return copy.deepcopy(desired_value)
+
+
+def owned_replace_object(current_object,desired_object,installation,reviewed):
+    if fingerprint(current_object,installation)!=reviewed or key(current_object)!=key(desired_object):
+        raise ValueError('Controller resource changed before the bounded replace fallback')
+    current_meta=current_object['metadata'];desired_meta=desired_object['metadata']
+    if current_meta.get('labels',{}).get('app.kubernetes.io/managed-by')!='hakopod':
+        raise ValueError('Controller replace fallback requires the exact installation ownership labels')
+    for current_scope,desired_scope in ((current_meta,desired_meta),(current_object.get('spec',{}).get('template',{}).get('metadata',{}),desired_object.get('spec',{}).get('template',{}).get('metadata',{}))):
+        for name,value in desired_scope.get('annotations',{}).items():
+            if name.startswith('hakopod.io/') and current_scope.get('annotations',{}).get(name)!=value:
+                raise ValueError('Controller replace fallback requires the reviewed ownership annotations')
+    replacement=merge_preserving_foreign(current_object,desired_object)
+    replacement.pop('status',None)
+    metadata=replacement['metadata'];metadata.pop('managedFields',None)
+    metadata['uid']=current_meta['uid'];metadata['resourceVersion']=current_meta['resourceVersion']
+    return replacement
+
+
 def apply_plan(bundle,plan,kube):
     if plan.get('schema_version')!=1 or not isinstance(plan.get('created_at'),int) or not 0<=time.time()-plan['created_at']<=1800:
         raise ValueError('Controller plan is invalid or expired; review a fresh plan')
@@ -160,7 +196,11 @@ def apply_plan(bundle,plan,kube):
             command=['apply','--server-side','--field-manager='+MANAGER]
         # Never force field ownership or print an API response that could echo a Secret.
         result=subprocess.run([*kube,*command,'-f','-'],input=json.dumps(obj).encode(),capture_output=True,timeout=90)
-        if result.returncode:raise ValueError('Controller resource apply failed; preserve installed resources and prepare a fresh review')
+        if result.returncode and old:
+            latest=current(kube,obj)
+            replacement=owned_replace_object(latest,obj,plan['installation'],reviewed[key(obj)])
+            result=subprocess.run([*kube,'replace','-f','-'],input=json.dumps(replacement).encode(),capture_output=True,timeout=90)
+        if result.returncode:raise ValueError('Controller resource apply and bounded replace failed; preserve installed resources and prepare a fresh review')
         if obj['kind']=='CustomResourceDefinition':
             result=subprocess.run([*kube,'wait','--for=condition=Established','crd/'+meta['name'],'--timeout=90s'],capture_output=True,timeout=100)
             if result.returncode:raise ValueError('Controller CRD did not become established')
