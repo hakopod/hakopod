@@ -105,14 +105,14 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	tlsName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["gateway-tls-certificate"])
 	runtimeName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["envoy-runtime-config"])
 	if err = validateSupabaseTLSSecretSnapshots(request.SecretSnapshots, manifests.RequiredSecrets, tlsName, runtimeName, request.Render.Spec.Supabase.PublicURL); err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_gateway_validation", err)
 	}
 	databaseTLSName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["database-tls-certificate"])
 	if err = validateSupabaseDatabaseTLS(request.SecretSnapshots[databaseTLSName], ns.Name); err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_database_tls_validation", err)
 	}
 	if err = validateSupabaseDatabaseClientURLs(request.SecretSnapshots, request.Render.Spec); err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_database_url_validation", err)
 	}
 	for _, name := range manifests.RequiredSecrets {
 		if err = c.applySupabaseSecret(ctx, state, op, ns, name, request.SecretSnapshots[name], prior, current, before); err != nil {

@@ -80,11 +80,11 @@ type ManagedPlatformRuntime struct {
 
 func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, state *store.Store, op store.ManagedPlatformOperation) error {
 	if r == nil {
-		return fmt.Errorf("managed platform cluster runtime is unavailable")
+		return managedPlatformRuntimeError("runtime_unavailable", fmt.Errorf("managed platform cluster runtime is unavailable"))
 	}
 	if state != nil && state.ManagedCloud && op.Kind != "delete" {
 		if state.ManagedPlatformCapacityBudget == nil || state.ValidateManagedPlatformCapacity == nil {
-			return fmt.Errorf("managed platform reconciliation requires durable capacity admission")
+			return managedPlatformRuntimeError("capacity_admission", fmt.Errorf("managed platform reconciliation requires durable capacity admission"))
 		}
 		validate := r.validateManagedPlatformCapacity
 		if validate == nil {
@@ -93,43 +93,43 @@ func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, s
 			}
 		}
 		if err := validate(ctx, state, op.PlatformID); err != nil {
-			return fmt.Errorf("managed platform reconciliation capacity admission failed: %w", err)
+			return managedPlatformRuntimeError("capacity_admission", err)
 		}
 	}
 	if r.Cluster == nil {
-		return fmt.Errorf("managed platform cluster runtime is unavailable")
+		return managedPlatformRuntimeError("runtime_unavailable", fmt.Errorf("managed platform cluster runtime is unavailable"))
 	}
 	snapshot, err := OpenManagedPlatformSnapshot(r.EncryptionKey, op)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("snapshot_invalid", err)
 	}
 	switch op.Spec.Kind {
 	case "supabase":
 		if snapshot.Supabase == nil {
-			return fmt.Errorf("Supabase runtime snapshot is unavailable")
+			return managedPlatformRuntimeError("supabase_snapshot_missing", fmt.Errorf("Supabase runtime snapshot is unavailable"))
 		}
 		request := *snapshot.Supabase
 		request.Operation = op
 		request.Render.Assets, err = managedplatform.PinnedSupabaseAssets()
 		if err != nil {
-			return err
+			return managedPlatformRuntimeError("supabase_assets_invalid", err)
 		}
 		if request.Render.PlatformID != op.PlatformID || request.Render.Revision != op.Revision || !bytes.Equal(store.JSON(request.Render.Spec), store.JSON(op.Spec)) || !bytes.Equal(store.JSON(snapshot.ReviewedPlan), store.JSON(op.Plan)) || !sameSupabaseTopology(mustSupabasePlan(request.Render), op.Plan) {
-			return fmt.Errorf("Supabase runtime snapshot does not match the durable operation")
+			return managedPlatformRuntimeError("supabase_snapshot_mismatch", fmt.Errorf("Supabase runtime snapshot does not match the durable operation"))
 		}
 		return r.Cluster.ReconcileSupabaseOperation(ctx, state, request)
 	case "neon":
 		if snapshot.Neon == nil {
-			return fmt.Errorf("Neon runtime snapshot is unavailable")
+			return managedPlatformRuntimeError("neon_snapshot_missing", fmt.Errorf("Neon runtime snapshot is unavailable"))
 		}
 		request := *snapshot.Neon
 		request.Operation = op
 		if request.Render.PlatformID != op.PlatformID || request.Render.Revision != op.Revision || !bytes.Equal(store.JSON(request.Render.Spec), store.JSON(op.Spec)) || !bytes.Equal(store.JSON(snapshot.ReviewedPlan), store.JSON(op.Plan)) || !sameNeonTopology(mustNeonPlan(request.Render), op.Plan) {
-			return fmt.Errorf("Neon runtime snapshot does not match the durable operation")
+			return managedPlatformRuntimeError("neon_snapshot_mismatch", fmt.Errorf("Neon runtime snapshot does not match the durable operation"))
 		}
 		return r.Cluster.ReconcileNeonOperation(ctx, state, request, r.EncryptionKey)
 	default:
-		return fmt.Errorf("managed platform kind is not supported by this runtime")
+		return managedPlatformRuntimeError("unsupported_kind", fmt.Errorf("managed platform kind is not supported by this runtime"))
 	}
 }
 func mustNeonPlan(input managedplatform.NeonRenderInput) managedplatform.Plan {
