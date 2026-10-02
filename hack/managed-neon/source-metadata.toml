@@ -1,24 +1,31 @@
 schema_version = 1
 upstream_repository = "https://github.com/neondatabase/neon.git"
 upstream_commit = "fa504217c61bbcaf5c512d75830564541f917f8f"
+postgres_commit = "1e01fcea2a6b38180021aa83e0051d95286d9096"
+postgres_tree = "5aca82893a42d97c0fce65a8f63d02d9e0587a19"
+postgres_patch = "patches/neon-postgres-17.11.patch"
+postgres_patch_sha256 = "47f90f03bc3aa0893b952049d86da54713843abdc94b74166a33c67bfb95a3e6"
+consumer_patch_id = "627583b85d7c0f624245e3ac6a240e775a5eed01"
+consumer_patch = "patches/neon-pg17.11-consumers.patch"
+consumer_patch_sha256 = "f425b69c6d20153ea3fbba2633d53adc77007f4d84468423d3544bc5fff11e60"
 proxy_patch = "patches/neon-proxy-control-plane-timeout.patch"
 proxy_patch_sha256 = "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 ownership_patch = "patches/neon-provider-ownership.patch"
 ownership_patch_sha256 = "a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
 frozen_combined_patch_sha256 = "bb37c2f06bad5aecdfe6e17a0cc19325613497b6e63d1b232b433ade2518fe30"
-combined_candidate_tree = "8fcaa8600a9da41870d6f74478cfdfcd53fb2dd6"
+combined_candidate_tree = "0e9da216fbb78976bac267a8036809e12f58a1bd"
 
 # The ownership patch is intentionally derived after applying the existing proxy
-# patch. Applying the two patches produces the same Git tree as the frozen
-# combined patch above; this keeps the proxy timeout provenance independent.
+# patch. The frozen combined patch covers that original pair; the candidate
+# tree additionally binds the PostgreSQL 17.11 consumer patch above.
 
 [source_archive]
-sha256 = "0a364b86e81faefca56c7dcf56e2057767c63cb396d653775d7596fcd343e209"
-size_bytes = 113605826
-member_count = 30746
+sha256 = "f91a9e1a5945dd1d2e634c2438d5c11052d4f2e993dc2d09c82f25d6eff995da"
+size_bytes = 113920297
+member_count = 30844
 repeat_comparison = "PASS"
 global_member_order = "PASS"
-location = "/srv/hakopod-backup-scratch/neon-packaging-v2/output/neon-provider-source.tar.gz"
+location = "/srv/hakopod-build/neon-pg1711-v5/source/neon-provider-source.tar.gz"
 
 [qualification]
 images_built = false
@@ -32,3 +39,7 @@ reason = "Provenance claimed sorted tar members, but the archive member order wa
 [[rejected_artifacts]]
 sha256 = "d0e4288c499b3c1ac92a03696d0dd38c3873b979af268947a5caa79bd045b38a"
 reason = "Superseded VM source archive included build outputs and lacked a committed reproducible recipe."
+
+[[rejected_artifacts]]
+sha256 = "6a2ddb62e74d1719c19f2cf56e7583bdfc0b10f8b75a9630a19cd03254aa7544"
+reason = "The recorded PostgreSQL commit was VM-local and the committed recipe did not recreate this archive from the fetchable Neon PostgreSQL branch."

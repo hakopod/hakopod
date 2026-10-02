@@ -28,3 +28,19 @@ func TestHakopodBackupReceivesTLS(t *testing.T) {
 	if !volume || !mount { t.Fatal("backup trust volume is absent") }
 	for _,c:=range pod.Spec.InitContainers { if c.Resources.Limits.Cpu().IsZero() || c.Resources.Limits.Memory().IsZero() { t.Fatal("backup init container has unbounded resources") } }
 }
+
+func TestHakopodFirstLiveBackupUsesDedicatedFlagAndStableName(t *testing.T) {
+	spec := &Spec{
+		Images: planetscalev2.VitessKeyspaceImages{Vtbackup:"test-backup", Mysqld:&planetscalev2.MysqldImage{Mysql80Compatible:"test-mysql"}},
+		Vttablet: &planetscalev2.VttabletSpec{}, Mysqld: &planetscalev2.MysqldSpec{},
+	}
+	pod := NewBackupPod(client.ObjectKey{Namespace:"database",Name:"first"}, &BackupSpec{TabletSpec:spec,AllowFirstBackup:true}, "test-mysql")
+	args := strings.Join(pod.Spec.Containers[0].Args," ")
+	if !strings.Contains(args,"allow_first_backup=true") || strings.Contains(args,"initial_backup=true") {
+		t.Fatal("first live backup did not remain distinct from empty initialization")
+	}
+	keyRange := planetscalev2.VitessKeyRange{}
+	if FirstLiveBackupPodName("database","app",keyRange) == InitialBackupPodName("database","app",keyRange) {
+		t.Fatal("first live backup reuses the immutable empty-init pod name")
+	}
+}

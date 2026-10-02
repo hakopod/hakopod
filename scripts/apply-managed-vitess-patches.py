@@ -146,6 +146,80 @@ def operator_changes(root):
 ''')
     path = root / "pkg/controller/vitessshard/reconcile_backup_job.go"
     text = path.read_text()
+    text = replace(text, '''\t// The object name for the initial backup Pod, if we end up needing one.
+\tinitPodName := vttablet.InitialBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange)
+\tinitPodKey := client.ObjectKey{
+\t\tNamespace: vts.Namespace,
+\t\tName:      initPodName,
+\t}
+
+\tif len(completeBackups) == 0 && vts.Status.HasMaster != corev1.ConditionTrue {
+\t\t// Until we see at least one complete backup, we attempt to create an
+\t\t// "initial backup", which is a special imaginary backup created from
+\t\t// scratch (not from any tablet). If we're wrong and a backup exists
+\t\t// already, the idempotent vtbackup "initial backup" mode will just do
+\t\t// nothing and return success.
+\t\tinitSpec := MakeVtbackupSpec(initPodKey, vts, labels, vitessbackup.TypeInit)
+\t\tif initSpec != nil {
+\t\t\tpodKeys = append(podKeys, initPodKey)
+\t\t\tif initSpec.TabletSpec.DataVolumePVCSpec != nil {
+\t\t\t\tpvcKeys = append(pvcKeys, initPodKey)
+\t\t\t}
+\t\t\tspecMap[initPodKey] = initSpec
+\t\t}
+\t} else {
+\t\t// We have at least one complete backup already.
+\t\tvts.Status.HasInitialBackup = corev1.ConditionTrue
+\t}''', '''\t// Empty initialization is valid only before a shard has a primary. Once
+\t// writes are serving, seed recovery from a temporary replica that catches
+\t// up to the exact topology primary instead of uploading an empty database.
+\tbackupPodKey := client.ObjectKey{
+\t\tNamespace: vts.Namespace,
+\t\tName:      vttablet.InitialBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange),
+\t}
+\tif len(completeBackups) == 0 {
+\t\tbackupSpec := MakeVtbackupSpec(backupPodKey, vts, labels, vitessbackup.TypeInit)
+\t\tif backupSpec != nil && vts.Status.HasMaster == corev1.ConditionTrue {
+\t\t\tif !firstLiveBackupReady(vts) {
+\t\t\t\tresultBuilder.RequeueAfter(5 * time.Second)
+\t\t\t\tbackupSpec = nil
+\t\t\t} else {
+\t\t\t\tbackupPodKey.Name = vttablet.FirstLiveBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange)
+\t\t\t\tbackupSpec = MakeVtbackupSpec(backupPodKey, vts, labels, vitessbackup.TypeInit)
+\t\t\t\tconfigureFirstLiveBackup(backupSpec)
+\t\t\t}
+\t\t}
+\t\tif backupSpec != nil {
+\t\t\tpodKeys = append(podKeys, backupPodKey)
+\t\t\tif backupSpec.TabletSpec.DataVolumePVCSpec != nil {
+\t\t\t\tpvcKeys = append(pvcKeys, backupPodKey)
+\t\t\t}
+\t\t\tspecMap[backupPodKey] = backupSpec
+\t\t}
+\t} else {
+\t\tvts.Status.HasInitialBackup = corev1.ConditionTrue
+\t}''')
+    text = replace(text, 'if key == initPodKey {', 'if isBootstrapBackup(key, backupPodKey) {')
+    text = replace(text, '''func MakeVtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLabels map[string]string, typ string) *vttablet.BackupSpec {''', '''func firstLiveBackupReady(vts *planetscalev2.VitessShard) bool {
+\tif vts.Status.HasMaster != corev1.ConditionTrue || vts.Status.ServingWrites != corev1.ConditionTrue || vts.Status.MasterAlias == "" {
+\t\treturn false
+\t}
+\tprimary, ok := vts.Status.Tablets[vts.Status.MasterAlias]
+\treturn ok && primary.Type == "primary" && primary.Running == corev1.ConditionTrue &&
+\t\tprimary.Ready == corev1.ConditionTrue && primary.Available == corev1.ConditionTrue &&
+\t\tprimary.DataVolumeBound == corev1.ConditionTrue
+}
+
+func configureFirstLiveBackup(spec *vttablet.BackupSpec) {
+\tspec.InitialBackup = false
+\tspec.AllowFirstBackup = true
+}
+
+func isBootstrapBackup(key, desired client.ObjectKey) bool {
+\treturn key == desired
+}
+
+func MakeVtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLabels map[string]string, typ string) *vttablet.BackupSpec {''')
     text = replace(text, '\t\tvitessbackup.LocationLabel: backupLocation.Name,',
                    '\t\tplanetscalev2.ComponentLabel: planetscalev2.VtbackupComponentName,\n\t\tvitessbackup.LocationLabel: backupLocation.Name,')
     text = replace(text, '\t// Fill in the parts of a vttablet spec that make sense for vtbackup.',
@@ -169,6 +243,23 @@ def operator_changes(root):
 
     path = root / "pkg/operator/vttablet/vtbackup_pod.go"
     text = path.read_text()
+    text = replace(text, '''\tInitialBackup bool
+\t// MinBackupInterval''', '''\tInitialBackup bool
+\t// AllowFirstBackup seeds the first recovery copy by replicating from the
+\t// live shard primary. It must never be combined with InitialBackup.
+\tAllowFirstBackup bool
+\t// MinBackupInterval''')
+    text = replace(text, '''func InitialBackupPodName(clusterName, keyspaceName string, keyRange planetscalev2.VitessKeyRange) string {
+\treturn names.JoinWithConstraints(names.DefaultConstraints, clusterName, keyspaceName, keyRange.SafeName(), planetscalev2.VtbackupComponentName, "init")
+}''', '''func InitialBackupPodName(clusterName, keyspaceName string, keyRange planetscalev2.VitessKeyRange) string {
+\treturn names.JoinWithConstraints(names.DefaultConstraints, clusterName, keyspaceName, keyRange.SafeName(), planetscalev2.VtbackupComponentName, "init")
+}
+
+// FirstLiveBackupPodName returns the stable name for the first backup copied
+// from a serving shard. A stable name makes retries reuse one Pod and PVC.
+func FirstLiveBackupPodName(clusterName, keyspaceName string, keyRange planetscalev2.VitessKeyRange) string {
+\treturn names.JoinWithConstraints(names.DefaultConstraints, clusterName, keyspaceName, keyRange.SafeName(), planetscalev2.VtbackupComponentName, "first-live")
+}''')
     text = replace(text, 'volumeMounts = append(volumeMounts, vttabletVolumeMounts.Get(tabletSpec)...)',
                    '''volumeMounts = append(volumeMounts, vttabletVolumeMounts.Get(tabletSpec)...)
 	update.VolumeMounts(&volumeMounts, tabletSpec.ExtraVolumeMounts)''')
@@ -194,6 +285,14 @@ def operator_changes(root):
                    '\tupdate.Volumes(&pod.Spec.Volumes, tabletSpec.ExtraVolumes)\n\n\tif planetscalev2.DefaultVitessServiceAccount != "" {')
     changes[path] = text
 
+    path = root / "pkg/operator/vttablet/flags.go"
+    text = changes[path]
+    text = replace(text, '''\t\t\t"initial_backup":      backupSpec.InitialBackup,
+\t\t\t"min_backup_interval": backupSpec.MinBackupInterval,''', '''\t\t\t"initial_backup":      backupSpec.InitialBackup,
+\t\t\t"allow_first_backup":  backupSpec.AllowFirstBackup,
+\t\t\t"min_backup_interval": backupSpec.MinBackupInterval,''')
+    changes[path] = text
+
     path = root / "pkg/controller/vitessbackupstorage/reconcile_subcontroller.go"
     text = replace(path.read_text(),
                    '\tcontainer.Resources.Limits = corev1.ResourceList{\n',
@@ -213,6 +312,17 @@ def operator_changes(root):
 ''')
     text = replace(text, '\tjob := &kbatch.Job{',
                    '\tmaps.Copy(meta.Labels, pod.Labels)\n\tdeadlineSeconds := int64(vbsc.Spec.JobTimeoutMinutes) * 60\n\tjob := &kbatch.Job{')
+    text = replace(text, '''\tbackupType := vitessbackup.TypeUpdate
+\tif len(completedBackups) == 0 {
+\t\tif vts.Status.HasMaster == corev1.ConditionTrue {
+\t\t\treturn nil, nil, fmt.Errorf("this shard has 0 backup and a running primary, the schedule cannot create an empty backup, please create a backup manually first")
+\t\t} else {
+\t\t\tbackupType = vitessbackup.TypeInit
+\t\t}
+\t}''', '''\tbackupType := vitessbackup.TypeUpdate
+\tif len(completedBackups) == 0 {
+\t\treturn nil, nil, fmt.Errorf("the shard controller has not completed the first native backup")
+\t}''')
     text = replace(text, '\tvtbackupSpec := vitessshard.MakeVtbackupSpec(podKey, &vts, labels, backupType)\n',
                    '''	vtbackupSpec := vitessshard.MakeVtbackupSpec(podKey, &vts, labels, backupType)
 	if vtbackupSpec == nil {
@@ -307,6 +417,7 @@ def main():
         ("vitess-api-compatibility-test.go.txt", operator / "pkg/controller/vitessbackupschedule/hakopod_api_test.go"),
         ("vitess-control-permissions-test.go.txt", operator / "pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go"),
         ("vitess-backup-pod-test.go.txt", operator / "pkg/operator/vttablet/hakopod_backup_test.go"),
+        ("vitess-first-live-backup-test.go.txt", operator / "pkg/controller/vitessshard/hakopod_first_live_backup_test.go"),
         ("vitess-tablet-hostname-test.go.txt", operator / "pkg/operator/vttablet/hakopod_hostname_test.go"),
         ("vitess-backup-flags-test.go.txt", operator / "pkg/operator/controllermanager/hakopod_backup_flags_test.go"),
     ):

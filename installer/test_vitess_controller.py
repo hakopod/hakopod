@@ -88,23 +88,23 @@ class VitessControllerBundleTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'eight|missing or duplicate'):
                 vitess.validate_objects(invalid)
 
-    def test_bundle_build_requires_qualification_only_when_vitess_is_selected(self):
+    def test_bundle_build_requires_qualification_by_default(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
             source=root/'source'/'installer';source.mkdir(parents=True)
             (source/'database-controller-sources.json').write_text(json.dumps({engine:{} for engine in builder.NAMESPACES}))
             (source/'pins.json').write_text(json.dumps({'helm':{}}))
             with patch.object(builder,'HERE',source), patch.object(builder,'qualify_vitess') as qualify, patch.object(builder,'helm_binary',return_value=root/'helm') as helm, patch.object(builder,'render',return_value=[]), patch.object(builder,'render_vitess',return_value=(list(self.objects.values()),{'qualification_sha256':'b'*64})) as render:
-                builder.build(root/'without-vitess','qualified-redis-fixture')
+                builder.build(root/'without-vitess','qualified-redis-fixture',include_vitess=False)
                 qualify.assert_not_called();render.assert_not_called()
                 manifest=json.loads((root/'without-vitess'/'manifest.json').read_text())
                 self.assertEqual(set(manifest['files']),{'postgresql.json','redis.json','mongodb.json'})
                 helm.reset_mock();qualify.side_effect=ValueError('unqualified Vitess')
                 with self.assertRaisesRegex(ValueError,'unqualified'):
-                    builder.build(root/'unqualified','qualified-redis-fixture',include_vitess=True)
+                    builder.build(root/'unqualified','qualified-redis-fixture')
                 helm.assert_not_called();render.assert_not_called()
                 qualify.side_effect=None
-                builder.build(root/'with-vitess','qualified-redis-fixture',include_vitess=True)
+                builder.build(root/'with-vitess','qualified-redis-fixture')
                 render.assert_called_once()
                 manifest=json.loads((root/'with-vitess'/'manifest.json').read_text())
                 self.assertEqual(set(manifest['files']),{'postgresql.json','redis.json','mongodb.json','vitess.json'})
