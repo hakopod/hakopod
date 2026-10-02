@@ -50,5 +50,9 @@ docker run --rm --hostname redis-runtime -v "$work:/tls:ro" --entrypoint bash "$
     --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt \
     --tls-auth-clients optional --protected-mode no --requirepass runtime-smoke
   export REDISCLI_AUTH=runtime-smoke
-  redis-cli --tls --cacert /tls/ca.crt -h redis-runtime ping | grep -q PONG
+  for attempt in $(seq 1 30); do
+    if redis-cli --tls --cacert /tls/ca.crt -h redis-runtime ping | grep -q PONG; then break; fi
+    test "$attempt" -lt 30
+    sleep 1
+  done
   redis-cli --tls --cacert /tls/ca.crt -h redis-runtime shutdown nosave'
