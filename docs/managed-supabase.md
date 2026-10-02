@@ -110,16 +110,27 @@ Runtime Deno cache is capped at 1 GiB at `/var/cache/deno`.
 
 Initial provisioning requires platform revision 1 and an observed absence of
 the database claim. Once a database claim UID exists, rendering requires the
-previous complete spec. Secret rotation and changes to `database_name` or
-`jwt_expiry_seconds` are rejected because PostgreSQL init scripts do not
-run again for a populated data claim. This remains blocked until reconciliation
-can update roles transactionally, roll clients, verify them, and revoke the old
-credentials on failure-safe boundaries. `jwt.sql` is likewise first-boot-only;
-the database does not receive the JWT signing secret. After a successful
-rollout, reconciliation must prune owned ConfigMaps older than the reported
-revision threshold and prune owned Secret snapshots outside the reported
-retain set. It must never prune before all workloads reference and observe the
-new revision.
+previous complete spec. The database name remains immutable. Runtime settings,
+database TLS and gateway TLS may change through a reviewed revision. A JWT
+expiry change updates the database setting in the same durable transaction and
+completion journal used for database credential changes. Gateway
+TLS and its Envoy configuration must change together. Database credentials
+rotate only as one complete bundle containing the role bootstrap and every
+database client reference. Reconciliation creates the immutable snapshots,
+applies the bounded bootstrap transaction through the exact owned database pod,
+records an immutable non-secret completion marker, rolls clients, verifies the
+revision and then removes old snapshots. A retry may repeat the idempotent SQL
+when the transaction committed before its marker was recorded.
+
+Legacy JWT and API keys remain immutable until dual-key verification and token
+retirement are implemented. The pg-meta, Realtime and pooler encryption keys
+remain immutable until their stored data can be re-encrypted. Storage access
+keys remain immutable until the object store can prove an overlap window.
+`jwt.sql` remains first-boot-only; the database does not receive the JWT signing
+secret. After a successful rollout, reconciliation prunes owned ConfigMaps
+older than the reported revision threshold and owned Secret snapshots outside
+the reported retain set. It never prunes before all workloads reference and
+observe the new revision.
 
 Readiness follows the upstream component health checks, including migrations
 and dependency-aware endpoints. Startup and liveness use the local listening
@@ -183,8 +194,9 @@ and execution rechecks resource ownership before every command. Recovery v13
 passed archive and cluster tests, 17 real PostgreSQL store/API test events
 without skips, and vet on the isolated validation VM. These tests cover durable
 operation and archive behavior; they do not prove a full Supabase stack restore.
-Native backup/restore tests remain required. Secret rotation
-and recovery remain unavailable until their lifecycle and native tests pass.
+Native backup/restore tests remain required. Database credential rotation and
+recovery remain unavailable for release until their native lifecycle tests
+pass.
 
 The development-only native harness under
 `examples/supabase-native-acceptance` refuses any context except
