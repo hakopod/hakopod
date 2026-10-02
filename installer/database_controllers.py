@@ -35,11 +35,14 @@ def validate_controller_objects(objects):
     if not isinstance(objects,list) or len(objects)>MAX_OBJECTS:
         raise ValueError('Controller resource count is invalid')
     for obj in objects:
-        if not isinstance(obj,dict) or obj.get('kind') not in CONTROLLER_RESOURCES.get(obj.get('apiVersion'),set()):
+        mysql_peering = isinstance(obj,dict) and obj.get('apiVersion')=='zalando.org/v1' and obj.get('kind')=='ClusterKopfPeering'
+        if not isinstance(obj,dict) or (not mysql_peering and obj.get('kind') not in CONTROLLER_RESOURCES.get(obj.get('apiVersion'),set())):
             raise ValueError('Controller installation accepts only explicit infrastructure kinds; customer data and database workloads are forbidden')
         metadata=obj.get('metadata')
         if not isinstance(metadata,dict) or not isinstance(metadata.get('name'),str) or not metadata['name']:
             raise ValueError('Controller resource identity is invalid')
+        if mysql_peering and (set(obj)!={'apiVersion','kind','metadata'} or metadata.get('name')!='mysql-operator' or metadata.get('namespace') or metadata.get('labels')!={'app.kubernetes.io/name':'mysql-operator','app.kubernetes.io/instance':'mysql-operator','app.kubernetes.io/component':'controller'}):
+            raise ValueError('Only the pinned MySQL controller peering identity is accepted')
         if obj['kind']=='Secret' and ('data' in obj or 'stringData' in obj):
             raise ValueError('Controller release contains credentials')
     if len({key(o) for o in objects})!=len(objects):
@@ -63,6 +66,9 @@ def key(obj):
 
 
 def current(kube,obj):
+    if obj['apiVersion']=='zalando.org/v1' and obj['kind']=='ClusterKopfPeering':
+        if not read(kube,'get','crd','clusterkopfpeerings.zalando.org','--ignore-not-found'):
+            return {}
     args=['get',obj['kind'],obj['metadata']['name'],'--ignore-not-found']
     if obj['metadata'].get('namespace'):args+=['-n',obj['metadata']['namespace']]
     # A previously absent CRD makes lookup of its custom resource impossible.
