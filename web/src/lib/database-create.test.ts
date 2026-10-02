@@ -38,10 +38,11 @@ test('creation review blocks unavailable engines and unsupported topology', () =
   assert.match(databaseCreateIssue({ ...redis, replicas: 3 }, 1) || '', /between 1 and 2/)
 })
 
-test('MySQL creation enforces voting quorum, minimum resources and complete allocations', () => {
+test('MySQL remains held while its sizing rules stay explicit', () => {
   const mysql = { ...initialDatabaseSpec, name: 'orders-mysql', engine: 'mysql' as const, version: '8.4', cpu: '500m', memory: '1Gi' }
-  for (let step = 0; step < 4; step++) assert.equal(databaseCreateIssue(mysql, step), undefined)
-  assert.match(databaseCreateIssue({ ...mysql, version: '8.0' }, 0) || '', /supported/)
+  assert.match(databaseCreateIssue(mysql, 0) || '', /available/)
+  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(mysql, step), undefined)
+  assert.match(databaseCreateIssue({ ...mysql, version: '8.0' }, 0) || '', /available/)
   for (const replicas of [2, 4, 6]) assert.equal(databaseCreateIssue({ ...mysql, mode: 'cluster', replicas }, 1), undefined)
   for (const replicas of [1, 3, 5]) assert.match(databaseCreateIssue({ ...mysql, mode: 'cluster', replicas }, 1) || '', /voting members/)
   assert.match(databaseCreateIssue({ ...mysql, cpu: '499m' }, 2) || '', /at least 500m/)
@@ -89,9 +90,10 @@ test('pooler capacity is included in creation without inflating member monitorin
   assert.match(databaseCreateIssue({ ...spec, pooling: { ...spec.pooling, default_pool_size: 21 } }, 3) || '', /server connections/)
 })
 
-test('ClickHouse creation accounts for three Keepers and every backup-staging volume', () => {
+test('ClickHouse remains held while capacity accounts for Keepers and backup staging', () => {
   const base = databaseEngineDefaults({ ...initialDatabaseSpec, name: 'events' }, 'clickhouse')
-  for (let step = 0; step < 4; step++) assert.equal(databaseCreateIssue(base, step), undefined)
+  assert.match(databaseCreateIssue(base, 0) || '', /available/)
+  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(base, step), undefined)
   const spec = { ...base, mode: 'cluster' as const, shards: 2, replicas: 2 }
   assert.equal(databaseRequestedCapacity(spec)?.cpu, 3.75)
   assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 13056)
@@ -103,16 +105,17 @@ test('ClickHouse creation accounts for three Keepers and every backup-staging vo
   assert.match(databaseCreateIssue({ ...spec, shards: 1, replicas: 1, placement: { spread: 'nodes', node_names: ['one', 'two'] } }, 1) || '', /3 eligible nodes/)
 })
 
-test('switching to Oracle Free resets clustering and reserves recovery storage', () => {
+test('Oracle remains held while its defaults reserve recovery storage', () => {
   const previous = { ...initialDatabaseSpec, name: 'orders', mode: 'cluster' as const, engine: 'redis' as const, replicas: 2, shards: 3, placement: { spread: 'nodes' as const } }
   const oracle = databaseEngineDefaults(previous, 'oracle')
-  for (let step = 0; step < 4; step++) assert.equal(databaseCreateIssue(oracle, step), undefined)
+  assert.match(databaseCreateIssue(oracle, 0) || '', /available/)
+  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(oracle, step), undefined)
   assert.equal(oracle.mode, 'standalone')
   assert.equal(oracle.oracle?.edition, 'free')
   assert.equal(databaseStorageGiB(oracle), 20)
   assert.equal(databaseRequestedCapacity(oracle)?.memoryMiB, 4096)
   assert.match(databaseCreateIssue({ ...oracle, mode: 'cluster', replicas: 1 }, 1) || '', /Free supports standalone/)
-  assert.match(databaseCreateIssue({ ...oracle, oracle: { edition: 'enterprise', image: 'registry.example/oracle:latest' } }, 0) || '', /Enterprise/)
+  assert.match(databaseCreateIssue({ ...oracle, oracle: { edition: 'enterprise', image: 'registry.example/oracle:latest' } }, 0) || '', /available/)
   assert.match(databaseCreateIssue({ ...oracle, memory: '2Gi' }, 2) || '', /4Gi/)
   assert.equal(databaseEngineDefaults(oracle, 'postgresql').oracle, undefined)
 })

@@ -71,6 +71,14 @@ func databaseLabels(d database.Resource) map[string]string {
 	return map[string]string{managedBy: "hakopod", databaseOwner: d.ID, "hakopod.io/project": d.Project, "hakopod.io/environment": d.Environment}
 }
 func (c *Client) DatabaseControllerAvailable(ctx context.Context, s database.Spec) error {
+	switch s.Engine {
+	case "mysql":
+		return fmt.Errorf("MySQL is unavailable in this release pending native qualification")
+	case "clickhouse":
+		return fmt.Errorf("ClickHouse is unavailable in this release pending native qualification")
+	case "oracle":
+		return fmt.Errorf("Oracle Database is unavailable in this release pending native qualification")
+	}
 	if c == nil || c.dynamic == nil || c.kube == nil {
 		return fmt.Errorf("database controller is unavailable")
 	}
@@ -275,6 +283,12 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 // ApplyDatabase writes only this database's namespace, credentials and controller
 // object. Each mutation is fenced by the operation's current lease/authority.
 func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, password []byte, before func() error) error {
+	if err := c.DatabaseControllerAvailable(ctx, d.Spec); err != nil {
+		return err
+	}
+	if len(password) < 32 || len(password) > 128 {
+		return fmt.Errorf("database credentials are unavailable")
+	}
 	if oracleEnterprise(d.Spec) {
 		return c.applyOracleEnterpriseDatabase(ctx, d, password, before)
 	}
@@ -283,14 +297,8 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 			return err
 		}
 	}
-	if len(password) < 32 || len(password) > 128 {
-		return fmt.Errorf("database credentials are unavailable")
-	}
 	object, err := c.databaseObject(ctx, d)
 	if err != nil {
-		return err
-	}
-	if err = c.DatabaseControllerAvailable(ctx, d.Spec); err != nil {
 		return err
 	}
 	ns := DatabaseNamespace(d.ID)

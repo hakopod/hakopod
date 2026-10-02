@@ -44,6 +44,27 @@ func TestDatabaseRequiresSafeCurrentRedisController(t *testing.T) {
 	}
 }
 
+func TestUnqualifiedDatabaseEnginesRemainUnavailable(t *testing.T) {
+	c := &Client{kube: fake.NewClientset(), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
+	for _, engine := range []string{"mysql", "clickhouse", "oracle"} {
+		t.Run(engine, func(t *testing.T) {
+			err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: engine, Mode: "standalone"})
+			if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
+				t.Fatal("unqualified database engine was available", err)
+			}
+			d := database.Resource{ID: strings.Repeat("a", 32), Project: "demo", Environment: "development", Revision: 1, Spec: database.Spec{Engine: engine}}
+			err = c.ApplyDatabase(context.Background(), d, []byte("development-fixture-password-with-32-bytes"), func() error { return nil })
+			if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
+				t.Fatal("unqualified database apply escaped the release gate", err)
+			}
+		})
+	}
+	namespaces, err := c.kube.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(namespaces.Items) != 0 {
+		t.Fatal("release-held database apply changed namespaces", err)
+	}
+}
+
 func TestDatabaseUpdatePreservesControllerMetadata(t *testing.T) {
 	ctx := context.Background()
 	c := &Client{kube: fake.NewClientset(redisControllerFixture()), dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{redisDatabaseResource: "RedisList"})}
