@@ -13,6 +13,7 @@ LABEL = "hakopod.com.node-restriction.kubernetes.io/clickhouse-runtime"
 PROFILE = "systrap-no-patching-v1"
 SERVER = "k3d-hakopod-dev-server-0"
 WORKER = "k3d-hakopod-database-worker-0"
+EXTRA_WORKER = "k3d-hakopod-database-worker-1"
 BINARY_DIGESTS = {
     "runsc": "3e0df2fa28f6ff5430b004f92573b81b75f442f78c780e0c85fdf6c2d572817a",
     "containerd-shim-runsc-v1": "ab441cda2625eee7324a5f991b22852724fdd9144ac3ffaf3aac492dc9e46737",
@@ -32,8 +33,14 @@ def main():
     if run(kube + ["config", "current-context"]).decode().strip() != "k3d-hakopod-dev":
         raise ValueError("Refusing a non-development kubeconfig")
     nodes = json.loads(run(kube + ["get", "nodes", "-o", "json"]))["items"]
-    if {n["metadata"]["name"] for n in nodes} != {SERVER, WORKER}:
+    node_names = {n["metadata"]["name"] for n in nodes}
+    if not {SERVER, WORKER} <= node_names or not node_names <= {SERVER, WORKER, EXTRA_WORKER}:
         raise ValueError("Refusing unexpected development nodes")
+    if EXTRA_WORKER in node_names:
+        extra = next(n for n in nodes if n["metadata"]["name"] == EXTRA_WORKER)
+        labels = json.loads(run(["sudo", "docker", "inspect", EXTRA_WORKER, "--format", "{{json .Config.Labels}}"] ))
+        if labels.get("com.hakopod.acceptance") != "database-placement" or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in extra.get("status", {}).get("conditions", [])):
+            raise ValueError("Additional development worker ownership or readiness changed")
     processes = run(["ps", "-eo", "args="]).decode().splitlines()
     if any("/cluster.test " in p or p.startswith("go test ") for p in processes):
         raise ValueError("Stop active development acceptance tests before restarting nodes")
