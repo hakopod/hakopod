@@ -1,9 +1,9 @@
 # Managed Oracle Database
 
-Oracle Database Free is included in the `v0.1.0-alpha.47` self-hosted release.
-Standalone has passed native development checks for
-lifecycle, TCPS renewal, private application bindings and isolated schema
-recovery. These checks do not establish production availability.
+Oracle Database Free is unavailable in `v0.1.0-alpha.47`. Earlier standalone
+checks passed, but current native recovery qualification is incomplete after
+an import failure. Creation remains disabled in the API and dashboard. The
+implementation and earlier evidence below do not establish released availability.
 Enterprise and Data Guard have a separate source implementation. Their runtime
 gate stays closed until the hardened controller and a licensed customer image
 pass native acceptance. Passing the Free tests does not open that gate.

@@ -1,6 +1,6 @@
 # How Hakopod manages a database
 
-Status: source architecture draft, September 30, 2026. PostgreSQL and Redis have a released development baseline. The expanded engines have different acceptance states, recorded in their individual guides. Vitess still requires runtime acceptance. This document does not announce its availability or a production deployment.
+Status: architecture guide for alpha.47, October 2, 2026. The release offers PostgreSQL, Redis and MongoDB. MySQL, ClickHouse, Oracle Database, Vitess, Neon and Supabase remain unavailable while native qualification is incomplete. Sections about those engines explain source implementations; they do not announce availability or a production deployment.
 
 ## Follow one create request
 

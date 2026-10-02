@@ -1,10 +1,10 @@
 # Managed MySQL
 
-Status: included in the `v0.1.0-alpha.47` self-hosted candidate, pending
-publication. Lifecycle, Router TLS and private application binding checks have
-passed. The latest scaling and recovery-ingress acceptance remains pending, as
-recorded below. This status does not claim production or independent-zone
-availability.
+Status: unavailable in `v0.1.0-alpha.47`. Earlier lifecycle, Router TLS and
+private application binding checks passed, but the October 2 qualification run
+failed scaling and timed out before clustered lifecycle and recovery completed.
+Creation remains disabled in the API and dashboard. This guide describes the
+implementation and earlier development evidence, not a released feature.
 
 ## Choose a layout
 
