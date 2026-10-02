@@ -10,6 +10,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/store"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -43,7 +44,26 @@ func TestSupabaseLiveRefusesUnclaimedNamespace(t *testing.T) {
 		cleanup, stop := context.WithTimeout(context.Background(), time.Minute)
 		defer stop()
 		uid := namespace.UID
-		_ = client.kube.CoreV1().Namespaces().Delete(cleanup, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}})
+		if deleteErr := client.kube.CoreV1().Namespaces().Delete(cleanup, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
+			t.Errorf("delete hostile Supabase namespace: %v", deleteErr)
+			return
+		}
+		for {
+			_, getErr := client.kube.CoreV1().Namespaces().Get(cleanup, name, metav1.GetOptions{})
+			if apierrors.IsNotFound(getErr) {
+				return
+			}
+			if getErr != nil {
+				t.Errorf("verify hostile Supabase namespace cleanup: %v", getErr)
+				return
+			}
+			select {
+			case <-cleanup.Done():
+				t.Errorf("hostile Supabase namespace cleanup timed out: %v", cleanup.Err())
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
 	})
 	state := newFakeSupabaseStore()
 	if _, err = client.ensureSupabaseNamespace(ctx, state, op, map[string]store.PlatformResourceClaim{}, map[string]store.PlatformResourceClaim{}, func() error { return nil }); err == nil {

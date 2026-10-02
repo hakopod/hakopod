@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+umask 077
+
+: "${HAKOPOD_OWNERSHIP_SOURCE:?set the exact source checkout}"
+: "${HAKOPOD_OWNERSHIP_EVIDENCE:?set a fresh protected evidence output}"
+: "${HAKOPOD_TEST_KUBECONFIG:?set the dedicated development kubeconfig}"
+[ ! -e "$HAKOPOD_OWNERSHIP_EVIDENCE" ] && [ ! -L "$HAKOPOD_OWNERSHIP_EVIDENCE" ] || { echo 'ownership evidence output already exists' >&2; exit 2; }
+[ -d "$HAKOPOD_OWNERSHIP_SOURCE/internal/cluster" ] && [ ! -L "$HAKOPOD_OWNERSHIP_SOURCE" ] || { echo 'ownership source is unavailable' >&2; exit 2; }
+[ -f "$HAKOPOD_TEST_KUBECONFIG" ] && [ ! -L "$HAKOPOD_TEST_KUBECONFIG" ] || { echo 'ownership kubeconfig is unavailable' >&2; exit 2; }
+
+raw=$(mktemp /tmp/hakopod-supabase-ownership.XXXXXX)
+result=$(mktemp "$(dirname "$HAKOPOD_OWNERSHIP_EVIDENCE")/.ownership-result.XXXXXX")
+trap 'rm -f "$raw" "$result"' EXIT HUP INT TERM
+(
+  ulimit -f 4096
+  cd "$HAKOPOD_OWNERSHIP_SOURCE"
+  HAKOPOD_SUPABASE_TEST=1 GOMAXPROCS=2 timeout 180s go test ./internal/cluster -run '^TestSupabaseLiveRefusesUnclaimedNamespace$' -count=1 -json >"$raw" 2>&1
+) || { echo 'Supabase hostile ownership test failed; raw output was withheld' >&2; exit 1; }
+[ "$(wc -c <"$raw")" -le 2097152 ] || { echo 'Supabase hostile ownership output exceeded its limit' >&2; exit 1; }
+python3 - "$raw" "$result" <<'PY'
+import hashlib,json,pathlib,sys
+source=pathlib.Path(sys.argv[1]); target=pathlib.Path(sys.argv[2]); seen_run=seen_pass=package_pass=False
+for line in source.read_text().splitlines():
+    value=json.loads(line,object_pairs_hook=lambda pairs: dict(pairs) if len(dict(pairs))==len(pairs) else (_ for _ in ()).throw(ValueError('duplicate key')))
+    if value.get('Action')=='fail': raise SystemExit(1)
+    if value.get('Test')=='TestSupabaseLiveRefusesUnclaimedNamespace':
+        seen_run |= value.get('Action')=='run'; seen_pass |= value.get('Action')=='pass'
+    if value.get('Action')=='pass' and value.get('Package')=='github.com/hakopod/hakopod/internal/cluster' and 'Test' not in value: package_pass=True
+if not (seen_run and seen_pass and package_pass): raise SystemExit(1)
+target.write_text(json.dumps({'schema_version':1,'case':'ownership-fencing','test':'TestSupabaseLiveRefusesUnclaimedNamespace','status':'passed','namespace_cleanup_verified':True,'go_test_json_sha256':hashlib.sha256(source.read_bytes()).hexdigest()},sort_keys=True,separators=(',',':'))+'\n')
+PY
+chmod 600 "$result"
+ln "$result" "$HAKOPOD_OWNERSHIP_EVIDENCE"
+rm -f "$result" "$raw"
+trap - EXIT HUP INT TERM
