@@ -310,8 +310,9 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 ## Managed database controllers
 
 The installer kit now carries a `deploy/database-controllers` bundle. Release
-packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
-sources, plus Vitess resource definitions, with pinned checksums and image digests. Building that bundle requires
+packaging renders PostgreSQL, Redis and MongoDB controller sources with pinned
+checksums and image digests. MySQL, ClickHouse and Oracle Database remain held
+for a later release. Building that bundle requires
 PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
 separately qualified credential/TLS-safe Redis image. The builder downloads and
 checks the pinned Helm binary itself. Controller installation uses only Python,
@@ -329,20 +330,20 @@ From the matching extracted installer kit on a completed installer-owned host:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb clickhouse vitess \
+  --engines postgresql redis mongodb \
   --plan /root/hakopod-database-controllers-plan.json
 ```
 
 Review the file's cluster identity, existing resource identities, controller
 images, replicas, node selectors and each container's requests and limits.
-MySQL, MongoDB and Vitess require a ready schedulable AMD64 node. Controller resources
+MongoDB requires a ready schedulable AMD64 node. Controller resources
 are additional to the database/application reservations. Check taints and total
 capacity before accepting the plan; a ready node alone is not a reservation.
 Then apply that exact plan within 30 minutes:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb clickhouse vitess \
+  --engines postgresql redis mongodb \
   --apply-reviewed-plan /root/hakopod-database-controllers-plan.json
 ```
 
@@ -350,7 +351,7 @@ A different bundle, cluster or existing object invalidates the review. Existing
 resources must carry this installation's ownership label. A controller installed
 outside this module is not adopted automatically, including a controller from a
 development installer. Such installations need an explicit ownership/migration
-review. Existing ClickHouse controller credentials are retained. Failures stop
+review. Failures stop
 without deleting already installed objects; prepare a fresh plan to resume.
 
 Use the new release kit for a controller upgrade and review its changes. Normal
