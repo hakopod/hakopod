@@ -1,0 +1,104 @@
+# Operator configuration template. This file contains no usable credentials.
+# Replace every REPLACE value and every zero identity before installation.
+# Keep the completed file outside the repository, owned by the API process,
+# with mode 0600. Do not put it in a platform spec or a support attachment.
+schema_version = 1
+approved_encrypted_storage_class = "REPLACE_WITH_STORAGE_CLASS"
+shared_storage_gid = 0
+approved_external_https_cidrs = []
+
+# These are the candidate inventory's immutable images. Check them against
+# the qualification manifest shipped with your installed Hakopod release.
+[images]
+api-gateway = "docker.io/envoyproxy/envoy@sha256:be87c8b52663c1164a5bdf3c5419017a269cb3d8c74be1ec93638a71f1ffbd4b"
+auth = "docker.io/supabase/gotrue@sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e"
+database = "docker.io/supabase/postgres@sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b"
+edge-runtime = "docker.io/supabase/edge-runtime@sha256:b331c6422f4f4bebd6052357da5f3c87610128c8cb530390ca024eb68cf4bf2e"
+image-proxy = "docker.io/darthsim/imgproxy@sha256:80200afeaa85c4abb58bbcb84deadab6d6cf5c79ac7af0694ff22e2b5de1477b"
+pooler = "docker.io/hakopod/supavisor@sha256:94712de6f5752f1e43f8ec3096d2b51e62475406b77982052b2c0f1179cc7d4a"
+postgres-meta = "docker.io/supabase/postgres-meta@sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e"
+realtime = "docker.io/supabase/realtime@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76"
+rest = "docker.io/postgrest/postgrest@sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0"
+storage = "docker.io/supabase/storage-api@sha256:63da55733ce9d7592d860739acb94f0b6189d880b7565d247ee5b195be854db1"
+studio = "docker.io/supabase/studio@sha256:0f797270d236090c79fd26a97a1e5d1cf7ec5f36e93b9b4c3c453e1cb1aeadab"
+
+# Use each image's qualified process UID and GID from the release manifest.
+# Zero values deliberately prevent this unconfigured template from starting.
+[identities]
+api-gateway = { uid = 0, gid = 0 }
+auth = { uid = 0, gid = 0 }
+database = { uid = 0, gid = 0 }
+edge-runtime = { uid = 0, gid = 0 }
+image-proxy = { uid = 0, gid = 0 }
+pooler = { uid = 0, gid = 0 }
+postgres-meta = { uid = 0, gid = 0 }
+realtime = { uid = 0, gid = 0 }
+rest = { uid = 0, gid = 0 }
+storage = { uid = 0, gid = 0 }
+studio = { uid = 0, gid = 0 }
+
+# Standalone servers reserve this pool. For Cloud, omit all capacity sections:
+# the current workspace grant supplies capacity and approved nodes instead.
+[capacity]
+enabled = true
+pool = "REPLACE_WITH_POOL"
+storage_class = "REPLACE_WITH_STORAGE_CLASS"
+
+[capacity.capacity]
+cpu_milli = 8000
+memory_bytes = 34359738368
+storage_gib = 256
+
+[[capacity.nodes]]
+name = "REPLACE_WITH_NODE_NAME"
+uid = "REPLACE_WITH_NODE_UID"
+architecture = "amd64"
+operating_system = "linux"
+
+# These values identify the reviewed target installation, not the test VM.
+# Set reviewed/encryption_at_rest only after checking the backing storage.
+[supabase_qualification]
+schema_version = 1
+release = "supabase-0.8.2-linux-amd64"
+cluster_uid = "REPLACE_WITH_KUBE_SYSTEM_NAMESPACE_UID"
+storage_class_name = "REPLACE_WITH_STORAGE_CLASS"
+storage_class_uid = "REPLACE_WITH_STORAGE_CLASS_UID"
+storage_provisioner = "REPLACE_WITH_STORAGE_PROVISIONER"
+storage_parameters_sha256 = "REPLACE_WITH_CANONICAL_PARAMETERS_SHA256"
+image_inventory_sha256 = "bb146a329003ff44a860626ded38ed71b88c9169856980958c9859148ed1f4ec"
+provider_evidence_sha256 = "REPLACE_WITH_REVIEWED_PROVIDER_EVIDENCE_SHA256"
+encryption_at_rest = false
+reviewed = false
+
+# Replace demo/development with the exact project/environment scope.
+# A platform reference { name = "anon-key", revision = 1 } resolves only the
+# anon-key-r1 entry in its own scope. Add a new revision rather than changing
+# bytes underneath an existing name. Keep old revisions during a rollout.
+[secrets.demo.development]
+anon-key-r1 = { value = "REPLACE_WITH_ANON_JWT" }
+auth-database-url-r1 = { value = "REPLACE_WITH_AUTH_DATABASE_URL" }
+dashboard-password-r1 = { value = "REPLACE_WITH_ADMIN_PASSWORD" }
+dashboard-username-r1 = { value = "REPLACE_WITH_ADMIN_USERNAME" }
+database-owner-password-r1 = { value = "REPLACE_WITH_DATABASE_OWNER_PASSWORD" }
+database-role-bootstrap-r1 = { value = "REPLACE_WITH_RENDERED_ROLE_BOOTSTRAP_SQL" }
+database-tls-certificate-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+envoy-runtime-config-r1 = { value = "REPLACE_WITH_RENDERED_ENVOY_LISTENER_YAML" }
+gateway-tls-certificate-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+jwt-secret-r1 = { value = "REPLACE_WITH_APPLICATION_JWT_SECRET" }
+jwt-signing-keys-r1 = { value = "REPLACE_WITH_SIGNING_KEYS_JSON" }
+jwt-verification-keys-r1 = { value = "REPLACE_WITH_VERIFICATION_KEYS_JSON" }
+pg-meta-crypto-key-r1 = { value = "REPLACE_WITH_META_ENCRYPTION_KEY" }
+pooler-api-jwt-secret-r1 = { value = "REPLACE_WITH_SEPARATE_POOLER_ADMIN_JWT_SECRET" }
+postgres-meta-database-password-r1 = { value = "REPLACE_WITH_META_DATABASE_PASSWORD" }
+publishable-key-r1 = { value = "REPLACE_WITH_PUBLISHABLE_KEY", edge-json = "REPLACE_WITH_EDGE_PUBLISHABLE_KEYS_JSON" }
+realtime-database-password-r1 = { value = "REPLACE_WITH_REALTIME_DATABASE_PASSWORD" }
+realtime-db-encryption-key-r1 = { value = "REPLACE_WITH_REALTIME_ENCRYPTION_KEY" }
+rest-database-url-r1 = { value = "REPLACE_WITH_REST_DATABASE_URL" }
+secret-key-base-r1 = { value = "REPLACE_WITH_SECRET_KEY_BASE" }
+service-role-key-r1 = { value = "REPLACE_WITH_SERVICE_ROLE_JWT" }
+secret-key-r1 = { value = "REPLACE_WITH_SECRET_API_KEY", edge-json = "REPLACE_WITH_EDGE_SECRET_KEYS_JSON" }
+storage-s3-access-key-r1 = { value = "REPLACE_WITH_STORAGE_ACCESS_KEY" }
+storage-s3-secret-key-r1 = { value = "REPLACE_WITH_STORAGE_SECRET_KEY" }
+storage-database-url-r1 = { value = "REPLACE_WITH_STORAGE_DATABASE_URL" }
+supavisor-database-url-r1 = { value = "REPLACE_WITH_SUPAVISOR_DATABASE_URL" }
+vault-encryption-key-r1 = { value = "REPLACE_WITH_VAULT_ENCRYPTION_KEY" }
