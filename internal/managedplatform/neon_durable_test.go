@@ -835,6 +835,51 @@ func TestDurableNeonReobservesIdenticalSafekeeperMembership(t *testing.T) {
 	}
 }
 
+func TestInspectOwnedRecoveryReservationRejectsForeignComputeToken(t *testing.T) {
+	target := NeonControlTarget{Name: "primary", Origin: "https://compute.example.test", Token: "compute-secret-token"}
+	externalKey, _, err := neonComputeIdentity(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}}
+	runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{config: NeonRuntimeConfig{Computes: []NeonControlTarget{target}}, client: &http.Client{Transport: neonRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		body := `{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","status":"running","operation_uuid":"` + strings.Repeat("f", 32) + `"}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}}}
+	request := durableNeonRequest()
+	intent := DurableResourceIntent{ID: strings.Repeat("e", 32), PlatformID: lifecycle.op.PlatformID, PlatformRevision: 1, Component: "compute-primary", Kind: "runtime_component", ExternalKey: externalKey, OwnerOperationID: testOperation}
+	if _, _, _, err = runtime.InspectOwnedRecoveryReservation(context.Background(), request, intent); err == nil || !strings.Contains(err.Error(), "ownership changed") {
+		t.Fatalf("foreign compute reservation token was accepted: %v", err)
+	}
+}
+
+func TestInspectOwnedRecoveryClaimDistinguishesAbsentFromForeignCompute(t *testing.T) {
+	target := NeonControlTarget{Name: "primary", Origin: "https://compute.example.test", Token: "compute-secret-token"}
+	_, identity, err := neonComputeIdentity(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerToken := strings.Repeat("d", 32)
+	resourceID, err := encodeNeonComputeClaimResourceID(identity, ownerToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}}
+	status := `{"tenant":"","timeline":"","status":"empty","operation_uuid":"` + ownerToken + `"}`
+	runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{config: NeonRuntimeConfig{Computes: []NeonControlTarget{target}}, client: &http.Client{Transport: neonRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(status)), Header: make(http.Header)}, nil
+	})}}}
+	claim := DurableResourceClaim{PlatformID: lifecycle.op.PlatformID, PlatformRevision: 1, Component: "compute-primary", Kind: "runtime_component", ResourceID: resourceID, ImmutableGeneration: 1, OwnerOperationID: testOperation}
+	exists, err := runtime.InspectOwnedRecoveryClaim(context.Background(), durableNeonRequest(), claim)
+	if err != nil || exists {
+		t.Fatalf("detached prior compute was not classified absent: %v %v", exists, err)
+	}
+	status = `{"tenant":"` + testTenant + `","timeline":"` + testTimeline + `","status":"running","operation_uuid":"` + strings.Repeat("f", 32) + `"}`
+	if _, err = runtime.InspectOwnedRecoveryClaim(context.Background(), durableNeonRequest(), claim); err == nil || !strings.Contains(err.Error(), "ownership changed") {
+		t.Fatalf("foreign prior compute was classified absent or untouched: %v", err)
+	}
+}
+
 func TestDurableNeonDeletionResumesAfterClaimsWereReleased(t *testing.T) {
 	events := []string{}
 	op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete"}

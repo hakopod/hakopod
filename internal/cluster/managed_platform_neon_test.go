@@ -105,7 +105,7 @@ func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 		},
 		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
 	}
-	lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(request, neonClaimReadStore{}, nil, nil)
+	lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(context.Background(), request, neonClaimReadStore{}, nil, nil)
 	if err != nil {
 		t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
 	}

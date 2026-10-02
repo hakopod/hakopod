@@ -42,6 +42,7 @@ type Repository interface {
 	StepPlatformRecovery(context.Context, Operation, string, string) error
 	FinishPlatformRecovery(context.Context, Operation, string, string) error
 	SetPlatformRecoveryCleanup(context.Context, Operation, bool) error
+	FencePlatformRecoveryCleanup(context.Context, Operation) error
 }
 
 type CapturedPart struct {
@@ -66,6 +67,16 @@ type Runtime interface {
 	VerifyRestoredRuntime(context.Context, Operation, Manifest) error
 }
 
+type captureManifestFinalizer interface {
+	FinalizeCapture(context.Context, Operation, Manifest) (Manifest, error)
+}
+type restoreFailureCleaner interface {
+	CleanupRestore(context.Context, Operation) error
+}
+type restoreTargetPreflight interface {
+	PreflightRestoreTarget(context.Context, Operation, Manifest) error
+}
+
 type ArtifactStore interface {
 	PutEncrypted(context.Context, Operation, Manifest, func(io.Writer) error) (string, error)
 	OpenDecrypted(context.Context, string) (io.ReadCloser, error)
@@ -81,6 +92,12 @@ type Service struct {
 }
 
 var errRecoveryCleanupRequired = errors.New("recovery cleanup remains required")
+
+type restoreCleanupError struct{ cause error }
+
+func (e *restoreCleanupError) Error() string        { return e.cause.Error() }
+func (e *restoreCleanupError) Unwrap() error        { return e.cause }
+func (e *restoreCleanupError) Is(target error) bool { return target == errRecoveryCleanupRequired }
 
 type recoveryOperationContextKey struct{}
 type recoveryCleanupContextKey struct{}
@@ -113,11 +130,15 @@ func (s *Service) RunOnce(parent context.Context) error {
 	ctx = WithRecoveryOperation(ctx, op)
 	defer cancel()
 	if op.CleanupRequired {
-		err = s.resume(ctx, op)
+		if op.Kind == "restore" {
+			err = s.cleanupRestore(ctx, op)
+		} else {
+			err = s.resume(ctx, op)
+		}
 		if err != nil {
 			return errors.Join(errRecoveryCleanupRequired, err)
 		}
-		return s.finish(parent, op, "cancelled", "Interrupted backup cleanup completed before terminalization.")
+		return s.finish(WithRecoveryCleanup(parent), op, "cancelled", "Interrupted recovery cleanup completed.")
 	}
 	if err = s.Repo.ReauthorizePlatformRecovery(ctx, op); err != nil {
 		return s.finish(parent, op, "cancelled", "Operation authority is no longer valid.")
@@ -144,9 +165,10 @@ func (s *Service) RunOnce(parent context.Context) error {
 			}
 		}
 	}()
+	cleanupCompleted := false
 	switch op.Kind {
 	case "backup":
-		err = s.backup(ctx, op)
+		err = s.backup(ctx, op, &cleanupCompleted)
 	case "restore":
 		err = s.restore(ctx, op)
 	default:
@@ -156,19 +178,92 @@ func (s *Service) RunOnce(parent context.Context) error {
 	cancel()
 	heartbeat.Wait()
 	if err != nil {
-		if errors.Is(err, errRecoveryCleanupRequired) {
-			return err
+		finishContext := parent
+		if cleanupCompleted {
+			finishContext = WithRecoveryCleanup(parent)
 		}
-		status, message := "failed", "Supabase backup or restore failed; inspect the bounded operation phase and keep any partial target isolated."
+		if errors.Is(err, errRecoveryCleanupRequired) {
+			if op.Kind != "restore" {
+				return err
+			}
+			if cleanupErr := s.cleanupRestore(parent, op); cleanupErr != nil {
+				return errors.Join(err, cleanupErr)
+			}
+			finishContext = WithRecoveryCleanup(parent)
+			var pending *restoreCleanupError
+			if errors.As(err, &pending) {
+				err = pending.cause
+			}
+		}
+		status, message := "failed", "Managed platform backup or restore failed; inspect the bounded operation phase and keep any partial target isolated."
 		if wasCancelled {
 			status, message = "cancelled", "Operation was cancelled, timed out, or lost its authority; the target remains isolated for inspection."
 		}
-		if finishErr := s.finish(parent, op, status, message); finishErr != nil {
+		if finishErr := s.finish(finishContext, op, status, message); finishErr != nil {
 			return errors.Join(err, finishErr)
 		}
 		return err
 	}
 	return s.finish(parent, op, "succeeded", "")
+}
+
+func (s *Service) cleanupRestore(parent context.Context, op Operation) error {
+	cleaner, ok := s.Runtime.(restoreFailureCleaner)
+	if !ok {
+		return errRecoveryCleanupRequired
+	}
+	return s.cleanup(parent, op, 2*time.Minute, cleaner.CleanupRestore)
+}
+
+// Cleanup keeps its exact operation lease alive even when the caller is
+// cancelled or loses authority. Losing this lease cancels further effects.
+func (s *Service) cleanup(parent context.Context, op Operation, timeout time.Duration, action func(context.Context, Operation) error) error {
+	return s.cleanupWithInterval(parent, op, timeout, 10*time.Second, action)
+}
+
+func (s *Service) cleanupWithInterval(parent context.Context, op Operation, timeout, interval time.Duration, action func(context.Context, Operation) error) error {
+	ctx, cancel := context.WithTimeout(WithRecoveryCleanup(WithRecoveryOperation(context.WithoutCancel(parent), op)), timeout)
+	defer cancel()
+	if err := s.Repo.FencePlatformRecoveryCleanup(ctx, op); err != nil {
+		return err
+	}
+	fenceDone := make(chan error, 1)
+	stopFence := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopFence:
+				fenceDone <- nil
+				return
+			case <-ctx.Done():
+				fenceDone <- nil
+				return
+			case <-ticker.C:
+				if err := s.Repo.FencePlatformRecoveryCleanup(ctx, op); err != nil {
+					cancel()
+					fenceDone <- err
+					return
+				}
+			}
+		}
+	}()
+	err := action(ctx, op)
+	if err == nil {
+		err = ctx.Err()
+	}
+	close(stopFence)
+	err = errors.Join(err, <-fenceDone)
+	if err == nil {
+		// Serialize the final renewal and flag clear after the ticker stops.
+		// Terminalization then has a fresh lease rather than its last seconds.
+		err = s.Repo.FencePlatformRecoveryCleanup(ctx, op)
+	}
+	if err == nil {
+		err = s.Repo.SetPlatformRecoveryCleanup(ctx, op, false)
+	}
+	return err
 }
 
 func (s *Service) finish(parent context.Context, op Operation, status, message string) error {
@@ -191,7 +286,7 @@ func (s *Service) checkpoint(ctx context.Context, op Operation, phase string) er
 	return s.Repo.StepPlatformRecovery(ctx, op, phase, "")
 }
 
-func (s *Service) backup(ctx context.Context, op Operation) (result error) {
+func (s *Service) backup(ctx context.Context, op Operation, cleanupCompleted *bool) (result error) {
 	manifest, err := s.Runtime.ResolveSource(ctx, op)
 	if err != nil {
 		return err
@@ -211,6 +306,8 @@ func (s *Service) backup(ctx context.Context, op Operation) (result error) {
 				} else {
 					result = errors.Join(errRecoveryCleanupRequired, e)
 				}
+			} else {
+				*cleanupCompleted = true
 			}
 		}
 	}()
@@ -231,8 +328,6 @@ func (s *Service) backup(ctx context.Context, op Operation) (result error) {
 	if err != nil {
 		return err
 	}
-	manifest.Parts = nil
-	manifest.Verification = evidence
 	defer func() {
 		for _, part := range parts {
 			if part.Cleanup != nil {
@@ -240,6 +335,14 @@ func (s *Service) backup(ctx context.Context, op Operation) (result error) {
 			}
 		}
 	}()
+	manifest.Parts = nil
+	manifest.Verification = evidence
+	if finalizer, ok := s.Runtime.(captureManifestFinalizer); ok {
+		manifest, err = finalizer.FinalizeCapture(ctx, op, manifest)
+		if err != nil {
+			return err
+		}
+	}
 	open := map[string]func() (io.ReadCloser, error){}
 	for _, part := range parts {
 		manifest.Parts = append(manifest.Parts, part.Part)
@@ -253,6 +356,7 @@ func (s *Service) backup(ctx context.Context, op Operation) (result error) {
 		return err
 	}
 	paused = false
+	*cleanupCompleted = true
 	manifest.ThawedAt = time.Now().UTC()
 	manifest.ManifestSHA256 = manifest.Digest()
 	if err = manifest.Validate(); err != nil {
@@ -287,20 +391,15 @@ func (s *Service) backup(ctx context.Context, op Operation) (result error) {
 }
 
 func (s *Service) resume(parent context.Context, op Operation) error {
-	ctx, cancel := context.WithTimeout(WithRecoveryCleanup(context.WithoutCancel(parent)), 30*time.Second)
-	defer cancel()
-	if err := s.Runtime.ResumeSource(ctx, op); err != nil {
-		return err
-	}
-	return s.Repo.SetPlatformRecoveryCleanup(ctx, op, false)
+	return s.cleanup(parent, op, 2*time.Minute, s.Runtime.ResumeSource)
 }
 
 func (s *Service) restore(ctx context.Context, op Operation) (result error) {
 	admittedBefore := op.Phase == "target-admitted" || strings.HasPrefix(op.Phase, "restoring-") || strings.HasPrefix(op.Phase, "verifying-")
-	admittedMutation := admittedBefore
+	admittedMutation := false
 	defer func() {
 		if admittedMutation && result != nil && !errors.Is(result, errRecoveryCleanupRequired) {
-			result = errors.Join(result, errRecoveryCleanupRequired)
+			result = &restoreCleanupError{cause: result}
 		}
 	}()
 	r, err := s.Artifacts.OpenDecrypted(ctx, op.ArtifactID)
@@ -336,11 +435,27 @@ func (s *Service) restore(ctx context.Context, op Operation) (result error) {
 	}
 	var admitted Manifest
 	manifest, err := ReadArchiveWithManifest(verified, func(source Manifest) error {
+		if admittedBefore && source.Neon != nil {
+			admittedMutation = true
+		}
 		if !admittedBefore {
 			if err := s.checkpoint(ctx, op, "admitting-empty-target"); err != nil {
 				return err
 			}
-			admittedMutation = true
+			if preflight, ok := s.Runtime.(restoreTargetPreflight); ok {
+				if err := preflight.PreflightRestoreTarget(ctx, op, source); err != nil {
+					return err
+				}
+			}
+			if source.Neon != nil {
+				if _, ok := s.Runtime.(restoreFailureCleaner); !ok {
+					return fmt.Errorf("Neon restore cleanup is unavailable")
+				}
+				if err := s.Repo.SetPlatformRecoveryCleanup(ctx, op, true); err != nil {
+					return err
+				}
+				admittedMutation = true
+			}
 			if err := s.Runtime.ResolveEmptyTarget(ctx, op, source); err != nil {
 				return err
 			}
@@ -374,7 +489,13 @@ func (s *Service) restore(ctx context.Context, op Operation) (result error) {
 	if err = s.checkpoint(ctx, op, "verifying-runtime"); err != nil {
 		return err
 	}
-	return s.Runtime.VerifyRestoredRuntime(ctx, op, manifest)
+	if err = s.Runtime.VerifyRestoredRuntime(ctx, op, manifest); err != nil {
+		return err
+	}
+	if admittedMutation {
+		return s.Repo.SetPlatformRecoveryCleanup(ctx, op, false)
+	}
+	return nil
 }
 
 func randomLease() string {

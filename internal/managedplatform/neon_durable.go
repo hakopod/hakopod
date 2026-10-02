@@ -368,6 +368,9 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			return state, err
 		}
 		body := map[string]any{"new_tenant_id": request.TenantID}
+		if request.RecoveryTenantGeneration > 0 {
+			body["generation"] = request.RecoveryTenantGeneration
+		}
 		var response []byte
 		var createErr error
 		if ownershipRequired {
@@ -496,6 +499,9 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			return state, err
 		}
 		body := map[string]any{"new_timeline_id": request.TimelineID, "pg_version": 17}
+		if request.RecoveryTimelineGeneration > 0 {
+			body["generation"] = request.RecoveryTimelineGeneration
+		}
 		if request.AncestorTimelineID != "" {
 			body["ancestor_timeline_id"] = request.AncestorTimelineID
 			body["read_only"] = false
@@ -707,6 +713,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	}
 	claims := map[string]DurableResourceClaim{}
 	wasPrior := map[string]bool{}
+	partial, _ := r.lifecycle.(interface{ AllowPartialNeonDeprovision() bool })
 	for component, claim := range prior {
 		if kind, ok := expected[component]; !ok || claim.Kind != kind {
 			return fmt.Errorf("Neon deletion claim inventory contains an unexpected resource")
@@ -722,7 +729,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		if claimErr != nil {
 			return claimErr
 		}
-		if !ok && (strings.HasPrefix(component, "pageserver-registration-") || strings.HasPrefix(component, "safekeeper-registration-")) {
+		if !ok && (strings.HasPrefix(component, "pageserver-registration-") || strings.HasPrefix(component, "safekeeper-registration-")) && (partial == nil || !partial.AllowPartialNeonDeprovision()) {
 			return fmt.Errorf("Neon %s ownership claim is missing", component)
 		}
 		if ok {
@@ -772,6 +779,10 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	}
 	timelineExists = timelineExists || safekeeperTimelineExists
 	for _, node := range r.control.config.Pageservers {
+		claim, claimed := claims["pageserver-registration-"+node.Name]
+		if !claimed && partial != nil && partial.AllowPartialNeonDeprovision() {
+			continue
+		}
 		body, status, requestErr := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/node/"+strconv.FormatInt(node.NodeID, 10), nil)
 		if requestErr != nil {
 			return requestErr
@@ -783,7 +794,6 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return fmt.Errorf("inspect Neon pageserver %s for deletion returned HTTP %d", node.Name, status)
 		}
 		identity, identityErr := verifiedNeonPageserverRegistrationIdentity(body, node)
-		claim := claims["pageserver-registration-"+node.Name]
 		claimedIdentity := claim.ResourceID
 		if ownershipRequired {
 			var ownershipToken string
@@ -797,6 +807,10 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		}
 	}
 	for _, node := range r.control.config.Safekeepers {
+		claim, claimed := claims["safekeeper-registration-"+node.Name]
+		if !claimed && partial != nil && partial.AllowPartialNeonDeprovision() {
+			continue
+		}
 		body, status, requestErr := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/safekeeper/"+strconv.FormatInt(node.NodeID, 10), nil)
 		if requestErr != nil {
 			return requestErr
@@ -808,7 +822,6 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return fmt.Errorf("inspect Neon safekeeper %s for deletion returned HTTP %d", node.Name, status)
 		}
 		identity, identityErr := verifiedNeonSafekeeperRegistrationIdentity(body, node)
-		claim := claims["safekeeper-registration-"+node.Name]
 		claimedIdentity := claim.ResourceID
 		if ownershipRequired {
 			var ownershipToken string
@@ -988,6 +1001,175 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	// the owned namespace is gone. This prevents a crash between individual
 	// releases from leaving a live registration without an ownership claim.
 	return nil
+}
+
+// InspectOwnedRecoveryReservation recovers the exact provider identity left
+// between a durable reservation and confirmation. It performs only GETs and
+// accepts an identity only when its deterministic external key and ownership
+// token both match the reserved intent.
+func (r *DurableNeonRuntime) InspectOwnedRecoveryReservation(ctx context.Context, request NeonLifecycleRequest, intent DurableResourceIntent) (string, int64, bool, error) {
+	op := r.lifecycle.Operation()
+	if request.OperationID != op.ID || intent.ID == "" || intent.PlatformID != op.PlatformID || intent.PlatformRevision != op.Revision || intent.OwnerOperationID != op.ID || intent.Confirmed {
+		return "", 0, false, fmt.Errorf("Neon recovery reservation does not match the leased operation")
+	}
+	if _, err := validateNeonLifecycleRequest(request, r.control.config.Computes); err != nil {
+		return "", 0, false, err
+	}
+	switch {
+	case intent.Component == "tenant" && intent.Kind == "neon_tenant" && intent.ExternalKey == request.TenantID:
+		exists, identity, generation, token, _, _, err := r.inspectTenant(ctx, request.TenantID)
+		if err != nil || !exists {
+			return "", 0, exists, err
+		}
+		if token != intent.ID || request.RecoveryTenantGeneration > 0 && generation != request.RecoveryTenantGeneration {
+			return "", 0, false, fmt.Errorf("Neon tenant recovery reservation ownership changed")
+		}
+		resourceID, err := encodeNeonOwnedResourceID(identity, intent.ID)
+		return resourceID, generation, true, err
+	case intent.Component == "timeline" && intent.Kind == "neon_timeline" && intent.ExternalKey == request.TenantID+"/"+request.TimelineID:
+		exists, controllerToken, err := r.inspectTimeline(ctx, request.TenantID, request.TimelineID)
+		if err != nil {
+			return "", 0, false, err
+		}
+		safekeeperExists, identity, generation, _, safekeeperToken, err := r.inspectSafekeeperTimeline(ctx, request.TenantID, request.TimelineID)
+		if err != nil || !exists && !safekeeperExists {
+			return "", 0, false, err
+		}
+		if !exists || !safekeeperExists || controllerToken != intent.ID || safekeeperToken != intent.ID || request.RecoveryTimelineGeneration > 0 && generation != request.RecoveryTimelineGeneration {
+			return "", 0, false, fmt.Errorf("Neon timeline recovery reservation ownership changed")
+		}
+		resourceID, err := encodeNeonOwnedResourceID(identity, intent.ID)
+		return resourceID, generation, true, err
+	case strings.HasPrefix(intent.Component, "compute-") && intent.Kind == "runtime_component":
+		for _, target := range r.control.config.Computes {
+			component := "compute-" + target.Name
+			externalKey, endpointIdentity, err := neonComputeIdentity(target)
+			if err != nil || component != intent.Component || externalKey != intent.ExternalKey {
+				continue
+			}
+			body, status, requestErr := r.control.request(ctx, target, http.MethodGet, "/status", nil)
+			if requestErr != nil {
+				return "", 0, false, requestErr
+			}
+			if status == http.StatusNotFound || status == http.StatusOK && neonComputeDetached(body) {
+				return "", 0, false, nil
+			}
+			if status != http.StatusOK || verifyComputeStatus(body, request.TenantID, request.TimelineID) != nil || verifyNeonComputeOwnershipStatus(body, intent.ID) != nil {
+				return "", 0, false, fmt.Errorf("Neon compute recovery reservation ownership changed")
+			}
+			resourceID, err := encodeNeonComputeClaimResourceID(endpointIdentity, intent.ID)
+			return resourceID, 1, true, err
+		}
+	case strings.HasPrefix(intent.Component, "pageserver-registration-") && intent.Kind == "runtime_component":
+		for _, node := range r.control.config.Pageservers {
+			externalKey := neonStorageIdentity("pageserver", node.Name, node.NodeID, node.Generation, node.Host, node.AvailabilityZone)
+			if "pageserver-registration-"+node.Name != intent.Component || intent.ExternalKey != externalKey {
+				continue
+			}
+			body, status, err := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/node/"+strconv.FormatInt(node.NodeID, 10), nil)
+			if err != nil || status == http.StatusNotFound {
+				return "", 0, false, err
+			}
+			identity, identityErr := verifiedNeonPageserverRegistrationIdentity(body, node)
+			if status != http.StatusOK || identityErr != nil || verifyNeonOwnershipToken(body, intent.ID) != nil {
+				return "", 0, false, fmt.Errorf("Neon pageserver recovery reservation ownership changed")
+			}
+			resourceID, err := encodeNeonOwnedResourceID(identity, intent.ID)
+			return resourceID, node.Generation, true, err
+		}
+	case strings.HasPrefix(intent.Component, "safekeeper-registration-") && intent.Kind == "runtime_component":
+		for _, node := range r.control.config.Safekeepers {
+			externalKey := neonStorageIdentity("safekeeper", node.Name, node.NodeID, node.Generation, node.Host, node.AvailabilityZone)
+			if "safekeeper-registration-"+node.Name != intent.Component || intent.ExternalKey != externalKey {
+				continue
+			}
+			body, status, err := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/control/v1/safekeeper/"+strconv.FormatInt(node.NodeID, 10), nil)
+			if err != nil || status == http.StatusNotFound {
+				return "", 0, false, err
+			}
+			identity, identityErr := verifiedNeonSafekeeperRegistrationIdentity(body, node)
+			if status != http.StatusOK || identityErr != nil || verifyNeonOwnershipToken(body, intent.ID) != nil {
+				return "", 0, false, fmt.Errorf("Neon safekeeper recovery reservation ownership changed")
+			}
+			resourceID, err := encodeNeonOwnedResourceID(identity, intent.ID)
+			return resourceID, node.Generation, true, err
+		}
+	}
+	return "", 0, false, fmt.Errorf("Neon recovery reservation intent is invalid")
+}
+
+// InspectOwnedRecoveryClaim determines whether an original provider identity
+// still exists without changing it. An identity mismatch is an error rather
+// than absence so cleanup never adopts or forgets a foreign resource.
+func (r *DurableNeonRuntime) InspectOwnedRecoveryClaim(ctx context.Context, request NeonLifecycleRequest, claim DurableResourceClaim) (bool, error) {
+	op := r.lifecycle.Operation()
+	if request.OperationID != op.ID || claim.PlatformID != op.PlatformID || claim.PlatformRevision != op.Revision || claim.OwnerOperationID != op.ID {
+		return false, fmt.Errorf("Neon recovery claim does not match the accepted operation")
+	}
+	if _, err := validateNeonLifecycleRequest(request, r.control.config.Computes); err != nil {
+		return false, err
+	}
+	switch {
+	case claim.Component == "tenant" && claim.Kind == "neon_tenant":
+		claimedIdentity, token, err := parseNeonOwnedResourceID(claim.ResourceID)
+		if err != nil {
+			return false, err
+		}
+		exists, identity, generation, observedToken, _, _, err := r.inspectTenant(ctx, request.TenantID)
+		if err != nil || !exists {
+			return false, err
+		}
+		if identity != claimedIdentity || generation != claim.ImmutableGeneration || observedToken != token {
+			return false, fmt.Errorf("Neon prior tenant ownership changed")
+		}
+		return true, nil
+	case claim.Component == "timeline" && claim.Kind == "neon_timeline":
+		claimedIdentity, token, err := parseNeonOwnedResourceID(claim.ResourceID)
+		if err != nil {
+			return false, err
+		}
+		exists, controllerToken, err := r.inspectTimeline(ctx, request.TenantID, request.TimelineID)
+		if err != nil {
+			return false, err
+		}
+		safekeeperExists, identity, generation, _, safekeeperToken, err := r.inspectSafekeeperTimeline(ctx, request.TenantID, request.TimelineID)
+		if err != nil {
+			return false, err
+		}
+		if !exists && !safekeeperExists {
+			return false, nil
+		}
+		if !exists || !safekeeperExists || identity != claimedIdentity || generation != claim.ImmutableGeneration || controllerToken != token || safekeeperToken != token {
+			return false, fmt.Errorf("Neon prior timeline ownership changed")
+		}
+		return true, nil
+	case strings.HasPrefix(claim.Component, "compute-") && claim.Kind == "runtime_component":
+		for _, target := range r.control.config.Computes {
+			if "compute-"+target.Name != claim.Component {
+				continue
+			}
+			_, expectedIdentity, err := neonComputeIdentity(target)
+			if err != nil {
+				return false, err
+			}
+			claimedIdentity, token, err := parseNeonComputeClaimResourceID(claim.ResourceID)
+			if err != nil || claimedIdentity != expectedIdentity || claim.ImmutableGeneration != 1 {
+				return false, fmt.Errorf("Neon prior compute claim changed")
+			}
+			body, status, err := r.control.request(ctx, target, http.MethodGet, "/status", nil)
+			if err != nil {
+				return false, err
+			}
+			if status == http.StatusNotFound || status == http.StatusOK && neonComputeDetached(body) {
+				return false, nil
+			}
+			if status != http.StatusOK || verifyComputeStatus(body, request.TenantID, request.TimelineID) != nil || verifyNeonComputeOwnershipStatus(body, token) != nil {
+				return false, fmt.Errorf("Neon prior compute ownership changed")
+			}
+			return true, nil
+		}
+	}
+	return false, fmt.Errorf("Neon prior recovery claim is invalid")
 }
 
 func (r *DurableNeonRuntime) terminateOwnedCompute(ctx context.Context, target NeonControlTarget, tenantID, timelineID, ownershipToken string) error {

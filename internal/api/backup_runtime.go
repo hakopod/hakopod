@@ -29,6 +29,7 @@ type BackupConfig struct {
 	DatabaseURL, PGDumpPath, StateDir string
 	MaxBytes                          int64
 	BlockedEndpointCIDRs              []netip.Prefix
+	NeonRecovery                      platformbackup.Runtime
 }
 
 func (s *Server) ConfigureBackups(config BackupConfig) error {
@@ -49,7 +50,8 @@ func (s *Server) ConfigureBackups(config BackupConfig) error {
 	runtime := &backupRuntime{server: s, config: config}
 	s.Backups = &backup.Service{Repo: s.Store, Runtime: runtime, Engine: runtime, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 	if s.Cluster != nil {
-		recoveryRuntime := &cluster.SupabaseRecoveryRuntime{Cluster: s.Cluster, Store: s.Store}
+		supabaseRecovery := &cluster.SupabaseRecoveryRuntime{Cluster: s.Cluster, Store: s.Store}
+		recoveryRuntime := &cluster.PlatformRecoveryRuntime{Store: s.Store, Supabase: supabaseRecovery, Neon: config.NeonRecovery}
 		recoveryArtifacts := &platformbackup.EncryptedStore{Repo: s.Store, CredentialKey: s.authEncryptionKey(), MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 		s.PlatformRecovery = &platformbackup.Service{Repo: s.Store, Runtime: recoveryRuntime, Artifacts: recoveryArtifacts, Timeout: 2 * time.Hour}
 	}

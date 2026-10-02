@@ -516,6 +516,16 @@ func (s *Store) ConfirmPlatformResourceIntent(ctx context.Context, op ManagedPla
 		}
 		return tx.Commit(ctx)
 	}
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,692))", claim.Kind+"\x1f"+claim.ResourceID); err != nil {
+		return err
+	}
+	var recoveryCollision bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_recovery_overrides WHERE resource_kind=$1 AND replacement_resource_id=$2 AND replacement_released_at IS NULL AND adopted_at IS NULL)`, claim.Kind, claim.ResourceID).Scan(&recoveryCollision); err != nil {
+		return err
+	}
+	if recoveryCollision {
+		return ErrConflict
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO platform_component_resources(platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id,intent_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID, intent.ID); err != nil {
 		return err
@@ -625,6 +635,16 @@ func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOpe
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,691))", op.PlatformID); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,692))", claim.Kind+"\x1f"+claim.ResourceID); err != nil {
+		return err
+	}
+	var recoveryCollision bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_recovery_overrides WHERE resource_kind=$1 AND replacement_resource_id=$2 AND replacement_released_at IS NULL AND adopted_at IS NULL)`, claim.Kind, claim.ResourceID).Scan(&recoveryCollision); err != nil {
+		return err
+	}
+	if recoveryCollision {
+		return ErrConflict
+	}
 	var count int
 	if err = tx.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM platform_component_resources WHERE platform_id=$1 AND released_at IS NULL) +
@@ -666,8 +686,13 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 	if op, _, _, err = s.managedPlatformOperationFenceTx(ctx, tx, op); err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT r.`+platformResourceClaimColumns+` FROM platform_component_resources r
+	rows, err := tx.Query(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,
+		COALESCE(o.replacement_resource_id,r.resource_id),COALESCE(o.replacement_generation,r.immutable_generation),r.owner_operation_id,r.released_at
+		FROM platform_component_resources r
+		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind
+			AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
 		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.released_at IS NULL
+		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
 		AND EXISTS(SELECT 1 FROM managed_platform_operations o JOIN managed_platforms p ON p.id=o.platform_id
 			WHERE o.id=$3 AND o.platform_id=$1 AND o.revision=$4 AND o.lease=$5 AND o.status='running' AND o.lease_until>clock_timestamp() AND p.revision=o.revision AND p.deleted_at IS NULL)
 		ORDER BY r.component,r.resource_kind LIMIT $6`, op.PlatformID, revision, op.ID, op.Revision, op.Lease, MaxManagedPlatformResources+1)
@@ -715,7 +740,12 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 		return ErrInput
 	}
 	var valid bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_resources r
+		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
+		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.component=$3 AND r.resource_kind=$4
+		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
+		AND COALESCE(o.replacement_resource_id,r.resource_id)=$5 AND COALESCE(o.replacement_generation,r.immutable_generation)=$6
+		AND r.owner_operation_id=$7 AND r.released_at IS NULL)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid); err != nil {
 		return err
 	}
 	if !valid {
@@ -749,21 +779,119 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if !managedPlatformClaimComponentAllowed(priorOperation, prior.Component, prior.Kind) {
 		return ErrInput
 	}
-	tag, err := tx.Exec(ctx, `UPDATE platform_component_resources SET platform_revision=$1,owner_operation_id=$2
-		WHERE platform_id=$3 AND platform_revision=$4 AND component=$5 AND resource_kind=$6 AND resource_id=$7 AND immutable_generation=$8 AND owner_operation_id=$9 AND released_at IS NULL`, op.Revision, op.ID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, prior.OwnerOperationID)
+	var baseResourceID string
+	var baseGeneration int64
+	var overrideOperationID string
+	err = tx.QueryRow(ctx, `SELECT b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
+		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind
+			AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$6 AND r.replacement_generation=$7
+		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$5 AND b.released_at IS NULL
+		AND (b.resource_id=$6 AND b.immutable_generation=$7 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration).Scan(&baseResourceID, &baseGeneration, &overrideOperationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if overrideOperationID == "" {
+		tag, err := tx.Exec(ctx, `UPDATE platform_component_resources SET platform_revision=$1,owner_operation_id=$2
+			WHERE platform_id=$3 AND platform_revision=$4 AND component=$5 AND resource_kind=$6 AND resource_id=$7 AND immutable_generation=$8 AND owner_operation_id=$9 AND released_at IS NULL`, op.Revision, op.ID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, prior.OwnerOperationID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			var valid bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL)`, op.PlatformID, op.Revision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, op.ID).Scan(&valid); err != nil {
+				return err
+			}
+			if !valid {
+				return ErrConflict
+			}
+		}
+		if err = propagateNeonRecoveryLineageTx(ctx, tx, prior.PlatformID, prior.PlatformRevision, op.Revision, ""); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE platform_component_resources SET released_at=now() WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL`, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, baseResourceID, baseGeneration, prior.OwnerOperationID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() != 1 {
-		var valid bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL)`, op.PlatformID, op.Revision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, op.ID).Scan(&valid); err != nil {
-			return err
+		return ErrConflict
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO platform_component_resources(platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, op.PlatformID, op.Revision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, op.ID); err != nil {
+		return err
+	}
+	tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='adopted',adopted_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND prior_owner_operation_id=$6 AND replacement_resource_id=$7 AND replacement_generation=$8 AND phase='confirmed' AND replacement_released_at IS NULL`, overrideOperationID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	if err = propagateNeonRecoveryLineageTx(ctx, tx, prior.PlatformID, prior.PlatformRevision, op.Revision, overrideOperationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// NeonRecoveryBindingForLifecycle resolves restored identity before an update
+// adopts its first resource. The live operation fence limits the lookup to
+// the current revision and its immediate predecessor on this platform.
+func (s *Store) NeonRecoveryBindingForLifecycle(ctx context.Context, op ManagedPlatformOperation) (NeonRecoveryBinding, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	defer tx.Rollback(ctx)
+	if op, _, _, err = s.managedPlatformOperationFenceTx(ctx, tx, op); err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	var binding NeonRecoveryBinding
+	err = tx.QueryRow(ctx, `SELECT b.operation_id,b.target_platform_id,b.target_revision,b.artifact_id,b.manifest_sha256,b.tenant_id,b.timeline_id,b.tenant_generation,b.timeline_generation,b.staging_prefix
+		FROM managed_platform_neon_recovery_lineage l
+		JOIN managed_platform_neon_recovery_bindings b ON b.operation_id=l.recovery_operation_id AND b.target_platform_id=l.platform_id
+		JOIN managed_platform_recovery_operations r ON r.id=b.operation_id AND r.status='succeeded'
+		WHERE l.platform_id=$1 AND (l.platform_revision=$2 OR ($3 IN ('update','delete') AND l.platform_revision=$2-1))
+		ORDER BY l.platform_revision DESC LIMIT 1`, op.PlatformID, op.Revision, op.Kind).Scan(&binding.OperationID, &binding.TargetPlatformID, &binding.TargetRevision, &binding.ArtifactID, &binding.ManifestSHA256, &binding.TenantID, &binding.TimelineID, &binding.TenantGeneration, &binding.TimelineGeneration, &binding.StagingPrefix)
+	if err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	return binding, nil
+}
+
+func propagateNeonRecoveryLineageTx(ctx context.Context, tx pgx.Tx, platformID string, fromRevision, toRevision int64, recoveryOperationID string) error {
+	var origin string
+	var err error
+	if recoveryOperationID == "" {
+		err = tx.QueryRow(ctx, `SELECT l.recovery_operation_id FROM managed_platform_neon_recovery_lineage l JOIN managed_platform_neon_recovery_bindings b ON b.operation_id=l.recovery_operation_id AND b.target_platform_id=l.platform_id WHERE l.platform_id=$1 AND l.platform_revision=$2`, platformID, fromRevision).Scan(&origin)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
 		}
-		if !valid {
+	} else {
+		err = tx.QueryRow(ctx, `SELECT operation_id FROM managed_platform_neon_recovery_bindings WHERE operation_id=$1 AND target_platform_id=$2 AND target_revision=$3`, recoveryOperationID, platformID, fromRevision).Scan(&origin)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrConflict
 		}
 	}
-	return tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO managed_platform_neon_recovery_lineage(platform_id,platform_revision,recovery_operation_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, platformID, toRevision, origin); err != nil {
+		return err
+	}
+	var stored string
+	if err = tx.QueryRow(ctx, `SELECT recovery_operation_id FROM managed_platform_neon_recovery_lineage WHERE platform_id=$1 AND platform_revision=$2`, platformID, toRevision).Scan(&stored); err != nil {
+		return err
+	}
+	if stored != origin {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
@@ -785,21 +913,33 @@ func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if !allowed {
 		return ErrInput
 	}
-	var intentID string
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(intent_id,'') FROM platform_component_resources
-		WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL FOR UPDATE`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&intentID); errors.Is(err, pgx.ErrNoRows) {
+	var intentID, baseResourceID, recoveryOperationID string
+	var baseGeneration int64
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(b.intent_id,''),b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
+		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$5 AND r.replacement_generation=$6
+		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$7 AND b.released_at IS NULL
+		AND (b.resource_id=$5 AND b.immutable_generation=$6 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&intentID, &baseResourceID, &baseGeneration, &recoveryOperationID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
 	if err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE platform_component_resources SET released_at=now()
-		WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID)
+		WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4 AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7 AND released_at IS NULL`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, baseResourceID, baseGeneration, claim.OwnerOperationID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrConflict
+	}
+	if recoveryOperationID != "" {
+		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='replacement_released',replacement_released_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND replacement_resource_id=$6 AND replacement_generation=$7 AND phase='confirmed' AND replacement_released_at IS NULL`, recoveryOperationID, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrConflict
+		}
 	}
 	if intentID != "" {
 		tag, err = tx.Exec(ctx, "UPDATE platform_resource_intents SET released_at=now() WHERE id=$1 AND confirmed_at IS NOT NULL AND released_at IS NULL", intentID)

@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,6 +35,10 @@ type neonDurableStore interface {
 	ManagedPlatformOperationStore
 	ActivateNeonProxyEndpoint(context.Context, store.ManagedPlatformOperation, store.NeonProxyEndpointRecord) error
 	RevokeNeonProxyEndpoint(context.Context, store.ManagedPlatformOperation) error
+}
+
+type neonRecoveryBindingStore interface {
+	NeonRecoveryBindingForLifecycle(context.Context, store.ManagedPlatformOperation) (store.NeonRecoveryBinding, error)
 }
 
 type neonLifecycleAdapter struct {
@@ -180,7 +186,7 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		if err != nil {
 			return err
 		}
-		lifecycle, runtimeRequest, _, err := prepareNeonLifecycle(request, state, encryptionKey, zones)
+		lifecycle, runtimeRequest, _, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
 		if err != nil {
 			return err
 		}
@@ -196,7 +202,15 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if err != nil {
 		return err
 	}
-	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(request, state, encryptionKey, zones)
+	if bindings, ok := state.(neonRecoveryBindingStore); ok {
+		binding, bindingErr := bindings.NeonRecoveryBindingForLifecycle(ctx, op)
+		if bindingErr == nil {
+			request.Render.Spec.Neon.ObjectStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
+		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
+			return fmt.Errorf("read Neon recovery binding: %w", bindingErr)
+		}
+	}
+	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
 	if err != nil {
 		return err
 	}
@@ -276,7 +290,11 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	return state.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "Neon runtime and durable proxy route are ready.", result)
 }
 
-func prepareNeonLifecycle(request NeonRuntimeRequest, state ManagedPlatformOperationStore, encryptionKey []byte, zones []string) (*managedplatform.DurableNeonRuntime, managedplatform.NeonLifecycleRequest, managedplatform.NeonProxyEndpointState, error) {
+func prepareNeonLifecycle(ctx context.Context, request NeonRuntimeRequest, state ManagedPlatformOperationStore, encryptionKey []byte, zones []string) (*managedplatform.DurableNeonRuntime, managedplatform.NeonLifecycleRequest, managedplatform.NeonProxyEndpointState, error) {
+	return prepareNeonLifecycleWithAdapter(ctx, request, neonLifecycleAdapter{state: state, op: request.Operation}, state, encryptionKey, zones)
+}
+
+func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeRequest, lifecycle managedplatform.DurableLifecycle, bindings any, encryptionKey []byte, zones []string) (*managedplatform.DurableNeonRuntime, managedplatform.NeonLifecycleRequest, managedplatform.NeonProxyEndpointState, error) {
 	var lifecycleRequest managedplatform.NeonLifecycleRequest
 	op := request.Operation
 	namespace := "managed-platform-" + op.PlatformID
@@ -340,6 +358,14 @@ func prepareNeonLifecycle(request NeonRuntimeRequest, state ManagedPlatformOpera
 	}
 	tenantID := neonDeterministicID(op.PlatformID, "tenant")
 	timelineID := neonDeterministicID(op.PlatformID, "timeline")
+	if recoveryBindings, ok := bindings.(neonRecoveryBindingStore); ok {
+		binding, bindingErr := recoveryBindings.NeonRecoveryBindingForLifecycle(ctx, op)
+		if bindingErr == nil {
+			tenantID, timelineID = binding.TenantID, binding.TimelineID
+		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("read Neon recovery identity binding: %w", bindingErr)
+		}
+	}
 	safekeepers := make([]string, 0, len(config.Safekeepers))
 	for _, node := range config.Safekeepers {
 		safekeepers = append(safekeepers, node.Host+":5454")
@@ -359,7 +385,7 @@ func prepareNeonLifecycle(request NeonRuntimeRequest, state ManagedPlatformOpera
 		}
 		lifecycleRequest.ComputeConfig[name] = raw
 	}
-	durable, err := managedplatform.NewDurableNeonRuntime(config, neonLifecycleAdapter{state: state, op: op})
+	durable, err := managedplatform.NewDurableNeonRuntime(config, lifecycle)
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}

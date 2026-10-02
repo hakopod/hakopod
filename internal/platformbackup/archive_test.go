@@ -75,3 +75,29 @@ func TestManifestRejectsDigestMismatchAndMutableImage(t *testing.T) {
 		t.Fatal("mutable image accepted")
 	}
 }
+
+func TestManifestKeepsNeonAndSupabaseContractsSeparate(t *testing.T) {
+	manifest, _ := fixtureManifest()
+	manifest.Format = NeonFormat
+	if manifest.Validate() == nil {
+		t.Fatal("Supabase parts were accepted as a Neon archive")
+	}
+	manifest.PlatformSpec = json.RawMessage(`{"kind":"neon"}`)
+	manifest.PVCs = nil
+	manifest.Neon = &NeonIdentity{TenantID: strings.Repeat("1", 32), TimelineID: strings.Repeat("2", 32), TenantGeneration: 3, TimelineGeneration: 4, CommitLSN: "0/16B6C50", PageserverRemoteConsistentLSNs: map[string]string{"0": "0/16B6C50", "1": "0/16B6C50"}, SourceObjectPrefix: "source-platform", ObjectInventorySHA256: strings.Repeat("3", 64), ObjectCount: 3, ObjectBytes: 1024}
+	manifest.Parts = nil
+	manifest.Verification = map[string]string{}
+	for _, key := range []string{"tenant_identity", "tenant_generation", "timeline_identity", "timeline_generation", "remote_storage"} {
+		manifest.Verification[key] = strings.Repeat("e", 64)
+	}
+	for _, name := range NeonRequiredParts {
+		manifest.Parts = append(manifest.Parts, Part{Name: name, SHA256: strings.Repeat("f", 64), Bytes: 1})
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("valid Neon manifest rejected: %v", err)
+	}
+	manifest.Format = Format
+	if manifest.Validate() == nil {
+		t.Fatal("Neon platform contract was accepted under the Supabase format")
+	}
+}

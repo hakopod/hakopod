@@ -22,6 +22,8 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	runtime "github.com/hakopod/hakopod/internal/management"
+	"github.com/hakopod/hakopod/internal/nativeacceptance"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/store"
 )
@@ -55,6 +57,11 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	_, err = nativeacceptance.Configure(ctx)
+	if err != nil {
+		return err
+	}
+	go nativeacceptance.Watch(ctx, stop)
 	dbURL, err := secretSetting("HAKOPOD_DATABASE_URL")
 	if err != nil {
 		return err
@@ -159,7 +166,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	kube, err := cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), cluster.Options{ManagedClusterNodes: managedClusterNodes, ClickHouseSandbox: os.Getenv("HAKOPOD_CLICKHOUSE_SANDBOX") == "true", ServerlessAddress: os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"), ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DatabasePublicAddress: os.Getenv("HAKOPOD_DATABASE_PUBLIC_ADDRESS"), DatabasePublicDomain: os.Getenv("HAKOPOD_DATABASE_PUBLIC_DOMAIN"), DatabasePublicPorts: databasePublicPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, ContainerDaemonBindings: containerDaemons, ManagedActions: managedActions, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")})
+	kubeOptions := cluster.Options{ManagedClusterNodes: managedClusterNodes, ClickHouseSandbox: os.Getenv("HAKOPOD_CLICKHOUSE_SANDBOX") == "true", ServerlessAddress: os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"), ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DatabasePublicAddress: os.Getenv("HAKOPOD_DATABASE_PUBLIC_ADDRESS"), DatabasePublicDomain: os.Getenv("HAKOPOD_DATABASE_PUBLIC_DOMAIN"), DatabasePublicPorts: databasePublicPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, ContainerDaemonBindings: containerDaemons, ManagedActions: managedActions, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")}
+	var kube *cluster.Client
+	if verified := nativeacceptance.KubernetesConfig(); verified != nil {
+		kube, err = cluster.NewWithConfig(verified, kubeOptions)
+	} else {
+		kube, err = cluster.New(os.Getenv("HAKOPOD_KUBECONFIG"), kubeOptions)
+	}
 	if err != nil {
 		return fmt.Errorf("initialize Kubernetes client: %w", err)
 	}
@@ -196,7 +209,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err = management.ConfigureBackups(api.BackupConfig{VitessApprovals: vitessApprovals, DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true"}); err != nil {
+	var neonRecovery platformbackup.Runtime
+	if managedRuntime != nil {
+		neonRecovery, err = cluster.NewNeonRecoveryRuntime(db, kube, managedRuntime.EncryptionKey)
+		if err != nil {
+			return err
+		}
+	}
+	if err = management.ConfigureBackups(api.BackupConfig{VitessApprovals: vitessApprovals, DatabaseURL: dbURL, PGDumpPath: env("HAKOPOD_PG_DUMP_PATH", "pg_dump"), StateDir: env("HAKOPOD_BACKUP_STATE_DIR", "/var/lib/hakopod/backups"), MaxBytes: 8 << 30, ManagedPostgres: os.Getenv("HAKOPOD_MANAGED_POSTGRES") == "true", NeonRecovery: neonRecovery}); err != nil {
 		return err
 	}
 	var gatewayServer *http.Server

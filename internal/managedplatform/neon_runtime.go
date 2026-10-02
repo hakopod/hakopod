@@ -79,13 +79,15 @@ type NeonSafekeeperRegistration struct {
 // NeonLifecycleRequest uses caller-assigned immutable Neon IDs. ComputeConfig
 // contains the exact upstream compute_ctl ConfigurationRequest JSON.
 type NeonLifecycleRequest struct {
-	OperationID        string
-	TenantID           string
-	TimelineID         string
-	AncestorTimelineID string
-	CreateTenant       bool
-	TenantOwnership    string
-	ComputeConfig      map[string]json.RawMessage
+	OperationID                string
+	TenantID                   string
+	TimelineID                 string
+	AncestorTimelineID         string
+	CreateTenant               bool
+	RecoveryTenantGeneration   int64
+	RecoveryTimelineGeneration int64
+	TenantOwnership            string
+	ComputeConfig              map[string]json.RawMessage
 }
 
 // NeonLifecycleState is durable orchestration evidence, not availability or
