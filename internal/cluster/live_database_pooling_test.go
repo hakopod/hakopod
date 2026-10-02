@@ -147,7 +147,9 @@ func TestManagedPostgresPooledRecoveryLive(t *testing.T) {
 	if os.Getenv("HAKOPOD_DATABASE_POOLING_TEST") != "1" {
 		t.Skip("set HAKOPOD_DATABASE_POOLING_TEST=1")
 	}
-	c, ctx := liveRecoveryClient(t)
+	// Source and target each need a complete bounded provisioning window before
+	// the backup can be restored through the target pooler.
+	c, ctx := liveRecoveryClient(t, 30*time.Minute)
 	configure := func(s *database.Spec) {
 		s.CPU = "500m"
 		s.Memory = "512Mi"
