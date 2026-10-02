@@ -38,6 +38,15 @@ loopback address, memory bytes, CPU quota and maximum parallelism through the
 concurrent BuildKit step. Keep the aggregate host allocation bounded when
 overlapping an independent build.
 
+Each phase first writes a source-built base OCI archive, then
+`release/wrap-runtime-oci.py` changes only the OCI config and manifest so the
+published image declares the numeric `1000:1000` account required by release
+verification. On the pinned images, that identity was measured as `neon` for
+storage, `nonroot` for compute tools and `postgres` for the compute runtime.
+The wrapper retains every filesystem layer byte-for-byte and labels the final
+config with the exact base manifest and config digests. Both archives remain
+as evidence, and an existing archive is never overwritten.
+
 These scripts keep images in the VM-local daemon. Building an image does not
 publish or qualify it. Record immutable image digests and complete native
 acceptance in the named development cluster before changing qualification
