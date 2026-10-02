@@ -1,7 +1,7 @@
 # Managed Oracle Database
 
-Oracle Database Free is included in the `v0.1.0-alpha.47` self-hosted candidate,
-pending publication. Standalone has passed native development checks for
+Oracle Database Free is included in the `v0.1.0-alpha.47` self-hosted release.
+Standalone has passed native development checks for
 lifecycle, TCPS renewal, private application bindings and isolated schema
 recovery. These checks do not establish production availability.
 Enterprise and Data Guard have a separate source implementation. Their runtime
