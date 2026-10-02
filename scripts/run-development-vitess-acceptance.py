@@ -32,7 +32,15 @@ MAX_EVENTS = 1024
 MAX_RUN_SECONDS = 95 * 60
 PACKAGE = 'github.com/hakopod/hakopod/internal/cluster'
 NODES = ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')
+ALLOWED_NODES = NODES + ('k3d-hakopod-database-worker-1',)
 GIB = 1024 ** 3
+
+
+def fixture_nodes(value):
+    nodes = tuple(value.split(','))
+    if not nodes or any(not node for node in nodes) or len(nodes) not in (2, 3) or len(set(nodes)) != len(nodes) or any(node not in ALLOWED_NODES for node in nodes):
+        raise RuntimeError('native acceptance requires two or three unique named development nodes')
+    return nodes
 
 
 def canonical_image(reference):
@@ -42,34 +50,64 @@ def canonical_image(reference):
     return repository + '@' + digest
 
 
-def native_go_environment(root, kubeconfig, fixtures):
+def native_go_environment(root, kubeconfig, fixtures, nodes=NODES, go_root=Path('/opt/hakopod-build-go'), cache_root=Path('/srv/hakopod-backup-scratch/managed-databases-20260927')):
     env = os.environ.copy()
     for key in list(env):
         if key.startswith(('GO', 'CGO_', 'HAKOPOD_', 'AWS_')) or key in ('CC', 'CXX', 'FC', 'PKG_CONFIG'):
             env.pop(key)
-    env.update(PATH=str(root/'bin')+':/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-        GOMAXPROCS='1', GOROOT='/opt/hakopod-build-go',
+    env.update(PATH=str(go_root/'bin')+':'+str(root/'bin')+':/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        GOMAXPROCS='1', GOROOT=str(go_root),
         GOENV='off', GOWORK='off', GOFLAGS='-mod=readonly', GOTOOLCHAIN='local', GO111MODULE='on',
         GOOS='linux', GOARCH='amd64', GOAMD64='v1', CGO_ENABLED='1', CC='/usr/bin/gcc', CXX='/usr/bin/g++',
-        GOCACHE='/srv/hakopod-backup-scratch/managed-databases-20260927/go-cache',
-        GOMODCACHE='/srv/hakopod-backup-scratch/managed-databases-20260927/go-mod', TMPDIR=str(root/'tmp'),
+        GOCACHE=str(cache_root/'go-cache'), GOMODCACHE=str(cache_root/'go-mod'), TMPDIR=str(root/'tmp'),
         PYTHONDONTWRITEBYTECODE='1', HAKOPOD_DATABASE_RECOVERY_TEST='1', HAKOPOD_DATABASE_VITESS_TEST='1',
         HAKOPOD_KEEP_DATABASE_FIXTURES='1', HAKOPOD_TEST_KUBECONFIG=str(kubeconfig),
-        HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG=str(fixtures), HAKOPOD_DATABASE_FIXTURE_NODES=','.join(NODES))
+        HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG=str(fixtures), HAKOPOD_DATABASE_FIXTURE_NODES=','.join(nodes))
     return env
 
 
+def command_output(command):
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+    data = bytearray()
+    deadline = time.monotonic() + 20
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while selector.get_map():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('development environment metadata timed out')
+                for key, _ in selector.select(timeout=.5):
+                    block = os.read(key.fileobj.fileno(), 64 * 1024)
+                    if not block:
+                        selector.unregister(key.fileobj)
+                        continue
+                    if len(data) + len(block) > 2 * 1024 * 1024:
+                        raise RuntimeError('development environment metadata exceeded its bound')
+                    data.extend(block)
+        if process.wait(timeout=max(.1, deadline - time.monotonic())):
+            raise RuntimeError('development environment metadata command failed')
+        return bytes(data)
+    finally:
+        # A command leader can exit while a descendant still owns stdout.
+        # Always terminate the isolated process group after collecting metadata.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            process.wait(timeout=5)
+        process.stdout.close()
+
+
 def command_json(command):
-    data = subprocess.check_output(command, timeout=20, stderr=subprocess.DEVNULL)
-    if len(data) > 2 * 1024 * 1024:
-        raise RuntimeError('development environment metadata exceeded its bound')
-    return json.loads(data)
+    return json.loads(command_output(command))
 
 
-def native_environment(root, kube, inventory, images, case, fixture_budget_gib):
-    """Read only the two approved nodes after cache warm-up and image imports."""
-    if len(inventory) != len(NODES) or {node['metadata']['name'] for node in inventory} != set(NODES):
-        raise RuntimeError('native acceptance requires both named development nodes')
+def native_environment(root, kube, inventory, images, case, fixture_budget_gib, nodes=NODES):
+    """Read only the explicitly approved nodes after cache warm-up and image imports."""
+    if tuple(nodes) != fixture_nodes(','.join(nodes)) or len(inventory) != len(nodes) or {node['metadata']['name'] for node in inventory} != set(nodes):
+        raise RuntimeError('native acceptance requires the exact named development nodes')
     disk = shutil.disk_usage(root)
     report = {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * GIB,
               'fixture_budget_bytes': fixture_budget_gib * GIB,
@@ -201,14 +239,21 @@ def passed_events(events, prefix='TestManagedVitess'):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,default=Path('/srv/hakopod-backup-scratch/database-cockpit-20260929'))
+    parser.add_argument('--source',type=Path,default=None)
+    parser.add_argument('--fixture',type=Path,default=None)
+    parser.add_argument('--kubeconfig',type=Path,default=None)
     parser.add_argument('--engine-image',required=True)
     parser.add_argument('--operator-image',required=True)
     parser.add_argument('--case',choices=CASES,required=True)
     parser.add_argument('--attempt',type=int,required=True)
     parser.add_argument('--fixture-budget-gib',type=int,required=True,
                         help='additional measured or conservative disk budget for this case, beyond the 12 GiB reserve')
+    parser.add_argument('--nodes',default=','.join(NODES),help='two or three approved development nodes')
+    parser.add_argument('--go',type=Path,default=Path('/usr/local/bin/go'))
+    parser.add_argument('--kubectl',type=Path,default=None)
+    parser.add_argument('--cache-root',type=Path,default=Path('/srv/hakopod-backup-scratch/managed-databases-20260927'))
     args=parser.parse_args()
-    root=args.root.resolve();source=root/'vitess-source-check'
+    root=args.root.resolve();source=(args.source or root/'vitess-source-check').resolve()
     if args.attempt<1 or args.attempt>100:
         raise RuntimeError('native attempt number must be between 1 and 100')
     if args.fixture_budget_gib < 1 or args.fixture_budget_gib > 64:
@@ -221,22 +266,28 @@ def main():
         match=re.search(r'\b'+name+r'\s*=\s*"([^"]+)"',runtime)
         if not match or match.group(1)!=want:
             raise RuntimeError('candidate runtime image differs from the requested acceptance image')
-    if 'managed Vitess is unavailable: native replication verification and recovery acceptance are incomplete' in runtime:
-        raise RuntimeError('isolated candidate still has its runtime gate closed')
-    kubeconfig=root/'development-kubeconfig'
-    kube=[str(root/'bin/kubectl'),'--kubeconfig',str(kubeconfig),'--context','k3d-hakopod-dev']
-    context=subprocess.check_output(kube+['config','current-context'],timeout=10,text=True).strip()
+    if 'managed Vitess is unavailable: native replication verification and recovery acceptance are incomplete' not in runtime:
+        raise RuntimeError('immutable candidate no longer contains the shipping runtime gate')
+    kubeconfig=(args.kubeconfig or root/'development-kubeconfig').resolve()
+    requested_go=args.go; go=requested_go.resolve(); kubectl=(args.kubectl or root/'bin/kubectl').resolve(); cache_root=args.cache_root.resolve()
+    scratch=Path('/srv/hakopod-backup-scratch')
+    legacy_go=requested_go==Path('/usr/local/bin/go')
+    if not go.is_file() or not os.access(go,os.X_OK) or not kubectl.is_file() or not os.access(kubectl,os.X_OK) or (scratch not in go.parents and not legacy_go) or scratch not in kubectl.parents or scratch not in cache_root.parents:
+        raise RuntimeError('Go, kubectl, and cache paths must be executable or bounded beneath acceptance scratch')
+    kube=[str(kubectl),'--kubeconfig',str(kubeconfig),'--context','k3d-hakopod-dev']
+    context=command_output(kube+['config','view','--minify','-o','jsonpath={.current-context}']).decode().strip()
     if context!='k3d-hakopod-dev':
         raise RuntimeError('native acceptance requires the named development cluster')
     if platform.system()!='Linux' or platform.machine() not in ('x86_64','amd64'):
         raise RuntimeError('native acceptance requires an amd64 Linux executor')
-    nodes=subprocess.check_output(kube+['get','nodes',*NODES,'-o','json'],timeout=15)
-    if len(nodes)>128*1024:
-        raise RuntimeError('development node inventory exceeded its bound')
+    cache_root.mkdir(mode=0o700,parents=True,exist_ok=True)
+    (root/'tmp').mkdir(mode=0o700,exist_ok=True)
+    selected_nodes=fixture_nodes(args.nodes)
+    nodes=command_output(kube+['get','nodes',*selected_nodes,'-o','json'])
     inventory=json.loads(nodes).get('items',[])
-    if len(inventory)!=len(NODES) or {node['metadata']['name'] for node in inventory}!=set(NODES):
-        raise RuntimeError('native acceptance requires both named development nodes')
-    fixtures=root/'vitess-native-fixture.json'
+    if len(inventory)!=len(selected_nodes) or {node['metadata']['name'] for node in inventory}!=set(selected_nodes):
+        raise RuntimeError('native acceptance requires the exact named development nodes')
+    fixtures=(args.fixture or root/'vitess-native-fixture.json').resolve()
     if fixtures.is_symlink() or not fixtures.is_file() or fixtures.stat().st_mode&0o077 or fixtures.stat().st_size>256*1024:
         raise RuntimeError('protected native backup fixture configuration is required')
     stem='vitess-native-'+args.case+'-v'+str(args.attempt)
@@ -247,7 +298,7 @@ def main():
     before=verifier['source_files'](source)
     environment=native_environment(root,kube,inventory,
         {'runtime':args.engine_image,'operator':args.operator_image,'etcd':verifier['source_constant'](source,'vitessEtcdImage')},
-        args.case,args.fixture_budget_gib)
+        args.case,args.fixture_budget_gib,selected_nodes)
     descriptor=os.open(preflight,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
     with os.fdopen(descriptor,'w') as output:json.dump(environment,output,indent=2)
     print('Protected native environment evidence:',preflight,flush=True)
@@ -257,10 +308,10 @@ def main():
     except ValueError as error:
         print('Native Vitess environment refused:',str(error),flush=True)
         return 1
-    env=native_go_environment(root,kubeconfig,fixtures)
+    env=native_go_environment(root,kubeconfig,fixtures,selected_nodes,go.parent.parent,cache_root)
     test=CASES[args.case]
     started=time.time()
-    exit_code,limit_error=run_bounded(['/usr/local/bin/go','test','-p','1','./internal/cluster','-run','^'+test+'$','-count=1','-timeout=90m','-json'],source,env,log)
+    exit_code,limit_error=run_bounded([str(go),'test','-tags=hakopod_native_acceptance','-p','1','./internal/cluster','-run','^'+test+'$','-count=1','-timeout=90m','-json'],source,env,log)
     after=verifier['source_files'](source)
     events,valid_log=structural_events(log)
     passed_tests,valid_events=passed_events(events)

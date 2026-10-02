@@ -115,6 +115,14 @@ def source_constant(root, name):
     return match[1]
 
 
+def source_boolean(root, name):
+    text = (root / 'internal/cluster/database_vitess.go').read_text()
+    match = re.search(r'^\s*' + re.escape(name) + r'\s*=\s*(true|false)\s*$', text, re.MULTILINE)
+    if not match:
+        raise ValueError('Missing Vitess release qualification constant: ' + name)
+    return match[1] == 'true'
+
+
 def accepted_test_events(events, required_tests=REQUIRED_TESTS):
     if not isinstance(events, list) or not events or len(events) > 1024:
         raise ValueError('Vitess native acceptance requires bounded Go test events')
@@ -163,11 +171,12 @@ def validate_native_environment(environment, case, images):
 
     capacity(environment['host_filesystem'])
     nodes = environment['nodes']
-    names = {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0'}
-    if not isinstance(nodes, list) or len(nodes) != 2 or any(not isinstance(node, dict) for node in nodes):
-        raise ValueError('Vitess native evidence requires both development nodes')
-    if any(not isinstance(node.get('name'), str) for node in nodes) or {node['name'] for node in nodes} != names:
-        raise ValueError('Vitess native evidence contains another node')
+    allowed = {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0', 'k3d-hakopod-database-worker-1'}
+    if not isinstance(nodes, list) or len(nodes) not in (2, 3) or any(not isinstance(node, dict) for node in nodes):
+        raise ValueError('Vitess native evidence requires two or three development nodes')
+    node_names = [node.get('name') for node in nodes]
+    if any(not isinstance(name, str) or not name for name in node_names) or len(set(node_names)) != len(node_names) or not set(node_names) <= allowed:
+        raise ValueError('Vitess native evidence contains an empty, duplicate, or foreign node')
     expected_images = set()
     for reference in images:
         repository, digest = reference.rsplit('@', 1)
@@ -191,7 +200,7 @@ def validate_native_environment(environment, case, images):
             capacity(filesystem, high_water)
         cached = node['cached_images']
         if not isinstance(cached, list) or len(cached) != len(expected_images) or any(not isinstance(item, str) for item in cached) or set(cached) != expected_images:
-            raise ValueError('Vitess native acceptance requires every canonical image digest cached on both nodes')
+            raise ValueError('Vitess native acceptance requires every canonical image digest cached on every selected node')
 
 
 def validate_metadata(directory, root=ROOT):
@@ -200,6 +209,8 @@ def validate_metadata(directory, root=ROOT):
         raise ValueError('Vitess qualification requires schema 1 and native linux/amd64')
     if manifest.get('source_files') != source_files(root):
         raise ValueError('Vitess source changed after native qualification')
+    if not source_boolean(root, 'vitessReleaseQualified'):
+        raise ValueError('Vitess shipping admission remains closed')
     expected_files = {'runtime-upstream.patch', 'operator-upstream.patch', 'native-acceptance.json', 'binary-sha256.txt'}
     if set(manifest.get('files', {})) != expected_files:
         raise ValueError('Vitess qualification must include patches, binary hashes and native acceptance')

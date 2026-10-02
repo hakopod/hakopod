@@ -3,6 +3,7 @@ import copy
 import importlib.util
 from pathlib import Path
 import subprocess
+import runpy
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('vitess_acceptance', Path(__file__).with_name('run-development-vitess-acceptance.py'))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+verifier = runpy.run_path(str(Path(__file__).parents[1] / 'release/verify-vitess-runtime.py'))
 
 
 class NativePreflightTests(unittest.TestCase):
@@ -84,6 +86,35 @@ class NativePreflightTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'lifecycle', 4)
                 command.assert_not_called()
+
+    def test_two_or_three_exact_nodes_are_accepted(self):
+        self.assertEqual(runner.fixture_nodes(','.join(runner.NODES)), runner.NODES)
+        self.assertEqual(runner.fixture_nodes(','.join(runner.ALLOWED_NODES)), runner.ALLOWED_NODES)
+
+    def test_empty_duplicate_single_or_foreign_node_sets_are_rejected(self):
+        for value in ('', runner.NODES[0], runner.NODES[0]+','+runner.NODES[0], runner.NODES[0]+',provider-smoke'):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                runner.fixture_nodes(value)
+
+    def test_release_verifier_accepts_worker_pair_and_all_three_nodes(self):
+        third = copy.deepcopy(self.inventory[0])
+        third['metadata']['name'] = 'k3d-hakopod-database-worker-1'
+        for inventory, names in (([copy.deepcopy(self.inventory[1]), third], runner.ALLOWED_NODES[1:]),
+                                 (self.inventory + [third], runner.ALLOWED_NODES)):
+            disk = SimpleNamespace(total=78 * runner.GIB, free=20 * runner.GIB)
+            with patch.object(runner.shutil, 'disk_usage', return_value=disk), patch.object(runner, 'command_json', side_effect=self.metadata):
+                report = runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'lifecycle', 4, names)
+            verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_release_verifier_rejects_duplicate_and_foreign_nodes(self):
+        report, _ = self.collect()
+        for names in (['k3d-hakopod-dev-server-0'] * 2,
+                      ['k3d-hakopod-dev-server-0', 'provider-smoke']):
+            bad = copy.deepcopy(report)
+            for node, name in zip(bad['nodes'], names):
+                node['name'] = name
+            with self.assertRaises(ValueError):
+                verifier['validate_native_environment'](bad, 'lifecycle', list(self.images.values()))
 
     def test_registry_port_survives_tag_removal(self):
         digest = '@sha256:' + 'a' * 64

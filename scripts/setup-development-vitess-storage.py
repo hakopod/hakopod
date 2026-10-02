@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import secrets
+import selectors
+import signal
 import socket
 import subprocess
 import sys
@@ -23,21 +25,50 @@ from botocore.exceptions import ClientError
 ROOT = Path(os.environ.get('HAKOPOD_DATABASE_FIXTURE_ROOT','/srv/hakopod-backup-scratch/database-cockpit-20260929')).resolve()
 STATE = ROOT / 'vitess-s3-fixture-state.json'
 CONFIG = ROOT / 'vitess-native-fixture.json'
-NAMESPACE = 'hakopod-vitess-s3-acceptance'
-OWNER = 'vitess-native-storage-20260930'
+NAMESPACE = os.environ.get('HAKOPOD_DATABASE_FIXTURE_NAMESPACE','hakopod-vitess-s3-acceptance')
+OWNER = os.environ.get('HAKOPOD_DATABASE_FIXTURE_OWNER','vitess-native-storage-20260930')
 WEED = 'docker.io/chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d'
-KUBE = [str(ROOT/'bin/kubectl'), '--kubeconfig', str(ROOT/'development-kubeconfig'), '--context', 'k3d-hakopod-dev']
+KUBE = [os.environ.get('HAKOPOD_TEST_KUBECTL',str(ROOT/'bin/kubectl')), '--kubeconfig', os.environ.get('HAKOPOD_TEST_KUBECONFIG',str(ROOT/'development-kubeconfig')), '--context', 'k3d-hakopod-dev']
 NAMES = ['standalone', 'cluster', 'recovery-source', 'recovery-target', 'reseed', 'revocation']
 
 
-def kube(args, value=None):
-    result = subprocess.run(KUBE+args, input=json.dumps(value).encode() if value is not None else None,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-    if result.returncode:
-        raise RuntimeError('fixture Kubernetes operation failed')
-    if len(result.stdout) > 2*1024*1024:
-        raise RuntimeError('fixture Kubernetes output exceeded its bound')
-    return result.stdout
+def kube(args, value=None, timeout=30, output_limit=2*1024*1024):
+    process = subprocess.Popen(KUBE+args, stdin=subprocess.PIPE if value is not None else subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    if value is not None:
+        process.stdin.write(json.dumps(value).encode())
+        process.stdin.close()
+    output = bytearray()
+    error = bytearray()
+    deadline = time.monotonic()+timeout
+    try:
+        with selectors.DefaultSelector() as selected:
+            selected.register(process.stdout, selectors.EVENT_READ, output)
+            selected.register(process.stderr, selectors.EVENT_READ, error)
+            while selected.get_map():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('fixture Kubernetes operation timed out')
+                for key, _ in selected.select(.5):
+                    block = os.read(key.fileobj.fileno(), 65536)
+                    if not block:
+                        selected.unregister(key.fileobj)
+                        continue
+                    stream = key.data
+                    if len(stream)+len(block) > output_limit:
+                        raise RuntimeError('fixture Kubernetes output exceeded its bound')
+                    stream.extend(block)
+        if process.wait(timeout=max(.1,deadline-time.monotonic())):
+            raise RuntimeError('fixture Kubernetes operation failed')
+        return bytes(output)
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=5)
+        process.stdout.close()
+        process.stderr.close()
 
 
 def save(path, value):
@@ -49,6 +80,26 @@ def save(path, value):
 
 def resources(cpu, memory):
     return {'requests': {'cpu': cpu, 'memory': memory}, 'limits': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': '256Mi'}}
+
+
+def fresh_fixture_state(run_id):
+    state = {'fixtures': {}}
+    identities = []
+    if run_id and (len(run_id)!=32 or any(c not in '0123456789abcdef' for c in run_id)):
+        raise RuntimeError('fixture run identity is malformed')
+    for name in NAMES:
+        database_id = secrets.token_hex(16)
+        key, secret = secrets.token_hex(16), secrets.token_hex(32)
+        bucket = 'hakopod-vitess-'+(run_id[:12]+'-' if run_id else '')+name
+        state['fixtures'][name] = {'database_id':database_id,'dedicated':True,
+            'destination':{'id':secrets.token_hex(16),'revision':1,'project':'demo','environment':'development','name':'Vitess '+name+' development fixture','endpoint':'','region':'us-east-1','bucket':bucket,'prefix':'acceptance','path_style':True},
+            'credentials':{'access_key_id':key,'secret_access_key':secret},'approved_endpoint_cidrs':[]}
+        identities.append({'name':'fixture-'+name,'credentials':[{'accessKey':key,'secretKey':secret}],'actions':['Admin:'+bucket]})
+    return state, identities
+
+
+def storage_service(metadata):
+    return {'apiVersion':'v1','kind':'Service','metadata':dict(metadata,name='s3-fixture'),'spec':{'selector':{'hakopod.io/development-fixture':OWNER,'app.kubernetes.io/component':'s3-storage'},'ports':[{'name':'s3','port':8333,'targetPort':8333}]}}
 
 
 def main():
@@ -77,23 +128,15 @@ def main():
         if state.get('namespace_uid') != namespace['metadata']['uid']:
             raise RuntimeError('fixture namespace was replaced')
     else:
-        state = {'fixtures': {}}
-        identities = []
-        for index, name in enumerate(NAMES,1):
-            database_id = 'f1'+'0'*29+str(index)
-            key, secret = secrets.token_hex(16), secrets.token_hex(32)
-            bucket = 'hakopod-vitess-fixture-'+name
-            state['fixtures'][name] = {'database_id':database_id,'dedicated':True,
-                'destination':{'id':'f2'+'0'*29+str(index),'revision':1,'project':'demo','environment':'development','name':'Vitess '+name+' development fixture','endpoint':'','region':'us-east-1','bucket':bucket,'prefix':'acceptance','path_style':True},
-                'credentials':{'access_key_id':key,'secret_access_key':secret},'approved_endpoint_cidrs':[]}
-            identities.append({'name':'fixture-'+name,'credentials':[{'accessKey':key,'secretKey':secret}],'actions':['Admin:'+bucket]})
+        run_id=os.environ.get('HAKOPOD_DATABASE_FIXTURE_RUN_ID','')
+        state, identities = fresh_fixture_state(run_id)
         namespace = json.loads(kube(['create','-f','-','-o','json'],{'apiVersion':'v1','kind':'Namespace','metadata':{'name':NAMESPACE,'labels':{'hakopod.io/development-fixture':OWNER,'app.kubernetes.io/managed-by':'hakopod-acceptance'}}}))
         state['namespace_uid'] = namespace['metadata']['uid']
         save(STATE,state)
         metadata = {'namespace':NAMESPACE,'labels':{'hakopod.io/development-fixture':OWNER}}
         def obj(kind,name,spec):
             return {'apiVersion':'v1','kind':kind,'metadata':dict(metadata,name=name),'spec':spec}
-        quota = obj('ResourceQuota','fixture',{'hard':{'requests.cpu':'1','limits.cpu':'1','requests.memory':'1Gi','limits.memory':'1Gi','requests.storage':'3Gi','persistentvolumeclaims':'1','pods':'1'}})
+        quota = obj('ResourceQuota','fixture',{'hard':{'requests.cpu':'1','limits.cpu':'1','requests.memory':'1Gi','limits.memory':'1Gi','requests.storage':'3Gi','persistentvolumeclaims':'1','pods':'2' if run_id else '1'}})
         claim = obj('PersistentVolumeClaim','data',{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'3Gi'}}})
         secret = {'apiVersion':'v1','kind':'Secret','metadata':dict(metadata,name='s3-credentials'),'type':'Opaque','data':{'s3.json':base64.b64encode(json.dumps({'identities':identities}).encode()).decode()}}
         security = {'allowPrivilegeEscalation':False,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':True,'runAsNonRoot':True,'runAsUser':1000,'runAsGroup':1000}
@@ -102,7 +145,9 @@ def main():
             'containers':[{'name':'s3','image':WEED,'command':['weed'],'args':['server','-dir=/data','-ip=127.0.0.1','-ip.bind=0.0.0.0','-volume.max=16','-master.volumeSizeLimitMB=128','-s3','-s3.port=8333','-s3.config=/etc/fixture/s3.json','-s3.autoCreateBucket=false'],'env':[{'name':'WEED_MASTER_VOLUME_GROWTH_COPY_1','value':'1'}],
                 'resources':resources('750m','768Mi'),'securityContext':security,'volumeMounts':[{'name':'data','mountPath':'/data'},{'name':'config','mountPath':'/etc/fixture','readOnly':True},{'name':'tmp','mountPath':'/tmp'}],
                 'readinessProbe':{'tcpSocket':{'port':8333},'periodSeconds':3,'timeoutSeconds':1,'failureThreshold':40}}]})
-        for item in [quota,claim,secret,pod]:
+        pod['metadata']['labels']['app.kubernetes.io/component']='s3-storage'
+        service=storage_service(metadata)
+        for item in [quota,claim,secret]+([service] if run_id else [])+[pod]:
             kube(['create','-f','-'],item)
         print('Created owned development S3 storage; waiting for readiness',flush=True)
     for _ in range(90):

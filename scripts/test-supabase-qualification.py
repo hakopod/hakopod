@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Focused tests for fail-closed Supabase qualification evidence."""
-import copy,json,os,runpy,shutil,subprocess,tempfile,time,unittest
+import copy,hashlib,json,os,runpy,shutil,subprocess,tempfile,time,unittest
 from pathlib import Path
 from unittest.mock import patch
 HERE=Path(__file__).resolve().parent.parent
@@ -16,7 +16,9 @@ class SupabaseQualificationTest(unittest.TestCase):
   (self.root/'templates/catalog.json').write_text('{}\n');(self.root/'cmd/hakopod-server/main.go').write_text('package main\n')
   runner=self.root/'examples/supabase-native-acceptance/run.sh';runner.write_text('#!/bin/sh\nexit 0\n');producer=runner.with_name('evidence.py');producer.write_text('# producer\n')
   release=self.root/'release';release.mkdir();shutil.copyfile(HERE/'release/verify-supabase-runtime.py',release/'verify-supabase-runtime.py');shutil.copyfile(HERE/'release/record-supabase-qualification.py',release/'record-supabase-qualification.py')
-  self.sources=VERIFY['source_files'](self.root);self.images={n:'registry.example/'+n+'@sha256:'+'a'*64 for n in VERIFY['COMPONENTS']}
+  self.images={n:'registry.example/'+n+'@sha256:'+'a'*64 for n in VERIFY['COMPONENTS']}
+  self.write_release_contract(False)
+  self.sources=VERIFY['source_files'](self.root)
   self.identities={n:{'uid':10001,'gid':10001,'image':image,'config_user':'app:app','process_observation_sha256':'b'*64} for n,image in self.images.items()}
   self.run_id='c'*32
   source={'platform_id':'source','namespace':'managed-platform-source','namespace_uid':'source-uid','create_operation_id':'create-source'};target={'platform_id':'target','namespace':'managed-platform-target','namespace_uid':'target-uid','create_operation_id':'create-target'}
@@ -25,6 +27,12 @@ class SupabaseQualificationTest(unittest.TestCase):
   self.report={'schema_version':2,'producer':{**VERIFY['PRODUCER'],'runner_sha256':VERIFY['file_hash'](runner),'producer_sha256':VERIFY['file_hash'](producer)},'run_id':self.run_id,'context':'k3d-hakopod-dev','execution':'native','platform':'linux/amd64','started_at':'2026-10-02T00:00:00Z','finished_at':'2026-10-02T00:10:00Z','elapsed_seconds':600.0,'environment':self.environment,'passed':True,'exit_code':0,'limit_error':'','source_files':self.sources,'source_files_after':self.sources,'images':self.images,'identities':self.identities,'embedded_assets':VERIFY['embedded_assets'](self.root),'event_file_sha256':'d'*64,'log_sha256':'e'*64,'test_events':events,'failed_cases':[],'storage_qualification':{'storage_class':'local-path','provisioner':'rancher.io/local-path','encrypted_storage_class_qualified':False},'public_endpoint_qualified':False,'physical_zones_qualified':False}
   self.cleanup={'schema_version':2,'run_id':self.run_id,'context':'k3d-hakopod-dev','status':'verified','errors':[],'source':{**source,'delete_operation_id':'delete-source','verified_absent':True,'persistent_volumes_absent':True},'recovery_target':{**target,'delete_operation_id':'delete-target','verified_absent':True,'persistent_volumes_absent':True}}
  def tearDown(self):self.temp.cleanup()
+ def write_release_contract(self,qualified):
+  digest=hashlib.sha256('\n'.join(name+'='+self.images[name] for name in sorted(self.images)).encode()).hexdigest()
+  lines=['package managedplatform','const SupabaseReleaseQualificationID = "supabase-0.8.2-linux-amd64"','const SupabaseReleaseImageInventorySHA256 = "'+digest+'"','var supabaseReleaseImages = map[string]string{']
+  lines += ['\t"'+name+'": "'+image+'",' for name,image in sorted(self.images.items())]
+  lines += ['}','func SupabaseReleaseQualified() bool { return '+str(qualified).lower()+' }']
+  (self.root/'internal/managedplatform/supabase_qualification.go').write_text('\n'.join(lines)+'\n')
  def write(self,name,value):
   path=Path(self.temp.name)/name;path.write_text(json.dumps(value));return path
  def assemble(self,report=None,cleanup=None):return RECORD['assemble'](self.root,self.write('report.json',report or self.report),self.write('cleanup.json',cleanup or self.cleanup),Path(self.temp.name)/'qualification')
@@ -32,7 +40,28 @@ class SupabaseQualificationTest(unittest.TestCase):
   report=report or self.report;cleanup=cleanup or self.cleanup
   return VERIFY['validate_acceptance'](report,cleanup,self.sources,self.images,self.identities,report['producer']['runner_sha256'],report['producer']['producer_sha256'],report['embedded_assets'])
  def test_records_development_evidence_without_qualification(self):
-  manifest=self.assemble();self.assertTrue(manifest['capability']['development_evidence_recorded']);self.assertFalse(manifest['capability']['development_cluster_qualified']);VERIFY['validate_metadata'](Path(self.temp.name)/'qualification',self.root)
+  manifest=self.assemble();self.assertTrue(manifest['capability']['development_evidence_recorded']);self.assertFalse(manifest['capability']['development_cluster_qualified']);self.assertFalse(manifest['capability']['release_runtime_qualified']);VERIFY['validate_metadata'](Path(self.temp.name)/'qualification',self.root)
+ def test_closed_gate_cannot_publish_or_pull_images(self):
+  self.assemble();calls=[]
+  with self.assertRaisesRegex(ValueError,'release gate is closed'):
+   VERIFY['verify'](Path(self.temp.name)/'qualification',Path(self.temp.name)/'verified',self.root,lambda *args:calls.append(args))
+  self.assertEqual(calls,[]);self.assertFalse(Path(self.temp.name,'verified').exists())
+ def test_final_native_source_can_qualify_runtime_without_approving_a_deployment(self):
+  self.write_release_contract(True);self.sources=VERIFY['source_files'](self.root)
+  self.report['source_files']=self.sources;self.report['source_files_after']=self.sources
+  manifest=self.assemble()
+  self.assertTrue(manifest['capability']['release_runtime_qualified'])
+  for name in ('cluster_qualified','encrypted_storage_class_qualified','public_endpoint_qualified','physical_zones_qualified'):
+   self.assertFalse(manifest['capability'][name])
+ def test_native_images_must_match_compiled_inventory(self):
+  changed=dict(self.images);changed['studio']='registry.example/changed@sha256:'+'f'*64
+  with self.assertRaisesRegex(ValueError,'compiled release inventory'):VERIFY['release_runtime_qualified'](self.root,changed)
+ def test_gate_change_after_acceptance_requires_new_native_evidence(self):
+  self.assemble();self.write_release_contract(True)
+  with self.assertRaisesRegex(ValueError,'source changed'):VERIFY['validate_metadata'](Path(self.temp.name)/'qualification',self.root)
+ def test_manifest_cannot_promote_a_closed_gate(self):
+  self.assemble();path=Path(self.temp.name)/'qualification/manifest.json';value=json.loads(path.read_text());value['capability']['release_runtime_qualified']=True;path.write_text(json.dumps(value))
+  with self.assertRaisesRegex(ValueError,'capability boundary'):VERIFY['validate_metadata'](path.parent,self.root)
  def test_rejects_legacy_or_uncommitted_producer(self):
   with self.assertRaisesRegex(ValueError,'legacy'):self.assemble({'schema_version':1})
   report=copy.deepcopy(self.report);report['producer']['producer_sha256']='f'*64
