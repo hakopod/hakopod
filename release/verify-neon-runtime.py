@@ -23,6 +23,10 @@ MAX_SOURCE_FILES = 20000
 MAX_SOURCE_BYTES = 512 * 1024 * 1024
 COMPONENTS = {"broker", "compute", "compute-tls", "controller-database", "pageserver", "proxy", "safekeeper", "storage-controller"}
 IMAGE_STAGES = {"storage", "compute-tools", "compute-runtime"}
+STAGE_COMPONENTS = {
+    "storage": {"broker", "pageserver", "proxy", "safekeeper", "storage-controller"},
+    "compute-runtime": {"compute"},
+}
 HELPER_IMAGES = {"buildkit": "moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea"}
 BINARY_NAMES = {
     "storage": {"pg_sni_router", "pageserver", "pagectl", "safekeeper", "storage_broker", "storage_controller", "proxy", "endpoint_storage", "neon_local", "storage_scrubber"},
@@ -114,20 +118,22 @@ def source_metadata(root):
         data = tomllib.load(stream)
     expected = {"schema_version", "upstream_repository", "upstream_commit", "proxy_patch",
                 "proxy_patch_sha256", "ownership_patch", "ownership_patch_sha256",
+                "postgres_commit", "postgres_tree", "postgres_patch", "postgres_patch_sha256",
+                "consumer_patch_id", "consumer_patch", "consumer_patch_sha256",
                 "frozen_combined_patch_sha256", "combined_candidate_tree", "source_archive",
                 "qualification", "rejected_artifacts"}
     if set(data) != expected or type(data["schema_version"]) is not int or data["schema_version"] != 1:
         raise ValueError("Neon source metadata is missing or malformed")
     if data["upstream_repository"] != "https://github.com/neondatabase/neon.git" or not COMMIT.fullmatch(data["upstream_commit"]):
         raise ValueError("Neon upstream identity is invalid")
-    for name in ("proxy_patch", "ownership_patch"):
+    for name in ("proxy_patch", "ownership_patch", "postgres_patch", "consumer_patch"):
         patch = Path(root) / data[name]
         if file_hash(patch) != data[name + "_sha256"]:
             raise ValueError("Neon patch identity changed: " + name)
     for name in ("frozen_combined_patch_sha256",):
         if not DIGEST.fullmatch(data[name]):
             raise ValueError("Neon frozen patch identity is invalid")
-    if not COMMIT.fullmatch(data["combined_candidate_tree"]):
+    if any(not COMMIT.fullmatch(data[name]) for name in ("combined_candidate_tree", "postgres_commit", "postgres_tree", "consumer_patch_id")):
         raise ValueError("Neon candidate tree identity is invalid")
     archive = data["source_archive"]
     if set(archive) != {"sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order", "location"} or not DIGEST.fullmatch(archive["sha256"]):
@@ -191,17 +197,22 @@ def validate_events(events, run_id=None, elapsed=None):
 
 def validate_build(build, metadata, archive=None):
     required = {"schema_version", "platform", "upstream_repository", "upstream_commit", "candidate_tree",
+                "postgres_commit", "postgres_tree", "consumer_patch_id",
                 "source_archive", "patches", "images", "identities", "image_stages", "helper_images"}
     if set(build) != required or type(build["schema_version"]) is not int or build["schema_version"] != 1 or build["platform"] != "linux/amd64":
         raise ValueError("Neon build evidence is malformed")
-    if build["upstream_repository"] != metadata["upstream_repository"] or build["upstream_commit"] != metadata["upstream_commit"] or build["candidate_tree"] != metadata["combined_candidate_tree"]:
+    if (build["upstream_repository"] != metadata["upstream_repository"] or build["upstream_commit"] != metadata["upstream_commit"] or
+            build["candidate_tree"] != metadata["combined_candidate_tree"] or build["postgres_commit"] != metadata["postgres_commit"] or
+            build["postgres_tree"] != metadata["postgres_tree"] or build["consumer_patch_id"] != metadata["consumer_patch_id"]):
         raise ValueError("Neon build belongs to another upstream source")
     expected_archive = {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")}
     if build["source_archive"] != expected_archive:
         raise ValueError("Neon build source archive identity changed")
     if archive is not None and (file_hash(archive, metadata["source_archive"]["size_bytes"]) != expected_archive["sha256"] or Path(archive).stat().st_size != expected_archive["size_bytes"]):
         raise ValueError("Neon build source archive identity changed")
-    patches = {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}
+    patches = {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"],
+               "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"],
+               "combined": metadata["frozen_combined_patch_sha256"]}
     if build["patches"] != patches:
         raise ValueError("Neon build patch provenance changed")
     images = validate_images(build["images"])
@@ -219,6 +230,9 @@ def validate_build(build, metadata, archive=None):
             raise ValueError("Neon image binary inventory is incomplete: " + stage)
         if item["manifest_digest"] != item["image"].rsplit("@", 1)[1]:
             raise ValueError("Neon image stage manifest digest changed: " + stage)
+    for stage, components in STAGE_COMPONENTS.items():
+        if any(images[component] != stages[stage]["image"] for component in components):
+            raise ValueError("Neon component image differs from its built stage: " + stage)
     return images, build["identities"]
 
 
@@ -244,15 +258,15 @@ def validate_acceptance(report, sources, images, identities):
     if not isinstance(environment, dict) or set(environment) != {"cpu_limit", "memory_limit_bytes", "cluster_mutation", "cluster_uid", "node_names"} or environment["cpu_limit"] != 1 or environment["memory_limit_bytes"] != 2147483648 or environment["cluster_mutation"] is not True or not environment["cluster_uid"] or not isinstance(environment["node_names"], list) or not 3 <= len(environment["node_names"]) <= 48 or environment["node_names"] != sorted(set(environment["node_names"])):
         raise ValueError("Neon native environment evidence is incomplete")
     cleanup = report["cleanup"]
-    if not isinstance(cleanup, dict) or set(cleanup) != {"schema_version", "run_id", "context", "status", "resources", "namespaces_absent", "persistent_volumes_absent"} or cleanup["schema_version"] != 2 or cleanup["run_id"] != report["run_id"] or cleanup["context"] != report["context"] or cleanup["status"] != "verified" or cleanup["namespaces_absent"] is not True or cleanup["persistent_volumes_absent"] is not True or set(cleanup["resources"]) != {"source", "recovery_target"}:
+    if not isinstance(cleanup, dict) or set(cleanup) != {"schema_version", "run_id", "context", "status", "resources", "namespaces_absent", "persistent_volumes_absent"} or cleanup["schema_version"] != 2 or cleanup["run_id"] != report["run_id"] or cleanup["context"] != report["context"] or cleanup["status"] != "verified" or cleanup["namespaces_absent"] is not True or cleanup["persistent_volumes_absent"] is not True or set(cleanup["resources"]) != {"source", "recovery_target", "cancellation_target"}:
         raise ValueError("Neon cleanup evidence is not bound to the native fixture")
     platform_ids = set()
     for resource in cleanup["resources"].values():
         if not isinstance(resource, dict) or set(resource) != {"platform_id", "namespace", "namespace_uid", "create_operation_id"} or not re.fullmatch(r"[0-9a-f]{32}", resource.get("platform_id", "")) or resource.get("namespace") != "managed-platform-" + resource.get("platform_id", "") or not resource.get("namespace_uid") or not re.fullmatch(r"[0-9a-f]{32}", resource.get("create_operation_id", "")):
             raise ValueError("Neon cleanup evidence is not bound to the native fixture")
         platform_ids.add(resource["platform_id"])
-    if len(platform_ids) != 2:
-        raise ValueError("Neon recovery target must be separate")
+    if len(platform_ids) != 3:
+        raise ValueError("Neon recovery and cancellation targets must be separate")
     observations = report["process_observations"]
     if not isinstance(observations, dict) or set(observations) != COMPONENTS:
         raise ValueError("Neon process evidence is incomplete")
@@ -276,7 +290,10 @@ def validate_metadata(directory, root=ROOT):
     if manifest["source_files"] != sources:
         raise ValueError("Neon source changed after native qualification")
     source = manifest["source"]
-    expected_source = {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"], "archive": {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")}, "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}}
+    expected_source = {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"],
+                       "postgres_commit": metadata["postgres_commit"], "postgres_tree": metadata["postgres_tree"], "consumer_patch_id": metadata["consumer_patch_id"],
+                       "archive": {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")},
+                       "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}}
     if source != expected_source:
         raise ValueError("Neon qualification source provenance changed")
     images = validate_images(manifest["images"])
@@ -330,6 +347,7 @@ def verify_images(images, identities, stages, runner=docker):
             if not isinstance(values, list) or len(values) != 1 or values[0].get("Os") != "linux" or values[0].get("Architecture") != "amd64" or repository + "@" + digest not in values[0].get("RepoDigests", []) or values[0].get("Config", {}).get("User") != expected_user:
                 raise ValueError("Neon image platform or digest changed: " + component)
         for stage, item in sorted(stages.items()):
+            runner(["pull", "--platform", "linux/amd64", item["image"]], config)
             values = json.loads(runner(["image", "inspect", item["image"]], config))
             if len(values) != 1 or values[0].get("Id") != item["config_digest"]:
                 raise ValueError("Neon image config digest changed: " + stage)

@@ -30,7 +30,9 @@ def assemble(source, source_archive, build_path, report_path, output):
     archive = {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")}
     manifest = {
         "schema_version": 1, "platform": "linux/amd64",
-        "source": {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"], "archive": archive, "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}},
+        "source": {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"],
+                   "postgres_commit": metadata["postgres_commit"], "postgres_tree": metadata["postgres_tree"], "consumer_patch_id": metadata["consumer_patch_id"],
+                   "archive": archive, "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}},
         "source_files": sources, "images": images, "identities": identities,
         "tooling": {"recorder_sha256": VERIFIER["file_hash"](source / "release/record-neon-qualification.py"), "verifier_sha256": VERIFIER["file_hash"](source / "release/verify-neon-runtime.py"), "runner_sha256": runner_hash, "producer_sha256": VERIFIER["file_hash"](source / VERIFIER["PRODUCER"]["producer_path"])},
         "files": {},

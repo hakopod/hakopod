@@ -7,6 +7,13 @@ repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 expected_context=k3d-hakopod-dev
 : "${KUBECONFIG:?set KUBECONFIG to the dedicated Hakopod development kubeconfig}"
 : "${HAKOPOD_ACCEPTANCE_SPEC:?set the path to the disposable Supabase specification JSON}"
+: "${HAKOPOD_ACCEPTANCE_ROTATION_SPEC:?set the path to the reviewed full-rotation specification JSON}"
+: "${HAKOPOD_ACCEPTANCE_ROTATION_OLD_PASSWORD_FILE:?set the old database owner password file}"
+: "${HAKOPOD_ACCEPTANCE_ROTATION_NEW_PASSWORD_FILE:?set the new database owner password file}"
+: "${HAKOPOD_ACCEPTANCE_ROTATION_FAIL_ONCE_FILE:?set the acceptance-only rotation retry marker path}"
+: "${HAKOPOD_ACCEPTANCE_ROTATION_RELEASE_FILE:?set the acceptance-only rotation release marker path}"
+: "${HAKOPOD_ACCEPTANCE_SERVER_PID:?set the disposable management server PID}"
+: "${HAKOPOD_ACCEPTANCE_SERVER_BINARY:?set the disposable management server binary}"
 : "${HAKOPOD_ACCEPTANCE_PROJECT:?set the disposable project}"
 : "${HAKOPOD_ACCEPTANCE_ENVIRONMENT:?set the disposable environment}"
 : "${HAKOPOD_ACCEPTANCE_API_URL:?set the Hakopod API base URL}"
@@ -54,7 +61,9 @@ printf 'apikey: %s\nauthorization: Bearer %s\n' "$HAKOPOD_ACCEPTANCE_SERVICE_KEY
 printf 'apikey: %s\nauthorization: Bearer %s\n' "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_SERVICE_KEY" "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_SERVICE_KEY" >"$target_service_headers"
 chmod 600 "$api_headers" "$anon_headers" "$service_headers" "$target_service_headers"
 unset HAKOPOD_ACCEPTANCE_API_TOKEN HAKOPOD_ACCEPTANCE_ANON_KEY HAKOPOD_ACCEPTANCE_SERVICE_KEY HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_SERVICE_KEY
-trap 'rm -rf "$secret_dir"' EXIT HUP INT TERM
+restarted_server_pid=
+cleanup_local() { [ -z "$restarted_server_pid" ] || kill "$restarted_server_pid" 2>/dev/null || true; rm -rf "$secret_dir"; }
+trap cleanup_local EXIT HUP INT TERM
 if [ -n "${HAKOPOD_ACCEPTANCE_CREATE_REVIEW_FILE:-}" ]; then
   create_review=$(python3 "$script_dir/review.py" --review "$HAKOPOD_ACCEPTANCE_CREATE_REVIEW_FILE" --spec "$HAKOPOD_ACCEPTANCE_SPEC" --project "$HAKOPOD_ACCEPTANCE_PROJECT" --environment "$HAKOPOD_ACCEPTANCE_ENVIRONMENT")
 else
@@ -316,6 +325,68 @@ record_case auth-redirect-and-signup "$evidence_dir/auth-redirect-and-signup.jso
 
 row_id=hakopod-test-$(date +%s)
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec statefulset/supabase-database -- psql -U postgres -v ON_ERROR_STOP=1 -c 'create table if not exists public.hakopod_acceptance (id text primary key, owner uuid not null default auth.uid(), value text not null); alter table public.hakopod_acceptance enable row level security; drop policy if exists hakopod_acceptance_owner on public.hakopod_acceptance; create policy hakopod_acceptance_owner on public.hakopod_acceptance using (owner = auth.uid()) with check (owner = auth.uid()); grant select,insert,update,delete on public.hakopod_acceptance to anon, authenticated, service_role; do $$ begin if not exists (select 1 from pg_publication_tables where pubname='"'"'supabase_realtime'"'"' and schemaname='"'"'public'"'"' and tablename='"'"'hakopod_acceptance'"'"') then alter publication supabase_realtime add table public.hakopod_acceptance; end if; end $$;' >/dev/null
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec -i statefulset/supabase-database -- psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $hakopod$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'hakopod_realtime' AND rolcanlogin AND NOT rolsuper
+      AND NOT rolcreatedb AND NOT rolcreaterole AND rolreplication AND NOT rolbypassrls
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'hakopod_meta' AND rolcanlogin AND NOT rolsuper
+      AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'supabase_realtime_admin' AND NOT rolcanlogin AND NOT rolsuper
+      AND NOT rolinherit AND NOT rolcreatedb AND NOT rolcreaterole
+      AND NOT rolreplication AND NOT rolbypassrls
+  ) THEN
+    RAISE EXCEPTION 'custom service role attributes differ';
+  END IF;
+  IF NOT EXISTS (
+       SELECT 1 FROM pg_auth_members membership
+       JOIN pg_roles member_role ON member_role.oid = membership.member
+       JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+       WHERE member_role.rolname = 'hakopod_realtime'
+         AND granted_role.rolname = 'supabase_realtime_admin'
+         AND membership.admin_option
+     ) OR 2 <> (
+       SELECT count(*) FROM pg_auth_members membership
+       JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+       WHERE granted_role.rolname = 'supabase_realtime_admin'
+     ) OR EXISTS (
+       SELECT 1 FROM pg_auth_members membership
+       JOIN pg_roles member_role ON member_role.oid = membership.member
+       JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+       WHERE member_role.rolname IN ('supabase_realtime_admin', 'hakopod_meta')
+          OR (member_role.rolname = 'hakopod_realtime'
+              AND granted_role.rolname <> 'supabase_realtime_admin')
+          OR granted_role.rolname IN ('hakopod_realtime', 'hakopod_meta')
+          OR (granted_role.rolname = 'supabase_realtime_admin'
+              AND member_role.rolname NOT IN ('postgres', 'hakopod_realtime'))
+     ) THEN
+    RAISE EXCEPTION 'custom service role membership differs';
+  END IF;
+  IF NOT has_database_privilege('hakopod_realtime', 'postgres', 'CONNECT')
+     OR NOT has_database_privilege('hakopod_realtime', 'postgres', 'CREATE')
+     OR NOT has_database_privilege('hakopod_meta', 'postgres', 'CONNECT')
+     OR has_database_privilege('hakopod_meta', 'postgres', 'CREATE')
+     OR NOT has_schema_privilege('hakopod_meta', 'public', 'USAGE')
+     OR NOT has_schema_privilege('hakopod_meta', 'public', 'CREATE')
+     OR NOT has_table_privilege('hakopod_meta', 'public.hakopod_acceptance', 'SELECT')
+     OR has_table_privilege('hakopod_meta', 'public.hakopod_acceptance', 'INSERT')
+     OR has_table_privilege('hakopod_meta', 'public.hakopod_acceptance', 'UPDATE')
+     OR has_table_privilege('hakopod_meta', 'public.hakopod_acceptance', 'DELETE') THEN
+    RAISE EXCEPTION 'custom service role privileges differ';
+  END IF;
+  IF (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'realtime') <> 'supabase_realtime_admin'
+     OR (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = '_realtime') <> 'supabase_realtime_admin' THEN
+    RAISE EXCEPTION 'realtime schema ownership differs';
+  END IF;
+END
+$hakopod$;
+SQL
 curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/rest/v1/hakopod_acceptance" --header @"$owner_headers" -H 'content-type: application/json' -H 'prefer: return=minimal' --data "{\"id\":\"$row_id\",\"value\":\"before-restart\"}"
 curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=id,value" --header @"$service_headers" | jq -e --arg id "$row_id" 'length==1 and .[0].id==$id and .[0].value=="before-restart"' >/dev/null
 curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=id" --header @"$anon_headers" | jq -e 'length==0' >/dev/null
@@ -378,7 +449,75 @@ record_case edge-runtime-isolation "$evidence_dir/edge-runtime-isolation.json"
 record_case studio-admin-isolation "$evidence_dir/studio-admin-isolation.json"
 HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" HAKOPOD_ACCEPTANCE_OWNER_OPERATION_ID="$namespace_owner_operation_id" HAKOPOD_ACCEPTANCE_RESOURCE_INTENT_ID="$namespace_resource_intent_id" "$script_dir/network-isolation.sh" >"$evidence_dir/network-policy-isolation.json"
 record_case network-policy-isolation "$evidence_dir/network-policy-isolation.json"
-kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec deployment/supabase-studio -- node -e 'fetch("http://meta:8080/tables?included_schemas=public").then(r => { if (!r.ok) process.exit(1) })'
+meta_tables=$work_dir/postgres-meta-tables.json
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec -i deployment/supabase-studio -- node - >"$meta_tables" <<'JS'
+const endpoint = 'http://meta:8080/tables'
+const connection = new URL('postgresql://db:5432/' + encodeURIComponent(process.env.POSTGRES_DB))
+connection.username = process.env.POSTGRES_USER_READ_WRITE
+connection.password = process.env.POSTGRES_PASSWORD
+connection.searchParams.set('sslmode', 'verify-full')
+const request = async (path = '', options = {}) => {
+  const response = await fetch(endpoint + path, {
+    ...options,
+    headers: { pg: connection.toString(), 'content-type': 'application/json', ...(options.headers || {}) },
+  })
+  const text = await response.text()
+  let body
+  try { body = JSON.parse(text) } catch { body = { raw: text } }
+  return { response, body }
+}
+const fail = message => { throw new Error(message) }
+;(async () => {
+  const initial = await request('?included_schemas=public')
+  if (!initial.response.ok || !Array.isArray(initial.body)) fail('public table listing failed')
+  const acceptance = initial.body.find(table => table?.schema === 'public' && table?.name === 'hakopod_acceptance')
+  if (!acceptance || !Number.isInteger(acceptance.id)) fail('acceptance table is absent from public catalog')
+
+  const created = await request('', {
+    method: 'POST',
+    body: JSON.stringify({ schema: 'public', name: 'hakopod_meta_managed', comment: 'created by native acceptance' }),
+  })
+  if (!created.response.ok || created.body?.schema !== 'public' || created.body?.name !== 'hakopod_meta_managed' || !Number.isInteger(created.body?.id)) fail('public table creation failed')
+  const managedId = created.body.id
+
+  const retrieved = await request(`/${managedId}`)
+  if (!retrieved.response.ok || retrieved.body?.id !== managedId || retrieved.body?.name !== 'hakopod_meta_managed') fail('created table retrieval failed')
+  const updated = await request(`/${managedId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ comment: 'updated by native acceptance', rls_enabled: true }),
+  })
+  if (!updated.response.ok || updated.body?.id !== managedId || updated.body?.comment !== 'updated by native acceptance' || updated.body?.rls_enabled !== true) fail('owned public table update failed')
+
+  const protectedCreate = await request('', {
+    method: 'POST',
+    body: JSON.stringify({ schema: 'auth', name: 'hakopod_meta_forbidden' }),
+  })
+  if (protectedCreate.response.ok) fail('protected schema creation unexpectedly succeeded')
+  const unownedUpdate = await request(`/${acceptance.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ comment: 'forbidden unowned update' }),
+  })
+  if (unownedUpdate.response.ok) fail('unowned public table update unexpectedly succeeded')
+
+  const removed = await request(`/${managedId}`, { method: 'DELETE' })
+  if (!removed.response.ok || removed.body?.id !== managedId) fail('owned public table deletion failed')
+  const final = await request('?included_schemas=public')
+  if (!final.response.ok || !Array.isArray(final.body) || final.body.some(table => table?.name === 'hakopod_meta_managed')) fail('deleted table remains in public catalog')
+
+  process.stdout.write(JSON.stringify({
+    requested_schema: 'public',
+    acceptance_table: 'hakopod_acceptance',
+    acceptance_table_visible: true,
+    managed_table_create_read_update_drop: true,
+    protected_schema_create_denied: true,
+    unowned_public_table_update_denied: true,
+  }))
+})().catch(error => { console.error(error.message); process.exit(1) })
+JS
+meta_observation=$evidence_dir/postgres-meta.json
+jq -e '.requested_schema == "public" and .acceptance_table == "hakopod_acceptance" and .acceptance_table_visible == true and .managed_table_create_read_update_drop == true and .protected_schema_create_denied == true and .unowned_public_table_update_denied == true' "$meta_tables" >/dev/null
+jq '.' "$meta_tables" >"$meta_observation"
+record_case postgres-meta-public-management "$meta_observation"
 
 # Tie each direct database client to a live TLS session by its pod IP. The
 # database rejects plaintext independently, but this proves every expected
@@ -444,14 +583,79 @@ rotation_status=$(curl --max-filesize 1048576 --silent --show-error --output "$r
 [ "$rotation_status" = 400 ]
 jq -e '.. | strings | select(contains("secret rotation for database-owner-password is unavailable"))' "$rotation_response" >/dev/null || { echo "uncoordinated database credential rotation was not refused explicitly" >&2; exit 1; }
 record_case unsafe-rotation-refusal "$rotation_response"
-update_review=$(printf '%s' "$platform" | jq --argjson revision "$revision" '{id:.id,project:.project,environment:.environment,expected_revision:$revision,kind:"update",confirm_name:.spec.name,spec:.spec}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @-)
+database_keys='["auth-database-url","database-owner-password","database-role-bootstrap","postgres-meta-database-password","realtime-database-password","rest-database-url","storage-database-url","supavisor-database-url"]'
+jq -e --slurpfile before "$HAKOPOD_ACCEPTANCE_SPEC" --argjson keys "$database_keys" '
+  .schema_version==1 and .kind=="supabase" and .supabase.jwt_expiry_seconds==7200 and
+  (. as $new | $before[0] as $old | ($new|.secrets={}|.supabase.jwt_expiry_seconds=0)==($old|.secrets={}|.supabase.jwt_expiry_seconds=0)) and
+  (.secrets as $new | $before[0].secrets as $old | all($new|keys[] as $key; (($keys|index($key))!=null) or $new[$key]==$old[$key])) and
+  (.secrets as $new | $before[0].secrets as $old | all($keys[] as $key; $new[$key] != $old[$key]))
+' "$HAKOPOD_ACCEPTANCE_ROTATION_SPEC" >/dev/null || { echo "full rotation specification changed unsupported identities or omitted a database credential" >&2; exit 1; }
+database_name=$(jq -er '.supabase.database_name' "$HAKOPOD_ACCEPTANCE_SPEC")
+check_database_password() {
+  password_file=$1
+  { cat "$password_file"; printf '\n'; } | kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec -i statefulset/supabase-database -- sh -c 'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -X -h 127.0.0.1 -U postgres -d "$1" -v ON_ERROR_STOP=1 -Atc "select 1"' sh "$database_name" >/dev/null 2>&1
+}
+check_database_password "$HAKOPOD_ACCEPTANCE_ROTATION_OLD_PASSWORD_FILE" || { echo "old database credential was not valid before rotation" >&2; exit 1; }
+old_secret_refs=$work_dir/pre-rotation-secret-refs.json
+printf '%s' "$platform" | jq -S '.spec.secrets' >"$old_secret_refs"
+update_review=$(printf '%s' "$platform" | jq --slurpfile spec "$HAKOPOD_ACCEPTANCE_ROTATION_SPEC" --argjson revision "$revision" '{id:.id,project:.project,environment:.environment,expected_revision:$revision,kind:"update",confirm_name:.spec.name,spec:$spec[0]}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @-)
 printf '%s' "$update_review" | jq -e '.blocked==false and .review.id!=null' >/dev/null
 update_operation=$(printf '%s' "$update_review" | jq '{id:.platform.id,project:.platform.project,environment:.platform.environment,expected_revision:.review.expected_revision,kind:"update",confirm_name:.platform.spec.name,spec:.platform.spec,review:.review}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/operations" --header @"$api_headers" -H "Idempotency-Key: hakopod-test-update-$HAKOPOD_ACCEPTANCE_PLATFORM_ID" -H 'content-type: application/json' --data-binary @-)
 update_operation_id=$(printf '%s' "$update_operation" | jq -er '.id')
 tries=0
+while [ ! -f "$HAKOPOD_ACCEPTANCE_ROTATION_FAIL_ONCE_FILE" ]; do tries=$((tries+1)); [ "$tries" -lt 60 ] || { echo "database rotation interruption boundary was not reached" >&2; exit 1; }; sleep 1; done
+kill "$HAKOPOD_ACCEPTANCE_SERVER_PID"
+tries=0
+while curl --silent --max-time 1 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/me" >/dev/null 2>&1; do tries=$((tries+1)); [ "$tries" -lt 30 ] || { echo "management server did not stop at the rotation boundary" >&2; exit 1; }; sleep 1; done
+! kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get configmap "supabase-database-credentials-r$((revision+1))" >/dev/null 2>&1 || { echo "rotation completion marker existed before management restart" >&2; exit 1; }
+"$HAKOPOD_ACCEPTANCE_SERVER_BINARY" >>"$work_dir/server-rotation-restart.log" 2>&1 &
+restarted_server_pid=$!
+tries=0
+until curl --silent --fail --max-time 1 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/me" --header @"$api_headers" >/dev/null 2>&1; do tries=$((tries+1)); [ "$tries" -lt 60 ] || { echo "management server did not restart for rotation replay" >&2; exit 1; }; sleep 1; done
+: >"$HAKOPOD_ACCEPTANCE_ROTATION_RELEASE_FILE"; chmod 600 "$HAKOPOD_ACCEPTANCE_ROTATION_RELEASE_FILE"
+tries=0
 while :; do update_status=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platform-operations/$update_operation_id" --header @"$api_headers" | jq -er '.status'); [ "$update_status" = succeeded ] && break; [ "$update_status" != failed ] && [ "$update_status" != cancelled ] || { echo "Supabase update failed" >&2; exit 1; }; tries=$((tries+1)); [ "$tries" -lt 180 ] || { echo "Supabase update timed out" >&2; exit 1; }; sleep 2; done
+updated_platform=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/$HAKOPOD_ACCEPTANCE_PLATFORM_ID" --header @"$api_headers")
+[ -f "$HAKOPOD_ACCEPTANCE_ROTATION_FAIL_ONCE_FILE" ] && [ ! -L "$HAKOPOD_ACCEPTANCE_ROTATION_FAIL_ONCE_FILE" ] || { echo "database rotation retry boundary did not run" >&2; exit 1; }
+rotation_retry_evidence=$evidence_dir/database-credential-rotation-retry.json
+jq -n '{status:"passed",sql_committed_before_process_restart:true,completion_marker_absent_before_process_restart:true,management_process_restarted:true,durable_operation_resumed:true,retry_replayed_transaction:true}' >"$rotation_retry_evidence"
+record_case database-credential-rotation-retry "$rotation_retry_evidence"
+printf '%s' "$updated_platform" | jq -e --argjson revision "$((revision+1))" --slurpfile expected "$HAKOPOD_ACCEPTANCE_ROTATION_SPEC" '.revision==$revision and .spec==$expected[0]' >/dev/null
+check_database_password "$HAKOPOD_ACCEPTANCE_ROTATION_NEW_PASSWORD_FILE" || { echo "new database credential was rejected after rotation" >&2; exit 1; }
+if check_database_password "$HAKOPOD_ACCEPTANCE_ROTATION_OLD_PASSWORD_FILE"; then echo "old database credential remained valid after rotation" >&2; exit 1; fi
+jwt_setting=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec statefulset/supabase-database -- psql -X -U postgres -d "$database_name" -Atc 'show app.settings.jwt_exp')
+[ "$jwt_setting" = 7200 ] || { echo "database JWT expiry setting was not rotated" >&2; exit 1; }
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec -i statefulset/supabase-database -- psql -X -U postgres -d "$database_name" -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+create or replace function public.hakopod_jwt_expiry() returns text language sql stable security definer set search_path = '' as $$ select current_setting('app.settings.jwt_exp', true) $$;
+revoke all on function public.hakopod_jwt_expiry() from public;
+grant execute on function public.hakopod_jwt_expiry() to service_role;
+SQL
+[ "$(curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/rest/v1/rpc/hakopod_jwt_expiry" --header @"$service_headers" -H 'content-type: application/json' --data '{}')" = '"7200"' ] || { echo "PostgREST did not observe the rotated JWT setting" >&2; exit 1; }
+rotation_marker=supabase-database-credentials-r$((revision+1))
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get configmap "$rotation_marker" -o json | jq -e '.immutable==true and (.data.reference_fingerprint|test("^[a-f0-9]{64}$"))' >/dev/null
+new_signup=$(curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/auth/v1/signup" --header @"$anon_headers" -H 'content-type: application/json' --data '{"data":{"acceptance":"hakopod-test-native-rotated"}}')
+new_access_token=$(printf '%s' "$new_signup" | jq -er '.access_token')
+token_lifetime=$(TOKEN="$new_access_token" python3 - <<'PY'
+import base64,json,os
+part=os.environ['TOKEN'].split('.')[1]; part += '='*((4-len(part)%4)%4)
+payload=json.loads(base64.urlsafe_b64decode(part)); print(payload['exp']-payload['iat'])
+PY
+)
+[ "$token_lifetime" = 7200 ] || { echo "GoTrue did not issue the reviewed JWT lifetime" >&2; exit 1; }
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" delete pod -l 'app.kubernetes.io/component in (database,auth,rest)' --wait=false >/dev/null
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" rollout status statefulset/supabase-database --timeout=180s >/dev/null
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" rollout status deployment/supabase-auth --timeout=180s >/dev/null
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" rollout status deployment/supabase-rest --timeout=180s >/dev/null
+check_database_password "$HAKOPOD_ACCEPTANCE_ROTATION_NEW_PASSWORD_FILE" || { echo "rotated credential did not survive restart" >&2; exit 1; }
+[ "$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec statefulset/supabase-database -- psql -X -U postgres -d "$database_name" -Atc 'show app.settings.jwt_exp')" = 7200 ] || { echo "JWT expiry did not survive restart" >&2; exit 1; }
+[ "$(curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/rest/v1/rpc/hakopod_jwt_expiry" --header @"$service_headers" -H 'content-type: application/json' --data '{}')" = '"7200"' ] || { echo "PostgREST JWT setting did not survive restart" >&2; exit 1; }
+printf '%s' "$updated_platform" | jq -r --argjson keys "$database_keys" '.spec.secrets|to_entries[]|.key as $key|select($keys|index($key))|.value.name+"-r"+(.value.revision|tostring)' | while read -r secret_name; do kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get secret "$secret_name" >/dev/null; done
+jq -r --argjson keys "$database_keys" 'to_entries[]|.key as $key|select($keys|index($key))|.value.name+"-r"+(.value.revision|tostring)' "$old_secret_refs" | while read -r secret_name; do ! kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get secret "$secret_name" >/dev/null 2>&1 || { echo "old database credential snapshot was not pruned after readiness" >&2; exit 1; }; done
+rotation_evidence=$evidence_dir/database-credential-and-jwt-rotation.json
+jq -n --arg marker "$rotation_marker" --argjson revision "$((revision+1))" '{status:"passed",revision:$revision,all_database_credentials_rotated:true,old_database_credential_rejected:true,new_database_credential_accepted:true,jwt_expiry_seconds:7200,gotrue_token_lifetime_seconds:7200,postgrest_setting_observed:true,restart_persistence:true,old_snapshots_pruned_after_ready:true,completion_marker:$marker}' >"$rotation_evidence"
+record_case database-credential-and-jwt-rotation "$rotation_evidence"
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get pvc -o json | jq -S '[.items[] | {name:.metadata.name,uid:.metadata.uid,volume:.spec.volumeName,storage_class:.spec.storageClassName,access_modes:.spec.accessModes,request:.spec.resources.requests.storage}] | sort_by(.name)' >"$pvc_after"
-cmp -s "$pvc_before" "$pvc_after" || { echo "Supabase PVC or PV identity changed across no-change update" >&2; exit 1; }
+cmp -s "$pvc_before" "$pvc_after" || { echo "Supabase PVC or PV identity changed across credential rotation" >&2; exit 1; }
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get pv $(jq -r '.[].volume' "$pvc_after") -o json | jq -S '[.items[] | {name:.metadata.name,uid:.metadata.uid,claim_namespace:.spec.claimRef.namespace,claim_name:.spec.claimRef.name,claim_uid:.spec.claimRef.uid}] | sort_by(.name)' >"$pv_after"
 cmp -s "$pv_before" "$pv_after" || { echo "Supabase PV resource identity changed across no-change update" >&2; exit 1; }
 [ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]

@@ -116,9 +116,10 @@ def observe_identities(args):
     observed = {}
     for pod in pods.get("items", []):
         metadata, spec = pod.get("metadata", {}), pod.get("spec", {})
-        component = metadata.get("labels", {}).get("app.kubernetes.io/component", "")
+        component = metadata.get("labels", {}).get("hakopod.io/neon-role", "")
         if component == "compute":
-            components = [("compute", spec.get("containers", [])[0]), ("compute-tls", spec.get("containers", [])[1])]
+            containers = {container.get("name"): container for container in spec.get("containers", [])}
+            components = [("compute", containers.get("compute", {})), ("compute-tls", containers.get("compute-tls", {}))]
         else:
             components = [(component, spec.get("containers", [])[0] if spec.get("containers") else {})]
         for logical, container in components:
@@ -151,11 +152,12 @@ def validate_observation(case, observation, value):
         required = common | {"mutation_capability_required", "foreign_owner_refused", "deletion_token_required", "owner_operation_id", "resource_intent_ids"}
         valid = set(observation) == required and all(observation[k] is True for k in ("mutation_capability_required", "foreign_owner_refused", "deletion_token_required")) and ID.fullmatch(observation["owner_operation_id"]) and 3 <= len(observation["resource_intent_ids"]) <= 16 and all(ID.fullmatch(x) for x in observation["resource_intent_ids"])
     elif case == "tls":
-        required = common | {"client_verified", "server_verified", "plaintext_refused", "services"}
-        valid = set(observation) == required and all(observation[k] is True for k in ("client_verified", "server_verified", "plaintext_refused")) and set(observation["services"]) == {"storage-controller", "pageserver", "safekeeper", "compute", "proxy"}
+        required = common | {"client_verification_enforced", "server_verified", "plaintext_refused", "services"}
+        valid = set(observation) == required and all(observation[k] is True for k in ("client_verification_enforced", "server_verified", "plaintext_refused")) and set(observation["services"]) == {"storage-controller", "pageserver", "safekeeper", "compute", "proxy"}
     elif case == "tenant-timeline-compute-lifecycle":
-        required = common | {"tenant_id", "timeline_id", "tenant_generation", "timeline_generation", "compute_ids", "created", "stopped", "deleted"}
-        valid = set(observation) == required and ID.fullmatch(observation["tenant_id"]) and ID.fullmatch(observation["timeline_id"]) and type(observation["tenant_generation"]) is int and observation["tenant_generation"] > 0 and type(observation["timeline_generation"]) is int and observation["timeline_generation"] > 0 and 1 <= len(observation["compute_ids"]) <= 6 and observation["created"] is True and observation["stopped"] is True and observation["deleted"] is True
+        required = common | {"tenant_id", "timeline_id", "tenant_generation", "timeline_generation", "compute_names", "created", "stopped", "deleted"}
+        names = observation.get("compute_names")
+        valid = set(observation) == required and ID.fullmatch(observation["tenant_id"]) and ID.fullmatch(observation["timeline_id"]) and type(observation["tenant_generation"]) is int and observation["tenant_generation"] > 0 and type(observation["timeline_generation"]) is int and observation["timeline_generation"] > 0 and isinstance(names, list) and names == ["compute-" + str(i) for i in range(len(names))] and 1 <= len(names) <= 6 and observation["created"] is True and observation["stopped"] is True and observation["deleted"] is True
     elif case == "backup-recovery":
         required = common | {"target_platform_id", "target_namespace_uid", "format", "parts", "tenant_id", "timeline_id", "tenant_generation", "timeline_generation", "commit_lsn", "pageserver_remote_consistent_lsns", "source_object_prefix", "object_inventory_sha256", "object_count", "object_bytes", "restored_data_sha256", "isolated_target"}
         lsns = observation.get("pageserver_remote_consistent_lsns", {})
@@ -164,8 +166,11 @@ def validate_observation(case, observation, value):
         required = common | {"storage_pod_uids_before", "storage_pod_uids_after", "compute_pod_uids_before", "compute_pod_uids_after", "failure_observed", "service_recovered", "data_sha256"}
         valid = set(observation) == required and observation["storage_pod_uids_before"] != observation["storage_pod_uids_after"] and observation["compute_pod_uids_before"] != observation["compute_pod_uids_after"] and observation["failure_observed"] is True and observation["service_recovered"] is True and re.fullmatch(r"[0-9a-f]{64}", observation["data_sha256"])
     elif case == "revocation-cleanup":
-        required = common | {"restore_operation_id", "restore_token_sha256", "access_revoked", "revoked_access_refused", "compute_closed", "proxy_closed", "readers_closed", "cleanup_replayed", "owned_resources_removed", "staging_prefix_removed", "foreign_resources_preserved"}
-        valid = set(observation) == required and ID.fullmatch(observation["restore_operation_id"]) and re.fullmatch(r"[0-9a-f]{64}", observation["restore_token_sha256"]) and all(observation[k] is True for k in required - common - {"restore_operation_id", "restore_token_sha256"})
+        cancellation = value["resources"].get("cancellation_target", {})
+        receipt = {"schema_version", "restore_operation_id", "project", "environment", "source_platform_id", "source_revision", "target_platform_id", "target_revision", "artifact_id", "manifest_sha256", "tenant_id", "timeline_id", "tenant_generation", "timeline_generation", "journal_entries", "journal_phase_counts", "cleanup_pending", "operation_authority_refused", "cancellation_target_namespace_uid", "deployment_count", "statefulset_count", "workload_replicas_zero", "pods_absent", "staging_prefix_empty"}
+        required = common | receipt | {"foreign_resources_preserved"}
+        counts = observation.get("journal_phase_counts", {})
+        valid = set(observation) == required and observation["source_platform_id"] == source.get("platform_id") and observation["target_platform_id"] == cancellation.get("platform_id") and observation["cancellation_target_namespace_uid"] == cancellation.get("namespace_uid") and ID.fullmatch(observation["restore_operation_id"]) and ID.fullmatch(observation["artifact_id"]) and re.fullmatch(r"[0-9a-f]{64}", observation["manifest_sha256"]) and ID.fullmatch(observation["tenant_id"]) and ID.fullmatch(observation["timeline_id"]) and isinstance(counts, dict) and set(counts) == {"complete", "empty_complete", "untouched_complete"} and all(type(count) is int and count >= 0 for count in counts.values()) and type(observation["journal_entries"]) is int and observation["journal_entries"] > 0 and sum(counts.values()) == observation["journal_entries"] and type(observation["deployment_count"]) is int and observation["deployment_count"] == 1 and type(observation["statefulset_count"]) is int and observation["statefulset_count"] >= 6 and observation["cleanup_pending"] is False and all(observation[k] is True for k in ("operation_authority_refused", "workload_replicas_zero", "pods_absent", "staging_prefix_empty", "foreign_resources_preserved"))
     else:
         raise ValueError("Unknown Neon acceptance case")
     if not valid:
@@ -200,7 +205,7 @@ def absent(value, resource):
 
 def finalize(args):
     value = state(args.state); stream = load(args.events)
-    if value["failures"] or set(value["resources"]) != {"source", "recovery_target"} or set(value["identities"]) != VERIFY["COMPONENTS"] or value["resources"]["source"]["platform_id"] == value["resources"]["recovery_target"]["platform_id"]:
+    if value["failures"] or set(value["resources"]) != {"source", "recovery_target", "cancellation_target"} or set(value["identities"]) != VERIFY["COMPONENTS"] or len({resource["platform_id"] for resource in value["resources"].values()}) != 3:
         raise ValueError("Neon resource evidence is incomplete")
     for resource in value["resources"].values(): absent(value, resource)
     elapsed = round(time.monotonic() - value["started_monotonic"], 3)
@@ -216,7 +221,7 @@ def finalize(args):
 def parser():
     root = argparse.ArgumentParser(description=__doc__); sub = root.add_subparsers(dest="command", required=True)
     p = sub.add_parser("begin"); p.add_argument("--source", type=Path, required=True); p.add_argument("--images", type=Path, required=True); p.add_argument("--identities", type=Path, required=True); p.add_argument("--state", type=Path, required=True); p.add_argument("--events", type=Path, required=True); p.add_argument("--context", default="k3d-hakopod-dev"); p.set_defaults(func=begin)
-    p = sub.add_parser("bind-resource"); p.add_argument("--state", type=Path, required=True); p.add_argument("--role", choices=("source", "recovery_target"), required=True); p.add_argument("--operation", type=Path, required=True); p.set_defaults(func=bind)
+    p = sub.add_parser("bind-resource"); p.add_argument("--state", type=Path, required=True); p.add_argument("--role", choices=("source", "recovery_target", "cancellation_target"), required=True); p.add_argument("--operation", type=Path, required=True); p.set_defaults(func=bind)
     p = sub.add_parser("observe-identities"); p.add_argument("--state", type=Path, required=True); p.set_defaults(func=observe_identities)
     p = sub.add_parser("record"); p.add_argument("--state", type=Path, required=True); p.add_argument("--events", type=Path, required=True); p.add_argument("--case", choices=sorted(VERIFY["CASES"]), required=True); p.add_argument("--observation", type=Path, required=True); p.set_defaults(func=record)
     p = sub.add_parser("fail"); p.add_argument("--state", type=Path, required=True); p.add_argument("--code", required=True); p.set_defaults(func=fail)

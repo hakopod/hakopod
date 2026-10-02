@@ -62,6 +62,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             self.manifest['images'][kind] = {'reference': image, 'base_image': base, 'binaries': binaries}
             self.manifest['sources'][kind] = {'repository': vitess.SOURCE_REPOSITORIES[kind], 'revision': revision}
         source.append('vitessEtcdImage = "' + ETCD_IMAGE + '"')
+        source.append('vitessReleaseQualified = true')
         (self.root / 'internal/cluster/database_vitess.go').write_text('\n'.join(source))
         for name in ('go.mod', 'go.sum', 'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
                      'scripts/run-development-vitess-acceptance.py', 'release/verify-vitess-runtime.py',
@@ -165,6 +166,15 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source changed'):
                 vitess.validate_metadata(self.directory, self.root)
             path.write_text(original)
+
+    def test_rejects_qualification_for_a_shipping_source_with_admission_closed(self):
+        path = self.root / 'internal/cluster/database_vitess.go'
+        path.write_text(path.read_text().replace('vitessReleaseQualified = true', 'vitessReleaseQualified = false'))
+        self.manifest['source_files'] = vitess.source_files(self.root)
+        self.acceptance['source_files'] = self.manifest['source_files']
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'admission remains closed'):
+            vitess.validate_metadata(self.directory, self.root)
 
     def test_rejects_symbolic_files_and_directories(self):
         for name, target in (('linked.py', self.root / 'internal/cluster/volume_copy.py'),
