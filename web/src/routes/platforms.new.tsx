@@ -9,7 +9,8 @@ import { SelectField } from '../components/ui/select'
 import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { canAccess, useScope } from '../lib/scope'
-import { managedPlatformName, platformSearch, useManagedPlatformCatalog, type ManagedPlatformCatalog, type ManagedPlatformDefaults, type ManagedPlatformReviewResponse, type ManagedPlatformSpec } from '../lib/managed-platforms'
+import { availableManagedPlatformEntries, managedPlatformName, platformSearch, useManagedPlatformCatalog, type ManagedPlatformCatalog, type ManagedPlatformDefaults, type ManagedPlatformReviewResponse, type ManagedPlatformSpec } from '../lib/managed-platforms'
+import { projectRouteScopeMatches } from '../lib/projects'
 
 export const Route = createFileRoute('/platforms/new')({ validateSearch: platformSearch, component: Page })
 
@@ -20,15 +21,19 @@ function Page() {
 }
 
 function CreatePlatform({ project, environment }: { project: string; environment: string }) {
-  const { identity } = useScope()
+  const workspace = useScope()
+  const { identity } = workspace
+  const scopeMatches = projectRouteScopeMatches(workspace, { project, environment })
   const canManage = !identity.application && canAccess(identity, project, 'deployments:write')
-  const query = useManagedPlatformCatalog(project, environment, canManage)
+  const query = useManagedPlatformCatalog(project, environment, canManage && scopeMatches)
+  if (!scopeMatches) return <Empty title="Workspace unavailable" description="Choose an accessible project and environment above." />
   if (!identity.application && !canManage) return <ErrorState error={new Error('You do not have permission to create platforms in this project.')} />
   if (identity.application) return <ErrorState error={new Error('Application-scoped access cannot create managed platforms.')} />
   if (query.isPending) return <Loading />
   if (query.error) return <ErrorState error={query.error} />
-  if (!query.data.items.length) return <ErrorState error={new Error('The server returned no supported managed-platform configuration.')} />
-  return <PlatformForm catalog={query.data} />
+  const items = availableManagedPlatformEntries(query.data)
+  if (!items.length) return <Empty title="Platform creation unavailable" description="No managed platforms have completed the required checks on this server." />
+  return <PlatformForm catalog={{ ...query.data, items }} />
 }
 
 function PlatformForm({ catalog }: { catalog: ManagedPlatformCatalog }) {

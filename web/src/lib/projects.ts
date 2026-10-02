@@ -16,6 +16,13 @@ export type ProjectRouteScope = {
   status: 'loading' | 'missing-project' | 'missing-environment' | 'ready'
 }
 
+export function projectRouteScopeMatches(
+  resolved: { project: string; environment: string },
+  requested: { project: string; environment: string },
+) {
+  return resolved.project === requested.project && resolved.environment === requested.environment
+}
+
 // A project URL must never fall back to the previously selected workspace.
 export function resolveProjectRouteScope(
   projects: Project[] | undefined,

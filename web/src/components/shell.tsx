@@ -327,7 +327,7 @@ function Workspace({
   try {
     routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
   } catch {}
-  const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms)$/.test(location.pathname)
+  const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms(?:\/new)?)$/.test(location.pathname)
   const routeScope = scopedListPage
     ? resolveProjectRouteScope(
         projects.data?.items,
@@ -390,7 +390,6 @@ function Workspace({
     { to: '/templates', icon: 'box', label: 'Catalog' },
     { to: '/builds', icon: 'branch', label: 'Builds' },
     { to: '/databases', search: { project, environment }, icon: 'database', label: 'Databases' },
-    { to: '/platforms', search: { project, environment }, icon: 'server', label: 'Platforms' },
     { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/requests', icon: 'activity', label: 'Requests' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
