@@ -21,12 +21,15 @@ def environment_fixture(case, images):
     canonical = [reference.split('@')[0].rsplit(':', 1)[0] + '@' + reference.split('@')[1]
                  for reference in [*images.values(), ETCD_IMAGE]]
     return {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * 1024 ** 3,
-            'fixture_budget_bytes': 4 * 1024 ** 3, 'host_filesystem': copy.deepcopy(filesystem),
+            'fixture_budget_bytes': 4 * 1024 ** 3,
+            'required_cpu_milli': {'lifecycle': 8450, 'recovery': 16900, 'reseed': 6350, 'revocation': 4900}[case],
+            'cpu_shortfall_milli': 0, 'host_filesystem': copy.deepcopy(filesystem),
             'nodes': [{'name': name, 'architecture': 'amd64', 'operating_system': 'linux',
                        'schedulable': True, 'image_gc_high_threshold_percent': 85,
                        'conditions': {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'},
                        'filesystems': {'nodefs': copy.deepcopy(filesystem), 'imagefs': copy.deepcopy(filesystem)},
-                       'cached_images': sorted(canonical)}
+                       'cached_images': sorted(canonical), 'allocatable_cpu_milli': 10000,
+                       'requested_cpu_milli': 100, 'available_cpu_milli': 9900}
                       for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')],
             'cluster': {'uid': 'cluster-a', 'node_uids': {'k3d-hakopod-dev-server-0': 'uid-0',
                 'k3d-hakopod-database-worker-0': 'uid-1', 'k3d-hakopod-database-worker-1': 'uid-2'},
