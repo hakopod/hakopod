@@ -23,7 +23,7 @@ set -eu
 umask 077
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends python3 shellcheck systemd ca-certificates curl openssl kmod >/tmp/packages.log
+apt-get install -y -qq --no-install-recommends python3 python3-yaml shellcheck systemd ca-certificates curl openssl kmod >/tmp/packages.log
 mkdir -m 0755 /work
 (cd /artifacts && sha256sum --check SHA256SUMS)
 python3 /repo/release/bootstrap-version.py /artifacts "$VERSION"
