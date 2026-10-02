@@ -158,7 +158,7 @@ class BootstrapVersionTests(unittest.TestCase):
                     patch('sys.argv', ['build-installer.py', '--version', VERSION, '--release-dir', str(inputs), '--use-existing-dist']):
                 builder.main()
             self.assertEqual(build_controllers.call_count, 1)
-            self.assertIn('--include-vitess', build_controllers.call_args.args[0])
+            self.assertNotIn('--include-vitess', build_controllers.call_args.args[0])
             output = root / '.local/installer-artifacts' / VERSION
             self.assertEqual(bootstrap.verify_artifacts(output, VERSION), VERSION)
             provenance = json.loads((output / 'installer-provenance.json').read_text())
