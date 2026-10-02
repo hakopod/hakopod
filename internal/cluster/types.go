@@ -198,6 +198,22 @@ func (c *Client) restClient() rest.Interface {
 }
 
 func New(kubeconfig string, options Options) (*Client, error) {
+	return newClient(kubeconfig, nil, options)
+}
+
+// NewWithConfig uses a configuration already verified by the trusted host.
+func NewWithConfig(config *rest.Config, options Options) (*Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("verified Kubernetes configuration is unavailable")
+	}
+	verified := rest.CopyConfig(config)
+	verified.CAData = append([]byte(nil), config.CAData...)
+	verified.CertData = append([]byte(nil), config.CertData...)
+	verified.KeyData = append([]byte(nil), config.KeyData...)
+	return newClient("", verified, options)
+}
+
+func newClient(kubeconfig string, verified *rest.Config, options Options) (*Client, error) {
 	if err := ValidateServerlessAddress(options.ServerlessAddress); err != nil {
 		return nil, err
 	}
@@ -270,7 +286,9 @@ func New(kubeconfig string, options Options) (*Client, error) {
 		b.Ports = append([]int32(nil), b.Ports...)
 	}
 	var config *rest.Config
-	if kubeconfig != "" {
+	if verified != nil {
+		config = rest.CopyConfig(verified)
+	} else if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
 		config, err = rest.InClusterConfig()
