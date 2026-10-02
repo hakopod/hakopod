@@ -11,10 +11,10 @@ export const initialDatabaseSpec: DatabaseSpec = {
 export const databaseEngines = [
   { id: 'postgresql', name: 'PostgreSQL', category: 'Relational', description: 'SQL, transactions and a rich extension ecosystem.', enabled: true },
   { id: 'redis', name: 'Redis', category: 'Key-value', description: 'In-memory data, caching, queues and streams.', enabled: true },
-  { id: 'mysql', name: 'MySQL', category: 'Relational', description: 'SQL with Group Replication and dedicated routing.', enabled: true },
+  { id: 'mysql', name: 'MySQL', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
   { id: 'mongodb', name: 'MongoDB', category: 'Document', description: 'Flexible documents and native replica sets.', enabled: true },
-  { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Column-oriented analytics with shards and replicas.', enabled: true },
-  { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Oracle Database Free for standalone SQL workloads.', enabled: true },
+  { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Creation is unavailable pending native qualification.', enabled: false },
+  { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
   { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'Sharded MySQL managed on your infrastructure.', enabled: false },
 ] as const
 
