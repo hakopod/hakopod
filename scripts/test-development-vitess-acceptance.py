@@ -24,6 +24,7 @@ class NativePreflightTests(unittest.TestCase):
                        'operator': 'ghcr.io/hakopod/operator:2@sha256:' + '2' * 64,
                        'etcd': 'quay.io/coreos/etcd:3@sha256:' + '3' * 64}
         self.inventory = [{'metadata': {'name': name}, 'status': {
+            'allocatable': {'cpu': '5'},
             'nodeInfo': {'architecture': 'amd64', 'operatingSystem': 'linux'},
             'conditions': [{'type': kind, 'status': status} for kind, status in (
                 ('Ready', 'True'), ('DiskPressure', 'False'), ('MemoryPressure', 'False'), ('PIDPressure', 'False'))]}}
@@ -35,6 +36,8 @@ class NativePreflightTests(unittest.TestCase):
             return {'node': {'fs': filesystem, 'runtime': {'imageFs': filesystem}}}
         if command[-1].endswith('/configz'):
             return {'kubeletconfig': {'imageGCHighThresholdPercent': 85}}
+        if 'pods' in command:
+            return {'items': []}
         return {'images': [{'repoDigests': [runner.canonical_image(reference)]} for reference in self.images.values()]}
 
     def collect(self, metadata=None, inventory=None):
@@ -54,11 +57,14 @@ class NativePreflightTests(unittest.TestCase):
     def test_uses_canonical_digests_and_records_real_node_measurements(self):
         report, commands = self.collect()
         self.assertEqual(report['fixture_budget_bytes'], 4 * runner.GIB)
+        self.assertEqual(report['required_cpu_milli'], 8450)
+        self.assertEqual(report['cpu_shortfall_milli'], 0)
         for node in report['nodes']:
             self.assertEqual(node['conditions']['DiskPressure'], 'False')
             self.assertEqual(node['filesystems']['imagefs']['available_bytes'], 20 * runner.GIB)
             self.assertEqual(node['image_gc_high_threshold_percent'], 85)
             self.assertEqual(node['cached_images'], sorted(runner.canonical_image(image) for image in self.images.values()))
+            self.assertEqual(node['available_cpu_milli'], 5000)
         inspections = [item.args[0] for item in commands.call_args_list if item.args[0][0] == 'docker']
         self.assertEqual(len(inspections), 2)
         self.assertTrue(all(command[2] in runner.NODES and command[3:] == ['crictl', 'images', '-o', 'json'] for command in inspections))
@@ -131,6 +137,24 @@ class NativePreflightTests(unittest.TestCase):
         digest = '@sha256:' + 'a' * 64
         self.assertEqual(runner.canonical_image('registry.test:5000/repo:2' + digest), 'registry.test:5000/repo' + digest)
         self.assertEqual(runner.canonical_image('registry.test:5000/repo' + digest), 'registry.test:5000/repo' + digest)
+
+    def test_fixed_case_cpu_envelopes_reject_short_selected_capacity(self):
+        constrained = copy.deepcopy(self.inventory)
+        for node in constrained:
+            node['status']['allocatable']['cpu'] = '3500m'
+        report, _ = self.collect(inventory=constrained)
+        self.assertEqual(report['required_cpu_milli'], 8450)
+        self.assertEqual(report['cpu_shortfall_milli'], 1450)
+        self.qualified_environment(report)
+        with self.assertRaises(ValueError):
+            verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_cpu_request_uses_regular_sum_or_largest_init_plus_overhead(self):
+        pod = {'spec': {'containers': [{'resources': {'requests': {'cpu': '250m'}}},
+                                       {'resources': {'requests': {'cpu': '100m'}}}],
+                        'initContainers': [{'resources': {'requests': {'cpu': '500m'}}}],
+                        'overhead': {'cpu': '25m'}}}
+        self.assertEqual(runner.pod_cpu_milli(pod), 525)
 
     def test_cluster_prerequisites_bind_receipt_identity_and_exact_crds(self):
         receipt = {'context': 'k3d-hakopod-dev', 'cluster_uid': 'cluster-a',

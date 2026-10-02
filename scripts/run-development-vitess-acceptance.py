@@ -35,6 +35,14 @@ PACKAGE = 'github.com/hakopod/hakopod/internal/cluster'
 NODES = ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')
 ALLOWED_NODES = NODES + ('k3d-hakopod-database-worker-1',)
 GIB = 1024 ** 3
+CASE_CPU_MILLI = {
+    # These are the exact CPUReservationMilli envelopes for the fixed native
+    # fixtures. Recovery keeps two two-shard clusters alive concurrently.
+    'lifecycle': 8450,
+    'recovery': 16900,
+    'reseed': 6350,
+    'revocation': 4900,
+}
 VITESS_CRDS = {
     'etcdlockservers.planetscale.com',
     'vitessbackups.planetscale.com',
@@ -59,6 +67,29 @@ def canonical_image(reference):
     if repository.rfind(':') > repository.rfind('/'):
         repository = repository[:repository.rfind(':')]
     return repository + '@' + digest
+
+
+def cpu_milli(value):
+    match = re.fullmatch(r'(\d+)(n|u|m)?', value or '')
+    if not match:
+        raise RuntimeError('Kubernetes CPU request is invalid')
+    amount, suffix = int(match.group(1)), match.group(2)
+    if suffix == 'n':
+        return (amount + 999999) // 1000000
+    if suffix == 'u':
+        return (amount + 999) // 1000
+    if suffix == 'm':
+        return amount
+    return amount * 1000
+
+
+def pod_cpu_milli(pod):
+    def request(container):
+        return cpu_milli(container.get('resources', {}).get('requests', {}).get('cpu', '0'))
+    regular = sum(request(container) for container in pod.get('spec', {}).get('containers', []))
+    init = max([request(container) for container in pod.get('spec', {}).get('initContainers', [])] or [0])
+    overhead = cpu_milli(pod.get('spec', {}).get('overhead', {}).get('cpu', '0'))
+    return max(regular, init) + overhead
 
 
 def native_go_environment(root, kubeconfig, fixtures, nodes=NODES, go_root=Path('/opt/hakopod-build-go'), cache_root=Path('/srv/hakopod-backup-scratch/managed-databases-20260927')):
@@ -158,8 +189,10 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
     disk = shutil.disk_usage(root)
     report = {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * GIB,
               'fixture_budget_bytes': fixture_budget_gib * GIB,
+              'required_cpu_milli': CASE_CPU_MILLI[case],
               'host_filesystem': {'capacity_bytes': disk.total, 'available_bytes': disk.free},
               'nodes': []}
+    available_cpu = 0
     for node in sorted(inventory, key=lambda item: item['metadata']['name']):
         name = node['metadata']['name']
         summary = command_json(kube + ['get', '--raw', '/api/v1/nodes/' + name + '/proxy/stats/summary'])['node']
@@ -176,6 +209,14 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
                 raise RuntimeError('development image digest inventory is malformed')
             digests.update(references)
         cached = [canonical_image(reference) for reference in images.values() if canonical_image(reference) in digests]
+        pods = command_json(kube + ['get', 'pods', '--all-namespaces', '--field-selector', 'spec.nodeName=' + name, '-o', 'json']).get('items')
+        if not isinstance(pods, list) or len(pods) > 1000:
+            raise RuntimeError('development pod inventory is missing or exceeded its bound')
+        requested_cpu = sum(pod_cpu_milli(pod) for pod in pods
+                            if pod.get('status', {}).get('phase') not in ('Succeeded', 'Failed'))
+        allocatable_cpu = cpu_milli(node['status'].get('allocatable', {}).get('cpu', ''))
+        free_cpu = allocatable_cpu - requested_cpu
+        available_cpu += free_cpu
         report['nodes'].append({'name': name, 'architecture': info.get('architecture'),
             'operating_system': info.get('operatingSystem'),
             'schedulable': not node.get('spec', {}).get('unschedulable', False),
@@ -185,7 +226,12 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
             'filesystems': {kind: {'capacity_bytes': item.get('capacityBytes'),
                                    'available_bytes': item.get('availableBytes')}
                             for kind, item in filesystems.items()},
-            'cached_images': sorted(cached)})
+            'cached_images': sorted(cached), 'allocatable_cpu_milli': allocatable_cpu,
+            'requested_cpu_milli': requested_cpu, 'available_cpu_milli': free_cpu})
+    if available_cpu < report['required_cpu_milli']:
+        report['cpu_shortfall_milli'] = report['required_cpu_milli'] - available_cpu
+    else:
+        report['cpu_shortfall_milli'] = 0
     return report
 
 
