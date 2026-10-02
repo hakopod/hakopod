@@ -27,17 +27,13 @@ docker run --rm -e SETUP_MODE=cluster -e REDIS_MAJOR_VERSION=v8 \
     chmod +x /tmp/bin/redis-server
     PATH=/tmp/bin:$PATH /usr/bin/entrypoint.sh'
 
-plain=$(docker run -d --entrypoint redis-server "$image" /etc/redis/redis.conf \
-  --port 6379 --protected-mode no --requirepass runtime-smoke)
-for _ in $(seq 1 30); do
-  if docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli -h 127.0.0.1 ping | grep -q PONG; then break; fi
-  sleep 1
-done
-test "$(docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli get runtime-smoke)" = ''
-docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli set runtime-smoke ok | grep -q OK
-test "$(docker exec -e REDISCLI_AUTH=runtime-smoke "$plain" redis-cli get runtime-smoke)" = ok
-docker rm -f "$plain" >/dev/null
-plain=
+docker run --rm --entrypoint bash "$image" -ec '
+  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --port 6379 --protected-mode no --requirepass runtime-smoke
+  export REDISCLI_AUTH=runtime-smoke
+  redis-cli -h 127.0.0.1 ping | grep -q PONG
+  redis-cli -h 127.0.0.1 set runtime-smoke ok | grep -q OK
+  test "$(redis-cli -h 127.0.0.1 get runtime-smoke)" = ok
+  redis-cli -h 127.0.0.1 shutdown nosave'
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=redis-runtime-ca \
   -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' \
@@ -49,14 +45,10 @@ printf 'subjectAltName=DNS:redis-runtime,DNS:localhost,IP:127.0.0.1\nextendedKey
 openssl x509 -req -days 1 -in "$work/server.csr" -CA "$work/ca.crt" -CAkey "$work/ca.key" \
   -CAcreateserial -extfile "$work/server.ext" -out "$work/server.crt" >/dev/null 2>&1
 chmod 0644 "$work/ca.crt" "$work/server.key" "$work/server.crt"
-tls=$(docker run -d --hostname redis-runtime -v "$work:/tls:ro" --entrypoint redis-server "$image" \
-  /etc/redis/redis.conf --port 0 --tls-port 6379 --tls-cert-file /tls/server.crt \
-  --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients optional \
-  --protected-mode no --requirepass runtime-smoke)
-for _ in $(seq 1 30); do
-  if docker exec -e REDISCLI_AUTH=runtime-smoke "$tls" redis-cli --tls --cacert /tls/ca.crt \
-    -h redis-runtime ping | grep -q PONG; then break; fi
-  sleep 1
-done
-docker exec -e REDISCLI_AUTH=runtime-smoke "$tls" redis-cli --tls --cacert /tls/ca.crt \
-  -h redis-runtime ping | grep -q PONG
+docker run --rm --hostname redis-runtime -v "$work:/tls:ro" --entrypoint bash "$image" -ec '
+  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --port 0 --tls-port 6379 \
+    --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt \
+    --tls-auth-clients optional --protected-mode no --requirepass runtime-smoke
+  export REDISCLI_AUTH=runtime-smoke
+  redis-cli --tls --cacert /tls/ca.crt -h redis-runtime ping | grep -q PONG
+  redis-cli --tls --cacert /tls/ca.crt -h redis-runtime shutdown nosave'
