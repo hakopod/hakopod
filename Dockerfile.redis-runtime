@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+ARG ALPINE_IMAGE=alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+
+FROM ${ALPINE_IMAGE} AS build
+ARG REDIS_SOURCE_REVISION=86b20b1b9e5f03d86db72c3d59bec432e471fbc9
+ARG REDIS_SOURCE_SHA256=cc123e28b60ea1cfc6466f9f69dad8880515197a0f4786098b49304540b27b43
+WORKDIR /source
+RUN apk add --no-cache build-base linux-headers openssl-dev tar
+ADD --checksum=sha256:${REDIS_SOURCE_SHA256} https://codeload.github.com/redis/redis/tar.gz/${REDIS_SOURCE_REVISION} /tmp/redis.tar.gz
+RUN tar -xzf /tmp/redis.tar.gz --strip-components=1 \
+    && test "$(sed -n 's/^#define REDIS_VERSION "\([^"]*\)"/\1/p' src/version.h)" = "8.2.10" \
+    && arch="$(uname -m)" \
+    && if [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then \
+         sed -ri 's!cd jemalloc && ./configure !&--with-lg-page=16 !' deps/Makefile; \
+       fi \
+    && BUILD_TLS=yes make -j2 redis-server redis-cli \
+    && install -m 0755 src/redis-server src/redis-cli /usr/local/bin/
+
+FROM ${ALPINE_IMAGE}
+ARG TARGETARCH
+ARG REDIS_SOURCE_REVISION=86b20b1b9e5f03d86db72c3d59bec432e471fbc9
+ENV REDIS_PORT=6379
+LABEL org.opencontainers.image.source="https://github.com/OT-CONTAINER-KIT/redis" \
+      org.opencontainers.image.version="8.2.10" \
+      org.opencontainers.image.revision="${REDIS_SOURCE_REVISION}" \
+      io.hakopod.upstream-runtime-revision="8a6d56bd05d42f05ff1f1f6ccfe1a7b9fbc1ef5f" \
+      io.hakopod.redis-tls="enabled" \
+      arch="${TARGETARCH}" \
+      description="Opstree-compatible Redis 8.2.10 runtime"
+RUN apk upgrade --no-cache \
+    && apk add --no-cache bash libstdc++ libssl3 libcrypto3 \
+    && addgroup -S -g 1000 redis \
+    && adduser -S -G redis -u 1000 redis \
+    && mkdir -p /data /node-conf /etc/redis \
+    && chown -R 1000:0 /data /node-conf /etc/redis \
+    && chmod -R g+rw /data /node-conf /etc/redis /var/run
+COPY --from=build /usr/local/bin/redis-server /usr/local/bin/redis-server
+COPY --from=build /usr/local/bin/redis-cli /usr/local/bin/redis-cli
+COPY images/redis-runtime/redis.conf /etc/redis/redis.conf
+COPY images/redis-runtime/entrypoint.sh /usr/bin/entrypoint.sh
+COPY images/redis-runtime/setupMasterSlave.sh /usr/bin/setupMasterSlave.sh
+COPY images/redis-runtime/healthcheck.sh /usr/bin/healthcheck.sh
+VOLUME ["/data", "/node-conf"]
+WORKDIR /data
+EXPOSE 6379
+USER 1000
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]
