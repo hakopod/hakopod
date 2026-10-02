@@ -14,6 +14,10 @@ trap cleanup EXIT
 
 test "$(docker image inspect "$image" --format '{{.Config.User}}')" = 1000
 test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["/usr/bin/entrypoint.sh"]'
+test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = 'https://github.com/hakopod/hakopod'
+test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = 'AGPL-3.0-only AND Apache-2.0'
+test "$(docker image inspect "$image" --format '{{index .Config.Labels "io.hakopod.redis-source-revision"}}')" = '86b20b1b9e5f03d86db72c3d59bec432e471fbc9'
+docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' | grep -Eq '^[a-f0-9]{40}$'
 docker run --rm --entrypoint redis-server "$image" --version | grep -F 'v=8.2.10'
 docker run --rm --entrypoint redis-server "$image" --version | grep -F 'malloc=jemalloc'
 docker run --rm --entrypoint sh "$image" -ec \
