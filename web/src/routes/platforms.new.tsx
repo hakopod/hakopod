@@ -478,11 +478,20 @@ export function PlatformForm({
                       className="mt-1"
                       checked={nodes.includes(node.name)}
                       disabled={
-                        busy || (!nodes.includes(node.name) && nodes.length >= entry.maximum_nodes)
+                        busy ||
+                        (!nodes.includes(node.name) &&
+                          (nodes.length >= entry.maximum_nodes ||
+                            node.architecture !== 'amd64' ||
+                            node.operating_system !== 'linux'))
                       }
                       onChange={() => toggleNode(node.name)}
                     />
-                    <span className="min-w-0 break-all">{node.name}</span>
+                    <span className="min-w-0">
+                      <span className="block break-all">{node.name}</span>
+                      {(node.architecture !== 'amd64' || node.operating_system !== 'linux') && (
+                        <span className="field-help block">Requires a Linux AMD64 node.</span>
+                      )}
+                    </span>
                   </label>
                 ))}
               </div>
