@@ -33,25 +33,71 @@ type NativeManagedPlatformPlanner struct {
 	NeonProxyEndpoints            map[string]NeonProxyBootstrapConfig
 	ResolveNeonSecret             SupabaseSecretSnapshotResolver
 	CatalogNodes                  []managedplatform.CapacityNode
+	CatalogCapacity               func(context.Context, string, string) (managedplatform.CapacityPolicy, error)
 	CatalogSecrets                map[string]map[string][]managedplatform.SecretReference
+	ValidateSupabaseQualification func(context.Context) error
+	ValidateNeonQualification     func(context.Context) error
 }
 
-func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(_ context.Context, _ store.Principal, item store.ManagedPlatform, _ int64, _ string) (managedplatform.Plan, error) {
+func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, _ store.Principal, item store.ManagedPlatform, _ int64, _ string) (managedplatform.Plan, error) {
+	nodes := p.CatalogNodes
+	if p.CatalogCapacity != nil {
+		capacity, err := p.CatalogCapacity(ctx, item.Project, item.Environment)
+		if err != nil {
+			return managedplatform.Plan{}, err
+		}
+		if err = capacity.Validate(); err != nil {
+			return managedplatform.Plan{}, err
+		}
+		if capacity.StorageClass != p.ApprovedEncryptedStorageClass {
+			return managedplatform.Plan{}, fmt.Errorf("workspace storage does not match the qualified platform storage")
+		}
+		nodes = capacity.Nodes
+	}
+	var plan managedplatform.Plan
+	var err error
+	var name string
+	var released bool
+	var validate func(context.Context) error
 	switch item.Spec.Kind {
 	case "supabase":
-		plan, err := managedplatform.PlanSupabase(item.Spec, p.SupabaseImages)
-		plan.Namespace = "managed-platform-" + item.ID
-		plan.StorageClass = p.ApprovedEncryptedStorageClass
-		return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
+		plan, err = managedplatform.PlanSupabase(item.Spec, p.SupabaseImages)
+		name, released, validate = "Supabase", managedplatform.SupabaseReleaseQualified(), p.ValidateSupabaseQualification
 	case "neon":
-		plan, err := managedplatform.PlanNeon(item.Spec, p.NeonImages)
-		plan.Namespace = "managed-platform-" + item.ID
-		plan.StorageClass = p.ApprovedEncryptedStorageClass
-		return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
+		plan, err = managedplatform.PlanNeon(item.Spec, p.NeonImages)
+		name, released, validate = "Neon", managedplatform.NeonReleaseQualified(), p.ValidateNeonQualification
 	default:
 		return managedplatform.Plan{}, fmt.Errorf("managed platform kind is not configured")
 	}
+	plan.Namespace = "managed-platform-" + item.ID
+	plan.StorageClass = p.ApprovedEncryptedStorageClass
+	plan.Capability.Available, plan.Capability.ClusterQualified, plan.Capability.PublicQualified = false, false, false
+	if err == nil {
+		err = validateManagedPlatformPlacement(name, item.Spec, nodes, p.CatalogCapacity != nil)
+	}
+	if err == nil {
+		plan.Capability, err = reviewedPlatformCapability(ctx, name, released, plan.Capability, validate)
+	}
+	return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
 }
+
+func validateManagedPlatformPlacement(name string, spec managedplatform.Spec, nodes []managedplatform.CapacityNode, requireGrant bool) error {
+	approved := make(map[string]managedplatform.CapacityNode, len(nodes))
+	for _, node := range nodes {
+		approved[node.Name] = node
+	}
+	for _, selected := range spec.Placement.NodeNames {
+		node, configured := approved[selected]
+		if !configured && (requireGrant || len(nodes) > 0) {
+			return fmt.Errorf("managed platform node is outside the workspace capacity grant")
+		}
+		if configured && (node.Architecture != "amd64" || node.OperatingSystem != "linux") {
+			return fmt.Errorf("%s release %s requires linux/amd64 node placement", name, spec.Version)
+		}
+	}
+	return nil
+}
+
 func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.Context, principal store.Principal, item store.ManagedPlatform, reviewed managedplatform.Plan, expected int64, kind string) ([]byte, error) {
 	plan, err := p.PlanManagedPlatform(ctx, principal, item, expected, kind)
 	if err != nil || !reflect.DeepEqual(plan, reviewed) {

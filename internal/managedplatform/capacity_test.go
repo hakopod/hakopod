@@ -88,7 +88,7 @@ func TestCapacityPolicyRejectsStorageOrNodeDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan.StorageClass = "encrypted-block"
-	policy := CapacityPolicy{Enabled: true, Pool: "fixture", Capacity: Capacity{CPUMilli: 4000, MemoryBytes: 8 << 30, StorageGiB: 64}, Nodes: []CapacityNode{{Name: "worker-a", UID: "uid-a"}}, StorageClass: "encrypted-block"}
+	policy := CapacityPolicy{Enabled: true, Pool: "fixture", Capacity: Capacity{CPUMilli: 4000, MemoryBytes: 8 << 30, StorageGiB: 64}, Nodes: []CapacityNode{{Name: "worker-a", UID: "uid-a", Architecture: "amd64", OperatingSystem: "linux"}}, StorageClass: "encrypted-block"}
 	if err = policy.Allows(spec, plan); err != nil {
 		t.Fatal(err)
 	}

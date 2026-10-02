@@ -50,8 +50,24 @@ func (s *Server) ConfigureBackups(config BackupConfig) error {
 	runtime := &backupRuntime{server: s, config: config}
 	s.Backups = &backup.Service{Repo: s.Store, Runtime: runtime, Engine: runtime, CredentialKey: s.authEncryptionKey(), StateDir: config.StateDir, MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 	if s.Cluster != nil {
-		supabaseRecovery := &cluster.SupabaseRecoveryRuntime{Cluster: s.Cluster, Store: s.Store}
-		recoveryRuntime := &cluster.PlatformRecoveryRuntime{Store: s.Store, Supabase: supabaseRecovery, Neon: config.NeonRecovery}
+		if config.NeonRecovery == nil {
+			if managed, ok := s.ManagedPlatformRuntime.(*cluster.ManagedPlatformRuntime); ok {
+				var err error
+				config.NeonRecovery, err = cluster.NewNeonRecoveryRuntime(s.Store, s.Cluster, managed.EncryptionKey)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if neon, ok := config.NeonRecovery.(*cluster.NeonRecoveryRuntime); ok {
+			neon.ValidateQualification = func(ctx context.Context, op platformbackup.Operation) error {
+				return s.validatePlatformRecoveryExecution(ctx, op, "neon")
+			}
+		}
+		supabaseRecovery := &cluster.SupabaseRecoveryRuntime{Cluster: s.Cluster, Store: s.Store, ValidateQualification: func(ctx context.Context, op platformbackup.Operation) error {
+			return s.validatePlatformRecoveryExecution(ctx, op, "supabase")
+		}}
+		recoveryRuntime := &cluster.PlatformRecoveryRuntime{Store: s.Store, Supabase: supabaseRecovery, Neon: config.NeonRecovery, ValidateQualification: s.validatePlatformRecoveryExecution}
 		recoveryArtifacts := &platformbackup.EncryptedStore{Repo: s.Store, CredentialKey: s.authEncryptionKey(), MaxBytes: config.MaxBytes, BlockedEndpointCIDRs: config.BlockedEndpointCIDRs}
 		s.PlatformRecovery = &platformbackup.Service{Repo: s.Store, Runtime: recoveryRuntime, Artifacts: recoveryArtifacts, Timeout: 2 * time.Hour}
 	}

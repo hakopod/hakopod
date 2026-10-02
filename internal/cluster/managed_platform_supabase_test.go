@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -17,6 +18,21 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 )
+
+func TestSupabaseDatabaseMigrationScriptIsOneBoundedTransaction(t *testing.T) {
+	script, err := supabaseDatabaseMigrationScript([]byte("BEGIN;\nSELECT 1;\nCOMMIT;\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Count(script, []byte("BEGIN;")) != 1 || bytes.Count(script, []byte("COMMIT;")) != 1 || !bytes.Contains(script, []byte(`ALTER DATABASE :"database_name" SET app.settings.jwt_exp TO :'jwt_expiry';`)) {
+		t.Fatalf("database migration transaction is malformed: %q", script)
+	}
+	for _, invalid := range [][]byte{nil, []byte("SELECT 1;"), bytes.Repeat([]byte("x"), (64<<10)+1)} {
+		if _, err = supabaseDatabaseMigrationScript(invalid); err == nil {
+			t.Fatal("invalid database migration input was accepted")
+		}
+	}
+}
 
 type fakeSupabaseOperationStore struct {
 	claims       map[int64][]store.PlatformResourceClaim
@@ -245,6 +261,142 @@ func TestSupabaseServicePreservesAllocatedAddresses(t *testing.T) {
 	}
 	if state.verifies != 1 || state.heartbeats != 1 {
 		t.Fatalf("expected claim verification and heartbeat, got verifies=%d heartbeats=%d", state.verifies, state.heartbeats)
+	}
+}
+
+func TestSupabaseStatefulSetPreservesDefaultedPodManagementPolicy(t *testing.T) {
+	ctx := context.Background()
+	op := supabaseTestOperation(1)
+	ns := supabaseTestNamespace(op)
+	one := int32(1)
+	existing := &appsv1.StatefulSet{
+		ObjectMeta: supabaseTestMeta(op, ns, "supabase-database"),
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:            &one,
+			ServiceName:         "db",
+			PodManagementPolicy: appsv1.OrderedReadyPodManagement,
+			Selector:            &metav1.LabelSelector{MatchLabels: map[string]string{"app": "database"}},
+			Template:            corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "database"}}},
+		},
+	}
+	kube := fake.NewSimpleClientset(ns, existing)
+	kube.PrependReactor("update", "statefulsets", func(action kubetesting.Action) (bool, runtime.Object, error) {
+		updated := action.(kubetesting.UpdateAction).GetObject().(*appsv1.StatefulSet)
+		if updated.Spec.PodManagementPolicy != appsv1.OrderedReadyPodManagement {
+			return true, nil, errors.New("immutable podManagementPolicy changed")
+		}
+		return false, nil, nil
+	})
+	state := newFakeSupabaseStore()
+	key := supabaseClaimKey("statefulset", existing.Name)
+	current := map[string]store.PlatformResourceClaim{key: {
+		PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key,
+		Kind: "runtime_component", ResourceID: string(existing.UID), ImmutableGeneration: 1, OwnerOperationID: op.ID,
+	}}
+	desired := existing.DeepCopy()
+	desired.ResourceVersion = ""
+	desired.Spec.PodManagementPolicy = ""
+	if err := (&Client{kube: kube}).applySupabaseStatefulSet(ctx, state, op, ns, desired, map[string]store.PlatformResourceClaim{}, current, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := kube.AppsV1().StatefulSets(ns.Name).Get(ctx, existing.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Spec.PodManagementPolicy != appsv1.OrderedReadyPodManagement {
+		t.Fatalf("defaulted pod management policy was not preserved: %q", updated.Spec.PodManagementPolicy)
+	}
+}
+
+func TestSupabaseCurrentCreateDatabaseClaimRequiresExactDurableOwnership(t *testing.T) {
+	op := supabaseTestOperation(1)
+	op.Kind = "create"
+	ns := supabaseTestNamespace(op)
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: supabaseTestMeta(op, ns, "supabase-database")}
+	key := supabaseClaimKey("pvc", claim.Name)
+	durable := store.PlatformResourceClaim{
+		PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key,
+		Kind: "runtime_component", ResourceID: string(claim.UID), ImmutableGeneration: 1, OwnerOperationID: op.ID,
+	}
+	current := map[string]store.PlatformResourceClaim{key: durable}
+	state := newFakeSupabaseStore()
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := recoverSupabaseCurrentCreateDatabaseClaim(context.Background(), state, op, ns, claim, map[string]store.PlatformResourceClaim{}, current, func() error { return nil }); err != nil {
+			t.Fatalf("same create retry %d was rejected: %v", attempt, err)
+		}
+	}
+
+	if err := verifySupabaseCurrentCreateDatabaseClaim(op, ns, claim, map[string]store.PlatformResourceClaim{}); err == nil {
+		t.Fatal("unclaimed database PVC was accepted")
+	}
+	mismatched := durable
+	mismatched.ResourceID = "different-uid"
+	if err := verifySupabaseCurrentCreateDatabaseClaim(op, ns, claim, map[string]store.PlatformResourceClaim{key: mismatched}); err == nil {
+		t.Fatal("mismatched database PVC UID was accepted")
+	}
+	foreign := claim.DeepCopy()
+	foreign.Labels["hakopod.io/managed-platform-id"] = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := verifySupabaseCurrentCreateDatabaseClaim(op, ns, foreign, current); err == nil {
+		t.Fatal("foreign database PVC was accepted")
+	}
+	update := op
+	update.Kind = "update"
+	if err := verifySupabaseCurrentCreateDatabaseClaim(update, ns, claim, current); err == nil {
+		t.Fatal("update operation claimed initial-create ownership")
+	}
+
+	pending := claim.DeepCopy()
+	pending.UID = types.UID("pending-uid")
+	intent := store.PlatformResourceIntent{
+		ID: "intent-database-pvc", PlatformID: op.PlatformID, PlatformRevision: op.Revision,
+		Component: key, Kind: "runtime_component", ExternalKey: supabaseExternalKey("pvc", ns.Name, pending.Name), OwnerOperationID: op.ID,
+	}
+	pending.Labels["hakopod.io/resource-intent-id"] = intent.ID
+	pending.Labels["hakopod.io/owner-operation-id"] = op.ID
+	state = newFakeSupabaseStore()
+	state.intents[op.Revision] = []store.PlatformResourceIntent{intent}
+	recovered := map[string]store.PlatformResourceClaim{}
+	if err := recoverSupabaseCurrentCreateDatabaseClaim(context.Background(), state, op, ns, pending, map[string]store.PlatformResourceClaim{}, recovered, func() error { return nil }); err != nil {
+		t.Fatalf("same-operation pending intent was not recovered: %v", err)
+	}
+	foreignPending := pending.DeepCopy()
+	foreignPending.UID = types.UID("foreign-pending-uid")
+	foreignPending.Labels["hakopod.io/managed-platform-id"] = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	foreignState := newFakeSupabaseStore()
+	foreignIntent := intent
+	foreignIntent.ID = "intent-foreign-database-pvc"
+	foreignPending.Labels["hakopod.io/resource-intent-id"] = foreignIntent.ID
+	foreignState.intents[op.Revision] = []store.PlatformResourceIntent{foreignIntent}
+	if err := recoverSupabaseCurrentCreateDatabaseClaim(context.Background(), foreignState, op, ns, foreignPending, map[string]store.PlatformResourceClaim{}, map[string]store.PlatformResourceClaim{}, func() error { return nil }); err == nil {
+		t.Fatal("foreign pending-intent PVC was adopted")
+	}
+	if len(foreignState.claims[op.Revision]) != 0 || foreignState.intents[op.Revision][0].ConfirmedAt != nil {
+		t.Fatal("foreign pending-intent PVC mutated durable ownership")
+	}
+	wrongScope := op
+	wrongScope.Kind = "update"
+	wrongScopeState := newFakeSupabaseStore()
+	wrongScopeState.intents[op.Revision] = []store.PlatformResourceIntent{intent}
+	if err := recoverSupabaseCurrentCreateDatabaseClaim(context.Background(), wrongScopeState, wrongScope, ns, pending, map[string]store.PlatformResourceClaim{}, map[string]store.PlatformResourceClaim{}, func() error { return nil }); err == nil {
+		t.Fatal("non-create pending-intent PVC was accepted")
+	}
+	if len(wrongScopeState.claims[op.Revision]) != 0 || wrongScopeState.intents[op.Revision][0].ConfirmedAt != nil {
+		t.Fatal("non-create pending-intent PVC mutated durable ownership")
+	}
+}
+
+func TestSupabaseDatabaseClaimPreparationClearsStaleCreateBinding(t *testing.T) {
+	ctx := context.Background()
+	op := supabaseTestOperation(1)
+	op.Kind = "create"
+	ns := supabaseTestNamespace(op)
+	render := managedplatform.SupabaseRenderInput{DatabaseClaim: managedplatform.ObservedClaimState{Observed: true, UID: "stale"}, DatabaseClaimFromCurrentCreate: true}
+	client := &Client{kube: fake.NewSimpleClientset(ns)}
+	if err := client.prepareSupabaseDatabaseClaim(ctx, newFakeSupabaseStore(), op, ns, &render, map[string]store.PlatformResourceClaim{}, map[string]store.PlatformResourceClaim{}, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !render.DatabaseClaim.Observed || render.DatabaseClaim.UID != "" || render.DatabaseClaimFromCurrentCreate {
+		t.Fatalf("stale database claim binding survived observation: %#v", render.DatabaseClaim)
 	}
 }
 

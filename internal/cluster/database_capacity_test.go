@@ -51,7 +51,7 @@ func TestManagedClusterPinsEveryNodeUID(t *testing.T) {
 
 func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 	ctx := context.Background()
-	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	name := "supabase-fixture"
 	labels := map[string]string{managedBy: "hakopod", "hakopod.io/managed-platform-id": id, "hakopod.io/managed-platform": name, "app.kubernetes.io/name": "supabase-auth", "app.kubernetes.io/component": "auth"}
@@ -100,7 +100,7 @@ func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 			t.Fatal("non-controller Pod reference claimed a StatefulSet reservation", err)
 		}
 	}
-	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1280 << 20}, Namespaces: map[string]managedplatform.CapacityNamespaceOwnership{namespace.Name: ownership}}
+	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Architecture: "amd64", OperatingSystem: "linux", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1280 << 20}, Namespaces: map[string]managedplatform.CapacityNamespaceOwnership{namespace.Name: ownership}}
 	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 
 func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	ctx := context.Background()
-	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	applicationID := "application-fixture"
 	applicationOwner := ownerID(applicationID)
 	applicationNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(applicationID), UID: "application-namespace", Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner, scopeKey: scopeLabel("project", "production")}}}
@@ -155,7 +155,7 @@ func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	c := &Client{kube: fake.NewClientset(node, applicationNamespace, applicationDeployment, applicationReplica, applicationPod, databaseNamespace, databaseSet, databasePod)}
 	workloadCapacity := managedplatform.Capacity{CPUMilli: 500, MemoryBytes: 512 << 20}
 	ownership := managedplatform.CapacityPoolOwnership{Workloads: []managedplatform.CapacityPoolWorkload{{Kind: "application", ID: applicationID, Project: "project", Environment: "production", Capacity: workloadCapacity}, {Kind: "database", ID: databaseID, Project: "project", Environment: "production", Capacity: workloadCapacity}}}
-	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1 << 30}, Ownership: ownership}
+	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Architecture: "amd64", OperatingSystem: "linux", Capacity: managedplatform.Capacity{CPUMilli: 1300, MemoryBytes: 1 << 30}, Ownership: ownership}
 	if err := c.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation}); err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestManagedClusterFileIsStrictAndBounded(t *testing.T) {
 }
 func TestDatabaseGrantAccountsForExistingPodsAndHeadroom(t *testing.T) {
 	ctx := context.Background()
-	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "default"}, Spec: corev1.PodSpec{NodeName: "worker", Containers: []corev1.Container{{Name: "other", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
 	c := &Client{kube: fake.NewClientset(&node, pod)}
 	r := DatabaseNodeReservation{UID: "uid-worker", Capacity: database.Capacity{CPUMilli: 1000, MemoryBytes: 1024 << 20}, Scopes: []string{"owned/production"}}

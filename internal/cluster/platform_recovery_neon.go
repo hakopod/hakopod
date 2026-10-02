@@ -33,9 +33,10 @@ import (
 )
 
 type NeonRecoveryRuntime struct {
-	Store         *store.Store
-	Cluster       *Client
-	EncryptionKey []byte
+	Store                 *store.Store
+	Cluster               *Client
+	EncryptionKey         []byte
+	ValidateQualification func(context.Context, platformbackup.Operation) error
 }
 
 const maxNeonRecoveryWorkloads = 33
@@ -43,6 +44,12 @@ const maxNeonRecoveryWorkloads = 33
 func (r *NeonRecoveryRuntime) fence(ctx context.Context, op platformbackup.Operation) error {
 	if platformbackup.RecoveryCleanupFromContext(ctx) {
 		return r.Store.FencePlatformRecoveryCleanup(ctx, op)
+	}
+	if r.ValidateQualification == nil {
+		return fmt.Errorf("Neon recovery qualification is unavailable")
+	}
+	if err := r.ValidateQualification(ctx, op); err != nil {
+		return err
 	}
 	cancelled, err := r.Store.HeartbeatPlatformRecovery(ctx, op)
 	if err != nil {
@@ -74,14 +81,7 @@ func (a neonRecoveryLifecycle) Operation() managedplatform.DurableOperation {
 	return managedplatform.DurableOperation{ID: a.platform.ID, PlatformID: a.platform.PlatformID, Revision: a.platform.Revision, Kind: a.platform.Kind}
 }
 func (a neonRecoveryLifecycle) Heartbeat(ctx context.Context) error {
-	if platformbackup.RecoveryCleanupFromContext(ctx) {
-		return a.runtime.Store.FencePlatformRecoveryCleanup(ctx, a.recovery)
-	}
-	cancelled, err := a.runtime.Store.HeartbeatPlatformRecovery(ctx, a.recovery)
-	if err == nil && cancelled {
-		return context.Canceled
-	}
-	return err
+	return a.runtime.fence(ctx, a.recovery)
 }
 func (a neonRecoveryLifecycle) Claims(ctx context.Context, revision int64) ([]managedplatform.DurableResourceClaim, error) {
 	if revision != a.platform.Revision {

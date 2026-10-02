@@ -46,9 +46,15 @@ func (w *Worker) runManagedPlatform(parent context.Context) {
 var managedPlatformSafeCategories = map[string]struct{}{
 	"capacity_admission": {}, "neon_snapshot_mismatch": {}, "neon_snapshot_missing": {},
 	"runtime_unavailable": {}, "snapshot_invalid": {}, "supabase_assets_invalid": {},
+	"supabase_apply_configmap": {}, "supabase_apply_deployment": {},
+	"supabase_apply_networkpolicy": {}, "supabase_apply_pvc": {},
+	"supabase_apply_secret": {}, "supabase_apply_service": {},
+	"supabase_apply_statefulset": {}, "supabase_claims": {},
 	"supabase_database_tls_validation": {}, "supabase_database_url_validation": {},
 	"supabase_gateway_validation": {}, "supabase_snapshot_mismatch": {},
-	"supabase_snapshot_missing": {}, "unsupported_kind": {},
+	"supabase_snapshot_missing": {}, "supabase_namespace": {},
+	"supabase_observe": {}, "supabase_qualification": {}, "neon_qualification": {}, "supabase_render": {}, "unsupported_kind": {},
+	"supabase_rotate_database_credentials": {},
 }
 
 func managedPlatformErrorObservation(err error) (string, string) {

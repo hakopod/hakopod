@@ -71,9 +71,13 @@ func TestVitessPolicyLimitsClientsToGateway(t *testing.T) {
 	}
 }
 
-func TestVitessIncompleteRuntimeFailsClosed(t *testing.T) {
+func TestVitessRuntimeAdmissionMatchesBuild(t *testing.T) {
 	d := vitessTestDatabase()
-	if vitessRuntimeSupported(d.Spec) == nil {
+	err := vitessRuntimeSupported(d.Spec)
+	if (vitessNativeAcceptance || vitessReleaseQualified) && err != nil {
+		t.Fatal("native acceptance build rejected the valid Vitess runtime", err)
+	}
+	if !vitessNativeAcceptance && !vitessReleaseQualified && err == nil {
 		t.Fatal("unaccepted Vitess runtime became available")
 	}
 	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
