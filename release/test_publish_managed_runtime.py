@@ -111,10 +111,22 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             _, image = self.fixture(Path(directory))
             for result in [(0, "sha256:" + "a" * 64, ""), (1, "", "DENIED")]:
-                with self.subTest(result=result), patch.object(publisher, "checked", side_effect=["", image["image_digest"]]) as checked, patch.object(publisher, "run", return_value=result):
+                with self.subTest(result=result), patch.object(publisher, "checked", side_effect=["", image["image_digest"], "sha256:" + "a" * 64]) as checked, patch.object(publisher, "run", return_value=result):
                     with self.assertRaises(ValueError):
                         publisher.publish("crane", image, Path(directory))
                     self.assertFalse(any("tag" in call.args[0] for call in checked.call_args_list))
+
+    def test_publication_tags_only_the_confirmed_missing_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, image = self.fixture(Path(directory))
+            tag = 'sha256-' + image['image_digest'][7:]
+            reference = image['repository'] + ':' + tag
+            url = 'https://ghcr.io/v2/hakopod/managed-vitess/manifests/' + tag
+            error = 'Error: fetching manifest ' + reference + ': GET ' + url + ': MANIFEST_UNKNOWN: manifest unknown\n'
+            with patch.object(publisher, 'run', return_value=(1, '', error)) as lookup, patch.object(publisher, 'checked', side_effect=['', image['image_digest'], '', image['image_digest']]) as checked:
+                self.assertEqual(publisher.publish('crane', image, Path(directory)), image['repository'] + '@' + image['image_digest'])
+                self.assertEqual(lookup.call_args.args[0], ['crane', 'manifest', reference])
+                self.assertEqual([call.args[0][1] for call in checked.call_args_list], ['push', 'digest', 'tag', 'digest'])
 
     def test_command_output_is_bounded(self):
         with self.assertRaisesRegex(ValueError, "output exceeded"):
