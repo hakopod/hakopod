@@ -98,7 +98,7 @@ class VitessControllerBundleTest(unittest.TestCase):
                 builder.build(root/'without-vitess','qualified-redis-fixture')
                 qualify.assert_not_called();render.assert_not_called()
                 manifest=json.loads((root/'without-vitess'/'manifest.json').read_text())
-                self.assertEqual(set(manifest['files']),{engine+'.json' for engine in builder.NAMESPACES})
+                self.assertEqual(set(manifest['files']),{'postgresql.json','redis.json','mongodb.json'})
                 helm.reset_mock();qualify.side_effect=ValueError('unqualified Vitess')
                 with self.assertRaisesRegex(ValueError,'unqualified'):
                     builder.build(root/'unqualified','qualified-redis-fixture',include_vitess=True)
@@ -107,7 +107,7 @@ class VitessControllerBundleTest(unittest.TestCase):
                 builder.build(root/'with-vitess','qualified-redis-fixture',include_vitess=True)
                 render.assert_called_once()
                 manifest=json.loads((root/'with-vitess'/'manifest.json').read_text())
-                self.assertEqual(set(manifest['files']),{engine+'.json' for engine in builder.NAMESPACES}|{'vitess.json'})
+                self.assertEqual(set(manifest['files']),{'postgresql.json','redis.json','mongodb.json','vitess.json'})
                 self.assertEqual(manifest['sources']['vitess']['qualification_sha256'],'b'*64)
 
 

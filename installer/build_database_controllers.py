@@ -22,6 +22,7 @@ IMAGE = re.compile(r'^[^\s]+:[^/@:]+@sha256:[0-9a-f]{64}$')
 REDIS_CONTROLLER_IMAGE = 'ghcr.io/hakopod/managed-redis-operator:candidate-36996745177-1@sha256:87a426b087355e41247210d176d82812a5c8c462cc2856789513dd00a37ab32a'
 HERE = Path(__file__).resolve().parent
 NAMESPACES = {'postgresql': 'cnpg-system', 'redis': 'redis-operator', 'mysql': 'mysql-operator', 'mongodb': 'mongodb-system', 'clickhouse': 'clickhouse-operator'}
+RELEASE_ENGINES = ('postgresql', 'redis', 'mongodb')
 
 
 def fetch(url, expected, path, limit=8 * 1024 * 1024):
@@ -140,7 +141,7 @@ def build(destination, redis_image, include_vitess=False):
     with tempfile.TemporaryDirectory(prefix='hakopod-controller-build-') as tmp:
         files={}
         helm=helm_binary(Path(tmp))
-        for engine in NAMESPACES:
+        for engine in RELEASE_ENGINES:
             root=Path(tmp)/engine;root.mkdir()
             objects=render(engine,pins[engine],root,redis_image,helm);validate(objects)
             files[engine+'.json']=(json.dumps({'apiVersion':'v1','kind':'List','items':objects},sort_keys=True)+'\n').encode()
