@@ -103,9 +103,14 @@ build() {
   }
   sudo docker inspect "$BUILDER_CONTAINER" \
     | cat >"$output_directory/builder-inspect.json"
-  sudo docker buildx build --builder "$BUILDER_NAME" --load --progress=plain \
+  archive="$output_directory/${phase}.oci.tar"
+  [[ ! -e "$archive" ]] || { echo "refusing build: OCI archive already exists" >&2; exit 1; }
+  sudo docker buildx build --builder "$BUILDER_NAME" --platform linux/amd64 --provenance=false --sbom=false \
+    --output "type=oci,dest=$archive" --progress=plain \
     --metadata-file "$output_directory/${phase}-build-metadata.json" \
-    --label "org.opencontainers.image.revision=$UPSTREAM_COMMIT" \
+    --label "org.opencontainers.image.source=https://github.com/hakopod/hakopod" \
+    --label "io.hakopod.neon.upstream-repository=https://github.com/neondatabase/neon" \
+    --label "io.hakopod.neon.upstream-commit=$UPSTREAM_COMMIT" \
     --label "io.hakopod.neon.patched-tree=$PATCHED_TREE" \
     --label "io.hakopod.neon.postgres-commit=$POSTGRES_COMMIT" \
     --label "io.hakopod.neon.consumer-patch-id=$CONSUMER_PATCH_ID" \
@@ -128,6 +133,7 @@ build() {
   done
   wait "$build_pid"
   require_disk_reserve
+  sudo docker image load --input "$archive" >/dev/null
 }
 
 case "$phase" in
@@ -156,13 +162,28 @@ sudo docker image inspect "$image" | cat >"$output_directory/${phase}-image-insp
 printf '%s\n' "$image" >"$output_directory/${phase}-image.txt"
 source_hash_after=$(sha256sum "$source_archive" | cut -d' ' -f1)
 [[ "$source_hash_after" == "$source_hash_before" ]]
-image_config_digest=$(sudo docker image inspect "$image" --format '{{.Id}}')
-image_manifest_digest=$(python3 - "$output_directory/${phase}-build-metadata.json" <<'PY'
+read -r image_manifest_digest image_config_digest < <(python3 - "$output_directory/${phase}-build-metadata.json" "$output_directory/${phase}.oci.tar" <<'PY'
 import json
+import re
 import sys
+import tarfile
+
+digest_pattern = re.compile(r"sha256:[0-9a-f]{64}")
 with open(sys.argv[1], encoding="utf-8") as stream:
     metadata = json.load(stream)
-print(metadata.get("containerimage.digest", "unavailable"))
+metadata_digest = metadata.get("containerimage.digest", "")
+if not isinstance(metadata_digest, str) or not digest_pattern.fullmatch(metadata_digest):
+    raise SystemExit("build metadata does not contain a SHA-256 manifest digest")
+with tarfile.open(sys.argv[2]) as archive:
+    index = json.load(archive.extractfile("index.json"))
+    manifests = index.get("manifests", [])
+    if len(manifests) != 1 or manifests[0].get("digest") != metadata_digest:
+        raise SystemExit("OCI archive manifest does not match build metadata")
+    manifest = json.load(archive.extractfile("blobs/sha256/" + metadata_digest[7:]))
+config_digest = manifest.get("config", {}).get("digest", "")
+if not isinstance(config_digest, str) or not digest_pattern.fullmatch(config_digest):
+    raise SystemExit("OCI archive manifest does not contain a SHA-256 config digest")
+print(metadata_digest, config_digest)
 PY
 )
 cat >"$output_directory/${phase}-provenance.txt" <<EOF
