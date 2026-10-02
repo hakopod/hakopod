@@ -2,6 +2,7 @@
 set -eu
 umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 
 expected_context=k3d-hakopod-dev
 : "${KUBECONFIG:?set KUBECONFIG to the dedicated Hakopod development kubeconfig}"
@@ -27,7 +28,7 @@ expected_context=k3d-hakopod-dev
 : "${HAKOPOD_ACCEPTANCE_DISPOSABLE:?set HAKOPOD_ACCEPTANCE_DISPOSABLE=1 for an isolated disposable fixture}"
 [ "$HAKOPOD_ACCEPTANCE_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicit disposable fixture marker" >&2; exit 2; }
 [ "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicitly disposable recovery target" >&2; exit 2; }
-for command in kubectl curl jq websocat sha256sum openssl python3; do command -v "$command" >/dev/null 2>&1 || { echo "$command is required" >&2; exit 2; }; done
+for command in kubectl curl jq websocat sha256sum openssl python3 docker; do command -v "$command" >/dev/null 2>&1 || { echo "$command is required" >&2; exit 2; }; done
 kubectl_bin=$(command -v kubectl)
 kubectl() { command "$kubectl_bin" --request-timeout=15s "$@"; }
 context=$(kubectl --kubeconfig "$KUBECONFIG" config current-context)
@@ -54,7 +55,11 @@ printf 'apikey: %s\nauthorization: Bearer %s\n' "$HAKOPOD_ACCEPTANCE_RECOVERY_TA
 chmod 600 "$api_headers" "$anon_headers" "$service_headers" "$target_service_headers"
 unset HAKOPOD_ACCEPTANCE_API_TOKEN HAKOPOD_ACCEPTANCE_ANON_KEY HAKOPOD_ACCEPTANCE_SERVICE_KEY HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_SERVICE_KEY
 trap 'rm -rf "$secret_dir"' EXIT HUP INT TERM
-create_review=$(jq -n --slurpfile spec "$HAKOPOD_ACCEPTANCE_SPEC" --arg project "$HAKOPOD_ACCEPTANCE_PROJECT" --arg environment "$HAKOPOD_ACCEPTANCE_ENVIRONMENT" '{project:$project,environment:$environment,expected_revision:0,kind:"create",spec:$spec[0]}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @-)
+if [ -n "${HAKOPOD_ACCEPTANCE_CREATE_REVIEW_FILE:-}" ]; then
+  create_review=$(python3 "$script_dir/review.py" --review "$HAKOPOD_ACCEPTANCE_CREATE_REVIEW_FILE" --spec "$HAKOPOD_ACCEPTANCE_SPEC" --project "$HAKOPOD_ACCEPTANCE_PROJECT" --environment "$HAKOPOD_ACCEPTANCE_ENVIRONMENT")
+else
+  create_review=$(jq -n --slurpfile spec "$HAKOPOD_ACCEPTANCE_SPEC" --arg project "$HAKOPOD_ACCEPTANCE_PROJECT" --arg environment "$HAKOPOD_ACCEPTANCE_ENVIRONMENT" '{project:$project,environment:$environment,expected_revision:0,kind:"create",spec:$spec[0]}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @-)
+fi
 printf '%s' "$create_review" | jq -e '.blocked==false and .review.id!=null' >/dev/null || { echo "Supabase capability gate remains closed; acceptance did not run" >&2; exit 3; }
 HAKOPOD_ACCEPTANCE_PLATFORM_ID=$(printf '%s' "$create_review" | jq -er '.platform.id')
 export HAKOPOD_ACCEPTANCE_PLATFORM_ID
@@ -63,6 +68,15 @@ expected_name=$(printf '%s' "$create_review" | jq -er '.platform.spec.name')
 work_dir=/tmp/hakopod-supabase-native-$HAKOPOD_ACCEPTANCE_PLATFORM_ID
 [ ! -e "$work_dir" ] && [ ! -L "$work_dir" ] || { echo "acceptance work directory already exists" >&2; exit 2; }
 mkdir -m 700 "$work_dir"
+evidence_dir=$work_dir/evidence
+mkdir -m 700 "$evidence_dir"
+evidence_state=$evidence_dir/state.json
+evidence_events=$evidence_dir/events.json
+evidence() { python3 "$script_dir/evidence.py" "$@"; }
+record_case() {
+  evidence event --state "$evidence_state" --events "$evidence_events" --case "$1" --evidence "$2"
+}
+target_create_file=$evidence_dir/target-create.json
 forward_pid=
 realtime_pid=
 recovery_forward_pid=
@@ -128,13 +142,19 @@ cleanup() {
   if [ -n "$recovery_forward_pid" ]; then kill "$recovery_forward_pid" 2>/dev/null || true; wait "$recovery_forward_pid" 2>/dev/null || true; fi
   if [ "$cleanup_armed" -eq 1 ]; then cleanup_platform || { echo "owned Supabase cleanup failed" >&2; [ "$status" -ne 0 ] || status=1; }; fi
   if [ "$target_cleanup_armed" -eq 1 ]; then cleanup_target || { echo "owned recovery target cleanup failed" >&2; [ "$status" -ne 0 ] || status=1; }; fi
+  if [ "$status" -ne 0 ]; then evidence fail --state "$evidence_state" --code native-check-or-cleanup-failed || true; fi
   rm -rf "$secret_dir"
-  [ "$status" -ne 0 ] || rm -rf "$work_dir"
   exit "$status"
 }
 cleanup_armed=1
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
+run_id=$(evidence begin --source "$repo_root" --images "$HAKOPOD_ACCEPTANCE_IMAGES" --state "$evidence_state" --events "$evidence_events")
+curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_ID/operations" --header @"$api_headers" |
+  jq -e --arg id "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_ID" '[.items[] | select(.platform_id==$id and .kind=="create" and .status=="succeeded")]|if length==1 then .[0]|{id,platform_id,kind,status} else error("recovery target create operation is not unique") end' >"$target_create_file"
+evidence bind-resource --state "$evidence_state" --role recovery_target --operation-observation "$target_create_file"
+HAKOPOD_OWNERSHIP_SOURCE="$repo_root" HAKOPOD_OWNERSHIP_EVIDENCE="$evidence_dir/ownership-fencing.json" HAKOPOD_TEST_KUBECONFIG="$KUBECONFIG" "$script_dir/ownership-check.sh"
+record_case ownership-fencing "$evidence_dir/ownership-fencing.json"
 create_operation=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/operations" --header @"$api_headers" -H "Idempotency-Key: $create_idempotency" -H 'content-type: application/json' --data-binary @"$create_request")
 create_operation_id=$(printf '%s' "$create_operation" | jq -er '.id')
 tries=0
@@ -143,6 +163,12 @@ jq -e 'type=="object" and length==11 and all(.[];test("^[^@]+@sha256:[0-9a-f]{64
 platform=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/$HAKOPOD_ACCEPTANCE_PLATFORM_ID" --header @"$api_headers")
 namespace_uid=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get namespace "$namespace" -o jsonpath='{.metadata.uid}')
 [ -n "$namespace_uid" ]
+namespace_owner_operation_id=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get namespace "$namespace" -o jsonpath='{.metadata.labels.hakopod\.io/owner-operation-id}')
+namespace_resource_intent_id=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get namespace "$namespace" -o jsonpath='{.metadata.labels.hakopod\.io/resource-intent-id}')
+[ "$namespace_owner_operation_id" = "$create_operation_id" ] && [ -n "$namespace_resource_intent_id" ]
+source_create_file=$evidence_dir/source-create.json
+curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platform-operations/$create_operation_id" --header @"$api_headers" | jq -e '{id,platform_id,kind,status}' >"$source_create_file"
+evidence bind-resource --state "$evidence_state" --role source --operation-observation "$source_create_file"
 application_jwt_ref=$(jq -er '.secrets["jwt-secret"] | .name + "-r" + (.revision|tostring)' "$HAKOPOD_ACCEPTANCE_SPEC")
 pooler_api_jwt_ref=$(jq -er '.secrets["pooler-api-jwt-secret"] | .name + "-r" + (.revision|tostring)' "$HAKOPOD_ACCEPTANCE_SPEC")
 [ "$application_jwt_ref" != "$pooler_api_jwt_ref" ]
@@ -194,7 +220,7 @@ pooler_digest=$(jq -er '.pooler | capture("@(?<digest>sha256:[0-9a-f]{64})$").di
 KUBECTL_BIN=kubectl \
   HAKOPOD_SUPABASE_NAMESPACE="$namespace" \
   HAKOPOD_SUPAVISOR_MANIFEST_DIGEST="$pooler_digest" \
-  "$script_dir/pooler-tls.sh"
+  "$script_dir/pooler-tls.sh" >"$evidence_dir/pooler-tls-observation.txt"
 
 pvc_before=$work_dir/pvc-before.json
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get pvc -o json | jq -S '[.items[] | {name:.metadata.name,uid:.metadata.uid,volume:.spec.volumeName,storage_class:.spec.storageClassName,access_modes:.spec.accessModes,request:.spec.resources.requests.storage}] | sort_by(.name)' >"$pvc_before"
@@ -203,6 +229,7 @@ pv_before=$work_dir/pv-before.json
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get pv $(jq -r '.[].volume' "$pvc_before") -o json | jq -S '[.items[] | {name:.metadata.name,uid:.metadata.uid,claim_namespace:.spec.claimRef.namespace,claim_name:.spec.claimRef.name,claim_uid:.spec.claimRef.uid}] | sort_by(.name)' >"$pv_before"
 [ "$(jq length "$pv_before")" -eq 5 ] && jq -e --arg ns "$namespace" 'all(.[]; .uid!="" and .claim_namespace==$ns and .claim_name!="" and .claim_uid!="")' "$pv_before" >/dev/null
 jq -e --slurpfile pvc "$pvc_before" 'all(.[]; . as $pv | any($pvc[0][]; .name==$pv.claim_name and .uid==$pv.claim_uid and .volume==$pv.name))' "$pv_before" >/dev/null
+record_case create-owned-resources "$workloads_file"
 
 for pod in $(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get pods -l "hakopod.io/managed-platform-id=$HAKOPOD_ACCEPTANCE_PLATFORM_ID" -o name); do
   component=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get "$pod" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')
@@ -211,7 +238,13 @@ for pod in $(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n
   process=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec "$pod" -- /bin/sh -ceu 'printf "%s:%s\n" "$(id -u)" "$(id -g)"; awk "/^(CapInh|CapPrm|CapEff|CapBnd|CapAmb|NoNewPrivs|Seccomp):/{print}" /proc/1/status; if : > /hakopod-rootfs-write-test 2>/dev/null; then exit 41; fi')
   printf '%s\n' "$process" | grep -Fx "$expected_uid:$expected_gid" >/dev/null
   printf '%s\n' "$process" | awk '/^Cap(Inh|Prm|Eff|Bnd|Amb):/{if ($2!="0000000000000000") exit 1} /^NoNewPrivs:/{if ($2!="1") exit 1; seen=1} /^Seccomp:/{if ($2!="2") exit 1; seccomp=1} END{exit seen&&seccomp?0:1}'
+  evidence observe-identity --state "$evidence_state" --role source --component "$component" --pod "${pod#pod/}"
 done
+record_case component-image-and-identity "$evidence_state"
+record_case pooler-admin-jwt-isolation "$evidence_dir/pooler-tls-observation.txt"
+HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" HAKOPOD_ACCEPTANCE_OWNER_OPERATION_ID="$namespace_owner_operation_id" HAKOPOD_ACCEPTANCE_RESOURCE_INTENT_ID="$namespace_resource_intent_id" "$script_dir/pooler-bounds.sh" >"$evidence_dir/pooler-connection-bounds.json"
+jq -e '.status=="passed" and .client_overflow_refused and .backend_bound_observed and .released_connection_reused' "$evidence_dir/pooler-connection-bounds.json" >/dev/null
+record_case pooler-connection-bounds "$evidence_dir/pooler-connection-bounds.json"
 
 capture_logs() {
   phase=$1
@@ -247,6 +280,9 @@ until openssl s_client -connect "127.0.0.1:$port" -servername "$gateway_host" -C
 if curl --silent --show-error --max-time 3 "http://127.0.0.1:$port/auth/v1/health" >/dev/null 2>&1; then echo "Supabase gateway served plaintext on its TLS listener" >&2; exit 1; fi
 tries=0
 until curl $curl_tls --fail --silent --max-time 2 "$base/auth/v1/health" >/dev/null; do tries=$((tries+1)); [ "$tries" -lt 30 ] || { echo "Supabase gateway did not become reachable" >&2; exit 1; }; sleep 1; done
+gateway_observation=$evidence_dir/gateway-tls.json
+jq -n --arg host "$gateway_host" --arg ca_sha256 "$reviewed_ca_sha" --arg uid "$namespace_uid" '{hostname:$host,ca_sha256:$ca_sha256,namespace_uid:$uid,tls_verified:true,plaintext_refused:true}' >"$gateway_observation"
+record_case gateway-tls "$gateway_observation"
 
 signup=$(curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/auth/v1/signup" --header @"$anon_headers" -H 'content-type: application/json' --data '{"data":{"acceptance":"hakopod-test-native-owner"}}')
 access_token=$(printf '%s' "$signup" | jq -er '.access_token')
@@ -262,6 +298,21 @@ printf 'authorization: Bearer %s\n' "$access_token" >>"$owner_headers"
 cat "$anon_headers" >"$second_headers"
 printf 'authorization: Bearer %s\n' "$second_access_token" >>"$second_headers"
 chmod 600 "$owner_headers" "$second_headers"
+studio_headers=$secret_dir/studio.headers
+dashboard_username_ref=$(jq -er '.secrets["dashboard-username"] | .name + "-r" + (.revision|tostring)' "$HAKOPOD_ACCEPTANCE_SPEC")
+dashboard_password_ref=$(jq -er '.secrets["dashboard-password"] | .name + "-r" + (.revision|tostring)' "$HAKOPOD_ACCEPTANCE_SPEC")
+{
+  kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get secret "$dashboard_username_ref" -o jsonpath='{.data.value}' | base64 -d
+  printf ':'
+  kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get secret "$dashboard_password_ref" -o jsonpath='{.data.value}' | base64 -d
+} >"$secret_dir/studio-basic-value"
+{ printf 'authorization: Basic '; base64 <"$secret_dir/studio-basic-value" | tr -d '\n'; printf '\n'; } >"$studio_headers"
+chmod 600 "$studio_headers"
+export HAKOPOD_BEHAVIOR_BASE_URL="$base" HAKOPOD_BEHAVIOR_HOST="$gateway_host" HAKOPOD_BEHAVIOR_PORT="$port" HAKOPOD_BEHAVIOR_CA="$HAKOPOD_ACCEPTANCE_GATEWAY_CA"
+export HAKOPOD_BEHAVIOR_ANON_HEADERS="$anon_headers" HAKOPOD_BEHAVIOR_OWNER_HEADERS="$owner_headers" HAKOPOD_BEHAVIOR_SERVICE_HEADERS="$service_headers" HAKOPOD_BEHAVIOR_EVIDENCE_DIR="$evidence_dir"
+export HAKOPOD_BEHAVIOR_STUDIO_HEADERS="$studio_headers"
+"$script_dir/behavior-checks.sh" auth
+record_case auth-redirect-and-signup "$evidence_dir/auth-redirect-and-signup.json"
 
 row_id=hakopod-test-$(date +%s)
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec statefulset/supabase-database -- psql -U postgres -v ON_ERROR_STOP=1 -c 'create table if not exists public.hakopod_acceptance (id text primary key, owner uuid not null default auth.uid(), value text not null); alter table public.hakopod_acceptance enable row level security; drop policy if exists hakopod_acceptance_owner on public.hakopod_acceptance; create policy hakopod_acceptance_owner on public.hakopod_acceptance using (owner = auth.uid()) with check (owner = auth.uid()); grant select,insert,update,delete on public.hakopod_acceptance to anon, authenticated, service_role; do $$ begin if not exists (select 1 from pg_publication_tables where pubname='"'"'supabase_realtime'"'"' and schemaname='"'"'public'"'"' and tablename='"'"'hakopod_acceptance'"'"') then alter publication supabase_realtime add table public.hakopod_acceptance; end if; end $$;' >/dev/null
@@ -272,6 +323,10 @@ curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod
 second_update=$(curl $curl_tls --fail --silent --show-error --max-time 10 -X PATCH "$base/rest/v1/hakopod_acceptance?id=eq.$row_id" --header @"$second_headers" -H 'content-type: application/json' -H 'prefer: return=representation' --data '{"value":"forbidden-cross-user-write"}')
 [ "$second_update" = '[]' ]
 curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=value" --header @"$owner_headers" | jq -e 'length==1 and .[0].value=="before-restart"' >/dev/null
+row_observation=$evidence_dir/row-isolation.json
+jq -n --arg id "$row_id" --arg owner "$user_id" --arg other "$second_user_id" '{row_id:$id,owner_id:$owner,other_user_id:$other,owner_read:true,service_read:true,anonymous_read_refused:true,other_user_read_refused:true,other_user_write_refused:true}' >"$row_observation"
+record_case jwt-role-isolation "$row_observation"
+record_case row-level-security "$row_observation"
 
 printf '{"topic":"realtime:public:hakopod_acceptance","event":"phx_join","payload":{"config":{"broadcast":{"ack":false,"self":false},"presence":{"enabled":false},"postgres_changes":[]},"access_token":"%s"},"ref":"1"}\n' "$access_token" | SSL_CERT_FILE="$HAKOPOD_ACCEPTANCE_GATEWAY_CA" timeout 10 websocat -1 -t --tls-domain="$gateway_host" "wss://127.0.0.1:$port/realtime/v1/websocket?vsn=1.0.0" | jq -e 'select(.event=="phx_reply" and .ref=="1" and .payload.status=="ok")' >/dev/null
 
@@ -298,6 +353,9 @@ kill "$realtime_pid" 2>/dev/null || true
 wait "$realtime_pid" 2>/dev/null || true
 realtime_pid=
 rm -f "$realtime_input" "$realtime_output"
+realtime_observation=$evidence_dir/realtime.json
+jq -n --arg id "$row_id" '{row_id:$id,authenticated_join:true,postgres_update_observed:true}' >"$realtime_observation"
+record_case realtime-authorization "$realtime_observation"
 
 bucket=hakopod-test-native
 object=roundtrip.txt
@@ -306,10 +364,20 @@ curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/storage
 printf 'hakopod-native-storage' | curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/storage/v1/object/$bucket/$object" --header @"$service_headers" -H 'content-type: text/plain' --data-binary @- >/dev/null
 printf 'hakopod-native-control' | curl $curl_tls --fail --silent --show-error --max-time 10 -X POST "$base/storage/v1/object/$bucket/$control_object" --header @"$service_headers" -H 'content-type: text/plain' --data-binary @- >/dev/null
 [ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]
+storage_observation=$evidence_dir/storage.json
+jq -n --arg bucket "$bucket" --arg object "$object" '{bucket:$bucket,object:$object,private_bucket:true,authenticated_roundtrip:true}' >"$storage_observation"
+record_case storage-roundtrip "$storage_observation"
+HAKOPOD_BEHAVIOR_BUCKET="$bucket" "$script_dir/behavior-checks.sh" image
+record_case image-transformation "$evidence_dir/image-transformation.json"
 edge_fixture_before=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec deployment/supabase-edge-runtime -- sha256sum /home/deno/functions/hello/index.ts | awk '{print $1}')
 [ -n "$edge_fixture_before" ]
 curl $curl_tls --fail --silent --show-error --max-time 10 "$base/functions/v1/hello" --header @"$owner_headers" | jq -e '. == {message:"Hello from Edge Functions!"}' >/dev/null
-curl $curl_tls --fail --silent --show-error --max-time 10 "$base/" >/dev/null
+"$script_dir/behavior-checks.sh" edge
+record_case edge-runtime-isolation "$evidence_dir/edge-runtime-isolation.json"
+"$script_dir/behavior-checks.sh" studio
+record_case studio-admin-isolation "$evidence_dir/studio-admin-isolation.json"
+HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" HAKOPOD_ACCEPTANCE_OWNER_OPERATION_ID="$namespace_owner_operation_id" HAKOPOD_ACCEPTANCE_RESOURCE_INTENT_ID="$namespace_resource_intent_id" "$script_dir/network-isolation.sh" >"$evidence_dir/network-policy-isolation.json"
+record_case network-policy-isolation "$evidence_dir/network-policy-isolation.json"
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec deployment/supabase-studio -- node -e 'fetch("http://meta:8080/tables?included_schemas=public").then(r => { if (!r.ok) process.exit(1) })'
 
 # Tie each direct database client to a live TLS session by its pod IP. The
@@ -340,6 +408,10 @@ HAKOPOD_SUPABASE_NAMESPACE="$namespace" \
   HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" \
   HAKOPOD_ACCEPTANCE_DISPOSABLE=1 \
   "$script_dir/adversarial-database-tls.sh"
+database_tls_observation=$evidence_dir/database-tls.json
+jq -n --arg ca_sha256 "$mounted_database_ca_sha" --arg cert_sha256 "$mounted_database_cert_sha" '{ca_sha256:$ca_sha256,certificate_sha256:$cert_sha256,attributed_clients:["auth","pooler","postgres-meta","realtime","rest","storage"],hostname_verified:true,wrong_ca_refused:true,wrong_hostname_refused:true,plaintext_refused:true}' >"$database_tls_observation"
+record_case database-tls-hostname "$database_tls_observation"
+record_case database-plaintext-refusal "$database_tls_observation"
 
 HAKOPOD_SUPABASE_NAMESPACE="$namespace" HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" "$script_dir/restart-owned-pods.sh"
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" rollout status statefulset/supabase-database --timeout=5m >/dev/null
@@ -361,6 +433,7 @@ kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get pv $(jq -r 
 cmp -s "$pv_before" "$pv_after" || { echo "Supabase PV resource identity changed across pod replacement" >&2; exit 1; }
 [ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]
 curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=id,value" --header @"$service_headers" | jq -e --arg id "$row_id" 'length==1 and .[0].id==$id' >/dev/null
+record_case restart-persistence "$pvc_after"
 
 platform=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/$HAKOPOD_ACCEPTANCE_PLATFORM_ID" --header @"$api_headers")
 revision=$(printf '%s' "$platform" | jq -er '.revision')
@@ -370,6 +443,7 @@ printf '%s' "$platform" | jq --argjson revision "$revision" '{id:.id,project:.pr
 rotation_status=$(curl --max-filesize 1048576 --silent --show-error --output "$rotation_response" --write-out '%{http_code}' --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @"$rotation_request")
 [ "$rotation_status" = 400 ]
 jq -e '.. | strings | select(contains("secret rotation for database-owner-password is unavailable"))' "$rotation_response" >/dev/null || { echo "uncoordinated database credential rotation was not refused explicitly" >&2; exit 1; }
+record_case unsafe-rotation-refusal "$rotation_response"
 update_review=$(printf '%s' "$platform" | jq --argjson revision "$revision" '{id:.id,project:.project,environment:.environment,expected_revision:$revision,kind:"update",confirm_name:.spec.name,spec:.spec}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/reviews" --header @"$api_headers" -H 'content-type: application/json' --data-binary @-)
 printf '%s' "$update_review" | jq -e '.blocked==false and .review.id!=null' >/dev/null
 update_operation=$(printf '%s' "$update_review" | jq '{id:.platform.id,project:.platform.project,environment:.platform.environment,expected_revision:.review.expected_revision,kind:"update",confirm_name:.platform.spec.name,spec:.platform.spec,review:.review}' | curl --max-filesize 1048576 --fail --silent --show-error --max-time 15 -X POST "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/operations" --header @"$api_headers" -H "Idempotency-Key: hakopod-test-update-$HAKOPOD_ACCEPTANCE_PLATFORM_ID" -H 'content-type: application/json' --data-binary @-)
@@ -381,6 +455,12 @@ cmp -s "$pvc_before" "$pvc_after" || { echo "Supabase PVC or PV identity changed
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get pv $(jq -r '.[].volume' "$pvc_after") -o json | jq -S '[.items[] | {name:.metadata.name,uid:.metadata.uid,claim_namespace:.spec.claimRef.namespace,claim_name:.spec.claimRef.name,claim_uid:.spec.claimRef.uid}] | sort_by(.name)' >"$pv_after"
 cmp -s "$pv_before" "$pv_after" || { echo "Supabase PV resource identity changed across no-change update" >&2; exit 1; }
 [ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]
+
+HAKOPOD_ACCEPTANCE_API_HEADERS="$api_headers" HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" HAKOPOD_ACCEPTANCE_OWNER_OPERATION_ID="$namespace_owner_operation_id" HAKOPOD_ACCEPTANCE_RESOURCE_INTENT_ID="$namespace_resource_intent_id" "$script_dir/cancel-recovery.sh" >"$evidence_dir/cancellation.json"
+jq -e '.status=="passed" and .artifact_absent and .source_ready_unchanged and .ownership_unchanged' "$evidence_dir/cancellation.json" >/dev/null
+[ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]
+curl $curl_tls --fail --silent --show-error --max-time 10 "$base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=id,value" --header @"$service_headers" | jq -e --arg id "$row_id" 'length==1 and .[0].id==$id and .[0].value=="realtime-observed"' >/dev/null
+record_case cancellation-recovery "$evidence_dir/cancellation.json"
 
 HAKOPOD_ACCEPTANCE_API_HEADERS="$api_headers" "$script_dir/recovery.sh" >"$work_dir/recovery-result.json"
 jq -e '.status=="passed" and (.artifact_id|test("^[0-9a-f]{32}$"))' "$work_dir/recovery-result.json" >/dev/null
@@ -399,6 +479,7 @@ curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/r
 [ "$(curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/storage/v1/object/authenticated/$bucket/$object" --header @"$target_service_headers")" = hakopod-native-storage ]
 curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/functions/v1/hello" --header @"$target_service_headers" | jq -e '. == {message:"Hello from Edge Functions!"}' >/dev/null
 [ "$(curl $curl_tls --fail --silent --show-error --max-time 10 "$base/storage/v1/object/authenticated/$bucket/$object" --header @"$service_headers")" = hakopod-native-storage ]
+record_case backup-separate-resource-restore "$work_dir/recovery-result.json"
 target_log_dir=$work_dir/logs-recovery-target
 mkdir -m 700 "$target_log_dir"
 for target_pod in $(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$target_namespace" get pods --chunk-size=32 -l "hakopod.io/managed-platform-id=$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_ID" -o name); do
@@ -418,6 +499,8 @@ wait "$recovery_forward_pid" 2>/dev/null || true
 recovery_forward_pid=
 cleanup_target
 target_cleanup_armed=0
+target_delete_file=$evidence_dir/target-delete.json
+curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platform-operations/$(printf '%s' "$target_operation" | jq -er '.id')" --header @"$api_headers" | jq -e '{id,platform_id,kind,status}' >"$target_delete_file"
 
 curl $curl_tls --fail --silent --show-error --max-time 10 -X DELETE "$base/storage/v1/object/$bucket" --header @"$service_headers" -H 'content-type: application/json' --data "{\"prefixes\":[\"$object\"]}" | jq -e 'type=="array" and length==1' >/dev/null
 removed_body=$work_dir/storage-removed.json
@@ -429,7 +512,7 @@ curl $curl_tls --fail --silent --show-error --max-time 10 -X DELETE "$base/stora
 curl $curl_tls --fail --silent --show-error --max-time 10 -X DELETE "$base/rest/v1/hakopod_acceptance?id=eq.$row_id" --header @"$service_headers" >/dev/null
 
 capture_logs after-recovery
-for header_file in "$api_headers" "$anon_headers" "$owner_headers" "$second_headers" "$service_headers" "$target_service_headers"; do
+for header_file in "$api_headers" "$anon_headers" "$owner_headers" "$second_headers" "$service_headers" "$target_service_headers" "$studio_headers"; do
   while IFS= read -r header; do
     credential=${header#*: }
     credential=${credential#Bearer }
@@ -467,4 +550,11 @@ status=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 
 [ -z "$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get namespace "$namespace" --ignore-not-found -o name)" ] || { echo "Supabase namespace remains after deletion" >&2; exit 1; }
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get pv --chunk-size=128 -o json | jq -e --arg ns "$namespace" 'all(.items[]; .spec.claimRef.namespace!=$ns)' >/dev/null || { echo "Supabase persistent volumes remain after deletion" >&2; exit 1; }
 cleanup_armed=0
-printf '{"context":"%s","platform_id":"%s","namespace_uid":"%s","operation_id":"%s","status":"passed"}\n' "$expected_context" "$HAKOPOD_ACCEPTANCE_PLATFORM_ID" "$namespace_uid" "$operation_id"
+source_delete_file=$evidence_dir/source-delete.json
+curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platform-operations/$operation_id" --header @"$api_headers" | jq -e '{id,platform_id,kind,status}' >"$source_delete_file"
+record_case owned-cleanup "$source_delete_file"
+# Structural events are the safe log. Raw component logs stay protected and are
+# never copied into a qualification record.
+cp "$evidence_events" "$evidence_dir/sanitized-log.json"
+evidence finalize --source "$repo_root" --state "$evidence_state" --events "$evidence_events" --sanitized-log "$evidence_dir/sanitized-log.json" --source-delete-operation "$source_delete_file" --recovery-target-delete-operation "$target_delete_file" --report "$evidence_dir/native-result.json" --cleanup "$evidence_dir/cleanup-receipt.json"
+printf '{"context":"%s","platform_id":"%s","namespace_uid":"%s","operation_id":"%s","status":"passed","evidence_directory":"%s"}\n' "$expected_context" "$HAKOPOD_ACCEPTANCE_PLATFORM_ID" "$namespace_uid" "$operation_id" "$evidence_dir"
