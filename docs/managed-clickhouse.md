@@ -1,7 +1,7 @@
 # Managed ClickHouse
 
-ClickHouse is included in the `v0.1.0-alpha.47` self-hosted candidate, pending
-publication. Standalone and replicated deployments have passed the native
+ClickHouse is included in the `v0.1.0-alpha.47` self-hosted release.
+Standalone and replicated deployments have passed the native
 development checks recorded below. Production deployment and independent-zone
 availability are not established.
 

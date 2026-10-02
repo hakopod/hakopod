@@ -4,7 +4,8 @@ Managed databases have their own project and environment, resource allocation, c
 
 PostgreSQL and Redis are included in the self-hosted development release starting
 with `v0.1.0-alpha.37`. MySQL, MongoDB, ClickHouse and Oracle Database Free are
-included in the `v0.1.0-alpha.47` candidate, which is pending publication.
+included in the `v0.1.0-alpha.47` self-hosted release. Use a published release's
+verified assets; a tag or candidate build alone is not an installation package.
 Provisioning requires the controller installation described below; upgrading
 Hakopod does not install missing controllers. Cloud workspace admission, quotas,
 trusted placement and approvals require the corresponding Cloud integration and
@@ -15,7 +16,7 @@ The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 implementations have separate guides with their exact development evidence and
 remaining limits. Managed Vitess, Neon and Supabase remain unavailable. Oracle
 Enterprise and Data Guard, and public endpoints for the expanded engines, also
-remain unavailable in this candidate.
+remain unavailable in this release.
 
 ## Database configuration
 
@@ -377,7 +378,7 @@ Use the resulting `repository:tag@sha256:digest` as `HAKOPOD_REDIS_CONTROLLER_IM
 HAKOPOD_TEST_KUBECONFIG=/path/to/development-kubeconfig HAKOPOD_REDIS_CONTROLLER_IMAGE="$REDIS_CONTROLLER_IMAGE" scripts/install-development-database-controllers.sh
 ```
 
-This script only targets `k3d-hakopod-dev`; it must not be used against an operator cluster. Controller installation for other environments requires an explicit operator rollout with the same verified build, `hakopod.io/redis-controller-source` and `hakopod.io/redis-tls-policy=ca-verified-v1` pod annotations, `GenerateConfigInInitContainer=true`, and `EXEC_COMMAND_TIMEOUT=20m`. A supplied source annotation is an installation-operator attestation; customers cannot set it. No controller image is published by this source change.
+This script only targets `k3d-hakopod-dev`; it must not be used against an operator cluster. Controller installation for other environments requires an explicit operator rollout with the same verified build, `hakopod.io/redis-controller-source` and `hakopod.io/redis-tls-policy=ca-verified-v1` pod annotations, `GenerateConfigInInitContainer=true`, and `EXEC_COMMAND_TIMEOUT=20m`. A supplied source annotation is an installation-operator attestation; customers cannot set it. The release installer uses the published, digest-pinned controller and Redis 8.2.10 runtime. The runtime includes native TLS, upstream license texts and source references.
 
 Validation records distinguish unit/store checks, rendered dashboard review, real development-cluster acceptance and released availability. No production deployment or release is implied by passing development tests.
 
