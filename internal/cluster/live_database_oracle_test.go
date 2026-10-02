@@ -41,7 +41,7 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 	t.Helper()
 	var err error
 	d := oracleFixture()
-	d.Spec.Placement.NodeNames = []string{"k3d-hakopod-dev-server-0"}
+	d.Spec.Placement.NodeNames = developmentRecoveryFixtureNodes(t)
 	id, password := make([]byte, 16), make([]byte, 32)
 	if _, err = rand.Read(id); err != nil {
 		t.Fatal(err)
