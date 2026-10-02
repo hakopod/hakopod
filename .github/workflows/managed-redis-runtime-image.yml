@@ -1,0 +1,99 @@
+name: Managed Redis runtime image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/managed-database-expansion']
+    paths:
+      - Dockerfile.redis-runtime
+      - images/redis-runtime/**
+      - release/smoke-redis-runtime.sh
+      - .github/workflows/managed-redis-runtime-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+      - name: Build and smoke Redis 8.2.10 runtime
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker buildx build --file Dockerfile.redis-runtime --platform "linux/$ARCH" \
+            --provenance=false --load --tag hakopod-redis-runtime:smoke .
+          release/smoke-redis-runtime.sh hakopod-redis-runtime:smoke
+      - name: Push tested platform image
+        env:
+          ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-redis-runtime"
+          tag="$image:run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker tag hakopod-redis-runtime:smoke "$tag"
+          docker push "$tag"
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}')
+          printf '%s@%s\n' "$image" "$digest" > "redis-runtime-$ARCH.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: redis-runtime-${{ matrix.arch }}
+          path: redis-runtime-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: redis-runtime-*
+          merge-multiple: true
+          path: .local/redis-runtime
+      - name: Publish and verify multi-platform image
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-redis-runtime"
+          docker buildx imagetools create --tag "$image:8.2.10-opstree" \
+            "$(cat .local/redis-runtime/redis-runtime-amd64.txt)" \
+            "$(cat .local/redis-runtime/redis-runtime-arm64.txt)"
+          digest=$(docker buildx imagetools inspect "$image:8.2.10-opstree" --format '{{.Manifest.Digest}}')
+          docker buildx imagetools inspect "$image@$digest"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          printf '%s@%s\n' "$image" "$digest"
+          anonymous=$(mktemp -d)
+          trap 'rm -rf "$anonymous"' EXIT
+          DOCKER_CONFIG="$anonymous" docker manifest inspect "$image@$digest" >/dev/null
