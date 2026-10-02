@@ -73,6 +73,19 @@ class PublicationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest())
 
+    def test_supporting_platform_images_use_only_reviewed_repositories(self):
+        for name in ("managed-neon-compute-tls", "managed-neon-controller-database", "managed-supabase-pooler"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                _, image = self.fixture(root)
+                image["repository"] = "ghcr.io/hakopod/" + name
+                path = root / "plan.json"
+                path.write_text(json.dumps({"schema_version": 1, "images": [image]}))
+                self.assertEqual(publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest()), [image])
+        for repository in ("ghcr.io/other/managed-supabase-pooler", "ghcr.io/hakopod/managed-supabase", "ghcr.io/hakopod/managed-neon-anything", "ghcr.io/hakopod/managed-supabase-pooler/extra", "ghcr.io/hakopod/managed-supabase-pooler:latest"):
+            with self.subTest(repository=repository):
+                self.assertIsNone(publisher.REPOSITORY.fullmatch(repository))
+
     def test_rejects_archive_checksum_and_image_digest_changes(self):
         for field, value in [("archive_sha256", "a" * 64), ("image_digest", "sha256:" + "b" * 64)]:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
