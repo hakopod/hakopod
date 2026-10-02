@@ -147,7 +147,7 @@ def accepted_test_events(events, required_tests=REQUIRED_TESTS):
 
 def validate_native_environment(environment, case, images):
     if not isinstance(environment, dict) or set(environment) != {
-            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'host_filesystem', 'nodes'}:
+            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'host_filesystem', 'nodes', 'cluster'}:
         raise ValueError('Vitess native environment evidence is missing or malformed')
     if type(environment['schema_version']) is not int or environment['schema_version'] != 1 or environment['case'] != case:
         raise ValueError('Vitess native environment evidence belongs to another case or schema')
@@ -177,6 +177,22 @@ def validate_native_environment(environment, case, images):
     node_names = [node.get('name') for node in nodes]
     if any(not isinstance(name, str) or not name for name in node_names) or len(set(node_names)) != len(node_names) or not set(node_names) <= allowed:
         raise ValueError('Vitess native evidence contains an empty, duplicate, or foreign node')
+    cluster = environment['cluster']
+    expected_crds = {
+        'etcdlockservers.planetscale.com', 'vitessbackups.planetscale.com',
+        'vitessbackupschedules.planetscale.com', 'vitessbackupstorages.planetscale.com',
+        'vitesscells.planetscale.com', 'vitessclusters.planetscale.com',
+        'vitesskeyspaces.planetscale.com', 'vitessshards.planetscale.com',
+    }
+    if (not isinstance(cluster, dict) or set(cluster) != {'uid', 'node_uids', 'vitess_crds', 'receipt_sha256'}
+            or not isinstance(cluster['uid'], str) or not cluster['uid']
+            or not isinstance(cluster['receipt_sha256'], str) or not DIGEST.fullmatch(cluster['receipt_sha256'])
+            or not isinstance(cluster['node_uids'], dict) or set(cluster['node_uids']) != allowed or not set(node_names) <= set(cluster['node_uids'])
+            or any(not isinstance(uid, str) or not uid for uid in cluster['node_uids'].values())
+            or not isinstance(cluster['vitess_crds'], list)
+            or any(not isinstance(name, str) for name in cluster['vitess_crds'])
+            or set(cluster['vitess_crds']) != expected_crds or len(cluster['vitess_crds']) != len(expected_crds)):
+        raise ValueError('Vitess native evidence is not bound to the exact development cluster and CRDs')
     expected_images = set()
     for reference in images:
         repository, digest = reference.rsplit('@', 1)
