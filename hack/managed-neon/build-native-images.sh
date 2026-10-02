@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(cd "$script_directory/../.." && pwd)
+
 readonly UPSTREAM_COMMIT="fa504217c61bbcaf5c512d75830564541f917f8f"
 readonly PATCHED_TREE="0e9da216fbb78976bac267a8036809e12f58a1bd"
 readonly POSTGRES_COMMIT="1e01fcea2a6b38180021aa83e0051d95286d9096"
@@ -104,9 +107,10 @@ build() {
   sudo docker inspect "$BUILDER_CONTAINER" \
     | cat >"$output_directory/builder-inspect.json"
   archive="$output_directory/${phase}.oci.tar"
-  [[ ! -e "$archive" ]] || { echo "refusing build: OCI archive already exists" >&2; exit 1; }
+  base_archive="$output_directory/${phase}.base.oci.tar"
+  [[ ! -e "$archive" && ! -e "$base_archive" ]] || { echo "refusing build: OCI archive already exists" >&2; exit 1; }
   sudo docker buildx build --builder "$BUILDER_NAME" --platform linux/amd64 --provenance=false --sbom=false \
-    --output "type=oci,dest=$archive" --progress=plain \
+    --output "type=oci,dest=$base_archive" --progress=plain \
     --metadata-file "$output_directory/${phase}-build-metadata.json" \
     --label "org.opencontainers.image.source=https://github.com/hakopod/hakopod" \
     --label "io.hakopod.neon.upstream-repository=https://github.com/neondatabase/neon" \
@@ -133,6 +137,8 @@ build() {
   done
   wait "$build_pid"
   require_disk_reserve
+  python3 "$repo/release/wrap-runtime-oci.py" --input "$base_archive" --output "$archive" --user 1000:1000 \
+    --label "org.opencontainers.image.source=https://github.com/hakopod/hakopod" >/dev/null
   sudo docker image load --input "$archive" >/dev/null
 }
 
@@ -177,13 +183,17 @@ if not isinstance(metadata_digest, str) or not digest_pattern.fullmatch(metadata
 with tarfile.open(sys.argv[2]) as archive:
     index = json.load(archive.extractfile("index.json"))
     manifests = index.get("manifests", [])
-    if len(manifests) != 1 or manifests[0].get("digest") != metadata_digest:
-        raise SystemExit("OCI archive manifest does not match build metadata")
-    manifest = json.load(archive.extractfile("blobs/sha256/" + metadata_digest[7:]))
-config_digest = manifest.get("config", {}).get("digest", "")
-if not isinstance(config_digest, str) or not digest_pattern.fullmatch(config_digest):
-    raise SystemExit("OCI archive manifest does not contain a SHA-256 config digest")
-print(metadata_digest, config_digest)
+    if len(manifests) != 1 or not digest_pattern.fullmatch(manifests[0].get("digest", "")):
+        raise SystemExit("OCI archive does not contain one SHA-256 image manifest")
+    manifest_digest = manifests[0]["digest"]
+    manifest = json.load(archive.extractfile("blobs/sha256/" + manifest_digest[7:]))
+    config_digest = manifest.get("config", {}).get("digest", "")
+    if not isinstance(config_digest, str) or not digest_pattern.fullmatch(config_digest):
+        raise SystemExit("OCI archive manifest does not contain a SHA-256 config digest")
+    config = json.load(archive.extractfile("blobs/sha256/" + config_digest[7:]))
+    if config.get("config", {}).get("Labels", {}).get("io.hakopod.managed-runtime.base-manifest") != metadata_digest:
+        raise SystemExit("numeric-user wrapper is not bound to the BuildKit manifest")
+print(manifest_digest, config_digest)
 PY
 )
 cat >"$output_directory/${phase}-provenance.txt" <<EOF
