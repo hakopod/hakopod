@@ -1,0 +1,76 @@
+name: Managed Redis controller candidate
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile.redis-controller'
+      - 'patches/redis-controller-*'
+      - '.github/workflows/managed-redis-controller-image.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: managed-redis-controller-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  image:
+    if: github.repository == 'hakopod/hakopod' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/hakopod/managed-redis-operator
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build and test the pinned credential and TLS policy
+        run: |
+          tag="$IMAGE:candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker build --build-arg TARGETOS=linux --build-arg TARGETARCH="$ARCH" \
+            --label "io.hakopod.source-revision=$(git rev-parse HEAD)" \
+            --file Dockerfile.redis-controller --tag "$tag" .
+          test "$(docker image inspect "$tag" --format '{{.Config.User}}')" = 65532:65532
+          test "$(docker image inspect "$tag" --format '{{index .Config.Labels "io.hakopod.redis-tls-policy"}}')" = ca-verified-v1
+      - name: Publish immutable candidate manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/redis-auth"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tag="$IMAGE:candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker push "$tag"
+          docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' > redis-manifest.json
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          value = json.loads(Path('redis-manifest.json').read_text())
+          digest = value['digest']
+          assert re.fullmatch(r'sha256:[a-f0-9]{64}', digest)
+          Path('redis-controller-candidate.json').write_text(json.dumps({
+              'schema_version': 1, 'architecture': os.environ['ARCH'],
+              'image': os.environ['IMAGE'] + '@' + digest,
+              'source_revision': os.environ.get('GITHUB_SHA'),
+              'native_qualified': False,
+          }, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: redis-controller-${{ matrix.arch }}
+          path: redis-controller-candidate.json
+          if-no-files-found: error
+          retention-days: 14
