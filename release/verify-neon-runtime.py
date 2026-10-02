@@ -23,6 +23,8 @@ MAX_SOURCE_FILES = 20000
 MAX_SOURCE_BYTES = 512 * 1024 * 1024
 COMPONENTS = {"broker", "compute", "compute-tls", "controller-database", "pageserver", "proxy", "safekeeper", "storage-controller"}
 IMAGE_STAGES = {"storage", "compute-tools", "compute-runtime"}
+MANIFEST_TYPES = {"application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"}
+CONFIG_TYPES = {"application/vnd.oci.image.config.v1+json", "application/vnd.docker.container.image.v1+json"}
 STAGE_COMPONENTS = {
     "storage": {"broker", "pageserver", "proxy", "safekeeper", "storage-controller"},
     "compute-runtime": {"compute"},
@@ -335,7 +337,22 @@ def docker(args, config):
         return output
 
 
-def verify_images(images, identities, stages, runner=docker):
+def verify_remote_manifest(reference, manifest_digest, config_digest, config, runner=docker):
+    raw = runner(["buildx", "imagetools", "inspect", "--raw", reference], config)
+    if hashlib.sha256(raw.encode()).hexdigest() != manifest_digest.removeprefix("sha256:"):
+        raise ValueError("Neon registry manifest bytes changed")
+    try:
+        manifest = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError("Neon registry manifest is not JSON") from error
+    descriptor = manifest.get("config", {})
+    if (manifest.get("schemaVersion") != 2 or manifest.get("mediaType") not in MANIFEST_TYPES or
+            not isinstance(descriptor, dict) or descriptor.get("mediaType") not in CONFIG_TYPES or
+            descriptor.get("digest") != config_digest or type(descriptor.get("size")) is not int or descriptor["size"] <= 0):
+        raise ValueError("Neon registry manifest or config descriptor changed")
+
+
+def verify_images(images, identities, stages, runner=docker, manifest_verifier=verify_remote_manifest):
     with tempfile.TemporaryDirectory(prefix="neon-release-verification-") as temporary:
         config = Path(temporary) / "anonymous"; config.mkdir()
         for component, reference in sorted(images.items()):
@@ -349,8 +366,13 @@ def verify_images(images, identities, stages, runner=docker):
         for stage, item in sorted(stages.items()):
             runner(["pull", "--platform", "linux/amd64", item["image"]], config)
             values = json.loads(runner(["image", "inspect", item["image"]], config))
-            if len(values) != 1 or values[0].get("Id") != item["config_digest"]:
-                raise ValueError("Neon image config digest changed: " + stage)
+            repository, digest = item["image"].rsplit("@", 1)
+            if repository.rfind(":") > repository.rfind("/"):
+                repository = repository[:repository.rfind(":")]
+            if (len(values) != 1 or values[0].get("Os") != "linux" or values[0].get("Architecture") != "amd64" or
+                    repository + "@" + digest not in values[0].get("RepoDigests", [])):
+                raise ValueError("Neon pulled stage metadata changed: " + stage)
+            manifest_verifier(item["image"], item["manifest_digest"], item["config_digest"], config, runner)
             container = runner(["create", "--network", "none", item["image"]], config).strip()
             if not re.fullmatch(r"[0-9a-f]{12,64}", container):
                 raise ValueError("Docker returned an invalid temporary container identity")
