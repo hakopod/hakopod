@@ -11,6 +11,21 @@ import database_controllers as controllers
 
 
 class ControllerPlanTests(unittest.TestCase):
+    def test_mysql_peering_is_infrastructure_with_one_exact_identity(self):
+        peering={'apiVersion':'zalando.org/v1','kind':'ClusterKopfPeering','metadata':{'name':'mysql-operator','labels':{'app.kubernetes.io/name':'mysql-operator','app.kubernetes.io/instance':'mysql-operator','app.kubernetes.io/component':'controller'}}}
+        controllers.validate_controller_objects([peering])
+        for changed in (
+            dict(peering,spec={}),
+            dict(peering,metadata=dict(peering['metadata'],name='another-controller')),
+            dict(peering,metadata=dict(peering['metadata'],namespace='customer')),
+            dict(peering,metadata=dict(peering['metadata'],labels={})),
+        ):
+            with self.subTest(changed=changed),self.assertRaisesRegex(ValueError,'peering identity'):
+                controllers.validate_controller_objects([changed])
+        with patch.object(controllers,'read',return_value={}) as read:
+            self.assertEqual(controllers.current(['kubectl'],peering),{})
+            read.assert_called_once_with(['kubectl'],'get','crd','clusterkopfpeerings.zalando.org','--ignore-not-found')
+
     def bundle(self, root, objects, engine='clickhouse'):
         data=json.dumps({'apiVersion':'v1','kind':'List','items':objects}).encode()
         (root/(engine+'.json')).write_bytes(data)
