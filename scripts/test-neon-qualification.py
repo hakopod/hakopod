@@ -127,13 +127,23 @@ class Tests(unittest.TestCase):
                 Path(args[2]).write_bytes(b"binary"); return ""
             raise AssertionError(args)
         stages={name:{**item,"binary_sha256":{path:hashlib.sha256(b"binary").hexdigest() for path in item["binary_sha256"]}} for name,item in value["image_stages"].items()}
-        VERIFY.verify_images(value["images"],value["identities"],stages,runner)
+        manifests=[]
+        VERIFY.verify_images(value["images"],value["identities"],stages,runner,lambda *args: manifests.append(args[:3]))
+        self.assertEqual(len(manifests),3)
         for item in stages.values():
             pull=("pull","--platform","linux/amd64",item["image"]); inspect=("image","inspect",item["image"])
             pull_indexes=[index for index,call in enumerate(calls) if call==pull]
             inspect_indexes=[index for index,call in enumerate(calls) if call==inspect]
             self.assertTrue(pull_indexes); self.assertTrue(inspect_indexes)
             self.assertLess(pull_indexes[-1],inspect_indexes[-1])
+    def test_remote_manifest_binds_exact_config_descriptor(self):
+        config_digest="sha256:"+"b"*64
+        manifest={"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":config_digest,"size":123},"layers":[]}
+        raw=json.dumps(manifest,separators=(",",":")); manifest_digest="sha256:"+hashlib.sha256(raw.encode()).hexdigest()
+        runner=lambda args,config: raw
+        VERIFY.verify_remote_manifest("registry.example/image@"+manifest_digest,manifest_digest,config_digest,Path("unused"),runner)
+        for changed_manifest,changed_config in (("sha256:"+"a"*64,config_digest),(manifest_digest,"sha256:"+"c"*64)):
+            with self.assertRaises(ValueError): VERIFY.verify_remote_manifest("registry.example/image@"+manifest_digest,changed_manifest,changed_config,Path("unused"),runner)
     def test_process_inventory(self):
         value=report(); value["process_observations"].pop("proxy")
         with self.assertRaisesRegex(ValueError,"process evidence"): self.validate(value)
