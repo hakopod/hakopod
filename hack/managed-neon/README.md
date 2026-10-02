@@ -25,7 +25,7 @@ The storage image contains `storage_controller`, `pageserver`, `safekeeper`,
 and `proxy`. The compute-tools checkpoint builds `compute_ctl`, `fast_import`,
 and `local_proxy`; the final compute phase builds the PG17 runtime with the
 upstream extension set. An isolated BuildKit container limits each sequential
-build to one CPU and 3 GiB memory. Each phase refuses to start or finish below
+build to one CPU and 7 GiB memory with swap disabled. Each phase refuses to start or finish below
 12 GiB free disk.
 Set `HAKOPOD_NEON_BUILDKIT_ROOT` to a directory on the scratch filesystem when
 the Docker data root cannot hold build layers.

@@ -7,6 +7,7 @@ readonly SOURCE_ARCHIVE_SHA256="0a364b86e81faefca56c7dcf56e2057767c63cb396d65377
 readonly PROXY_PATCH_SHA256="e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 readonly OWNERSHIP_PATCH_SHA256="a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
 readonly DEFAULT_MINIMUM_FREE_GIB=12
+readonly BUILDER_MEMORY_BYTES=7516192768
 readonly BUILDER_NAME="hakopod-neon-bounded"
 readonly BUILDER_CONTAINER="hakopod-neon-buildkit"
 readonly BUILDER_ADDRESS="tcp://127.0.0.1:12347"
@@ -62,7 +63,7 @@ build() {
   buildkit_root=$(mkdir -p "$buildkit_root" && cd "$buildkit_root" && pwd)
   if ! sudo docker container inspect "$BUILDER_CONTAINER" >/dev/null 2>&1; then
     sudo docker run --detach --name "$BUILDER_CONTAINER" --privileged \
-      --network host --memory 3g --cpu-period 100000 --cpu-quota 100000 \
+      --network host --memory "$BUILDER_MEMORY_BYTES" --memory-swap "$BUILDER_MEMORY_BYTES" --cpu-period 100000 --cpu-quota 100000 \
       --volume "$buildkit_root:/var/lib/buildkit" "$BUILDKIT_IMAGE" \
       --addr "$BUILDER_ADDRESS" >/dev/null
   fi
@@ -71,11 +72,11 @@ build() {
       "$BUILDER_ADDRESS" >/dev/null
   fi
   sudo docker buildx inspect --bootstrap "$BUILDER_NAME" >/dev/null
-  read -r memory cpu_period cpu_quota network_mode mounted_root < <(
+  read -r memory memory_swap cpu_period cpu_quota network_mode mounted_root < <(
     sudo docker inspect "$BUILDER_CONTAINER" \
-      --format '{{.HostConfig.Memory}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}} {{.HostConfig.NetworkMode}} {{range .Mounts}}{{if eq .Destination "/var/lib/buildkit"}}{{.Source}}{{end}}{{end}}'
+      --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}} {{.HostConfig.NetworkMode}} {{range .Mounts}}{{if eq .Destination "/var/lib/buildkit"}}{{.Source}}{{end}}{{end}}'
   )
-  [[ "$memory" == 3221225472 && "$cpu_period" == 100000 && "$cpu_quota" == 100000 && \
+  [[ "$memory" == "$BUILDER_MEMORY_BYTES" && "$memory_swap" == "$BUILDER_MEMORY_BYTES" && "$cpu_period" == 100000 && "$cpu_quota" == 100000 && \
     "$network_mode" == host && "$mounted_root" == "$buildkit_root" ]] || {
     echo "refusing build: $BUILDER_CONTAINER does not have the required resource or scratch-storage limits" >&2
     exit 1
