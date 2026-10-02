@@ -91,3 +91,38 @@ func TestManagedPlatformCLIRepeatedUpdatesBindRetryKeyToRevision(t *testing.T) {
 		t.Fatalf("retry/update keys changed incorrectly: %v", keys)
 	}
 }
+
+func TestManagedPlatformCLICatalogRequiresExactScope(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != "GET" || r.URL.Path != "/api/v1/managed-platforms/catalog" || r.URL.Query().Get("project") != "selected" || r.URL.Query().Get("environment") != "staging" || len(r.URL.Query()) != 2 {
+			t.Error("catalog did not preserve the explicitly selected scope")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"project":"selected","environment":"staging","storage_class":"encrypted","nodes":[],"secret_references":[],"items":[]}`))
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, http: server.Client()}
+	if _, err := captureExternalCLI(t, func() error {
+		return managedPlatformCommand(context.Background(), c, "selected", "staging", []string{"catalog"}, "", "", "")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		project, environment string
+		args                 []string
+	}{
+		{"", "", []string{"catalog"}},
+		{"selected", "", []string{"catalog"}},
+		{"", "staging", []string{"catalog"}},
+		{"selected", "staging", []string{"catalog", strings.Repeat("a", 32)}},
+	} {
+		if err := managedPlatformCommand(context.Background(), c, test.project, test.environment, test.args, "", "", ""); err == nil {
+			t.Fatal("catalog accepted a missing scope or resource ID")
+		}
+	}
+	if calls != 1 {
+		t.Fatal("invalid catalog input reached the server")
+	}
+}

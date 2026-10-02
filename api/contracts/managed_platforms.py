@@ -50,9 +50,22 @@ for platform_kind, alternative in zip(['supabase','neon'], platform_alternatives
     if 'allOf' in alternative:
         schemas[schema_name]['allOf'] = alternative['allOf']
 schemas['ManagedPlatformSpec'] = {'oneOf':[ref('SupabasePlatformSpec'),ref('NeonPlatformSpec')]}
+for platform_kind in ['Supabase','Neon']:
+    draft_properties = dict(schemas[platform_kind+'PlatformSpec']['properties'])
+    draft_properties['placement'] = obj({'node_names':{'type':'array','items':S,'maxItems':48,'uniqueItems':True},'spread':{'type':'string','enum':['','nodes','zones']}})
+    if platform_kind == 'Neon':
+        draft_config = dict(schemas['NeonConfig']['properties'])
+        for field in ['object_storage_url','object_storage_bucket','object_storage_region','object_storage_prefix']:
+            draft_config[field] = S
+        draft_properties['neon'] = obj(draft_config, schemas['NeonConfig']['required'])
+    schemas[platform_kind+'PlatformDefaults'] = obj(draft_properties, schemas[platform_kind+'PlatformSpec']['required'])
+schemas['ManagedPlatformDefaults'] = {'oneOf':[ref('SupabasePlatformDefaults'),ref('NeonPlatformDefaults')]}
 schemas['ManagedPlatformCapability'] = obj({'available':B,'cluster_qualified':B,'public_qualified':B,'reason':S}, ['available','cluster_qualified','public_qualified','reason'])
 schemas['ManagedPlatformComponent'] = obj({'name':S,'image':S,'resources':ref('ManagedPlatformResources'),'replicas':I,'ports':array(I),'secret_keys':array(S),'storage_keys':array(S)}, ['name','image','resources','replicas','ports','secret_keys','storage_keys'])
-schemas['ManagedPlatformPlan'] = obj({'namespace':S,'components':array(ref('ManagedPlatformComponent')),'public_service':S,'capability':ref('ManagedPlatformCapability')}, ['namespace','components','public_service','capability'])
+schemas['ManagedPlatformPlan'] = obj({'namespace':S,'components':array(ref('ManagedPlatformComponent')),'public_service':S,'storage_class':S,'capability':ref('ManagedPlatformCapability')}, ['namespace','components','public_service','storage_class','capability'])
+schemas['ManagedPlatformCatalogNode'] = obj({'name':S,'uid':S}, ['name','uid'])
+schemas['ManagedPlatformCatalogEntry'] = obj({'kind':{'type':'string','enum':['neon','supabase']},'version':S,'minimum_nodes':I,'maximum_nodes':I,'required_secret_keys':array(S),'default_spec':ref('ManagedPlatformDefaults'),'capability':ref('ManagedPlatformCapability')}, ['kind','version','minimum_nodes','maximum_nodes','required_secret_keys','default_spec','capability'])
+schemas['ManagedPlatformCatalog'] = obj({'project':S,'environment':S,'storage_class':S,'nodes':{'type':'array','items':ref('ManagedPlatformCatalogNode'),'maxItems':48},'secret_references':{'type':'array','items':ref('ManagedPlatformSecretReference'),'maxItems':64},'items':{'type':'array','items':ref('ManagedPlatformCatalogEntry'),'maxItems':2}}, ['project','environment','storage_class','nodes','secret_references','items'])
 schemas['ManagedPlatformReview'] = obj({'id':S,'expected_revision':I,'kind':{'type':'string','enum':['create','update','delete']},'request_hash':S,'authority_fingerprint':S,'capacity_fingerprint':S,'expires_at':T,'blocked_reasons':array(S)}, ['id','expected_revision','kind','request_hash','expires_at','blocked_reasons'])
 schemas['ManagedPlatformObservation'] = obj({'status':S,'phase':S,'revision':I,'namespace_uid':S,'ready_components':I,'expected_components':I,'pending':array(S),'tenant_id':S,'timeline_id':S,'safekeeper_count':I,'attached_computes':array(S),'proxy_endpoint_id':S,'proxy_generation':I})
 schemas['ManagedPlatform'] = obj({'id':S,'project':S,'environment':S,'revision':I,'spec':ref('ManagedPlatformSpec'),'status':S,'observation':ref('ManagedPlatformObservation'),'reserved_cpu_milli':I,'reserved_memory_bytes':I,'reserved_storage_gib':I,'created_at':T,'updated_at':T,'deleted_at':{'anyOf':[T,{'type':'null'}]}}, ['id','project','environment','revision','spec','status','observation','reserved_cpu_milli','reserved_memory_bytes','reserved_storage_gib','created_at','updated_at'])
@@ -62,6 +75,8 @@ schemas['ManagedPlatformAcceptIntent'] = obj(schemas['ManagedPlatformIntent']['p
 schemas['ManagedPlatformReviewResponse'] = obj({'platform':ref('ManagedPlatform'),'plan':ref('ManagedPlatformPlan'),'review':{'anyOf':[ref('ManagedPlatformReview'),{'type':'null'}]},'blocked':B}, ['platform','plan','review','blocked'])
 
 route('/managed-platforms','get','listManagedPlatforms',items('ManagedPlatform'),scope=True)
+route('/managed-platforms/catalog','get','getManagedPlatformCatalog',ref('ManagedPlatformCatalog'),scope=True)
+paths['/managed-platforms/catalog']['get']['description'] = 'Read editable platform defaults, configured capacity node references and immutable secret references for one authorized existing environment. References contain no secret values. Configured nodes do not assert live health or physical-zone qualification. Native qualification gates still control creation.'
 for parameter in paths['/managed-platforms']['get']['parameters']:
     parameter['required'] = False
 paths['/managed-platforms']['get']['description'] = 'List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected.'

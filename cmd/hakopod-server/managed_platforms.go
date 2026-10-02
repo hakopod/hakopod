@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -156,6 +158,32 @@ func configureManagedPlatforms(path string, db *store.Store, kube *cluster.Clien
 		}
 	}
 	planner := &api.NativeManagedPlatformPlanner{Store: db, EncryptionKey: key, SupabaseImages: config.Images, SupabaseIdentities: config.Identities, ApprovedEncryptedStorageClass: config.ApprovedEncryptedStorageClass, SharedStorageGID: config.SharedStorageGID, ApprovedExternalHTTPSCIDRs: config.ApprovedExternalHTTPSCIDRs, ResolveSupabaseSecret: resolver, NeonImages: config.NeonImages, NeonIdentities: config.NeonIdentities, NeonProxyControlPlaneOrigin: config.NeonProxyControlPlaneOrigin, NeonControlPlaneNamespace: config.NeonControlPlaneNamespace, NeonControlPlanePodLabels: config.NeonControlPlanePodLabels, NeonProxyToken: config.NeonProxyToken, NeonProxyEndpoints: config.NeonProxyEndpoints, ResolveNeonSecret: resolver}
+	planner.CatalogSecrets = map[string]map[string][]managedplatform.SecretReference{}
+	for project, environments := range config.Secrets {
+		planner.CatalogSecrets[project] = map[string][]managedplatform.SecretReference{}
+		for environment, snapshots := range environments {
+			refs := []managedplatform.SecretReference{}
+			for snapshot := range snapshots {
+				index := strings.LastIndex(snapshot, "-r")
+				revision, parseErr := strconv.ParseInt(snapshot[index+2:], 10, 64)
+				ref := managedplatform.SecretReference{Name: snapshot[:index], Revision: revision}
+				if parseErr != nil || ref.Validate() != nil {
+					return nil, nil, nil, fmt.Errorf("configured immutable secret revision is invalid")
+				}
+				refs = append(refs, ref)
+			}
+			sort.Slice(refs, func(i, j int) bool {
+				if refs[i].Name == refs[j].Name {
+					return refs[i].Revision < refs[j].Revision
+				}
+				return refs[i].Name < refs[j].Name
+			})
+			planner.CatalogSecrets[project][environment] = refs
+		}
+	}
+	if config.Capacity.Enabled {
+		planner.CatalogNodes = append([]managedplatform.CapacityNode{}, config.Capacity.Nodes...)
+	}
 	if config.Capacity.Enabled {
 		if err = config.Capacity.Validate(); err != nil {
 			return nil, nil, nil, err

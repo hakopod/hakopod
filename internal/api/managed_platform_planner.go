@@ -31,6 +31,8 @@ type NativeManagedPlatformPlanner struct {
 	NeonProxyToken                string
 	NeonProxyEndpoints            map[string]NeonProxyBootstrapConfig
 	ResolveNeonSecret             SupabaseSecretSnapshotResolver
+	CatalogNodes                  []managedplatform.CapacityNode
+	CatalogSecrets                map[string]map[string][]managedplatform.SecretReference
 }
 
 func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(_ context.Context, _ store.Principal, item store.ManagedPlatform, _ int64, _ string) (managedplatform.Plan, error) {

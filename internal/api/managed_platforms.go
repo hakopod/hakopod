@@ -32,6 +32,7 @@ type managedPlatformIntent struct {
 
 func (s *Server) registerManagedPlatformRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/managed-platforms", s.managedPlatforms)
+	mux.HandleFunc("GET /api/v1/managed-platforms/catalog", s.managedPlatformCatalog)
 	mux.HandleFunc("GET /api/v1/managed-platforms/{id}", s.managedPlatform)
 	mux.HandleFunc("GET /api/v1/managed-platforms/{id}/operations", s.managedPlatformOperations)
 	mux.HandleFunc("GET /api/v1/managed-platform-operations/{id}", s.managedPlatformOperation)

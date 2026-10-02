@@ -2595,6 +2595,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/managed-platforms/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read editable platform defaults, configured capacity node references and immutable secret references for one authorized existing environment. References contain no secret values. Configured nodes do not assert live health or physical-zone qualification. Native qualification gates still control creation. */
+        get: operations["getManagedPlatformCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/managed-platforms/{id}": {
         parameters: {
             query?: never;
@@ -6241,6 +6258,81 @@ export interface components {
             };
             neon: components["schemas"]["NeonConfig"];
         } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        SupabasePlatformDefaults: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /**
+             * @constant
+             * @enum {string}
+             */
+            kind: "supabase";
+            /**
+             * @constant
+             * @enum {string}
+             */
+            version: "0.8.2";
+            resources: {
+                [key: string]: components["schemas"]["ManagedPlatformResources"];
+            };
+            storage: {
+                [key: string]: number;
+            };
+            secrets: {
+                [key: string]: components["schemas"]["ManagedPlatformSecretReference"];
+            };
+            placement: {
+                node_names?: string[];
+                /** @enum {string} */
+                spread?: "" | "nodes" | "zones";
+            };
+            supabase: components["schemas"]["SupabaseConfig"];
+        };
+        NeonPlatformDefaults: {
+            /** @constant */
+            schema_version: 1;
+            name: string;
+            /**
+             * @constant
+             * @enum {string}
+             */
+            kind: "neon";
+            /**
+             * @constant
+             * @enum {string}
+             */
+            version: "fa504217c61bbcaf5c512d75830564541f917f8f";
+            resources: {
+                [key: string]: components["schemas"]["ManagedPlatformResources"];
+            };
+            storage: {
+                [key: string]: number;
+            };
+            secrets: {
+                [key: string]: components["schemas"]["ManagedPlatformSecretReference"];
+            };
+            placement: {
+                node_names?: string[];
+                /** @enum {string} */
+                spread?: "" | "nodes" | "zones";
+            };
+            neon: {
+                /** @constant */
+                postgres_version: "17";
+                compute_replicas: number;
+                pageservers: number;
+                /** @constant */
+                safekeepers: 3;
+                branch_limit: number;
+                object_storage_url: string;
+                object_storage_bucket: string;
+                object_storage_region: string;
+                object_storage_prefix: string;
+                /** @constant */
+                proxy_control_plane_patch_sha256: "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6";
+            };
+        };
+        ManagedPlatformDefaults: components["schemas"]["SupabasePlatformDefaults"] | components["schemas"]["NeonPlatformDefaults"];
         ManagedPlatformCapability: {
             available: boolean;
             cluster_qualified: boolean;
@@ -6260,7 +6352,30 @@ export interface components {
             namespace: string;
             components: components["schemas"]["ManagedPlatformComponent"][];
             public_service: string;
+            storage_class: string;
             capability: components["schemas"]["ManagedPlatformCapability"];
+        };
+        ManagedPlatformCatalogNode: {
+            name: string;
+            uid: string;
+        };
+        ManagedPlatformCatalogEntry: {
+            /** @enum {string} */
+            kind: "neon" | "supabase";
+            version: string;
+            minimum_nodes: number;
+            maximum_nodes: number;
+            required_secret_keys: string[];
+            default_spec: components["schemas"]["ManagedPlatformDefaults"];
+            capability: components["schemas"]["ManagedPlatformCapability"];
+        };
+        ManagedPlatformCatalog: {
+            project: string;
+            environment: string;
+            storage_class: string;
+            nodes: components["schemas"]["ManagedPlatformCatalogNode"][];
+            secret_references: components["schemas"]["ManagedPlatformSecretReference"][];
+            items: components["schemas"]["ManagedPlatformCatalogEntry"][];
         };
         ManagedPlatformReview: {
             id: string;
@@ -14230,6 +14345,38 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["ManagedPlatform"][];
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedPlatformCatalog: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedPlatformCatalog"];
                 };
             };
             /** @description Error */
