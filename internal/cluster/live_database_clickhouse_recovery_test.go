@@ -31,7 +31,9 @@ func liveClickHouseClient(t *testing.T) (*Client, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	// Multi-member startup and the later recovery or trust transition each need
+	// a bounded convergence window on the shared development cluster.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	t.Cleanup(cancel)
 	return c, ctx
 }
