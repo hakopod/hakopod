@@ -319,12 +319,12 @@ checks the pinned Helm binary itself. Controller installation uses only Python,
 kubectl and the packaged JSON; it does not download charts or install Python
 packages on the target host.
 
-Building with `--include-vitess` requires native qualification records that match the
-current source and exact runtime images. It stops when those records are missing
-or stale. The Vitess payload contains eight CRDs. Hakopod creates a separate,
-namespace-scoped operator for each Vitess database; this module does not install
-a shared Vitess controller. Builds without that option and installation of other
-engines do not require Vitess qualification. A kit that omits Vitess cannot enable it.
+Release builds include Vitess and require native qualification records that match
+the current source and exact runtime images. Packaging stops when those records
+are missing or stale. The Vitess payload contains eight CRDs. Hakopod creates a
+separate, namespace-scoped operator for each Vitess database; this module does
+not install a shared Vitess controller. Development-only bundles may pass
+`--without-vitess`; a kit that omits Vitess cannot enable it.
 
 From the matching extracted installer kit on a completed installer-owned host:
 

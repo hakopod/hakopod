@@ -441,7 +441,7 @@ function Workspace({
         >
           {mobile && <Icon name={icon} size={18} />}
           <span>{label}</span>
-          <Brackets />
+          {dashboardEdition.cloud && <Brackets />}
         </Link>
       ))
   return (
