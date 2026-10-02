@@ -13,7 +13,7 @@ RUN tar -xzf /tmp/redis.tar.gz --strip-components=1 \
     && if [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then \
          sed -ri 's!cd jemalloc && ./configure !&--with-lg-page=16 !' deps/Makefile; \
        fi \
-    && BUILD_TLS=yes make -j2 redis-server redis-cli \
+    && BUILD_TLS=yes make -j2 all \
     && install -m 0755 src/redis-server src/redis-cli /usr/local/bin/
 
 FROM ${ALPINE_IMAGE}
