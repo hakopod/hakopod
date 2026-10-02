@@ -5,6 +5,7 @@ caller supplies the tested candidate image references after importing them into
 the named development cluster, and coordinates resources before starting it.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,16 @@ PACKAGE = 'github.com/hakopod/hakopod/internal/cluster'
 NODES = ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')
 ALLOWED_NODES = NODES + ('k3d-hakopod-database-worker-1',)
 GIB = 1024 ** 3
+VITESS_CRDS = {
+    'etcdlockservers.planetscale.com',
+    'vitessbackups.planetscale.com',
+    'vitessbackupschedules.planetscale.com',
+    'vitessbackupstorages.planetscale.com',
+    'vitesscells.planetscale.com',
+    'vitessclusters.planetscale.com',
+    'vitesskeyspaces.planetscale.com',
+    'vitessshards.planetscale.com',
+}
 
 
 def fixture_nodes(value):
@@ -102,6 +113,42 @@ def command_output(command):
 
 def command_json(command):
     return json.loads(command_output(command))
+
+
+def cluster_prerequisites(kube, receipt_path, receipt_sha256, nodes):
+    if not re.fullmatch(r'[a-f0-9]{64}', receipt_sha256 or ''):
+        raise RuntimeError('exact development cluster receipt SHA-256 is required')
+    if receipt_path.is_symlink() or not receipt_path.is_absolute() or not receipt_path.is_file() or receipt_path.stat().st_size > 256 * 1024:
+        raise RuntimeError('bounded development cluster receipt is required')
+    raw = receipt_path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != receipt_sha256:
+        raise RuntimeError('development cluster receipt SHA-256 differs')
+    receipt = json.loads(raw)
+    if receipt.get('context') != 'k3d-hakopod-dev' or not isinstance(receipt.get('cluster_uid'), str):
+        raise RuntimeError('development cluster receipt identity is invalid')
+    expected_nodes = receipt.get('node_uids')
+    if not isinstance(expected_nodes, dict) or set(expected_nodes) != set(ALLOWED_NODES) or not set(nodes) <= set(expected_nodes) or any(not isinstance(uid, str) or not uid for uid in expected_nodes.values()):
+        raise RuntimeError('development cluster receipt node identity differs')
+    namespace = command_json(kube + ['get', 'namespace', 'kube-system', '-o', 'json'])
+    inventory = command_json(kube + ['get', 'nodes', *sorted(expected_nodes), '-o', 'json']).get('items', [])
+    observed_nodes = {item.get('metadata', {}).get('name'): item.get('metadata', {}).get('uid') for item in inventory}
+    if namespace.get('metadata', {}).get('uid') != receipt['cluster_uid'] or observed_nodes != expected_nodes:
+        raise RuntimeError('live development cluster identity differs from its receipt')
+    crds = command_json(kube + ['get', 'customresourcedefinitions.apiextensions.k8s.io', '-o', 'json']).get('items', [])
+    observed_crds = {}
+    for item in crds:
+        name = item.get('metadata', {}).get('name')
+        if not isinstance(name, str) or not name.endswith('.planetscale.com'):
+            continue
+        conditions = {condition.get('type'): condition.get('status') for condition in item.get('status', {}).get('conditions', []) if isinstance(condition, dict)}
+        observed_crds[name] = {'group': item.get('spec', {}).get('group'), 'scope': item.get('spec', {}).get('scope'),
+                               'established': conditions.get('Established'), 'names_accepted': conditions.get('NamesAccepted')}
+    if set(observed_crds) != VITESS_CRDS or any(value != {
+            'group': 'planetscale.com', 'scope': 'Namespaced', 'established': 'True', 'names_accepted': 'True'}
+            for value in observed_crds.values()):
+        raise RuntimeError('development cluster requires the exact eight Vitess resource definitions')
+    return {'uid': receipt['cluster_uid'], 'node_uids': expected_nodes, 'vitess_crds': sorted(observed_crds),
+            'receipt_sha256': receipt_sha256}
 
 
 def native_environment(root, kube, inventory, images, case, fixture_budget_gib, nodes=NODES):
@@ -252,6 +299,8 @@ def main():
     parser.add_argument('--go',type=Path,default=Path('/usr/local/bin/go'))
     parser.add_argument('--kubectl',type=Path,default=None)
     parser.add_argument('--cache-root',type=Path,default=Path('/srv/hakopod-backup-scratch/managed-databases-20260927'))
+    parser.add_argument('--cluster-receipt',type=Path,required=True)
+    parser.add_argument('--cluster-receipt-sha256',required=True)
     args=parser.parse_args()
     root=args.root.resolve();source=(args.source or root/'vitess-source-check').resolve()
     if args.attempt<1 or args.attempt>100:
@@ -283,6 +332,7 @@ def main():
     cache_root.mkdir(mode=0o700,parents=True,exist_ok=True)
     (root/'tmp').mkdir(mode=0o700,exist_ok=True)
     selected_nodes=fixture_nodes(args.nodes)
+    cluster = cluster_prerequisites(kube, args.cluster_receipt, args.cluster_receipt_sha256, selected_nodes)
     nodes=command_output(kube+['get','nodes',*selected_nodes,'-o','json'])
     inventory=json.loads(nodes).get('items',[])
     if len(inventory)!=len(selected_nodes) or {node['metadata']['name'] for node in inventory}!=set(selected_nodes):
@@ -299,6 +349,7 @@ def main():
     environment=native_environment(root,kube,inventory,
         {'runtime':args.engine_image,'operator':args.operator_image,'etcd':verifier['source_constant'](source,'vitessEtcdImage')},
         args.case,args.fixture_budget_gib,selected_nodes)
+    environment['cluster'] = cluster
     descriptor=os.open(preflight,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
     with os.fdopen(descriptor,'w') as output:json.dump(environment,output,indent=2)
     print('Protected native environment evidence:',preflight,flush=True)

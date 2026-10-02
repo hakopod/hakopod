@@ -27,7 +27,14 @@ def environment_fixture(case, images):
                        'conditions': {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'},
                        'filesystems': {'nodefs': copy.deepcopy(filesystem), 'imagefs': copy.deepcopy(filesystem)},
                        'cached_images': sorted(canonical)}
-                      for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')]}
+                      for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')],
+            'cluster': {'uid': 'cluster-a', 'node_uids': {'k3d-hakopod-dev-server-0': 'uid-0',
+                'k3d-hakopod-database-worker-0': 'uid-1', 'k3d-hakopod-database-worker-1': 'uid-2'},
+                'vitess_crds': sorted({'etcdlockservers.planetscale.com', 'vitessbackups.planetscale.com',
+                    'vitessbackupschedules.planetscale.com', 'vitessbackupstorages.planetscale.com',
+                    'vitesscells.planetscale.com', 'vitessclusters.planetscale.com',
+                    'vitesskeyspaces.planetscale.com', 'vitessshards.planetscale.com'}),
+                'receipt_sha256': 'a' * 64}}
 
 
 class VitessReleaseVerificationTest(unittest.TestCase):
