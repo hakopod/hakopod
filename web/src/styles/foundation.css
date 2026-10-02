@@ -109,6 +109,7 @@ textarea {
   background-repeat: no-repeat;
 }
 label {
+  @apply min-w-0;
   font-size: 14px;
   color: var(--muted);
   font-weight: 400;
@@ -156,6 +157,7 @@ label > .select-field-wrap {
   display: none;
 }
 .select-field-wrap {
+  @apply max-w-full;
   position: relative;
   display: inline-block;
   width: 100%;
@@ -167,6 +169,7 @@ label > .select-field-wrap {
   color: var(--foreground);
 }
 .select-field-value {
+  @apply block flex-1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

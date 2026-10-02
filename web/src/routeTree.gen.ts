@@ -44,6 +44,7 @@ import { Route as LoginVerifyRouteImport } from './routes/login.verify'
 import { Route as NetworksNetworkNameRouteImport } from './routes/networks.$networkName'
 import { Route as NetworksNewRouteImport } from './routes/networks.new'
 import { Route as PlatformsPlatformIdRouteImport } from './routes/platforms.$platformId'
+import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
 import { Route as ProjectsProjectRouteImport } from './routes/projects.$project'
 import { Route as SettingsDnsProvidersRouteImport } from './routes/settings.dns-providers'
 import { Route as SettingsEdgeRouteImport } from './routes/settings.edge'
@@ -269,6 +270,11 @@ const NetworksNewRoute = NetworksNewRouteImport.update({
 const PlatformsPlatformIdRoute = PlatformsPlatformIdRouteImport.update({
   id: '/$platformId',
   path: '/$platformId',
+  getParentRoute: () => PlatformsRoute,
+} as any)
+const PlatformsNewRoute = PlatformsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
   getParentRoute: () => PlatformsRoute,
 } as any)
 const ProjectsProjectRoute = ProjectsProjectRouteImport.update({
@@ -591,6 +597,7 @@ export interface FileRoutesByFullPath {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
+  '/platforms/new': typeof PlatformsNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -678,6 +685,7 @@ export interface FileRoutesByTo {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
+  '/platforms/new': typeof PlatformsNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -766,6 +774,7 @@ export interface FileRoutesById {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
+  '/platforms/new': typeof PlatformsNewRoute
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -855,6 +864,7 @@ export interface FileRouteTypes {
     | '/networks/$networkName'
     | '/networks/new'
     | '/platforms/$platformId'
+    | '/platforms/new'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -942,6 +952,7 @@ export interface FileRouteTypes {
     | '/networks/$networkName'
     | '/networks/new'
     | '/platforms/$platformId'
+    | '/platforms/new'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -1029,6 +1040,7 @@ export interface FileRouteTypes {
     | '/networks/$networkName'
     | '/networks/new'
     | '/platforms/$platformId'
+    | '/platforms/new'
     | '/projects/$project'
     | '/settings/dns-providers'
     | '/settings/edge'
@@ -1354,6 +1366,13 @@ declare module '@tanstack/react-router' {
       path: '/$platformId'
       fullPath: '/platforms/$platformId'
       preLoaderRoute: typeof PlatformsPlatformIdRouteImport
+      parentRoute: typeof PlatformsRoute
+    }
+    '/platforms/new': {
+      id: '/platforms/new'
+      path: '/new'
+      fullPath: '/platforms/new'
+      preLoaderRoute: typeof PlatformsNewRouteImport
       parentRoute: typeof PlatformsRoute
     }
     '/projects/$project': {
@@ -1883,10 +1902,12 @@ const PlatformsPlatformIdRouteWithChildren =
 
 interface PlatformsRouteChildren {
   PlatformsPlatformIdRoute: typeof PlatformsPlatformIdRouteWithChildren
+  PlatformsNewRoute: typeof PlatformsNewRoute
 }
 
 const PlatformsRouteChildren: PlatformsRouteChildren = {
   PlatformsPlatformIdRoute: PlatformsPlatformIdRouteWithChildren,
+  PlatformsNewRoute: PlatformsNewRoute,
 }
 
 const PlatformsRouteWithChildren = PlatformsRoute._addFileChildren(
