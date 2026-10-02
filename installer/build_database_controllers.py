@@ -19,6 +19,7 @@ from database_controllers import validate_controller_objects
 from vitess_controller import qualification as qualify_vitess, render as render_vitess
 
 IMAGE = re.compile(r'^[^\s]+:[^/@:]+@sha256:[0-9a-f]{64}$')
+REDIS_CONTROLLER_IMAGE = 'ghcr.io/hakopod/managed-redis-operator:candidate-36996745177-1@sha256:87a426b087355e41247210d176d82812a5c8c462cc2856789513dd00a37ab32a'
 HERE = Path(__file__).resolve().parent
 NAMESPACES = {'postgresql': 'cnpg-system', 'redis': 'redis-operator', 'mysql': 'mysql-operator', 'mongodb': 'mongodb-system', 'clickhouse': 'clickhouse-operator'}
 
@@ -156,6 +157,6 @@ def build(destination, redis_image, include_vitess=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--redis-controller-image',default=os.environ.get('HAKOPOD_REDIS_CONTROLLER_IMAGE',''))
+    parser.add_argument('--redis-controller-image',default=os.environ.get('HAKOPOD_REDIS_CONTROLLER_IMAGE') or REDIS_CONTROLLER_IMAGE)
     parser.add_argument('--include-vitess',action='store_true',help='Require native qualification and include the eight Vitess resource definitions')
     args=parser.parse_args();build(args.output,args.redis_controller_image,args.include_vitess)
