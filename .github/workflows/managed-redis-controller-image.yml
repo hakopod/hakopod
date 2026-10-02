@@ -74,3 +74,57 @@ jobs:
           path: redis-controller-candidate.json
           if-no-files-found: error
           retention-days: 14
+  index:
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: redis-controller-*
+          path: candidates
+      - name: Publish the verified architecture index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/redis-index-auth"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          images = []
+          revisions = set()
+          for arch in ('amd64', 'arm64'):
+              value = json.loads(Path(f'candidates/redis-controller-{arch}/redis-controller-candidate.json').read_text())
+              assert value['architecture'] == arch and value['native_qualified'] is False
+              assert re.fullmatch(r'ghcr.io/hakopod/managed-redis-operator@sha256:[a-f0-9]{64}', value['image'])
+              assert re.fullmatch(r'[a-f0-9]{40}', value['source_revision'])
+              revisions.add(value['source_revision'])
+              images.append(value['image'])
+          assert len(revisions) == 1
+          tag = f"ghcr.io/hakopod/managed-redis-operator:candidate-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          subprocess.run(['docker', 'buildx', 'imagetools', 'create', '--tag', tag, *images], check=True, timeout=120)
+          raw = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', tag, '--raw'], timeout=60)
+          index = json.loads(raw)
+          assert len(index['manifests']) == 2
+          assert {item['digest'] for item in index['manifests']} == {image.split('@')[1] for image in images}
+          assert {(item['platform']['os'], item['platform']['architecture']) for item in index['manifests']} == {('linux', 'amd64'), ('linux', 'arm64')}
+          digest = 'sha256:' + __import__('hashlib').sha256(raw).hexdigest()
+          Path('redis-controller-index.json').write_text(json.dumps({
+              'schema_version': 1, 'image': tag + '@' + digest,
+              'source_revision': revisions.pop(), 'native_qualified': False,
+              'manifests': index['manifests'],
+          }, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: redis-controller-index
+          path: redis-controller-index.json
+          if-no-files-found: error
+          retention-days: 14
