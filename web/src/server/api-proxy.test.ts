@@ -5,6 +5,19 @@ import { sealSession, sessionCookie } from './session.ts'
 
 const origin = 'http://127.0.0.1:4173'
 const token = 'hs_proxy_regression_not_a_real_session_12345'
+test('managed platform catalog forwards scope through the protected session proxy', async (t) => {
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+    const target = new URL(String(url))
+    assert.equal(target.pathname, '/api/v1/managed-platforms/catalog')
+    assert.equal(target.search, '?project=owned&environment=production')
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+    return Response.json({ items: [] })
+  })
+  const response = await proxy({ request: request('managed-platforms/catalog?project=owned&environment=production'), params: { _splat: 'managed-platforms/catalog' } })
+  assert.equal(response.status, 200)
+  assert.equal((await proxy({ request: request('managed-platforms/catalog', 'GET', undefined, false), params: { _splat: 'managed-platforms/catalog' } })).status, 401)
+  mocked.mock.restore()
+})
 function request(
   path: string,
   method = 'GET',

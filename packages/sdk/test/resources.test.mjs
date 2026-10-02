@@ -76,6 +76,22 @@ function fixture(handler) {
   });
   return { client, calls };
 }
+test("managed platform catalog requires and preserves an explicit scope", async () => {
+  const { client, calls } = fixture(() => Response.json({ items: [] }));
+  await client.in({ project: "orders", environment: "staging" }).managedPlatformCatalog();
+  await client.managedPlatformCatalog();
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(call.path, "/managed-platforms/catalog");
+    assert.equal(call.method, "GET");
+  }
+  assert.equal(calls[0].url.searchParams.get("project"), "orders");
+  assert.equal(calls[0].url.searchParams.get("environment"), "staging");
+  assert.equal(calls[1].url.searchParams.get("project"), scope.project);
+  assert.equal(calls[1].url.searchParams.get("environment"), scope.environment);
+  const unscoped = new Hakopod({ apiUrl: "https://fixture.invalid", apiKey: "hp_fixture", fetch: async () => { throw new Error("unscoped catalog must not be sent"); } });
+  assert.throws(() => unscoped.managedPlatformCatalog(), { code: "missing_scope" });
+});
 test("database node discovery uses the selected scope without changing the client's scope", async () => {
   const { client, calls } = fixture(() => Response.json({ items: [], limit: 48 }));
   assert.deepEqual(await client.in({ project: "orders", environment: "staging" }).databasePlacementNodes(), { items: [], limit: 48 });

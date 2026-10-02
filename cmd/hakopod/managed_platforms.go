@@ -53,16 +53,33 @@ func readManagedPlatformSpec(path string) (managedplatform.Spec, error) {
 
 func managedPlatformCommand(ctx context.Context, c *client, project, environment string, args []string, file, idem, confirm string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return &exitError{2, "platform requires list, show, review, apply, update, delete, operations or operation"}
+		return &exitError{2, "platform requires list, catalog, show, review, apply, update, delete, operations or operation"}
 	}
 	action, id := args[0], ""
 	if len(args) == 2 {
 		id = args[1]
 	}
-	if action != "list" && action != "review" && action != "apply" && !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
+	if action != "list" && action != "catalog" && action != "review" && action != "apply" && !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
 		return &exitError{2, "provide the 32-character platform or operation ID"}
 	}
 	switch action {
+	case "catalog":
+		if id != "" || project == "" || environment == "" {
+			return &exitError{2, "platform catalog requires a project and environment, without a resource ID"}
+		}
+		var out struct {
+			Project          string                            `json:"project"`
+			Environment      string                            `json:"environment"`
+			StorageClass     string                            `json:"storage_class"`
+			Nodes            []managedplatform.CapacityNode    `json:"nodes"`
+			SecretReferences []managedplatform.SecretReference `json:"secret_references"`
+			Items            []managedplatform.CatalogEntry    `json:"items"`
+		}
+		query := url.Values{"project": {project}, "environment": {environment}}
+		if err := c.request(ctx, "GET", "/managed-platforms/catalog?"+query.Encode(), nil, "", &out); err != nil {
+			return err
+		}
+		return printJSON(out)
 	case "list":
 		var out struct {
 			Items []store.ManagedPlatform `json:"items"`
@@ -180,6 +197,6 @@ func managedPlatformCommand(ctx context.Context, c *client, project, environment
 		}
 		return printJSON(out)
 	default:
-		return &exitError{2, "platform requires list, show, review, apply, update, delete, operations or operation"}
+		return &exitError{2, "platform requires list, catalog, show, review, apply, update, delete, operations or operation"}
 	}
 }

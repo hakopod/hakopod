@@ -156,6 +156,12 @@ export class Hakopod {
   listManagedPlatforms(options: RequestOptions = {}) {
     return this.request("GET", "/managed-platforms", { ...options, query: this.#context.scope ?? {} });
   }
+  managedPlatformCatalog(options: RequestOptions = {}) {
+    return this.request("GET", "/managed-platforms/catalog", {
+      ...options,
+      query: scope(this.#context),
+    });
+  }
   reviewManagedPlatform(spec: Schema["ManagedPlatformSpec"], options: RequestOptions = {}) {
     const selected = scope(this.#context);
     return this.request("POST", "/managed-platforms/reviews", {

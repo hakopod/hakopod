@@ -10105,6 +10105,52 @@
         "description": "List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected."
       }
     },
+    "/managed-platforms/catalog": {
+      "get": {
+        "operationId": "getManagedPlatformCatalog",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read editable platform defaults, configured capacity node references and immutable secret references for one authorized existing environment. References contain no secret values. Configured nodes do not assert live health or physical-zone qualification. Native qualification gates still control creation."
+      }
+    },
     "/managed-platforms/{id}": {
       "get": {
         "operationId": "getManagedPlatform",
@@ -24708,6 +24754,233 @@
           }
         ]
       },
+      "SupabasePlatformDefaults": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "supabase",
+              "neon"
+            ],
+            "const": "supabase"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "0.8.2",
+              "fa504217c61bbcaf5c512d75830564541f917f8f"
+            ],
+            "const": "0.8.2"
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformResources"
+            }
+          },
+          "storage": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+            }
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "node_names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 48,
+                "uniqueItems": true
+              },
+              "spread": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "nodes",
+                  "zones"
+                ]
+              }
+            },
+            "required": []
+          },
+          "supabase": {
+            "$ref": "#/components/schemas/SupabaseConfig"
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "kind",
+          "version",
+          "resources",
+          "storage",
+          "secrets",
+          "placement",
+          "supabase"
+        ]
+      },
+      "NeonPlatformDefaults": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "supabase",
+              "neon"
+            ],
+            "const": "neon"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "0.8.2",
+              "fa504217c61bbcaf5c512d75830564541f917f8f"
+            ],
+            "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformResources"
+            }
+          },
+          "storage": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "secrets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+            }
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "node_names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 48,
+                "uniqueItems": true
+              },
+              "spread": {
+                "type": "string",
+                "enum": [
+                  "",
+                  "nodes",
+                  "zones"
+                ]
+              }
+            },
+            "required": []
+          },
+          "neon": {
+            "type": "object",
+            "properties": {
+              "postgres_version": {
+                "type": "string",
+                "const": "17"
+              },
+              "compute_replicas": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "pageservers": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 8
+              },
+              "safekeepers": {
+                "type": "integer",
+                "const": 3
+              },
+              "branch_limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "object_storage_url": {
+                "type": "string"
+              },
+              "object_storage_bucket": {
+                "type": "string"
+              },
+              "object_storage_region": {
+                "type": "string"
+              },
+              "object_storage_prefix": {
+                "type": "string"
+              },
+              "proxy_control_plane_patch_sha256": {
+                "type": "string",
+                "const": "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
+              }
+            },
+            "required": [
+              "postgres_version",
+              "compute_replicas",
+              "pageservers",
+              "safekeepers",
+              "branch_limit",
+              "object_storage_url",
+              "object_storage_bucket",
+              "object_storage_region",
+              "object_storage_prefix",
+              "proxy_control_plane_patch_sha256"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "name",
+          "kind",
+          "version",
+          "resources",
+          "storage",
+          "secrets",
+          "placement",
+          "neon"
+        ]
+      },
+      "ManagedPlatformDefaults": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SupabasePlatformDefaults"
+          },
+          {
+            "$ref": "#/components/schemas/NeonPlatformDefaults"
+          }
+        ]
+      },
       "ManagedPlatformCapability": {
         "type": "object",
         "properties": {
@@ -24790,6 +25063,9 @@
           "public_service": {
             "type": "string"
           },
+          "storage_class": {
+            "type": "string"
+          },
           "capability": {
             "$ref": "#/components/schemas/ManagedPlatformCapability"
           }
@@ -24798,7 +25074,108 @@
           "namespace",
           "components",
           "public_service",
+          "storage_class",
           "capability"
+        ]
+      },
+      "ManagedPlatformCatalogNode": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "uid"
+        ]
+      },
+      "ManagedPlatformCatalogEntry": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "neon",
+              "supabase"
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "minimum_nodes": {
+            "type": "integer"
+          },
+          "maximum_nodes": {
+            "type": "integer"
+          },
+          "required_secret_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_spec": {
+            "$ref": "#/components/schemas/ManagedPlatformDefaults"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/ManagedPlatformCapability"
+          }
+        },
+        "required": [
+          "kind",
+          "version",
+          "minimum_nodes",
+          "maximum_nodes",
+          "required_secret_keys",
+          "default_spec",
+          "capability"
+        ]
+      },
+      "ManagedPlatformCatalog": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "storage_class": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformCatalogNode"
+            },
+            "maxItems": 48
+          },
+          "secret_references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformSecretReference"
+            },
+            "maxItems": 64
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformCatalogEntry"
+            },
+            "maxItems": 2
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "storage_class",
+          "nodes",
+          "secret_references",
+          "items"
         ]
       },
       "ManagedPlatformReview": {
