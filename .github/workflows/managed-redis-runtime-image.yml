@@ -40,6 +40,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           docker buildx build --file Dockerfile.redis-runtime --platform "linux/$ARCH" \
+            --build-arg "HAKOPOD_SOURCE_REVISION=$GITHUB_SHA" \
             --provenance=false --load --tag hakopod-redis-runtime:smoke .
           release/smoke-redis-runtime.sh hakopod-redis-runtime:smoke
       - name: Push tested platform image

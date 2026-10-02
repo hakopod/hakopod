@@ -19,12 +19,14 @@ RUN tar -xzf /tmp/redis.tar.gz --strip-components=1 \
 FROM ${ALPINE_IMAGE}
 ARG TARGETARCH
 ARG REDIS_SOURCE_REVISION=86b20b1b9e5f03d86db72c3d59bec432e471fbc9
+ARG HAKOPOD_SOURCE_REVISION=unknown
 ENV REDIS_PORT=6379
 LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
       org.opencontainers.image.version="8.2.10" \
-      org.opencontainers.image.revision="${REDIS_SOURCE_REVISION}" \
+      org.opencontainers.image.revision="${HAKOPOD_SOURCE_REVISION}" \
       org.opencontainers.image.licenses="AGPL-3.0-only AND Apache-2.0" \
       io.hakopod.redis-source="https://codeload.github.com/redis/redis/tar.gz/${REDIS_SOURCE_REVISION}" \
+      io.hakopod.redis-source-revision="${REDIS_SOURCE_REVISION}" \
       io.hakopod.build-recipe="/usr/share/doc/hakopod-redis-runtime/Dockerfile.redis-runtime" \
       io.hakopod.upstream-runtime-revision="8a6d56bd05d42f05ff1f1f6ccfe1a7b9fbc1ef5f" \
       io.hakopod.redis-tls="enabled" \
