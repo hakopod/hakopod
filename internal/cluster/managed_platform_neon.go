@@ -227,7 +227,7 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if err != nil {
 		return err
 	}
-	if err = validateNeonSecretSnapshot(request.SecretSnapshots, manifests.RequiredSecrets, request.Render.Spec); err != nil {
+	if err = validateNeonSecretSnapshot(request.SecretSnapshots, manifests.RequiredSecrets, request.Render.Spec, request.Render.PlatformID); err != nil {
 		return err
 	}
 	for _, name := range manifests.RequiredSecrets {
@@ -417,7 +417,7 @@ func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekee
 	return encoded, nil
 }
 
-func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []string, spec managedplatform.Spec) error {
+func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []string, spec managedplatform.Spec, platformID string) error {
 	if len(values) != len(names) {
 		return fmt.Errorf("resolved Neon secret snapshot is incomplete")
 	}
@@ -438,9 +438,10 @@ func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []str
 		}
 	}
 	required := map[string][]string{
+		"broker-auth":                  {"tls.crt", "tls.key", "ca.crt"},
 		"compute-auth":                 {"config.json", "token", "tls.crt", "tls.key", "ca.crt"},
 		"controller-auth":              {"token", "public-key.pem", "tls.crt", "tls.key", "ca.crt"},
-		"controller-database-password": {"value"},
+		"controller-database-password": {"value", "tls.crt", "tls.key", "ca.crt"},
 		"object-storage":               {"access-key-id", "secret-access-key"},
 		"pageserver-auth":              {"token", "public-key.pem", "tls.crt", "tls.key", "ca.crt"},
 		"proxy-auth":                   {"token", "tls.crt", "tls.key"},
@@ -462,7 +463,7 @@ func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []str
 			}
 		}
 	}
-	return nil
+	return validateNeonTLSSecretSnapshots(values, spec, platformID, time.Now())
 }
 
 func (c *Client) ObserveNeon(ctx context.Context, op store.ManagedPlatformOperation, manifests managedplatform.NeonManifests, current map[string]store.PlatformResourceClaim) (NeonRuntimeObservation, error) {
