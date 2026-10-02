@@ -7,11 +7,11 @@ export type ExternalDatabaseSpec = components['schemas']['ExternalDatabaseSpec']
 export type ExternalDatabaseCredentials = components['schemas']['ExternalDatabaseCredentials']
 export type ExternalDatabaseConnectionPlan = components['schemas']['ExternalDatabaseConnectionPlan']
 
-export function useExternalDatabases(project: string, environment: string) {
+export function useExternalDatabases(project: string, environment: string, enabled = true) {
   return useQuery({
     queryKey: ['external-databases', project, environment],
     queryFn: ({ signal }) => unwrap(client.GET('/external-databases', { signal, params: { query: { project, environment } } })),
-    enabled: Boolean(project && environment), refetchInterval: 10000, gcTime: 0,
+    enabled: enabled && Boolean(project && environment), refetchInterval: 10000, gcTime: 0,
   })
 }
 export function useExternalDatabase(id: string) {

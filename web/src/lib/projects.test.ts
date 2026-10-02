@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveProjectRouteScope } from './projects'
+import { projectRouteScopeMatches, resolveProjectRouteScope } from './projects'
 import type { Project } from './types'
 
 const projects: Project[] = [
@@ -49,4 +49,23 @@ test('loading, missing access and projects without environments never supply an 
     environment: '',
     status: 'missing-environment',
   })
+})
+
+test('scoped collection routes only query the workspace resolved from their URL', () => {
+  assert.equal(
+    projectRouteScopeMatches(
+      { project: 'alpha', environment: 'production' },
+      { project: 'alpha', environment: 'production' },
+    ),
+    true,
+  )
+  for (const requested of [
+    { project: 'removed', environment: 'production' },
+    { project: 'alpha', environment: 'removed' },
+  ])
+    assert.equal(
+      projectRouteScopeMatches({ project: '', environment: '' }, requested),
+      false,
+      'an inaccessible URL scope must not reuse an unscoped collection query',
+    )
 })

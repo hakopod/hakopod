@@ -12,6 +12,7 @@ import { Icon } from '../components/icons'
 import { SelectField } from '../components/ui/select'
 import { engineName, expectedMembers, shardedDatabase } from '../lib/database-view'
 import { timestamp } from '../lib/api'
+import { projectRouteScopeMatches } from '../lib/projects'
 
 export const Route = createFileRoute('/databases')({
   validateSearch: databaseSearch,
@@ -22,10 +23,11 @@ function DatabaseRoute() {
 }
 function Databases() {
   const scope = Route.useSearch()
-  const query = useDatabases(scope.project, scope.environment)
-  const external = useExternalDatabases(scope.project, scope.environment)
-  const { identity } = useScope()
-  const canManage = !identity.application && canAccess(identity, scope.project, 'deployments:write')
+  const workspace = useScope()
+  const scopeMatches = projectRouteScopeMatches(workspace, scope)
+  const query = useDatabases(scope.project, scope.environment, scopeMatches)
+  const external = useExternalDatabases(scope.project, scope.environment, scopeMatches)
+  const canManage = scopeMatches && !workspace.identity.application && canAccess(workspace.identity, scope.project, 'deployments:write')
   const [filter, setFilter] = useState('')
   const [engine, setEngine] = useState('all')
   const filtered = (query.data?.items || []).filter(
@@ -61,7 +63,12 @@ function Databases() {
           )
         }
       />
-      {!scope.project || !scope.environment ? (
+      {!scopeMatches ? (
+        <Empty
+          title="Workspace unavailable"
+          description="Choose an accessible project and environment above."
+        />
+      ) : !scope.project || !scope.environment ? (
         <Empty
           title="Choose a project and environment"
           description="Select a project above, then open Databases to manage its resources."
