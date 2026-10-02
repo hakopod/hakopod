@@ -180,13 +180,13 @@ def publish(publisher, image, layout):
     # The tag is derived from the digest. Never replace a different manifest.
     tag = "sha256-" + image["image_digest"][7:]
     reference = image["repository"] + ":" + tag
-    code, current, error = run([publisher, "digest", reference], 60)
+    code, current, error = run([publisher, "manifest", reference], 60)
     if code == 0:
-        if current.strip() != image["image_digest"]:
+        if checked([publisher, "digest", reference], 60).strip() != image["image_digest"]:
             raise ValueError("Refusing to replace an existing image tag")
     else:
         url = "https://ghcr.io/v2/" + image["repository"][len("ghcr.io/"):] + "/manifests/" + tag
-        missing = re.fullmatch(r"Error: (?:fetching manifest |GET )?" + re.escape(reference) + r": GET " + re.escape(url) + r": (?:MANIFEST_UNKNOWN|NAME_UNKNOWN): [^\r\n]+", error.strip())
+        missing = re.fullmatch(r"Error: fetching manifest " + re.escape(reference) + r": GET " + re.escape(url) + r": (?:MANIFEST_UNKNOWN|NAME_UNKNOWN): [^\r\n]+", error.strip())
         if current.strip() or missing is None:
             raise ValueError("Registry did not confirm an absent tag; no tag was changed")
         checked([publisher, "tag", immutable, tag], 60)
