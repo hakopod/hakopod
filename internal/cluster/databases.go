@@ -30,8 +30,8 @@ var redisDatabaseResource = schema.GroupVersionResource{Group: "redis.redis.opst
 var redisClusterResource = schema.GroupVersionResource{Group: "redis.redis.opstreelabs.in", Version: "v1beta2", Resource: "redisclusters"}
 var mysqlDatabaseResource = schema.GroupVersionResource{Group: "mysql.oracle.com", Version: "v2", Resource: "innodbclusters"}
 var databaseImages = map[string]string{
-	"postgresql:17":   "ghcr.io/cloudnative-pg/postgresql:17.6@sha256:30b304a2e300ed80b6d1b740e4369e9b0f25599fb518de78c01fd9f25531791b",
-	"postgresql:18":   "ghcr.io/cloudnative-pg/postgresql:18.0@sha256:f06cae6ae14e2f101392130dce800b504bf9c5110b5db5fc0266782464882dbb",
+	"postgresql:17":   "ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e",
+	"postgresql:18":   "ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533",
 	"redis:8":         "quay.io/opstree/redis:v8.2.1@sha256:8027cf7ec625d625a4f60e2526f0073d2b58bf6a6172992015f7699ecbd8504a",
 	"mysql:8.4":       "container-registry.oracle.com/mysql/community-server:8.4.12@sha256:7dcc4add9183664de3a214daf85a50c3ba6cccfd7534f700b6561bf5b41885be",
 	"mongodb:8.0":     mongodbServerImage,
