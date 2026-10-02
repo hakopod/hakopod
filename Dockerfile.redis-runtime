@@ -20,9 +20,12 @@ FROM ${ALPINE_IMAGE}
 ARG TARGETARCH
 ARG REDIS_SOURCE_REVISION=86b20b1b9e5f03d86db72c3d59bec432e471fbc9
 ENV REDIS_PORT=6379
-LABEL org.opencontainers.image.source="https://github.com/OT-CONTAINER-KIT/redis" \
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
       org.opencontainers.image.version="8.2.10" \
       org.opencontainers.image.revision="${REDIS_SOURCE_REVISION}" \
+      org.opencontainers.image.licenses="AGPL-3.0-only AND Apache-2.0" \
+      io.hakopod.redis-source="https://codeload.github.com/redis/redis/tar.gz/${REDIS_SOURCE_REVISION}" \
+      io.hakopod.build-recipe="/usr/share/doc/hakopod-redis-runtime/Dockerfile.redis-runtime" \
       io.hakopod.upstream-runtime-revision="8a6d56bd05d42f05ff1f1f6ccfe1a7b9fbc1ef5f" \
       io.hakopod.redis-tls="enabled" \
       arch="${TARGETARCH}" \
@@ -38,6 +41,9 @@ COPY images/redis-runtime/redis.conf /etc/redis/redis.conf
 COPY images/redis-runtime/entrypoint.sh /usr/bin/entrypoint.sh
 COPY images/redis-runtime/setupMasterSlave.sh /usr/bin/setupMasterSlave.sh
 COPY images/redis-runtime/healthcheck.sh /usr/bin/healthcheck.sh
+COPY images/redis-runtime/licenses/redis-LICENSE.txt /usr/share/licenses/redis/LICENSE.txt
+COPY images/redis-runtime/licenses/opstree-LICENSE /usr/share/licenses/opstree-redis/LICENSE
+COPY images/redis-runtime/NOTICE images/redis-runtime/UPSTREAM.lock Dockerfile.redis-runtime /usr/share/doc/hakopod-redis-runtime/
 RUN chown -R 1000:0 /data /node-conf /etc/redis \
     && chmod -R g+rw /data /node-conf /etc/redis /var/run
 VOLUME ["/data", "/node-conf"]

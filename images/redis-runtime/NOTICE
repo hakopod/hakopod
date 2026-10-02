@@ -1,0 +1,16 @@
+Hakopod Redis runtime
+=====================
+
+Redis 8.2.10 is distributed by Hakopod under the GNU Affero General Public
+License version 3 option in Redis's upstream tri-license. The complete pinned
+source is available at:
+
+https://codeload.github.com/redis/redis/tar.gz/86b20b1b9e5f03d86db72c3d59bec432e471fbc9
+
+The Opstree-compatible runtime scripts are from OT-CONTAINER-KIT/redis and are
+distributed under the Apache License 2.0. Their pinned source is available at:
+
+https://github.com/OT-CONTAINER-KIT/redis/tree/8a6d56bd05d42f05ff1f1f6ccfe1a7b9fbc1ef5f
+
+Exact revisions and content checksums are recorded in UPSTREAM.lock. The image
+also contains the Dockerfile used to compile Redis and assemble the runtime.

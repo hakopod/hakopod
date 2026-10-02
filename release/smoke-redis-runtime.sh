@@ -17,7 +17,13 @@ test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" =
 docker run --rm --entrypoint redis-server "$image" --version | grep -F 'v=8.2.10'
 docker run --rm --entrypoint redis-server "$image" --version | grep -F 'malloc=jemalloc'
 docker run --rm --entrypoint sh "$image" -ec \
-  'test -x /usr/bin/healthcheck.sh && test -x /usr/bin/setupMasterSlave.sh'
+  'test -x /usr/bin/healthcheck.sh && test -x /usr/bin/setupMasterSlave.sh
+   test -s /usr/share/licenses/redis/LICENSE.txt
+   test -s /usr/share/licenses/opstree-redis/LICENSE
+   test -s /usr/share/doc/hakopod-redis-runtime/NOTICE
+   test -s /usr/share/doc/hakopod-redis-runtime/UPSTREAM.lock
+   test -s /usr/share/doc/hakopod-redis-runtime/Dockerfile.redis-runtime
+   grep -Fq "redis_license_choice=AGPL-3.0-only" /usr/share/doc/hakopod-redis-runtime/UPSTREAM.lock'
 docker run --rm -e SETUP_MODE=cluster -e REDIS_MAJOR_VERSION=v8 \
   -e REDIS_PASSWORD=runtime-smoke -e TLS_MODE=true \
   -e REDIS_TLS_CERT=/tls/server.crt -e REDIS_TLS_CERT_KEY=/tls/server.key -e REDIS_TLS_CA_KEY=/tls/ca.crt \
