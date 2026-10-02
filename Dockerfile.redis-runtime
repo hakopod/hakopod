@@ -31,15 +31,15 @@ RUN apk upgrade --no-cache \
     && apk add --no-cache bash libstdc++ libssl3 libcrypto3 \
     && addgroup -S -g 1000 redis \
     && adduser -S -G redis -u 1000 redis \
-    && mkdir -p /data /node-conf /etc/redis \
-    && chown -R 1000:0 /data /node-conf /etc/redis \
-    && chmod -R g+rw /data /node-conf /etc/redis /var/run
+    && mkdir -p /data /node-conf /etc/redis
 COPY --from=build /usr/local/bin/redis-server /usr/local/bin/redis-server
 COPY --from=build /usr/local/bin/redis-cli /usr/local/bin/redis-cli
 COPY images/redis-runtime/redis.conf /etc/redis/redis.conf
 COPY images/redis-runtime/entrypoint.sh /usr/bin/entrypoint.sh
 COPY images/redis-runtime/setupMasterSlave.sh /usr/bin/setupMasterSlave.sh
 COPY images/redis-runtime/healthcheck.sh /usr/bin/healthcheck.sh
+RUN chown -R 1000:0 /data /node-conf /etc/redis \
+    && chmod -R g+rw /data /node-conf /etc/redis /var/run
 VOLUME ["/data", "/node-conf"]
 WORKDIR /data
 EXPOSE 6379
