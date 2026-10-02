@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import uuid
 
 RUNTIME = "hakopod-clickhouse"
 LABEL = "hakopod.com.node-restriction.kubernetes.io/clickhouse-runtime"
@@ -18,16 +19,41 @@ BINARY_DIGESTS = {
     "runsc": "3e0df2fa28f6ff5430b004f92573b81b75f442f78c780e0c85fdf6c2d572817a",
     "containerd-shim-runsc-v1": "ab441cda2625eee7324a5f991b22852724fdd9144ac3ffaf3aac492dc9e46737",
 }
+SOURCE_ROOTS = (
+    "/usr/local/bin",
+    "/opt/hakopod/database-runtime/release-20260907.0",
+)
 
 
 def run(args, **kwargs):
     return subprocess.check_output(args, timeout=90, **kwargs)
 
 
+def lease_id(value):
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("lease ID must be a UUID") from exc
+    if str(parsed) != value:
+        raise argparse.ArgumentTypeError("lease ID must be a canonical lowercase UUID")
+    return value
+
+
+def owned_worker(labels, expected_lease_id):
+    if labels.get("com.hakopod.acceptance") == "database-placement":
+        return True
+    return (
+        expected_lease_id is not None
+        and labels.get("k3d.cluster") == "hakopod-dev"
+        and labels.get("com.hakopod.lease-id") == expected_lease_id
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--kubectl", required=True)
+    parser.add_argument("--lease-id", type=lease_id)
     args = parser.parse_args()
     kube = [args.kubectl, "--kubeconfig", args.kubeconfig, "--context", "k3d-hakopod-dev"]
     if run(kube + ["config", "current-context"]).decode().strip() != "k3d-hakopod-dev":
@@ -39,20 +65,32 @@ def main():
     if EXTRA_WORKER in node_names:
         extra = next(n for n in nodes if n["metadata"]["name"] == EXTRA_WORKER)
         labels = json.loads(run(["sudo", "docker", "inspect", EXTRA_WORKER, "--format", "{{json .Config.Labels}}"] ))
-        if labels.get("com.hakopod.acceptance") != "database-placement" or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in extra.get("status", {}).get("conditions", [])):
+        if not owned_worker(labels, args.lease_id) or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in extra.get("status", {}).get("conditions", [])):
             raise ValueError("Additional development worker ownership or readiness changed")
     processes = run(["ps", "-eo", "args="]).decode().splitlines()
     if any("/cluster.test " in p or p.startswith("go test ") for p in processes):
         raise ValueError("Stop active development acceptance tests before restarting nodes")
     for node in (SERVER, WORKER):
         labels = json.loads(run(["sudo", "docker", "inspect", node, "--format", "{{json .Config.Labels}}"] ))
-        expected = labels.get("k3d.cluster") == "hakopod-dev" if node == SERVER else labels.get("com.hakopod.acceptance") == "database-placement"
+        expected = labels.get("k3d.cluster") == "hakopod-dev" if node == SERVER else owned_worker(labels, args.lease_id)
         if not expected:
             raise ValueError("Development container ownership changed")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         for name, digest in BINARY_DIGESTS.items():
-            run(["sudo", "docker", "cp", f"{SERVER}:/usr/local/bin/{name}", str(root / name)])
+            sources = []
+            for source_root in SOURCE_ROOTS:
+                source = f"{source_root}/{name}"
+                exists = subprocess.run(["sudo", "docker", "exec", SERVER, "test", "-f", source], timeout=20).returncode == 0
+                if not exists:
+                    continue
+                observed = run(["sudo", "docker", "exec", SERVER, "sha256sum", source]).decode().split()[0]
+                if observed != digest:
+                    raise ValueError("Pinned development sandbox binary changed")
+                sources.append(source)
+            if not sources:
+                raise ValueError("Pinned development sandbox binary is unavailable")
+            run(["sudo", "docker", "cp", f"{SERVER}:{sources[0]}", str(root / name)])
             if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
                 raise ValueError("Pinned development sandbox binary changed")
         profile = root / "runsc-clickhouse.toml"
