@@ -64,7 +64,7 @@ jobs:
           Path('redis-controller-candidate.json').write_text(json.dumps({
               'schema_version': 1, 'architecture': os.environ['ARCH'],
               'image': os.environ['IMAGE'] + '@' + digest,
-              'source_revision': os.environ.get('GITHUB_SHA'),
+              'source_revision': __import__('subprocess').check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'native_qualified': False,
           }, indent=2) + '\n')
           PY
