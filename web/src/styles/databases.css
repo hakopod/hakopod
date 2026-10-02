@@ -304,20 +304,28 @@
   @apply flex flex-wrap gap-3 text-muted-foreground;
 }
 .db-catalog {
-  @apply grid gap-4;
+  @apply grid min-w-0 grid-cols-1 gap-4;
 }
 .db-catalog-card {
-  @apply grid min-w-0 gap-4 bg-card p-4;
+  @apply grid min-w-0 grid-cols-1 gap-4 bg-card p-4;
   box-shadow: inset 0 2px 0 color-mix(in srgb, var(--info) 45%, transparent);
 }
 .db-catalog-card[data-engine='redis'] {
   box-shadow: inset 0 2px 0 color-mix(in srgb, var(--action) 65%, transparent);
 }
 .db-catalog-card-heading {
-  @apply flex items-start gap-3;
+  @apply flex min-w-0 flex-wrap items-start gap-3;
+}
+.db-catalog-card-heading > svg {
+  @apply shrink-0;
 }
 .db-catalog-card-heading > div {
-  @apply min-w-0 flex-1;
+  @apply min-w-0 flex-[1_1_8rem];
+}
+.db-catalog-card-heading > .hako-status {
+  @apply max-w-full shrink-0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .db-catalog-card h2 {
   @apply text-base font-semibold;
@@ -335,9 +343,13 @@
 }
 .db-catalog-card-heading p {
   @apply mt-1 text-xs text-muted-foreground;
+  overflow-wrap: anywhere;
 }
 .db-catalog-facts {
-  @apply grid grid-cols-2 gap-2 border-y border-border py-3 sm:grid-cols-3;
+  @apply grid min-w-0 grid-cols-2 gap-2 border-y border-border py-3 sm:grid-cols-3;
+}
+.db-catalog-facts > div {
+  @apply min-w-0;
 }
 .db-catalog-facts dt {
   @apply mb-1 text-xs text-muted-foreground;
