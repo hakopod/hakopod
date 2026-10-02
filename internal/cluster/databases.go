@@ -32,7 +32,7 @@ var mysqlDatabaseResource = schema.GroupVersionResource{Group: "mysql.oracle.com
 var databaseImages = map[string]string{
 	"postgresql:17":   "ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e",
 	"postgresql:18":   "ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533",
-	"redis:8":         "quay.io/opstree/redis:v8.2.1@sha256:8027cf7ec625d625a4f60e2526f0073d2b58bf6a6172992015f7699ecbd8504a",
+	"redis:8":         "ghcr.io/hakopod/hakopod-redis-runtime:8.2.10-opstree@sha256:a8b5559271d94989b92e3b5fe22c5167bf8ccda83fbac33065b7e1a42dd250cd",
 	"mysql:8.4":       "container-registry.oracle.com/mysql/community-server:8.4.12@sha256:7dcc4add9183664de3a214daf85a50c3ba6cccfd7534f700b6561bf5b41885be",
 	"mongodb:8.0":     mongodbServerImage,
 	"clickhouse:26.3": clickhouseServerImage,
