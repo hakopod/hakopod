@@ -6,7 +6,7 @@
     "image": "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"
   },
   "redis": {
-    "url": "https://ot-container-kit.github.io/helm-charts/redis-operator-0.26.0.tgz",
+    "url": "https://github.com/OT-CONTAINER-KIT/helm-charts/releases/download/redis-operator-0.26.0/redis-operator-0.26.0.tgz",
     "sha256": "75c22256179e2d2e58bb9df23ffff3b69a90db0d7fe1384099bcf220a70c090b",
     "source": "c5017206e75f7743d79e82db47ec8c39d7410816"
   },
