@@ -6,12 +6,163 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/jackc/pgx/v5"
 )
+
+type NeonRecoveryBinding struct {
+	OperationID, TargetPlatformID, ArtifactID, ManifestSHA256 string
+	TargetRevision, TenantGeneration, TimelineGeneration      int64
+	TenantID, TimelineID, StagingPrefix                       string
+}
+
+func (s *Store) BindNeonRecoveryTarget(ctx context.Context, op platformbackup.Operation, manifest platformbackup.Manifest, stagingPrefix string) (NeonRecoveryBinding, error) {
+	var binding NeonRecoveryBinding
+	if op.Kind != "restore" || manifest.Format != platformbackup.NeonFormat || manifest.Neon == nil || manifest.ManifestSHA256 == "" || manifest.ManifestSHA256 != manifest.Digest() || op.ArtifactID == "" || op.TargetPlatformID == "" || stagingPrefix == "" || len(stagingPrefix) > 512 {
+		return binding, ErrInput
+	}
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return binding, err
+	}
+	defer tx.Rollback(ctx)
+	stored, err := scanPlatformRecovery(tx.QueryRow(ctx, `SELECT `+platformRecoveryQualifiedColumns+` FROM managed_platform_recovery_operations o
+		JOIN managed_platforms source ON source.id=o.source_platform_id AND source.revision=o.expected_source_revision AND source.project=o.project AND source.environment=o.environment AND source.kind='neon' AND source.deleted_at IS NULL
+		JOIN managed_platforms target ON target.id=o.target_platform_id AND target.revision=o.expected_target_revision AND target.project=o.project AND target.environment=o.environment AND target.kind='neon' AND target.deleted_at IS NULL
+		JOIN managed_platform_recovery_artifacts artifact ON artifact.id=o.artifact_id AND artifact.source_platform_id=o.source_platform_id AND artifact.source_revision=o.expected_source_revision AND artifact.manifest_sha256=$8 AND artifact.published_at IS NOT NULL AND artifact.deleted_at IS NULL
+		WHERE o.id=$1 AND o.kind='restore' AND o.source_platform_id=$2 AND o.target_platform_id=$3 AND o.expected_source_revision=$4 AND o.expected_target_revision=$5 AND o.artifact_id=$6 AND o.status='running' AND o.lease=$7 AND o.lease_until>=clock_timestamp() AND o.cancel_requested=false
+		FOR UPDATE OF o FOR SHARE OF source,target,artifact`, op.ID, op.SourcePlatformID, op.TargetPlatformID, op.ExpectedSourceRevision, op.ExpectedTargetRevision, op.ArtifactID, op.Lease, manifest.ManifestSHA256))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return binding, ErrConflict
+	}
+	if err != nil {
+		return binding, err
+	}
+	if stored.Kind != op.Kind || stored.Project != op.Project || stored.Environment != op.Environment || stored.SourcePlatformID != op.SourcePlatformID || stored.TargetPlatformID != op.TargetPlatformID || stored.ArtifactID != op.ArtifactID || stored.DestinationID != op.DestinationID || stored.DestinationRevision != op.DestinationRevision || stored.ExpectedSourceRevision != op.ExpectedSourceRevision || stored.ExpectedTargetRevision != op.ExpectedTargetRevision || stored.Lease != op.Lease || !bytes.Equal(stored.AuthorityFingerprint, op.AuthorityFingerprint) {
+		return binding, ErrConflict
+	}
+	if err = s.reauthorizePlatformRecoveryTx(ctx, tx, stored); err != nil {
+		return binding, err
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO managed_platform_neon_recovery_bindings(operation_id,target_platform_id,target_revision,artifact_id,manifest_sha256,tenant_id,timeline_id,tenant_generation,timeline_generation,staging_prefix)
+	VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+	ON CONFLICT DO NOTHING
+	RETURNING operation_id,target_platform_id,target_revision,artifact_id,manifest_sha256,tenant_id,timeline_id,tenant_generation,timeline_generation,staging_prefix`, op.ID, op.TargetPlatformID, op.ExpectedTargetRevision, op.ArtifactID, manifest.ManifestSHA256, manifest.Neon.TenantID, manifest.Neon.TimelineID, manifest.Neon.TenantGeneration, manifest.Neon.TimelineGeneration, stagingPrefix).Scan(&binding.OperationID, &binding.TargetPlatformID, &binding.TargetRevision, &binding.ArtifactID, &binding.ManifestSHA256, &binding.TenantID, &binding.TimelineID, &binding.TenantGeneration, &binding.TimelineGeneration, &binding.StagingPrefix)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `SELECT operation_id,target_platform_id,target_revision,artifact_id,manifest_sha256,tenant_id,timeline_id,tenant_generation,timeline_generation,staging_prefix FROM managed_platform_neon_recovery_bindings WHERE operation_id=$1`, op.ID).Scan(&binding.OperationID, &binding.TargetPlatformID, &binding.TargetRevision, &binding.ArtifactID, &binding.ManifestSHA256, &binding.TenantID, &binding.TimelineID, &binding.TenantGeneration, &binding.TimelineGeneration, &binding.StagingPrefix)
+		if errors.Is(err, pgx.ErrNoRows) {
+			var existingOperation string
+			collisionErr := tx.QueryRow(ctx, `SELECT operation_id FROM managed_platform_neon_recovery_bindings WHERE target_platform_id=$1 AND target_revision=$2`, op.TargetPlatformID, op.ExpectedTargetRevision).Scan(&existingOperation)
+			if collisionErr == nil {
+				return NeonRecoveryBinding{}, fmt.Errorf("%w: this Neon target revision already has an immutable recovery binding; create and review a fresh target revision", ErrConflict)
+			}
+			if !errors.Is(collisionErr, pgx.ErrNoRows) {
+				return NeonRecoveryBinding{}, collisionErr
+			}
+		}
+	}
+	if err != nil {
+		return binding, err
+	}
+	if binding.TargetPlatformID != op.TargetPlatformID || binding.TargetRevision != op.ExpectedTargetRevision || binding.ArtifactID != op.ArtifactID || binding.ManifestSHA256 != manifest.ManifestSHA256 || binding.TenantID != manifest.Neon.TenantID || binding.TimelineID != manifest.Neon.TimelineID || binding.TenantGeneration != manifest.Neon.TenantGeneration || binding.TimelineGeneration != manifest.Neon.TimelineGeneration || binding.StagingPrefix != stagingPrefix {
+		return NeonRecoveryBinding{}, ErrConflict
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO managed_platform_neon_recovery_lineage(platform_id,platform_revision,recovery_operation_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, binding.TargetPlatformID, binding.TargetRevision, binding.OperationID); err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	var lineageOperationID string
+	if err = tx.QueryRow(ctx, `SELECT recovery_operation_id FROM managed_platform_neon_recovery_lineage WHERE platform_id=$1 AND platform_revision=$2`, binding.TargetPlatformID, binding.TargetRevision).Scan(&lineageOperationID); err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	if lineageOperationID != binding.OperationID {
+		return NeonRecoveryBinding{}, ErrConflict
+	}
+	return binding, tx.Commit(ctx)
+}
+
+func (s *Store) NeonRecoveryBindingForTarget(ctx context.Context, platformID string, revision int64) (NeonRecoveryBinding, error) {
+	var binding NeonRecoveryBinding
+	err := s.Pool.QueryRow(ctx, `SELECT b.operation_id,b.target_platform_id,b.target_revision,b.artifact_id,b.manifest_sha256,b.tenant_id,b.timeline_id,b.tenant_generation,b.timeline_generation,b.staging_prefix
+		FROM managed_platform_neon_recovery_lineage l JOIN managed_platform_neon_recovery_bindings b ON b.operation_id=l.recovery_operation_id AND b.target_platform_id=l.platform_id
+		JOIN managed_platform_recovery_operations o ON o.id=b.operation_id AND o.status='succeeded'
+		JOIN managed_platforms p ON p.id=l.platform_id AND p.revision=$2 AND p.deleted_at IS NULL
+		WHERE l.platform_id=$1 AND l.platform_revision=$2`, platformID, revision).Scan(&binding.OperationID, &binding.TargetPlatformID, &binding.TargetRevision, &binding.ArtifactID, &binding.ManifestSHA256, &binding.TenantID, &binding.TimelineID, &binding.TenantGeneration, &binding.TimelineGeneration, &binding.StagingPrefix)
+	return binding, err
+}
+
+func (s *Store) NeonRecoveryBindingForRecovery(ctx context.Context, op platformbackup.Operation) (NeonRecoveryBinding, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	defer tx.Rollback(ctx)
+	binding, err := s.neonRecoveryFenceTx(ctx, tx, op, platformbackup.RecoveryCleanupFromContext(ctx))
+	if err != nil {
+		if !errors.Is(err, ErrConflict) {
+			return NeonRecoveryBinding{}, err
+		}
+		var existingOperationID string
+		bindingErr := tx.QueryRow(ctx, `SELECT operation_id FROM managed_platform_neon_recovery_bindings WHERE target_platform_id=$1 AND target_revision=$2`, op.TargetPlatformID, op.ExpectedTargetRevision).Scan(&existingOperationID)
+		if bindingErr == nil || !errors.Is(bindingErr, pgx.ErrNoRows) {
+			if bindingErr != nil {
+				return NeonRecoveryBinding{}, bindingErr
+			}
+			return NeonRecoveryBinding{}, ErrConflict
+		}
+		if platformbackup.RecoveryCleanupFromContext(ctx) {
+			if err = s.neonRecoveryEmptyCleanupFenceTx(ctx, tx, op); err != nil {
+				return NeonRecoveryBinding{}, err
+			}
+		} else {
+			stored, scanErr := scanPlatformRecovery(tx.QueryRow(ctx, `SELECT `+platformRecoveryQualifiedColumns+` FROM managed_platform_recovery_operations o JOIN managed_platforms p ON p.id=o.target_platform_id AND p.revision=o.expected_target_revision AND p.kind='neon' AND p.deleted_at IS NULL WHERE o.id=$1 AND o.kind='restore' AND o.source_platform_id=$2 AND o.target_platform_id=$3 AND o.expected_source_revision=$4 AND o.expected_target_revision=$5 AND o.artifact_id=$6 AND o.status='running' AND o.lease=$7 AND o.lease_until>=clock_timestamp() AND o.cancel_requested=false FOR UPDATE OF o,p`, op.ID, op.SourcePlatformID, op.TargetPlatformID, op.ExpectedSourceRevision, op.ExpectedTargetRevision, op.ArtifactID, op.Lease))
+			if errors.Is(scanErr, pgx.ErrNoRows) {
+				return NeonRecoveryBinding{}, ErrConflict
+			}
+			if scanErr != nil {
+				return NeonRecoveryBinding{}, scanErr
+			}
+			if !bytes.Equal(stored.AuthorityFingerprint, op.AuthorityFingerprint) {
+				return NeonRecoveryBinding{}, ErrConflict
+			}
+			if err = s.reauthorizePlatformRecoveryTx(ctx, tx, stored); err != nil {
+				return NeonRecoveryBinding{}, err
+			}
+		}
+		return NeonRecoveryBinding{}, pgx.ErrNoRows
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return NeonRecoveryBinding{}, err
+	}
+	return binding, nil
+}
+
+func (s *Store) ManagedPlatformRecoverySnapshot(ctx context.Context, platformID string, revision int64) (ManagedPlatformOperation, error) {
+	return scanManagedPlatformOperation(s.Pool.QueryRow(ctx, `SELECT `+managedPlatformOperationColumns+` FROM managed_platform_operations WHERE platform_id=$1 AND revision=$2 AND status='succeeded' ORDER BY finished_at DESC,id DESC LIMIT 1`, platformID, revision))
+}
+
+func (s *Store) SaveNeonRecoveryCapture(ctx context.Context, op platformbackup.Operation, identity platformbackup.NeonIdentity) error {
+	if op.Kind != "backup" {
+		return ErrInput
+	}
+	r, err := s.Pool.Exec(ctx, `INSERT INTO managed_platform_neon_recovery_captures(operation_id,manifest_neon) SELECT $1,$3 WHERE EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND kind='backup' AND status='running' AND lease=$2 AND lease_until>=clock_timestamp()) ON CONFLICT(operation_id) DO NOTHING`, op.ID, op.Lease, JSON(identity))
+	if err != nil {
+		return err
+	}
+	if r.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+
+func (s *Store) NeonRecoveryCapture(ctx context.Context, op platformbackup.Operation) (platformbackup.NeonIdentity, error) {
+	var identity platformbackup.NeonIdentity
+	err := s.Pool.QueryRow(ctx, `SELECT manifest_neon FROM managed_platform_neon_recovery_captures WHERE operation_id=$1 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>=clock_timestamp())`, op.ID, op.Lease).Scan(&identity)
+	return identity, err
+}
 
 const platformRecoveryColumns = `id,kind,project,environment,source_platform_id,COALESCE(target_platform_id,''),COALESCE(artifact_id,''),COALESCE(result_artifact_id,''),COALESCE(destination_id,''),COALESCE(destination_revision,0),expected_source_revision,COALESCE(expected_target_revision,0),status,phase,message,authority_fingerprint,lease,cancel_requested,cleanup_required`
 
@@ -24,7 +175,7 @@ func scanPlatformRecovery(row scanner) (platformbackup.Operation, error) {
 func platformRecoveryHash(intent platformbackup.Intent) [32]byte { return sha256.Sum256(JSON(intent)) }
 
 func (s *Store) ManagedPlatformRecoveryContract(ctx context.Context, id string, revision int64) (ManagedPlatform, managedplatform.Plan, error) {
-	item, err := scanManagedPlatform(s.Pool.QueryRow(ctx, "SELECT "+managedPlatformColumns+" FROM managed_platforms WHERE id=$1 AND revision=$2 AND kind='supabase' AND deleted_at IS NULL", id, revision))
+	item, err := scanManagedPlatform(s.Pool.QueryRow(ctx, "SELECT "+managedPlatformColumns+" FROM managed_platforms WHERE id=$1 AND revision=$2 AND kind IN ('supabase','neon') AND deleted_at IS NULL", id, revision))
 	if err != nil {
 		return item, managedplatform.Plan{}, err
 	}
@@ -33,7 +184,13 @@ func (s *Store) ManagedPlatformRecoveryContract(ctx context.Context, id string, 
 	return item, plan, err
 }
 func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, revision int64) (map[string]PlatformResourceClaim, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id,released_at FROM platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 AND released_at IS NULL ORDER BY component,resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
+	rows, err := s.Pool.Query(ctx, `SELECT b.platform_id,b.platform_revision,b.component,b.resource_kind,
+		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
+		FROM platform_component_resources b
+		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL
+		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.released_at IS NULL
+		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=b.platform_id AND pending.platform_revision=b.platform_revision AND pending.component=b.component AND pending.resource_kind=b.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
+		ORDER BY b.component,b.resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +239,7 @@ func (s *Store) SavePlatformRecoveryReview(ctx context.Context, p Principal, int
 	if err = tx.QueryRow(ctx, "SELECT revision,kind,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND deleted_at IS NULL FOR SHARE", intent.SourcePlatformID, intent.Project, intent.Environment).Scan(&sourceRevision, &sourceKind, &sourceStatus); err != nil {
 		return review, err
 	}
-	if sourceKind != "supabase" || sourceRevision != intent.ExpectedSourceRevision || sourceStatus != "ready" {
+	if (sourceKind != "supabase" && sourceKind != "neon") || sourceRevision != intent.ExpectedSourceRevision || sourceStatus != "ready" {
 		return review, ErrConflict
 	}
 	if intent.Kind == "backup" {
@@ -100,11 +257,12 @@ func (s *Store) SavePlatformRecoveryReview(ctx context.Context, p Principal, int
 		if err = tx.QueryRow(ctx, "SELECT revision,kind,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND deleted_at IS NULL FOR SHARE", intent.TargetPlatformID, intent.Project, intent.Environment).Scan(&targetRevision, &targetKind, &targetStatus); err != nil {
 			return review, err
 		}
-		if targetKind != "supabase" || targetRevision != intent.ExpectedTargetRevision || targetStatus != "ready" {
+		if targetKind != sourceKind || targetRevision != intent.ExpectedTargetRevision || targetStatus != "ready" {
 			return review, ErrConflict
 		}
 		var published bool
-		if err = tx.QueryRow(ctx, "SELECT published_at IS NOT NULL AND deleted_at IS NULL FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE", intent.ArtifactID, intent.SourcePlatformID).Scan(&published); err != nil || !published {
+		var artifactFormat string
+		if err = tx.QueryRow(ctx, "SELECT published_at IS NOT NULL AND deleted_at IS NULL,manifest->>'format' FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE", intent.ArtifactID, intent.SourcePlatformID).Scan(&published, &artifactFormat); err != nil || !published || artifactFormat != recoveryFormat(sourceKind) {
 			if err != nil {
 				return review, err
 			}
@@ -198,8 +356,8 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 		return op, ErrConflict
 	}
 	var sourceRevision int64
-	var sourceStatus string
-	if err = tx.QueryRow(ctx, `SELECT revision,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND kind='supabase' AND deleted_at IS NULL FOR UPDATE`, intent.SourcePlatformID, intent.Project, intent.Environment).Scan(&sourceRevision, &sourceStatus); err != nil {
+	var sourceKind, sourceStatus string
+	if err = tx.QueryRow(ctx, `SELECT revision,kind,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND kind IN ('supabase','neon') AND deleted_at IS NULL FOR UPDATE`, intent.SourcePlatformID, intent.Project, intent.Environment).Scan(&sourceRevision, &sourceKind, &sourceStatus); err != nil {
 		return op, err
 	}
 	if sourceRevision != intent.ExpectedSourceRevision || sourceStatus != "ready" {
@@ -215,19 +373,29 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 		}
 	} else {
 		var targetRevision int64
-		var targetStatus string
-		if err = tx.QueryRow(ctx, `SELECT revision,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND kind='supabase' AND deleted_at IS NULL FOR UPDATE`, intent.TargetPlatformID, intent.Project, intent.Environment).Scan(&targetRevision, &targetStatus); err != nil {
+		var targetKind, targetStatus string
+		if err = tx.QueryRow(ctx, `SELECT revision,kind,status FROM managed_platforms WHERE id=$1 AND project=$2 AND environment=$3 AND kind IN ('supabase','neon') AND deleted_at IS NULL FOR UPDATE`, intent.TargetPlatformID, intent.Project, intent.Environment).Scan(&targetRevision, &targetKind, &targetStatus); err != nil {
 			return op, err
 		}
-		if targetRevision != intent.ExpectedTargetRevision || targetStatus != "ready" {
+		if targetKind != sourceKind || targetRevision != intent.ExpectedTargetRevision || targetStatus != "ready" {
 			return op, ErrConflict
 		}
 		var valid bool
-		if err = tx.QueryRow(ctx, `SELECT published_at IS NOT NULL AND deleted_at IS NULL FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE`, intent.ArtifactID, intent.SourcePlatformID).Scan(&valid); err != nil {
+		var artifactFormat string
+		if err = tx.QueryRow(ctx, `SELECT published_at IS NOT NULL AND deleted_at IS NULL,manifest->>'format' FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE`, intent.ArtifactID, intent.SourcePlatformID).Scan(&valid, &artifactFormat); err != nil {
 			return op, err
 		}
-		if !valid {
+		if !valid || artifactFormat != recoveryFormat(sourceKind) {
 			return op, ErrConflict
+		}
+		if sourceKind == "neon" {
+			var bound bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM managed_platform_neon_recovery_lineage WHERE platform_id=$1 AND platform_revision=$2)`, intent.TargetPlatformID, intent.ExpectedTargetRevision).Scan(&bound); err != nil {
+				return op, err
+			}
+			if bound {
+				return op, fmt.Errorf("%w: this Neon target revision already has an immutable recovery binding; create and review a fresh target revision", ErrConflict)
+			}
 		}
 	}
 	op = platformbackup.Operation{ID: NewID(), Kind: intent.Kind, Project: intent.Project, Environment: intent.Environment, SourcePlatformID: intent.SourcePlatformID, TargetPlatformID: intent.TargetPlatformID, ArtifactID: intent.ArtifactID, DestinationID: intent.DestinationID, DestinationRevision: intent.DestinationRevision, ExpectedSourceRevision: intent.ExpectedSourceRevision, ExpectedTargetRevision: intent.ExpectedTargetRevision, AuthorityFingerprint: fingerprint, Status: "queued", Phase: "accepted"}
@@ -243,6 +411,13 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 	}
 	op.AuthorityFingerprint = nil
 	return op, nil
+}
+
+func recoveryFormat(kind string) string {
+	if kind == "neon" {
+		return platformbackup.NeonFormat
+	}
+	return platformbackup.Format
 }
 
 func (s *Store) ClaimPlatformRecovery(ctx context.Context, lease string) (platformbackup.Operation, error) {
@@ -316,16 +491,119 @@ func (s *Store) HeartbeatPlatformRecovery(ctx context.Context, op platformbackup
 	return cancelled, tx.Commit(ctx)
 }
 func (s *Store) FencePlatformRecoveryCleanup(ctx context.Context, op platformbackup.Operation) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND kind='backup' AND source_platform_id=$3 AND expected_source_revision=$4 AND status='running' AND lease=$2 AND lease_until>=clock_timestamp()`, op.ID, op.Lease, op.SourcePlatformID, op.ExpectedSourceRevision)
+	if op.Kind == "restore" {
+		if !platformbackup.RecoveryCleanupFromContext(ctx) {
+			return ErrConflict
+		}
+		tx, err := s.Pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+		if _, err = s.neonRecoveryFenceTx(ctx, tx, op, true); err != nil {
+			if !errors.Is(err, ErrConflict) {
+				return err
+			}
+			if err = s.neonRecoveryEmptyCleanupFenceTx(ctx, tx, op); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.Exec(ctx, `UPDATE managed_platform_recovery_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND status='running' AND lease=$2 AND lease_until>=clock_timestamp()`, op.ID, op.Lease); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.backupRecoveryCleanupFenceTx(ctx, tx, op, false); err != nil {
+		return err
+	}
+	r, err := tx.Exec(ctx, `UPDATE managed_platform_recovery_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND status='running' AND lease=$2 AND lease_until>=clock_timestamp()`, op.ID, op.Lease)
 	if err != nil {
 		return err
 	}
 	if r.RowsAffected() != 1 {
 		return ErrConflict
 	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) backupRecoveryCleanupFenceTx(ctx context.Context, tx pgx.Tx, supplied platformbackup.Operation, requireComplete bool) error {
+	if !platformbackup.RecoveryCleanupFromContext(ctx) || supplied.Kind != "backup" {
+		return ErrConflict
+	}
+	stored, err := scanPlatformRecovery(tx.QueryRow(ctx, `SELECT `+platformRecoveryColumns+` FROM managed_platform_recovery_operations WHERE id=$1 AND kind='backup' AND source_platform_id=$2 AND expected_source_revision=$3 AND destination_id=$4 AND destination_revision=$5 AND status='running' AND lease=$6 AND lease_until>=clock_timestamp() AND (NOT $7 OR cleanup_required=false) FOR UPDATE`, supplied.ID, supplied.SourcePlatformID, supplied.ExpectedSourceRevision, supplied.DestinationID, supplied.DestinationRevision, supplied.Lease, requireComplete))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if stored.Kind != supplied.Kind || stored.Project != supplied.Project || stored.Environment != supplied.Environment || stored.SourcePlatformID != supplied.SourcePlatformID || stored.TargetPlatformID != supplied.TargetPlatformID || stored.ArtifactID != supplied.ArtifactID || stored.DestinationID != supplied.DestinationID || stored.DestinationRevision != supplied.DestinationRevision || stored.ExpectedSourceRevision != supplied.ExpectedSourceRevision || stored.ExpectedTargetRevision != supplied.ExpectedTargetRevision || stored.Lease != supplied.Lease || !bytes.Equal(stored.AuthorityFingerprint, supplied.AuthorityFingerprint) {
+		return ErrConflict
+	}
 	return nil
 }
+
+func (s *Store) neonRecoveryEmptyCleanupFenceTx(ctx context.Context, tx pgx.Tx, supplied platformbackup.Operation) error {
+	if !platformbackup.RecoveryCleanupFromContext(ctx) || supplied.Kind != "restore" {
+		return ErrConflict
+	}
+	stored, err := scanPlatformRecovery(tx.QueryRow(ctx, `SELECT `+platformRecoveryQualifiedColumns+` FROM managed_platform_recovery_operations o JOIN managed_platforms p ON p.id=o.target_platform_id AND p.revision=o.expected_target_revision AND p.kind='neon' AND p.deleted_at IS NULL WHERE o.id=$1 AND o.kind='restore' AND o.source_platform_id=$2 AND o.target_platform_id=$3 AND o.expected_source_revision=$4 AND o.expected_target_revision=$5 AND o.artifact_id=$6 AND o.status='running' AND o.lease=$7 AND o.lease_until>=clock_timestamp() AND NOT EXISTS(SELECT 1 FROM managed_platform_neon_recovery_bindings b WHERE b.operation_id=o.id) AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides r WHERE r.recovery_operation_id=o.id) AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_deployments d WHERE d.operation_id=o.id) AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_database_state d WHERE d.operation_id=o.id) FOR UPDATE OF o,p`, supplied.ID, supplied.SourcePlatformID, supplied.TargetPlatformID, supplied.ExpectedSourceRevision, supplied.ExpectedTargetRevision, supplied.ArtifactID, supplied.Lease))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(stored.AuthorityFingerprint, supplied.AuthorityFingerprint) {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Store) SetPlatformRecoveryCleanup(ctx context.Context, op platformbackup.Operation, required bool) error {
+	if op.Kind == "restore" {
+		tx, err := s.Pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+		if required && !platformbackup.RecoveryCleanupFromContext(ctx) {
+			stored, scanErr := scanPlatformRecovery(tx.QueryRow(ctx, `SELECT `+platformRecoveryQualifiedColumns+` FROM managed_platform_recovery_operations o JOIN managed_platforms p ON p.id=o.target_platform_id AND p.revision=o.expected_target_revision AND p.kind='neon' AND p.deleted_at IS NULL WHERE o.id=$1 AND o.kind='restore' AND o.source_platform_id=$2 AND o.target_platform_id=$3 AND o.expected_source_revision=$4 AND o.expected_target_revision=$5 AND o.artifact_id=$6 AND o.status='running' AND o.lease=$7 AND o.lease_until>=clock_timestamp() FOR UPDATE OF o,p`, op.ID, op.SourcePlatformID, op.TargetPlatformID, op.ExpectedSourceRevision, op.ExpectedTargetRevision, op.ArtifactID, op.Lease))
+			if errors.Is(scanErr, pgx.ErrNoRows) {
+				return ErrConflict
+			}
+			if scanErr != nil {
+				return scanErr
+			}
+			if !bytes.Equal(stored.AuthorityFingerprint, op.AuthorityFingerprint) {
+				return ErrConflict
+			}
+			if err = s.reauthorizePlatformRecoveryTx(ctx, tx, stored); err != nil {
+				return err
+			}
+		} else if _, err = s.neonRecoveryFenceTx(ctx, tx, op, platformbackup.RecoveryCleanupFromContext(ctx)); err != nil {
+			if required || !errors.Is(err, ErrConflict) {
+				return err
+			}
+			if err = s.neonRecoveryEmptyCleanupFenceTx(ctx, tx, op); err != nil {
+				return err
+			}
+		}
+		cleanup := platformbackup.RecoveryCleanupFromContext(ctx)
+		r, err := tx.Exec(ctx, `UPDATE managed_platform_recovery_operations SET cleanup_required=$3 WHERE id=$1 AND kind='restore' AND status='running' AND lease=$2 AND lease_until>=clock_timestamp() AND ($3 OR ($4 AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides r WHERE r.recovery_operation_id=$1 AND r.phase NOT IN ('complete','empty_complete','untouched_complete'))) OR (NOT $4 AND cancel_requested=false AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides r WHERE r.recovery_operation_id=$1 AND r.phase<>'confirmed')))`, op.ID, op.Lease, required, cleanup)
+		if err != nil {
+			return err
+		}
+		if r.RowsAffected() != 1 {
+			return ErrConflict
+		}
+		return tx.Commit(ctx)
+	}
 	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_operations SET cleanup_required=$3 WHERE id=$1 AND kind='backup' AND status='running' AND lease=$2 AND lease_until>=clock_timestamp()`, op.ID, op.Lease, required)
 	if err != nil {
 		return err
@@ -336,18 +614,24 @@ func (s *Store) SetPlatformRecoveryCleanup(ctx context.Context, op platformbacku
 	return nil
 }
 func (s *Store) PreparePlatformRecoveryDeployment(ctx context.Context, op platformbackup.Operation, platformID, name, uid string, generation int64, replicas int32, target int32, claimedGeneration int64, token string) (int64, int32, error) {
+	return s.PreparePlatformRecoveryWorkload(ctx, op, platformID, "deployment", name, uid, generation, replicas, target, claimedGeneration, token)
+}
+func (s *Store) PreparePlatformRecoveryWorkload(ctx context.Context, op platformbackup.Operation, platformID, kind, name, uid string, generation int64, replicas int32, target int32, claimedGeneration int64, token string) (int64, int32, error) {
+	if kind != "deployment" && kind != "statefulset" {
+		return 0, 0, ErrInput
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `INSERT INTO managed_platform_recovery_deployments(operation_id,platform_id,deployment_name,deployment_uid,baseline_generation,current_generation,prior_replicas,target_replicas,transition_token) SELECT $1,$2,$3,$4,$5::bigint,$5::bigint,$6::integer,$7::integer,$10 WHERE $5::bigint=$9::bigint AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$8 AND status='running' AND lease_until>=clock_timestamp()) ON CONFLICT(operation_id,deployment_name) DO NOTHING`, op.ID, platformID, name, uid, generation, replicas, target, op.Lease, claimedGeneration, token); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO managed_platform_recovery_deployments(operation_id,platform_id,workload_kind,deployment_name,deployment_uid,baseline_generation,current_generation,prior_replicas,target_replicas,transition_token) SELECT $1,$2,$11,$3,$4,$5::bigint,$5::bigint,$6::integer,$7::integer,$10 WHERE $5::bigint=$9::bigint AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$8 AND status='running' AND lease_until>=clock_timestamp()) ON CONFLICT(operation_id,deployment_name) DO NOTHING`, op.ID, platformID, name, uid, generation, replicas, target, op.Lease, claimedGeneration, token, kind); err != nil {
 		return 0, 0, err
 	}
 	var storedPlatform, storedUID string
 	var current int64
 	var prior int32
-	if err = tx.QueryRow(ctx, `UPDATE managed_platform_recovery_deployments SET target_replicas=$3,transition_token=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$4 AND status='running' AND lease_until>=clock_timestamp()) RETURNING platform_id,deployment_uid,current_generation,prior_replicas`, op.ID, name, target, op.Lease, token).Scan(&storedPlatform, &storedUID, &current, &prior); err != nil {
+	if err = tx.QueryRow(ctx, `UPDATE managed_platform_recovery_deployments SET target_replicas=$3,transition_token=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND workload_kind=$6 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$4 AND status='running' AND lease_until>=clock_timestamp()) RETURNING platform_id,deployment_uid,current_generation,prior_replicas`, op.ID, name, target, op.Lease, token, kind).Scan(&storedPlatform, &storedUID, &current, &prior); err != nil {
 		return 0, 0, err
 	}
 	if storedPlatform != platformID || storedUID != uid || current != generation {
@@ -412,12 +696,31 @@ func (s *Store) FinishPlatformRecovery(ctx context.Context, op platformbackup.Op
 	if status != "succeeded" && status != "failed" && status != "cancelled" || len(message) > 512 {
 		return ErrInput
 	}
+	cleanupAuthority := platformbackup.RecoveryCleanupFromContext(ctx) && (op.Kind == "backup" || op.Kind == "restore")
+	if cleanupAuthority && status == "succeeded" {
+		return ErrInput
+	}
+	backupCleanup := op.Kind == "backup" && cleanupAuthority
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if !op.CleanupRequired {
+	restoreCleanup := op.Kind == "restore" && platformbackup.RecoveryCleanupFromContext(ctx)
+	if backupCleanup {
+		if err = s.backupRecoveryCleanupFenceTx(ctx, tx, op, true); err != nil {
+			return err
+		}
+	} else if restoreCleanup {
+		if _, err = s.neonRecoveryFenceTx(ctx, tx, op, true); err != nil {
+			if !errors.Is(err, ErrConflict) {
+				return err
+			}
+			if err = s.neonRecoveryEmptyCleanupFenceTx(ctx, tx, op); err != nil {
+				return err
+			}
+		}
+	} else {
 		if err = s.reauthorizePlatformRecoveryTx(ctx, tx, op); err != nil {
 			return err
 		}

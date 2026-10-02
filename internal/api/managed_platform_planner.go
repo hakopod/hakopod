@@ -9,6 +9,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/nativeacceptance"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -41,12 +42,12 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(_ context.Context, _ 
 		plan, err := managedplatform.PlanSupabase(item.Spec, p.SupabaseImages)
 		plan.Namespace = "managed-platform-" + item.ID
 		plan.StorageClass = p.ApprovedEncryptedStorageClass
-		return plan, err
+		return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
 	case "neon":
 		plan, err := managedplatform.PlanNeon(item.Spec, p.NeonImages)
 		plan.Namespace = "managed-platform-" + item.ID
 		plan.StorageClass = p.ApprovedEncryptedStorageClass
-		return plan, err
+		return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
 	default:
 		return managedplatform.Plan{}, fmt.Errorf("managed platform kind is not configured")
 	}

@@ -30,31 +30,47 @@ tenant and timeline, persist the new configuration, configure the correct
 compute process and acknowledge only after applying it. A process restart or
 duplicate notification must not redirect another tenant's data.
 
-## Remaining implementation and acceptance
+## What the implementation contains
 
-The shared managed-platform API, PostgreSQL operation store and bounded worker
-are implemented and VM-tested. Neon-specific work is still being integrated: a
-Kubernetes renderer, authenticated storage-controller and safekeeper clients,
-compute management, and the production connection proxy. The first candidate
-passed VM compilation, race tests, cluster tests and API checks. Review found
-startup, placement, deletion and networking gaps. The corrected candidate
-passed those source checks. Independent review then found pending-intent
-recovery, resumable deletion, proxy network isolation and registration-claim
-gaps. A later review found that provider resources lack a persisted operation
-marker: an authenticated response with matching configuration cannot prove
-ownership after an interrupted create. The compute API's operation UUID also
-needs durable restart and mutation enforcement. Changes to the provider's
-storage and compute processes are required; a controller-only ledger cannot
-fence every downstream mutation. Those corrections and native acceptance
-remain required. Qualified component images,
-credential rotation, backup and restore are still release requirements.
+The API, durable operation store, worker, Kubernetes renderer and private
+control clients are implemented. They share the same immutable revision and
+operation lease. Provider resources carry ownership tokens as well as the
+database record that owns them. Interrupted creation uses read-only provider
+inspection before adopting a resource; matching configuration alone is not
+proof of ownership.
 
-The object-store transport foundation checks every DNS answer before dialing a
-checked public address and retains the original TLS hostname. Redirects and
-private or metadata destinations are rejected. It is not wired into a storage
-worker yet. Private object stores require a separately reviewed egress policy.
-The placement input describes separation within each stateful group; the
-renderer must apply that rule to pageservers and safekeepers separately.
+The recovery adapter closes the connection proxy and computes, records the
+committed WAL boundary, and waits for every pageserver to upload through that
+boundary. It then stops storage writers while copying a deterministic object
+inventory. The encrypted archive contains tenant identity, timeline identity
+and remote storage. A zero commit LSN, divergent safekeeper observations or a
+pageserver behind the committed boundary prevents capture.
+
+Restore uses a separate target and an operation-specific object prefix. A
+PostgreSQL journal records each original provider resource, its replacement,
+generation and cleanup state. Recovery never overwrites the ordinary lifecycle
+owner. A successful restore carries its identity into later updates, so the
+first update cannot select the target's old bootstrap identity.
+
+Cancellation cleanup uses the exact restore lease and binding. It keeps the
+proxy closed, inspects interrupted provider effects, removes owned replacements
+and clears the staging prefix. Lease loss stops further effects. An incomplete
+cleanup retains durable work for retry; a cleaned partial target reports an
+isolated failure instead of remaining marked ready.
+
+The object-store transport checks every DNS answer before dialing a checked
+public address and retains the original TLS hostname. It rejects redirects and
+private or metadata destinations. Private object stores require a separately
+reviewed egress policy. Placement separates pageservers from each other and
+safekeepers from each other.
+
+## Verification and release requirements
+
+The implementation has passed Go package tests, recovery race tests, API
+checks and actual PostgreSQL tests for ownership, cancellation, immutable
+lineage and stale leases. These checks exercise source behavior. They do not
+establish that the complete Neon stack works with the built provider images.
+Neon stays unavailable until native lifecycle and recovery acceptance pass.
 
 Acceptance must prove tenant isolation, authenticated storage protocols, verified
 client TLS, WAL quorum failure and fencing, pageserver replacement, durable

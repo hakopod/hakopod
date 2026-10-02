@@ -47,6 +47,7 @@ type Server struct {
 	Backups                          *backup.Service
 	PlatformRecovery                 *platformbackup.Service
 	ManagedPlatformRecoveryQualified bool
+	ManagedNeonRecoveryQualified     bool
 	ProcessLogs                      *serverlogs.Buffer
 	ManagedPlatformPlanner           ManagedPlatformPlanner
 	ManagedPlatformRuntime           ManagedPlatformRuntime

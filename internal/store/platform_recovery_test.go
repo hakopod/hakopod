@@ -155,6 +155,16 @@ func TestPlatformRestoreRechecksSourceAndTargetCapacity(t *testing.T) {
 	if _, err = s.AcceptPlatformRecovery(ctx, p, restore, review, "restore-capacity-recheck"); err != nil {
 		t.Fatal(err)
 	}
+	claimed, err := s.ClaimPlatformRecovery(ctx, "supabase-restore-cleanup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetPlatformRecoveryCleanup(ctx, claimed, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Supabase restore acquired Neon cleanup support: %v", err)
+	}
+	if err = s.FinishPlatformRecovery(platformbackup.WithRecoveryCleanup(ctx), claimed, "succeeded", "cleanup escalation"); !errors.Is(err, ErrInput) {
+		t.Fatalf("restore cleanup authority escalated operation to success: %v", err)
+	}
 	if admissions != 1 || validations != 1 {
 		t.Fatalf("restore skipped current admission or source/target capacity validation: admissions=%d validations=%d", admissions, validations)
 	}
@@ -245,7 +255,11 @@ func TestPlatformRecoveryReviewRevisionReplayLeaseArtifactAndCancellation(t *tes
 	if err != nil || !cancelled {
 		t.Fatalf("cancellation was not observed: %v %v", cancelled, err)
 	}
-	if err = s.FencePlatformRecoveryCleanup(ctx, claimed); err != nil {
+	cleanup := platformbackup.WithRecoveryCleanup(ctx)
+	if err = s.FencePlatformRecoveryCleanup(ctx, claimed); !errors.Is(err, ErrConflict) {
+		t.Fatalf("backup cleanup fence accepted a plain context: %v", err)
+	}
+	if err = s.FencePlatformRecoveryCleanup(cleanup, claimed); err != nil {
 		t.Fatal("live cleanup lease rejected", err)
 	}
 	manifest := recoveryManifestFixture(item.ID, destination.ID)
@@ -263,6 +277,42 @@ func TestPlatformRecoveryReviewRevisionReplayLeaseArtifactAndCancellation(t *tes
 	stored, err := s.PlatformRecoveryArtifact(ctx, artifact.ID)
 	if err != nil || stored.EncryptedBytes != 123 || stored.Manifest.Digest() != manifest.Digest() {
 		t.Fatalf("artifact persistence changed: %#v %v", stored, err)
+	}
+	if err = s.SetPlatformRecoveryCleanup(cleanup, claimed, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.FinishPlatformRecovery(cleanup, claimed, "cancelled", "cleanup incomplete"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("unfinished backup cleanup reached terminal state: %v", err)
+	}
+	if err = s.SetPlatformRecoveryCleanup(cleanup, claimed, false); err != nil {
+		t.Fatal(err)
+	}
+	wrongLease := claimed
+	wrongLease.Lease = "wrong-cleanup-lease"
+	if err = s.FinishPlatformRecovery(cleanup, wrongLease, "cancelled", "wrong lease"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("wrong cleanup lease terminalized backup: %v", err)
+	}
+	wrongIdentity := claimed
+	wrongIdentity.Project = "other"
+	if err = s.FinishPlatformRecovery(cleanup, wrongIdentity, "cancelled", "wrong identity"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("wrong cleanup identity terminalized backup: %v", err)
+	}
+	if err = s.FinishPlatformRecovery(cleanup, claimed, "succeeded", "cleanup escalation"); !errors.Is(err, ErrInput) {
+		t.Fatalf("cleanup authority escalated backup to success: %v", err)
+	}
+	if _, err = s.Pool.Exec(ctx, `UPDATE api_keys SET revoked_at=clock_timestamp() WHERE id=$1`, p.KeyID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.FinishPlatformRecovery(ctx, claimed, "cancelled", "revoked cleanup"); err == nil {
+		t.Fatal("revoked authority terminalized backup without cleanup context")
+	}
+	staleCleanupFlag := claimed
+	staleCleanupFlag.CleanupRequired = true
+	if err = s.FinishPlatformRecovery(ctx, staleCleanupFlag, "cancelled", "stale cleanup snapshot"); err == nil {
+		t.Fatal("stale cleanup-required snapshot bypassed revoked authority")
+	}
+	if err = s.FinishPlatformRecovery(cleanup, claimed, "cancelled", "revoked cleanup complete"); err != nil {
+		t.Fatalf("exact completed backup cleanup could not terminalize after revocation: %v", err)
 	}
 }
 

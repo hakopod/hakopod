@@ -1,5 +1,5 @@
-// Package platformbackup defines the durable, encrypted compound archive used
-// to recover a managed Supabase platform into a separate empty target.
+// Package platformbackup defines durable, encrypted compound archives used to
+// recover managed platforms into separate empty targets.
 package platformbackup
 
 import (
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,12 +19,13 @@ import (
 const (
 	SchemaVersion          = 1
 	Format                 = "hakopod-supabase-recovery-v1"
+	NeonFormat             = "hakopod-neon-recovery-v1"
 	MaxParts               = 6
 	MaxManifestBytes       = 128 << 10
 	MaxArchiveBytes  int64 = 64 << 30
 )
 
-var ErrInvalid = errors.New("invalid Supabase recovery artifact")
+var ErrInvalid = errors.New("invalid managed platform recovery artifact")
 var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -34,6 +36,12 @@ var RequiredParts = []string{
 	"edge-functions.tar",
 	"storage-objects.tar",
 	"studio-snippets.tar",
+}
+
+var NeonRequiredParts = []string{
+	"tenant.json",
+	"timeline.json",
+	"remote-storage.tar",
 }
 
 type Part struct {
@@ -49,6 +57,19 @@ type Claim struct {
 	UID       string `json:"uid"`
 }
 
+type NeonIdentity struct {
+	TenantID                       string            `json:"tenant_id"`
+	TimelineID                     string            `json:"timeline_id"`
+	TenantGeneration               int64             `json:"tenant_generation"`
+	TimelineGeneration             int64             `json:"timeline_generation"`
+	CommitLSN                      string            `json:"commit_lsn"`
+	PageserverRemoteConsistentLSNs map[string]string `json:"pageserver_remote_consistent_lsns"`
+	SourceObjectPrefix             string            `json:"source_object_prefix"`
+	ObjectInventorySHA256          string            `json:"object_inventory_sha256"`
+	ObjectCount                    int64             `json:"object_count"`
+	ObjectBytes                    int64             `json:"object_bytes"`
+}
+
 type Manifest struct {
 	SchemaVersion       int               `json:"schema_version"`
 	Format              string            `json:"format"`
@@ -60,6 +81,7 @@ type Manifest struct {
 	SourceNamespace     string            `json:"source_namespace"`
 	SourceNamespaceUID  string            `json:"source_namespace_uid"`
 	PVCs                []Claim           `json:"pvcs"`
+	Neon                *NeonIdentity     `json:"neon,omitempty"`
 	Parts               []Part            `json:"parts"`
 	Verification        map[string]string `json:"verification"`
 	CapturedAt          time.Time         `json:"captured_at"`
@@ -107,14 +129,41 @@ type Review struct {
 }
 
 func (m Manifest) Validate() error {
-	if m.SchemaVersion != SchemaVersion || m.Format != Format || !idPattern.MatchString(m.PlatformID) || m.PlatformRevision < 1 {
+	if m.SchemaVersion != SchemaVersion || (m.Format != Format && m.Format != NeonFormat) || !idPattern.MatchString(m.PlatformID) || m.PlatformRevision < 1 {
 		return fmt.Errorf("%w: unsupported identity or version", ErrInvalid)
 	}
 	if len(m.PlatformSpec) == 0 || len(m.PlatformSpec) > 64<<10 || !json.Valid(m.PlatformSpec) || strings.TrimSpace(m.Release) == "" {
 		return fmt.Errorf("%w: platform contract is incomplete", ErrInvalid)
 	}
-	if m.SourceNamespace == "" || m.SourceNamespaceUID == "" || len(m.PVCs) < 1 || len(m.PVCs) > 16 || len(m.Images) < 1 || len(m.Images) > 32 {
+	var platform struct {
+		Kind string `json:"kind"`
+	}
+	if json.Unmarshal(m.PlatformSpec, &platform) != nil || platform.Kind == "" || platform.Kind == "supabase" && m.Format != Format || platform.Kind == "neon" && m.Format != NeonFormat || platform.Kind != "supabase" && platform.Kind != "neon" {
+		return fmt.Errorf("%w: platform kind does not match archive format", ErrInvalid)
+	}
+	if m.SourceNamespace == "" || m.SourceNamespaceUID == "" || len(m.PVCs) > 16 || len(m.Images) < 1 || len(m.Images) > 32 {
 		return fmt.Errorf("%w: source ownership inventory is incomplete", ErrInvalid)
+	}
+	if m.Format == Format && len(m.PVCs) < 1 {
+		return fmt.Errorf("%w: Supabase PVC ownership inventory is incomplete", ErrInvalid)
+	}
+	if m.Format == Format && m.Neon != nil {
+		return fmt.Errorf("%w: Supabase artifact contains Neon identity", ErrInvalid)
+	}
+	if m.Format == NeonFormat {
+		if m.Neon == nil || !idPattern.MatchString(m.Neon.TenantID) || !idPattern.MatchString(m.Neon.TimelineID) || m.Neon.TenantGeneration < 1 || m.Neon.TimelineGeneration < 1 || !validLSN(m.Neon.CommitLSN) || len(m.Neon.PageserverRemoteConsistentLSNs) < 2 || len(m.Neon.PageserverRemoteConsistentLSNs) > 8 || m.Neon.SourceObjectPrefix == "" || strings.HasPrefix(m.Neon.SourceObjectPrefix, "/") || strings.Contains(m.Neon.SourceObjectPrefix, "..") || !digestPattern.MatchString(m.Neon.ObjectInventorySHA256) || m.Neon.ObjectCount < 1 || m.Neon.ObjectCount > 100000 || m.Neon.ObjectBytes < 1 || m.Neon.ObjectBytes > MaxArchiveBytes {
+			return fmt.Errorf("%w: Neon recovery identity or object inventory is incomplete", ErrInvalid)
+		}
+		commit, valid := lsnValue(m.Neon.CommitLSN)
+		if !valid || commit == 0 {
+			return fmt.Errorf("%w: Neon recovery commit LSN is invalid", ErrInvalid)
+		}
+		for name, lsn := range m.Neon.PageserverRemoteConsistentLSNs {
+			visible, valid := lsnValue(lsn)
+			if name == "" || !valid || visible < commit {
+				return fmt.Errorf("%w: Neon pageserver recovery evidence is invalid", ErrInvalid)
+			}
+		}
 	}
 	for name, image := range m.Images {
 		if name == "" || !strings.Contains(image, "@sha256:") || !digestPattern.MatchString(image[strings.LastIndex(image, "@sha256:")+8:]) {
@@ -129,10 +178,15 @@ func (m Manifest) Validate() error {
 		}
 		seenClaims[key] = true
 	}
-	if len(m.Parts) != len(RequiredParts) {
+	requiredParts, verificationKeys := RequiredParts, []string{"database_roles", "database_security", "auth_metadata", "storage_metadata", "storage_bytes", "edge_functions", "studio_snippets"}
+	if m.Format == NeonFormat {
+		requiredParts = NeonRequiredParts
+		verificationKeys = []string{"tenant_identity", "tenant_generation", "timeline_identity", "timeline_generation", "remote_storage"}
+	}
+	if len(m.Parts) != len(requiredParts) {
 		return fmt.Errorf("%w: compound archive is incomplete", ErrInvalid)
 	}
-	for _, key := range []string{"database_roles", "database_security", "auth_metadata", "storage_metadata", "storage_bytes", "edge_functions", "studio_snippets"} {
+	for _, key := range verificationKeys {
 		if !digestPattern.MatchString(m.Verification[key]) {
 			return fmt.Errorf("%w: content verification evidence is incomplete", ErrInvalid)
 		}
@@ -140,10 +194,10 @@ func (m Manifest) Validate() error {
 	seenParts := map[string]bool{}
 	var total int64
 	for index, part := range m.Parts {
-		if !requiredPart(part.Name) || seenParts[part.Name] || part.Bytes < 1 || part.Bytes > MaxArchiveBytes || !digestPattern.MatchString(part.SHA256) {
+		if !containsPart(requiredParts, part.Name) || seenParts[part.Name] || part.Bytes < 1 || part.Bytes > MaxArchiveBytes || !digestPattern.MatchString(part.SHA256) {
 			return fmt.Errorf("%w: invalid archive part", ErrInvalid)
 		}
-		if part.Name != RequiredParts[index] {
+		if part.Name != requiredParts[index] {
 			return fmt.Errorf("%w: archive part order is unsafe", ErrInvalid)
 		}
 		seenParts[part.Name] = true
@@ -161,8 +215,34 @@ func (m Manifest) Validate() error {
 	return nil
 }
 
+func validLSN(value string) bool {
+	_, valid := lsnValue(value)
+	return valid
+}
+
+func lsnValue(value string) (uint64, bool) {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || len(parts[0]) > 8 || len(parts[1]) > 8 {
+		return 0, false
+	}
+	for _, part := range parts {
+		for _, c := range part {
+			if c < '0' || c > '9' && c < 'A' || c > 'F' && c < 'a' || c > 'f' {
+				return 0, false
+			}
+		}
+	}
+	high, highErr := strconv.ParseUint(parts[0], 16, 32)
+	low, lowErr := strconv.ParseUint(parts[1], 16, 32)
+	return high<<32 | low, highErr == nil && lowErr == nil
+}
+
 func requiredPart(name string) bool {
-	for _, required := range RequiredParts {
+	return containsPart(RequiredParts, name) || containsPart(NeonRequiredParts, name)
+}
+
+func containsPart(parts []string, name string) bool {
+	for _, required := range parts {
 		if name == required {
 			return true
 		}
