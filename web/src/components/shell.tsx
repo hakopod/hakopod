@@ -327,7 +327,7 @@ function Workspace({
   try {
     routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
   } catch {}
-  const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms(?:\/new)?)$/.test(location.pathname)
+  const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms(?:\/new(?:\/[^/]+)?)?)$/.test(location.pathname)
   const routeScope = scopedListPage
     ? resolveProjectRouteScope(
         projects.data?.items,
@@ -402,7 +402,8 @@ function Workspace({
     to === '/' || to.startsWith('/projects/')
       ? location.pathname === '/' ||
         /^\/(projects|applications|deployments)(\/|$)/.test(location.pathname)
-      : location.pathname === to || location.pathname.startsWith(to + '/')
+      : location.pathname === to || location.pathname.startsWith(to + '/') ||
+        to === '/databases' && /^\/platforms(?:\/|$)/.test(location.pathname)
   const accountRole = dashboardEdition.cloud
     ? 'Cloud account'
     : identity.owner
