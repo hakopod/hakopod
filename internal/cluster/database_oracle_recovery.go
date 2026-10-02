@@ -59,7 +59,7 @@ func oraclePumpSQL(name, file, operation string) string {
 		release = "IF capture_scn IS NOT NULL THEN lock_result:=DBMS_LOCK.RELEASE(82635001); END IF;"
 	}
 	return fmt.Sprintf(`SET SERVEROUTPUT ON SIZE 32767
-DECLARE h NUMBER; state VARCHAR2(30); status KU$_STATUS; capture_scn NUMBER; lock_result NUMBER; error_index PLS_INTEGER; error_count PLS_INTEGER; object_type VARCHAR2(128); error_number NUMBER;
+DECLARE h NUMBER; state VARCHAR2(30); status KU$_STATUS; capture_scn NUMBER; lock_result NUMBER; error_index PLS_INTEGER; error_count PLS_INTEGER; code_index PLS_INTEGER; error_code VARCHAR2(10); error_number NUMBER;
 BEGIN
  %s
  h:=DBMS_DATAPUMP.OPEN(operation=>'%s',job_mode=>'SCHEMA',job_name=>'%s');
@@ -74,10 +74,16 @@ BEGIN
 	   error_index:=status.error.FIRST; error_count:=0;
 	   WHILE error_index IS NOT NULL AND error_count<8 LOOP
 	    DBMS_OUTPUT.PUT_LINE('ORA-'||TO_CHAR(ABS(status.error(error_index).errorNumber),'FM00000'));
-	    object_type:=REGEXP_SUBSTR(status.error(error_index).LogText,'Object type ([A-Z_/]+)',1,1,'c',1);
-	    object_type:=REGEXP_SUBSTR(object_type,'[^/]+$');
-	    IF INSTR(',%s,',','||object_type||',')>0 THEN DBMS_OUTPUT.PUT_LINE('HAKOPOD_OBJECT='||object_type); END IF;
-	    error_index:=status.error.NEXT(error_index); error_count:=error_count+1;
+	    error_count:=error_count+1; code_index:=1;
+	    WHILE error_count<8 AND code_index<=8 LOOP
+	     error_code:=REGEXP_SUBSTR(status.error(error_index).LogText,'ORA-[0-9]{5}',1,code_index,'c');
+	     EXIT WHEN error_code IS NULL;
+	     IF error_code<>'ORA-'||TO_CHAR(ABS(status.error(error_index).errorNumber),'FM00000') THEN
+	      DBMS_OUTPUT.PUT_LINE(error_code); error_count:=error_count+1;
+	     END IF;
+	     code_index:=code_index+1;
+	    END LOOP;
+	    error_index:=status.error.NEXT(error_index);
 	   END LOOP;
 	   RAISE_APPLICATION_ERROR(-20001,'Data Pump reported an error');
 	  END IF;
@@ -95,7 +101,7 @@ EXCEPTION WHEN OTHERS THEN
 	 %s
 	 RAISE_APPLICATION_ERROR(-20012,'Schema transfer failed');
 END;
-/`, guard, operation, name, file, setup, oracleDiagnosticObjectTypes, finish, release, release)
+/`, guard, operation, name, file, setup, finish, release, release)
 }
 
 func (c *Client) oracleRecoveryCleanup(d database.Resource, m database.Member, name, file string) error {
