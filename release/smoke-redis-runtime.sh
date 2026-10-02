@@ -48,6 +48,7 @@ openssl req -newkey rsa:2048 -nodes -subj /CN=redis-runtime \
 printf 'subjectAltName=DNS:redis-runtime,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth,clientAuth\n' >"$work/server.ext"
 openssl x509 -req -days 1 -in "$work/server.csr" -CA "$work/ca.crt" -CAkey "$work/ca.key" \
   -CAcreateserial -extfile "$work/server.ext" -out "$work/server.crt" >/dev/null 2>&1
+chmod 0755 "$work"
 chmod 0644 "$work/ca.crt" "$work/server.key" "$work/server.crt"
 docker run --rm --hostname redis-runtime -v "$work:/tls:ro" --entrypoint bash "$image" -ec '
   if ! redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --pidfile /tmp/redis.pid \
