@@ -28,7 +28,8 @@ docker run --rm -e SETUP_MODE=cluster -e REDIS_MAJOR_VERSION=v8 \
     PATH=/tmp/bin:$PATH /usr/bin/entrypoint.sh'
 
 docker run --rm --entrypoint bash "$image" -ec '
-  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --port 6379 --protected-mode no --requirepass runtime-smoke
+  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --pidfile /tmp/redis.pid \
+    --logfile /tmp/redis.log --bind 127.0.0.1 --port 6379 --protected-mode no --requirepass runtime-smoke
   export REDISCLI_AUTH=runtime-smoke
   redis-cli -h 127.0.0.1 ping | grep -q PONG
   redis-cli -h 127.0.0.1 set runtime-smoke ok | grep -q OK
@@ -46,13 +47,14 @@ openssl x509 -req -days 1 -in "$work/server.csr" -CA "$work/ca.crt" -CAkey "$wor
   -CAcreateserial -extfile "$work/server.ext" -out "$work/server.crt" >/dev/null 2>&1
 chmod 0644 "$work/ca.crt" "$work/server.key" "$work/server.crt"
 docker run --rm --hostname redis-runtime -v "$work:/tls:ro" --entrypoint bash "$image" -ec '
-  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --port 0 --tls-port 6379 \
+  redis-server /etc/redis/redis.conf --daemonize yes --dir /tmp --pidfile /tmp/redis.pid \
+    --logfile /tmp/redis.log --bind 127.0.0.1 --port 0 --tls-port 6379 \
     --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt \
     --tls-auth-clients optional --protected-mode no --requirepass runtime-smoke
   export REDISCLI_AUTH=runtime-smoke
   for attempt in $(seq 1 30); do
-    if redis-cli --tls --cacert /tls/ca.crt -h redis-runtime ping | grep -q PONG; then break; fi
+    if redis-cli --tls --cacert /tls/ca.crt -h localhost ping | grep -q PONG; then break; fi
     test "$attempt" -lt 30
     sleep 1
   done
-  redis-cli --tls --cacert /tls/ca.crt -h redis-runtime shutdown nosave'
+  redis-cli --tls --cacert /tls/ca.crt -h localhost shutdown nosave'
