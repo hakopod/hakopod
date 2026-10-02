@@ -67,6 +67,12 @@ func TestOracleImportDoesNotRequireCaptureLockPrivileges(t *testing.T) {
 	if !strings.Contains(export, "DBMS_LOCK.REQUEST") || strings.Count(export, "DBMS_LOCK.RELEASE") != 2 {
 		t.Fatal("capture must hold its DDL guard and release it on success or failure")
 	}
+	if !strings.Contains(export, "REGEXP_SUBSTR(status.error(error_index).LogText,'ORA-[0-9]{5}',1,code_index,'c')") || !strings.Contains(export, "error_count<8 AND code_index<=8") {
+		t.Fatal("Data Pump diagnostics must emit only a bounded set of nested Oracle codes")
+	}
+	if strings.Contains(export, "DBMS_OUTPUT.PUT_LINE(status.error(error_index).LogText") || strings.Contains(export, "HAKOPOD_OBJECT=") {
+		t.Fatal("Data Pump diagnostics must not expose log text or object names")
+	}
 }
 
 func TestOracleDiagnosticCodesDoNotExposeSQLOrCredentials(t *testing.T) {
