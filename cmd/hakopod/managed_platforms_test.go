@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -31,6 +32,97 @@ func managedPlatformCLIFixture() managedplatform.Spec {
 		Storage:   map[string]int64{"database": 20, "database-encryption": 1, "edge-functions": 1, "objects": 20, "studio-snippets": 1},
 		Placement: managedplatform.Placement{NodeNames: []string{"fixture-worker"}},
 		Supabase:  &managedplatform.SupabaseConfig{PublicURL: "https://data.example.test", SiteURL: "https://app.example.test", RedirectURLs: []string{"https://app.example.test"}, DatabaseName: "postgres", JWTExpirySeconds: 3600, RESTMaxRows: 1000, StorageFileLimitBytes: 50 << 20, PoolSize: 20, PoolMaxClients: 100},
+	}
+}
+
+func TestManagedPlatformCLIRecoveryReviewAndApplyUseExactContract(t *testing.T) {
+	source, target, destination := strings.Repeat("a", 32), strings.Repeat("b", 32), strings.Repeat("c", 32)
+	path := externalCLIFile(t, "recovery.toml", `schema_version = 1
+kind = "restore"
+project = "demo"
+environment = "development"
+source_platform_id = "`+source+`"
+target_platform_id = "`+target+`"
+artifact_id = "`+destination+`"
+expected_source_revision = 2
+expected_target_revision = 1
+confirm_target_name = "restore-target"
+`)
+	reviewID := strings.Repeat("d", 32)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request managedPlatformRecoveryRequest
+		if json.NewDecoder(r.Body).Decode(&request) != nil || request.intent() != (platformbackup.Intent{Kind: "restore", Project: "demo", Environment: "development", SourcePlatformID: source, TargetPlatformID: target, ArtifactID: destination, ExpectedSourceRevision: 2, ExpectedTargetRevision: 1}) || request.ConfirmTargetName != "restore-target" {
+			t.Error("recovery request lost its immutable intent")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/managed-platform-recovery/reviews":
+			_ = json.NewEncoder(w).Encode(platformbackup.Review{ID: reviewID, Intent: request.intent()})
+		case "/api/v1/managed-platform-recovery/operations":
+			if r.Header.Get("Idempotency-Key") != "platform-recovery-"+reviewID || request.Review.ID != reviewID {
+				t.Error("recovery apply lost review or retry identity")
+			}
+			_ = json.NewEncoder(w).Encode(platformbackup.Operation{ID: strings.Repeat("e", 32), Kind: "restore"})
+		default:
+			t.Error("unexpected recovery request")
+		}
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, http: server.Client()}
+	if _, err := captureExternalCLI(t, func() error {
+		return managedPlatformCommand(context.Background(), c, "demo", "development", []string{"recovery-apply"}, path, "", "")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected review and apply requests, got %d", calls)
+	}
+}
+
+func TestManagedPlatformCLIRecoveryRejectsScopeMismatch(t *testing.T) {
+	path := externalCLIFile(t, "recovery.toml", `schema_version = 1
+kind = "backup"
+project = "demo"
+environment = "development"
+source_platform_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+destination_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+destination_revision = 1
+expected_source_revision = 1
+`)
+	if err := managedPlatformCommand(context.Background(), &client{}, "other", "development", []string{"recovery-review"}, path, "", ""); err == nil {
+		t.Fatal("recovery review accepted a mismatched selected scope")
+	}
+}
+
+func TestManagedPlatformCLIRecoveryRequiresSchemaVersion(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing": `kind = "backup"
+project = "demo"
+environment = "development"
+source_platform_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+destination_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+destination_revision = 1
+expected_source_revision = 1
+`,
+		"unknown": `schema_version = 1
+kind = "backup"
+project = "demo"
+environment = "development"
+source_platform_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+destination_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+destination_revision = 1
+expected_source_revision = 1
+invented = true
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := externalCLIFile(t, "recovery.toml", body)
+			if _, err := readManagedPlatformRecovery(path); err == nil {
+				t.Fatal("invalid recovery schema was accepted")
+			}
+		})
 	}
 }
 

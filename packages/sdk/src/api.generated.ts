@@ -6439,6 +6439,7 @@ export interface components {
             name: string;
             uid: string;
             architecture: string;
+            operating_system: string;
         };
         ManagedPlatformCatalogEntry: {
             /** @enum {string} */
