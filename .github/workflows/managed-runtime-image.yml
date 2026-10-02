@@ -1,0 +1,69 @@
+name: Publish prebuilt managed runtime images
+on:
+  workflow_dispatch:
+    inputs:
+      archive_release:
+        description: Draft release containing the OCI archives and managed-runtime-publication.json
+        required: true
+        type: string
+      plan_sha256:
+        description: SHA-256 of the reviewed publication JSON
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: managed-runtime-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'hakopod/hakopod' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ARCHIVE_RELEASE: ${{ inputs.archive_release }}
+      PLAN_SHA256: ${{ inputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the archive and publication checks
+        run: python3 -B -m unittest discover -s release -p test_publish_managed_runtime.py
+      - name: Download the reviewed publication plan and pinned publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$ARCHIVE_RELEASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir -m 700 "$RUNNER_TEMP/runtime-publisher" "$RUNNER_TEMP/runtime-registry-auth"
+          gh release download "$ARCHIVE_RELEASE" --repo "$GITHUB_REPOSITORY" --pattern managed-runtime-publication.json --dir "$RUNNER_TEMP/runtime-publisher"
+          printf '%s  %s\n' "$PLAN_SHA256" "$RUNNER_TEMP/runtime-publisher/managed-runtime-publication.json" | sha256sum --check
+          curl --fail --location --silent --show-error --max-time 120 --output "$RUNNER_TEMP/runtime-publisher/crane.tgz" https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          printf '%s  %s\n' 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 "$RUNNER_TEMP/runtime-publisher/crane.tgz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/runtime-publisher/crane.tgz" -C "$RUNNER_TEMP/runtime-publisher" crane
+      - name: Publish exact OCI manifests without rebuilding
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export DOCKER_CONFIG="$RUNNER_TEMP/runtime-registry-auth"
+          printf '%s' "$GH_TOKEN" | "$RUNNER_TEMP/runtime-publisher/crane" auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          python3 release/publish-managed-runtime.py \
+            --plan "$RUNNER_TEMP/runtime-publisher/managed-runtime-publication.json" \
+            --plan-sha256 "$PLAN_SHA256" --release "$ARCHIVE_RELEASE" \
+            --publisher "$RUNNER_TEMP/runtime-publisher/crane" \
+            --output "$RUNNER_TEMP/managed-runtime-publication-receipt.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-runtime-publication-receipt
+          path: ${{ runner.temp }}/managed-runtime-publication-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove temporary registry authentication
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/runtime-registry-auth"
