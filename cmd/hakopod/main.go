@@ -779,6 +779,11 @@ func help() {
   hakopod platform update PLATFORM_ID --file supabase.toml
   hakopod platform delete PLATFORM_ID --name PLATFORM_NAME
   hakopod platform operation OPERATION_ID
+  hakopod platform recovery-review --file recovery.toml
+  hakopod platform recovery-apply --file recovery.toml --idempotency-key RETRY_KEY
+  hakopod platform recovery-operations PLATFORM_ID
+  hakopod platform recovery-operation OPERATION_ID
+  hakopod platform recovery-cancel OPERATION_ID
   hakopod database nodes --project demo --environment development
   hakopod database create --file database.toml --project demo --environment development
   hakopod database show DATABASE_ID
