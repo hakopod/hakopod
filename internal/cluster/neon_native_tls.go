@@ -46,7 +46,11 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 		role, secret, host, port string
 		postgres                 bool
 	}
-	listeners := []listener{{"storage-controller", "controller-auth", "neon-storage-controller." + namespace + ".svc", "6699", false}}
+	listeners := []listener{
+		{"broker", "broker-auth", "neon-broker." + namespace + ".svc", "50051", false},
+		{"controller-database", "controller-database-password", "neon-controller-database." + namespace + ".svc", "5432", true},
+		{"storage-controller", "controller-auth", "neon-storage-controller." + namespace + ".svc", "6699", false},
+	}
 	for i := 0; i < request.Render.Spec.Neon.Pageservers; i++ {
 		listeners = append(listeners, listener{"pageserver", "pageserver-auth", "neon-pageserver-" + strconv.Itoa(i) + "." + namespace + ".svc", "9898", false})
 	}

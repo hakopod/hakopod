@@ -111,6 +111,7 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 	objects := []runtime.Object{}
 
 	objects = append(objects, neonPVC(meta, in, "controller-database", "controller-database"))
+	objects = append(objects, neonControllerDatabaseConfigMap(meta, in))
 	for i := 0; i < in.Spec.Neon.Pageservers; i++ {
 		name := "pageserver-" + strconv.Itoa(i)
 		objects = append(objects, neonPVC(meta, in, name, "pageserver"), neonConfigMap(meta, in, name, i))
@@ -219,7 +220,7 @@ func neonPVC(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name, stor
 func neonConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name string, ordinal int) *corev1.ConfigMap {
 	c := in.Spec.Neon
 	remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/pageserver-%d'}", c.ObjectStorageURL, c.ObjectStorageBucket, c.ObjectStorageRegion, strings.Trim(c.ObjectStoragePrefix, "/"), ordinal)
-	config := fmt.Sprintf("listen_pg_addr='0.0.0.0:6400'\nlisten_http_addr='127.0.0.1:9897'\nlisten_https_addr='0.0.0.0:9898'\nssl_key_file='/var/run/secrets/hakopod/pageserver-auth/tls.key'\nssl_cert_file='/var/run/secrets/hakopod/pageserver-auth/tls.crt'\nssl_ca_file='/var/run/secrets/hakopod/pageserver-auth/ca.crt'\nbroker_endpoint='http://neon-broker:50051'\ncontrol_plane_api='https://neon-storage-controller:6699'\nauth_validation_public_key_path='/var/run/secrets/hakopod/pageserver-auth/public-key.pem'\nhakopod_ownership_v1=true\nremote_storage=%s\n", remote)
+	config := fmt.Sprintf("listen_pg_addr='0.0.0.0:6400'\nlisten_http_addr='127.0.0.1:9897'\nlisten_https_addr='0.0.0.0:9898'\nssl_key_file='/var/run/secrets/hakopod/pageserver-auth/tls.key'\nssl_cert_file='/var/run/secrets/hakopod/pageserver-auth/tls.crt'\nssl_ca_file='/var/run/secrets/hakopod/pageserver-auth/ca.crt'\nbroker_endpoint='https://neon-broker:50051'\ncontrol_plane_api='https://neon-storage-controller:6699'\nauth_validation_public_key_path='/var/run/secrets/hakopod/pageserver-auth/public-key.pem'\nhakopod_ownership_v1=true\nremote_storage=%s\n", remote)
 	return &corev1.ConfigMap{ObjectMeta: meta("neon-" + name + "-r" + strconv.FormatInt(in.Revision, 10)), Immutable: neonBool(true), Data: map[string]string{"identity.toml": fmt.Sprintf("id=%d\n", ordinal+1), "pageserver.toml": config}}
 }
 
@@ -227,6 +228,12 @@ func neonComputeTLSConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderI
 	name := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)
 	config := "global\n  maxconn 64\n  ssl-default-bind-options ssl-min-ver TLSv1.2\ndefaults\n  mode http\n  timeout connect 2s\n  timeout client 30s\n  timeout server 30s\nfrontend compute_control\n  bind :3081 ssl crt /tmp/compute-tls.pem\n  default_backend compute_ctl\nbackend compute_ctl\n  server local 127.0.0.1:3080\n"
 	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"haproxy.cfg": config}}
+}
+
+func neonControllerDatabaseConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput) *corev1.ConfigMap {
+	name := "neon-controller-database-r" + strconv.FormatInt(in.Revision, 10)
+	hba := "local all all trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl storage_controller storage_controller 0.0.0.0/0 scram-sha-256\nhostssl storage_controller storage_controller ::/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::/0 reject\n"
+	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"pg_hba.conf": hba}}
 }
 
 func neonPod(in NeonRenderInput, component Component, labels map[string]string, ordinal int) corev1.PodTemplateSpec {
@@ -247,20 +254,27 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 	container.VolumeMounts = []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}}
 	for _, key := range component.SecretKeys {
 		ref := in.Spec.Secrets[key]
-		volumes = append(volumes, corev1.Volume{Name: key, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: neonSecretName(ref)}}})
+		secretSource := &corev1.SecretVolumeSource{SecretName: neonSecretName(ref), DefaultMode: neonInt32(0440)}
+		if logicalName == "storage-controller" && key == "controller-database-password" {
+			secretSource.Items = []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}
+		}
+		volumes = append(volumes, corev1.Volume{Name: key, VolumeSource: corev1.VolumeSource{Secret: secretSource}})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: key, MountPath: "/var/run/secrets/hakopod/" + key, ReadOnly: true})
 	}
 	if logicalName == "controller-database" {
-		volumes = append(volumes, neonPVCVolume("data", "neon-controller-database"))
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/postgresql/data"})
-		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "POSTGRES_PASSWORD", "value"), corev1.EnvVar{Name: "POSTGRES_DB", Value: "storage_controller"}, corev1.EnvVar{Name: "POSTGRES_USER", Value: "storage_controller"})
+		configName := "neon-controller-database-r" + strconv.FormatInt(in.Revision, 10)
+		volumes = append(volumes, neonPVCVolume("data", "neon-controller-database"), corev1.Volume{Name: "controller-database-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}}}})
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/postgresql/data"}, corev1.VolumeMount{Name: "controller-database-config", MountPath: "/etc/hakopod-postgres", ReadOnly: true})
+		container.Command = []string{"/bin/sh", "-ec"}
+		container.Args = []string{"umask 077; cp /var/run/secrets/hakopod/controller-database-password/tls.key /tmp/controller-database.key; chmod 0600 /tmp/controller-database.key; exec /usr/local/bin/docker-entrypoint.sh postgres -c hba_file=/etc/hakopod-postgres/pg_hba.conf -c ssl=on -c ssl_cert_file=/var/run/secrets/hakopod/controller-database-password/tls.crt -c ssl_key_file=/tmp/controller-database.key -c ssl_ca_file=/var/run/secrets/hakopod/controller-database-password/ca.crt -c unix_socket_directories=/tmp -c password_encryption=scram-sha-256"}
+		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "POSTGRES_PASSWORD", "value"), corev1.EnvVar{Name: "POSTGRES_DB", Value: "storage_controller"}, corev1.EnvVar{Name: "POSTGRES_USER", Value: "storage_controller"}, corev1.EnvVar{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"}, corev1.EnvVar{Name: "PGHOST", Value: "/tmp"})
 	} else if logicalName == "broker" {
 		container.Command = []string{"storage_broker"}
-		container.Args = []string{"--listen-addr=0.0.0.0:50051"}
+		container.Args = []string{"--listen-https-addr=0.0.0.0:50051", "--ssl-key-file=/var/run/secrets/hakopod/broker-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/broker-auth/tls.crt"}
 	} else if logicalName == "storage-controller" {
 		container.Command = []string{"storage_controller"}
 		container.Args = []string{"--listen-https=0.0.0.0:6699", "--ssl-key-file=/var/run/secrets/hakopod/controller-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/controller-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/controller-auth/ca.crt", "--timelines-onto-safekeepers=true", "--use-https-pageserver-api=true", "--use-https-safekeeper-api=true", "--hakopod-ownership-v1", "--reconciler-concurrency=4", "--priority-reconciler-concurrency=2", "--safekeeper-reconciler-concurrency=2"}
-		container.Env = append(container.Env, corev1.EnvVar{Name: "DATABASE_URL", Value: "postgresql://storage_controller@neon-controller-database:5432/storage_controller"}, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "PGPASSWORD", "value"), neonSecretEnv(in.Spec.Secrets["controller-auth"], "PUBLIC_KEY", "public-key.pem"), neonSecretEnv(in.Spec.Secrets["pageserver-auth"], "PAGESERVER_JWT_TOKEN", "token"), neonSecretEnv(in.Spec.Secrets["safekeeper-auth"], "SAFEKEEPER_JWT_TOKEN", "token"))
+		container.Env = append(container.Env, corev1.EnvVar{Name: "DATABASE_URL", Value: "postgresql://storage_controller@neon-controller-database:5432/storage_controller?sslmode=require"}, corev1.EnvVar{Name: "STORCON_DB_CERT_CHECKS", Value: "1"}, corev1.EnvVar{Name: "SSL_CERT_FILE", Value: "/var/run/secrets/hakopod/controller-database-password/ca.crt"}, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "PGPASSWORD", "value"), neonSecretEnv(in.Spec.Secrets["controller-auth"], "PUBLIC_KEY", "public-key.pem"), neonSecretEnv(in.Spec.Secrets["pageserver-auth"], "PAGESERVER_JWT_TOKEN", "token"), neonSecretEnv(in.Spec.Secrets["safekeeper-auth"], "SAFEKEEPER_JWT_TOKEN", "token"))
 	} else if logicalName == "pageserver" {
 		configName := "neon-" + instanceName + "-r" + strconv.FormatInt(in.Revision, 10)
 		volumes = append(volumes, neonPVCVolume("data", "neon-"+instanceName), corev1.Volume{Name: "config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}}}})
@@ -273,7 +287,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/neon"})
 		remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/safekeeper-%d'}", in.Spec.Neon.ObjectStorageURL, in.Spec.Neon.ObjectStorageBucket, in.Spec.Neon.ObjectStorageRegion, strings.Trim(in.Spec.Neon.ObjectStoragePrefix, "/"), ordinal)
 		container.Command = []string{"safekeeper"}
-		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/safekeeper-auth/ca.crt", "--broker-endpoint=http://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token", "--hakopod-ownership-v1"}
+		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/var/run/secrets/hakopod/safekeeper-auth/ca.crt", "--broker-endpoint=https://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token", "--hakopod-ownership-v1"}
 		container.Env = append(container.Env, neonObjectStorageEnv(in.Spec.Secrets["object-storage"])...)
 	} else if logicalName == "compute" {
 		configName := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)

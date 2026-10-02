@@ -64,6 +64,22 @@ private or metadata destinations. Private object stores require a separately
 reviewed egress policy. Placement separates pageservers from each other and
 safekeepers from each other.
 
+Internal control traffic is encrypted as part of the rendered runtime. The
+broker exposes only HTTPS, and pageservers and safekeepers use its HTTPS service
+name with their existing CA bundles. The controller PostgreSQL server uses a
+certificate for both its short and namespace-qualified service names, rejects
+plaintext IPv4 and IPv6 clients, and admits only the `storage_controller` role
+over TLS with SCRAM. Its local Unix socket remains available for image bootstrap
+under `/tmp`. The storage controller enables its upstream certificate checks,
+uses the mounted public database CA, and does not receive the database private
+key. All certificate snapshots are checked for matching keys, a valid CA,
+current lifetime and every owned service hostname before workloads are applied.
+The pinned broker defines its plaintext and HTTPS listeners as separate optional
+arguments, so the manifest supplies only the HTTPS listener. The pinned storage
+controller uses `rustls-native-certs` 0.8 and loads native roots when
+`STORCON_DB_CERT_CHECKS` is present; that crate reads the explicitly mounted
+`SSL_CERT_FILE`.
+
 ## Verification and release requirements
 
 The implementation has passed Go package tests, recovery race tests, API
@@ -72,8 +88,9 @@ lineage and stale leases. These checks exercise source behavior. They do not
 establish that the complete Neon stack works with the built provider images.
 Neon stays unavailable until native lifecycle and recovery acceptance pass.
 
-Acceptance must prove tenant isolation, authenticated storage protocols, verified
-client TLS, WAL quorum failure and fencing, pageserver replacement, durable
+Acceptance must prove tenant isolation, authenticated storage protocols,
+verified broker and controller-database TLS with wrong-CA, wrong-hostname and
+plaintext rejection, WAL quorum failure and fencing, pageserver replacement, durable
 controller recovery, compute restart, branch creation and deletion, credentials
 and connection limits, object-store outage, restore into a separate empty
 resource and complete owned cleanup. Physical zone and provider availability
