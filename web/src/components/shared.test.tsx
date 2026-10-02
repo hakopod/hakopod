@@ -1,6 +1,7 @@
 import '../lib/toml-language.test'
 import '../lib/framework-recipes.test'
 import '../lib/key-lifetime.test'
+import '../lib/platform-wizard.test'
 import '../lib/runner-resources.test'
 import '../lib/public-endpoints.test'
 import '../lib/database-public-endpoints.test'
