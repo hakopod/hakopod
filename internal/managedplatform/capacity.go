@@ -32,8 +32,10 @@ func (c Capacity) Fits(limit Capacity) bool {
 }
 
 type CapacityNode struct {
-	Name string `json:"name" toml:"name"`
-	UID  string `json:"uid" toml:"uid"`
+	Name            string `json:"name" toml:"name"`
+	UID             string `json:"uid" toml:"uid"`
+	Architecture    string `json:"architecture" toml:"architecture"`
+	OperatingSystem string `json:"operating_system" toml:"operating_system"`
 }
 
 // CapacityNamespaceOwnership identifies the exact namespace and workload
@@ -92,7 +94,7 @@ func (p CapacityPolicy) Validate() error {
 	}
 	seenNames, seenUIDs := map[string]bool{}, map[string]bool{}
 	for _, node := range p.Nodes {
-		if len(validation.IsDNS1123Subdomain(node.Name)) != 0 || node.UID == "" || len(node.UID) > 128 || seenNames[node.Name] || seenUIDs[node.UID] {
+		if len(validation.IsDNS1123Subdomain(node.Name)) != 0 || node.UID == "" || len(node.UID) > 128 || node.Architecture == "" || len(validation.IsQualifiedName(node.Architecture)) != 0 || node.OperatingSystem == "" || len(validation.IsQualifiedName(node.OperatingSystem)) != 0 || seenNames[node.Name] || seenUIDs[node.UID] {
 			return fmt.Errorf("managed platform capacity node identity is invalid")
 		}
 		seenNames[node.Name], seenUIDs[node.UID] = true, true

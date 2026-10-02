@@ -24,6 +24,8 @@ func TestManagedPlatformErrorObservation(t *testing.T) {
 		{"stage preserves store conflict", &cluster.ManagedPlatformRuntimeError{Category: "capacity_admission", Err: store.ErrConflict}, "store_conflict"},
 		{"kubernetes conflict", apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"}, "redacted", errors.New("redacted")), "kubernetes_conflict"},
 		{"safe stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_database_tls_validation", Err: errors.New("secret material")}, "supabase_database_tls_validation"},
+		{"safe apply stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_apply_statefulset", Err: errors.New("password=must-not-escape")}, "supabase_apply_statefulset"},
+		{"safe credential rotation stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_rotate_database_credentials", Err: errors.New("password=must-not-escape")}, "supabase_rotate_database_credentials"},
 		{"unapproved stage", &cluster.ManagedPlatformRuntimeError{Category: "attacker supplied", Err: errors.New("secret material")}, "other"},
 		{"other", errors.New("secret material"), "other"},
 	}

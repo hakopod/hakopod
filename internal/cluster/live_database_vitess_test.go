@@ -121,10 +121,15 @@ func newVitessFixture(t *testing.T, ctx context.Context, fixtures *vitessLiveFix
 	if nodes := os.Getenv("HAKOPOD_DATABASE_FIXTURE_NODES"); nodes != "" {
 		d.Spec.Placement.NodeNames = strings.Split(nodes, ",")
 	}
+	if len(d.Spec.Placement.NodeNames) < 2 || len(d.Spec.Placement.NodeNames) > 3 {
+		t.Fatal("Vitess native fixtures require two or three named development nodes")
+	}
+	seenNodes := map[string]bool{}
 	for _, node := range d.Spec.Placement.NodeNames {
-		if node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0" {
-			t.Fatal("Vitess native fixtures require the two dedicated database development nodes")
+		if node == "" || seenNodes[node] || (node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0" && node != "k3d-hakopod-database-worker-1") {
+			t.Fatal("Vitess native fixtures require unique dedicated database development nodes")
 		}
+		seenNodes[node] = true
 	}
 	if err := d.Spec.Validate(); err != nil {
 		t.Fatal(err)

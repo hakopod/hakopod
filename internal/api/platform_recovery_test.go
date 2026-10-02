@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,11 +115,52 @@ func TestPlatformRecoveryQualificationUsesLoadedKindAndExactTarget(t *testing.T)
 				in.ArtifactID, in.DestinationID, in.DestinationRevision = strings.Repeat("c", 32), "", 0
 				in.ConfirmTargetName = test.confirmation
 			}
-			server := &Server{Store: db, ManagedNeonRecoveryQualified: test.neonQualified, ManagedPlatformRecoveryQualified: test.supabaseQualified}
+			server := &Server{Store: db, ManagedNeonRecoveryQualified: test.neonQualified, ManagedPlatformRecoveryQualified: test.supabaseQualified, ValidateManagedPlatformRecovery: func(context.Context, string) error { return nil }}
 			response := httptest.NewRecorder()
 			_, ok := server.validatePlatformRecoveryRequest(response, recoveryRequest("/api/v1/managed-platform-recovery/reviews", "", recoveryPrincipal()), in)
 			if response.Code != test.want || ok != (test.want == http.StatusOK) {
 				t.Fatalf("recovery selection returned %d, accepted=%v; want %d: %s", response.Code, ok, test.want, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestPlatformRecoveryRechecksQualificationAfterReview(t *testing.T) {
+	for _, kind := range []string{"supabase", "neon"} {
+		t.Run(kind, func(t *testing.T) {
+			available := true
+			checks := 0
+			server := &Server{ManagedPlatformRecoveryQualified: true, ManagedNeonRecoveryQualified: true, ValidateManagedPlatformRecovery: func(ctx context.Context, got string) error {
+				checks++
+				if _, bounded := ctx.Deadline(); !bounded {
+					t.Fatal("qualification check has no timeout")
+				}
+				if got != kind || !available {
+					return errors.New("operator binding changed")
+				}
+				return nil
+			}}
+			if !server.platformRecoveryQualified(context.Background(), "demo", "development", kind) {
+				t.Fatal("valid review qualification rejected")
+			}
+			available = false
+			for _, route := range recoveryHandlers(server) {
+				response := httptest.NewRecorder()
+				route.handler(response, recoveryRequest(route.path, validRecoveryBody, recoveryPrincipal()))
+				if response.Code != http.StatusServiceUnavailable {
+					t.Fatalf("%s accepted drift: %d", route.name, response.Code)
+				}
+			}
+			op := platformbackup.Operation{Project: "demo", Environment: "development"}
+			if err := server.validatePlatformRecoveryExecution(context.Background(), op, kind); err == nil {
+				t.Fatal("worker accepted changed qualification")
+			}
+			if checks < 4 {
+				t.Fatal("qualification was cached")
+			}
+			server.ValidateManagedPlatformRecovery = nil
+			if server.platformRecoveryQualified(context.Background(), "demo", "development", kind) {
+				t.Fatal("release flag alone enabled recovery")
 			}
 		})
 	}

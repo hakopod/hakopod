@@ -119,6 +119,9 @@ type NeonLifecycleState struct {
 // API store, object-storage recovery, backup/restore, and real-cluster cases
 // have all passed. Exercising this adapter alone cannot change that gate.
 func NeonRuntimeQualification() Capability {
+	if NeonReleaseQualified() {
+		return Capability{Available: true, ClusterQualified: true, PublicQualified: false, Reason: "Neon is qualified for private cluster use; public endpoints remain unavailable"}
+	}
 	return Capability{Available: false, ClusterQualified: false, PublicQualified: false, Reason: "Neon runtime, durable API state, object-storage recovery, backup and real-cluster acceptance remain unqualified"}
 }
 

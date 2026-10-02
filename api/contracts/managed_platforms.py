@@ -63,7 +63,7 @@ schemas['ManagedPlatformDefaults'] = {'oneOf':[ref('SupabasePlatformDefaults'),r
 schemas['ManagedPlatformCapability'] = obj({'available':B,'cluster_qualified':B,'public_qualified':B,'reason':S}, ['available','cluster_qualified','public_qualified','reason'])
 schemas['ManagedPlatformComponent'] = obj({'name':S,'image':S,'resources':ref('ManagedPlatformResources'),'replicas':I,'ports':array(I),'secret_keys':array(S),'storage_keys':array(S)}, ['name','image','resources','replicas','ports','secret_keys','storage_keys'])
 schemas['ManagedPlatformPlan'] = obj({'namespace':S,'components':array(ref('ManagedPlatformComponent')),'public_service':S,'storage_class':S,'capability':ref('ManagedPlatformCapability')}, ['namespace','components','public_service','storage_class','capability'])
-schemas['ManagedPlatformCatalogNode'] = obj({'name':S,'uid':S}, ['name','uid'])
+schemas['ManagedPlatformCatalogNode'] = obj({'name':S,'uid':S,'architecture':S,'operating_system':S}, ['name','uid','architecture','operating_system'])
 schemas['ManagedPlatformCatalogEntry'] = obj({'kind':{'type':'string','enum':['neon','supabase']},'version':S,'minimum_nodes':I,'maximum_nodes':I,'required_secret_keys':array(S),'default_spec':ref('ManagedPlatformDefaults'),'capability':ref('ManagedPlatformCapability')}, ['kind','version','minimum_nodes','maximum_nodes','required_secret_keys','default_spec','capability'])
 schemas['ManagedPlatformCatalog'] = obj({'project':S,'environment':S,'storage_class':S,'nodes':{'type':'array','items':ref('ManagedPlatformCatalogNode'),'maxItems':48},'secret_references':{'type':'array','items':ref('ManagedPlatformSecretReference'),'maxItems':64},'items':{'type':'array','items':ref('ManagedPlatformCatalogEntry'),'maxItems':2}}, ['project','environment','storage_class','nodes','secret_references','items'])
 schemas['ManagedPlatformReview'] = obj({'id':S,'expected_revision':I,'kind':{'type':'string','enum':['create','update','delete']},'request_hash':S,'authority_fingerprint':S,'capacity_fingerprint':S,'expires_at':T,'blocked_reasons':array(S)}, ['id','expected_revision','kind','request_hash','expires_at','blocked_reasons'])
@@ -73,6 +73,33 @@ schemas['ManagedPlatformOperation'] = obj({'id':S,'platform_id':S,'revision':I,'
 schemas['ManagedPlatformIntent'] = obj({'id':S,'project':S,'environment':S,'expected_revision':I,'kind':{'type':'string','enum':['create','update','delete']},'spec':ref('ManagedPlatformSpec'),'review':ref('ManagedPlatformReview'),'confirm_name':S}, ['project','environment','expected_revision','kind','spec'])
 schemas['ManagedPlatformAcceptIntent'] = obj(schemas['ManagedPlatformIntent']['properties'], ['id','project','environment','expected_revision','kind','spec','review'])
 schemas['ManagedPlatformReviewResponse'] = obj({'platform':ref('ManagedPlatform'),'plan':ref('ManagedPlatformPlan'),'review':{'anyOf':[ref('ManagedPlatformReview'),{'type':'null'}]},'blocked':B}, ['platform','plan','review','blocked'])
+platform_id = {'type':'string','pattern':'^[0-9a-f]{32}$'}
+schemas['ManagedPlatformRecoveryIntent'] = obj({
+    'kind':{'type':'string','enum':['backup','restore']}, 'project':S, 'environment':S,
+    'source_platform_id':platform_id, 'target_platform_id':platform_id,
+    'artifact_id':platform_id, 'destination_id':platform_id,
+    'destination_revision':{'type':'integer','minimum':1},
+    'expected_source_revision':{'type':'integer','minimum':1},
+    'expected_target_revision':{'type':'integer','minimum':1},
+}, ['kind','project','environment','source_platform_id','expected_source_revision'])
+schemas['ManagedPlatformRecoveryReview'] = obj({
+    'id':S, 'intent':ref('ManagedPlatformRecoveryIntent'), 'request_hash':S,
+    'authority_fingerprint':S, 'expires_at':T,
+}, ['id','intent','request_hash','authority_fingerprint','expires_at'])
+schemas['ManagedPlatformRecoveryRequest'] = {'allOf':[
+    ref('ManagedPlatformRecoveryIntent'), obj({'confirm_target_name':S}),
+]}
+schemas['ManagedPlatformRecoveryAcceptRequest'] = {'allOf':[
+    ref('ManagedPlatformRecoveryRequest'), obj({'review':ref('ManagedPlatformRecoveryReview')}, ['review']),
+]}
+schemas['ManagedPlatformRecoveryOperation'] = obj({
+    'id':S, 'kind':{'type':'string','enum':['backup','restore']}, 'project':S,
+    'environment':S, 'status':S, 'phase':S, 'message':S,
+    'source_platform_id':S, 'target_platform_id':S, 'artifact_id':S,
+    'result_artifact_id':S, 'destination_id':S, 'destination_revision':I,
+    'expected_source_revision':I, 'expected_target_revision':I,
+    'cancel_requested':B,
+}, ['id','kind','project','environment','status','phase','message','source_platform_id','expected_source_revision','cancel_requested'])
 
 route('/managed-platforms','get','listManagedPlatforms',items('ManagedPlatform'),scope=True)
 route('/managed-platforms/catalog','get','getManagedPlatformCatalog',ref('ManagedPlatformCatalog'),scope=True)
@@ -87,3 +114,12 @@ route('/managed-platforms/reviews','post','reviewManagedPlatform',ref('ManagedPl
 route('/managed-platforms/operations','post','acceptManagedPlatform',ref('ManagedPlatformOperation'),ref('ManagedPlatformAcceptIntent'),'202',idem=True)
 for action in ['/managed-platforms/reviews','/managed-platforms/operations']:
     paths[action]['post']['description'] = 'Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource.'
+route('/managed-platforms/{id}/recovery-operations','get','listManagedPlatformRecoveryOperations',items('ManagedPlatformRecoveryOperation'))
+route('/managed-platform-recovery-operations/{id}','get','getManagedPlatformRecoveryOperation',ref('ManagedPlatformRecoveryOperation'))
+route('/managed-platform-recovery/reviews','post','reviewManagedPlatformRecovery',ref('ManagedPlatformRecoveryReview'),ref('ManagedPlatformRecoveryRequest'))
+route('/managed-platform-recovery/operations','post','acceptManagedPlatformRecovery',ref('ManagedPlatformRecoveryOperation'),ref('ManagedPlatformRecoveryAcceptRequest'),'202',idem=True)
+route('/managed-platform-recovery-operations/{id}/cancel','post','cancelManagedPlatformRecoveryOperation',obj({'cancel_requested':B}, ['cancel_requested']),status='202')
+for action in ['/managed-platforms/{id}/recovery-operations','/managed-platform-recovery-operations/{id}','/managed-platform-recovery-operations/{id}/cancel']:
+    paths[action][next(iter(paths[action]))]['parameters'][0]['schema'] = platform_id
+paths['/managed-platform-recovery/operations']['post']['responses']['202']['description'] = 'Accepted'
+paths['/managed-platform-recovery-operations/{id}/cancel']['post']['responses']['202']['description'] = 'Accepted'

@@ -17,7 +17,7 @@ import (
 func enableManagedPlatformCapacity(s *Store, nodes ...string) managedplatform.CapacityPolicy {
 	policy := managedplatform.CapacityPolicy{Enabled: true, Pool: "fixture", Capacity: managedplatform.Capacity{CPUMilli: 12000, MemoryBytes: 48 << 30, StorageGiB: 512}, StorageClass: "encrypted-block"}
 	for _, name := range nodes {
-		policy.Nodes = append(policy.Nodes, managedplatform.CapacityNode{Name: name, UID: "uid-" + name})
+		policy.Nodes = append(policy.Nodes, managedplatform.CapacityNode{Name: name, UID: "uid-" + name, Architecture: "amd64", OperatingSystem: "linux"})
 	}
 	s.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
 		return policy, nil
@@ -519,9 +519,9 @@ func TestManagedPlatformAndDatabaseCapacitySerialize(t *testing.T) {
 		Capacity:     managedplatform.Capacity{CPUMilli: max(platformPeak.CPUMilli, databaseCPU), MemoryBytes: max(platformPeak.MemoryBytes, DatabaseMemoryReservation(d.Spec)), StorageGiB: max(platformTotal.StorageGiB, DatabaseStorageReservation(d.Spec))},
 		StorageClass: "encrypted-block",
 		Nodes: []managedplatform.CapacityNode{
-			{Name: "node-a", UID: "uid-node-a"},
-			{Name: "node-b", UID: "uid-node-b"},
-			{Name: "node-c", UID: "uid-node-c"},
+			{Name: "node-a", UID: "uid-node-a", Architecture: "amd64", OperatingSystem: "linux"},
+			{Name: "node-b", UID: "uid-node-b", Architecture: "amd64", OperatingSystem: "linux"},
+			{Name: "node-c", UID: "uid-node-c", Architecture: "amd64", OperatingSystem: "linux"},
 		},
 	}
 	s.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
@@ -653,7 +653,7 @@ func TestManagedPlatformCapacityIncludesCommittedCrossEnvironmentUsage(t *testin
 			}
 			platformPeak := maxNodeCapacity(reservationsByNode(platformReservations))
 			platformTotal := managedplatform.ReservationTotal(platformReservations)
-			policy := managedplatform.CapacityPolicy{Enabled: true, Pool: "fixture", Capacity: platformPeak, StorageClass: "encrypted-block", Nodes: []managedplatform.CapacityNode{{Name: "node-a", UID: "uid-node-a"}, {Name: "node-b", UID: "uid-node-b"}, {Name: "node-c", UID: "uid-node-c"}}}
+			policy := managedplatform.CapacityPolicy{Enabled: true, Pool: "fixture", Capacity: platformPeak, StorageClass: "encrypted-block", Nodes: []managedplatform.CapacityNode{{Name: "node-a", UID: "uid-node-a", Architecture: "amd64", OperatingSystem: "linux"}, {Name: "node-b", UID: "uid-node-b", Architecture: "amd64", OperatingSystem: "linux"}, {Name: "node-c", UID: "uid-node-c", Architecture: "amd64", OperatingSystem: "linux"}}}
 			policy.Capacity.StorageGiB = platformTotal.StorageGiB
 			s.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
 				return policy, nil

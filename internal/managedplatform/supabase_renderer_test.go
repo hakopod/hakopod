@@ -258,6 +258,12 @@ func TestSupabaseRendererEnforcesSharedVolumeAndStorageContracts(t *testing.T) {
 		if pod.NodeSelector["kubernetes.io/hostname"] != "worker-a" {
 			t.Fatalf("%s is not pinned with the shared RWO claims", deployment.Name)
 		}
+		if pod.NodeSelector["kubernetes.io/arch"] != "amd64" {
+			t.Fatalf("%s does not select the qualified amd64 architecture", deployment.Name)
+		}
+		if pod.NodeSelector["kubernetes.io/os"] != "linux" {
+			t.Fatalf("%s does not select the qualified Linux operating system", deployment.Name)
+		}
 		if deployment.Name == "supabase-studio" {
 			for _, mount := range pod.Containers[0].VolumeMounts {
 				if mount.Name == "edge-functions" && !mount.ReadOnly {
@@ -583,10 +589,23 @@ func TestSupabaseDatabaseKeyInitializerExecutesSafely(t *testing.T) {
 		if err := os.WriteFile(key, []byte(strings.Repeat("b", 64)), 0640); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(key, 0640); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.Mode().Perm() != 0640 {
+			t.Fatalf("wrong-mode fixture has mode %04o", before.Mode().Perm())
+		}
 		if err := runSupabaseKeyInitializer(init, directory); err == nil {
 			t.Fatal("wrong-mode key was accepted")
 		}
-		info, _ := os.Stat(key)
+		info, err := os.Stat(key)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if info.Mode().Perm() != 0640 {
 			t.Fatal("wrong-mode key permissions were silently changed")
 		}
@@ -862,8 +881,110 @@ func TestSupabaseRendererRejectsUncoordinatedSecretRotation(t *testing.T) {
 	changedSetting.PreviousSpec = &prior
 	changedSetting.Revision = 2
 	changedSetting.Spec.Supabase.JWTExpirySeconds++
-	if _, err := RenderSupabase(changedSetting); err == nil {
-		t.Fatal("first-boot-only database setting update was accepted")
+	changedSettingResult, err := RenderSupabase(changedSetting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingMarker := false
+	for _, object := range changedSettingResult.Objects {
+		marker, ok := object.(*corev1.ConfigMap)
+		if ok && marker.Name == "supabase-database-credentials-r2" {
+			settingMarker = len(marker.Data["reference_fingerprint"]) == 64
+		}
+	}
+	if !settingMarker {
+		t.Fatal("JWT expiry update has no durable database migration marker")
+	}
+	databaseRotation := rendererFixture()
+	prior = databaseRotation.Spec
+	prior.Secrets = cloneMap(databaseRotation.Spec.Secrets)
+	priorConfig = *databaseRotation.Spec.Supabase
+	prior.Supabase = &priorConfig
+	databaseRotation.DatabaseClaim = ObservedClaimState{Observed: true, UID: "database-claim-uid"}
+	databaseRotation.PreviousSpec = &prior
+	databaseRotation.Revision = 2
+	for _, key := range supabaseDatabaseCredentialKeys {
+		ref := databaseRotation.Spec.Secrets[key]
+		ref.Revision++
+		databaseRotation.Spec.Secrets[key] = ref
+	}
+	rotated, err := RenderSupabase(databaseRotation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerFound := false
+	for _, object := range rotated.Objects {
+		marker, ok := object.(*corev1.ConfigMap)
+		if !ok || marker.Name != "supabase-database-credentials-r2" {
+			continue
+		}
+		markerFound = len(marker.Data["reference_fingerprint"]) == 64 && len(marker.Data) == 1 && marker.Immutable != nil && *marker.Immutable
+	}
+	if !markerFound {
+		t.Fatal("database credential rotation has no immutable non-secret completion marker")
+	}
+	unsafeKey := rendererFixture()
+	prior = unsafeKey.Spec
+	prior.Secrets = cloneMap(unsafeKey.Spec.Secrets)
+	priorConfig = *unsafeKey.Spec.Supabase
+	prior.Supabase = &priorConfig
+	unsafeKey.DatabaseClaim = ObservedClaimState{Observed: true, UID: "database-claim-uid"}
+	unsafeKey.PreviousSpec = &prior
+	unsafeKey.Revision = 2
+	ref := unsafeKey.Spec.Secrets["jwt-secret"]
+	ref.Revision++
+	unsafeKey.Spec.Secrets["jwt-secret"] = ref
+	if _, err := RenderSupabase(unsafeKey); err == nil {
+		t.Fatal("JWT secret rotation without a migration protocol was accepted")
+	}
+}
+
+func TestSupabaseRendererAllowsOnlyBoundCurrentCreateDatabaseClaim(t *testing.T) {
+	in := rendererFixture()
+	in.DatabaseClaim = ObservedClaimState{Observed: true, UID: types.UID("database-claim-uid")}
+	in.DatabaseClaimFromCurrentCreate = true
+	if _, err := RenderSupabase(in); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := in
+	missing.DatabaseClaim.UID = ""
+	if _, err := RenderSupabase(missing); err == nil {
+		t.Fatal("missing current-create database claim was accepted")
+	}
+
+	wrongRevision := in
+	wrongRevision.Revision = 2
+	if _, err := RenderSupabase(wrongRevision); err == nil {
+		t.Fatal("later revision claimed current-create provisioning")
+	}
+
+	withPrevious := in
+	previous := in.Spec
+	withPrevious.PreviousSpec = &previous
+	if _, err := RenderSupabase(withPrevious); err == nil {
+		t.Fatal("update claimed current-create provisioning")
+	}
+}
+
+func TestSupabaseDatabaseMigrationFingerprintCoversExpiryAndCredentialReferences(t *testing.T) {
+	base := rendererFixture().Spec
+	original := supabaseDatabaseCredentialFingerprint(base)
+	expiry := base
+	expiry.Secrets = cloneMap(base.Secrets)
+	expiryConfig := *base.Supabase
+	expiry.Supabase = &expiryConfig
+	expiry.Supabase.JWTExpirySeconds++
+	if supabaseDatabaseCredentialFingerprint(expiry) == original {
+		t.Fatal("JWT expiry did not change the database migration fingerprint")
+	}
+	credentials := base
+	credentials.Secrets = cloneMap(base.Secrets)
+	ref := credentials.Secrets["auth-database-url"]
+	ref.Revision++
+	credentials.Secrets["auth-database-url"] = ref
+	if supabaseDatabaseCredentialFingerprint(credentials) == original {
+		t.Fatal("database credential reference did not change the migration fingerprint")
 	}
 }
 

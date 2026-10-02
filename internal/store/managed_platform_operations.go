@@ -244,7 +244,7 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return false
 	}
 	if resourceKind == "configmap" {
-		for _, base := range []string{"supabase-database-bootstrap", "supabase-envoy-public", "supabase-functions", "supabase-pooler"} {
+		for _, base := range []string{"supabase-database-bootstrap", "supabase-database-credentials", "supabase-envoy-public", "supabase-functions", "supabase-pooler"} {
 			if name == fmt.Sprintf("%s-r%d", base, op.Revision) {
 				return true
 			}
@@ -256,7 +256,15 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return ok && storage[name]
 	}
 	if resourceKind == "networkpolicy" {
-		return name == "supabase-default-deny-and-internal" || name == "supabase-envoy-ingress" || name == "supabase-edge-approved-https"
+		if name == "supabase-default-deny-and-internal" || name == "supabase-envoy-ingress" || name == "supabase-edge-approved-https" {
+			return true
+		}
+		for planned := range components {
+			if name == "supabase-"+planned+"-internal" {
+				return true
+			}
+		}
+		return false
 	}
 	for planned := range components {
 		workload := "supabase-" + planned

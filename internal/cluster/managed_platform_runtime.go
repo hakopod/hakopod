@@ -76,6 +76,8 @@ type ManagedPlatformRuntime struct {
 	Cluster                         *Client
 	EncryptionKey                   []byte
 	validateManagedPlatformCapacity func(context.Context, *store.Store, string) error
+	ValidateSupabaseQualification   func(context.Context) error
+	ValidateNeonQualification       func(context.Context) error
 }
 
 func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, state *store.Store, op store.ManagedPlatformOperation) error {
@@ -105,6 +107,11 @@ func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, s
 	}
 	switch op.Spec.Kind {
 	case "supabase":
+		if op.Kind != "delete" && r.ValidateSupabaseQualification != nil {
+			if err = r.ValidateSupabaseQualification(ctx); err != nil {
+				return managedPlatformRuntimeError("supabase_qualification", err)
+			}
+		}
 		if snapshot.Supabase == nil {
 			return managedPlatformRuntimeError("supabase_snapshot_missing", fmt.Errorf("Supabase runtime snapshot is unavailable"))
 		}
@@ -119,6 +126,11 @@ func (r *ManagedPlatformRuntime) ReconcileManagedPlatform(ctx context.Context, s
 		}
 		return r.Cluster.ReconcileSupabaseOperation(ctx, state, request)
 	case "neon":
+		if op.Kind != "delete" && r.ValidateNeonQualification != nil {
+			if err = r.ValidateNeonQualification(ctx); err != nil {
+				return managedPlatformRuntimeError("neon_qualification", err)
+			}
+		}
 		if snapshot.Neon == nil {
 			return managedPlatformRuntimeError("neon_snapshot_missing", fmt.Errorf("Neon runtime snapshot is unavailable"))
 		}

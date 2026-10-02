@@ -14,14 +14,18 @@ import (
 const (
 	vitessOperatorSource     = "10a3b742c02c38f97d554739d5a257197daa48f9"
 	vitessServerSource       = "0f1ed062dec171e0adfab796110549752901e299"
-	vitessOperatorImage      = "docker.io/planetscale/vitess-operator:v2.16.0@sha256:f0a6f6beec2a5e54872eadc84fca43c3093a076b74dc1a287ad78c35f1c772e2"
-	vitessServerImage        = "docker.io/vitess/lite:v23.0.6@sha256:4a6fee36e049abe76e442eb43d7d198f5fe285d480e1888ee36b3a22b1914a76"
+	vitessOperatorImage      = "ghcr.io/hakopod/managed-vitess-operator:2.16.0-hakopod.8@sha256:6c84d315b2981220de8bb5c6a76fbb8ea392ed2b8dbe86f1b9f7fd2541af1210"
+	vitessServerImage        = "ghcr.io/hakopod/managed-vitess-runtime:23.0.6-hakopod.6@sha256:0239855a213c6f14161aa07d7ecfc73da8694c44a2ceed237f88068a3450079d"
 	vitessEtcdImage          = "quay.io/coreos/etcd:v3.5.17@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
 	vitessComponentLabel     = "hakopod.io/vitess-component"
 	vitessIdentityAnnotation = "hakopod.io/vitess-identity"
 	vitessConfigSecret       = "database-vitess-config"
 	vitessTLSPath            = "/etc/hakopod/tls"
 	vitessConfigPath         = "/etc/hakopod/vitess"
+	// Change this only in the final candidate whose complete native evidence
+	// and exact image digests ship with the release. The acceptance build flag
+	// cannot enable a shipping binary.
+	vitessReleaseQualified = false
 )
 
 var vitessDatabaseResource = schema.GroupVersionResource{Group: "planetscale.com", Version: "v2", Resource: "vitessclusters"}
@@ -161,6 +165,9 @@ func vitessDatabaseSpec(d database.Resource, resources map[string]any) map[strin
 func vitessRuntimeSupported(s database.Spec) error {
 	if err := s.ValidateVitess(); err != nil {
 		return err
+	}
+	if vitessNativeAcceptance || vitessReleaseQualified {
+		return nil
 	}
 	return fmt.Errorf("managed Vitess is unavailable: native replication verification and recovery acceptance are incomplete")
 }

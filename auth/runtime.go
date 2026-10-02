@@ -9,6 +9,7 @@ import (
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/management"
+	"github.com/hakopod/hakopod/internal/platformconfig"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -86,6 +87,8 @@ type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
 type RuntimeConfig struct {
+	// ManagedPlatformConfigFile is operator input, never a customer setting.
+	ManagedPlatformConfigFile string
 	// ClickHouseSandbox requires the operator-installed, attested runtime.
 	ClickHouseSandbox bool
 	StorageBudgetTx   func(context.Context, pgx.Tx, string, string) (int64, error)
@@ -200,6 +203,9 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 		return nil, nil, err
 	}
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true, DatabasePublicEndpointAuthority: config.DatabasePublicAuthority}
+	if err = platformconfig.Attach(server, config.ManagedPlatformConfigFile, s.config.EncryptionKey, platformconfig.Options{ExternalCapacity: true, CatalogCapacity: s.managedPlatformCatalogCapacity}); err != nil {
+		return nil, nil, err
+	}
 	if err = server.ConfigureBackups(config.Backups); err != nil {
 		return nil, nil, err
 	}
@@ -222,9 +228,30 @@ func (s *Service) validateManagedPlatformCapacity(ctx context.Context, project, 
 	}
 	reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
 	for _, node := range policy.Nodes {
-		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Capacity: policy.Capacity, Ownership: owned}
+		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, Capacity: policy.Capacity, Ownership: owned}
 	}
 	return s.runtime.CheckManagedPlatformNodeReservations(bounded, reservations)
+}
+
+func (s *Service) managedPlatformCatalogCapacity(ctx context.Context, project, environment string) (managedplatform.CapacityPolicy, error) {
+	if s.store == nil || s.store.Pool == nil || s.store.ManagedPlatformCapacityBudget == nil {
+		return managedplatform.CapacityPolicy{}, errors.New("managed platform workspace capacity is unavailable")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	tx, err := s.store.Pool.Begin(bounded)
+	if err != nil {
+		return managedplatform.CapacityPolicy{}, err
+	}
+	defer tx.Rollback(bounded)
+	policy, err := s.store.ManagedPlatformCapacityBudget(bounded, tx, project, environment)
+	if err != nil {
+		return managedplatform.CapacityPolicy{}, err
+	}
+	if err = policy.Validate(); err != nil {
+		return managedplatform.CapacityPolicy{}, err
+	}
+	return policy, nil
 }
 
 func (s *Service) CheckWorkloadPool(ctx context.Context, node, pool, runtime string) error {

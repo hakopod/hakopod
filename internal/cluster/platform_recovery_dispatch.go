@@ -10,9 +10,10 @@ import (
 )
 
 type PlatformRecoveryRuntime struct {
-	Store    *store.Store
-	Supabase platformbackup.Runtime
-	Neon     platformbackup.Runtime
+	Store                 *store.Store
+	Supabase              platformbackup.Runtime
+	Neon                  platformbackup.Runtime
+	ValidateQualification func(context.Context, platformbackup.Operation, string) error
 }
 
 func (r *PlatformRecoveryRuntime) runtime(ctx context.Context, op platformbackup.Operation) (platformbackup.Runtime, error) {
@@ -22,6 +23,14 @@ func (r *PlatformRecoveryRuntime) runtime(ctx context.Context, op platformbackup
 	item, _, err := r.Store.ManagedPlatformRecoveryContract(ctx, op.SourcePlatformID, op.ExpectedSourceRevision)
 	if err != nil {
 		return nil, err
+	}
+	if !platformbackup.RecoveryCleanupFromContext(ctx) {
+		if r.ValidateQualification == nil {
+			return nil, fmt.Errorf("managed platform recovery qualification is unavailable")
+		}
+		if err := r.ValidateQualification(ctx, op, item.Spec.Kind); err != nil {
+			return nil, err
+		}
 	}
 	switch item.Spec.Kind {
 	case "supabase":

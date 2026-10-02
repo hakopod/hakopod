@@ -3,13 +3,41 @@ package cluster
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"maps"
 	"os"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 )
+
+func TestRecoveryMutationFencesRejectQualificationDrift(t *testing.T) {
+	changed := errors.New("operator storage identity changed")
+	op := platformbackup.Operation{ID: "recovery-operation", Lease: "current-lease"}
+	ctx := platformbackup.WithRecoveryOperation(context.Background(), op)
+	check := func(_ context.Context, got platformbackup.Operation) error {
+		if got.ID != op.ID || got.Lease != op.Lease {
+			t.Fatal("qualification lost operation identity")
+		}
+		return changed
+	}
+	supabase := &SupabaseRecoveryRuntime{ValidateQualification: check}
+	neon := &NeonRecoveryRuntime{ValidateQualification: check}
+	for name, fence := range map[string]func() error{
+		"supabase":       func() error { return supabase.fence(ctx) },
+		"neon":           func() error { return neon.fence(ctx, op) },
+		"neon-lifecycle": func() error { return (neonRecoveryLifecycle{runtime: neon, recovery: op}).Heartbeat(ctx) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := fence(); !errors.Is(err, changed) {
+				t.Fatalf("mutation reached the store after drift: %v", err)
+			}
+		})
+	}
+}
 
 func TestSupabaseRecoveryPreservesPoolerAdministrativeAuthority(t *testing.T) {
 	source := managedplatform.Spec{Secrets: map[string]managedplatform.SecretReference{}}
