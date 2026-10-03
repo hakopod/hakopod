@@ -46,4 +46,15 @@ node names, one Equal NoSchedule toleration and the optional verified
 RuntimeClass. Other blocking taints are refused. Empty policy preserves the default
 scheduling behavior. Cleanup does not require an unexpired scheduling gate.
 
+For development clusters on separate hosts, place a protected `host-binding.json`
+beside the bridge's TLS files. Use `schema_version: 1`, the host's private IPv4
+`address`, `haproxy_path: "/usr/sbin/haproxy"`, its exact `haproxy_sha256`, and
+the installed `haproxy` user's numeric `uid` and `gid`. The helper checks the
+binary, service identity and assigned address before use. It runs native
+HAProxy as that user with a three-hour limit, 128 MiB of memory and half a CPU.
+The relay certificate must cover that IP address and chain to the bridge CA.
+The bridge uses the same address for routing, certificate verification and its
+single-host egress rule. Without this file, the existing Docker-host bridge
+continues to use `172.18.0.1`. Include the binding in the protected run inventory.
+
 Qualification remains false until this complete destructive run succeeds on the named development cluster and its output passes the independent release verifier. The driver does not turn a source-only review, a blocked two-node run, or a development fixture into runtime qualification.

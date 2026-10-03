@@ -5,8 +5,11 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import stat
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -17,6 +20,86 @@ SPEC.loader.exec_module(BRIDGE)
 
 
 class Tests(unittest.TestCase):
+    def native_binding(self):
+        return {"schema_version":1,"address":"10.242.1.4","haproxy_path":"/usr/sbin/haproxy","haproxy_sha256":hashlib.sha256(b"native-haproxy").hexdigest(),"uid":111,"gid":112}
+
+    def test_native_host_binding_checks_binary_user_and_local_private_address(self):
+        for changed in (None, "hash", "binary-owner", "binary-mode", "user", "address-missing"):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); value=self.native_binding()
+                if changed=="hash": value["haproxy_sha256"]="a"*64
+                path=root/"host-binding.json"; path.write_text(json.dumps(value)); path.chmod(0o600)
+                info=SimpleNamespace(st_mode=stat.S_IFREG| (0o777 if changed=="binary-mode" else 0o755),st_uid=1 if changed=="binary-owner" else 0,st_size=14)
+                user=SimpleNamespace(pw_uid=113 if changed=="user" else 111,pw_gid=112)
+                addresses=[] if changed=="address-missing" else [{"addr_info":[{"family":"inet","local":"10.242.1.4"}]}]
+                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(Path,"lstat",return_value=info), mock.patch.object(Path,"read_bytes",return_value=b"native-haproxy"), mock.patch.object(BRIDGE.pwd,"getpwnam",return_value=user), mock.patch.object(BRIDGE,"run",return_value=json.dumps(addresses)):
+                    if changed:
+                        with self.assertRaises(RuntimeError): BRIDGE.host_binding()
+                    else: self.assertEqual(BRIDGE.host_binding(),value)
+
+    def test_native_host_binding_refuses_unsafe_address_and_unprotected_receipt(self):
+        for address in ("0.0.0.0","127.0.0.1","169.254.169.254","8.8.8.8","::1","10.242.1.4\nbackend injected",2130706433):
+            with self.subTest(address=address), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); value=self.native_binding(); value["address"]=address
+                path=root/"host-binding.json"; path.write_text(json.dumps(value)); path.chmod(0o600)
+                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"run") as run:
+                    with self.assertRaises(RuntimeError): BRIDGE.host_binding()
+                    run.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); path=root/"host-binding.json"; path.write_text(json.dumps(self.native_binding())); path.chmod(0o644)
+            with mock.patch.object(BRIDGE,"ROOT",root):
+                with self.assertRaisesRegex(RuntimeError,"protected"): BRIDGE.host_binding()
+
+    def test_native_relay_address_matches_tls_verification_and_egress(self):
+        with mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
+            objects=json.loads(BRIDGE.manifest(["a"*32],relay_address="10.242.1.4"))["items"]
+        config=next(item for item in objects if item["kind"]=="ConfigMap")["data"]["haproxy.cfg"]
+        self.assertIn("server relay 10.242.1.4:19443 ssl",config)
+        self.assertIn("verify required verifyhost 10.242.1.4",config)
+        self.assertNotIn("172.18.0.1",config)
+        policy=next(item for item in objects if item["metadata"]["name"]=="hakopod-neon-control-egress")
+        self.assertEqual(policy["spec"]["egress"][0],{"to":[{"ipBlock":{"cidr":"10.242.1.4/32"}}],"ports":[{"protocol":"TCP","port":19443}]})
+
+    def test_native_host_uses_bounded_unprivileged_service_and_keeps_legacy_container(self):
+        for native in (False,True):
+            with self.subTest(native=native), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); calls=[]
+                binding=self.native_binding() if native else None
+                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"host_binding",return_value=binding), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"), mock.patch.object(BRIDGE.os,"chown"), mock.patch.object(BRIDGE.subprocess,"run"), mock.patch.object(BRIDGE,"run",side_effect=lambda args:calls.append(args)):
+                    previous=os.umask(0o077)
+                    try: BRIDGE.start_host()
+                    finally: os.umask(previous)
+                command=calls[-1]; config=(root/"host-runtime/haproxy.cfg").read_text()
+                self.assertEqual(stat.S_IMODE((root/"host-runtime").stat().st_mode),0o750)
+                address="10.242.1.4" if native else "172.18.0.1"
+                self.assertIn("-verify_ip",calls[0]); self.assertIn(address,calls[0])
+                self.assertIn("bind "+address+":19443 ssl",config)
+                self.assertIn("verify required ssl-min-ver TLSv1.2",config)
+                for bound in ("--property=RuntimeMaxSec=3h","--property=MemoryMax=134217728","--property=CPUQuota=50%","--property=NoNewPrivileges=yes"):
+                    self.assertIn(bound,command)
+                if native:
+                    self.assertNotIn("docker",command)
+                    for bound in ("--property=User=111","--property=Group=112","--property=TasksMax=64","--property=ProtectSystem=strict","--property=CapabilityBoundingSet=","/usr/sbin/haproxy"):
+                        self.assertIn(bound,command)
+                else: self.assertIn("docker",command)
+
+    def test_cleanup_stops_host_even_when_kubernetes_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(BRIDGE,"ROOT",Path(directory)), mock.patch.object(BRIDGE,"kube",side_effect=RuntimeError("unavailable")), mock.patch.object(BRIDGE,"stop_host") as stop:
+            with self.assertRaisesRegex(RuntimeError,"unavailable"): BRIDGE.cleanup("/kubeconfig")
+            stop.assert_called_once_with()
+
+    def test_host_stop_removes_only_matching_tls_copies_after_inactive(self):
+        for state in ("inactive","active"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); runtime=root/"host-runtime"; runtime.mkdir()
+                for name in ("ca.crt","relay.pem"):
+                    (runtime/name).write_bytes(b"fixture"); (runtime/name).chmod(0o440)
+                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"), mock.patch.object(BRIDGE,"run",side_effect=["active","",state]), mock.patch.object(Path,"lstat",return_value=SimpleNamespace(st_mode=stat.S_IFREG|0o440,st_uid=0,st_nlink=1)):
+                    if state=="active":
+                        with self.assertRaisesRegex(RuntimeError,"still active"): BRIDGE.stop_host()
+                    else: BRIDGE.stop_host()
+                self.assertEqual((runtime/"relay.pem").exists(),state=="active")
+
     def scheduling_fixture(self, directory):
         root = Path(directory)
         uids = {"node-"+str(i):str(i)*8+"-2222-3333-4444-555555555555" for i in range(1,4)}
