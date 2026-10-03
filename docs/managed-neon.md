@@ -17,6 +17,13 @@ and follow that timeline. Each compute permits 64 total PostgreSQL connections,
 including four reserved for administration. The connection proxy routes to
 compute zero; the replicas do not automatically replace it as writer.
 
+The Configure flow changes component CPU and memory through a reviewed
+revision. Storage size, object-store identity, node placement, membership and
+secret references stay fixed. Applying an allocation change can restart
+services and interrupt connections. Use a separate restore target to change
+the storage or topology. Native acceptance must verify the first allocation
+update after restore against the restored tenant, timeline and data.
+
 The source foundation requires a complete component allocation, versioned
 secret references, object-store scope and digest-pinned images. Its availability,
 cluster and public endpoint gates stay closed. These checks describe required
@@ -108,7 +115,7 @@ Neon stays unavailable until native lifecycle and recovery acceptance pass.
 Acceptance must prove tenant isolation, authenticated storage protocols,
 verified broker and controller-database TLS with wrong-CA, wrong-hostname and
 plaintext rejection, WAL quorum failure and fencing, pageserver replacement, durable
-controller recovery, compute restart, branch creation and deletion, credentials
+controller recovery, compute restart, owned tenant and timeline creation and deletion, credentials
 and connection limits, object-store outage, restore into a separate empty
 resource and complete owned cleanup. Physical zone and provider availability
 need separate infrastructure failure tests. Public endpoint availability cannot

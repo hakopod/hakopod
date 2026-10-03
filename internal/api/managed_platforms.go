@@ -127,6 +127,12 @@ func (s *Server) reviewManagedPlatform(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item.Project, item.Environment = current.Project, current.Environment
+		if in.Kind == "update" && current.Spec.Kind == "neon" {
+			if err := managedplatform.ValidateNeonResourceUpdate(current.Spec, in.Spec); err != nil {
+				problem(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+		}
 		if in.Kind == "delete" {
 			item.Spec = current.Spec
 		}
@@ -202,6 +208,12 @@ func (s *Server) acceptManagedPlatform(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Kind == "delete" {
 			item.Spec = current.Spec
+		}
+		if in.Kind == "update" && current.Spec.Kind == "neon" {
+			if err := managedplatform.ValidateNeonResourceUpdate(current.Spec, in.Spec); err != nil {
+				problem(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
 		}
 	}
 	plan, err := s.ManagedPlatformPlanner.PlanManagedPlatform(r.Context(), principal, item, in.ExpectedRevision, in.Kind)

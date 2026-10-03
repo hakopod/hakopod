@@ -203,6 +203,12 @@ ownership before external creation and checks observed resource identities
 before changing them. After a process restart, it resumes the durable operation
 instead of assuming that a matching Kubernetes name belongs to it.
 
+Neon configuration has two steps: **Resources** and **Review**. It changes CPU
+and memory allocations only. Storage size, node placement, compute and storage
+member counts, version and secret references are preserved from the loaded
+resource. The API rejects attempts to change those fields in place. To change
+storage or topology, restore into a separate platform with the desired setup.
+
 For Supabase, database password rotation is one complete bundle: the role
 bootstrap and all database client references move together. A successful
 rollout precedes old snapshot removal. JWT expiry can change through a reviewed
