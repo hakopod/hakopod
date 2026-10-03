@@ -96,6 +96,12 @@ Each attempt lasts at most five minutes, and each provider request at most two
 minutes. Failed renewal cancels the work; the old worker cannot keep retrying
 under a lost lease.
 
+Lease renewal can overlap a transaction that records provisioning progress.
+If PostgreSQL rejects that transaction with a serialization conflict, Hakopod
+retries the full transaction at most five times within the caller's deadline.
+Every retry checks the current lease and authority again. A revoked key,
+changed lease or other database error stops the retry.
+
 The recovery adapter closes the connection proxy and computes, records the
 committed WAL boundary, and waits for the attached pageserver to upload through
 that boundary. It then stops storage writers while copying a deterministic object
