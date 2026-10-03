@@ -237,13 +237,18 @@ class Driver:
         namespace="managed-platform-"+pid; deployment=json.loads(self.k("-n",namespace,"get","deployment","neon-proxy","-o","json"))
         secrets=[volume.get("secret",{}).get("secretName") for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume.get("name")=="proxy-auth"]
         if len(secrets)!=1 or not re.fullmatch(r"platform-tls-proxy-[0-9a-f]{16}-r1",secrets[0] or ""): raise RuntimeError("active Neon proxy TLS snapshot is ambiguous")
-        correct=self.proxy_auth_message(namespace,"service/neon-proxy",self.a.local_port,self.root/"managed-tls-ca.crt")
+        base=["--kubeconfig",self.a.kubeconfig,"--platform-id",pid]
+        self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","correct"],240)
+        try: correct=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
+        finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
         if correct!=b"R": raise RuntimeError("correct control-plane issuer did not reach PostgreSQL authentication")
-        self.command([sys.executable,self.a.control_plane_bridge,"wrong-start","--kubeconfig",self.a.kubeconfig,"--platform-id",pid,"--proxy-secret",secrets[0]],240)
-        try: wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
-        finally:self.command([sys.executable,self.a.control_plane_bridge,"wrong-stop","--kubeconfig",self.a.kubeconfig,"--platform-id",pid],240)
+        self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","wrong"],240)
+        try:
+            wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
+            self.command([sys.executable,self.a.control_plane_bridge,"probe-verify-wrong",*base],60)
+        finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
         if wrong!=b"E": raise RuntimeError("wrong control-plane issuer was not rejected")
-        return {"correct_issuer_authenticated":True,"wrong_issuer_refused":True}
+        return {"correct_issuer_reached_authentication":True,"wrong_issuer_refused":True}
     def sql(self,ns,pod,statement):
         return self.command(["kubectl","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",ns,"exec",pod,"-c","compute","--","psql","-XAt","postgresql://cloud_admin@127.0.0.1:55433/postgres?sslmode=require","-v","ON_ERROR_STOP=1","-c",statement],45).strip()
     def compute_pod(self,pid):
