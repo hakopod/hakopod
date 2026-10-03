@@ -21,5 +21,9 @@ then replaces the proxy snapshot with a short-lived leaf through the same
 fenced runtime-mutation journal used by production maintenance. The run waits
 for automatic renewal, requires stable CA trust and records which individual
 snapshots changed. It does not assume that unrelated healthy leaves rotate.
+The control-plane bridge uses a private CA, mutual TLS to its loopback relay,
+and an exact namespace allowlist. The driver proves that the pinned proxy
+client reaches PostgreSQL authentication with that CA and rejects a separately
+issued CA with a certificate-verification error.
 
 Qualification remains false until this complete destructive run succeeds on the named development cluster and its output passes the independent release verifier. The driver does not turn a source-only review, a blocked two-node run, or a development fixture into runtime qualification.
