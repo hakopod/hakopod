@@ -295,22 +295,50 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"actual pod CPU"): driver.compute_cpu(pid,600)
     def test_restart_waits_for_exact_owned_primary_and_storage_replacements(self):
         driver=self.bare_driver(); pid="a"*32; driver.a.kubeconfig="/protected/kubeconfig"; driver.run_id="b"*32; namespace="managed-platform-"+pid
+        probe={"platform_id":pid,"platform_revision":4,"namespace_uid":"namespace-uid","ownership_capability_verified":True,"attached_pageserver":"pageserver-1","attached_pageserver_node_id":2,"tenant_id":"1"*32,"tenant_generation":7}
+        driver.api=mock.Mock(side_effect=lambda method,path,*args: {"revision":4} if method=="GET" else probe)
         def pod(component,uid,ready=True,owner=None):
             role="compute" if component.startswith("compute") else "pageserver"
             return {"metadata":{"name":"neon-"+component+"-0","uid":uid,"labels":{"hakopod.io/neon-role":role,"app.kubernetes.io/component":component},"ownerReferences":[{"kind":"StatefulSet","name":"neon-"+component,"uid":owner or "set-"+component}]},"status":{"containerStatuses":[{"ready":True}] if ready else [],"conditions":[{"type":"Ready","status":"True"}]}}
-        before=[pod("compute-0","old-primary"),pod("compute-1","unchanged-replica"),pod("pageserver-0","old-storage")]
-        not_ready=[pod("compute-0","new-primary",False),before[1],pod("pageserver-0","new-storage",False)]
-        ready=[pod("compute-0","new-primary"),before[1],pod("pageserver-0","new-storage")]
+        before=[pod("compute-0","old-primary"),pod("compute-1","unchanged-replica"),pod("pageserver-1","old-storage"),pod("pageserver-0","unchanged-storage")]
+        not_ready=[pod("compute-0","new-primary",False),before[1],pod("pageserver-1","new-storage",False),before[3]]
+        ready=[pod("compute-0","new-primary"),before[1],pod("pageserver-1","new-storage"),before[3]]
         relabeled=copy.deepcopy(before[0]); relabeled["metadata"].pop("labels")
         driver.pods=mock.Mock(return_value=(namespace,before))
-        sets={"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1","pageserver-0")]}
+        sets={"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1","pageserver-0","pageserver-1")]}
         driver.k=mock.Mock(side_effect=[json.dumps(sets),*[json.dumps({"items":items}) for items in ([before[1]],not_ready,ready+[relabeled],ready)]]); driver.namespace=mock.Mock(return_value={"metadata":{"uid":"namespace-uid"}}); driver.command=mock.Mock(return_value=""); driver.sql=mock.Mock(side_effect=["","hakopod-"+driver.run_id])
         with mock.patch.object(DRIVER.time,"sleep"): result=driver.restart(pid,"namespace-uid")
         self.assertEqual(result["compute_pod_uids_after"],["new-primary"]); self.assertEqual(driver.k.call_count,5); self.assertTrue(result["old_pods_absent"])
+        self.assertEqual(result["restarted_components"],{"pageserver":"pageserver-1","compute":"compute-0"})
         self.assertTrue(all("-l" not in call.args for call in driver.k.call_args_list[1:]))
         self.assertEqual([json.loads(call.kwargs["data"])["preconditions"]["uid"] for call in driver.command.call_args_list],["old-primary","old-storage"])
-        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[pod("compute-0","foreign-primary",owner="foreign-set"),pod("pageserver-0","new-storage")]})]); driver.sql=mock.Mock(return_value="")
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[pod("compute-0","foreign-primary",owner="foreign-set"),pod("pageserver-1","new-storage")]})]); driver.sql=mock.Mock(return_value="")
         with self.assertRaisesRegex(RuntimeError,"replacement ownership changed"): driver.restart(pid,"namespace-uid")
+        driver.api=mock.Mock(side_effect=[{"revision":4},probe,dict(probe,attached_pageserver="pageserver-0",attached_pageserver_node_id=1)])
+        driver.k=mock.Mock(return_value=json.dumps(sets)); driver.command.reset_mock()
+        with self.assertRaisesRegex(RuntimeError,"moved before"): driver.restart(pid,"namespace-uid")
+        driver.command.assert_not_called()
+    def test_tenant_migration_requires_owned_move_and_both_sql_paths(self):
+        driver=self.bare_driver(); pid="a"*32; uid="namespace-uid"; driver.run_id="b"*32
+        probe={"platform_id":pid,"platform_revision":4,"namespace_uid":uid,"ownership_capability_verified":True,"attached_pageserver":"pageserver-0","attached_pageserver_node_id":1,"tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":7}
+        moved={"platform_id":pid,"platform_revision":4,"namespace_uid":uid,"tenant_id":"1"*32,"timeline_id":"2"*32,"source_node_id":1,"destination_node_id":2,"generation_before":7,"generation_after":8,"tenant_owner_unchanged":True,"controller_move_completed":True,"compute_names":["compute-0","compute-1"],"compute_routing_verified":True}
+        after=dict(probe,attached_pageserver="pageserver-1",attached_pageserver_node_id=2,tenant_generation=8)
+        def pod(component):
+            return {"metadata":{"name":"neon-"+component+"-0","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":component},"ownerReferences":[{"kind":"StatefulSet","name":"neon-"+component,"uid":"set-"+component}]},"status":{"containerStatuses":[{"ready":True}]}}
+        pods=[pod("compute-0"),pod("compute-1")]; namespace="managed-platform-"+pid
+        driver.pods=mock.Mock(return_value=(namespace,pods));driver.namespace=mock.Mock(return_value={"metadata":{"uid":uid}})
+        driver.k=mock.Mock(return_value=json.dumps({"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1")]}))
+        def prepare(observation):
+            driver.api=mock.Mock(side_effect=[{"revision":4,"spec":{"neon":{"pageservers":2}}},probe,observation,after])
+            driver.sql=mock.Mock(side_effect=["","hakopod-migration-"+driver.run_id,"hakopod-migration-"+driver.run_id])
+        prepare(moved);result=driver.tenant_migration(pid,uid)
+        self.assertTrue(result["primary_sql_verified"] and result["replica_sql_verified"])
+        self.assertEqual(driver.api.call_args_list[2].args,("POST","/api/v1/managed-platforms/"+pid+"/native-migrate",{"expected_revision":4,"namespace_uid":uid,"source_node_id":1,"destination_node_id":2}))
+        for changed in (dict(moved,generation_after=7),dict(moved,tenant_owner_unchanged=False),dict(moved,compute_names=["compute-0"]),dict(moved,namespace_uid="foreign")):
+            prepare(changed)
+            with self.assertRaisesRegex(RuntimeError,"observation is not exact"):driver.tenant_migration(pid,uid)
+        prepare(moved);driver.sql=mock.Mock(side_effect=["","missing","hakopod-migration-"+driver.run_id])
+        with self.assertRaisesRegex(RuntimeError,"SQL on both"):driver.tenant_migration(pid,uid)
     def test_object_store_fault_requires_bounded_absolute_command(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             command=Path(directory)/"command.json"; driver=self.bare_driver(); driver.a.object_store_fault_command_file=str(command); driver.command=mock.Mock(return_value="running\n")

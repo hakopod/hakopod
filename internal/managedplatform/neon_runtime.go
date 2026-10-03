@@ -350,6 +350,15 @@ func (r *NeonRuntime) Provision(ctx context.Context, request NeonLifecycleReques
 	return state, err
 }
 
+func decodeNeonJSON(raw []byte, value any) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("invalid Neon configuration JSON")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	return decoder.Decode(value)
+}
+
 func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonControlTarget) (string, error) {
 	if !neonID.MatchString(request.OperationID) || !neonID.MatchString(request.TenantID) || !neonID.MatchString(request.TimelineID) {
 		return "", fmt.Errorf("operation, tenant, and timeline IDs must be 32 lowercase hexadecimal characters")
@@ -373,7 +382,7 @@ func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonCo
 			return "", fmt.Errorf("compute %s: %w", target.Name, err)
 		}
 		var value any
-		if err := json.Unmarshal(raw, &value); err != nil {
+		if err := decodeNeonJSON(raw, &value); err != nil {
 			return "", err
 		}
 		encoded, err := json.Marshal(value)

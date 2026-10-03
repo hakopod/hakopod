@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -469,8 +470,10 @@ func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekee
 		return nil, fmt.Errorf("Neon compute identity is invalid")
 	}
 	var root map[string]any
-	if err := json.Unmarshal(template, &root); err != nil {
-		return nil, fmt.Errorf("decode Neon compute configuration: %w", err)
+	decoder := json.NewDecoder(bytes.NewReader(template))
+	decoder.UseNumber()
+	if err := decoder.Decode(&root); err != nil || !json.Valid(template) {
+		return nil, fmt.Errorf("decode Neon compute configuration")
 	}
 	spec, ok := root["spec"].(map[string]any)
 	if !ok {

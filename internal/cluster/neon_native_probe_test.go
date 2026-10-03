@@ -62,7 +62,7 @@ func TestPrepareNativeNeonProbeReadsCompletedRevisionBindings(t *testing.T) {
 				Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
 				SecretSnapshots: map[string]map[string][]byte{
 					"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-					"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{"cluster":{"settings":[]}},"compute_ctl_config":{}}`)},
+					"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
 					"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 					"pageserver-auth-r1": {"token": []byte("pageserver-secret-token"), "ca.crt": ca},
 				},
