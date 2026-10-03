@@ -52,6 +52,12 @@ func (s *Store) managedPlatformOperationFenceTx(ctx context.Context, tx pgx.Tx, 
 }
 
 func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatformOperation, error) {
+	return retryManagedPlatformTransaction(ctx, func() (ManagedPlatformOperation, error) {
+		return s.claimManagedPlatformOperation(ctx)
+	})
+}
+
+func (s *Store) claimManagedPlatformOperation(ctx context.Context) (ManagedPlatformOperation, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return ManagedPlatformOperation{}, err
@@ -120,6 +126,10 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 }
 
 func (s *Store) CheckManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.checkManagedPlatformOperation(ctx, op) })
+}
+
+func (s *Store) checkManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err
@@ -132,6 +142,10 @@ func (s *Store) CheckManagedPlatformOperation(ctx context.Context, op ManagedPla
 }
 
 func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.heartbeatManagedPlatformOperation(ctx, op) })
+}
+
+func (s *Store) heartbeatManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err
@@ -155,6 +169,12 @@ func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op Manage
 }
 
 func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatformOperation, status, phase, message string, observation map[string]any) error {
+	return retryManagedPlatformWrite(ctx, func() error {
+		return s.recordManagedPlatformStep(ctx, op, status, phase, message, observation)
+	})
+}
+
+func (s *Store) recordManagedPlatformStep(ctx context.Context, op ManagedPlatformOperation, status, phase, message string, observation map[string]any) error {
 	if op.Maintenance {
 		return s.recordManagedPlatformMaintenanceStep(ctx, op, status, phase, message, observation)
 	}
@@ -501,6 +521,12 @@ func scanPlatformResourceIntent(row pgx.Row) (PlatformResourceIntent, error) {
 // external create. A reservation remains pending after an ambiguous provider
 // response and must never be interpreted as ownership.
 func (s *Store) ReservePlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, requested PlatformResourceIntent) (PlatformResourceIntent, error) {
+	return retryManagedPlatformTransaction(ctx, func() (PlatformResourceIntent, error) {
+		return s.reservePlatformResourceIntent(ctx, op, requested)
+	})
+}
+
+func (s *Store) reservePlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, requested PlatformResourceIntent) (PlatformResourceIntent, error) {
 	if !validPlatformResourceIntent(op, requested, false) {
 		return PlatformResourceIntent{}, ErrInput
 	}
@@ -555,6 +581,10 @@ func (s *Store) ReservePlatformResourceIntent(ctx context.Context, op ManagedPla
 // ConfirmPlatformResourceIntent atomically converts one pending intent into
 // an exact ownership claim derived from a validated provider response.
 func (s *Store) ConfirmPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.confirmPlatformResourceIntent(ctx, op, intent, claim) })
+}
+
+func (s *Store) confirmPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent, claim PlatformResourceClaim) error {
 	if !validPlatformResourceIntent(op, intent, true) || !validPlatformResourceClaim(op, claim) || intent.Component != claim.Component || intent.Kind != claim.Kind {
 		return ErrInput
 	}
@@ -611,6 +641,12 @@ func (s *Store) ConfirmPlatformResourceIntent(ctx context.Context, op ManagedPla
 }
 
 func (s *Store) PlatformResourceIntents(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceIntent, error) {
+	return retryManagedPlatformTransaction(ctx, func() ([]PlatformResourceIntent, error) {
+		return s.platformResourceIntents(ctx, op, revision)
+	})
+}
+
+func (s *Store) platformResourceIntents(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceIntent, error) {
 	if revision < 1 || revision != op.Revision && revision != op.Revision-1 {
 		return nil, ErrInput
 	}
@@ -652,6 +688,10 @@ func (s *Store) PlatformResourceIntents(ctx context.Context, op ManagedPlatformO
 // CancelPlatformResourceIntent releases a still-pending reservation only.
 // Callers must first prove that the external object does not exist.
 func (s *Store) CancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.cancelPlatformResourceIntent(ctx, op, intent) })
+}
+
+func (s *Store) cancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
 	if !managedPlatformID.MatchString(intent.ID) || intent.PlatformID != op.PlatformID || intent.PlatformRevision != op.Revision && intent.PlatformRevision != op.Revision-1 || !managedPlatformComponent.MatchString(intent.Component) || len(intent.ExternalKey) < 1 || len(intent.ExternalKey) > 255 || intent.OwnerOperationID == "" {
 		return ErrInput
 	}
@@ -688,6 +728,10 @@ func (s *Store) CancelPlatformResourceIntent(ctx context.Context, op ManagedPlat
 }
 
 func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.claimPlatformResource(ctx, op, claim) })
+}
+
+func (s *Store) claimPlatformResource(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}
@@ -744,11 +788,14 @@ func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOpe
 // Asking for the prior revision includes older claims still owned after a
 // failed operation. The same resource bound and current-operation fence apply.
 func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceClaim, error) {
+	return retryManagedPlatformTransaction(ctx, func() ([]PlatformResourceClaim, error) {
+		return s.platformResourceClaims(ctx, op, revision)
+	})
+}
+
+func (s *Store) platformResourceClaims(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceClaim, error) {
 	if revision < 1 || revision != op.Revision && revision != op.Revision-1 {
 		return nil, ErrInput
-	}
-	if err := s.CheckManagedPlatformOperation(ctx, op); err != nil {
-		return nil, err
 	}
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
@@ -786,6 +833,10 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 }
 
 func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.verifyPlatformResourceClaim(ctx, op, claim) })
+}
+
+func (s *Store) verifyPlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}
@@ -817,6 +868,10 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 }
 
 func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, prior PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.advancePlatformResourceClaim(ctx, op, prior) })
+}
+
+func (s *Store) advancePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, prior PlatformResourceClaim) error {
 	if prior.PlatformID != op.PlatformID || prior.PlatformRevision < 1 || prior.PlatformRevision >= op.Revision || prior.ImmutableGeneration < 1 || !managedPlatformComponent.MatchString(prior.Component) || len(prior.ResourceID) < 1 || len(prior.ResourceID) > 255 || prior.OwnerOperationID == "" {
 		return ErrInput
 	}
@@ -964,6 +1019,10 @@ func propagateNeonRecoveryLineageTx(ctx context.Context, tx pgx.Tx, platformID s
 }
 
 func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.releasePlatformResourceClaim(ctx, op, claim) })
+}
+
+func (s *Store) releasePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}

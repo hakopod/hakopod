@@ -26,6 +26,10 @@ type NeonProxyEndpointRecord struct {
 }
 
 func (s *Store) ActivateNeonProxyEndpoint(ctx context.Context, op ManagedPlatformOperation, record NeonProxyEndpointRecord) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.activateNeonProxyEndpoint(ctx, op, record) })
+}
+
+func (s *Store) activateNeonProxyEndpoint(ctx context.Context, op ManagedPlatformOperation, record NeonProxyEndpointRecord) error {
 	if record.EndpointID != op.PlatformID || record.PlatformID != op.PlatformID || record.PlatformRevision != op.Revision || record.OwnerOperationID != op.ID || record.Generation != op.Revision || !record.Enabled || record.Address == "" || record.ServerName == "" || record.ProjectID != op.PlatformID || record.BranchID == "" || record.ComputeID == "" || len(record.EncryptedRoles) < 29 || len(record.EncryptedRoles) > 65536 {
 		return ErrInput
 	}
@@ -80,6 +84,10 @@ func (s *Store) ActivateNeonProxyEndpoint(ctx context.Context, op ManagedPlatfor
 }
 
 func (s *Store) RevokeNeonProxyEndpoint(ctx context.Context, op ManagedPlatformOperation) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.revokeNeonProxyEndpoint(ctx, op) })
+}
+
+func (s *Store) revokeNeonProxyEndpoint(ctx context.Context, op ManagedPlatformOperation) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err

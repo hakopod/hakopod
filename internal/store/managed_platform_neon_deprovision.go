@@ -13,6 +13,10 @@ const neonKubernetesClaimComponentPattern = `^(namespace|secret|configmap|pvc|se
 // the shared, UID-fenced namespace cleanup. Unknown resource kinds or component
 // prefixes prevent the shortcut, as do unfinished recovery replacements.
 func (s *Store) NeonProviderStateEmpty(ctx context.Context, op ManagedPlatformOperation) (bool, error) {
+	return retryManagedPlatformTransaction(ctx, func() (bool, error) { return s.neonProviderStateEmpty(ctx, op) })
+}
+
+func (s *Store) neonProviderStateEmpty(ctx context.Context, op ManagedPlatformOperation) (bool, error) {
 	if op.Kind != "delete" || op.Spec.Kind != "neon" || op.Maintenance {
 		return false, ErrInput
 	}
