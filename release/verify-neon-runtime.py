@@ -45,7 +45,7 @@ CASE_EVENTS = {
     "isolation-authentication": {"tenant-isolated", "source-marker-verified", "target-marker-absent", "bad-credentials-refused", "cross-platform-credentials-refused"},
     "connection-limits": {"connection-limit-observed", "excess-connections-refused", "service-recovered"},
     "compute-roles": {"primary-writable", "replica-read-only", "replica-write-refused", "replica-caught-up"},
-    "wal-quorum-fencing": {"quorum-loss-observed", "write-fenced", "quorum-restored", "write-recovered"},
+    "wal-quorum-fencing": {"quorum-loss-observed", "write-fenced", "quorum-restored", "fenced-write-absent", "write-recovered"},
     "controller-recovery": {"controller-restarted", "identity-preserved", "service-recovered"},
     "object-store-outage": {"outage-observed", "backup-refused", "service-restored"},
     "restored-resource-update": {"reviewed-update-applied", "revision-advanced-once", "stale-revision-refused", "topology-change-refused", "identity-preserved", "pod-cpu-changed", "compute-roles-preserved", "restored-data-verified"},

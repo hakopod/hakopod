@@ -375,13 +375,21 @@ class Driver:
             else: raise RuntimeError("Neon connection-limit port-forward did not become ready")
             observer_environment=dict(environment,PGAPPNAME="hakopod_limit_observer_"+self.run_id)
             observer=subprocess.Popen([self.a.psql,"-XAtqw","-v","ON_ERROR_STOP=1"],stdin=subprocess.PIPE,stdout=observer_output,stderr=observer_output,close_fds=True,env=observer_environment,preexec_fn=process_output_limit)
-            observer.stdin.write(b"SELECT 'hakopod-observer-ready';\n"); observer.stdin.flush()
+            capacity_query="SELECT 'hakopod-capacity:' || json_build_object('max_connections',current_setting('max_connections')::int,'superuser_reserved_connections',current_setting('superuser_reserved_connections')::int,'reserved_connections',current_setting('reserved_connections')::int,'role_superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),'role_reserved',pg_has_role(current_user,'pg_use_reserved_connections','member'),'baseline_pids',(SELECT COALESCE(json_agg(pid ORDER BY pid),'[]'::json) FROM pg_stat_activity WHERE backend_type='client backend'))::text; SELECT 'hakopod-observer-ready';\n"
+            observer.stdin.write(capacity_query.encode()); observer.stdin.flush()
             deadline=time.monotonic()+15
             while time.monotonic()<deadline:
                 if observer.poll() is not None: raise RuntimeError("Neon connection observer exited")
                 if "hakopod-observer-ready" in bounded_process_output(observer_output).splitlines(): break
                 time.sleep(.1)
             else: raise RuntimeError("Neon connection observer did not authenticate and flush its marker")
+            capacity_lines=[line.removeprefix("hakopod-capacity:") for line in bounded_process_output(observer_output).splitlines() if line.startswith("hakopod-capacity:")]
+            if len(capacity_lines)!=1: raise RuntimeError("Neon connection capacity observation is missing")
+            capacity=json.loads(capacity_lines[0]); baseline=capacity.get("baseline_pids",[])
+            if capacity.get("max_connections")!=maximum or any(type(capacity.get(key)) is not int or not 0<=capacity[key]<maximum for key in ("superuser_reserved_connections","reserved_connections")) or any(type(capacity.get(key)) is not bool for key in ("role_superuser","role_reserved")) or not isinstance(baseline,list) or not 1<=len(baseline)<=8 or any(type(pid) is not int or pid<1 for pid in baseline) or len(set(baseline))!=len(baseline): raise RuntimeError("Neon connection capacity observation is invalid")
+            effective=maximum if capacity["role_superuser"] else maximum-capacity["superuser_reserved_connections"]-(0 if capacity["role_reserved"] else capacity["reserved_connections"])
+            expected_held=effective-len(baseline)
+            if expected_held<1: raise RuntimeError("Neon connection baseline leaves no bounded saturation capacity")
             for _ in range(maximum+8):
                 output=tempfile.TemporaryFile(); outputs.append(output)
                 processes.append(subprocess.Popen([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c","SELECT 'hakopod-held:' || pg_backend_pid()","-c","SELECT pg_sleep(45)"],stdin=subprocess.DEVNULL,stdout=output,stderr=output,close_fds=True,env=environment,preexec_fn=process_output_limit))
@@ -399,12 +407,13 @@ class Driver:
                 time.sleep(.1)
             else: raise RuntimeError("Neon connection clients did not authenticate or return a classified refusal")
             held=len(held_pids)
-            if not maximum-4<=held<maximum or refused<1: raise RuntimeError("Neon connection limit did not hold successful clients and specifically refuse bounded excess")
+            if held!=expected_held or refused<1: raise RuntimeError("Neon connection limit differs from its exact role and baseline capacity")
             deadline=time.monotonic()+5; backend_pids=set()
             for attempt in range(25):
                 if time.monotonic()>=deadline: break
                 prefix="hakopod-active-"+str(attempt)+":"; complete="hakopod-observer-complete-"+str(attempt)
-                query="SELECT '"+prefix+"' || pid FROM pg_stat_activity WHERE application_name='"+application+"' AND state='active' AND wait_event='PgSleep' ORDER BY pid; SELECT '"+complete+"';\n"
+                baseline_prefix="hakopod-baseline-"+str(attempt)+":"
+                query="SELECT '"+prefix+"' || pid FROM pg_stat_activity WHERE application_name='"+application+"' AND state='active' AND wait_event='PgSleep' ORDER BY pid; SELECT '"+baseline_prefix+"' || COALESCE(json_agg(pid ORDER BY pid),'[]'::json)::text FROM pg_stat_activity WHERE backend_type='client backend' AND application_name!='"+application+"'; SELECT '"+complete+"';\n"
                 observer.stdin.write(query.encode()); observer.stdin.flush()
                 while time.monotonic()<deadline:
                     observed=bounded_process_output(observer_output)
@@ -413,6 +422,8 @@ class Driver:
                     time.sleep(.05)
                 else: raise RuntimeError("Neon connection observer did not flush its live backend observation")
                 backend_pids={int(value) for value in re.findall(r"^"+prefix+r"([1-9][0-9]*)$",observed,re.MULTILINE)}
+                baseline_lines=[line.removeprefix(baseline_prefix) for line in observed.splitlines() if line.startswith(baseline_prefix)]
+                if len(baseline_lines)!=1 or json.loads(baseline_lines[0])!=baseline: raise RuntimeError("Neon connection baseline changed during saturation")
                 if backend_pids==held_pids: break
                 time.sleep(.1)
             if backend_pids!=held_pids or sum(process.poll() is None for process in processes)!=held: raise RuntimeError("Neon held clients were not independently observed sleeping in PostgreSQL")
@@ -430,7 +441,7 @@ class Driver:
             errors.close()
             observer_output.close()
         if self.proxy_query(pid,password,"SELECT 1")!="1": raise RuntimeError("Neon SQL did not recover after the connection-limit probe")
-        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"configured_max_connections":maximum,"attempted_connections":maximum+8,"concurrent_connections":held,"refused_connections":refused,"backend_pids":sorted(backend_pids),"held_markers_flushed":True,"sleeping_backends_verified":True,"service_recovered":True}
+        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"configured_max_connections":maximum,"attempted_connections":maximum+8,"concurrent_connections":held,"refused_connections":refused,"backend_pids":sorted(backend_pids),"baseline_backend_pids":baseline,"superuser_reserved_connections":capacity["superuser_reserved_connections"],"reserved_connections":capacity["reserved_connections"],"role_superuser":capacity["role_superuser"],"role_reserved":capacity["role_reserved"],"effective_connection_limit":effective,"held_markers_flushed":True,"sleeping_backends_verified":True,"baseline_unchanged":True,"service_recovered":True}
     def absent_safekeepers(self,namespace,stopped,old_uids):
         sets=json.loads(self.k("-n",namespace,"get","statefulsets",*stopped,"-o","json"))["items"]
         if len(sets)!=2 or {item["metadata"]["name"]:item["metadata"]["uid"] for item in sets}!=stopped: raise RuntimeError("Neon WAL quorum StatefulSet ownership changed")
@@ -469,9 +480,10 @@ class Driver:
                 try:self.k("-n",namespace,"rollout","status","statefulset/"+name,"--timeout=180s",timeout=200)
                 except Exception:restore_errors.append(name)
         if restore_errors: raise RuntimeError("Neon WAL quorum restoration failed")
+        if self.proxy_query(pid,password,"SELECT count(*) FROM hakopod_native_acceptance WHERE k='wal-quorum'")!="0": raise RuntimeError("Neon WAL-fenced write committed despite its refusal")
         recovered=self.proxy_query(pid,password,"INSERT INTO hakopod_native_acceptance VALUES ('wal-recovered','yes') ON CONFLICT (k) DO UPDATE SET v=excluded.v; SELECT v FROM hakopod_native_acceptance WHERE k='wal-recovered'")
         if recovered!="INSERT 0 1\nyes" and not recovered.endswith("\nyes"): raise RuntimeError("Neon WAL quorum did not recover")
-        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"safekeeper_count":3,"stopped_safekeepers":2,"stopped_statefulsets":stopped,"stopped_pod_uids":sorted(stopped_uids),"replicas_zero_before_write":True,"replicas_zero_after_refusal":True,"replacement_pods_absent":True,"write_refused_without_quorum":True,"quorum_restored":True,"write_recovered":True}
+        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"safekeeper_count":3,"stopped_safekeepers":2,"stopped_statefulsets":stopped,"stopped_pod_uids":sorted(stopped_uids),"replicas_zero_before_write":True,"replicas_zero_after_refusal":True,"replacement_pods_absent":True,"write_refused_without_quorum":True,"fenced_write_absent":True,"quorum_restored":True,"write_recovered":True}
     def controller_recovery(self,pid):
         namespace="managed-platform-"+pid; before=self.api("POST","/api/v1/managed-platforms/"+pid+"/native-probe",{"expected_revision":self.api("GET","/api/v1/managed-platforms/"+pid)["revision"]})
         sets=json.loads(self.k("-n",namespace,"get","statefulsets","-l","hakopod.io/neon-role=storage-controller","-o","json"))["items"]
@@ -598,29 +610,44 @@ class Driver:
         if set(value)!=required or value.get("schema_version")!=1 or value.get("operation_id")!=operation or value.get("project")!=self.a.project or value.get("environment")!="development" or value.get("source_platform_id")!=source or value.get("source_revision")!=source_revision or value.get("target_platform_id")!=target or value.get("target_revision")!=target_revision or value.get("artifact_id")!=artifact or value.get("manifest_sha256")!=manifest or value.get("namespace_uid")!=target_uid or not ID.fullmatch(str(value.get("tenant_id"))) or not ID.fullmatch(str(value.get("timeline_id"))) or type(value.get("tenant_generation")) is not int or value["tenant_generation"]<1 or type(value.get("timeline_generation")) is not int or value["timeline_generation"]<1 or type(value.get("journal_entries")) is not int or value["journal_entries"]<1 or not isinstance(counts,dict) or set(counts)!={"complete","empty_complete","untouched_complete"} or any(type(count) is not int or count<0 for count in counts.values()) or sum(counts.values())!=value["journal_entries"] or value.get("cleanup_pending") is not False or value.get("operation_authority_refused") is not True or value.get("deployment_count")!=1 or value.get("statefulset_count")!=expected_sets or value.get("workload_replicas_zero") is not True or value.get("pods_absent") is not True or value.get("staging_prefix_empty") is not True: raise RuntimeError("native cancellation receipt binding is invalid")
         return value
     def restart(self,pid,uid):
-        ns,pods=self.pods(pid); chosen={}
+        ns,pods=self.pods(pid); chosen={}; components={"pageserver":"pageserver-0","compute":"compute-0"}
+        sets=json.loads(self.k("-n",ns,"get","statefulsets","-l","hakopod.io/managed-platform-id="+pid,"-o","json"))["items"]
+        if len(sets)>16: raise RuntimeError("Neon restart StatefulSet inventory exceeded its bound")
+        owners={item["metadata"]["name"]:item["metadata"]["uid"] for item in sets}
         for pod in pods:
             role=pod["metadata"]["labels"].get("hakopod.io/neon-role"); component=pod["metadata"]["labels"].get("app.kubernetes.io/component")
-            if role=="pageserver" and "pageserver" not in chosen: chosen["pageserver"]=pod
-            if role=="compute" and component=="compute-0": chosen["compute"]=pod
+            if role not in components or component!=components[role]: continue
+            owner="neon-"+component
+            if role in chosen or owner not in owners or not any(ref.get("kind")=="StatefulSet" and ref.get("name")==owner and ref.get("uid")==owners[owner] for ref in pod["metadata"].get("ownerReferences",[])): raise RuntimeError("Neon restart subject ownership is invalid")
+            chosen[role]=pod
         before={k:v["metadata"]["uid"] for k,v in chosen.items()}
         if set(before)!={"pageserver","compute"}: raise RuntimeError("restart subjects are missing")
+        if self.namespace(pid)["metadata"]["uid"]!=uid: raise RuntimeError("Neon restart namespace changed")
         seed="hakopod-"+self.run_id; self.sql(ns,chosen["compute"]["metadata"]["name"],"CREATE TABLE IF NOT EXISTS hakopod_native_acceptance(k text primary key,v text not null); INSERT INTO hakopod_native_acceptance VALUES ('restart','"+seed+"') ON CONFLICT (k) DO UPDATE SET v=excluded.v;")
-        for pod in chosen.values(): self.k("-n",ns,"delete","pod",pod["metadata"]["name"],"--wait=false")
-        after={}; failure_observed=False; deadline=time.monotonic()+300
+        for pod in chosen.values():
+            delete=json.dumps({"apiVersion":"v1","kind":"DeleteOptions","preconditions":{"uid":pod["metadata"]["uid"]}}).encode()
+            self.command(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","delete","--raw","/api/v1/namespaces/"+ns+"/pods/"+pod["metadata"]["name"],"-f","-"],data=delete)
+        after={}; old_absent=False; failure_observed=False; deadline=time.monotonic()+300
         while time.monotonic()<deadline:
-            _,current=self.pods(pid)
-            current_uids={pod["metadata"]["uid"] for pod in current}; failure_observed = failure_observed or any(uid not in current_uids for uid in before.values())
+            current=json.loads(self.k("-n",ns,"get","pods","-o","json"))["items"]; after={}
+            if len(current)>32: raise RuntimeError("Neon restart pod inventory exceeded its bound")
+            current_uids={pod["metadata"]["uid"] for pod in current}; old_absent=not set(before.values())&current_uids; failure_observed = failure_observed or old_absent
             for pod in current:
-                c=pod["metadata"]["labels"].get("hakopod.io/neon-role"); ready=all(x.get("ready") for x in pod.get("status",{}).get("containerStatuses",[]))
-                if c in before and pod["metadata"]["uid"]!=before[c] and ready: after[c]=pod
-            if set(after)==set(before): break
+                metadata=pod["metadata"]; labels=metadata.get("labels",{}); role=labels.get("hakopod.io/neon-role"); component=labels.get("app.kubernetes.io/component")
+                if role not in components or component!=components[role] or metadata["name"]!=chosen[role]["metadata"]["name"] or metadata["uid"]==before[role]: continue
+                owner="neon-"+component; statuses=pod.get("status",{}).get("containerStatuses",[])
+                ready=bool(statuses) and all(item.get("ready") is True for item in statuses) and any(item.get("type")=="Ready" and item.get("status")=="True" for item in pod.get("status",{}).get("conditions",[]))
+                if not any(ref.get("kind")=="StatefulSet" and ref.get("name")==owner and ref.get("uid")==owners[owner] for ref in metadata.get("ownerReferences",[])): raise RuntimeError("Neon restart replacement ownership changed")
+                if ready:
+                    if role in after: raise RuntimeError("Neon restart replacement inventory is not exact")
+                    after[role]=pod
+            if old_absent and set(after)==set(before): break
             time.sleep(2)
-        if set(after)!=set(before): raise RuntimeError("owned pods did not recover")
+        if not old_absent or set(after)!=set(before) or self.namespace(pid)["metadata"]["uid"]!=uid: raise RuntimeError("owned pods did not recover")
         restored=self.sql(ns,after["compute"]["metadata"]["name"],"SELECT v FROM hakopod_native_acceptance WHERE k='restart';")
         if restored!=seed or not failure_observed: raise RuntimeError("restart failure and restored SQL data were not both observed")
         digest=hashlib.sha256(restored.encode()).hexdigest()
-        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"storage_pod_uids_before":[before["pageserver"]],"storage_pod_uids_after":[after["pageserver"]["metadata"]["uid"]],"compute_pod_uids_before":[before["compute"]],"compute_pod_uids_after":[after["compute"]["metadata"]["uid"]],"failure_observed":failure_observed,"service_recovered":restored==seed,"data_sha256":digest}
+        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"storage_pod_uids_before":[before["pageserver"]],"storage_pod_uids_after":[after["pageserver"]["metadata"]["uid"]],"compute_pod_uids_before":[before["compute"]],"compute_pod_uids_after":[after["compute"]["metadata"]["uid"]],"restarted_components":components,"statefulset_uids":{role:owners["neon-"+component] for role,component in components.items()},"old_pods_absent":old_absent,"failure_observed":failure_observed,"service_recovered":restored==seed,"data_sha256":digest}
     def run(self):
         attestation=validate_attestation(self.a); nodes=json.loads(self.k("get","nodes","-o","json"))["items"]
         observed_nodes={item["metadata"]["name"]:item["metadata"]["uid"] for item in nodes}; cluster_uid=self.namespace_uid("kube-system")
