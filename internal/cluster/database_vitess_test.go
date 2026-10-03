@@ -29,10 +29,13 @@ func TestVitessScopedCredentials(t *testing.T) {
 		t.Fatal("internal credentials exposed to gateway users")
 	}
 	init := string(data["init.sql"])
-	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_app'") || !strings.Contains(init, "REQUIRE SSL") {
+	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT ON _vt.tables TO 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT, UPDATE ON _vt.schema_migrations TO 'vt_app'@'localhost'") ||
+		strings.Contains(init, "GRANT ALL ON *.* TO 'vt_app'") || !strings.Contains(init, "REQUIRE SSL") {
 		t.Fatal("application or replication grants exceed their boundary")
 	}
-	if !strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_allprivs'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_allprivs'") || strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_app'") {
+	if !strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_allprivs'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_allprivs'") || strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_app'") || strings.Contains(init, "GRANT INSERT ON _vt.") || strings.Contains(init, "GRANT DELETE ON _vt.") {
 		t.Fatal("Vitess metadata access must stay with the local internal account")
 	}
 }

@@ -21,7 +21,7 @@ import (
 func testVitessSecurity(t *testing.T, ctx context.Context, c *Client, d database.Resource, health database.Observation, password []byte) {
 	t.Helper()
 	client := vitessFixtureClient(t, ctx, c, d, health, password, "app@primary", 0)
-	for _, query := range []string{"CREATE USER forbidden_global_user IDENTIFIED BY 'fixture'", "SELECT authentication_string FROM mysql.user"} {
+	for _, query := range []string{"CREATE USER forbidden_global_user IDENTIFIED BY 'fixture'", "SELECT authentication_string FROM mysql.user", "SELECT 1 FROM _vt.tables LIMIT 1", "UPDATE _vt.schema_migrations SET migration_status=migration_status WHERE 1=0"} {
 		if _, err := client.ExecContext(ctx, query); err == nil {
 			t.Fatal("Vitess application account accepted a global administrative operation")
 		}
