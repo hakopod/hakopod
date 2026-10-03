@@ -85,6 +85,8 @@ class Tests(unittest.TestCase):
             driver.command(["true"],timeout=0)
         with self.assertRaisesRegex(RuntimeError,"malformed"):
             driver.command(["true","bad\x00argument"])
+        observed=driver.command([os.environ.get("PYTHON","python3"),"-c","import sys; sys.stderr.write('classified failure'); raise SystemExit(3)"],expected=(3,),capture_stderr=True)
+        self.assertEqual(observed,"classified failure")
     def bare_driver(self):
         driver=DRIVER.Driver.__new__(DRIVER.Driver); driver.a=mock.Mock(api_url="http://127.0.0.1:8800"); driver.token="protected-token-value"; return driver
     def test_runtime_uses_neon_roles_and_numbered_services(self):
@@ -107,6 +109,13 @@ class Tests(unittest.TestCase):
         driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix"); driver.native={}
         driver.pods=mock.Mock(return_value=("managed-platform-id",[]))
         with self.assertRaises(RuntimeError): driver.runtime("e"*32,"namespace-uid")
+    def test_compute_pod_requires_nonempty_ready_status_and_primary_identity(self):
+        driver=self.bare_driver(); driver.source_spec=neon("source","prefix"); pid="e"*32
+        empty={"metadata":{"name":"empty","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-0"}},"status":{}}
+        driver.pods=mock.Mock(return_value=("namespace",[empty]))
+        with self.assertRaisesRegex(RuntimeError,"ready compute"): driver.compute_pod(pid)
+        ready={"metadata":{"name":"primary","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-0"}},"status":{"containerStatuses":[{"ready":True}],"conditions":[{"type":"Ready","status":"True"}]}}
+        driver.pods.return_value=("namespace",[ready]); self.assertEqual(driver.compute_pod(pid),("namespace","primary"))
     def test_ownership_requests_read_only_native_probe(self):
         driver=self.bare_driver(); driver.run_id="a"*32; driver.native={}; driver.foreign=None
         pid="e"*32; opid="f"*32
@@ -170,13 +179,14 @@ class Tests(unittest.TestCase):
         self.assertFalse(driver.sql.call_args_list[2].kwargs["expect_success"])
     def test_wal_quorum_restores_both_safekeepers_before_reporting_failure(self):
         driver=self.bare_driver(); pid="a"*32; driver.run_id="b"*32; driver.bound={pid:("namespace-uid","operation")}; driver.proxy_password=mock.Mock(return_value="secret")
-        sets={"items":[{"metadata":{"name":"neon-safekeeper-"+str(i),"labels":{"hakopod.io/neon-role":"safekeeper"}}} for i in range(3)]}
-        driver.k=mock.Mock(side_effect=[json.dumps(sets),"","",json.dumps({"items":[]}),"","","",""])
+        sets={"items":[{"metadata":{"name":"neon-safekeeper-"+str(i),"uid":"set-"+str(i),"labels":{"hakopod.io/neon-role":"safekeeper"}},"spec":{"replicas":1}} for i in range(3)]}
+        pods={"items":[{"metadata":{"uid":"pod-"+str(i),"ownerReferences":[{"kind":"StatefulSet","name":"neon-safekeeper-"+str(i),"uid":"set-"+str(i)}]}} for i in range(3)]}
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps(pods),"","",json.dumps({"items":[]}),"","","",""])
         driver.proxy_query=mock.Mock(side_effect=["","INSERT 0 1\nyes"])
         result=driver.wal_quorum_fencing(pid)
         self.assertTrue(result["quorum_restored"])
         scale_calls=[call.args for call in driver.k.call_args_list if "scale" in call.args]
-        self.assertEqual(scale_calls[-2:],[('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-1','--replicas=1'),('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-2','--replicas=1')])
+        self.assertEqual(scale_calls[-2:],[('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-1','--current-replicas=0','--replicas=1'),('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-2','--current-replicas=0','--replicas=1')])
     def test_object_store_fault_requires_bounded_absolute_command(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             command=Path(directory)/"command.json"; driver=self.bare_driver(); driver.a.object_store_fault_command_file=str(command); driver.command=mock.Mock(return_value="running\n")
@@ -191,7 +201,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(driver.object_store_fault.call_args_list,[mock.call("stop"),mock.call("start")])
         self.assertEqual(driver.api.call_args_list[-1].args[1],"/api/v1/managed-platform-recovery-operations/"+"c"*32+"/cancel")
     def test_cleanup_records_lifecycle_only_after_namespaces_are_absent(self):
-        driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.pending_lifecycle={"created":True}; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"
+        driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.pending_lifecycle={"created":True,"branch_created":True}; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"
         driver.record=mock.Mock(); driver.command=mock.Mock(return_value=""); driver.cleanup()
         driver.record.assert_called_once_with("tenant-timeline-compute-lifecycle",{"created":True,"stopped":True,"deleted":True,"branch_created":True,"branch_deleted":True})
         self.assertIsNone(driver.pending_lifecycle)
