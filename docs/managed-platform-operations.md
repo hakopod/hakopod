@@ -116,9 +116,23 @@ the release image inventory and identities from the matching qualification
 manifest; do not infer them from tags. Replace the public HTTPS CIDR with the
 smallest canonical ranges required by the object store and other approved
 external endpoints. The control-plane origin must be an exact HTTPS origin,
-and its namespace and labels must select only the Hakopod API pods that may
-reach it. `neon_proxy_token` authenticates that private control-plane API and
+and its namespace and labels must select only the Hakopod API pods that the
+proxy may reach. `neon_proxy_token` authenticates that private control-plane API and
 must contain at least 32 random characters.
+
+Set `neon_proxy_control_plane_ca_pem` to the CA certificates that verify that
+HTTPS server. Use a TOML multiline string with certificate PEM blocks only.
+The server certificate must cover the hostname in
+`neon_proxy_control_plane_origin`. The bundle may contain up to 16 CA
+certificates and 64 KiB; private keys and ordinary server certificates are
+rejected. This is public trust material, separate from the proxy's bearer token.
+
+The proxy receives this bundle through an immutable ConfigMap for the reviewed
+platform revision. Changing the operator file does not rewrite an existing
+revision's trust. Review and apply a new platform revision when changing the
+control-plane CA, with both old and new CAs present during a planned overlap.
+Managed platform TLS still needs this setting: Hakopod's per-platform issuer
+does not issue the shared control-plane server's certificate.
 
 For self-hosted installations, keep the template's capacity sections and bind
 at least three explicit node names to their live Kubernetes UIDs; the selected

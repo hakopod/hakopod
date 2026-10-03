@@ -80,6 +80,16 @@ controller uses `rustls-native-certs` 0.8 and loads native roots when
 `STORCON_DB_CERT_CHECKS` is present; that crate reads the explicitly mounted
 `SSL_CERT_FILE`.
 
+The connection proxy also calls Hakopod's private HTTPS authentication API.
+Its operator configuration supplies that server's CA certificate bundle through
+`neon_proxy_control_plane_ca_pem`. The renderer mounts only the public CA bundle
+into the proxy, in an immutable ConfigMap for the reviewed revision, and sets
+`SSL_CERT_FILE` to that mount. This trust is separate from the proxy's own
+managed server certificate and its authentication token. Native acceptance
+must prove that the pinned proxy accepts the configured issuer and rejects a
+different issuer. See the [operator guide](managed-platform-operations.md) for
+the hostname, bundle and update requirements.
+
 ## Verification and release requirements
 
 The implementation has passed Go package tests, recovery race tests, API
