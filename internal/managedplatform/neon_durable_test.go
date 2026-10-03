@@ -169,7 +169,7 @@ func TestDurableNeonAmbiguousTenantCreateRecoversOnlyItsMatchingIntent(t *testin
 			events = append(events, "post:tenant")
 			tenantCreated = true
 			w.WriteHeader(http.StatusInternalServerError)
-		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
+		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline, "GET /v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			t.Fatalf("unexpected storage request %s %s", request.Method, request.URL.Path)

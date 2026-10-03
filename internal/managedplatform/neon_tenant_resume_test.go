@@ -94,7 +94,7 @@ func TestDurableNeonPendingTenantResumesBeforeCanonicalInspection(t *testing.T) 
 					case "POST /debug/v1/inspect":
 						events = append(events, "attachment")
 						body = `{"attachment":[7,11]}`
-					case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
+					case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline, "GET /v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 						status = http.StatusServiceUnavailable
 					default:
 						t.Fatalf("unexpected request %s %s", req.Method, req.URL.Path)
