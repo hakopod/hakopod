@@ -7,6 +7,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 VERIFY = runpy.run_path(str(ROOT / "release/verify-neon-runtime.py"))
+PARTIAL = runpy.run_path(str(HERE / "partial-create.py"))
 ID = re.compile(r"[0-9a-f]{32}")
 MAX_OUTPUT = 2 * 1024 * 1024
 
@@ -149,7 +150,10 @@ def validate_observation(case, observation, value):
     common = {"run_id", "platform_id", "namespace_uid"}
     if not common <= set(observation) or observation["run_id"] != value["run_id"] or observation["platform_id"] != subject.get("platform_id") or observation["namespace_uid"] != subject.get("namespace_uid"):
         raise ValueError("Neon observation is not bound to its exact fixture")
-    if case == "ownership-capability":
+    if case == "partial-create-cleanup":
+        PARTIAL["validate_observation"](observation, value["resources"])
+        valid = True
+    elif case == "ownership-capability":
         required = common | {"mutation_capability_required", "foreign_owner_refused", "deletion_token_required", "owner_operation_id", "resource_intent_ids"}
         valid = set(observation) == required and all(observation[k] is True for k in ("mutation_capability_required", "foreign_owner_refused", "deletion_token_required")) and ID.fullmatch(observation["owner_operation_id"]) and 3 <= len(observation["resource_intent_ids"]) <= 16 and all(ID.fullmatch(x) for x in observation["resource_intent_ids"])
     elif case == "tls":
@@ -245,6 +249,8 @@ def record(args):
     if stream.get("run_id") != value["run_id"] or any(item.get("case") == args.case for item in stream.get("events", [])):
         raise ValueError("Neon event stream is stale or duplicate")
     validate_observation(args.case, observation, value)
+    if args.case == "partial-create-cleanup":
+        PARTIAL["validate_supporting_files"](args.observation, observation)
     stream["events"].append({"sequence": len(stream["events"]) + 1, "case": args.case,
         "run_id": value["run_id"], "elapsed_seconds": round(time.monotonic() - value["started_monotonic"], 3),
         "evidence_sha256": VERIFY["file_hash"](args.observation)})
@@ -273,6 +279,13 @@ def finalize(args):
     for resource in value["resources"].values(): absent(value, resource)
     elapsed = round(time.monotonic() - value["started_monotonic"], 3)
     VERIFY["validate_events"](stream.get("events", []), value["run_id"], elapsed)
+    partial_path = Path(args.events).parent / "partial-create-cleanup.json"
+    partial = load(partial_path)
+    partial_event = next(item for item in stream["events"] if item["case"] == "partial-create-cleanup")
+    if VERIFY["file_hash"](partial_path) != partial_event["evidence_sha256"]:
+        raise ValueError("Partial-create cleanup evidence changed after recording")
+    validate_observation("partial-create-cleanup", partial, value)
+    PARTIAL["validate_supporting_files"](partial_path, partial)
     sources_after = VERIFY["source_files"](args.source)
     if sources_after != value["source_files"]: raise ValueError("Neon source changed during acceptance")
     cleanup = {"schema_version": 2, "run_id": value["run_id"], "context": value["context"], "status": "verified", "resources": value["resources"], "namespaces_absent": True, "persistent_volumes_absent": True}
