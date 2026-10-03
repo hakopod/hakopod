@@ -456,9 +456,34 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			return state, fmt.Errorf("Neon timeline ownership claim is invalid: %w", err)
 		}
 	}
+	timelineReplayed := false
+	if !timelineOwned && ownershipRequired {
+		intent, pendingCreate, intentErr := pendingIntentFor(pending, "timeline", "neon_timeline", request.TenantID+"/"+request.TimelineID)
+		if intentErr != nil {
+			return state, intentErr
+		}
+		if pendingCreate {
+			// Pageserver creation can finish before the controller completes
+			// ownership. Resume the exact intent before inspecting that state.
+			if err = r.lifecycle.Heartbeat(ctx); err != nil {
+				return state, err
+			}
+			response, replayErr := r.control.doJSONOwned(ctx, r.control.config.StorageController, http.MethodPost, "/v1/tenant/"+request.TenantID+"/timeline", neonTimelineCreateBody(request), intent.ID, http.StatusCreated)
+			if replayErr != nil {
+				return state, fmt.Errorf("resume Neon timeline left a pending intent: %w", replayErr)
+			}
+			if err = verifyNeonOwnershipToken(response, intent.ID); err != nil {
+				return state, fmt.Errorf("resume Neon timeline returned invalid ownership: %w", err)
+			}
+			timelineReplayed = true
+		}
+	}
 	timelineExists, observedTimelineToken, err := r.inspectTimeline(ctx, request.TenantID, request.TimelineID)
 	if err != nil {
 		return state, err
+	}
+	if timelineReplayed && !timelineExists {
+		return state, fmt.Errorf("resumed Neon timeline is not yet visible for ownership confirmation")
 	}
 	if timelineExists {
 		if !timelineOwned {
@@ -536,14 +561,7 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return state, err
 		}
-		body := map[string]any{"new_timeline_id": request.TimelineID, "pg_version": 17}
-		if request.RecoveryTimelineGeneration > 0 {
-			body["generation"] = request.RecoveryTimelineGeneration
-		}
-		if request.AncestorTimelineID != "" {
-			body["ancestor_timeline_id"] = request.AncestorTimelineID
-			body["read_only"] = false
-		}
+		body := neonTimelineCreateBody(request)
 		var response []byte
 		var createErr error
 		if ownershipRequired {
@@ -1306,6 +1324,26 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 		if err != nil {
 			return err
 		}
+		replayed := false
+		if !owned && ownershipRequired {
+			intent, pendingCreate, intentErr := pendingIntentFor(pending, component, "runtime_component", identity)
+			if intentErr != nil {
+				return intentErr
+			}
+			if pendingCreate {
+				if err = r.lifecycle.Heartbeat(ctx); err != nil {
+					return err
+				}
+				created, replayErr := r.control.doJSONOwned(ctx, controller, http.MethodPost, "/control/v1/node", neonPageserverRegistrationBody(node), intent.ID, http.StatusOK)
+				if replayErr != nil {
+					return fmt.Errorf("resume Neon pageserver %s registration left ownership pending: %w", node.Name, replayErr)
+				}
+				if err = verifyNeonOwnershipToken(created, intent.ID); err != nil {
+					return fmt.Errorf("resume Neon pageserver %s registration returned invalid ownership: %w", node.Name, err)
+				}
+				replayed = true
+			}
+		}
 		observed, status, err := r.control.request(ctx, controller, http.MethodGet, "/control/v1/node/"+strconv.FormatInt(node.NodeID, 10), nil)
 		if err != nil {
 			return err
@@ -1342,6 +1380,8 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 				current[component] = claim
 				owned = true
 			}
+		} else if replayed {
+			return fmt.Errorf("resumed Neon pageserver %s registration disappeared before canonical inspection", node.Name)
 		} else if owned {
 			return fmt.Errorf("confirmed Neon pageserver %s registration disappeared", node.Name)
 		}
@@ -1371,7 +1411,7 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return err
 		}
-		body := map[string]any{"node_id": node.NodeID, "listen_pg_addr": node.Host, "listen_pg_port": 6400, "listen_grpc_addr": nil, "listen_grpc_port": nil, "listen_http_addr": node.Host, "listen_http_port": 9897, "listen_https_port": 9898, "availability_zone_id": node.AvailabilityZone, "node_ip_addr": nil}
+		body := neonPageserverRegistrationBody(node)
 		var created []byte
 		if ownershipRequired {
 			created, err = r.control.doJSONOwned(ctx, controller, http.MethodPost, "/control/v1/node", body, intent.ID, http.StatusOK)
@@ -1415,6 +1455,27 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 		if err != nil {
 			return err
 		}
+		replayed := false
+		if !owned && ownershipRequired {
+			intent, pendingCreate, intentErr := pendingIntentFor(pending, component, "runtime_component", identity)
+			if intentErr != nil {
+				return intentErr
+			}
+			if pendingCreate {
+				if err = r.lifecycle.Heartbeat(ctx); err != nil {
+					return err
+				}
+				path := "/control/v1/safekeeper/" + strconv.FormatInt(node.NodeID, 10)
+				created, replayErr := r.control.doJSONOwned(ctx, controller, http.MethodPost, path, neonSafekeeperRegistrationBody(node), intent.ID, http.StatusOK)
+				if replayErr != nil {
+					return fmt.Errorf("resume Neon safekeeper %s registration left ownership pending: %w", node.Name, replayErr)
+				}
+				if err = verifyNeonOwnershipToken(created, intent.ID); err != nil {
+					return fmt.Errorf("resume Neon safekeeper %s registration returned invalid ownership: %w", node.Name, err)
+				}
+				replayed = true
+			}
+		}
 		observed, status, err := r.control.request(ctx, controller, http.MethodGet, "/control/v1/safekeeper/"+strconv.FormatInt(node.NodeID, 10), nil)
 		if err != nil {
 			return err
@@ -1451,6 +1512,8 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 				current[component] = claim
 				owned = true
 			}
+		} else if replayed {
+			return fmt.Errorf("resumed Neon safekeeper %s registration disappeared before canonical inspection", node.Name)
 		} else if owned {
 			return fmt.Errorf("confirmed Neon safekeeper %s registration disappeared", node.Name)
 		}
@@ -1480,7 +1543,7 @@ func (r *DurableNeonRuntime) registerStorageNodes(ctx context.Context, prior, cu
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return err
 		}
-		body := map[string]any{"id": node.NodeID, "region_id": "hakopod", "version": node.Generation, "host": node.Host, "port": 5454, "active": true, "http_port": 7677, "https_port": 7676, "availability_zone_id": node.AvailabilityZone}
+		body := neonSafekeeperRegistrationBody(node)
 		var created []byte
 		if ownershipRequired {
 			created, err = r.control.doJSONOwned(ctx, controller, http.MethodPost, "/control/v1/safekeeper/"+strconv.FormatInt(node.NodeID, 10), body, intent.ID, http.StatusOK)
@@ -1603,6 +1666,18 @@ func neonTenantCreateBody(request NeonLifecycleRequest) map[string]any {
 	body := map[string]any{"new_tenant_id": request.TenantID}
 	if request.RecoveryTenantGeneration > 0 {
 		body["generation"] = request.RecoveryTenantGeneration
+	}
+	return body
+}
+
+func neonTimelineCreateBody(request NeonLifecycleRequest) map[string]any {
+	body := map[string]any{"new_timeline_id": request.TimelineID, "pg_version": 17}
+	if request.RecoveryTimelineGeneration > 0 {
+		body["generation"] = request.RecoveryTimelineGeneration
+	}
+	if request.AncestorTimelineID != "" {
+		body["ancestor_timeline_id"] = request.AncestorTimelineID
+		body["read_only"] = false
 	}
 	return body
 }
