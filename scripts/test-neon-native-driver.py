@@ -144,6 +144,7 @@ class Tests(unittest.TestCase):
     def test_authenticated_proxy_query_verifies_tls_identity_and_keeps_password_out_of_argv(self,popen,_connect):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             driver=self.bare_driver(); driver.root=Path(directory); driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
+            driver.platform_ca=mock.Mock(return_value=Path(directory)/"platform-ca.crt")
             password=Path(directory)/"password"; password.write_text("native-test-credential"); password.chmod(0o600); driver.proxy_passwords={"a"*32:str(password)}
             driver.command=mock.Mock(return_value="cloud_admin:postgres\n")
             forward=mock.MagicMock(); forward.poll.return_value=None; popen.return_value=forward
