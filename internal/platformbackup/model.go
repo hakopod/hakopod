@@ -151,7 +151,7 @@ func (m Manifest) Validate() error {
 		return fmt.Errorf("%w: Supabase artifact contains Neon identity", ErrInvalid)
 	}
 	if m.Format == NeonFormat {
-		if m.Neon == nil || !idPattern.MatchString(m.Neon.TenantID) || !idPattern.MatchString(m.Neon.TimelineID) || m.Neon.TenantGeneration < 1 || m.Neon.TimelineGeneration < 1 || !validLSN(m.Neon.CommitLSN) || len(m.Neon.PageserverRemoteConsistentLSNs) < 2 || len(m.Neon.PageserverRemoteConsistentLSNs) > 8 || m.Neon.SourceObjectPrefix == "" || strings.HasPrefix(m.Neon.SourceObjectPrefix, "/") || strings.Contains(m.Neon.SourceObjectPrefix, "..") || !digestPattern.MatchString(m.Neon.ObjectInventorySHA256) || m.Neon.ObjectCount < 1 || m.Neon.ObjectCount > 100000 || m.Neon.ObjectBytes < 1 || m.Neon.ObjectBytes > MaxArchiveBytes {
+		if m.Neon == nil || !idPattern.MatchString(m.Neon.TenantID) || !idPattern.MatchString(m.Neon.TimelineID) || m.Neon.TenantGeneration < 1 || m.Neon.TimelineGeneration < 1 || !validLSN(m.Neon.CommitLSN) || len(m.Neon.PageserverRemoteConsistentLSNs) < 1 || len(m.Neon.PageserverRemoteConsistentLSNs) > 8 || m.Neon.SourceObjectPrefix == "" || strings.HasPrefix(m.Neon.SourceObjectPrefix, "/") || strings.Contains(m.Neon.SourceObjectPrefix, "..") || !digestPattern.MatchString(m.Neon.ObjectInventorySHA256) || m.Neon.ObjectCount < 1 || m.Neon.ObjectCount > 100000 || m.Neon.ObjectBytes < 1 || m.Neon.ObjectBytes > MaxArchiveBytes {
 			return fmt.Errorf("%w: Neon recovery identity or object inventory is incomplete", ErrInvalid)
 		}
 		commit, valid := lsnValue(m.Neon.CommitLSN)

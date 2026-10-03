@@ -223,6 +223,25 @@ func TestNeonManifestRequiresEveryPageserverToReachNonzeroCommit(t *testing.T) {
 	}
 }
 
+func TestNeonManifestAcceptsOneAttachedPageserverAndRejectsNoCheckpoint(t *testing.T) {
+	manifest, err := ReadArchive(bytes.NewReader(neonServiceArchive(t)), func(_ Part, input io.Reader) error {
+		_, err := io.Copy(io.Discard, input)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ManifestSHA256 = ""
+	manifest.Neon.PageserverRemoteConsistentLSNs = map[string]string{"1": manifest.Neon.CommitLSN}
+	if err := manifest.Validate(); err != nil {
+		t.Fatal("one attached pageserver was rejected", err)
+	}
+	manifest.Neon.PageserverRemoteConsistentLSNs = nil
+	if manifest.Validate() == nil {
+		t.Fatal("missing pageserver checkpoint accepted")
+	}
+}
+
 func TestNeonRestorePreflightConflictDoesNotFlagOrMutateTarget(t *testing.T) {
 	conflict := errors.New("fresh target required")
 	repo := &recoveryRepo{op: Operation{ID: strings.Repeat("1", 32), Kind: "restore"}}

@@ -70,11 +70,13 @@ states that its configuration tests images and is not a usable deployment. It
 omits the storage controller. The [local control plane](https://github.com/neondatabase/neon/blob/fa504217c61bbcaf5c512d75830564541f917f8f/control_plane/README.md)
 is also a development tool.
 
-Hakopod needs a durable adapter for the storage controller's tenant attachment
-and safekeeper membership notifications. Each update must resolve the owned
-tenant and timeline, persist the new configuration, configure the correct
-compute process and acknowledge only after applying it. A process restart or
-duplicate notification must not redirect another tenant's data.
+Hakopod stores the controller's tenant attachment and safekeeper membership
+notifications in PostgreSQL. It derives compute destinations from owned node
+IDs, applies the configuration and checks the running result before acknowledging
+the update. A retry can observe an update that already finished. A changed
+revision or deletion prevents an old notification from changing compute.
+After a compute restarts, it waits for the reconciler to replay its owned
+configuration. These paths still require native acceptance with the provider.
 
 ## Ownership, backup and recovery
 
@@ -86,8 +88,8 @@ inspection before adopting a resource; matching configuration alone is not
 proof of ownership.
 
 The recovery adapter closes the connection proxy and computes, records the
-committed WAL boundary, and waits for every pageserver to upload through that
-boundary. It then stops storage writers while copying a deterministic object
+committed WAL boundary, and waits for the attached pageserver to upload through
+that boundary. It then stops storage writers while copying a deterministic object
 inventory. The encrypted archive contains tenant identity, timeline identity
 and remote storage. A zero commit LSN, divergent safekeeper observations or a
 pageserver behind the committed boundary prevents capture.
@@ -125,6 +127,16 @@ arguments, so the manifest supplies only the HTTPS listener. The pinned storage
 controller uses `rustls-native-certs` 0.8 and loads native roots when
 `STORCON_DB_CERT_CHECKS` is present; that crate reads the explicitly mounted
 `SSL_CERT_FILE`.
+
+Hakopod issues the internal Neon authentication tokens. Pageservers and
+safekeepers share a verification key within one platform, so a compute can use
+the same tenant-scoped token for both. Other platforms have different keys.
+Controller administration, pageserver administration and safekeeper access
+use separate scopes; pageserver callbacks receive only the generations scope.
+The signing keys are derived in the control process from its encryption key
+and platform identity. They are never stored in a pod, runtime snapshot or API
+response. A restore receives a token for the restored tenant under the target
+platform's trust. Keep the control-plane encryption key with its backups.
 
 The connection proxy also calls Hakopod's private HTTPS authentication API.
 Its operator configuration supplies that server's CA certificate bundle through

@@ -91,12 +91,15 @@ reviewed = false
 
 # Replace demo/development with the exact project/environment scope. Snapshot
 # names are immutable: add a new revision when rotating any value.
+# Hakopod generates the controller, pageserver and safekeeper JWTs and public
+# verification keys for each platform. Compute receives a tenant-scoped storage
+# token. Supply certificates here only when using operator-provided TLS.
 [secrets.demo.development]
 broker-auth-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
 compute-auth-r1 = { "config.json" = "REPLACE_WITH_COMPUTE_CONFIG_JSON", token = "REPLACE_WITH_COMPUTE_TOKEN", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
-controller-auth-r1 = { token = "REPLACE_WITH_CONTROLLER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+controller-auth-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
 controller-database-password-r1 = { value = "REPLACE_WITH_DATABASE_PASSWORD", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
 object-storage-r1 = { "access-key-id" = "REPLACE_WITH_ACCESS_KEY_ID", "secret-access-key" = "REPLACE_WITH_SECRET_ACCESS_KEY" }
-pageserver-auth-r1 = { token = "REPLACE_WITH_PAGESERVER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+pageserver-auth-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
 proxy-auth-r1 = { token = "REPLACE_WITH_PROXY_TOKEN", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY" }
-safekeeper-auth-r1 = { token = "REPLACE_WITH_SAFEKEEPER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+safekeeper-auth-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }

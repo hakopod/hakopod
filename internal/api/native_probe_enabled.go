@@ -14,6 +14,7 @@ import (
 
 func (s *Server) registerNativeProbeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/managed-platforms/{id}/native-probe", s.probeNativeNeon)
+	mux.HandleFunc("POST /api/v1/managed-platforms/{id}/native-migrate", s.migrateNativeNeon)
 	mux.HandleFunc("GET /api/v1/managed-platform-recovery-operations/{id}/native-receipt", s.nativeNeonRecoveryReceipt)
 	mux.HandleFunc("GET /api/v1/managed-platform-recovery-operations/{id}/native-cancellation-receipt", s.nativeNeonCancellationReceipt)
 }

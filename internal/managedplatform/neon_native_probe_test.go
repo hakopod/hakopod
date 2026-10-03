@@ -69,6 +69,7 @@ func TestNeonNativeProbeReturnsOnlyExactSanitizedObservations(t *testing.T) {
 	config := NeonRuntimeConfig{
 		StorageController: NeonControlTarget{Name: "storage", Origin: "https://storage.example", Token: "controller-private-secret"},
 		Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.example", Token: "compute-private-secret"}},
+		Pageservers:       []NeonPageserverRegistration{{Name: "0", NodeID: 10, Generation: 1, Host: "ps-a", AvailabilityZone: "zone-a"}, {Name: "1", NodeID: 11, Generation: 1, Host: "ps-b", AvailabilityZone: "zone-b"}},
 		Safekeepers:       []NeonSafekeeperRegistration{{Name: "0", NodeID: 1, Generation: 1, Host: "sk-a", AvailabilityZone: "zone-a"}, {Name: "1", NodeID: 2, Generation: 1, Host: "sk-b", AvailabilityZone: "zone-b"}, {Name: "2", NodeID: 3, Generation: 1, Host: "sk-c", AvailabilityZone: "zone-c"}},
 		SafekeeperToken:   "safekeeper-private-secret", RequestTimeout: time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
 	}
@@ -113,7 +114,7 @@ func TestNeonNativeProbeReturnsOnlyExactSanitizedObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.OwnershipCapabilityVerified || result.TenantGeneration != 7 || result.TimelineGeneration != 9 || strings.Join(result.ComputeNames, ",") != "primary" {
+	if !result.OwnershipCapabilityVerified || result.TenantGeneration != 7 || result.TimelineGeneration != 9 || result.AttachedPageserver != "pageserver-1" || result.AttachedPageserverNodeID != 11 || strings.Join(result.ComputeNames, ",") != "primary" {
 		t.Fatalf("unexpected native probe result: %#v", result)
 	}
 	encoded, err := json.Marshal(result)

@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	s.tlsIssuerChanges = make(chan struct{}, 2)
 	mux := http.NewServeMux()
 	s.registerNeonProxyControlPlane(mux)
+	s.registerNeonController(mux)
 	mux.HandleFunc("POST /api/v1/build-registry/authorize", s.authorizeBuildRegistry)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

@@ -179,7 +179,7 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 	if len(manifests.Objects) > maxNeonRenderedObjects {
 		t.Fatal("Neon manifest inventory exceeded its bound")
 	}
-	if !manifests.TLSRequired || len(manifests.RequiredSecrets) != len(NeonSecretKeys()) {
+	if !manifests.TLSRequired || len(manifests.RequiredSecrets) != len(NeonSecretKeys())+1 || !slices.Contains(manifests.RequiredSecrets, NeonControllerCallbackSecretName(1)) {
 		t.Fatal("Neon renderer omitted TLS or immutable secret snapshots")
 	}
 }

@@ -87,9 +87,9 @@ func PlanNeon(s Spec, images map[string]string) (Plan, error) {
 		{Name: "compute", Replicas: c.ComputeReplicas, Ports: []int32{3081, 55433}, SecretKeys: []string{"compute-auth", "pageserver-auth", "safekeeper-auth"}, StorageKeys: []string{"compute-cache"}},
 		{Name: "compute-tls", Replicas: c.ComputeReplicas, Ports: []int32{3081}, SecretKeys: []string{"compute-auth"}},
 		{Name: "controller-database", Replicas: 1, Ports: []int32{5432}, SecretKeys: []string{"controller-database-password"}, StorageKeys: []string{"controller-database"}},
-		{Name: "pageserver", Replicas: c.Pageservers, Ports: []int32{6400, 9898}, SecretKeys: []string{"pageserver-auth", "object-storage"}, StorageKeys: []string{"pageserver"}},
+		{Name: "pageserver", Replicas: c.Pageservers, Ports: []int32{6400, 9898}, SecretKeys: []string{"pageserver-auth", "controller-auth", "safekeeper-auth", "broker-auth", "object-storage"}, StorageKeys: []string{"pageserver"}},
 		{Name: "proxy", Replicas: 1, Ports: []int32{5432, 7001}, SecretKeys: []string{"proxy-auth"}},
-		{Name: "safekeeper", Replicas: c.Safekeepers, Ports: []int32{5454, 7676}, SecretKeys: []string{"safekeeper-auth", "object-storage"}, StorageKeys: []string{"safekeeper"}},
+		{Name: "safekeeper", Replicas: c.Safekeepers, Ports: []int32{5454, 7676}, SecretKeys: []string{"safekeeper-auth", "broker-auth", "object-storage"}, StorageKeys: []string{"safekeeper"}},
 		{Name: "storage-controller", Replicas: 1, Ports: []int32{6699}, SecretKeys: []string{"controller-auth", "controller-database-password", "pageserver-auth", "safekeeper-auth"}},
 	}
 	for i := range components {

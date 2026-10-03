@@ -66,8 +66,17 @@ func TestRenderNeonEncryptsBrokerAndControllerDatabaseTraffic(t *testing.T) {
 	for _, value := range controller.Env {
 		environment[value.Name] = value.Value
 	}
-	if !strings.Contains(environment["DATABASE_URL"], "sslmode=require") || environment["STORCON_DB_CERT_CHECKS"] != "1" || environment["SSL_CERT_FILE"] != "/var/run/secrets/hakopod/controller-database-password/ca.crt" {
+	if environment["DATABASE_URL"] != "" || environment["STORCON_DB_CERT_CHECKS"] != "1" || environment["SSL_CERT_FILE"] != "/var/run/secrets/hakopod/controller-database-password/ca.crt" {
 		t.Fatal("storage controller does not require verified database TLS")
+	}
+	var databaseURLBound bool
+	for _, value := range controller.Env {
+		if value.Name == "DATABASE_URL" {
+			databaseURLBound = value.ValueFrom != nil && value.ValueFrom.SecretKeyRef != nil && value.ValueFrom.SecretKeyRef.Name == NeonControllerCallbackSecretName(1) && value.ValueFrom.SecretKeyRef.Key == "database-url"
+		}
+	}
+	if !databaseURLBound {
+		t.Fatal("controller database connection is not bound to the generated credential snapshot")
 	}
 	for _, volume := range storageController.Spec.Template.Spec.Volumes {
 		if volume.Name == "controller-database-password" && (volume.Secret == nil || len(volume.Secret.Items) != 1 || volume.Secret.Items[0].Key != "ca.crt") {
@@ -78,7 +87,7 @@ func TestRenderNeonEncryptsBrokerAndControllerDatabaseTraffic(t *testing.T) {
 		set, ok := object.(*appsv1.StatefulSet)
 		if ok && (strings.HasPrefix(set.Name, "neon-safekeeper-") || strings.HasPrefix(set.Name, "neon-pageserver-")) {
 			for _, volume := range set.Spec.Template.Spec.Volumes {
-				if volume.Name == "broker-auth" {
+				if volume.Name == "broker-auth" && (volume.Secret == nil || len(volume.Secret.Items) != 1 || volume.Secret.Items[0].Key != "ca.crt") {
 					t.Fatal("broker private key was projected into a client")
 				}
 			}

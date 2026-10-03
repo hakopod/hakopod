@@ -24,6 +24,16 @@ func TestNativeProbeRequiresAdmittedRunBeforeDatabaseAccess(t *testing.T) {
 	}
 }
 
+func TestNativeMigrationRequiresAdmittedRunBeforeDatabaseAccess(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Server{}).registerNativeProbeRoutes(mux)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/managed-platforms/fixture/native-migrate", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured native migration reached database access: %d", w.Code)
+	}
+}
+
 func TestNativeProbeAdmissionRequiresExactWritableReadyNeonRevision(t *testing.T) {
 	platformID := strings.Repeat("a", 32)
 	item := store.ManagedPlatform{ID: platformID, Project: "native-neon", Environment: "development", Revision: 4, Status: "ready", Spec: managedplatform.Spec{Kind: "neon"}}

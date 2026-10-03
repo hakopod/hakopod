@@ -190,7 +190,10 @@ func (a neonRecoveryLifecycle) Release(ctx context.Context, claim managedplatfor
 			_, err = a.runtime.Store.MarkNeonRecoveryPriorReleased(ctx, a.recovery, resource.Component, resource.PriorResourceID, resource.PriorGeneration, resource.TransitionToken)
 			return err
 		}
-		if resource.Component == claim.Component && resource.ReplacementResourceID == claim.ResourceID && resource.ReplacementGeneration == claim.ImmutableGeneration {
+		if resource.Component == claim.Component && resource.Kind == claim.Kind && resource.Phase == "confirmed" {
+			if err = a.Verify(ctx, claim); err != nil {
+				return err
+			}
 			if _, err = a.runtime.Store.MarkNeonRecoveryReplacementReleased(ctx, a.recovery, resource.Component, resource.ReplacementResourceID, resource.ReplacementGeneration, resource.TransitionToken); err != nil {
 				return err
 			}
@@ -249,6 +252,9 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 	durable, lifecycle, _, err := prepareNeonLifecycleWithAdapter(ctx, NeonRuntimeRequest{Operation: accepted, Render: request.Render, SecretSnapshots: request.SecretSnapshots, ProxyEndpoint: request.ProxyEndpoint}, adapter, nil, r.EncryptionKey, zones)
 	if err != nil {
 		return nil, lifecycle, nil, err
+	}
+	if !deprovision {
+		durable.SetComputeConfigResolver(neonControllerComputeResolver(r.Store, item.ID, item.Revision, item.Spec.Neon.Pageservers))
 	}
 	if useBinding {
 		var binding store.NeonRecoveryBinding
@@ -309,7 +315,7 @@ func (r *NeonRecoveryRuntime) ResolveSource(ctx context.Context, op platformback
 	if err != nil {
 		return platformbackup.Manifest{}, err
 	}
-	m := platformbackup.Manifest{SchemaVersion: platformbackup.SchemaVersion, Format: platformbackup.NeonFormat, PlatformID: item.ID, PlatformRevision: item.Revision, PlatformSpec: json.RawMessage(store.JSON(item.Spec)), Release: item.Spec.Version, Images: map[string]string{}, SourceNamespace: ns.Name, SourceNamespaceUID: string(ns.UID), Consistency: "computes and proxy stopped; safekeepers checkpointed; every pageserver uploaded through the committed LSN", DestinationID: op.DestinationID, EncryptionRecipient: destination.EncryptionRecipient}
+	m := platformbackup.Manifest{SchemaVersion: platformbackup.SchemaVersion, Format: platformbackup.NeonFormat, PlatformID: item.ID, PlatformRevision: item.Revision, PlatformSpec: json.RawMessage(store.JSON(item.Spec)), Release: item.Spec.Version, Images: map[string]string{}, SourceNamespace: ns.Name, SourceNamespaceUID: string(ns.UID), Consistency: "computes and proxy stopped; safekeepers checkpointed; the attached pageserver uploaded through the committed LSN", DestinationID: op.DestinationID, EncryptionRecipient: destination.EncryptionRecipient}
 	for _, c := range plan.Components {
 		m.Images[c.Name] = c.Image
 	}
@@ -707,7 +713,11 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	if err != nil {
 		return fmt.Errorf("verify recovered Neon storage boundary: %w", err)
 	}
-	if fence.TenantGeneration != m.Neon.TenantGeneration || fence.TimelineGeneration != m.Neon.TimelineGeneration || fence.CommitLSN != m.Neon.CommitLSN || !bytes.Equal(store.JSON(fence.Pageservers), store.JSON(m.Neon.PageserverRemoteConsistentLSNs)) {
+	checkpointLSN, checkpointErr := parseRecoveryLSNOutput(fence.CommitLSN)
+	requiredLSN, requiredErr := parseRecoveryLSNOutput(m.Neon.CommitLSN)
+	// Starting the restored compute can append WAL. Its verified storage must
+	// contain the artifact's boundary, even when the controller moves it.
+	if fence.TenantID != m.Neon.TenantID || fence.TimelineID != m.Neon.TimelineID || fence.TenantGeneration != m.Neon.TenantGeneration || fence.TimelineGeneration != m.Neon.TimelineGeneration || checkpointErr != nil || requiredErr != nil || checkpointLSN < requiredLSN || len(fence.Pageservers) != 1 {
 		return fmt.Errorf("recovered Neon storage identity or LSN differs from the artifact")
 	}
 	claims, err := r.Store.EffectiveNeonRecoveryClaims(ctx, op)
