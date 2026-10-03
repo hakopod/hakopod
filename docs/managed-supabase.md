@@ -90,6 +90,11 @@ upstream Envoy entrypoint because that script substitutes credentials through
 `sed`. A trusted secret-resolution step must instead create the immutable
 `envoy-runtime-config` Secret snapshot containing `lds.yaml` before apply.
 
+Run `scripts/build-supabase-edge-bundle.py` on the build VM to reproduce the
+Edge bundle. It uses the digest-pinned runtime image twice with separate empty
+module caches, requires byte-identical ESZIP output, fetches only the pinned
+JOSE 6.2.12 metadata and license, and records all source and output digests.
+
 Database clients do not share the owner password. Auth, Edge Runtime,
 PostgREST, Realtime, Storage, postgres-meta and Supavisor each receive a
 separately scoped credential snapshot. A trusted bootstrap step must render
