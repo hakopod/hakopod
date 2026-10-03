@@ -194,24 +194,24 @@ class Tests(unittest.TestCase):
         self.assertEqual(driver.api.call_args_list[1].args,("POST","/api/v1/managed-platforms/"+pid+"/native-probe",{"expected_revision":1}))
     @mock.patch.object(DRIVER.ssl,"create_default_context")
     @mock.patch.object(DRIVER.socket,"create_connection")
-    @mock.patch.object(DRIVER.subprocess,"Popen")
-    def test_proxy_auth_binds_platform_endpoint_in_startup_options(self,popen,create_connection,create_context):
+    @mock.patch.object(DRIVER.Driver,"proxy_forward")
+    def test_proxy_auth_binds_platform_endpoint_in_startup_options(self,proxy_forward,create_connection,create_context):
         platform_id="e"*32; raw=mock.MagicMock(); raw.recv.return_value=b"S"; create_connection.return_value=raw
         connection=mock.MagicMock(); connection.__enter__.return_value=connection; connection.recv.return_value=b"R"; create_context.return_value.wrap_socket.return_value=connection
-        process=mock.MagicMock(); process.poll.return_value=None; popen.return_value=process
         driver=self.bare_driver(); driver.a.kubeconfig="/protected/kubeconfig"
-        self.assertEqual(driver.proxy_auth_message("managed-platform-"+platform_id,"deployment/proxy",15433,Path("/protected/ca.crt"),platform_id),b"R")
+        self.assertEqual(driver.proxy_auth_message("managed-platform-"+platform_id,"deployment/hakopod-neon-wrong-ca",15433,Path("/protected/ca.crt"),platform_id),b"R")
+        proxy_forward.assert_called_once_with(platform_id,local_port=15433,probe=True)
         payload=connection.sendall.call_args.args[0]
         self.assertEqual(payload[8:],b"user\x00cloud_admin\x00database\x00postgres\x00options\x00endpoint="+platform_id.encode()+b"\x00\x00")
     @mock.patch.object(DRIVER.socket,"create_connection")
-    @mock.patch.object(DRIVER.subprocess,"Popen")
-    def test_authenticated_proxy_query_verifies_tls_identity_and_keeps_password_out_of_argv(self,popen,_connect):
+    @mock.patch.object(DRIVER.Driver,"proxy_forward")
+    def test_authenticated_proxy_query_verifies_tls_identity_and_keeps_password_out_of_argv(self,proxy_forward,_connect):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             driver=self.bare_driver(); driver.root=Path(directory); driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
             driver.platform_ca=mock.Mock(return_value=Path(directory)/"platform-ca.crt")
             password=Path(directory)/"password"; password.write_text("native-test-credential"); password.chmod(0o600); driver.proxy_passwords={"a"*32:str(password)}
             driver.command=mock.Mock(return_value="cloud_admin:postgres\n")
-            forward=mock.MagicMock(); forward.poll.return_value=None; popen.return_value=forward
+            forward=mock.MagicMock(); proxy_forward.return_value=forward
             with mock.patch.dict(DRIVER.os.environ,{"PGSERVICE":"untrusted-service","PGSSLMODE":"disable","PSQLRC":"/untrusted/rc"}):
                 driver.authenticated_proxy_query("a"*32)
             argv=driver.command.call_args.args[0]; environment=driver.command.call_args.kwargs["env"]
@@ -219,10 +219,10 @@ class Tests(unittest.TestCase):
             self.assertEqual(environment["PGOPTIONS"],"endpoint="+"a"*32)
             self.assertFalse({"PGSERVICE","PSQLRC"}&set(environment))
             self.assertEqual(environment["PGHOST"],"neon-proxy"); self.assertEqual(environment["PGHOSTADDR"],"127.0.0.1"); self.assertEqual(environment["PGSSLMODE"],"verify-full")
-            self.assertIn("service/neon-proxy",popen.call_args.args[0]); forward.terminate.assert_called_once()
+            proxy_forward.assert_called_once_with("a"*32,lifetime=180); forward.__exit__.assert_called_once()
             driver.command.return_value="unexpected:postgres\n"
             with self.assertRaisesRegex(RuntimeError,"identity differs"): driver.authenticated_proxy_query("a"*32)
-            self.assertEqual(forward.terminate.call_count,2)
+            self.assertEqual(forward.__exit__.call_count,2)
     def test_isolation_uses_distinct_endpoint_credentials_and_rejects_cross_scope(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             source,target="a"*32,"b"*32; source_password=Path(directory)/"source"; target_password=Path(directory)/"target"
@@ -277,10 +277,11 @@ class Tests(unittest.TestCase):
         driver.k=mock.Mock(return_value=json.dumps(replaced))
         with self.assertRaisesRegex(RuntimeError,"ownership changed"): driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"})
         driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[]})]); self.assertTrue(driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"}))
-    def connection_fixture(self,mode="valid"):
+    def connection_fixture(self,mode="valid",maximum=64):
         driver=self.bare_driver(); driver.run_id="b"*32; pid="a"*32; driver.bound={pid:("namespace-uid","operation")}; driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
-        driver.proxy_password=mock.Mock(return_value="secret"); driver.proxy_environment=mock.Mock(return_value={}); driver.proxy_query=mock.Mock(side_effect=["64","1"])
-        clients=[]; successful=59 if mode=="non-superuser" else 60; baseline=[1] if mode=="non-superuser" else [1,2,3,4]
+        driver.proxy_password=mock.Mock(return_value="secret"); driver.proxy_environment=mock.Mock(return_value={}); driver.proxy_query=mock.Mock(side_effect=[str(maximum),"1"])
+        forward=mock.MagicMock(); forward.start.return_value=forward; driver.proxy_forward=mock.Mock(return_value=forward)
+        clients=[]; successful=maximum-5 if mode=="non-superuser" else maximum-4; baseline=[1] if mode=="non-superuser" else [1,2,3,4]
         def launch(argv,**kwargs):
             process=mock.MagicMock(); process.status=None; process.poll.side_effect=lambda:process.status; process.terminate.side_effect=lambda:setattr(process,"status",-15)
             if argv[0]=="kubectl": return process
@@ -288,7 +289,7 @@ class Tests(unittest.TestCase):
             if "-c" not in argv:
                 def observe(data):
                     if b"ready" in data:
-                        capacity={"max_connections":64,"superuser_reserved_connections":4,"reserved_connections":0,"role_superuser":mode!="non-superuser","role_reserved":False,"baseline_pids":baseline}
+                        capacity={"max_connections":maximum,"superuser_reserved_connections":4,"reserved_connections":0,"role_superuser":mode!="non-superuser","role_reserved":False,"baseline_pids":baseline}
                         output.write(("hakopod-capacity:"+json.dumps(capacity)+"\nhakopod-observer-ready\n").encode())
                     else:
                         attempt=re.search(rb"hakopod-active-([0-9]+):",data)[1].decode()
@@ -311,6 +312,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(result["concurrent_connections"],60); self.assertEqual(result["backend_pids"],list(range(100,160))); self.assertTrue(result["sleeping_backends_verified"])
         child=popen.call_args_list[2].args[0]; self.assertEqual(child.count("-c"),2); self.assertIn("SELECT pg_sleep(45)",child)
         self.assertTrue(all(process.status is not None for process in clients))
+        driver.proxy_forward.assert_called_once_with(pid,maximum=74)
+        driver.proxy_forward.return_value.close.assert_called_once()
+        driver.proxy_forward.return_value.check_healthy.assert_called_once()
         driver,pid,launch,clients=self.connection_fixture("delayed-sleep")
         with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
             self.assertEqual(driver.connection_limits(pid)["concurrent_connections"],60)
@@ -318,6 +322,14 @@ class Tests(unittest.TestCase):
         with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
             result=driver.connection_limits(pid)
             self.assertEqual(result["concurrent_connections"],59); self.assertEqual(result["effective_connection_limit"],60); self.assertFalse(result["role_superuser"])
+    def test_connection_limit_carrier_covers_maximum_clients_and_observer(self):
+        driver,pid,launch,clients=self.connection_fixture(maximum=120)
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.time,"sleep"):
+            result=driver.connection_limits(pid)
+        self.assertEqual(len(clients),128)
+        self.assertEqual(result["concurrent_connections"],116)
+        driver.proxy_forward.assert_called_once_with(pid,maximum=130)
+        self.assertTrue(all(process.status is not None for process in clients))
     def test_connection_limit_rejects_unflushed_unconnected_or_unclassified_clients(self):
         for mode,message in (("unflushed-marker","did not authenticate"),("missing-backend","independently observed"),("authentication-failure","unexpected reason"),("baseline-drift","baseline changed")):
             with self.subTest(mode=mode):
