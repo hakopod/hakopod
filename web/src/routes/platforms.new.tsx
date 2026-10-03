@@ -845,9 +845,9 @@ function PlatformSettings({
                 <Input
                   required
                   value={config.database_name}
-                  disabled={busy || editing}
-                  onChange={(e) => set({ database_name: e.target.value })}
+                  disabled
                 />
+                <span className="field-help">This Supabase release uses the postgres database.</span>
               </label>
               <NumberField
                 label="JWT expiry (seconds)"

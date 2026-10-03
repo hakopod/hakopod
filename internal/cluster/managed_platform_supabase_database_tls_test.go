@@ -65,6 +65,9 @@ func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 			database = "_supabase"
 		}
 		values[key+"-r1"] = map[string][]byte{"value": []byte("postgresql://" + role + ":password@db:5432/" + database + "?sslmode=verify-full&sslrootcert=%2Fetc%2Fhakopod-database-ca%2Fca.crt")}
+		if key == "supavisor-database-url" {
+			values[key+"-r1"]["password"] = []byte("password")
+		}
 	}
 	if err := validateSupabaseDatabaseClientURLs(values, spec); err != nil {
 		t.Fatal(err)
@@ -93,6 +96,7 @@ func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 	values["auth-database-url-r1"]["value"] = []byte(valid)
 	pooler := values["supavisor-database-url-r1"]["value"]
 	for _, bad := range []string{
+		"%malformed",
 		strings.Replace(string(pooler), "/_supabase?", "/postgres?", 1),
 		strings.Replace(string(pooler), "pgbouncer:", "postgres:", 1),
 		strings.Replace(string(pooler), "@db:5432", "@database:5432", 1),
@@ -102,6 +106,18 @@ func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 		err := validateSupabaseDatabaseClientURLs(values, spec)
 		if err == nil || !strings.Contains(err.Error(), "supavisor-database-url") || strings.Contains(err.Error(), "password") {
 			t.Fatalf("unsafe Supavisor URL did not produce a redacted field-specific error: %v", err)
+		}
+	}
+	values["supavisor-database-url-r1"]["value"] = pooler
+	for _, bad := range []map[string][]byte{
+		{"value": pooler},
+		{"value": pooler, "password": []byte("different")},
+		{"value": pooler, "password": []byte("password"), "extra": []byte("secret-marker")},
+	} {
+		values["supavisor-database-url-r1"] = bad
+		err := validateSupabaseDatabaseClientURLs(values, spec)
+		if err == nil || !strings.Contains(err.Error(), "supavisor-database-url") || strings.Contains(err.Error(), "secret-marker") {
+			t.Fatalf("invalid Supavisor snapshot did not produce a redacted field-specific error: %v", err)
 		}
 	}
 }
