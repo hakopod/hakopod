@@ -97,7 +97,7 @@ class Driver:
         self.a=a; self.source_spec,self.target_spec,self.cancellation_target_spec=validate_contract(a); self.root=Path(a.work_dir); self.root.mkdir(mode=0o700); self.evidence=self.root/"evidence"; self.evidence.mkdir(mode=0o700)
         token=protected_text(a.token_file)
         if token != token.strip() or "\n" in token or "\r" in token: raise RuntimeError("API token is malformed")
-        self.token=token; self.platforms=[]; self.bound={}; self.run_id=""; self.foreign=None; self.native={}; self.pending_revocation=None; self.pending_lifecycle=None; self.cleanup_started=False; self.cleanup_completed=False
+        self.token=token; self.platforms=[]; self.bound={}; self.run_id=""; self.foreign=None; self.native={}; self.pending_revocation=None; self.pending_lifecycle=None; self.cleanup_started=False; self.cleanup_completed=False; self.deleted_platforms=set()
         if not 16 <= len(self.token) <= 4096: raise RuntimeError("API token is malformed")
         self.proxy_password_files={"source":a.source_proxy_password_file,"target":a.target_proxy_password_file,"cancellation":a.cancellation_proxy_password_file}; self.proxy_passwords={}
         values=[]
@@ -190,7 +190,7 @@ class Driver:
         current=self.api("GET","/api/v1/managed-platforms/"+platform_id)
         if current.get("id")!=platform_id or current.get("project")!=self.a.project or current.get("environment")!="development" or current.get("spec",{}).get("name")!=name: raise RuntimeError("cleanup API resource identity changed")
         body={"id":platform_id,"project":self.a.project,"environment":"development","expected_revision":current["revision"],"kind":"delete","confirm_name":name,"spec":current["spec"]}
-        reviewed=self.api("POST","/api/v1/managed-platforms/reviews",body); body["review"]=reviewed["review"]; op=self.api("POST","/api/v1/managed-platforms/operations",body,"neon-delete-"+platform_id); self.wait("/api/v1/managed-platform-operations/"+op["id"],seconds)
+        reviewed=self.api("POST","/api/v1/managed-platforms/reviews",body); body["review"]=reviewed["review"]; op=self.api("POST","/api/v1/managed-platforms/operations",body,"neon-delete-"+platform_id); return self.wait("/api/v1/managed-platform-operations/"+op["id"],seconds)
     def recover(self,intent,label):
         review=self.api("POST","/api/v1/managed-platform-recovery/reviews",intent); op=self.api("POST","/api/v1/managed-platform-recovery/operations",dict(intent,review=review),"neon-"+label+"-"+self.run_id); return self.wait("/api/v1/managed-platform-recovery-operations/"+op["id"],1200)
     def namespace(self,pid): return json.loads(self.k("get","namespace","managed-platform-"+pid,"-o","json"))
@@ -720,6 +720,9 @@ class Driver:
         review=self.api("POST","/api/v1/managed-platform-recovery/reviews",cancel_intent); op=self.api("POST","/api/v1/managed-platform-recovery/operations",dict(cancel_intent,review=review),"neon-cancel-"+self.run_id); operation_path="/api/v1/managed-platform-recovery-operations/"+op["id"]; self.wait_phase(operation_path,{"target-admitted","restoring-tenant.json","restoring-timeline.json","restoring-remote-storage.tar"}); self.api("POST",operation_path+"/cancel",{},expected=(202,)); self.wait(operation_path,300,("cancelled",))
         cancellation_receipt=self.api("GET","/api/v1/managed-platform-recovery-operations/"+op["id"]+"/native-cancellation-receipt"); observed=self.cancellation_receipt(cancellation_receipt,op["id"],artifact,receipt["manifest_sha256"],source["id"],sc["revision"],cancellation["id"],cc["revision"],cancellation_uid)
         self.pending_revocation={"run_id":self.run_id,"platform_id":source["id"],"namespace_uid":source_uid,"restore_operation_id":observed["operation_id"],"cancellation_target_namespace_uid":observed["namespace_uid"],**{key:value for key,value in observed.items() if key not in ("operation_id","namespace_uid")}}
+        spec=importlib.util.spec_from_file_location("neon_partial_create",Path(__file__).with_name("partial-create.py"))
+        partial=importlib.util.module_from_spec(spec); spec.loader.exec_module(partial)
+        partial.run(self,source,target,atomic)
     def namespace_uid(self,name):
         value=json.loads(self.k("get","namespace",name,"-o","json")); return value.get("metadata",{}).get("uid","")
     def cleanup(self):
@@ -744,7 +747,7 @@ class Driver:
                 if present:
                     current=self.namespace(pid)
                     if expected is None or current["metadata"]["uid"]!=expected[0] or current["metadata"].get("labels",{}).get("hakopod.io/owner-operation-id")!=expected[1]: raise RuntimeError("cleanup target identity changed")
-                self.delete(pid,name,240)
+                if pid not in getattr(self,"deleted_platforms",set()): self.delete(pid,name,240)
             except Exception:failed.append(pid)
         remaining_namespaces=[]
         namespace_audit_complete=True

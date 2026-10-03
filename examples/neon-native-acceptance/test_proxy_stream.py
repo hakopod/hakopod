@@ -57,6 +57,20 @@ class ProxyTargetTests(unittest.TestCase):
         self.assertEqual(first["workload_uid"], second["workload_uid"])
         self.assertNotEqual(first["pod_uid"], second["pod_uid"])
 
+    def test_controller_stream_preserves_exact_ownership_and_port_checks(self):
+        self.deployment["metadata"]["name"] = "neon-storage-controller"
+        self.deployment["metadata"]["labels"]["app.kubernetes.io/component"] = "storage-controller"
+        self.replica["metadata"]["ownerReferences"][0]["name"] = "neon-storage-controller"
+        for runtime in (self.deployment["spec"]["template"]["spec"], self.replica["spec"]["template"]["spec"], self.pod["spec"]):
+            runtime["containers"][0]["name"] = "storage-controller"
+            runtime["containers"][0]["ports"] = [{"containerPort": 6699}]
+        target = MODULE.ProxyTarget("/private/development-kubeconfig", PLATFORM, NS_UID, OPERATION, IMAGE, self.kube, component="storage-controller")
+        observed = target()
+        self.assertEqual((observed["port"], observed["container"], observed["workload_name"]), (6699, "storage-controller", "neon-storage-controller"))
+        self.pod["spec"]["containers"][0]["ports"] = [{"containerPort": 5432}]
+        with self.assertRaisesRegex(RuntimeError, "runtime differs"):
+            target()
+
     def test_workload_replacement_cannot_be_adopted(self):
         target = self.target()
         target()
