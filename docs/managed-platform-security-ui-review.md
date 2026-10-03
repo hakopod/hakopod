@@ -36,3 +36,19 @@ were changed.
 Ignored local evidence is in
 `work/database-enterprise/platform-ui-20261003/tls-review-captures/`. The VM
 capture directory is `/srv/hakopod-build/platform-trust-ui-review-v1/captures`.
+
+## Supabase database name
+
+An independent follow-up reviewed commit `2007930`, which fixes the Supabase
+database name to `postgres`. It covered creation and configuration in dark and
+Paper themes at 1440, 390 and 320 pixels, with 12 full-page screenshots.
+The disabled field and its help stayed aligned within the shared page inset.
+Keyboard navigation skipped the disabled input; mouse and touch could not
+change its value. The reviewer found no clipping, document overflow or visual
+blocker. This did not exercise screen-reader announcements or additional
+browsers.
+
+The fixture server was stopped after review. Evidence is in
+`work/database-enterprise/supabase-form-ui-review-2007930/results.json` and its
+adjacent screenshots. The VM copy is under
+`/srv/hakopod-build/platform-trust-ui-review-v1/supabase-form-2007930/`.
