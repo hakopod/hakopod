@@ -43,7 +43,11 @@ const (
 		"fi\n" +
 		"if [ -L \"$ownership_dir\" ]; then echo 'Neon compute ownership directory became a symlink' >&2; exit 1; fi\n" +
 		"actual=$(stat -c '%u:%g:%a' \"$ownership_dir\")\n" +
-		"if [ \"$actual\" != \"$expected\" ]; then echo 'Neon compute ownership directory has unsafe ownership or mode' >&2; exit 1; fi"
+		// A private directory may inherit setgid from the fsGroup-owned volume root.
+		// It grants no group access and keeps newly created files in the compute group.
+		"case \"$actual\" in \"$expected\"|\"${expected%:700}:2700\") ;;\n" +
+		"  *) echo 'Neon compute ownership directory has unsafe ownership or mode' >&2; exit 1 ;;\n" +
+		"esac"
 )
 
 type NeonRuntimeIdentity struct {
