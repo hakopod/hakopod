@@ -36,6 +36,13 @@ capability reason. Fix a blocked plan before applying it. Resource values are
 reservations, not measured CPU or memory use. Start with the platform's sizing
 requirements and measure the application workload before adjusting them.
 
+Keep the platform's overall status separate from its component observations.
+An accepted operation means Hakopod has recorded the work. A ready component
+means that component passed its current readiness checks. Neither establishes
+that an application's queries, sign-in flow or recovery procedure have been
+tested. After creation, connect with the scoped application credential and
+exercise the path the application will use.
+
 ```sh
 hakopod platform apply --file supabase.toml --project demo --environment development
 hakopod platform operations PLATFORM_ID
@@ -208,6 +215,10 @@ and memory allocations only. Storage size, node placement, compute and storage
 member counts, version and secret references are preserved from the loaded
 resource. The API rejects attempts to change those fields in place. To change
 storage or topology, restore into a separate platform with the desired setup.
+An allocation change can restart services and interrupt active connections.
+Wait for the operation to finish and check an application query afterward.
+If another update wins first, reload the current revision and review the
+change again; do not reuse a stale approval.
 
 For Supabase, database password rotation is one complete bundle: the role
 bootstrap and all database client references move together. A successful
@@ -263,6 +274,13 @@ recovery is in progress. Inspect database rows and the platform's application
 paths, including uploaded objects or functions where relevant. A restored
 target does not include source writes made after the capture point. Plan the
 application cutover separately.
+
+For Neon, verify the restored tenant and timeline through the platform's
+recorded recovery result, then query known rows through its own endpoint and
+credential. For Supabase, check more than the database: sign in, fetch an
+uploaded object and invoke an authenticated function if the application uses
+those services. Keep the source until these checks and the application
+cutover have completed.
 
 Use a restore request with the completed backup's artifact ID, the separate
 target's current revision and its exact current name:

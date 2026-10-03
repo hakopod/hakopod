@@ -1,4 +1,4 @@
-# Managed Neon implementation
+# Managed Neon
 
 Managed Neon is being implemented as a self-hosted platform. It is unavailable
 in the create catalog. This work does not connect to the paid Neon service and
@@ -9,6 +9,31 @@ object storage, a storage controller and a connection proxy. The storage
 controller also needs durable metadata. Hakopod must manage tenant and timeline
 identity, compute configuration, authentication and storage placement together.
 Three safekeepers alone do not make the complete service highly available.
+
+## How the stack works
+
+An application connects to the PostgreSQL proxy. The proxy authenticates the
+connection through Hakopod and sends it to the platform's writer. The writer
+runs SQL, reads pages from the pageservers and sends its write-ahead log to
+the safekeepers. Pageservers turn that log into database pages and upload
+durable layers to the configured object store.
+
+| Component | What it does |
+| --- | --- |
+| Connection proxy | Authenticates the platform endpoint and routes application connections to compute zero. |
+| Compute | Runs PostgreSQL. Compute zero accepts writes; additional computes follow the same timeline as read-only replicas. |
+| Three safekeepers | Store the write-ahead log. Writes require a quorum; losing two members prevents writes from completing. |
+| Pageservers | Serve database pages and upload their data to object storage. |
+| Object storage | Holds the remote data layers. Its bucket and prefix belong to the reviewed platform configuration. |
+| Storage controller | Manages tenant placement and membership. Its metadata lives in a separate PostgreSQL database. |
+| Storage broker | Shares storage-service status used by the Neon components. |
+
+Hakopod records the desired stack and its operations in its own PostgreSQL
+store. The API and reconciler run in the same process by default. If that
+process restarts, it resumes recorded work and checks ownership before making
+another provider change.
+
+## Supported shape and changes
 
 Each platform currently owns one tenant and one timeline. Its `branch_limit`
 must be `1`; creating additional branches or forks is not exposed. Compute node
@@ -23,6 +48,13 @@ secret references stay fixed. Applying an allocation change can restart
 services and interrupt connections. Use a separate restore target to change
 the storage or topology. Native acceptance must verify the first allocation
 update after restore against the restored tenant, timeline and data.
+
+A replica is not an automatic failover target in this implementation. If the
+writer is unavailable, its proxy route is unavailable until the writer
+recovers. The storage quorum protects a different part of the system. Placing
+the three safekeepers on three Kubernetes nodes only provides independent
+failure boundaries when the underlying hosts and infrastructure are also
+independent.
 
 The source foundation requires a complete component allocation, versioned
 secret references, object-store scope and digest-pinned images. Its availability,
@@ -44,7 +76,7 @@ tenant and timeline, persist the new configuration, configure the correct
 compute process and acknowledge only after applying it. A process restart or
 duplicate notification must not redirect another tenant's data.
 
-## What the implementation contains
+## Ownership, backup and recovery
 
 The API, durable operation store, worker, Kubernetes renderer and private
 control clients are implemented. They share the same immutable revision and
