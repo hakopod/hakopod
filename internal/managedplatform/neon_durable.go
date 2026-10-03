@@ -193,6 +193,77 @@ func pendingIntentFor(pending map[string]DurableResourceIntent, component, kind,
 	return intent, true, nil
 }
 
+// A failed create can leave a pageserver timeline before safekeeper creation
+// and before the controller confirms its ownership. Only the original durable
+// reservation permits that incomplete child to follow its owned parent through
+// the provider's prepared deletion protocol.
+func (r *DurableNeonRuntime) pendingTimelineDeletion(ctx context.Context, request NeonLifecycleRequest, parentToken string) (DurableResourceIntent, bool, error) {
+	op := r.lifecycle.Operation()
+	var pending DurableResourceIntent
+	var parent DurableResourceIntent
+	revisions := []int64{op.Revision}
+	if op.Revision > 1 {
+		revisions = append(revisions, op.Revision-1)
+	}
+	for _, revision := range revisions {
+		intents, err := r.lifecycle.Intents(ctx, revision)
+		if err != nil {
+			return pending, false, err
+		}
+		if len(intents) > maxDurableNeonResources {
+			return pending, false, fmt.Errorf("Neon deletion intent inventory exceeds its bound")
+		}
+		for _, intent := range intents {
+			if intent.PlatformID != op.PlatformID || intent.PlatformRevision != revision || !neonID.MatchString(intent.ID) || !neonID.MatchString(intent.OwnerOperationID) || revision == op.Revision && intent.OwnerOperationID != op.ID {
+				return pending, false, fmt.Errorf("Neon deletion intent belongs to another operation or revision")
+			}
+			if intent.Component == "tenant" && revision == op.Revision-1 {
+				if parent.ID != "" {
+					return pending, false, fmt.Errorf("Neon parent deletion intent is ambiguous")
+				}
+				parent = intent
+			}
+			if intent.Component != "timeline" || intent.Confirmed {
+				continue
+			}
+			if revision != op.Revision-1 || intent.Kind != "neon_timeline" || intent.ExternalKey != request.TenantID+"/"+request.TimelineID || pending.ID != "" {
+				return pending, false, fmt.Errorf("Neon pending timeline deletion authority is ambiguous")
+			}
+			pending = intent
+		}
+	}
+	// Advancing a claim transfers it to the delete revision. Its original
+	// confirmed intent preserves creation authority across deletion retries.
+	if pending.ID != "" && (!parent.Confirmed || parent.ID != parentToken || parent.Kind != "neon_tenant" || parent.ExternalKey != request.TenantID || parent.OwnerOperationID != pending.OwnerOperationID) {
+		return pending, false, fmt.Errorf("Neon pending timeline and parent creation authority differ")
+	}
+	return pending, pending.ID != "", nil
+}
+
+func (r *DurableNeonRuntime) inspectPendingTimelineDeletion(ctx context.Context, request NeonLifecycleRequest, intent DurableResourceIntent) (bool, error) {
+	// The controller detail response deliberately omits ownership while its
+	// ledger is applying. The canonical pageserver response still identifies
+	// the actual timeline and the token that created it.
+	body, status, err := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/v1/tenant/"+request.TenantID+"/timeline/"+request.TimelineID, nil)
+	if err != nil {
+		return false, err
+	}
+	if status == http.StatusNotFound {
+		return false, nil
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("inspect pending Neon timeline returned HTTP %d", status)
+	}
+	var identity struct {
+		TenantID   string `json:"tenant_id"`
+		TimelineID string `json:"timeline_id"`
+	}
+	if err = json.Unmarshal(body, &identity); err != nil || identity.TenantID != request.TenantID || identity.TimelineID != request.TimelineID || verifyNeonOwnershipToken(body, intent.ID) != nil {
+		return false, fmt.Errorf("Neon pending timeline identity or ownership differs from its durable intent")
+	}
+	return true, nil
+}
+
 func (r *DurableNeonRuntime) reserveOrReuse(ctx context.Context, pending map[string]DurableResourceIntent, component, kind, externalKey string) (DurableResourceIntent, error) {
 	if intent, ok, err := pendingIntentFor(pending, component, kind, externalKey); err != nil {
 		return DurableResourceIntent{}, err
@@ -841,19 +912,64 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return fmt.Errorf("Neon tenant attachment identity changed or is unclaimed; deletion refused")
 		}
 	}
-	timelineExists, observedTimelineToken, err := r.inspectTimeline(ctx, request.TenantID, request.TimelineID)
+	pendingTimeline, pendingTimelineFound := DurableResourceIntent{}, false
+	if _, claimed := claims["timeline"]; ownershipRequired && !claimed {
+		parentToken := ""
+		if tenantClaimed {
+			_, parentToken, err = parseNeonOwnedResourceID(tenantClaim.ResourceID)
+			if err != nil {
+				return err
+			}
+		}
+		pendingTimeline, pendingTimelineFound, err = r.pendingTimelineDeletion(ctx, request, parentToken)
+		if err != nil {
+			return err
+		}
+	}
+	var timelineExists bool
+	var observedTimelineToken string
+	parentDeleted := !tenantExists && tenantClaimed && ownershipRequired
+	if parentDeleted {
+		_, owner, parseErr := parseNeonOwnedResourceID(tenantClaim.ResourceID)
+		if parseErr != nil {
+			return parseErr
+		}
+		// The provider returns this 404 only for a tombstone carrying the
+		// same tenant token. A missing tenant's canonical timeline endpoint
+		// returns 503, which cannot otherwise establish child absence.
+		_, status, verifyErr := r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID+"?validate_only=true", nil, owner)
+		if verifyErr != nil || status != http.StatusNotFound {
+			return fmt.Errorf("verify deleted Neon tenant ownership returned HTTP %d: %w", status, verifyErr)
+		}
+	} else if pendingTimelineFound {
+		timelineExists, err = r.inspectPendingTimelineDeletion(ctx, request, pendingTimeline)
+	} else {
+		timelineExists, observedTimelineToken, err = r.inspectTimeline(ctx, request.TenantID, request.TimelineID)
+	}
 	if err != nil {
 		return err
 	}
-	safekeeperTimelineExists, timelineIdentity, timelineGeneration, _, observedSafekeeperToken, err := r.inspectSafekeeperTimeline(ctx, request.TenantID, request.TimelineID)
+	pendingToken := ""
+	if pendingTimelineFound {
+		pendingToken = pendingTimeline.ID
+	}
+	safekeeperTimelineExists, timelineIdentity, timelineGeneration, _, observedSafekeeperToken, err := r.inspectSafekeeperTimelineWithPendingIntent(ctx, request.TenantID, request.TimelineID, pendingToken)
 	if err != nil {
 		return err
+	}
+	if parentDeleted && safekeeperTimelineExists {
+		return fmt.Errorf("Neon deleted tenant still has a safekeeper timeline")
 	}
 	preparedDeletion := ownershipRequired && tenantOwnershipState == "deleting" && validNeonComputeOwnershipToken(observedDeletionToken)
-	if timelineExists != safekeeperTimelineExists && !preparedDeletion {
+	if pendingTimelineFound && (timelineExists || safekeeperTimelineExists) {
+		if !tenantExists || !tenantClaimed || safekeeperTimelineExists && observedSafekeeperToken != pendingTimeline.ID {
+			return fmt.Errorf("Neon pending timeline lacks matching parent or safekeeper ownership")
+		}
+	}
+	if timelineExists != safekeeperTimelineExists && !preparedDeletion && !pendingTimelineFound {
 		return fmt.Errorf("Neon controller and safekeeper timeline presence is inconsistent")
 	}
-	if timelineExists || safekeeperTimelineExists {
+	if (timelineExists || safekeeperTimelineExists) && !pendingTimelineFound {
 		timelineClaim, timelineClaimed := claims["timeline"]
 		claimedIdentity, ownershipToken := timelineClaim.ResourceID, ""
 		if timelineClaimed && ownershipRequired {
@@ -1017,7 +1133,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return fmt.Errorf("Neon compute %s became attached without an ownership claim; deletion refused", target.Name)
 		}
 	}
-	if timelineExists {
+	if timelineExists && !pendingTimelineFound {
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return err
 		}
@@ -1078,14 +1194,14 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return fmt.Errorf("Neon tenant deletion is still in progress")
 		}
 	}
-	if claim, ok := claims["tenant"]; ok {
-		if err = r.lifecycle.Release(ctx, claim); err != nil {
+	if pendingTimelineFound {
+		if err = r.lifecycle.Cancel(ctx, pendingTimeline); err != nil {
 			return err
 		}
 	}
-	// Storage-controller registration claims remain until Kubernetes confirms
-	// the owned namespace is gone. This prevents a crash between individual
-	// releases from leaving a live registration without an ownership claim.
+	// Tenant and registration claims remain until Kubernetes confirms the
+	// owned namespace is gone. The tenant claim retains exact tombstone
+	// authority if a crash occurs before namespace deletion.
 	return nil
 }
 
@@ -1868,6 +1984,13 @@ func (r *DurableNeonRuntime) inspectTimeline(ctx context.Context, tenantID, time
 }
 
 func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tenantID, timelineID string) (bool, string, int64, []string, string, error) {
+	return r.inspectSafekeeperTimelineWithPendingIntent(ctx, tenantID, timelineID, "")
+}
+
+func (r *DurableNeonRuntime) inspectSafekeeperTimelineWithPendingIntent(ctx context.Context, tenantID, timelineID, pendingToken string) (bool, string, int64, []string, string, error) {
+	if pendingToken != "" && (!validNeonComputeOwnershipToken(pendingToken) || r.control.config.allowUnqualifiedOwnershipProtocolForTest) {
+		return false, "", 0, nil, "", fmt.Errorf("Neon pending safekeeper inspection requires an exact ownership token")
+	}
 	path := "/v1/tenant/" + tenantID + "/timeline/" + timelineID
 	expectedMembers := make(map[string]string, len(r.control.config.Safekeepers))
 	for _, node := range r.control.config.Safekeepers {
@@ -1877,7 +2000,8 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tena
 	var expectedIdentity string
 	var expectedGeneration int64
 	var expectedHosts []string
-	var expectedOwnershipToken string
+	expectedOwnershipToken := pendingToken
+	anyExists := false
 	for _, node := range r.control.config.Safekeepers {
 		target := NeonControlTarget{
 			Name:   "safekeeper-" + node.Name,
@@ -1902,7 +2026,7 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tena
 		if status != http.StatusOK && status != http.StatusNotFound {
 			return false, "", 0, nil, "", fmt.Errorf("inspect Neon safekeeper %s timeline returned HTTP %d", node.Name, status)
 		}
-		if expectedExists != nil && *expectedExists != exists {
+		if expectedExists != nil && *expectedExists != exists && pendingToken == "" {
 			return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper timeline presence is inconsistent")
 		}
 		if expectedExists == nil {
@@ -1912,6 +2036,7 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tena
 		if !exists {
 			continue
 		}
+		anyExists = true
 		var response struct {
 			TenantID   string `json:"tenant_id"`
 			TimelineID string `json:"timeline_id"`
@@ -1968,7 +2093,7 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tena
 	if expectedExists == nil {
 		return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper inventory is empty")
 	}
-	return *expectedExists, expectedIdentity, expectedGeneration, expectedHosts, expectedOwnershipToken, nil
+	return anyExists, expectedIdentity, expectedGeneration, expectedHosts, expectedOwnershipToken, nil
 }
 
 func (r *DurableNeonRuntime) verifyConfiguredSafekeeperHosts(hosts []string) error {
