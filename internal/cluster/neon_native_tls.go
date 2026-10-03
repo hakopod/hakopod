@@ -13,10 +13,16 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/store"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type neonNativeTLSObservation struct {
@@ -28,8 +34,10 @@ type neonNativeTLSObservation struct {
 }
 
 // These facts concern the contacted listeners and certificate verification.
-// They do not establish application authentication or mutual TLS.
-func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNativeTLSObservation, error) {
+// Owned Pod streams deliver plaintext to the real listener while preserving
+// end-to-end TLS. It does not establish NetworkPolicy enforcement, application
+// authentication or mutual TLS; those are separate acceptance observations.
+func (c *Client) probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest, ns *corev1.Namespace, claims map[string]store.PlatformResourceClaim) (neonNativeTLSObservation, error) {
 	var result neonNativeTLSObservation
 	namespace := "managed-platform-" + request.Operation.PlatformID
 	if request.Render.Spec.Neon == nil || request.Render.Spec.Neon.Pageservers < 2 || request.Render.Spec.Neon.Pageservers > 8 || request.Render.Spec.Neon.Safekeepers != 3 || request.Render.Spec.Neon.ComputeReplicas < 1 || request.Render.Spec.Neon.ComputeReplicas > 6 {
@@ -44,25 +52,7 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 		}
 		return pool, nil
 	}
-	type listener struct {
-		role, secret, host, port string
-		postgres                 bool
-	}
-	listeners := []listener{
-		{"broker", "broker-auth", "neon-broker." + namespace + ".svc", "50051", false},
-		{"controller-database", "controller-database-password", "neon-controller-database." + namespace + ".svc", "5432", true},
-		{"storage-controller", "controller-auth", "neon-storage-controller." + namespace + ".svc", "6699", false},
-	}
-	for i := 0; i < request.Render.Spec.Neon.Pageservers; i++ {
-		listeners = append(listeners, listener{"pageserver", "pageserver-auth", "neon-pageserver-" + strconv.Itoa(i) + "." + namespace + ".svc", "9898", false})
-	}
-	for i := 0; i < 3; i++ {
-		listeners = append(listeners, listener{"safekeeper", "safekeeper-auth", "neon-safekeeper-" + strconv.Itoa(i) + "." + namespace + ".svc", "7676", false})
-	}
-	for i := 0; i < request.Render.Spec.Neon.ComputeReplicas; i++ {
-		listeners = append(listeners, listener{"compute", "compute-auth", "neon-compute-" + strconv.Itoa(i) + "-control." + namespace + ".svc", "3081", false})
-		listeners = append(listeners, listener{"compute-sql", "compute-auth", "neon-compute-" + strconv.Itoa(i) + "." + namespace + ".svc", "55433", true})
-	}
+	listeners := neonNativeTLSListeners(request, namespace)
 	// The proxy certificate itself is the accepted trust anchor. It is kept
 	// inside the server snapshot; no certificate or secret is returned.
 	proxyRef := request.Render.Spec.Secrets["proxy-auth"]
@@ -71,7 +61,6 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 	if !proxyRoots.AppendCertsFromPEM(proxyValues["tls.crt"]) {
 		return result, fmt.Errorf("native Neon proxy TLS trust is unavailable")
 	}
-	listeners = append(listeners, listener{"proxy", "proxy-auth", "neon-proxy." + namespace + ".svc", "5432", true})
 	roles := map[string]bool{}
 	for _, target := range listeners {
 		pool := proxyRoots
@@ -82,8 +71,28 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 				return result, err
 			}
 		}
-		if err := probeNeonNativeListener(ctx, net.JoinHostPort(target.host, target.port), target.host, pool, target.postgres, target.role == "compute-sql"); err != nil {
+		pod, err := c.neonNativeTLSProbePod(ctx, request, ns, claims, target)
+		if err != nil {
+			return result, err
+		}
+		// Both connections recheck the same accepted member. A replacement
+		// between the TLS handshake and plaintext probe cannot qualify.
+		dial := func(probe context.Context) (net.Conn, func(), error) {
+			current, err := c.neonNativeTLSProbePod(probe, request, ns, claims, target)
+			if err != nil || current.UID != pod.UID || !reflect.DeepEqual(current.OwnerReferences, pod.OwnerReferences) {
+				return nil, func() {}, fmt.Errorf("native Neon TLS member changed before connection")
+			}
+			return c.platformTLSStream(probe, current, target.port)
+		}
+		probe, stop := context.WithTimeout(ctx, 12*time.Second)
+		err = probeNeonNativeListener(probe, dial, target.host, pool, target.postgres, target.role == "compute-sql")
+		stop()
+		if err != nil {
 			return result, fmt.Errorf("native Neon %s TLS listener was not verified", target.role)
+		}
+		after, err := c.neonNativeTLSProbePod(ctx, request, ns, claims, target)
+		if err != nil || after.UID != pod.UID || !reflect.DeepEqual(after.OwnerReferences, pod.OwnerReferences) {
+			return result, fmt.Errorf("native Neon TLS member changed during probe")
 		}
 		roles[target.role] = true
 		if target.role == "compute-sql" {
@@ -98,13 +107,85 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 	return result, nil
 }
 
-func probeNeonNativeListener(ctx context.Context, address, hostname string, roots *x509.CertPool, postgres, requireHBA bool) error {
-	dialer := net.Dialer{Timeout: 2 * time.Second}
-	connection, err := dialer.DialContext(ctx, "tcp", address)
+type neonNativeTLSListener struct {
+	role, secret, component, container, host string
+	port                                     int
+	postgres                                 bool
+}
+
+func neonNativeTLSListeners(request NeonRuntimeRequest, namespace string) []neonNativeTLSListener {
+	listener := func(role, secret, component, container, service string, port int, postgres bool) neonNativeTLSListener {
+		return neonNativeTLSListener{role, secret, component, container, service + "." + namespace + ".svc", port, postgres}
+	}
+	result := []neonNativeTLSListener{
+		listener("broker", "broker-auth", "broker", "broker", "neon-broker", 50051, false),
+		listener("controller-database", "controller-database-password", "controller-database", "controller-database", "neon-controller-database", 5432, true),
+		listener("storage-controller", "controller-auth", "storage-controller", "storage-controller", "neon-storage-controller", 6699, false),
+	}
+	for i := 0; i < request.Render.Spec.Neon.Pageservers; i++ {
+		name := "pageserver-" + strconv.Itoa(i)
+		result = append(result, listener("pageserver", "pageserver-auth", name, "pageserver", "neon-"+name, 9898, false))
+	}
+	for i := 0; i < request.Render.Spec.Neon.Safekeepers; i++ {
+		name := "safekeeper-" + strconv.Itoa(i)
+		result = append(result, listener("safekeeper", "safekeeper-auth", name, "safekeeper", "neon-"+name, 7676, false))
+	}
+	for i := 0; i < request.Render.Spec.Neon.ComputeReplicas; i++ {
+		name := "compute-" + strconv.Itoa(i)
+		result = append(result, listener("compute", "compute-auth", name, "compute-tls", "neon-"+name+"-control", 3081, false))
+		result = append(result, listener("compute-sql", "compute-auth", name, "compute", "neon-"+name, 55433, true))
+	}
+	return append(result, listener("proxy", "proxy-auth", "proxy", "proxy", "neon-proxy", 5432, true))
+}
+
+func (c *Client) neonNativeTLSProbePod(ctx context.Context, request NeonRuntimeRequest, ns *corev1.Namespace, claims map[string]store.PlatformResourceClaim, target neonNativeTLSListener) (*corev1.Pod, error) {
+	if c == nil || c.kube == nil || ns == nil || ns.UID == "" || ns.Name != "managed-platform-"+request.Operation.PlatformID {
+		return nil, fmt.Errorf("native Neon TLS namespace is invalid")
+	}
+	current, err := c.kube.CoreV1().Namespaces().Get(ctx, ns.Name, metav1.GetOptions{})
+	if err != nil || current.UID != ns.UID || current.DeletionTimestamp != nil || current.Labels[managedBy] != "hakopod" || current.Labels["hakopod.io/managed-platform-id"] != request.Operation.PlatformID {
+		return nil, fmt.Errorf("native Neon TLS namespace changed")
+	}
+	if err = verifySupabaseClaimedUID("namespace", current, claims); err != nil {
+		return nil, fmt.Errorf("native Neon TLS namespace claim changed")
+	}
+	pod, err := c.platformTLSProbePod(ctx, request.Operation, current, target.component, claims)
+	if err != nil {
+		return nil, fmt.Errorf("native Neon TLS workload ownership changed")
+	}
+	if pod.Labels["hakopod.io/revision"] != strconv.FormatInt(request.Operation.Revision, 10) || len(pod.OwnerReferences) != 1 || pod.OwnerReferences[0].Controller == nil || !*pod.OwnerReferences[0].Controller {
+		return nil, fmt.Errorf("native Neon TLS member revision or owner changed")
+	}
+	image := request.Render.Images[target.container]
+	if managedplatform.ValidateImages(map[string]string{target.container: image}, []string{target.container}) != nil {
+		return nil, fmt.Errorf("native Neon TLS container image is not pinned")
+	}
+	ports := 0
+	for _, container := range pod.Spec.Containers {
+		for _, port := range container.Ports {
+			if port.ContainerPort != int32(target.port) {
+				continue
+			}
+			if container.Name != target.container || container.Image != image || port.Protocol != "" && port.Protocol != corev1.ProtocolTCP {
+				return nil, fmt.Errorf("native Neon TLS container or port changed")
+			}
+			ports++
+		}
+	}
+	if ports != 1 {
+		return nil, fmt.Errorf("native Neon TLS listener inventory changed")
+	}
+	return pod, nil
+}
+
+type neonNativeTLSDial func(context.Context) (net.Conn, func(), error)
+
+func probeNeonNativeListener(ctx context.Context, dial neonNativeTLSDial, hostname string, roots *x509.CertPool, postgres, requireHBA bool) error {
+	connection, closeConnection, err := dial(ctx)
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
+	defer closeConnection()
 	deadline := neonNativeConnectionDeadline(ctx)
 	if err = connection.SetDeadline(deadline); err != nil {
 		return err
@@ -136,13 +217,13 @@ func probeNeonNativeListener(ctx context.Context, address, hostname string, root
 	if _, err = state.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: intermediates, DNSName: hostname}); err == nil {
 		return fmt.Errorf("TLS untrusted certificate was accepted")
 	}
-	// Dial the exact reached address again to distinguish plaintext refusal
-	// from DNS drift or an unreachable listener.
-	plain, err := dialer.DialContext(ctx, "tcp", connection.RemoteAddr().String())
+	// The second stream reaches the same UID-bound listener without a TLS
+	// router that could reject plaintext before the provider sees it.
+	plain, closePlain, err := dial(ctx)
 	if err != nil {
 		return err
 	}
-	defer plain.Close()
+	defer closePlain()
 	deadline = neonNativeConnectionDeadline(ctx)
 	if err = plain.SetDeadline(deadline); err != nil {
 		return err

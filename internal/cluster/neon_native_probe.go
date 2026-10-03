@@ -69,7 +69,7 @@ func (c *Client) ProbeNeonNative(ctx context.Context, state *store.Store, op sto
 	if err != nil {
 		return observation, err
 	}
-	tlsObservation, err := probeNeonNativeTLS(ctx, request)
+	tlsObservation, err := c.probeNeonNativeTLS(ctx, request, ns, claimsByComponent)
 	if err != nil {
 		return observation, err
 	}
