@@ -738,6 +738,20 @@ func (s *Store) FinishPlatformRecovery(ctx context.Context, op platformbackup.Op
 	if r.RowsAffected() != 1 {
 		return ErrConflict
 	}
+	if op.Kind == "restore" {
+		// Supabase restore leaves the target's clients and gateway stopped.
+		// Only a newly reviewed revision may activate them again.
+		const heldMessage = "Certificate maintenance is paused for this restore target. Review a new platform revision before activating its services."
+		if _, err = tx.Exec(ctx, `UPDATE managed_platform_maintenance m SET phase='restore-isolated',message=$3,updated_at=now()
+			FROM managed_platforms p WHERE p.id=$1 AND p.revision=$2 AND p.kind='supabase' AND p.deleted_at IS NULL
+			AND m.platform_id=p.id AND m.revision=p.revision`, op.TargetPlatformID, op.ExpectedTargetRevision, heldMessage); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE managed_platforms SET observation=observation || jsonb_build_object('maintenance',jsonb_build_object('status','pending','phase','restore-isolated','message',$3::text,'checked_at',clock_timestamp())),updated_at=now()
+			WHERE id=$1 AND revision=$2 AND kind='supabase' AND desired_spec->>'tls_mode'='managed' AND deleted_at IS NULL`, op.TargetPlatformID, op.ExpectedTargetRevision, heldMessage); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
 }
 

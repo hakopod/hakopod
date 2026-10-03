@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -276,5 +278,112 @@ func TestManagedPlatformMaintenanceFenceRejectsOriginalLease(t *testing.T) {
 	maintenance.Lease = op.Lease
 	if err = s.CheckManagedPlatformOperation(ctx, maintenance); !errors.Is(err, ErrConflict) {
 		t.Fatal("original operation lease crossed maintenance fence", err)
+	}
+}
+
+func TestManagedPlatformMaintenanceKeepsSupabaseRestoreTargetIsolated(t *testing.T) {
+	for _, terminal := range []string{"succeeded", "failed", "cancelled"} {
+		t.Run(terminal, func(t *testing.T) {
+			s, p, source, sourcePlan, destination := recoveryStoreFixture(t)
+			ctx := context.Background()
+			target := ManagedPlatform{ID: NewID(), Project: source.Project, Environment: source.Environment, Spec: source.Spec}
+			target.Spec.Name = "isolated-target"
+			enableManagedTLSFixture(&target)
+			images := map[string]string{}
+			for _, component := range sourcePlan.Components {
+				images[component.Name] = component.Image
+			}
+			plan, err := managedplatform.PlanSupabase(target.Spec, images)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan.Capability, plan.StorageClass = sourcePlan.Capability, sourcePlan.StorageClass
+			review := managedPlatformReview(t, s, p, target, plan, 0, "create")
+			if _, err = s.AcceptManagedPlatform(ctx, p, target, plan, []byte("sealed-isolated-target"), review, 0, "isolated-target-create", "create"); err != nil {
+				t.Fatal(err)
+			}
+			owner, err := s.ClaimManagedPlatformOperation(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.RecordManagedPlatformStep(ctx, owner, "succeeded", "ready", "", map[string]any{"namespace_uid": "isolated-namespace", "tls": map[string]any{"serial": "original"}}); err != nil {
+				t.Fatal(err)
+			}
+			manifest := recoveryManifestFixture(source.ID, destination.ID)
+			artifactID := NewID()
+			if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,1,$3,'fixtures/isolated-target',123,$4,$5,$6,now())`, artifactID, source.ID, destination.ID, strings.Repeat("e", 64), JSON(manifest), manifest.Digest()); err != nil {
+				t.Fatal(err)
+			}
+			intent := platformbackup.Intent{Kind: "restore", Project: source.Project, Environment: source.Environment, SourcePlatformID: source.ID, TargetPlatformID: target.ID, ArtifactID: artifactID, ExpectedSourceRevision: 1, ExpectedTargetRevision: 1}
+			recoveryReview, err := s.SavePlatformRecoveryReview(ctx, p, intent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.AcceptPlatformRecovery(ctx, p, intent, recoveryReview, "isolated-target-restore"); err != nil {
+				t.Fatal(err)
+			}
+			recovery, err := s.ClaimPlatformRecovery(ctx, "isolated-target-lease")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.FinishPlatformRecovery(ctx, recovery, terminal, "Restore target remains isolated."); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Pool.Exec(ctx, "UPDATE managed_platform_maintenance SET next_attempt_at=clock_timestamp()-interval '1 second' WHERE platform_id=$1", target.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.ClaimManagedPlatformMaintenance(ctx); !errors.Is(err, pgx.ErrNoRows) {
+				t.Fatal("maintenance would activate an isolated restore target", err)
+			}
+			var phase, namespaceUID, serial, message string
+			if err = s.Pool.QueryRow(ctx, `SELECT observation->'maintenance'->>'phase',observation->>'namespace_uid',observation->'tls'->>'serial',observation->'maintenance'->>'message' FROM managed_platforms WHERE id=$1`, target.ID).Scan(&phase, &namespaceUID, &serial, &message); err != nil {
+				t.Fatal(err)
+			}
+			if phase != "restore-isolated" || namespaceUID != "isolated-namespace" || serial != "original" || !strings.Contains(message, "Review a new platform revision") {
+				t.Fatal("isolation did not preserve prior TLS facts and explain the hold")
+			}
+			var sourceObservation map[string]any
+			if err = s.Pool.QueryRow(ctx, "SELECT observation FROM managed_platforms WHERE id=$1", source.ID).Scan(&sourceObservation); err != nil {
+				t.Fatal(err)
+			}
+			if _, held := sourceObservation["maintenance"]; held {
+				t.Fatal("restore held the source platform's maintenance")
+			}
+			// A stale or replayed maintenance lease must fail the mutation fence too.
+			var maintenanceID string
+			if err = s.Pool.QueryRow(ctx, `UPDATE managed_platform_maintenance SET status='running',lease='stale-restore-maintenance',lease_until=clock_timestamp()+interval '30 seconds' WHERE platform_id=$1 RETURNING id`, target.ID).Scan(&maintenanceID); err != nil {
+				t.Fatal(err)
+			}
+			stale := owner
+			stale.Maintenance, stale.MaintenanceID, stale.Lease = true, maintenanceID, "stale-restore-maintenance"
+			if err = s.CheckManagedPlatformOperation(ctx, stale); !errors.Is(err, ErrConflict) {
+				t.Fatal("stale maintenance crossed the restore isolation fence", err)
+			}
+			if _, err = s.Pool.Exec(ctx, "UPDATE managed_platform_maintenance SET status='idle',lease='',lease_until=NULL WHERE platform_id=$1", target.ID); err != nil {
+				t.Fatal(err)
+			}
+			target, err = s.ManagedPlatform(ctx, p, target.ID, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			review = managedPlatformReview(t, s, p, target, plan, target.Revision, "update")
+			if _, err = s.AcceptManagedPlatform(ctx, p, target, plan, []byte("sealed-reviewed-target"), review, target.Revision, "isolated-target-activate", "update"); err != nil {
+				t.Fatal(err)
+			}
+			activation, err := s.ClaimManagedPlatformOperation(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.RecordManagedPlatformStep(ctx, activation, "succeeded", "ready", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Pool.Exec(ctx, "UPDATE managed_platform_maintenance SET next_attempt_at=clock_timestamp()-interval '1 second' WHERE platform_id=$1", target.ID); err != nil {
+				t.Fatal(err)
+			}
+			maintenance, err := s.ClaimManagedPlatformMaintenance(ctx)
+			if err != nil || maintenance.Revision != activation.Revision || maintenance.Revision != 2 {
+				t.Fatal("reviewed activation did not resume certificate maintenance", err)
+			}
+		})
 	}
 }

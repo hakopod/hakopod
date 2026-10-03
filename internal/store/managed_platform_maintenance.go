@@ -40,6 +40,7 @@ func (s *Store) ClaimManagedPlatformMaintenance(ctx context.Context) (ManagedPla
 			WHERE (m.status='idle' OR m.status='running' AND m.lease_until<clock_timestamp()) AND m.next_attempt_at<=clock_timestamp() AND m.attempt<16 AND p.status='ready' AND p.desired_spec->>'tls_mode'='managed'
 			AND NOT EXISTS(SELECT 1 FROM managed_platform_operations active WHERE active.platform_id=m.platform_id AND active.status IN ('queued','running'))
 			AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE (recovery.source_platform_id=m.platform_id OR recovery.target_platform_id=m.platform_id) AND recovery.status IN ('queued','running'))
+			AND NOT (p.kind='supabase' AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE recovery.kind='restore' AND recovery.target_platform_id=p.id AND recovery.expected_target_revision=p.revision AND recovery.status IN ('succeeded','failed','cancelled')))
 			ORDER BY m.next_attempt_at,m.platform_id FOR UPDATE OF m SKIP LOCKED LIMIT 1)
 		RETURNING id,operation_id`, lease).Scan(&maintenanceID, &operationID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -68,7 +69,9 @@ func (s *Store) managedPlatformMaintenanceFenceTx(ctx context.Context, tx pgx.Tx
 	err := tx.QueryRow(ctx, `SELECT `+managedPlatformOperationQualifiedColumns+`,p.project,p.environment FROM managed_platform_maintenance m
 		JOIN managed_platform_operations o ON o.id=m.operation_id JOIN managed_platforms p ON p.id=m.platform_id AND p.revision=m.revision
 		WHERE m.id=$1 AND m.platform_id=$2 AND m.revision=$3 AND m.operation_id=$4 AND m.lease=$5 AND m.status='running' AND m.lease_until>clock_timestamp()
-		AND o.status='succeeded' AND p.status='ready' AND p.desired_spec->>'tls_mode'='managed' AND p.deleted_at IS NULL FOR UPDATE OF m,p`, supplied.MaintenanceID, supplied.PlatformID, supplied.Revision, supplied.ID, supplied.Lease).
+		AND o.status='succeeded' AND p.status='ready' AND p.desired_spec->>'tls_mode'='managed' AND p.deleted_at IS NULL
+		AND NOT (p.kind='supabase' AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE recovery.kind='restore' AND recovery.target_platform_id=p.id AND recovery.expected_target_revision=p.revision AND recovery.status IN ('succeeded','failed','cancelled')))
+		FOR UPDATE OF m,p`, supplied.MaintenanceID, supplied.PlatformID, supplied.Revision, supplied.ID, supplied.Lease).
 		Scan(&stored.ID, &stored.PlatformID, &stored.Revision, &stored.Kind, &stored.Status, &stored.Phase, &stored.Message, &stored.Spec, &stored.Plan, &stored.EncryptedSnapshot, &stored.Review, &stored.ReviewID, &stored.AuthorityFingerprint, &stored.CreatedAt, &stored.StartedAt, &stored.FinishedAt, &stored.IdentityID, &stored.KeyID, &stored.Lease, &stored.LeaseUntil, &stored.Attempt, &project, &environment)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ManagedPlatformOperation{}, "", "", ErrConflict
