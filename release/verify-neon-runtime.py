@@ -38,10 +38,16 @@ BINARY_NAMES = {
 CASE_EVENTS = {
     "ownership-capability": {"mutation-capability-required", "foreign-owner-refused", "deletion-token-required"},
     "tls": {"client-verified", "server-verified", "plaintext-refused"},
-    "tenant-timeline-compute-lifecycle": {"tenant-created", "timeline-created", "compute-started", "compute-stopped", "timeline-deleted", "tenant-deleted"},
+    "tenant-timeline-compute-lifecycle": {"tenant-created", "timeline-created", "branch-created", "compute-started", "compute-stopped", "branch-deleted", "timeline-deleted", "tenant-deleted"},
     "backup-recovery": {"backup-completed", "recovery-target-created", "restored-data-verified"},
     "restart-failure": {"storage-restarted", "compute-restarted", "failure-observed", "service-recovered"},
     "revocation-cleanup": {"access-revoked", "revoked-access-refused", "owned-resources-removed", "persistent-volumes-removed"},
+    "isolation-authentication": {"tenant-isolated", "source-marker-verified", "target-marker-absent", "bad-credentials-refused", "cross-platform-credentials-refused"},
+    "connection-limits": {"connection-limit-observed", "excess-connections-refused", "service-recovered"},
+    "compute-roles": {"primary-writable", "replica-read-only", "replica-write-refused", "replica-caught-up"},
+    "wal-quorum-fencing": {"quorum-loss-observed", "write-fenced", "quorum-restored", "write-recovered"},
+    "controller-recovery": {"controller-restarted", "identity-preserved", "service-recovered"},
+    "object-store-outage": {"outage-observed", "backup-refused", "service-restored"},
 }
 CASES = set(CASE_EVENTS)
 PRODUCER = {"runner_path": "examples/neon-native-acceptance/run.sh", "producer_path": "examples/neon-native-acceptance/evidence.py"}

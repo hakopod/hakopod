@@ -21,9 +21,12 @@ repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 : "${HAKOPOD_ACCEPTANCE_RUNTIME_SPEC_DIGEST_HELPER:?set the typed runtime-spec digest helper}"
 : "${HAKOPOD_ACCEPTANCE_CONTROL_PSQL_COMMAND_FILE:?set the protected control-database command argv}"
 : "${HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE:?set the control-plane bridge helper}"
+: "${HAKOPOD_ACCEPTANCE_OBJECT_STORE_FAULT_COMMAND_FILE:?set the protected disposable object-store fault command}"
 : "${HAKOPOD_ACCEPTANCE_OPENSSL:?set the reviewed OpenSSL executable}"
 : "${HAKOPOD_ACCEPTANCE_PSQL:?set the PostgreSQL client executable}"
-: "${HAKOPOD_ACCEPTANCE_PROXY_PASSWORD_FILE:?set the protected proxy application credential file}"
+: "${HAKOPOD_ACCEPTANCE_SOURCE_PROXY_PASSWORD_FILE:?set the protected source proxy application credential file}"
+: "${HAKOPOD_ACCEPTANCE_TARGET_PROXY_PASSWORD_FILE:?set the protected target proxy application credential file}"
+: "${HAKOPOD_ACCEPTANCE_CANCELLATION_PROXY_PASSWORD_FILE:?set the protected cancellation proxy application credential file}"
 : "${HAKOPOD_ACCEPTANCE_LOCAL_PORT:?set a free loopback port for the Neon proxy}"
 : "${HAKOPOD_ACCEPTANCE_DISPOSABLE:?set to 1 for this destructive disposable run}"
 
@@ -34,10 +37,13 @@ for command in kubectl python3 stat; do command -v "$command" >/dev/null 2>&1 ||
 [ ! -e "$HAKOPOD_ACCEPTANCE_WORK_DIR" ] && [ ! -L "$HAKOPOD_ACCEPTANCE_WORK_DIR" ] || { echo 'use a fresh work directory' >&2; exit 2; }
 case "$HAKOPOD_ACCEPTANCE_WORK_DIR" in /tmp/hakopod-neon-native-*|/srv/hakopod-backup-scratch/hakopod-neon-native-*) ;; *) echo 'work directory is outside accepted scratch roots' >&2; exit 2;; esac
 case "$HAKOPOD_ACCEPTANCE_API_URL" in http://127.0.0.1:*|http://localhost:*) ;; *) echo 'acceptance API must be loopback HTTP' >&2; exit 2;; esac
-for file in "$KUBECONFIG" "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE" "$HAKOPOD_ACCEPTANCE_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_SPEC" "$HAKOPOD_ACCEPTANCE_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_IMAGES" "$HAKOPOD_ACCEPTANCE_IDENTITIES" "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION" "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE"; do
+for file in "$KUBECONFIG" "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE" "$HAKOPOD_ACCEPTANCE_SOURCE_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_TARGET_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_CANCELLATION_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_SPEC" "$HAKOPOD_ACCEPTANCE_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_IMAGES" "$HAKOPOD_ACCEPTANCE_IDENTITIES" "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION" "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE" "$HAKOPOD_ACCEPTANCE_OBJECT_STORE_FAULT_COMMAND_FILE"; do
   [ -f "$file" ] && [ ! -L "$file" ] || { echo 'an acceptance input is missing or symbolic' >&2; exit 2; }
 done
 [ "$(stat -c %a "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE")" = 600 ] || { echo 'API token file must be mode 600' >&2; exit 2; }
+for file in "$HAKOPOD_ACCEPTANCE_SOURCE_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_TARGET_PROXY_PASSWORD_FILE" "$HAKOPOD_ACCEPTANCE_CANCELLATION_PROXY_PASSWORD_FILE"; do
+  [ "$(stat -c %a "$file")" = 600 ] || { echo 'proxy password files must be mode 600' >&2; exit 2; }
+done
 
 exec python3 "$script_dir/driver.py" --source "$repo_root" --kubeconfig "$KUBECONFIG" \
   --api-url "$HAKOPOD_ACCEPTANCE_API_URL" --token-file "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE" \
@@ -50,5 +56,8 @@ exec python3 "$script_dir/driver.py" --source "$repo_root" --kubeconfig "$KUBECO
   --runtime-spec-digest-helper "$HAKOPOD_ACCEPTANCE_RUNTIME_SPEC_DIGEST_HELPER" \
   --control-psql-command-file "$HAKOPOD_ACCEPTANCE_CONTROL_PSQL_COMMAND_FILE" \
   --control-plane-bridge "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE" \
-  --psql "$HAKOPOD_ACCEPTANCE_PSQL" --proxy-password-file "$HAKOPOD_ACCEPTANCE_PROXY_PASSWORD_FILE" \
+  --object-store-fault-command-file "$HAKOPOD_ACCEPTANCE_OBJECT_STORE_FAULT_COMMAND_FILE" \
+  --psql "$HAKOPOD_ACCEPTANCE_PSQL" --source-proxy-password-file "$HAKOPOD_ACCEPTANCE_SOURCE_PROXY_PASSWORD_FILE" \
+  --target-proxy-password-file "$HAKOPOD_ACCEPTANCE_TARGET_PROXY_PASSWORD_FILE" \
+  --cancellation-proxy-password-file "$HAKOPOD_ACCEPTANCE_CANCELLATION_PROXY_PASSWORD_FILE" \
   --openssl "$HAKOPOD_ACCEPTANCE_OPENSSL" --local-port "$HAKOPOD_ACCEPTANCE_LOCAL_PORT"

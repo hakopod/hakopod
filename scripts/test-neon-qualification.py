@@ -292,6 +292,22 @@ class Tests(unittest.TestCase):
             observation["control_plane_trust"]["proxy_authenticated_query"]=replacement
             with self.assertRaisesRegex(ValueError,"authenticated SQL"): PRODUCER.validate_observation("tls",observation,state)
 
+    def test_failure_isolation_and_limit_observations_are_exact(self):
+        state={"run_id":"4"*32,"resources":resources()}; common={"run_id":"4"*32,"platform_id":"6"*32,"namespace_uid":"uid-source"}
+        observations={
+            "isolation-authentication":{**common,"target_platform_id":"7"*32,"target_namespace_uid":"uid-recovery_target","source_tenant_id":"1"*32,"source_timeline_id":"2"*32,"target_tenant_id":"3"*32,"target_timeline_id":"4"*32,"source_marker_verified":True,"target_marker_absent":True,"bad_credentials_refused":True,"cross_platform_credentials_refused":True},
+            "connection-limits":{**common,"configured_max_connections":64,"attempted_connections":72,"concurrent_connections":60,"refused_connections":12,"service_recovered":True},
+            "compute-roles":{**common,"primary_compute":"compute-0","replica_compute":"compute-1","primary_writable":True,"replica_read_only":True,"replica_write_refused":True,"replica_caught_up":True},
+            "wal-quorum-fencing":{**common,"safekeeper_count":3,"stopped_safekeepers":2,"write_refused_without_quorum":True,"quorum_restored":True,"write_recovered":True},
+            "controller-recovery":{**common,"controller_pod_uid_before":"old","controller_pod_uid_after":"new","tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":1,"timeline_generation":2,"identity_preserved":True,"service_recovered":True},
+            "object-store-outage":{**common,"outage_observed":True,"backup_refused":True,"service_restored":True},
+        }
+        for case,value in observations.items():
+            PRODUCER.validate_observation(case,value,state)
+            broken=dict(value); flag=next(key for key in value if key.endswith(("refused","recovered","restored")))
+            broken[flag]=False
+            with self.assertRaisesRegex(ValueError,case): PRODUCER.validate_observation(case,broken,state)
+
 class QualificationRecordTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
