@@ -49,6 +49,11 @@ func (w *Worker) runManagedPlatform(parent context.Context) {
 
 var managedPlatformSafeCategories = map[string]struct{}{
 	"capacity_admission": {}, "neon_snapshot_mismatch": {}, "neon_snapshot_missing": {},
+	"neon_proxy_activate": {}, "neon_namespace": {}, "neon_claims": {}, "neon_provider_state": {},
+	"neon_runtime_repair": {}, "neon_tls_prepare": {}, "neon_lifecycle_prepare": {}, "neon_lifecycle_deprovision": {},
+	"neon_node_inventory": {}, "neon_recovery_binding": {}, "neon_controller_secret": {}, "neon_render": {},
+	"neon_secret_validate": {}, "neon_secret_apply": {}, "neon_object_apply": {}, "neon_bootstrap_observe": {},
+	"neon_lifecycle_provision": {}, "neon_compute_replay": {}, "neon_serving_observe": {}, "neon_snapshot_prune": {}, "neon_recovery_observe": {},
 	"runtime_unavailable": {}, "snapshot_invalid": {}, "supabase_assets_invalid": {},
 	"supabase_apply_configmap": {}, "supabase_apply_deployment": {},
 	"supabase_apply_networkpolicy": {}, "supabase_apply_pvc": {},

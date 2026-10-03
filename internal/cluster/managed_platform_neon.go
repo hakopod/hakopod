@@ -202,6 +202,19 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		if claimed && namespaceClaim.ResourceID != string(ns.UID) {
 			return fmt.Errorf("Neon deletion namespace claim identity changed")
 		}
+		// Initial provisioning can fail before managed TLS or compute authority
+		// is attached. Only a fenced all-revision absence proof permits owned
+		// Kubernetes cleanup without preparing those provider credentials.
+		empty, err := (neonLifecycleAdapter{state: state, op: op}).NeonProviderStateEmpty(ctx)
+		if err != nil {
+			return managedPlatformRuntimeError("neon_provider_state", err)
+		}
+		if empty {
+			if err = before(); err != nil {
+				return err
+			}
+			return c.deleteSupabaseOperation(ctx, state, op, before)
+		}
 		if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
 			return managedPlatformRuntimeError("neon_runtime_repair", err)
 		}
