@@ -54,6 +54,37 @@ func TestNeonColdStartSeparatesBootstrapAndServingReadiness(t *testing.T) {
 	}
 }
 
+func TestNeonUpdatedComputeCanBootstrapBeforeCurrentRevisionAdvances(t *testing.T) {
+	replicas := int32(1)
+	compute := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "neon-compute-0", Generation: 2},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+		Status:     appsv1.StatefulSetStatus{ObservedGeneration: 2, Replicas: 1, UpdatedReplicas: 1, CurrentRevision: "old", UpdateRevision: "new"},
+	}
+	if !neonStatefulSetObserved(compute, false) || neonStatefulSetObserved(compute, true) {
+		t.Fatal("updated detached compute cannot reach lifecycle configuration before serving")
+	}
+	for _, change := range []func(*appsv1.StatefulSet){
+		func(s *appsv1.StatefulSet) { s.Status.ObservedGeneration = 1 },
+		func(s *appsv1.StatefulSet) { s.Status.UpdatedReplicas = 0 },
+		func(s *appsv1.StatefulSet) { s.Status.Replicas = 2 },
+	} {
+		pending := compute.DeepCopy()
+		change(pending)
+		if neonStatefulSetObserved(pending, false) {
+			t.Fatal("unobserved or incomplete compute replacement passed bootstrap")
+		}
+	}
+	compute.Status.ReadyReplicas = 1
+	if neonStatefulSetObserved(compute, true) {
+		t.Fatal("serving readiness ignored an incomplete revision transition")
+	}
+	compute.Status.CurrentRevision = compute.Status.UpdateRevision
+	if !neonStatefulSetObserved(compute, true) {
+		t.Fatal("completed ready compute rollout was refused")
+	}
+}
+
 func TestNeonAvailabilityZonesComeFromReadyKubernetesNodes(t *testing.T) {
 	node := func(name, zone string) *corev1.Node {
 		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"topology.kubernetes.io/zone": zone}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}

@@ -558,10 +558,12 @@ func neonDeploymentObserved(item *appsv1.Deployment, serving bool) bool {
 }
 
 func neonStatefulSetObserved(item *appsv1.StatefulSet, serving bool) bool {
-	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
+	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas {
 		return false
 	}
-	return !serving || item.Status.ReadyReplicas == *item.Spec.Replicas
+	// Kubernetes advances CurrentRevision after every updated Pod is ready.
+	// Lifecycle-configured StatefulSets must bootstrap before that can happen.
+	return !serving || item.Status.CurrentRevision == item.Status.UpdateRevision && item.Status.ReadyReplicas == *item.Spec.Replicas
 }
 
 func (c *Client) observeNeon(ctx context.Context, op store.ManagedPlatformOperation, manifests managedplatform.NeonManifests, current map[string]store.PlatformResourceClaim, serving bool) (NeonRuntimeObservation, error) {
