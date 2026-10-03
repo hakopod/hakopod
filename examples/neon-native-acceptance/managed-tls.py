@@ -220,7 +220,10 @@ def validate_certificates(a, issuer, snapshots):
                 raise RuntimeError(f"managed TLS snapshot {logical} has a different CA")
             result[logical] = {"snapshot_name": snapshots[logical][0]["metadata"]["name"],
                                "snapshot_uid": snapshots[logical][0]["metadata"]["uid"],
-                               "leaf_fingerprint": cert_fingerprint(data["tls.crt"])}
+                               "leaf_fingerprint": cert_fingerprint(data["tls.crt"]),
+                               "valid_beyond_renewal_window": subprocess.run(
+                                   [a.openssl, "x509", "-in", str(cert), "-checkend", str(7 * 24 * 60 * 60), "-noout"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10).returncode == 0}
     return issuer_ca, result
 
 
@@ -324,7 +327,7 @@ def inject(a):
                 f"UPDATE managed_platform_runtime_mutations SET completed_at=now() WHERE platform_id='{a.platform_id}' AND platform_revision={int(a.platform_revision)} AND component='{component}' AND operation_id='{a.owner_operation_id}' AND resource_id='{deployment_uid}' AND old_generation={old_generation} AND new_generation={new_generation} AND transition_token='{token}' AND spec_sha256='{spec_digest}' AND completed_at IS NULL; GET DIAGNOSTICS changed=ROW_COUNT; IF changed<>1 THEN RAISE EXCEPTION 'runtime journal transition mismatch'; END IF; END $hakopod$; SELECT 'HAKOPOD_RESULT:completed';")
     if psql(a, complete) != "completed":
         raise RuntimeError("Neon proxy transition claim was not completed")
-    kube(a, "-n", a.namespace, "rollout", "status", "deployment/neon-proxy", "--timeout=180s")
+    kube(a, "-n", a.namespace, "rollout", "status", "deployment/neon-proxy", "--timeout=180s", timeout=190)
     pathlib.Path(a.ca_file).write_bytes(issuer_ca)
     os.chmod(a.ca_file, 0o600)
     expected = cert_fingerprint(data["tls.crt"])
@@ -353,6 +356,8 @@ def await_renewal(a):
         raise RuntimeError("managed TLS maintenance did not replace the near-expiry Neon proxy leaf")
     if current["ca_fingerprint"] != injected["ca_fingerprint"]:
         raise RuntimeError("managed TLS maintenance changed the Neon platform CA")
+    if current["snapshots"]["proxy-auth"]["valid_beyond_renewal_window"] is not True:
+        raise RuntimeError("managed TLS maintenance left the Neon proxy leaf inside the seven-day renewal window")
     changes = {logical: current["snapshots"][logical]["snapshot_name"] != injected["prior_inventory"][logical]["snapshot_name"]
                for logical in LOGICAL}
     return {"status": "passed", "ca_fingerprint": current["ca_fingerprint"],
