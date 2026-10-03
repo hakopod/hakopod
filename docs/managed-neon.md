@@ -83,9 +83,18 @@ configuration. These paths still require native acceptance with the provider.
 The API, durable operation store, worker, Kubernetes renderer and private
 control clients are implemented. They share the same immutable revision and
 operation lease. Provider resources carry ownership tokens as well as the
-database record that owns them. Interrupted creation uses read-only provider
-inspection before adopting a resource; matching configuration alone is not
-proof of ownership.
+database record that owns them. If creation stops partway through, Hakopod
+replays only the request recorded for that operation. The provider checks its
+ownership token and request contents before resuming. Hakopod then reads the
+current provider state before confirming the resource. A matching name or
+configuration does not establish ownership.
+
+The worker holds a 30-second lease that prevents another worker from running
+the same operation. It renews that lease every five seconds while checking the
+operation's authority, so PostgreSQL initialization can continue safely.
+Each attempt lasts at most five minutes, and each provider request at most two
+minutes. Failed renewal cancels the work; the old worker cannot keep retrying
+under a lost lease.
 
 The recovery adapter closes the connection proxy and computes, records the
 committed WAL boundary, and waits for the attached pageserver to upload through

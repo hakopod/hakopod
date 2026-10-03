@@ -53,6 +53,11 @@ Replace the uppercase IDs with the values returned by the API. Apply returns a
 durable operation; an accepted HTTP request does not mean that the stack is
 ready. Inspect the operation and the platform's observed state.
 
+Long provisioning steps keep their operation lease renewed. If the worker
+loses that lease or the reviewed authority is revoked, it cancels the step.
+After a restart, another worker can resume the recorded work and verify the
+resources already created.
+
 ## Understand what the operator approves
 
 Standalone Hakopod and the Cloud embedding use the same runtime configuration
