@@ -31,9 +31,16 @@ func (w *Worker) runManagedPlatform(parent context.Context) {
 	if err != nil {
 		return
 	}
-	attemptCtx, cancel := context.WithTimeout(parent, 25*time.Second)
+	// Native database bootstrap can outlast one lease. Renew the exact
+	// operation while it runs, and stop its work if that authority is lost.
+	attemptCtx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
-	if err = w.ManagedPlatforms.ReconcileManagedPlatform(attemptCtx, w.Store, operation); err == nil {
+	err, leaseLost := reconcileManagedPlatformWithLease(attemptCtx, 5*time.Second,
+		func(ctx context.Context) error { return w.Store.HeartbeatManagedPlatformOperation(ctx, operation) },
+		func(ctx context.Context) error {
+			return w.ManagedPlatforms.ReconcileManagedPlatform(ctx, w.Store, operation)
+		})
+	if err == nil || leaseLost {
 		return
 	}
 	if attemptCtx.Err() != nil && parent.Err() != nil {
@@ -45,6 +52,49 @@ func (w *Worker) runManagedPlatform(parent context.Context) {
 	if recordErr := w.Store.RecordManagedPlatformStep(finishCtx, operation, "queued", "retry", "Managed platform reconciliation will retry.", map[string]any{"status": "pending", "revision": operation.Revision, "error_category": errorCategory, "error_type": errorType}); recordErr != nil {
 		slog.Warn("managed platform retry could not be recorded", "operation", operation.ID, "error_category", errorCategory, "error_type", errorType)
 	}
+}
+
+// Reconciliation and renewal share cancellation, but a completed operation
+// stops its renewer without turning a successful result into cancellation.
+func reconcileManagedPlatformWithLease(parent context.Context, interval time.Duration, heartbeat, reconcile func(context.Context) error) (error, bool) {
+	ctx, cancel := context.WithCancelCause(parent)
+	defer cancel(nil)
+	renewCtx, stopRenewing := context.WithCancel(ctx)
+	defer stopRenewing()
+	renewed := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-renewCtx.Done():
+				renewed <- nil
+				return
+			case <-ticker.C:
+				checkCtx, stopCheck := context.WithTimeout(renewCtx, 3*time.Second)
+				err := heartbeat(checkCtx)
+				stopCheck()
+				if err != nil {
+					if renewCtx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+						renewed <- nil
+						return
+					}
+					cancel(err)
+					renewed <- err
+					return
+				}
+			}
+		}
+	}()
+	err := reconcile(ctx)
+	stopRenewing()
+	if renewalErr := <-renewed; renewalErr != nil {
+		return renewalErr, true
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause, false
+	}
+	return err, false
 }
 
 var managedPlatformSafeCategories = map[string]struct{}{
