@@ -412,6 +412,7 @@ func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonCo
 func validateComputeConfig(raw json.RawMessage, tenantID, timelineID string) error {
 	var root struct {
 		Spec *struct {
+			Mode         string   `json:"mode"`
 			TenantID     string   `json:"tenant_id"`
 			TimelineID   string   `json:"timeline_id"`
 			Safekeepers  []string `json:"safekeeper_connstrings"`
@@ -425,8 +426,15 @@ func validateComputeConfig(raw json.RawMessage, tenantID, timelineID string) err
 	if root.Spec == nil || root.Spec.TenantID != tenantID || root.Spec.TimelineID != timelineID {
 		return fmt.Errorf("compute spec must attach the requested tenant and timeline")
 	}
-	if len(root.Spec.Safekeepers) < 3 || len(root.Spec.Safekeepers) > 8 {
-		return fmt.Errorf("compute spec requires 3-8 safekeeper connections")
+	if root.Spec.Mode == "Replica" {
+		if len(root.Spec.Safekeepers) != 0 {
+			return fmt.Errorf("replica compute must not run walproposer")
+		}
+		if err := validateNeonReplicaWALSettings(raw); err != nil {
+			return err
+		}
+	} else if root.Spec.Mode != "" && root.Spec.Mode != "Primary" || len(root.Spec.Safekeepers) != 3 {
+		return fmt.Errorf("primary compute requires 3 safekeeper connections")
 	}
 	seen := map[string]bool{}
 	for _, connection := range root.Spec.Safekeepers {

@@ -143,8 +143,20 @@ template's public JWKS and control token before sealing an operation. The token
 uses scope `compute_ctl:admin` and audience `["compute"]`, matching the pinned
 provider's authorization rules. It can manage both computes in that platform;
 another platform's key cannot verify it. The same platform retains its key on
-restart, update and restore. User compute settings and leaf TLS material are
-preserved, and only the public key enters the compute configuration.
+restart, update and restore. Only the public key enters the compute
+configuration. Go binds the control's TLS paths to the managed compute
+certificate and enables the provider's TLS feature.
+
+Go also owns the SQL port, listener, HBA policy, connection limits and WAL
+settings. Optional PostgreSQL settings remain configurable; conflicting owned
+settings are replaced. Raw PostgreSQL configuration accepts single-line
+assignments and rejects include directives. External plaintext SQL is refused;
+external TLS connections require SCRAM authentication. Compute zero sends WAL
+to the safekeeper quorum. Replicas use the PostgreSQL WAL receiver with verified
+TLS and an empty walproposer membership list, so routing cannot promote them.
+The provider gives the PostgreSQL child its tenant token through the environment
+instead of placing a password in `primary_conninfo`. Restore stops the previous
+compute processes before configuring the recovered tenant and its credential.
 
 The connection proxy also calls Hakopod's private HTTPS authentication API.
 Its operator configuration supplies that server's CA certificate bundle through
@@ -166,7 +178,8 @@ Neon stays unavailable until native lifecycle and recovery acceptance pass.
 
 Acceptance must prove tenant isolation, authenticated storage protocols,
 verified broker and controller-database TLS with wrong-CA, wrong-hostname and
-plaintext rejection, WAL quorum failure and fencing, pageserver replacement, durable
+plaintext rejection, verified TLS and HBA plaintext refusal on every compute SQL
+listener, WAL quorum failure and fencing, pageserver replacement, durable
 controller recovery, compute restart, owned tenant and timeline creation and deletion, credentials
 and connection limits, object-store outage, restore into a separate empty
 resource and complete owned cleanup. Physical zone and provider availability

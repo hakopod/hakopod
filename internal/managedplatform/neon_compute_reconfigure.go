@@ -24,6 +24,7 @@ type neonComputeDigests struct {
 func neonComputeRoutingDigest(raw json.RawMessage) (string, error) {
 	var value struct {
 		Spec struct {
+			Mode        string   `json:"mode"`
 			Pageserver  *string  `json:"pageserver_connstring"`
 			Safekeepers []string `json:"safekeeper_connstrings"`
 			Generation  *uint32  `json:"safekeepers_generation"`
@@ -31,8 +32,11 @@ func neonComputeRoutingDigest(raw json.RawMessage) (string, error) {
 			Timeline    *string  `json:"timeline_id"`
 		} `json:"spec"`
 	}
-	if len(raw) > maxNeonResponseBytes || json.Unmarshal(raw, &value) != nil || value.Spec.Pageserver == nil || value.Spec.Generation == nil || value.Spec.Tenant == nil || value.Spec.Timeline == nil || !neonID.MatchString(*value.Spec.Tenant) || !neonID.MatchString(*value.Spec.Timeline) || len(value.Spec.Safekeepers) != 3 {
+	if len(raw) > maxNeonResponseBytes || json.Unmarshal(raw, &value) != nil || value.Spec.Pageserver == nil || value.Spec.Generation == nil || value.Spec.Tenant == nil || value.Spec.Timeline == nil || !neonID.MatchString(*value.Spec.Tenant) || !neonID.MatchString(*value.Spec.Timeline) || (value.Spec.Mode == "Replica" && len(value.Spec.Safekeepers) != 0) || (value.Spec.Mode != "Replica" && len(value.Spec.Safekeepers) != 3) {
 		return "", fmt.Errorf("Neon compute routing is invalid")
+	}
+	if value.Spec.Safekeepers == nil {
+		value.Spec.Safekeepers = []string{}
 	}
 	sort.Strings(value.Spec.Safekeepers)
 	projection := map[string]any{"pageserver_connstring": value.Spec.Pageserver, "safekeeper_connstrings": value.Spec.Safekeepers, "safekeepers_generation": value.Spec.Generation, "tenant_id": value.Spec.Tenant, "timeline_id": value.Spec.Timeline}

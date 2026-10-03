@@ -48,6 +48,10 @@ func BindNeonComputeAuthentication(raw json.RawMessage, key []byte, platformID s
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode Neon compute verification key")
 	}
+	control["tls"], _ = json.Marshal(map[string]string{
+		"key_path":  "/var/run/secrets/hakopod/compute-auth/tls.key",
+		"cert_path": "/var/run/secrets/hakopod/compute-auth/tls.crt",
+	})
 	config["compute_ctl_config"], err = json.Marshal(control)
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode Neon compute control configuration")

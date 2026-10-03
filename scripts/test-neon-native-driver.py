@@ -100,11 +100,14 @@ class Tests(unittest.TestCase):
         driver.pods=mock.Mock(return_value=("managed-platform-id",pods))
         service_names=("neon-storage-controller","neon-proxy","neon-pageserver-0","neon-pageserver-1","neon-safekeeper-0","neon-safekeeper-1","neon-safekeeper-2","neon-compute-0","neon-compute-0-control")
         driver.k=mock.Mock(return_value=json.dumps({"items":[{"metadata":{"name":name}} for name in service_names]}))
-        observation={"tenant_id":"b"*32,"timeline_id":"c"*32,"tenant_generation":1,"timeline_generation":1,"compute_ids":["d"*32],"tenant_created":True,"timeline_created":True,"compute_started":True,"compute_stopped":True,"timeline_deleted":True,"tenant_deleted":True,"tls":{"client_verification_enforced":True,"server_verified":True,"plaintext_refused":True,"services":list(roles)}}
+        observation={"tenant_id":"b"*32,"timeline_id":"c"*32,"tenant_generation":1,"timeline_generation":1,"compute_ids":["d"*32],"tenant_created":True,"timeline_created":True,"compute_started":True,"compute_stopped":True,"timeline_deleted":True,"tenant_deleted":True,"tls":{"client_verification_enforced":True,"server_verified":True,"plaintext_refused":True,"services":list(roles)+["broker","controller-database","compute-sql"],"compute_sql_names":["compute-0"]}}
         driver.native={"e"*32:dict(observation,compute_names=["compute-0"])}
         driver.api=mock.Mock(return_value={"observation":observation})
         tls,lifecycle=driver.runtime("e"*32,"namespace-uid")
         self.assertTrue(tls["plaintext_refused"]); self.assertEqual(lifecycle["compute_names"],["compute-0"])
+        for names in (None,[],["compute-1"],["compute-0","compute-0"]):
+            driver.native["e"*32]["tls"]["compute_sql_names"]=names
+            with self.assertRaisesRegex(RuntimeError,"compute SQL TLS"): driver.runtime("e"*32,"namespace-uid")
     def test_runtime_rejects_absent_native_probe_evidence(self):
         driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix"); driver.native={}
         driver.pods=mock.Mock(return_value=("managed-platform-id",[]))

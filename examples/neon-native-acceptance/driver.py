@@ -203,10 +203,11 @@ class Driver:
         compute=next(p for p in pods if p["metadata"]["labels"].get("hakopod.io/neon-role")=="compute"); containers={c["name"] for c in compute["spec"]["containers"]}
         if not {"compute","compute-tls"}<=containers: raise RuntimeError("compute TLS sidecar is absent")
         probe=self.native.get(pid,{}); computes=probe.get("compute_names"); tls_observed=probe.get("tls",{})
-        if any(tls_observed.get(field) is not True for field in ("client_verification_enforced","server_verified","plaintext_refused")) or set(tls_observed.get("services",[]))!=required: raise RuntimeError("five-service provider TLS evidence is missing")
         expected_computes=["compute-"+str(i) for i in range(self.source_spec["neon"]["compute_replicas"])]
+        tls_services=required|{"broker","controller-database","compute-sql"}
+        if any(tls_observed.get(field) is not True for field in ("client_verification_enforced","server_verified","plaintext_refused")) or set(tls_observed.get("services",[]))!=tls_services or tls_observed.get("compute_sql_names")!=expected_computes: raise RuntimeError("provider and compute SQL TLS evidence is missing")
         if not ID.fullmatch(str(probe.get("tenant_id"))) or not ID.fullmatch(str(probe.get("timeline_id"))) or type(probe.get("tenant_generation")) is not int or type(probe.get("timeline_generation")) is not int or sorted(computes or [])!=expected_computes or any(probe.get(field) is not True for field in ("tenant_created","timeline_created","compute_started")): raise RuntimeError("native durable lifecycle identity is missing")
-        tls={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"client_verification_enforced":tls_observed["client_verification_enforced"],"server_verified":tls_observed["server_verified"],"plaintext_refused":tls_observed["plaintext_refused"],"services":sorted(tls_observed["services"])}
+        tls={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"client_verification_enforced":tls_observed["client_verification_enforced"],"server_verified":tls_observed["server_verified"],"plaintext_refused":tls_observed["plaintext_refused"],"services":sorted(tls_observed["services"]),"compute_sql_names":tls_observed["compute_sql_names"]}
         lifecycle={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"tenant_id":probe["tenant_id"],"timeline_id":probe["timeline_id"],"tenant_generation":probe["tenant_generation"],"timeline_generation":probe["timeline_generation"],"compute_names":computes,"created":True,"stopped":False,"deleted":False,"branch_created":probe["timeline_created"]}
         return tls,lifecycle
     def managed_tls(self,pid,revision,operation_id):

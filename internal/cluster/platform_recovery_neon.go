@@ -276,6 +276,12 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 				if err != nil {
 					return nil, lifecycle, nil, err
 				}
+				if !deprovision {
+					lifecycle.ComputeConfig[name], err = managedplatform.BindNeonTenantAuthentication(lifecycle.ComputeConfig[name], r.EncryptionKey, item.ID, binding.TenantID)
+					if err != nil {
+						return nil, lifecycle, nil, err
+					}
+				}
 			}
 		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
 			return nil, lifecycle, nil, bindingErr
@@ -695,6 +701,12 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	if err = r.scaleStorage(ctx, op, item, -1); err != nil {
 		return err
 	}
+	// The target was fenced and all compute pods removed before importing
+	// storage. Start empty controls before configuring the recovered tenant;
+	// each PostgreSQL child receives the recovered tenant's storage token.
+	if err = r.scaleServingWorkloads(ctx, op, item, plan.Namespace, -1, false); err != nil {
+		return err
+	}
 	durable, lifecycle, objects, err := r.durable(ctx, op, item, accepted, request, false, true)
 	if objects != nil {
 		defer objects.Close()
@@ -743,9 +755,6 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	}
 	endpoint, err := r.Store.NeonProxyEndpoint(ctx, item.ID)
 	if err != nil {
-		return err
-	}
-	if err = r.scaleServingWorkloads(ctx, op, item, plan.Namespace, -1, false); err != nil {
 		return err
 	}
 	compute, err := r.computePod(ctx, op, item, plan.Namespace, request)
