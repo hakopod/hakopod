@@ -19,6 +19,10 @@ func TestNeonRecoveryStorageRenderingPreservesAcceptedSpec(t *testing.T) {
 		identities[name] = NeonRuntimeIdentity{UID: 1000, GID: 1000}
 	}
 	input := NeonRenderInput{Spec: spec, PreviousSpec: &spec, PlatformID: strings.Repeat("a", 32), Revision: 2, NamespaceUID: "namespace-uid", Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 1000, ProxyControlPlaneOrigin: "https://control.example.test", ProxyControlPlaneCAPEM: neonTestControlPlaneCAPEM(t), ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}}
+	expectedStorageNodes := map[string]string{
+		"neon-pageserver-0": spec.Placement.NodeNames[0], "neon-pageserver-1": spec.Placement.NodeNames[1],
+		"neon-safekeeper-0": spec.Placement.NodeNames[0], "neon-safekeeper-1": spec.Placement.NodeNames[1], "neon-safekeeper-2": spec.Placement.NodeNames[2],
+	}
 	acceptedPrefix := spec.Neon.ObjectStoragePrefix
 	recoveryPrefix := acceptedPrefix + "/recovery/" + strings.Repeat("b", 32)
 	for _, prefix := range []string{"", recoveryPrefix, recoveryPrefix + "/"} {
@@ -51,6 +55,9 @@ func TestNeonRecoveryStorageRenderingPreservesAcceptedSpec(t *testing.T) {
 				}
 				pageservers++
 			case *appsv1.StatefulSet:
+				if expectedNode, ok := expectedStorageNodes[value.Name]; ok {
+					assertScheduledOnNode(t, value.Spec.Template.Spec, expectedNode)
+				}
 				if !strings.HasPrefix(value.Name, "neon-safekeeper-") {
 					continue
 				}

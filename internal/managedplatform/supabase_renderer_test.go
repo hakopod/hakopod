@@ -360,9 +360,7 @@ func TestSupabaseRendererEnforcesSharedVolumeAndStorageContracts(t *testing.T) {
 			continue
 		}
 		pod := deployment.Spec.Template.Spec
-		if pod.NodeSelector["kubernetes.io/hostname"] != "worker-a" {
-			t.Fatalf("%s is not pinned with the shared RWO claims", deployment.Name)
-		}
+		assertScheduledOnNode(t, pod, "worker-a")
 		if pod.NodeSelector["kubernetes.io/arch"] != "amd64" {
 			t.Fatalf("%s does not select the qualified amd64 architecture", deployment.Name)
 		}
