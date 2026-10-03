@@ -365,6 +365,9 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		return false
 	}
 	if resourceKind == "configmap" {
+		if component == "configmap.neon-proxy-control-plane-ca-r"+fmt.Sprint(op.Revision) && components["proxy"] {
+			return true
+		}
 		if components["pageserver"] && indexed("configmap.neon-pageserver-%d-r"+fmt.Sprint(op.Revision), op.Spec.Neon.Pageservers) {
 			return true
 		}

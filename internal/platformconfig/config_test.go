@@ -2,15 +2,22 @@ package platformconfig
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
@@ -24,6 +31,25 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 )
+
+func testManagedPlatformCertificatePEM(t *testing.T, isCA bool) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	usage := x509.KeyUsageDigitalSignature
+	if isCA {
+		usage = x509.KeyUsageCertSign
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "managed platform fixture"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: isCA, BasicConstraintsValid: true, KeyUsage: usage}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
 
 func TestUnconfiguredServerHasNoTypedNilRuntime(t *testing.T) {
 	server := &api.Server{}
@@ -224,7 +250,7 @@ func TestValidateManagedPlatformInventoriesKeepsPlatformsIndependent(t *testing.
 	for _, name := range managedplatform.NeonComponents() {
 		neonIdentities[name] = managedplatform.NeonRuntimeIdentity{UID: 10001, GID: 10001}
 	}
-	config := managedPlatformFile{NeonImages: images(managedplatform.NeonComponents()), NeonIdentities: neonIdentities, NeonProxyControlPlaneOrigin: "https://control.example.test", NeonControlPlaneNamespace: "hakopod-system", NeonControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}, NeonProxyToken: strings.Repeat("t", 32)}
+	config := managedPlatformFile{NeonImages: images(managedplatform.NeonComponents()), NeonIdentities: neonIdentities, NeonProxyControlPlaneOrigin: "https://control.example.test", NeonProxyControlPlaneCAPEM: testManagedPlatformCertificatePEM(t, true), NeonControlPlaneNamespace: "hakopod-system", NeonControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}, NeonProxyToken: strings.Repeat("t", 32)}
 	if supabase, neon, err := validateManagedPlatformInventories(config); err != nil || supabase || !neon {
 		t.Fatalf("Neon-only inventory was not accepted: supabase=%t neon=%t err=%v", supabase, neon, err)
 	}
@@ -233,6 +259,19 @@ func TestValidateManagedPlatformInventoriesKeepsPlatformsIndependent(t *testing.
 		t.Fatalf("unsafe Neon proxy control-plane origin was accepted: %v", err)
 	}
 	config.NeonProxyControlPlaneOrigin = "https://control.example.test"
+	config.NeonProxyControlPlaneCAPEM = ""
+	if _, _, err := validateManagedPlatformInventories(config); err == nil || !strings.Contains(err.Error(), "control-plane CA") {
+		t.Fatalf("missing Neon control-plane CA was accepted: %v", err)
+	}
+	config.NeonProxyControlPlaneCAPEM = "-----BEGIN PRIVATE KEY-----\nZmFrZQ==\n-----END PRIVATE KEY-----\n"
+	if _, _, err := validateManagedPlatformInventories(config); err == nil || strings.Contains(err.Error(), config.NeonProxyControlPlaneCAPEM) {
+		t.Fatalf("private key was accepted or leaked: %v", err)
+	}
+	config.NeonProxyControlPlaneCAPEM = testManagedPlatformCertificatePEM(t, false)
+	if _, _, err := validateManagedPlatformInventories(config); err == nil || !strings.Contains(err.Error(), "not a certificate authority") {
+		t.Fatalf("non-CA certificate was accepted: %v", err)
+	}
+	config.NeonProxyControlPlaneCAPEM = testManagedPlatformCertificatePEM(t, true)
 	config.NeonControlPlanePodLabels = nil
 	if _, _, err := validateManagedPlatformInventories(config); err == nil || !strings.Contains(err.Error(), "network trust") {
 		t.Fatalf("unscoped Neon control-plane ingress was accepted: %v", err)

@@ -44,6 +44,7 @@ type managedPlatformFile struct {
 	NeonImages                    map[string]string                                  `toml:"neon_images"`
 	NeonIdentities                map[string]managedplatform.NeonRuntimeIdentity     `toml:"neon_identities"`
 	NeonProxyControlPlaneOrigin   string                                             `toml:"neon_proxy_control_plane_origin"`
+	NeonProxyControlPlaneCAPEM    string                                             `toml:"neon_proxy_control_plane_ca_pem"`
 	NeonControlPlaneNamespace     string                                             `toml:"neon_control_plane_namespace"`
 	NeonControlPlanePodLabels     map[string]string                                  `toml:"neon_control_plane_pod_labels"`
 	NeonProxyToken                string                                             `toml:"neon_proxy_token"`
@@ -56,7 +57,7 @@ type managedPlatformFile struct {
 
 func validateManagedPlatformInventories(config managedPlatformFile) (bool, bool, error) {
 	supabaseConfigured := len(config.Images) > 0 || len(config.Identities) > 0
-	neonConfigured := len(config.NeonImages) > 0 || len(config.NeonIdentities) > 0 || config.NeonProxyControlPlaneOrigin != "" || config.NeonControlPlaneNamespace != "" || len(config.NeonControlPlanePodLabels) > 0 || config.NeonProxyToken != "" || len(config.NeonProxyEndpoints) > 0
+	neonConfigured := len(config.NeonImages) > 0 || len(config.NeonIdentities) > 0 || config.NeonProxyControlPlaneOrigin != "" || config.NeonProxyControlPlaneCAPEM != "" || config.NeonControlPlaneNamespace != "" || len(config.NeonControlPlanePodLabels) > 0 || config.NeonProxyToken != "" || len(config.NeonProxyEndpoints) > 0
 	if !supabaseConfigured && !neonConfigured {
 		return false, false, fmt.Errorf("managed platform runtime requires at least one complete platform inventory")
 	}
@@ -93,6 +94,9 @@ func validateManagedPlatformInventories(config managedPlatformFile) (bool, bool,
 			}
 		}
 		if err := managedplatform.ValidateHTTPSOrigin(config.NeonProxyControlPlaneOrigin, "Neon proxy control-plane origin"); err != nil {
+			return false, false, err
+		}
+		if err := managedplatform.ValidateNeonControlPlaneCABundle(config.NeonProxyControlPlaneCAPEM); err != nil {
 			return false, false, err
 		}
 		if err := managedplatform.ValidateNeonNetworkTrust(config.NeonControlPlaneNamespace, config.NeonControlPlanePodLabels, config.ApprovedExternalHTTPSCIDRs); err != nil {
@@ -202,7 +206,7 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 			return nil, nil, nil, fmt.Errorf("Neon proxy bootstrap %s: %w", scope, err)
 		}
 	}
-	planner := &api.NativeManagedPlatformPlanner{Store: db, EncryptionKey: key, SupabaseImages: config.Images, SupabaseIdentities: config.Identities, ApprovedEncryptedStorageClass: config.ApprovedEncryptedStorageClass, SharedStorageGID: config.SharedStorageGID, ApprovedExternalHTTPSCIDRs: config.ApprovedExternalHTTPSCIDRs, ResolveSupabaseSecret: resolver, NeonImages: config.NeonImages, NeonIdentities: config.NeonIdentities, NeonProxyControlPlaneOrigin: config.NeonProxyControlPlaneOrigin, NeonControlPlaneNamespace: config.NeonControlPlaneNamespace, NeonControlPlanePodLabels: config.NeonControlPlanePodLabels, NeonProxyToken: config.NeonProxyToken, NeonProxyEndpoints: config.NeonProxyEndpoints, ResolveNeonSecret: resolver}
+	planner := &api.NativeManagedPlatformPlanner{Store: db, EncryptionKey: key, SupabaseImages: config.Images, SupabaseIdentities: config.Identities, ApprovedEncryptedStorageClass: config.ApprovedEncryptedStorageClass, SharedStorageGID: config.SharedStorageGID, ApprovedExternalHTTPSCIDRs: config.ApprovedExternalHTTPSCIDRs, ResolveSupabaseSecret: resolver, NeonImages: config.NeonImages, NeonIdentities: config.NeonIdentities, NeonProxyControlPlaneOrigin: config.NeonProxyControlPlaneOrigin, NeonProxyControlPlaneCAPEM: config.NeonProxyControlPlaneCAPEM, NeonControlPlaneNamespace: config.NeonControlPlaneNamespace, NeonControlPlanePodLabels: config.NeonControlPlanePodLabels, NeonProxyToken: config.NeonProxyToken, NeonProxyEndpoints: config.NeonProxyEndpoints, ResolveNeonSecret: resolver}
 	var validateSupabaseQualification func(context.Context) error
 	if config.SupabaseQualification != nil {
 		binding := *config.SupabaseQualification
