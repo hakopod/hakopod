@@ -317,7 +317,7 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 		}
 		reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(config.Capacity.Nodes))
 		for _, node := range config.Capacity.Nodes {
-			reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, Capacity: config.Capacity.Capacity, Ownership: owned}
+			reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, SchedulingPool: config.Capacity.SchedulingPool, SchedulingRuntimeClass: config.Capacity.SchedulingRuntimeClass, Capacity: config.Capacity.Capacity, Ownership: owned}
 		}
 		bounded, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		err = kube.CheckManagedPlatformNodeReservations(bounded, reservations)
@@ -334,7 +334,7 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 			}
 			current := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
 			for _, node := range policy.Nodes {
-				current[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, Capacity: policy.Capacity, Ownership: owned}
+				current[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, SchedulingPool: policy.SchedulingPool, SchedulingRuntimeClass: policy.SchedulingRuntimeClass, Capacity: policy.Capacity, Ownership: owned}
 			}
 			return kube.CheckManagedPlatformNodeReservations(bounded, current)
 		}

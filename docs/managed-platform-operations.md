@@ -71,8 +71,29 @@ Cloud additionally requires a current workspace capacity grant. A global
 capacity section in the runtime TOML cannot override that grant. The catalog,
 planning and execution paths check the approved nodes and scope. Node UID,
 operating system and architecture are checked against the live inventory.
+Nodes must also be Ready and schedulable. A cordoned node or a blocking taint,
+such as disk pressure, prevents admission.
 One observed node is sufficient for a standalone Supabase grant; ordinary
 managed database grants retain their two-node minimum.
+
+For a dedicated worker pool, the operator sets `scheduling_pool` to the node's
+`hakopod.com/pool` label. Each approved node must have that label and the matching
+`NoSchedule` taint. Hakopod adds only that pool's exact selector and toleration
+to the pods, alongside the reviewed node affinity. Other blocking taints still
+prevent admission. Leave `scheduling_pool` empty for untainted nodes. Cloud
+derives this value from the workspace grant; customers cannot supply their own
+tolerations. The separate `pool` field identifies the capacity reservation.
+Changing either value invalidates an earlier review.
+
+`scheduling_runtime_class` selects the operator-approved container runtime for
+the stack. Cloud uses `runsc` and checks that its RuntimeClass exists, names the
+expected handler, and allows the selected node. Self-hosted operators can leave
+this value empty to use their node's default runtime. Customers cannot change
+the runtime through a platform specification. Set a scheduling pool whenever you select a runtime
+class. Changing the runtime also requires a new review.
+The supported runtime profile reserves 20m CPU and 50 MiB memory per pod in
+addition to the component requests. Admission rejects a runtime class whose
+declared overhead exceeds that allowance.
 
 The following redacted shape shows every capacity and node field. Replace each
 uppercase placeholder with values observed from the installation. A
@@ -87,6 +108,8 @@ shared_storage_gid = 10001
 [capacity]
 enabled = true
 pool = "REPLACE_WITH_CAPACITY_POOL"
+scheduling_pool = ""
+scheduling_runtime_class = ""
 storage_class = "REPLACE_WITH_STORAGE_CLASS"
 
 [capacity.capacity]

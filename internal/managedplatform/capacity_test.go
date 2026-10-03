@@ -42,6 +42,14 @@ func TestSupabaseCapacityCountsEachRenderedPVCOnce(t *testing.T) {
 	if total.CPUMilli != 3000 || total.MemoryBytes != 7<<30+int64(workloads)*PodMemoryOverheadBytes || total.StorageGiB != 43 {
 		t.Fatalf("unexpected Supabase reservation: %#v", total)
 	}
+	plan.SchedulingPool, plan.SchedulingRuntimeClass = "databases", "runsc"
+	sandboxed, err := CapacityReservations(spec, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ReservationTotal(sandboxed).CPUMilli; got != total.CPUMilli+int64(workloads)*SandboxCPUOverheadMilli {
+		t.Fatalf("sandbox CPU overhead was not reserved per pod: %dm", got)
+	}
 }
 
 func TestNeonCapacityMatchesSidecarsPVCsAndRendererPlacement(t *testing.T) {
@@ -66,6 +74,14 @@ func TestNeonCapacityMatchesSidecarsPVCsAndRendererPlacement(t *testing.T) {
 	}
 	if total.CPUMilli != 5500 || total.MemoryBytes != 22<<30+int64(workloads)*PodMemoryOverheadBytes || total.StorageGiB != 140 {
 		t.Fatalf("unexpected Neon reservation: %#v", total)
+	}
+	plan.SchedulingPool, plan.SchedulingRuntimeClass = "databases", "runsc"
+	sandboxed, err := CapacityReservations(spec, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ReservationTotal(sandboxed).CPUMilli; got != total.CPUMilli+int64(workloads)*SandboxCPUOverheadMilli {
+		t.Fatalf("sandbox CPU overhead was not reserved per rendered pod: %dm", got)
 	}
 	if byNode["node-a"].CPUMilli != 4000 || byNode["node-b"].CPUMilli != 1000 || byNode["node-c"].CPUMilli != 500 {
 		t.Fatalf("unexpected Neon placement: %#v", byNode)
@@ -105,5 +121,22 @@ func TestCapacityPolicyRejectsStorageOrNodeDrift(t *testing.T) {
 	spec.Placement.NodeNames = []string{"worker-b"}
 	if err = policy.Allows(spec, plan); err == nil {
 		t.Fatal("unapproved node accepted")
+	}
+}
+
+func TestCapacityPolicyFingerprintBindsSchedulingPool(t *testing.T) {
+	policy := CapacityPolicy{Enabled: true, Pool: "workspace", SchedulingPool: "databases", SchedulingRuntimeClass: "runsc", Capacity: Capacity{CPUMilli: 1000, MemoryBytes: 1 << 30, StorageGiB: 10}, Nodes: []CapacityNode{{Name: "worker", UID: "uid-worker", Architecture: "amd64", OperatingSystem: "linux"}}, StorageClass: "encrypted"}
+	withPool, err := policy.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.SchedulingPool = ""
+	policy.SchedulingRuntimeClass = ""
+	withoutPool, err := policy.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withPool == withoutPool {
+		t.Fatal("scheduling pool was not bound into the capacity fingerprint")
 	}
 }

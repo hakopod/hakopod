@@ -210,9 +210,11 @@ type Component struct {
 }
 
 type Plan struct {
-	Namespace     string      `json:"namespace"`
-	Components    []Component `json:"components"`
-	PublicService string      `json:"public_service"`
-	StorageClass  string      `json:"storage_class"`
-	Capability    Capability  `json:"capability"`
+	Namespace              string      `json:"namespace"`
+	Components             []Component `json:"components"`
+	PublicService          string      `json:"public_service"`
+	StorageClass           string      `json:"storage_class"`
+	SchedulingPool         string      `json:"scheduling_pool,omitempty"`
+	SchedulingRuntimeClass string      `json:"scheduling_runtime_class,omitempty"`
+	Capability             Capability  `json:"capability"`
 }
