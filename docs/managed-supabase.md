@@ -94,6 +94,13 @@ Run `scripts/build-supabase-edge-bundle.py` on the build VM to reproduce the
 Edge bundle. It uses the digest-pinned runtime image twice with separate empty
 module caches, requires byte-identical ESZIP output, fetches only the pinned
 JOSE 6.2.12 metadata and license, and records all source and output digests.
+The frozen bundle has also started in a container with networking disabled:
+an unauthenticated request and a malformed bearer token were rejected with
+HTTP 401, while a correctly signed token passed authentication and reached the
+missing-function response with HTTP 404. This proves the bundled router can
+authenticate requests without downloading dependencies at startup. It does
+not prove Kubernetes NetworkPolicy enforcement, function execution, external
+egress, or a full-stack deployment.
 
 Database clients do not share the owner password. Auth, Edge Runtime,
 PostgREST, Realtime, Storage, postgres-meta and Supavisor each receive a
@@ -171,9 +178,10 @@ named with an immutable name and revision, so another project cannot retrieve
 one by guessing its name. Secret bodies are authenticated and encrypted before
 database storage and redacted from API reads.
 
-VM validation passed the renderer and lifecycle tests, the store and API
-suites, worker tests and focused vet checks. The CLI, SDK and dashboard also
-passed their checks. A database-only native preflight passed empty-volume
+VM validation passed the current renderer and lifecycle tests, the store and
+API suites, worker tests and focused vet checks. The CLI, SDK and dashboard
+also passed their checks. These development checks used the reviewed source;
+they are not availability evidence. A database-only native preflight passed empty-volume
 startup, role isolation, private encryption-key permissions and persistence
 through pod replacement. It did not run the other ten components or test a
 full platform restore. Full-stack native acceptance remains required.
@@ -185,8 +193,11 @@ configuration. The database-only native preflight reported PostgreSQL
 separate CA-signed database certificate, verifies its key and both database DNS
 names, stages TLS files atomically, and configures PostgreSQL to refuse plaintext
 TCP connections. Auth, REST and Storage URLs must verify the database hostname
-against the mounted CA. Source tests and independent review passed; these
-controls have not yet passed native full-stack acceptance.
+against the mounted CA. Source tests and independent review passed for these
+controls. The prepared full-stack source and input receipt are
+review-window-bound and must be regenerated from the final source immediately
+before the run; an older receipt must not be reused. These controls have not
+yet passed native full-stack acceptance.
 
 Supavisor is configured with a separately generated `pooler-api-jwt-secret`
 for its administrative API, while NetworkPolicy denies application traffic to
