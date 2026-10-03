@@ -29,6 +29,9 @@ func TestVitessScopedCredentials(t *testing.T) {
 		t.Fatal("internal credentials exposed to gateway users")
 	}
 	init := string(data["init.sql"])
+	if strings.Contains(init, "CREATE DATABASE IF NOT EXISTS app") || !strings.Contains(init, "CREATE DATABASE IF NOT EXISTS _vt;") {
+		t.Fatal("Vitess bootstrap must preserve native fresh-storage detection and metadata setup")
+	}
 	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") ||
 		!strings.Contains(init, "GRANT SELECT, CREATE ON _vt.tables TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.tables FROM 'vt_app'@'localhost'") ||
 		!strings.Contains(init, "GRANT SELECT, UPDATE, CREATE ON _vt.schema_migrations TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.schema_migrations FROM 'vt_app'@'localhost'") ||
