@@ -13,6 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -72,6 +74,47 @@ func vitessFixtureReplicaAliasFromJSON(d database.Resource, member database.Memb
 		return "", fmt.Errorf("Vitess could not bind the observed replica to a native alias")
 	}
 	return alias, nil
+}
+
+func vitessFixtureCompleteBackups(ctx context.Context, c *Client, d database.Resource) (map[types.UID]time.Time, error) {
+	ns := DatabaseNamespace(d.ID)
+	root, err := c.dynamic.Resource(vitessDatabaseResource).Namespace(ns).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil || root.GetUID() == "" || root.GetLabels()[databaseOwner] != d.ID || root.GetLabels()[managedBy] != "hakopod" {
+		return nil, fmt.Errorf("Vitess reseed backup controller ownership changed")
+	}
+	backups, err := c.dynamic.Resource(schema.GroupVersionResource{Group: "planetscale.com", Version: "v2", Resource: "vitessbackups"}).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 65, LabelSelector: "planetscale.com/cluster=database"})
+	if err != nil || backups.GetContinue() != "" || len(backups.Items) > 64 {
+		return nil, fmt.Errorf("Vitess reseed backup inventory exceeds its bound")
+	}
+	complete := map[types.UID]time.Time{}
+	for _, copy := range backups.Items {
+		if !c.vitessOwnedChain(ctx, ns, copy.GetUID(), copy.GetOwnerReferences(), root.GetUID()) || copy.GetLabels()["planetscale.com/keyspace"] != "app" || copy.GetLabels()["planetscale.com/shard"] != "x-x" {
+			return nil, fmt.Errorf("Vitess reseed backup ownership or shard changed")
+		}
+		ready, _, err := unstructured.NestedBool(copy.Object, "status", "complete")
+		if err != nil {
+			return nil, fmt.Errorf("Vitess reseed backup completion state is invalid")
+		}
+		if !ready || copy.GetDeletionTimestamp() != nil {
+			continue
+		}
+		stamp, _, _ := unstructured.NestedString(copy.Object, "status", "startTime")
+		started, err := time.Parse(time.RFC3339, stamp)
+		if err != nil || started.After(time.Now().Add(time.Minute)) {
+			return nil, fmt.Errorf("Vitess reseed backup timestamp is invalid")
+		}
+		complete[copy.GetUID()] = started
+	}
+	return complete, nil
+}
+
+func vitessFixtureHasNewBackup(before, after map[types.UID]time.Time, started time.Time) bool {
+	for uid, at := range after {
+		if _, existed := before[uid]; !existed && !at.Before(started.Truncate(time.Second)) {
+			return true
+		}
+	}
+	return false
 }
 
 func vitessFixtureTabletVolume(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) (corev1.PersistentVolumeClaim, corev1.PersistentVolume) {
@@ -215,10 +258,32 @@ func TestManagedVitessNativeReseedLive(t *testing.T) {
 	if _, err := client.ExecContext(ctx, "INSERT INTO records VALUES (99,0xCAFE,'after-replica-stopped')"); err != nil {
 		t.Fatal(err)
 	}
-	beforeBackups := vitessFixtureNativeCommand(t, ctx, c, d, "GetBackups", "--limit=10", "app/-")
+	// vtctld cannot reach object storage. Observe the owned backup controller's
+	// complete copies without granting the control process backup egress.
+	beforeBackups, err := vitessFixtureCompleteBackups(ctx, c, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupStarted := time.Now()
 	vitessFixtureNativeCommand(t, ctx, c, d, "BackupShard", "--concurrency=1", "app/-")
-	afterBackups := vitessFixtureNativeCommand(t, ctx, c, d, "GetBackups", "--limit=10", "app/-")
-	if strings.TrimSpace(afterBackups) == "" || beforeBackups == afterBackups {
+	waitBackup, stopBackup := context.WithTimeout(ctx, 3*time.Minute)
+	backupComplete := false
+	for waitBackup.Err() == nil {
+		afterBackups, err := vitessFixtureCompleteBackups(waitBackup, c, d)
+		if err != nil {
+			stopBackup()
+			t.Fatal(err)
+		}
+		if vitessFixtureHasNewBackup(beforeBackups, afterBackups, backupStarted) {
+			backupComplete = true
+			break
+		}
+		if sleepContext(waitBackup, 2*time.Second) != nil {
+			break
+		}
+	}
+	stopBackup()
+	if !backupComplete {
 		t.Fatal("Vitess native backup did not publish a new recovery copy")
 	}
 	local(primary, "FLUSH BINARY LOGS")
