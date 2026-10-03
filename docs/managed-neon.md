@@ -158,6 +158,23 @@ The provider gives the PostgreSQL child its tenant token through the environment
 instead of placing a password in `primary_conninfo`. Restore stops the previous
 compute processes before configuring the recovered tenant and its credential.
 
+Before sealing the compute configuration, Go copies the accepted proxy roles'
+SCRAM verifiers into roles already declared in the reviewed template. An
+undeclared proxy role is rejected before an operation is accepted. The pinned
+provider gives newly created template roles administrative privileges, including
+creating databases and roles, replication, and bypassing row-level security.
+Review that role list as an administrative provisioning policy. Create roles
+with limited privileges through SQL and grant only the database access they
+need; [Neon's role guide](https://neon.com/docs/manage/roles) explains this
+distinction. Adding a proxy credential never adds a template role.
+
+Go validates the verifier's
+salt and key encoding and preserves other reviewed role options. The provider
+enables login when applying those roles. This keeps the proxy and database
+passwords aligned, including when a restore target uses different credentials
+from the source. A shared operator template does not share those passwords
+between platforms.
+
 The connection proxy also calls Hakopod's private HTTPS authentication API.
 Its operator configuration supplies that server's CA certificate bundle through
 `neon_proxy_control_plane_ca_pem`. The renderer mounts only the public CA bundle

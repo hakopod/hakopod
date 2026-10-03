@@ -21,8 +21,6 @@ const maxNeonProxyRequestBytes = 8 << 10
 
 var neonProxySessionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var neonProxyName = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$`)
-var neonProxyRole = regexp.MustCompile(`^[a-z0-9_](?:[-_a-z0-9]{0,61}[a-z0-9_])?$`)
-var neonSCRAMSecret = regexp.MustCompile(`^SCRAM-SHA-256\$[1-9][0-9]{3,8}:[A-Za-z0-9+/]+=*\$[A-Za-z0-9+/]+=*:[A-Za-z0-9+/]+=*$`)
 
 type NeonProxyAccess struct {
 	RoleSecret             string         `json:"role_secret"`
@@ -173,7 +171,7 @@ func NewConfiguredNeonProxyAuthority(token string, endpoints map[string]NeonProx
 		}
 		roles := make(map[string]NeonProxyRoleConfig, len(config.Roles))
 		for role, value := range config.Roles {
-			if !neonProxyRole.MatchString(role) || !neonSCRAMSecret.MatchString(value.SCRAMSecret) || len(value.AllowedIPs) > 64 || len(value.AllowedVPCEndpointIDs) > 64 {
+			if managedplatform.ValidateNeonSQLRoleCredential(role, value.SCRAMSecret) != nil || len(value.AllowedIPs) > 64 || len(value.AllowedVPCEndpointIDs) > 64 {
 				return nil, fmt.Errorf("Neon proxy role configuration is invalid")
 			}
 			ips := append([]string(nil), value.AllowedIPs...)
