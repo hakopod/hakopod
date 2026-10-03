@@ -130,6 +130,25 @@ class Tests(unittest.TestCase):
         self.assertEqual(driver.proxy_auth_message("managed-platform-"+platform_id,"deployment/proxy",15433,Path("/protected/ca.crt"),platform_id),b"R")
         payload=connection.sendall.call_args.args[0]
         self.assertEqual(payload[8:],b"user\x00cloud_admin\x00database\x00postgres\x00options\x00endpoint="+platform_id.encode()+b"\x00\x00")
+    @mock.patch.object(DRIVER.socket,"create_connection")
+    @mock.patch.object(DRIVER.subprocess,"Popen")
+    def test_authenticated_proxy_query_verifies_tls_identity_and_keeps_password_out_of_argv(self,popen,_connect):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.root=Path(directory); driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
+            password=Path(directory)/"password"; password.write_text("native-test-credential"); password.chmod(0o600); driver.a.proxy_password_file=str(password)
+            driver.command=mock.Mock(return_value="cloud_admin:postgres\n")
+            forward=mock.MagicMock(); forward.poll.return_value=None; popen.return_value=forward
+            with mock.patch.dict(DRIVER.os.environ,{"PGSERVICE":"untrusted-service","PGSSLMODE":"disable","PSQLRC":"/untrusted/rc"}):
+                driver.authenticated_proxy_query("a"*32)
+            argv=driver.command.call_args.args[0]; environment=driver.command.call_args.kwargs["env"]
+            self.assertNotIn("native-test-credential"," ".join(argv)); self.assertEqual(environment["PGPASSWORD"],"native-test-credential")
+            self.assertEqual(environment["PGOPTIONS"],"endpoint="+"a"*32)
+            self.assertFalse({"PGSERVICE","PSQLRC"}&set(environment))
+            self.assertEqual(environment["PGHOST"],"neon-proxy"); self.assertEqual(environment["PGHOSTADDR"],"127.0.0.1"); self.assertEqual(environment["PGSSLMODE"],"verify-full")
+            self.assertIn("service/neon-proxy",popen.call_args.args[0]); forward.terminate.assert_called_once()
+            driver.command.return_value="unexpected:postgres\n"
+            with self.assertRaisesRegex(RuntimeError,"identity differs"): driver.authenticated_proxy_query("a"*32)
+            self.assertEqual(forward.terminate.call_count,2)
     def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
         driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
         value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
