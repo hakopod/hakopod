@@ -206,7 +206,7 @@ func vitessFixtureClient(t *testing.T, ctx context.Context, c *Client, d databas
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := c.vitessGatewayClient(ctx, d, health.Routing.Members[gateway], route, password, config)
+	client, err := c.vitessGatewayClientWithReadTimeout(ctx, d, health.Routing.Members[gateway], route, password, config, 35*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
