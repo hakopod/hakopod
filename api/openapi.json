@@ -24559,7 +24559,8 @@
             "uniqueItems": true
           },
           "database_name": {
-            "type": "string"
+            "type": "string",
+            "const": "postgres"
           },
           "jwt_expiry_seconds": {
             "type": "integer"
@@ -24622,8 +24623,7 @@
           },
           "branch_limit": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 64
+            "const": 1
           },
           "object_storage_url": {
             "type": "string",
@@ -25215,8 +25215,7 @@
               },
               "branch_limit": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 64
+                "const": 1
               },
               "object_storage_url": {
                 "type": "string"
