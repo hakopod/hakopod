@@ -33,6 +33,15 @@ func vitessFixtureNativeCommand(t *testing.T, ctx context.Context, c *Client, d 
 
 func vitessFixtureReplicaAlias(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) string {
 	t.Helper()
+	value := vitessFixtureNativeCommand(t, ctx, c, d, "GetTablets", "--strict", "--format=json", "--keyspace=app", "--shard="+member.Shard)
+	alias, err := vitessFixtureReplicaAliasFromJSON(d, member, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return alias
+}
+
+func vitessFixtureReplicaAliasFromJSON(d database.Resource, member database.Member, value string) (string, error) {
 	var tablets []struct {
 		Alias struct {
 			Cell string `json:"cell"`
@@ -41,25 +50,28 @@ func vitessFixtureReplicaAlias(t *testing.T, ctx context.Context, c *Client, d d
 		Hostname string `json:"hostname"`
 		Keyspace string `json:"keyspace"`
 		Shard    string `json:"shard"`
-		Type     string `json:"type"`
+		Type     uint32 `json:"type"`
 	}
-	value := vitessFixtureNativeCommand(t, ctx, c, d, "GetTablets", "--strict", "--format=json", "--keyspace=app", "--shard="+member.Shard)
 	if json.Unmarshal([]byte(value), &tablets) != nil || len(tablets) != 1+d.Spec.Replicas {
-		t.Fatal("Vitess native tablet identity inventory is incomplete")
+		return "", fmt.Errorf("Vitess native tablet identity inventory is incomplete")
 	}
 	alias := ""
 	for _, tablet := range tablets {
+		if tablet.Type != 1 && tablet.Type != 2 {
+			return "", fmt.Errorf("Vitess native tablet inventory has an unsupported role")
+		}
 		if tablet.Hostname == member.Name+"."+DatabaseNamespace(d.ID)+".svc.cluster.local" {
-			if alias != "" || tablet.Keyspace != "app" || tablet.Shard != member.Shard || tablet.Type != "REPLICA" || tablet.Alias.Cell != "local" || tablet.Alias.UID == 0 {
-				t.Fatal("Vitess selected tablet is not the observed replica")
+			// GetTablets emits the numeric protobuf enum; REPLICA is 2.
+			if alias != "" || tablet.Keyspace != "app" || tablet.Shard != member.Shard || tablet.Type != 2 || tablet.Alias.Cell != "local" || tablet.Alias.UID == 0 {
+				return "", fmt.Errorf("Vitess selected tablet is not the observed replica")
 			}
 			alias = fmt.Sprintf("%s-%010d", tablet.Alias.Cell, tablet.Alias.UID)
 		}
 	}
 	if alias == "" {
-		t.Fatal("Vitess could not bind the observed replica to a native alias")
+		return "", fmt.Errorf("Vitess could not bind the observed replica to a native alias")
 	}
-	return alias
+	return alias, nil
 }
 
 func vitessFixtureTabletVolume(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) (corev1.PersistentVolumeClaim, corev1.PersistentVolume) {
