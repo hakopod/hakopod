@@ -8,6 +8,18 @@ umask 077
 : "${HAKOPOD_ACCEPTANCE_NAMESPACE_UID:?set the recorded disposable namespace UID}"
 : "${HAKOPOD_ACCEPTANCE_ADVERSARIAL_CERT_DIR:?set the protected VM certificate directory}"
 [ "${HAKOPOD_ACCEPTANCE_DISPOSABLE:-}" = 1 ] || { echo "adversarial TLS requires a disposable fixture" >&2; exit 2; }
+scheduling_pool=${HAKOPOD_ACCEPTANCE_SCHEDULING_POOL:-}
+scheduling_runtime_class=${HAKOPOD_ACCEPTANCE_SCHEDULING_RUNTIME_CLASS:-}
+node_names=[]
+node_uids={}
+if [ -n "$scheduling_pool$scheduling_runtime_class" ]; then
+  [ -n "$scheduling_pool" ] && [ -n "$scheduling_runtime_class" ] && [ -n "${HAKOPOD_ACCEPTANCE_NODE_NAMES_JSON:-}" ] && [ -n "${HAKOPOD_ACCEPTANCE_NODE_UIDS_JSON:-}" ] || { echo "adversarial TLS scheduling policy is incomplete" >&2; exit 2; }
+  printf '%s' "$scheduling_pool" | grep -Eq '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$' || { echo "adversarial TLS scheduling pool is invalid" >&2; exit 2; }
+  printf '%s' "$scheduling_runtime_class" | grep -Eq '^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$' || { echo "adversarial TLS scheduling RuntimeClass is invalid" >&2; exit 2; }
+  node_names=$(printf '%s' "$HAKOPOD_ACCEPTANCE_NODE_NAMES_JSON" | jq -ce 'select(type=="array" and length>=1 and length<=48 and all(.[]; type=="string" and length>0) and (unique|length)==length)')
+  node_uids=$(printf '%s' "$HAKOPOD_ACCEPTANCE_NODE_UIDS_JSON" | jq -ce 'select(type=="object" and length>=1 and length<=48 and all(to_entries[]; (.key|type)=="string" and (.value|type)=="string" and (.value|length)>0))')
+  jq -ne --argjson nodes "$node_names" --argjson uids "$node_uids" 'all($nodes[]; $uids[.] != null)' >/dev/null || { echo "adversarial TLS placement is not bound to reviewed node UIDs" >&2; exit 2; }
+fi
 
 kubectl_bin=${KUBECTL_BIN:-kubectl}
 context=k3d-hakopod-dev
@@ -153,7 +165,7 @@ run_phase() {
   secret_identity=$(printf '%s' "$secret_manifest" | k create -f - -o json | jq -er '.metadata.uid+" "+.metadata.resourceVersion')
   active_secret_uid=${secret_identity% *}
   active_secret_rv=${secret_identity#* }
-  pod_json=$(cat <<EOF | k create -f - -o json
+  pod_manifest=$(cat <<EOF
 apiVersion: v1
 kind: Pod
 metadata:
@@ -220,9 +232,20 @@ spec:
     emptyDir: {sizeLimit: 64Mi}
 EOF
 )
+  if [ -n "$scheduling_pool" ]; then
+    pod_manifest=$(printf '%s' "$pod_manifest" | k create --dry-run=client -f - -o json | jq --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --argjson nodes "$node_names" '.spec.runtimeClassName=$runtime | .spec.nodeSelector["hakopod.com/pool"]=$pool | .spec.tolerations=[{key:"hakopod.com/pool",operator:"Equal",value:$pool,effect:"NoSchedule"}] | .spec.affinity={nodeAffinity:{requiredDuringSchedulingIgnoredDuringExecution:{nodeSelectorTerms:[{matchFields:[{key:"metadata.name",operator:"In",values:$nodes}]}]}}}')
+  fi
+  pod_json=$(printf '%s' "$pod_manifest" | k create -f - -o json)
   active_pod_uid=$(printf '%s' "$pod_json" | jq -er '.metadata.uid')
   active_pod_rv=$(printf '%s' "$pod_json" | jq -er '.metadata.resourceVersion')
   k wait --for=condition=Ready "pod/$active_name" --timeout=2m >/dev/null
+  if [ -n "$scheduling_pool" ]; then
+    observed_pod=$(k get pod "$active_name" -o json)
+    observed_node=$(printf '%s' "$observed_pod" | jq -er --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --argjson nodes "$node_names" '.spec.nodeName as $node | select(.status.phase=="Running" and any(.status.conditions[]?; .type=="Ready" and .status=="True") and ($nodes|index($node))!=null and .spec.runtimeClassName==$runtime and .spec.nodeSelector["hakopod.com/pool"]==$pool and ([.spec.tolerations[]? | select(.key=="hakopod.com/pool" and .operator=="Equal" and .value==$pool and .effect=="NoSchedule")] | length)==1) | $node')
+    expected_node_uid=$(printf '%s' "$node_uids" | jq -er --arg node "$observed_node" '.[$node]')
+    observed_node_json=$("$kubectl_bin" --request-timeout=15s --kubeconfig "$KUBECONFIG" --context "$context" get node "$observed_node" -o json)
+    printf '%s' "$observed_node_json" | jq -e --arg uid "$expected_node_uid" --arg pool "$scheduling_pool" '.metadata.uid==$uid and .spec.unschedulable!=true and .metadata.labels["hakopod.com/pool"]==$pool and any(.status.conditions[]?; .type=="Ready" and .status=="True") and ([.spec.taints[]? | select(.effect=="NoSchedule" or .effect=="NoExecute")] | length)==1 and ([.spec.taints[]? | select(.key=="hakopod.com/pool" and .value==$pool and .effect=="NoSchedule")] | length)==1' >/dev/null || { echo "adversarial TLS Pod node scheduling identity differs" >&2; return 1; }
+  fi
   selector=$(jq -cn --arg value "$phase-$suffix" '{"hakopod.io/tls-adversary":$value}')
   patch=$(jq -cn --arg uid "$service_uid" --argjson selector "$selector" '[{op:"test",path:"/metadata/uid",value:$uid},{op:"replace",path:"/spec/selector",value:$selector}]')
   selector_changed=1

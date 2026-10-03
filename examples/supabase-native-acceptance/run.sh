@@ -35,6 +35,17 @@ expected_context=k3d-hakopod-dev
 : "${HAKOPOD_ACCEPTANCE_DISPOSABLE:?set HAKOPOD_ACCEPTANCE_DISPOSABLE=1 for an isolated disposable fixture}"
 [ "$HAKOPOD_ACCEPTANCE_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicit disposable fixture marker" >&2; exit 2; }
 [ "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicitly disposable recovery target" >&2; exit 2; }
+placement_nodes=$(jq -ce '.placement.node_names | select(type=="array" and length>=1 and length<=48 and all(.[]; type=="string" and length>0))' "$HAKOPOD_ACCEPTANCE_SPEC")
+scheduling_pool=${HAKOPOD_ACCEPTANCE_SCHEDULING_POOL:-}
+scheduling_runtime_class=${HAKOPOD_ACCEPTANCE_SCHEDULING_RUNTIME_CLASS:-}
+node_uids={}
+if [ -n "$scheduling_pool$scheduling_runtime_class" ]; then
+  [ -n "$scheduling_pool" ] && [ -n "$scheduling_runtime_class" ] && [ -n "${HAKOPOD_ACCEPTANCE_NODE_UIDS_JSON:-}" ] || { echo "acceptance scheduling policy is incomplete" >&2; exit 2; }
+  printf '%s' "$scheduling_pool" | grep -Eq '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$' || { echo "acceptance scheduling pool is invalid" >&2; exit 2; }
+  printf '%s' "$scheduling_runtime_class" | grep -Eq '^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$' || { echo "acceptance scheduling RuntimeClass is invalid" >&2; exit 2; }
+  node_uids=$(printf '%s' "$HAKOPOD_ACCEPTANCE_NODE_UIDS_JSON" | jq -ce 'select(type=="object" and length>=1 and length<=48 and all(to_entries[]; (.key|type)=="string" and (.value|type)=="string" and (.value|length)>0))')
+  jq -ne --argjson nodes "$placement_nodes" --argjson uids "$node_uids" 'all($nodes[]; $uids[.] != null)' >/dev/null || { echo "acceptance placement is not bound to reviewed node UIDs" >&2; exit 2; }
+fi
 for command in kubectl curl jq websocat sha256sum openssl python3 docker go timeout; do command -v "$command" >/dev/null 2>&1 || { echo "$command is required" >&2; exit 2; }; done
 kubectl_bin=$(command -v kubectl)
 kubectl() { command "$kubectl_bin" --request-timeout=15s "$@"; }
@@ -199,13 +210,18 @@ reviewed_ca_sha=$(sha256sum "$HAKOPOD_ACCEPTANCE_GATEWAY_CA" | awk '{print $1}')
 [ "$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get secret "$runtime_ref" -o go-template='{{range $key,$value := .data}}{{$key}}{{"\n"}}{{end}}')" = value ]
 workloads_file=$work_dir/workloads.json
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get deployment,statefulset -o json >"$workloads_file"
-jq -e --slurpfile pins "$HAKOPOD_ACCEPTANCE_IMAGES" --slurpfile ids "$HAKOPOD_ACCEPTANCE_IDENTITIES" '
+jq -e --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --slurpfile pins "$HAKOPOD_ACCEPTANCE_IMAGES" --slurpfile ids "$HAKOPOD_ACCEPTANCE_IDENTITIES" '
   (.items | length)==11 and
   (.items | map(.metadata.labels["app.kubernetes.io/component"]) | unique | length)==11 and
   (.items | map({key:.metadata.labels["app.kubernetes.io/component"],value:.spec.template.spec.containers[0].image}) | from_entries) == $pins[0] and
   all(.items[]; .metadata.labels["app.kubernetes.io/component"] as $component |
     .spec.template.spec.automountServiceAccountToken == false and
     .spec.template.spec.enableServiceLinks == false and
+    (if $pool=="" then true else
+      .spec.template.spec.runtimeClassName == $runtime and
+      .spec.template.spec.nodeSelector["hakopod.com/pool"] == $pool and
+      ([.spec.template.spec.tolerations[]? | select(.key=="hakopod.com/pool" and .operator=="Equal" and .value==$pool and .effect=="NoSchedule")] | length)==1
+    end) and
     .spec.template.spec.securityContext.runAsNonRoot == true and
     .spec.template.spec.securityContext.runAsUser == $ids[0][$component].uid and
     .spec.template.spec.securityContext.runAsGroup == $ids[0][$component].gid and
@@ -241,6 +257,14 @@ jq -e --slurpfile pvc "$pvc_before" 'all(.[]; . as $pv | any($pvc[0][]; .name==$
 record_case create-owned-resources "$workloads_file"
 
 for pod in $(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get pods -l "hakopod.io/managed-platform-id=$HAKOPOD_ACCEPTANCE_PLATFORM_ID" -o name); do
+  pod_json=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get "$pod" -o json)
+  if [ -n "$scheduling_pool" ]; then
+    printf '%s' "$pod_json" | jq -e --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --argjson nodes "$placement_nodes" --argjson uids "$node_uids" '.spec.nodeName as $node | .status.phase=="Running" and any(.status.conditions[]?; .type=="Ready" and .status=="True") and ($nodes|index($node))!=null and $uids[$node]!=null and .spec.runtimeClassName==$runtime and .spec.nodeSelector["hakopod.com/pool"]==$pool and ([.spec.tolerations[]? | select(.key=="hakopod.com/pool" and .operator=="Equal" and .value==$pool and .effect=="NoSchedule")] | length)==1' >/dev/null || { echo "managed Supabase pod scheduling policy is invalid" >&2; exit 1; }
+    pod_node=$(printf '%s' "$pod_json" | jq -er '.spec.nodeName')
+    expected_node_uid=$(printf '%s' "$node_uids" | jq -er --arg node "$pod_node" '.[$node]')
+    pod_node_json=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" get node "$pod_node" -o json)
+    printf '%s' "$pod_node_json" | jq -e --arg uid "$expected_node_uid" --arg pool "$scheduling_pool" '.metadata.uid==$uid and .spec.unschedulable!=true and .metadata.labels["hakopod.com/pool"]==$pool and any(.status.conditions[]?; .type=="Ready" and .status=="True") and ([.spec.taints[]? | select(.effect=="NoSchedule" or .effect=="NoExecute")] | length)==1 and ([.spec.taints[]? | select(.key=="hakopod.com/pool" and .value==$pool and .effect=="NoSchedule")] | length)==1' >/dev/null || { echo "managed Supabase pod node scheduling identity differs" >&2; exit 1; }
+  fi
   component=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" get "$pod" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/component}')
   expected_uid=$(jq -er --arg c "$component" '.[$c].uid' "$HAKOPOD_ACCEPTANCE_IDENTITIES")
   expected_gid=$(jq -er --arg c "$component" '.[$c].gid' "$HAKOPOD_ACCEPTANCE_IDENTITIES")
@@ -560,6 +584,10 @@ fixture_database_cert_sha=$(sha256sum "$HAKOPOD_ACCEPTANCE_ADVERSARIAL_CERT_DIR/
 HAKOPOD_SUPABASE_NAMESPACE="$namespace" \
   HAKOPOD_ACCEPTANCE_PLATFORM_ID="$HAKOPOD_ACCEPTANCE_PLATFORM_ID" \
   HAKOPOD_ACCEPTANCE_NAMESPACE_UID="$namespace_uid" \
+  HAKOPOD_ACCEPTANCE_SCHEDULING_POOL="$scheduling_pool" \
+  HAKOPOD_ACCEPTANCE_SCHEDULING_RUNTIME_CLASS="$scheduling_runtime_class" \
+  HAKOPOD_ACCEPTANCE_NODE_NAMES_JSON="$placement_nodes" \
+  HAKOPOD_ACCEPTANCE_NODE_UIDS_JSON="$node_uids" \
   HAKOPOD_ACCEPTANCE_DISPOSABLE=1 \
   "$script_dir/adversarial-database-tls.sh"
 database_tls_observation=$evidence_dir/database-tls.json
