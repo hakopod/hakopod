@@ -1,8 +1,10 @@
 # Managed Neon qualification
 
-Hakopod keeps Neon unavailable until a release has complete native evidence tied to its source. The recorder does not enable Neon or change the runtime capability. The producer records fixed observations and rejects caller-authored pass events. The native driver is being completed; it creates only admitted development resources and refuses missing provider evidence. It has not completed a native run.
+Hakopod keeps Neon unavailable until a release has complete native evidence tied to its source and images. The recorder does not enable Neon or change the runtime capability. The producer records fixed observations and rejects caller-authored pass events. The native driver creates only admitted development resources and refuses missing provider evidence. A complete native run is still pending.
 
-The record binds the upstream Neon repository and commit, the reproducible archive digest, byte size, member count and ordering checks, both reviewed patches and their frozen combined tree, and a complete Hakopod source inventory. That inventory covers `internal`, `templates`, `cmd`, `hack`, `scripts`, the Go module files, and the Neon recorder, verifier and qualification document. Generated qualification output is outside the inventory, avoiding a circular manifest.
+The version 2 qualification manifest records `release_runtime_qualified` only when the tested source has an open release gate and its complete image inventory matches the compiled release inventory. The compiled archive digest, PostgreSQL commit and compatibility patch must also match the build provenance. Changing the gate, image list or source after acceptance requires a new native run. Closed-gate evidence can be recorded for review; release verification rejects it before pulling images or creating release output.
+
+The record binds the upstream Neon repository and commit, the reproducible archive digest, byte size, member count and ordering checks, the reviewed patches and their frozen combined tree, and a complete Hakopod source inventory. That inventory covers `internal`, `auth`, `templates`, `cmd`, `hack`, `scripts`, the Go module files, and the Neon recorder, verifier and qualification document. Generated qualification output is outside the inventory, avoiding a circular manifest.
 
 The build report is a schema-versioned JSON object. It must identify native `linux/amd64`, the upstream source and candidate tree, archive metadata, proxy, ownership and combined patch hashes, all eight component image references, and the UID/GID bound to each component image. Each of the `storage`, `compute-tools`, and `compute-runtime` stages must provide an immutable published image reference, manifest and config digests, and a complete absolute-path binary hash map. Rejected archives listed in `hack/managed-neon/source-metadata.toml` are not accepted by substituting their digest for the canonical archive.
 
@@ -16,7 +18,7 @@ As checked on 2026-10-02, the official amd64 base selected for compatibility tes
 
 An official base and separately built tools have different source provenance. Any future record must bind the base manifest and config, its source and SBOM statements, the patched tools' source and binary hashes, the final image, and the unchanged base layers. Digest checks establish which statement was read; they do not establish the identity of its signer. Matching repeated overlay outputs also does not prove that the official base can be rebuilt from source.
 
-The current version 1 build record expects all stages to use the recorded source archive. It cannot admit this mixed-source candidate. A reviewed record format change, a current security baseline and the existing native acceptance checks are required before release. No runtime capability is enabled by downloading or assembling an image.
+The version 1 build record expects all stages to use the recorded source archive. It cannot admit this mixed-source candidate. The current candidate instead builds PostgreSQL 17.11 from the pinned source and compatibility patch recorded in `hack/managed-neon/source-metadata.toml`. Reusing a prebuilt base would require a reviewed build-record change, a current security baseline and the same native acceptance checks. Downloading or assembling an image does not enable a runtime capability.
 
 ## Native acceptance
 
@@ -56,4 +58,6 @@ systemd-run --user --wait --collect \
   python3 scripts/test-neon-qualification.py
 ```
 
-A completed development record sets only `development_evidence_recorded`. `cluster_qualified`, `public_endpoint_qualified`, and `physical_zones_qualified` remain separately false. Production qualification requires a reviewed evidence producer and a separate schema change; the product runtime remains unavailable.
+A completed record can qualify the release runtime; it does not approve a target installation. `development_cluster_qualified`, `cluster_qualified`, `encrypted_storage_class_qualified`, `public_endpoint_qualified` and `physical_zones_qualified` remain false in that record. Release verification separately checks anonymous image pulls and writes `deployment_qualified: false`.
+
+Each operator must also supply the strict `neon_qualification` configuration described in the [operator guide](managed-platform-operations.md). It binds the release, image inventory, cluster UID and exact StorageClass to reviewed provider evidence for encryption at rest. Startup, planning and execution recheck that binding. Neither a successful release run nor an operator binding can override the other requirement. Public endpoints and availability across physical zones require separate acceptance and remain unavailable.

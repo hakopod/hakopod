@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify source-bound Neon qualification records without enabling Neon."""
+"""Verify the exact Neon release runtime and its native evidence."""
 import argparse
 import hashlib
 import json
@@ -45,7 +45,7 @@ CASE_EVENTS = {
 }
 CASES = set(CASE_EVENTS)
 PRODUCER = {"runner_path": "examples/neon-native-acceptance/run.sh", "producer_path": "examples/neon-native-acceptance/evidence.py"}
-SOURCE_DIRS = ("internal", "templates", "cmd", "hack", "scripts", "examples/neon-native-acceptance")
+SOURCE_DIRS = ("internal", "auth", "templates", "cmd", "hack", "scripts", "examples/neon-native-acceptance")
 SOURCE_FILES = ("go.mod", "go.sum", "release/record-neon-qualification.py",
                 "release/verify-neon-runtime.py", "docs/managed-neon-qualification.md")
 
@@ -281,11 +281,64 @@ def validate_acceptance(report, sources, images, identities):
     validate_events(report["test_events"], report["run_id"], elapsed)
 
 
+def release_runtime_qualified(root, images, metadata):
+    path = Path(root) / "internal/managedplatform/neon_qualification.go"
+    file_hash(path, 1024 * 1024)
+    source = path.read_text()
+    gates = re.findall(r'^func NeonReleaseQualified\(\) bool \{ return (true|false) \}$', source, re.MULTILINE)
+    tables = re.findall(r'^var neonReleaseImages = map\[string\]string\{(.*?)\}$', source, re.MULTILINE | re.DOTALL)
+    expected = {
+        "NeonReleaseQualificationID": "neon-fa504217-pg17.11-linux-amd64",
+        "NeonReleaseSourceArchiveSHA256": metadata["source_archive"]["sha256"],
+        "NeonReleasePostgresCommit": metadata["postgres_commit"],
+        "NeonReleaseConsumerPatchID": metadata["consumer_patch_id"],
+    }
+    if len(gates) != 1 or len(tables) != 1 or any(
+        re.findall(r'^const ' + re.escape(name) + r' = "([^"]+)"$', source, re.MULTILINE) != [value]
+        for name, value in expected.items()
+    ):
+        raise ValueError("Neon compiled release contract is missing or malformed")
+    compiled = {}
+    for line in tables[0].splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r'\s*"([a-z-]+)":\s*"([^"]+)",', line)
+        if not match or match[1] in compiled:
+            raise ValueError("Neon compiled image inventory is malformed")
+        compiled[match[1]] = match[2]
+    if gates[0] == "false" and not compiled:
+        return False
+    validate_images(compiled)
+    if compiled != images:
+        raise ValueError("Neon native images differ from the compiled release inventory")
+    return gates[0] == "true"
+
+
+def capabilities(root, images, metadata):
+    # A release run does not approve another cluster's storage, routing or zones.
+    return {
+        "development_evidence_recorded": True,
+        "release_runtime_qualified": release_runtime_qualified(root, images, metadata),
+        "development_cluster_qualified": False,
+        "cluster_qualified": False,
+        "encrypted_storage_class_qualified": False,
+        "public_endpoint_qualified": False,
+        "physical_zones_qualified": False,
+    }
+
+
+def validate_capabilities(value, expected):
+    if not isinstance(value, dict) or set(value) != set(expected) or any(
+        value[name] is not flag for name, flag in expected.items()
+    ):
+        raise ValueError("Neon qualification capability boundary is invalid")
+
+
 def validate_metadata(directory, root=ROOT):
     directory, root = Path(directory), Path(root)
     manifest = read_json(directory / "manifest.json")
     required = {"schema_version", "platform", "source", "source_files", "images", "identities", "tooling", "files", "capability"}
-    if set(manifest) != required or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1 or manifest["platform"] != "linux/amd64":
+    if set(manifest) != required or type(manifest["schema_version"]) is not int or manifest["schema_version"] != 2 or manifest["platform"] != "linux/amd64":
         raise ValueError("Neon qualification manifest is malformed")
     metadata = source_metadata(root)
     sources = source_files(root)
@@ -302,8 +355,9 @@ def validate_metadata(directory, root=ROOT):
     identities = validate_identities(manifest["identities"], images)
     runner = root / "examples/neon-native-acceptance/run.sh"
     tooling = {"recorder_sha256": file_hash(root / "release/record-neon-qualification.py"), "verifier_sha256": file_hash(root / "release/verify-neon-runtime.py"), "runner_sha256": file_hash(runner), "producer_sha256": file_hash(root / PRODUCER["producer_path"])}
-    if manifest["tooling"] != tooling or manifest["capability"] != {"development_evidence_recorded": True, "cluster_qualified": False, "public_endpoint_qualified": False, "physical_zones_qualified": False}:
-        raise ValueError("Neon tooling or capability boundary changed")
+    if manifest["tooling"] != tooling:
+        raise ValueError("Neon qualification tooling changed")
+    validate_capabilities(manifest["capability"], capabilities(root, images, metadata))
     if set(manifest["files"]) != {"build-provenance.json", "native-acceptance.json"}:
         raise ValueError("Neon qualification artifacts are incomplete")
     for name, digest in manifest["files"].items():
@@ -388,6 +442,8 @@ def verify_images(images, identities, stages, runner=docker, manifest_verifier=v
 
 def verify(directory, output, root=ROOT, runner=docker):
     manifest = validate_metadata(directory, root)
+    if manifest["capability"]["release_runtime_qualified"] is not True:
+        raise ValueError("Neon release gate is closed; candidate evidence cannot qualify a release")
     build = read_json(Path(directory) / "build-provenance.json")
     verify_images(manifest["images"], manifest["identities"], build["image_stages"], runner)
     output = Path(output)
@@ -396,7 +452,7 @@ def verify(directory, output, root=ROOT, runner=docker):
     temporary = Path(tempfile.mkdtemp(prefix="." + output.name + "-", dir=output.parent))
     try:
         for name in ("manifest.json", *manifest["files"]): shutil.copyfile(Path(directory) / name, temporary / name)
-        (temporary / "release-verification.json").write_text(json.dumps({"schema_version": 1, "platform": "linux/amd64", "anonymous_pull_verified": True, "native_acceptance_reused": True, "images": manifest["images"]}, indent=2, sort_keys=True) + "\n")
+        (temporary / "release-verification.json").write_text(json.dumps({"schema_version": 2, "platform": "linux/amd64", "anonymous_pull_verified": True, "native_acceptance_reused": True, "release_runtime_qualified": True, "deployment_qualified": False, "images": manifest["images"]}, indent=2, sort_keys=True) + "\n")
         os.replace(temporary, output)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
