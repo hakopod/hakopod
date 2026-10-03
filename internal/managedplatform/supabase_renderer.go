@@ -70,34 +70,38 @@ var supabaseAssetNames = []string{
 	"api/envoy/cds.yaml", "api/envoy/docker-entrypoint.sh", "api/envoy/envoy.yaml", "api/envoy/lds.template.yaml",
 	"api/kong-entrypoint.sh", "api/kong.yml", "db/_supabase.sql", "db/init/data.sql", "db/jwt.sql", "db/logs.sql",
 	"db/pooler.sql", "db/realtime.sql", "db/roles.sql", "db/webhooks.sql", "functions/deno.jsonc", "functions/hello/index.ts",
-	"functions/main/index.ts", "logs/vector.yml", "pooler/pooler.exs", "proxy/caddy/Caddyfile", "proxy/nginx/supabase-nginx.conf.tpl",
+	"functions/main/index.ts", "functions/main.eszip.b64", "functions/vendor/jose-6.2.12-LICENSE.md", "functions/vendor/jose-6.2.12-meta.json",
+	"logs/vector.yml", "pooler/pooler.exs", "proxy/caddy/Caddyfile", "proxy/nginx/supabase-nginx.conf.tpl",
 	"snippets/.gitkeep", "storage/.gitkeep",
 }
 
 var supabaseAssetSHA256 = map[string]string{
-	"api/envoy/cds.yaml":                  "1d7514b891370ed27c25911df008887402e16ab09273e6e433225bb7f09f7905",
-	"api/envoy/docker-entrypoint.sh":      "8a0c9503764de32ba39e0d81e73629457b13ec42ef19897e30e4918c996d0508",
-	"api/envoy/envoy.yaml":                "3697f23b0be9ec5b829f937c600eb9b878f1f778ab510b42ad5e4f14742447e9",
-	"api/envoy/lds.template.yaml":         "c0c9218d57df78df195958d74c0501184a1db3fd451b2d2ed1ec649ef92420e2",
-	"api/kong-entrypoint.sh":              "aacdadade6adde6284163ea79e0d88decce0276796ae4749a15f018d56eda933",
-	"api/kong.yml":                        "c55d3f8064560188b12f2bdd0aa01ced36cd6cab3734b539c01604977b33ddc9",
-	"db/_supabase.sql":                    "9dce462adc04137d6afabcf28efa60a6c355270a4b32d7af58891ac4eb964c5f",
-	"db/init/data.sql":                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-	"db/jwt.sql":                          "c1d3f5c01e44646c2e533c5a1c111821cc49cb5a4c2534e08cddad61d8fb0339",
-	"db/logs.sql":                         "f0463ce5030907acef49326d2bffd36002df0718035071be7c99bd7fc897c63d",
-	"db/pooler.sql":                       "71d066fbfe5f780c4ff78bc4c78ac600d48718795cc1b87538207716f13e5743",
-	"db/realtime.sql":                     "7e9e442e7fc4dae05544c07b67bede37a00d84644304dfce4d937134cb4c8f88",
-	"db/roles.sql":                        "3ad717b225daa38aa982da26750f35641eb404e1eb5e69a763c22236ab96c1b2",
-	"db/webhooks.sql":                     "05a61316b899374253891cbba66ce073d9273f33983c3f47961eda3aa26c2823",
-	"functions/deno.jsonc":                "a9a29da36c2576f755dd868b9f553a02afdf7d7bccf52e97e65c7f68cf36bfef",
-	"functions/hello/index.ts":            "65e7d7ce5d898dd285e660cbab54521fca4bf990c41370f51fad5b4d4cae5f42",
-	"functions/main/index.ts":             "ed402c31abf346198d71cc7bab3b7eead03b91d6b9d638b30fc5e5fada25802b",
-	"logs/vector.yml":                     "8f9fa080e3cd8107ac3e6d3bf8d6aa8959b6845d3cd8d5144fb8f28a45607a41",
-	"pooler/pooler.exs":                   "8d9f464bb31d1a92926d2301b2544d08cb93d1f8693c6770525f5d1038f178e5",
-	"proxy/caddy/Caddyfile":               "7c571b03cbc5ebdc10a0d7f05e5caae3ff3e6c4a4543624cf08a52ac654fb01e",
-	"proxy/nginx/supabase-nginx.conf.tpl": "f9dc5f45b6c4b3a3e3640c0711eb875a7f4ddb6530909c49b444035f30154a16",
-	"snippets/.gitkeep":                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-	"storage/.gitkeep":                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"api/envoy/cds.yaml":                      "1d7514b891370ed27c25911df008887402e16ab09273e6e433225bb7f09f7905",
+	"api/envoy/docker-entrypoint.sh":          "8a0c9503764de32ba39e0d81e73629457b13ec42ef19897e30e4918c996d0508",
+	"api/envoy/envoy.yaml":                    "3697f23b0be9ec5b829f937c600eb9b878f1f778ab510b42ad5e4f14742447e9",
+	"api/envoy/lds.template.yaml":             "c0c9218d57df78df195958d74c0501184a1db3fd451b2d2ed1ec649ef92420e2",
+	"api/kong-entrypoint.sh":                  "aacdadade6adde6284163ea79e0d88decce0276796ae4749a15f018d56eda933",
+	"api/kong.yml":                            "c55d3f8064560188b12f2bdd0aa01ced36cd6cab3734b539c01604977b33ddc9",
+	"db/_supabase.sql":                        "9dce462adc04137d6afabcf28efa60a6c355270a4b32d7af58891ac4eb964c5f",
+	"db/init/data.sql":                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"db/jwt.sql":                              "c1d3f5c01e44646c2e533c5a1c111821cc49cb5a4c2534e08cddad61d8fb0339",
+	"db/logs.sql":                             "f0463ce5030907acef49326d2bffd36002df0718035071be7c99bd7fc897c63d",
+	"db/pooler.sql":                           "71d066fbfe5f780c4ff78bc4c78ac600d48718795cc1b87538207716f13e5743",
+	"db/realtime.sql":                         "7e9e442e7fc4dae05544c07b67bede37a00d84644304dfce4d937134cb4c8f88",
+	"db/roles.sql":                            "3ad717b225daa38aa982da26750f35641eb404e1eb5e69a763c22236ab96c1b2",
+	"db/webhooks.sql":                         "05a61316b899374253891cbba66ce073d9273f33983c3f47961eda3aa26c2823",
+	"functions/deno.jsonc":                    "5f1c69e365acfb48147f4f9c2806b4228ba91f920fc7723b25185e275bd29537",
+	"functions/hello/index.ts":                "860f84dbbb3e66997da12ef988eb28064123d66f98bf6f408e383b6547c9bf8a",
+	"functions/main/index.ts":                 "ee09ad8aa44ee54a6bf99fc8e07f49e5cecae90ad709036b98e0b7eaf13da58c",
+	"functions/main.eszip.b64":                "9cf5227519e8a10bd124754c6fd8c703870e0fdc7e84961585d98fae8431def3",
+	"functions/vendor/jose-6.2.12-LICENSE.md": "8078b0829d6c3e9ecde2f003e1966e4cad3efc6e7a640efbab0313cc166b1af1",
+	"functions/vendor/jose-6.2.12-meta.json":  "45dd3888cff0c45dbd91ca5279f7fd4324227042d19df91504aa2c0678b3edcc",
+	"logs/vector.yml":                         "8f9fa080e3cd8107ac3e6d3bf8d6aa8959b6845d3cd8d5144fb8f28a45607a41",
+	"pooler/pooler.exs":                       "8d9f464bb31d1a92926d2301b2544d08cb93d1f8693c6770525f5d1038f178e5",
+	"proxy/caddy/Caddyfile":                   "7c571b03cbc5ebdc10a0d7f05e5caae3ff3e6c4a4543624cf08a52ac654fb01e",
+	"proxy/nginx/supabase-nginx.conf.tpl":     "f9dc5f45b6c4b3a3e3640c0711eb875a7f4ddb6530909c49b444035f30154a16",
+	"snippets/.gitkeep":                       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"storage/.gitkeep":                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 }
 
 var databaseAssetPaths = []string{"db/_supabase.sql", "db/jwt.sql", "db/logs.sql", "db/pooler.sql", "db/realtime.sql", "db/webhooks.sql"}
@@ -110,7 +114,7 @@ var databaseAssetTargets = []struct{ Source, Target string }{
 	{"db/webhooks.sql", "init-scripts/98-webhooks.sql"},
 }
 var envoyPublicAssetPaths = []string{"api/envoy/cds.yaml", "api/envoy/envoy.yaml"}
-var functionAssetPaths = []string{"functions/deno.jsonc", "functions/hello/index.ts", "functions/main/index.ts"}
+var functionAssetPaths = []string{"functions/deno.jsonc", "functions/hello/index.ts", "functions/main/index.ts", "functions/main.eszip.b64"}
 var poolerAssetPaths = []string{"pooler/pooler.exs"}
 
 var supabaseDatabaseCredentialKeys = []string{
@@ -408,8 +412,8 @@ exec /app/bin/server`}
 		volumes = append(volumes, assetVolume("functions-config", configName("supabase-functions"), "functions/", functionAssetPaths), corev1.Volume{Name: "deno-cache", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &cacheLimit}}})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "deno-cache", MountPath: "/var/cache/deno"})
 		container.Env = append(container.Env, corev1.EnvVar{Name: "DENO_DIR", Value: "/var/cache/deno"})
-		initContainers = append(initContainers, corev1.Container{Name: "seed-functions", Image: component.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: []string{"/bin/sh", "-c"}, Args: []string{"set -eu; if [ ! -e /target/main/index.ts ]; then cp -R /seed/. /target/; fi"}, SecurityContext: security.DeepCopy(), Resources: container.Resources, VolumeMounts: []corev1.VolumeMount{{Name: "functions-config", MountPath: "/seed", ReadOnly: true}, {Name: "edge-functions", MountPath: "/target"}, {Name: "tmp", MountPath: "/tmp"}}})
-		container.Args = []string{"start", "--user-worker-request-idle-timeout", "150000", "--main-service", "/home/deno/functions/main"}
+		initContainers = append(initContainers, corev1.Container{Name: "seed-functions", Image: component.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: []string{"/bin/sh", "-c"}, Args: []string{"set -eu; if [ ! -e /target/main/index.ts ]; then cp -R /seed/. /target/; rm -f /target/main.eszip.b64; fi; rm -f /target/.main.eszip.tmp; base64 -d /seed/main.eszip.b64 > /target/.main.eszip.tmp; chmod 0444 /target/.main.eszip.tmp; mv /target/.main.eszip.tmp /target/main.eszip"}, SecurityContext: security.DeepCopy(), Resources: container.Resources, VolumeMounts: []corev1.VolumeMount{{Name: "functions-config", MountPath: "/seed", ReadOnly: true}, {Name: "edge-functions", MountPath: "/target"}, {Name: "tmp", MountPath: "/tmp"}}})
+		container.Args = []string{"start", "--user-worker-request-idle-timeout", "150000", "--main-service", "/home/deno/functions/main.eszip"}
 	}
 	if component.Name == "api-gateway" {
 		ref := in.Spec.Secrets["envoy-runtime-config"]
@@ -801,15 +805,15 @@ func supabaseDatabaseCredentialFingerprint(spec Spec) string {
 }
 func validateSupabaseAssets(assets map[string]string) error {
 	if len(assets) != len(supabaseAssetNames) {
-		return fmt.Errorf("upstream assets must contain the complete pinned 23-file inventory")
+		return fmt.Errorf("Supabase assets must contain the complete pinned inventory")
 	}
 	for _, name := range supabaseAssetNames {
 		value, ok := assets[name]
 		if !ok {
-			return fmt.Errorf("upstream assets requires %s", name)
+			return fmt.Errorf("Supabase assets require %s", name)
 		}
 		if fmt.Sprintf("%x", sha256.Sum256([]byte(value))) != supabaseAssetSHA256[name] {
-			return fmt.Errorf("upstream asset %s does not match commit %s", name, SupabaseUpstreamCommit)
+			return fmt.Errorf("Supabase asset %s does not match its reviewed digest", name)
 		}
 	}
 	return nil
