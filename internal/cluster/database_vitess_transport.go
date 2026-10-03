@@ -46,12 +46,12 @@ func (c *vitessStreamConn) Close() error { c.close(); return nil }
 
 // A fixed localhost bridge supports runsc's userspace network. The Go driver
 // performs MySQL TLS and authentication over this stream; exec sees no password.
-func (c *Client) vitessGatewayStream(ctx context.Context, d database.Resource, m database.Member) (net.Conn, error) {
+func (c *Client) vitessGatewayStream(ctx context.Context, d database.Resource, m database.Member, lifetime time.Duration) (net.Conn, error) {
 	pod, container, err := c.vitessExecTarget(ctx, d, m)
 	if err != nil || container != "vtgate" {
 		return nil, fmt.Errorf("Vitess gateway transport identity changed")
 	}
-	streamCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	streamCtx, cancel := context.WithTimeout(ctx, lifetime)
 	script := `set -eu
 exec 3<>/dev/tcp/127.0.0.1/3306
 cat <&3 & reader=$!
@@ -75,6 +75,15 @@ cat >&3`
 }
 
 func (c *Client) vitessGatewayClient(ctx context.Context, d database.Resource, m database.Member, target string, password []byte, config *tls.Config) (*sql.DB, error) {
+	return c.vitessGatewayClientWithReadTimeout(ctx, d, m, target, password, config, 5*time.Second)
+}
+
+// Health probes keep their short deadline. Native application acceptance also
+// uses this transport, but must allow the gateway's 30-second query budget.
+func (c *Client) vitessGatewayClientWithReadTimeout(ctx context.Context, d database.Resource, m database.Member, target string, password []byte, config *tls.Config, readTimeout time.Duration) (*sql.DB, error) {
+	if readTimeout <= 0 || readTimeout > 35*time.Second {
+		return nil, fmt.Errorf("Vitess gateway read timeout is outside its bound")
+	}
 	if target != "app@primary" && target != "app@replica" {
 		return nil, fmt.Errorf("Vitess route target is invalid")
 	}
@@ -83,14 +92,14 @@ func (c *Client) vitessGatewayClient(ctx context.Context, d database.Resource, m
 	settings.User, settings.Passwd, settings.DBName = "app", string(password), target
 	settings.Net, settings.Addr = "tcp", net.JoinHostPort(host, "3306")
 	settings.TLS = config
-	settings.Timeout, settings.ReadTimeout, settings.WriteTimeout = 5*time.Second, 5*time.Second, 5*time.Second
+	settings.Timeout, settings.ReadTimeout, settings.WriteTimeout = 5*time.Second, readTimeout, 5*time.Second
 	settings.MaxAllowedPacket = 1 << 20
 	settings.Logger = log.New(io.Discard, "", 0)
 	settings.DialFunc = func(dial context.Context, network, address string) (net.Conn, error) {
 		if dial.Err() != nil || network != "tcp" || address != settings.Addr {
 			return nil, fmt.Errorf("Vitess requested an unexpected gateway")
 		}
-		return c.vitessGatewayStream(ctx, d, m)
+		return c.vitessGatewayStream(ctx, d, m, readTimeout+15*time.Second)
 	}
 	connector, err := mysqlclient.NewConnector(settings)
 	if err != nil {
