@@ -5,14 +5,17 @@ script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$script_directory/../.." && pwd)
 
 readonly UPSTREAM_COMMIT="fa504217c61bbcaf5c512d75830564541f917f8f"
-readonly PATCHED_TREE="0e9da216fbb78976bac267a8036809e12f58a1bd"
+readonly PATCHED_TREE="5f24bced00ee471993649acdfbb3fe4e82f7eb30"
 readonly POSTGRES_COMMIT="1e01fcea2a6b38180021aa83e0051d95286d9096"
 readonly CONSUMER_PATCH_ID="627583b85d7c0f624245e3ac6a240e775a5eed01"
-readonly SOURCE_ARCHIVE_SHA256="f91a9e1a5945dd1d2e634c2438d5c11052d4f2e993dc2d09c82f25d6eff995da"
+readonly SOURCE_ARCHIVE_SHA256="d60f451fa12899cc4c63991b804e2eb9deb3cf1202d36955e450299432ab76aa"
 readonly PROXY_PATCH_SHA256="e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 readonly OWNERSHIP_PATCH_SHA256="a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
 readonly POSTGRES_PATCH_SHA256="47f90f03bc3aa0893b952049d86da54713843abdc94b74166a33c67bfb95a3e6"
 readonly CONSUMER_PATCH_SHA256="f425b69c6d20153ea3fbba2633d53adc77007f4d84468423d3544bc5fff11e60"
+readonly TRANSPORT_PATCH_SHA256="3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
+readonly RECONFIGURE_PATCH_SHA256="12931e80616072403d44935d4e80a800c0e8576c549e107e9ddfa09c433595ca"
+readonly PLACEMENT_PATCH_SHA256="9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
 readonly DEFAULT_MINIMUM_FREE_GIB=12
 readonly BUILDER_MEMORY_BYTES="${HAKOPOD_NEON_BUILDER_MEMORY_BYTES:-7516192768}"
 readonly BUILDER_CPU_QUOTA="${HAKOPOD_NEON_BUILDER_CPU_QUOTA:-100000}"
@@ -21,6 +24,7 @@ readonly BUILDER_NAME="${HAKOPOD_NEON_BUILDER_NAME:-hakopod-neon-bounded}"
 readonly BUILDER_CONTAINER="${HAKOPOD_NEON_BUILDER_CONTAINER:-hakopod-neon-buildkit}"
 readonly BUILDER_ADDRESS="${HAKOPOD_NEON_BUILDER_ADDRESS:-tcp://127.0.0.1:12347}"
 readonly BUILDKIT_IMAGE="moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea"
+readonly BUILD_TOOLS_DIGEST="sha256:07e617fce699ae4d2fd9b6c46ee2583340fbce4a98c4cedccf04f12d30e63a62"
 
 usage() {
   cat >&2 <<'EOF'
@@ -123,6 +127,9 @@ build() {
     --label "io.hakopod.neon.ownership-patch-sha256=$OWNERSHIP_PATCH_SHA256" \
     --label "io.hakopod.neon.postgres-patch-sha256=$POSTGRES_PATCH_SHA256" \
     --label "io.hakopod.neon.consumer-patch-sha256=$CONSUMER_PATCH_SHA256" \
+    --label "io.hakopod.neon.transport-patch-sha256=$TRANSPORT_PATCH_SHA256" \
+    --label "io.hakopod.neon.reconfigure-patch-sha256=$RECONFIGURE_PATCH_SHA256" \
+    --label "io.hakopod.neon.placement-patch-sha256=$PLACEMENT_PATCH_SHA256" \
     "$@" &
   build_pid=$!
   while kill -0 "$build_pid" 2>/dev/null; do
@@ -145,7 +152,7 @@ build() {
 case "$phase" in
   storage)
     image="hakopod/neon-storage:${UPSTREAM_COMMIT:0:8}-${PATCHED_TREE:0:8}"
-    build --build-arg "GIT_VERSION=$UPSTREAM_COMMIT" --tag "$image" "$source_directory" \
+    build --build-arg "GIT_VERSION=$UPSTREAM_COMMIT" --build-arg "TAG=pinned@$BUILD_TOOLS_DIGEST" --tag "$image" "$source_directory" \
       >"$output_directory/storage-build.log" 2>&1
     ;;
   compute-tools)
@@ -155,7 +162,7 @@ case "$phase" in
       >"$output_directory/compute-tools-build.log" 2>&1
     ;;
   compute-runtime)
-    image="hakopod/neon-compute-v17:pg17.11-${POSTGRES_COMMIT:0:8}-${CONSUMER_PATCH_ID:0:8}"
+    image="hakopod/neon-compute-v17:pg17.11-${POSTGRES_COMMIT:0:8}-${CONSUMER_PATCH_ID:0:8}-${PATCHED_TREE:0:8}"
     build --file "$source_directory/compute/compute-node.Dockerfile" \
       --build-arg PG_VERSION=v17 --build-arg EXTENSIONS=none \
       --build-arg "BUILD_TAG=hakopod-pg17.11-${POSTGRES_COMMIT:0:8}" --tag "$image" "$source_directory" \
@@ -205,8 +212,12 @@ proxy_patch_sha256=$PROXY_PATCH_SHA256
 ownership_patch_sha256=$OWNERSHIP_PATCH_SHA256
 postgres_patch_sha256=$POSTGRES_PATCH_SHA256
 consumer_patch_sha256=$CONSUMER_PATCH_SHA256
+transport_patch_sha256=$TRANSPORT_PATCH_SHA256
+reconfigure_patch_sha256=$RECONFIGURE_PATCH_SHA256
+placement_patch_sha256=$PLACEMENT_PATCH_SHA256
 postgres_commit=$POSTGRES_COMMIT
 consumer_patch_id=$CONSUMER_PATCH_ID
+storage_build_tools_digest=$BUILD_TOOLS_DIGEST
 image=$image
 image_manifest_digest=$image_manifest_digest
 image_config_digest=$image_config_digest

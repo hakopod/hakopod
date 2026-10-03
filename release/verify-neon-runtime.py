@@ -47,6 +47,7 @@ CASE_EVENTS = {
     "compute-roles": {"primary-writable", "replica-read-only", "replica-write-refused", "replica-caught-up"},
     "wal-quorum-fencing": {"quorum-loss-observed", "write-fenced", "quorum-restored", "fenced-write-absent", "write-recovered"},
     "controller-recovery": {"controller-restarted", "identity-preserved", "service-recovered"},
+    "tenant-migration": {"owned-destination-verified", "generation-advanced", "ownership-preserved", "compute-routing-updated", "primary-data-verified", "replica-data-verified"},
     "object-store-outage": {"outage-observed", "backup-refused", "service-restored"},
     "restored-resource-update": {"reviewed-update-applied", "revision-advanced-once", "stale-revision-refused", "topology-change-refused", "identity-preserved", "pod-cpu-changed", "compute-roles-preserved", "restored-data-verified"},
 }
@@ -129,13 +130,15 @@ def source_metadata(root):
                 "proxy_patch_sha256", "ownership_patch", "ownership_patch_sha256",
                 "postgres_commit", "postgres_tree", "postgres_patch", "postgres_patch_sha256",
                 "consumer_patch_id", "consumer_patch", "consumer_patch_sha256",
+                "transport_patch", "transport_patch_sha256", "reconfigure_patch", "reconfigure_patch_sha256",
+                "placement_patch", "placement_patch_sha256",
                 "frozen_combined_patch_sha256", "combined_candidate_tree", "source_archive",
                 "qualification", "rejected_artifacts"}
-    if set(data) != expected or type(data["schema_version"]) is not int or data["schema_version"] != 1:
+    if set(data) != expected or type(data["schema_version"]) is not int or data["schema_version"] != 2:
         raise ValueError("Neon source metadata is missing or malformed")
     if data["upstream_repository"] != "https://github.com/neondatabase/neon.git" or not COMMIT.fullmatch(data["upstream_commit"]):
         raise ValueError("Neon upstream identity is invalid")
-    for name in ("proxy_patch", "ownership_patch", "postgres_patch", "consumer_patch"):
+    for name in ("proxy_patch", "ownership_patch", "postgres_patch", "consumer_patch", "transport_patch", "reconfigure_patch", "placement_patch"):
         patch = Path(root) / data[name]
         if file_hash(patch) != data[name + "_sha256"]:
             raise ValueError("Neon patch identity changed: " + name)
@@ -155,6 +158,12 @@ def source_metadata(root):
     if not isinstance(rejected, list) or any(not isinstance(x, dict) or set(x) != {"sha256", "reason"} or not DIGEST.fullmatch(x["sha256"]) or not x["reason"] for x in rejected):
         raise ValueError("Neon rejected artifact inventory is malformed")
     return data
+
+
+def source_patch_hashes(metadata):
+    return {**{name: metadata[name + "_patch_sha256"]
+               for name in ("proxy", "ownership", "postgres", "consumer", "transport", "reconfigure", "placement")},
+            "combined": metadata["frozen_combined_patch_sha256"]}
 
 
 def validate_images(images):
@@ -219,9 +228,7 @@ def validate_build(build, metadata, archive=None):
         raise ValueError("Neon build source archive identity changed")
     if archive is not None and (file_hash(archive, metadata["source_archive"]["size_bytes"]) != expected_archive["sha256"] or Path(archive).stat().st_size != expected_archive["size_bytes"]):
         raise ValueError("Neon build source archive identity changed")
-    patches = {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"],
-               "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"],
-               "combined": metadata["frozen_combined_patch_sha256"]}
+    patches = source_patch_hashes(metadata)
     if build["patches"] != patches:
         raise ValueError("Neon build patch provenance changed")
     images = validate_images(build["images"])
@@ -355,7 +362,7 @@ def validate_metadata(directory, root=ROOT):
     expected_source = {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"],
                        "postgres_commit": metadata["postgres_commit"], "postgres_tree": metadata["postgres_tree"], "consumer_patch_id": metadata["consumer_patch_id"],
                        "archive": {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")},
-                       "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}}
+                       "patches": source_patch_hashes(metadata)}
     if source != expected_source:
         raise ValueError("Neon qualification source provenance changed")
     images = validate_images(manifest["images"])

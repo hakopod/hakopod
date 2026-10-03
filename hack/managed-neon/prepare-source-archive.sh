@@ -7,10 +7,13 @@ readonly PROXY_PATCH_SHA256="e9a1df309106d166adfc0982500f6500df220dbc6173761c48c
 readonly OWNERSHIP_PATCH_SHA256="a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
 readonly POSTGRES_PATCH_SHA256="47f90f03bc3aa0893b952049d86da54713843abdc94b74166a33c67bfb95a3e6"
 readonly CONSUMER_PATCH_SHA256="f425b69c6d20153ea3fbba2633d53adc77007f4d84468423d3544bc5fff11e60"
+readonly TRANSPORT_PATCH_SHA256="3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
+readonly RECONFIGURE_PATCH_SHA256="12931e80616072403d44935d4e80a800c0e8576c549e107e9ddfa09c433595ca"
+readonly PLACEMENT_PATCH_SHA256="9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
 readonly POSTGRES_COMMIT="1e01fcea2a6b38180021aa83e0051d95286d9096"
 readonly POSTGRES_TREE="5aca82893a42d97c0fce65a8f63d02d9e0587a19"
 readonly CONSUMER_PATCH_ID="627583b85d7c0f624245e3ac6a240e775a5eed01"
-readonly COMBINED_CANDIDATE_TREE="0e9da216fbb78976bac267a8036809e12f58a1bd"
+readonly COMBINED_CANDIDATE_TREE="5f24bced00ee471993649acdfbb3fe4e82f7eb30"
 
 usage() {
   echo "usage: $0 OUTPUT_DIRECTORY [UPSTREAM_CHECKOUT]" >&2
@@ -26,11 +29,17 @@ proxy_patch="$repository_root/patches/neon-proxy-control-plane-timeout.patch"
 ownership_patch="$repository_root/patches/neon-provider-ownership.patch"
 postgres_patch="$repository_root/patches/neon-postgres-17.11.patch"
 consumer_patch="$repository_root/patches/neon-pg17.11-consumers.patch"
+transport_patch="$repository_root/patches/neon-storage-tls.patch"
+reconfigure_patch="$repository_root/patches/neon-compute-reconfigure.patch"
+placement_patch="$repository_root/patches/neon-controller-placement.patch"
 
 printf '%s  %s\n' "$PROXY_PATCH_SHA256" "$proxy_patch" | sha256sum --check --status
 printf '%s  %s\n' "$OWNERSHIP_PATCH_SHA256" "$ownership_patch" | sha256sum --check --status
 printf '%s  %s\n' "$POSTGRES_PATCH_SHA256" "$postgres_patch" | sha256sum --check --status
 printf '%s  %s\n' "$CONSUMER_PATCH_SHA256" "$consumer_patch" | sha256sum --check --status
+printf '%s  %s\n' "$TRANSPORT_PATCH_SHA256" "$transport_patch" | sha256sum --check --status
+printf '%s  %s\n' "$RECONFIGURE_PATCH_SHA256" "$reconfigure_patch" | sha256sum --check --status
+printf '%s  %s\n' "$PLACEMENT_PATCH_SHA256" "$placement_patch" | sha256sum --check --status
 
 work_directory=$(mktemp -d "${TMPDIR:-/tmp}/hakopod-neon-source.XXXXXXXX")
 archive="${output_directory}/neon-provider-source.tar.gz"
@@ -49,6 +58,9 @@ else
   git clone --quiet "$UPSTREAM_REPOSITORY" "$source_directory"
 fi
 git -C "$source_directory" checkout --quiet --detach "$UPSTREAM_COMMIT"
+# Relative submodule URLs must resolve against the official repository even
+# when the initial clone reuses a local checkout.
+git -C "$source_directory" remote set-url origin "$UPSTREAM_REPOSITORY"
 git -C "$source_directory" submodule update --init --recursive --depth 1 --jobs 1
 
 [[ "$(git -C "$source_directory" rev-parse HEAD)" == "$UPSTREAM_COMMIT" ]]
@@ -58,6 +70,12 @@ git -C "$source_directory" apply --check "$ownership_patch"
 git -C "$source_directory" apply "$ownership_patch"
 git -C "$source_directory" apply --check "$consumer_patch"
 git -C "$source_directory" apply "$consumer_patch"
+git -C "$source_directory" apply --check "$transport_patch"
+git -C "$source_directory" apply "$transport_patch"
+git -C "$source_directory" apply --check "$reconfigure_patch"
+git -C "$source_directory" apply "$reconfigure_patch"
+git -C "$source_directory" apply --check "$placement_patch"
+git -C "$source_directory" apply "$placement_patch"
 git -C "$source_directory" add -A
 [[ "$(git -C "$source_directory" write-tree)" == "$COMBINED_CANDIDATE_TREE" ]] || { echo "refusing archive: combined candidate tree mismatch" >&2; exit 1; }
 
@@ -95,6 +113,9 @@ rm -f -- "$archive_temporary"
   printf '%s  %s\n' "$OWNERSHIP_PATCH_SHA256" "patches/neon-provider-ownership.patch"
   printf '%s  %s\n' "$POSTGRES_PATCH_SHA256" "patches/neon-postgres-17.11.patch"
   printf '%s  %s\n' "$CONSUMER_PATCH_SHA256" "patches/neon-pg17.11-consumers.patch"
+  printf '%s  %s\n' "$TRANSPORT_PATCH_SHA256" "patches/neon-storage-tls.patch"
+  printf '%s  %s\n' "$RECONFIGURE_PATCH_SHA256" "patches/neon-compute-reconfigure.patch"
+  printf '%s  %s\n' "$PLACEMENT_PATCH_SHA256" "patches/neon-controller-placement.patch"
 } >"$output_directory/SHA256SUMS"
 cat >"$output_directory/provenance.txt" <<EOF
 upstream_repository=$UPSTREAM_REPOSITORY
@@ -103,6 +124,9 @@ proxy_patch_sha256=$PROXY_PATCH_SHA256
 ownership_patch_sha256=$OWNERSHIP_PATCH_SHA256
 postgres_patch_sha256=$POSTGRES_PATCH_SHA256
 consumer_patch_sha256=$CONSUMER_PATCH_SHA256
+transport_patch_sha256=$TRANSPORT_PATCH_SHA256
+reconfigure_patch_sha256=$RECONFIGURE_PATCH_SHA256
+placement_patch_sha256=$PLACEMENT_PATCH_SHA256
 postgres_commit=$POSTGRES_COMMIT
 postgres_tree=$POSTGRES_TREE
 consumer_patch_id=$CONSUMER_PATCH_ID

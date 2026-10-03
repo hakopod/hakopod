@@ -5,9 +5,19 @@ upstream revision and patch hashes are fixed in `source-metadata.toml`.
 `prepare-source-archive.sh` clones that revision and its pinned PostgreSQL
 submodules, applies the proxy timeout and provider ownership patches, updates
 the pinned Neon PostgreSQL 17.5 revision with the official 17.11 changes, then
-applies the matching Neon WAL consumer patch. It writes a normalized archive
-twice and requires the two
-copies and the globally sorted member list to match.
+applies the matching Neon WAL consumer patch. Additional patches verify
+certificates on storage connections, allow owned compute routing updates with
+a compare-and-swap check, and expose committed tenant placement to the control
+plane. It writes a normalized archive twice and requires both copies and the
+globally sorted member list to match.
+
+The placement endpoint reads the controller database directly. During a live
+move, Neon waits for the compute callback before updating its in-memory
+generation. Reading that older generation inside the callback would prevent
+the move from completing. The endpoint requires an administrative token and
+returns only an attached, completed, unsharded tenant with its ownership token.
+Hakopod also verifies the destination's owned pageserver registration before
+recording the new placement.
 
 Run source preparation on the build VM:
 
