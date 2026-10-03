@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Install the disposable, mutually authenticated Neon control-plane bridge."""
-import argparse, base64, datetime, hashlib, json, os, pathlib, re, stat, subprocess, sys, time, uuid
+import argparse, base64, datetime, hashlib, ipaddress, json, os, pathlib, pwd, re, stat, subprocess, sys, time, uuid
 
 ID = re.compile(r"^[0-9a-f]{32}$")
 UID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -249,15 +249,49 @@ def refresh_bridge(kubeconfig, path, value, objects):
         patch_owned_spec(kubeconfig,NAMESPACE,resource,current,desired[resource],value)
     kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
 
+def host_binding():
+    path = ROOT / "host-binding.json"
+    if not path.exists() and not path.is_symlink():
+        return None
+    value = json.loads(protected_policy_input(str(path)))
+    if not isinstance(value, dict) or set(value) != {"schema_version", "address", "haproxy_path", "haproxy_sha256", "uid", "gid"} or type(value["schema_version"]) is not int or value["schema_version"] != 1:
+        raise RuntimeError("native relay binding is invalid")
+    if not isinstance(value["address"], str):
+        raise RuntimeError("native relay requires a private IPv4 address")
+    try:
+        address = ipaddress.IPv4Address(value["address"])
+    except (ValueError, TypeError):
+        raise RuntimeError("native relay requires a private IPv4 address") from None
+    networks = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    if not any(address in ipaddress.ip_network(network) for network in networks):
+        raise RuntimeError("native relay requires a private IPv4 address")
+    if value["haproxy_path"] != "/usr/sbin/haproxy" or not re.fullmatch(r"[0-9a-f]{64}", str(value["haproxy_sha256"])):
+        raise RuntimeError("native relay executable binding is invalid")
+    binary = pathlib.Path(value["haproxy_path"])
+    info = binary.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or not info.st_mode & 0o111 or not 0 < info.st_size <= 64 << 20 or hashlib.sha256(binary.read_bytes()).hexdigest() != value["haproxy_sha256"]:
+        raise RuntimeError("native relay executable changed")
+    user = pwd.getpwnam("haproxy")
+    if any(type(value[key]) is not int or not 0 < value[key] < 65535 for key in ("uid", "gid")) or (user.pw_uid, user.pw_gid) != (value["uid"], value["gid"]):
+        raise RuntimeError("native relay service identity changed")
+    interfaces = json.loads(run(["ip", "-j", "address", "show"]))
+    if not isinstance(interfaces, list) or len(interfaces) > 128 or not any(item.get("family") == "inet" and item.get("local") == str(address) for interface in interfaces for item in interface.get("addr_info", [])):
+        raise RuntimeError("native relay address is not assigned to this host")
+    return value
+
 def start_host():
+    binding = host_binding()
+    address, group = (binding["address"], binding["gid"]) if binding else ("172.18.0.1", 99)
+    run(["openssl", "verify", "-CAfile", str(ROOT / "ca.crt"), "-purpose", "sslserver", "-verify_ip", address, str(ROOT / "relay.pem")])
     runtime = ROOT / "host-runtime"
     runtime.mkdir(mode=0o750, exist_ok=True)
-    os.chown(runtime, 0, 99)
+    runtime.chmod(0o750)
+    os.chown(runtime, 0, group)
     for name in ("ca.crt", "relay.pem"):
         target = runtime / name
         target.write_bytes(protected(name))
         target.chmod(0o440)
-        os.chown(target, 0, 99)
+        os.chown(target, 0, group)
     config = runtime / "haproxy.cfg"
     config.write_text("""global
   maxconn 64
@@ -269,15 +303,20 @@ defaults
   timeout server 10s
   timeout http-request 5s
 frontend control
-  bind 172.18.0.1:19443 ssl crt /bridge/relay.pem ca-file /bridge/ca.crt verify required ssl-min-ver TLSv1.2
+  bind RELAY_ADDRESS:19443 ssl crt /bridge/relay.pem ca-file /bridge/ca.crt verify required ssl-min-ver TLSv1.2
   default_backend api
 backend api
   server api 127.0.0.1:18880 check
-""")
+""".replace("RELAY_ADDRESS", address))
     config.chmod(0o440)
-    os.chown(config, 0, 99)
+    os.chown(config, 0, group)
     subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    run(["systemd-run", "--unit=" + UNIT.removesuffix(".service"), "--property=RuntimeMaxSec=3h", "--property=MemoryMax=134217728", "--property=CPUQuota=50%", "--property=NoNewPrivileges=yes", "docker", "run", "--rm", "--network", "host", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--mount", "type=bind,src=" + str(runtime) + ",dst=/bridge,readonly", IMAGE, "haproxy", "-W", "-db", "-f", "/bridge/haproxy.cfg"])
+    command = ["systemd-run", "--unit=" + UNIT.removesuffix(".service"), "--property=RuntimeMaxSec=3h", "--property=MemoryMax=134217728", "--property=CPUQuota=50%", "--property=NoNewPrivileges=yes"]
+    if binding:
+        command += ["--property=User="+str(binding["uid"]), "--property=Group="+str(group), "--property=TasksMax=64", "--property=ProtectSystem=strict", "--property=ProtectHome=yes", "--property=PrivateTmp=yes", "--property=CapabilityBoundingSet=", "--property=RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX", "--property=BindReadOnlyPaths="+str(runtime)+":/bridge", binding["haproxy_path"], "-W", "-db", "-f", "/bridge/haproxy.cfg"]
+    else:
+        command += ["docker", "run", "--rm", "--network", "host", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--mount", "type=bind,src=" + str(runtime) + ",dst=/bridge,readonly", IMAGE, "haproxy", "-W", "-db", "-f", "/bridge/haproxy.cfg"]
+    run(command)
 
 def management_routes(platform_ids):
     if not isinstance(platform_ids, list) or not 1 <= len(platform_ids) <= 3 or platform_ids != sorted(set(platform_ids)) or any(not ID.fullmatch(str(value)) for value in platform_ids):
@@ -298,7 +337,10 @@ def management_routes(platform_ids):
             lines += ["backend "+backend, "  mode tcp", "  timeout connect 2s", "  timeout server 90s", "  server target "+target+":"+str(port)+" resolvers kube resolve-prefer ipv4 init-addr last,libc,none check inter 2s", ""]
     return "\n".join(lines)
 
-def manifest(platform_ids, scheduling=None):
+def manifest(platform_ids, scheduling=None, relay_address="172.18.0.1"):
+    # This value comes from the protected host binding, never a workload field.
+    if str(ipaddress.IPv4Address(relay_address)) != relay_address:
+        raise RuntimeError("bridge relay address is invalid")
     config = """global
   maxconn 64
   log stdout format raw local0
@@ -312,8 +354,8 @@ frontend service
   bind :443 ssl crt /bridge/service.pem ssl-min-ver TLSv1.2
   default_backend relay
 backend relay
-  server relay 172.18.0.1:19443 ssl ca-file /bridge-config/ca.crt crt /bridge/client.pem verify required verifyhost 172.18.0.1 check
-\n""" + management_routes(platform_ids)
+  server relay RELAY_ADDRESS:19443 ssl ca-file /bridge-config/ca.crt crt /bridge/client.pem verify required verifyhost RELAY_ADDRESS check
+\n""".replace("RELAY_ADDRESS", relay_address) + management_routes(platform_ids)
     config_name = "hakopod-neon-control-" + hashlib.sha256(config.encode()).hexdigest()[:16]
     labels = {"app.kubernetes.io/name": "hakopod-neon-control", "hakopod.io/native-acceptance": "neon"}
     ports = [{"name":"https","containerPort":443}] + [{"name":"manage-"+str(port),"containerPort":port} for port in (6699,9898,7676,3081)]
@@ -325,7 +367,7 @@ backend relay
       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"hakopod-neon-control","namespace":NAMESPACE,"labels":labels},"spec":{"replicas":1,"selector":{"matchLabels":labels},"template":{"metadata":{"labels":labels,"annotations":{"hakopod.io/bridge-config-sha256":hashlib.sha256(config.encode()).hexdigest()}},"spec":{"automountServiceAccountToken":False,"enableServiceLinks":False,"securityContext":{"runAsNonRoot":True,"runAsUser":99,"runAsGroup":99,"fsGroup":99,"sysctls":[{"name":"net.ipv4.ip_unprivileged_port_start","value":"0"}],"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"bridge","image":IMAGE,"imagePullPolicy":"IfNotPresent","args":["haproxy","-W","-db","-f","/bridge-config/haproxy.cfg"],"ports":ports,"readinessProbe":{"tcpSocket":{"port":"https"},"periodSeconds":2,"timeoutSeconds":1},"resources":{"requests":{"cpu":"25m","memory":"128Mi"},"limits":{"cpu":"100m","memory":"256Mi"}},"securityContext":{"allowPrivilegeEscalation":False,"readOnlyRootFilesystem":True,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"config","mountPath":"/bridge-config","readOnly":True},{"name":"tls","mountPath":"/bridge","readOnly":True}]}],"volumes":[{"name":"config","configMap":{"name":config_name,"items":[{"key":"haproxy.cfg","path":"haproxy.cfg"},{"key":"ca.crt","path":"ca.crt"}],"defaultMode":288}},{"name":"tls","secret":{"secretName":"hakopod-neon-control-tls","items":[{"key":"service.pem","path":"service.pem"},{"key":"client.pem","path":"client.pem"}],"defaultMode":288}}]}}}},
       {"apiVersion":"v1","kind":"Service","metadata":{"name":"hakopod-control","namespace":NAMESPACE,"labels":labels},"spec":{"selector":labels,"ports":[{"name":"https","port":443,"targetPort":"https"}]}},
       {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-ingress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Ingress"],"ingress":[{"from":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["proxy","storage-controller"]}]}}],"ports":[{"protocol":"TCP","port":443}]}]}},
-      {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-egress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Egress"],"egress":[{"to":[{"ipBlock":{"cidr":"172.18.0.1/32"}}],"ports":[{"protocol":"TCP","port":19443}]},{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},{"to":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["storage-controller","pageserver","safekeeper","compute"]}]}}],"ports":[{"protocol":"TCP","port":port} for port in (6699,9898,7676,3081)]}]}}
+      {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-egress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Egress"],"egress":[{"to":[{"ipBlock":{"cidr":relay_address+"/32"}}],"ports":[{"protocol":"TCP","port":19443}]},{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},{"to":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["storage-controller","pageserver","safekeeper","compute"]}]}}],"ports":[{"protocol":"TCP","port":port} for port in (6699,9898,7676,3081)]}]}}
     ]
     next(item for item in objects if item["kind"] == "Deployment")["spec"]["template"]["spec"].update(scheduling or {})
     return json.dumps({"apiVersion":"v1","kind":"List","items":objects}, separators=(",", ":")).encode()
@@ -333,6 +375,8 @@ backend relay
 def allow(kubeconfig, platform_id, scheduling=None):
     if not ID.fullmatch(platform_id):
         raise RuntimeError("platform identity is malformed")
+    binding = host_binding()
+    relay_address = binding["address"] if binding else "172.18.0.1"
     state = ROOT / "allowed-platforms.json"
     prior,resources = read_bridge_state(state) if state.exists() else (None,None)
     values = prior["platform_ids"] if prior else []
@@ -342,7 +386,7 @@ def allow(kubeconfig, platform_id, scheduling=None):
     if len(values) > 3 or any(not ID.fullmatch(value) for value in values):
         raise RuntimeError("bridge platform allowlist is invalid")
     if prior is None:
-        objects=json.loads(manifest(values,scheduling))["items"]
+        objects=json.loads(manifest(values,scheduling,relay_address))["items"]
         config_name=next(item for item in objects if item["kind"]=="ConfigMap")["metadata"]["name"]
         resources=bridge_resources([config_name])
         prior = install_owned(kubeconfig, NAMESPACE, state, {"platform_ids":values,"config_names":[config_name]}, objects, resources)
@@ -355,22 +399,44 @@ def allow(kubeconfig, platform_id, scheduling=None):
             if {key:pod[key] for key in ("nodeSelector", "tolerations", "runtimeClassName", "affinity") if key in pod} != scheduling or pod.get("nodeName"):
                 raise RuntimeError("existing bridge scheduling differs")
         prior["platform_ids"] = values; write_state(state, prior)
-        refresh_bridge(kubeconfig,state,prior,json.loads(manifest(values,scheduling))["items"])
+        refresh_bridge(kubeconfig,state,prior,json.loads(manifest(values,scheduling,relay_address))["items"])
     prior["platform_ids"] = values; write_state(state, prior)
     if len(values)==1:
         kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
 
+def stop_host():
+    # Network/API failures must not leave the host relay listening. Retain the
+    # original protected TLS inputs, but remove the service-readable copies.
+    before = run(["systemctl", "show", UNIT, "--property=ActiveState", "--value"]).strip()
+    if before not in ("inactive", "failed"):
+        run(["systemctl", "stop", UNIT])
+    if run(["systemctl", "show", UNIT, "--property=ActiveState", "--value"]).strip() not in ("inactive", "failed"):
+        raise RuntimeError("host relay is still active")
+    runtime = ROOT / "host-runtime"
+    if runtime.is_symlink():
+        raise RuntimeError("host relay runtime directory changed")
+    for name in ("relay.pem", "ca.crt"):
+        target = runtime / name
+        if not target.exists() and not target.is_symlink():
+            continue
+        info = target.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o777 != 0o440 or target.read_bytes() != protected(name):
+            raise RuntimeError("host relay TLS copy changed")
+        target.unlink()
+
 def cleanup(kubeconfig):
     state = ROOT / "allowed-platforms.json"
-    if state.exists():
-        value,resources=read_bridge_state(state)
-        cleanup_owned(kubeconfig,NAMESPACE,state,value,resources)
-    else:
-        configs=json.loads(kube(kubeconfig,"-n",NAMESPACE,"get","configmaps","-l","hakopod.io/native-acceptance=neon","-o","json")).get("items",[])
-        if len(configs)>3 or configs or any(observe(kubeconfig, NAMESPACE, resource) is not None for resource in BRIDGE_FIXED_RESOURCES):
-            raise RuntimeError("bridge resources exist without an ownership journal")
-    subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    state.unlink(missing_ok=True)
+    try:
+        if state.exists():
+            value,resources=read_bridge_state(state)
+            cleanup_owned(kubeconfig,NAMESPACE,state,value,resources)
+        else:
+            configs=json.loads(kube(kubeconfig,"-n",NAMESPACE,"get","configmaps","-l","hakopod.io/native-acceptance=neon","-o","json")).get("items",[])
+            if len(configs)>3 or configs or any(observe(kubeconfig, NAMESPACE, resource) is not None for resource in BRIDGE_FIXED_RESOURCES):
+                raise RuntimeError("bridge resources exist without an ownership journal")
+        state.unlink(missing_ok=True)
+    finally:
+        stop_host()
 
 def owned_proxy_image(deployment, platform_id, proxy_secret):
     meta = deployment.get("metadata", {}); spec = deployment.get("spec", {})
