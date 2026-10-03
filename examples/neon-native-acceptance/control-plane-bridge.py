@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Install the disposable, mutually authenticated Neon control-plane bridge."""
-import argparse, base64, datetime, hashlib, json, os, pathlib, re, stat, subprocess, sys
+import argparse, base64, datetime, hashlib, json, os, pathlib, re, stat, subprocess, sys, time, uuid
 
 ID = re.compile(r"^[0-9a-f]{32}$")
 UID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -10,6 +10,9 @@ NAMESPACE = "hakopod-system"
 UNIT = "hakopod-neon-control-relay.service"
 POOL_KEY = "hakopod.com/pool"
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+INSTALL_KEY = "hakopod.io/native-acceptance-install"
+BRIDGE_RESOURCES = ("configmap/hakopod-neon-control", "secret/hakopod-neon-control-tls", "deployment/hakopod-neon-control", "service/hakopod-control", "networkpolicy/hakopod-neon-control-ingress", "networkpolicy/hakopod-neon-control-egress")
+PROBE_RESOURCES = ("configmap/hakopod-neon-wrong-ca", "deployment/hakopod-neon-wrong-ca", "networkpolicy/hakopod-neon-wrong-ca-egress")
 
 def protected_policy_input(path):
     if not pathlib.Path(path).is_absolute():
@@ -48,7 +51,8 @@ def scheduling_policy(path, gate_path, kubeconfig):
         expected = {"key":POOL_KEY, "value":pool, "effect":"NoSchedule"}
         if node["metadata"].get("deletionTimestamp") or node.get("spec", {}).get("unschedulable") or node["metadata"].get("labels", {}).get(POOL_KEY) != pool or taints != [expected] or blocked or not any(item.get("type") == "Ready" and item.get("status") == "True" for item in node.get("status", {}).get("conditions", [])):
             raise RuntimeError("attested scheduling pool is not ready and exact")
-    result = {"nodeSelector":{POOL_KEY:pool}, "tolerations":[{"key":POOL_KEY, "operator":"Equal", "value":pool, "effect":"NoSchedule"}], "affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchFields":[{"key":"metadata.name", "operator":"In", "values":sorted(nodes)}]}]}}}}
+    terms = [{"matchFields":[{"key":"metadata.name", "operator":"In", "values":[name]}]} for name in sorted(nodes)]
+    result = {"nodeSelector":{POOL_KEY:pool}, "tolerations":[{"key":POOL_KEY, "operator":"Equal", "value":pool, "effect":"NoSchedule"}], "affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":terms}}}}
     runtime = policy["runtime_class"]
     if runtime is not None:
         if not isinstance(runtime, dict) or set(runtime) != {"name", "uid", "handler", "pod_fixed", "node_selector"} or not DNS_LABEL.fullmatch(str(runtime["name"])) or not DNS_LABEL.fullmatch(str(runtime["handler"])) or not UID.fullmatch(str(runtime["uid"])) or not isinstance(runtime["pod_fixed"], dict) or set(runtime["pod_fixed"]) not in (set(), {"cpu", "memory"}) or runtime["pod_fixed"] and (not re.fullmatch(r"[1-9][0-9]{0,3}m", str(runtime["pod_fixed"]["cpu"])) or not re.fullmatch(r"[1-9][0-9]{0,3}Mi", str(runtime["pod_fixed"]["memory"]))):
@@ -82,6 +86,90 @@ def protected(name, maximum=1 << 20):
 def kube(kubeconfig, *args, data=None):
     timeout = 200 if "rollout" in args else 90
     return run(["kubectl", "--request-timeout=30s", "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", *args], data, timeout)
+
+def write_state(path, value):
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as output:
+        json.dump(value, output, separators=(",", ":")); output.write("\n")
+        output.flush(); os.fsync(output.fileno())
+    temporary.replace(path)
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+def observe(kubeconfig, namespace, resource):
+    raw = kube(kubeconfig, "-n", namespace, "get", resource, "--ignore-not-found", "-o", "json")
+    return json.loads(raw) if raw.strip() else None
+
+def read_state(path, fields, resources):
+    value = json.loads(protected(path.name))
+    if not isinstance(value, dict) or set(value) != set(fields) | {"install_id", "namespace_uid", "uids"} or not ID.fullmatch(str(value.get("install_id"))) or not UID.fullmatch(str(value.get("namespace_uid"))) or not isinstance(value.get("uids"), dict) or not set(value["uids"]) <= set(resources) or any(not UID.fullmatch(str(uid)) for uid in value["uids"].values()):
+        raise RuntimeError("helper ownership journal is invalid")
+    return value
+
+def recover_owned(kubeconfig, namespace, path, value, resources):
+    current = json.loads(kube(kubeconfig, "get", "namespace", namespace, "-o", "json"))
+    if current["metadata"]["uid"] != value["namespace_uid"]:
+        raise RuntimeError("helper namespace ownership changed")
+    present = {}
+    for resource in resources:
+        current = observe(kubeconfig, namespace, resource)
+        if current is None: continue
+        meta = current["metadata"]; uid = meta.get("uid")
+        if not UID.fullmatch(str(uid)) or meta.get("annotations", {}).get(INSTALL_KEY) != value["install_id"] or resource in value["uids"] and value["uids"][resource] != uid:
+            raise RuntimeError("helper cleanup refused foreign resource")
+        value["uids"][resource] = uid; present[resource] = uid
+    write_state(path, value)
+    return present
+
+def validate_manifests(kubeconfig, objects):
+    # Admission of a Deployment does not run every Pod admission check.
+    candidates = list(objects)
+    for item in objects:
+        if item["kind"] != "Deployment": continue
+        template = item["spec"]["template"]
+        candidates.append({"apiVersion":"v1", "kind":"Pod", "metadata":{**template["metadata"], "name":item["metadata"]["name"]+"-preflight", "namespace":item["metadata"]["namespace"]}, "spec":template["spec"]})
+    kube(kubeconfig, "create", "--dry-run=server", "-f", "-", "-o", "name", data=json.dumps({"apiVersion":"v1", "kind":"List", "items":candidates}).encode())
+
+def install_owned(kubeconfig, namespace, path, value, objects, resources):
+    if path.exists(): raise RuntimeError("helper ownership journal already exists")
+    if any(observe(kubeconfig, namespace, resource) is not None for resource in resources):
+        raise RuntimeError("helper fixed-name resource already exists")
+    validate_manifests(kubeconfig, objects)
+    namespace_uid = json.loads(kube(kubeconfig, "get", "namespace", namespace, "-o", "json"))["metadata"]["uid"]
+    if not UID.fullmatch(str(namespace_uid)): raise RuntimeError("helper namespace identity is invalid")
+    value = {**value, "install_id":uuid.uuid4().hex, "namespace_uid":namespace_uid, "uids":{}}
+    # Persist the unpredictable ownership marker before the first create. Cleanup can
+    # recover a successful create whose response was lost without adopting names.
+    write_state(path, value)
+    for item in objects:
+        item["metadata"].setdefault("annotations", {})[INSTALL_KEY] = value["install_id"]
+        resource = item["kind"].lower()+"/"+item["metadata"]["name"]
+        if resource not in resources: raise RuntimeError("helper resource is outside its fixed inventory")
+        try:
+            current = json.loads(kube(kubeconfig, "create", "-f", "-", "-o", "json", data=json.dumps(item).encode()))
+        except Exception:
+            raise RuntimeError("helper create failed for " + item["kind"] + "; output withheld") from None
+        meta = current.get("metadata", {})
+        if not UID.fullmatch(str(meta.get("uid"))) or meta.get("annotations", {}).get(INSTALL_KEY) != value["install_id"] or meta.get("name") != item["metadata"]["name"] or meta.get("namespace") != namespace:
+            raise RuntimeError("helper create response ownership differs")
+        value["uids"][resource] = meta["uid"]; write_state(path, value)
+    return value
+
+def cleanup_owned(kubeconfig, namespace, path, value, resources):
+    present = recover_owned(kubeconfig, namespace, path, value, resources)
+    paths = {"configmap":("/api/v1", "configmaps"), "secret":("/api/v1", "secrets"), "service":("/api/v1", "services"), "deployment":("/apis/apps/v1", "deployments"), "networkpolicy":("/apis/networking.k8s.io/v1", "networkpolicies")}
+    for resource, uid in present.items():
+        kind, name = resource.split("/"); prefix, plural = paths[kind]
+        body = {"apiVersion":"v1", "kind":"DeleteOptions", "preconditions":{"uid":uid}, "propagationPolicy":"Foreground"}
+        kube(kubeconfig, "delete", "--raw", prefix+"/namespaces/"+namespace+"/"+plural+"/"+name, "-f", "-", data=json.dumps(body).encode())
+    deadline = time.monotonic() + 90
+    while True:
+        if not any(observe(kubeconfig, namespace, resource) is not None for resource in resources): break
+        if time.monotonic() >= deadline: raise RuntimeError("helper cleanup is incomplete")
+        time.sleep(1)
+    path.unlink()
 
 def start_host():
     runtime = ROOT / "host-runtime"
@@ -145,58 +233,41 @@ def allow(kubeconfig, platform_id, scheduling=None):
     if not ID.fullmatch(platform_id):
         raise RuntimeError("platform identity is malformed")
     state = ROOT / "allowed-platforms.json"
-    values = [] if not state.exists() else json.loads(protected(state.name).decode())
-    if isinstance(values, dict):
-        allowed, uids = values.get("platform_ids"), values.get("uids")
-        if set(values) != {"platform_ids","uids"} or not isinstance(allowed, list) or not isinstance(uids, dict):
-            raise RuntimeError("bridge ownership state is invalid")
-        for resource, uid in uids.items():
-            current = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", resource, "-o", "json"))
-            if not UID.fullmatch(uid) or current["metadata"]["uid"] != uid:
-                raise RuntimeError("bridge resource ownership changed")
-        values = allowed
-    else:
-        uids = None
+    prior = read_state(state, {"platform_ids"}, BRIDGE_RESOURCES) if state.exists() else None
+    values = prior["platform_ids"] if prior else []
+    if not isinstance(values, list) or len(values) > 3 or any(not ID.fullmatch(str(value)) for value in values):
+        raise RuntimeError("bridge platform allowlist is invalid")
     values = sorted(set(values) | {platform_id})
     if len(values) > 3 or any(not ID.fullmatch(value) for value in values):
         raise RuntimeError("bridge platform allowlist is invalid")
-    resources = (("configmap","hakopod-neon-control"),("secret","hakopod-neon-control-tls"),("deployment","hakopod-neon-control"),("service","hakopod-control"),("networkpolicy","hakopod-neon-control-ingress"),("networkpolicy","hakopod-neon-control-egress"))
-    if uids is None:
-        for kind, name in resources:
-            if kube(kubeconfig, "-n", NAMESPACE, "get", kind, name, "--ignore-not-found", "-o", "name").strip():
-                raise RuntimeError("bridge fixed-name resource already exists")
-        kube(kubeconfig, "create", "-f", "-", data=manifest(values, scheduling))
-        uids = {kind+"/"+name:json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", kind, name, "-o", "json"))["metadata"]["uid"] for kind,name in resources}
+    if prior is None:
+        prior = install_owned(kubeconfig, NAMESPACE, state, {"platform_ids":values}, json.loads(manifest(values, scheduling))["items"], BRIDGE_RESOURCES)
     else:
+        if set(recover_owned(kubeconfig, NAMESPACE, state, prior, BRIDGE_RESOURCES)) != set(BRIDGE_RESOURCES):
+            raise RuntimeError("bridge install is incomplete; cleanup is required")
         if scheduling:
             current = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "deployment", "hakopod-neon-control", "-o", "json"))
             pod = current["spec"]["template"]["spec"]
             if {key:pod[key] for key in ("nodeSelector", "tolerations", "runtimeClassName", "affinity") if key in pod} != scheduling or pod.get("nodeName"):
                 raise RuntimeError("existing bridge scheduling differs")
         policy = next(item for item in json.loads(manifest(values))["items"] if item["kind"] == "NetworkPolicy" and item["metadata"]["name"] == "hakopod-neon-control-ingress")
-        kube(kubeconfig, "-n", NAMESPACE, "patch", "networkpolicy", "hakopod-neon-control-ingress", "--type=merge", "-p", json.dumps({"spec":policy["spec"]}, separators=(",", ":")))
-        if json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "networkpolicy", "hakopod-neon-control-ingress", "-o", "json"))["metadata"]["uid"] != uids["networkpolicy/hakopod-neon-control-ingress"]:
+        owned = observe(kubeconfig, NAMESPACE, "networkpolicy/hakopod-neon-control-ingress")
+        if owned is None or owned["metadata"]["uid"] != prior["uids"]["networkpolicy/hakopod-neon-control-ingress"] or owned["metadata"].get("annotations", {}).get(INSTALL_KEY) != prior["install_id"]:
             raise RuntimeError("bridge ingress policy ownership changed")
-    temporary = state.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"platform_ids":values,"uids":uids}, separators=(",", ":")) + "\n")
-    temporary.chmod(0o600); temporary.replace(state)
+        patch = [{"op":"test", "path":"/metadata/uid", "value":owned["metadata"]["uid"]}, {"op":"test", "path":"/metadata/resourceVersion", "value":owned["metadata"]["resourceVersion"]}, {"op":"replace", "path":"/spec", "value":policy["spec"]}]
+        kube(kubeconfig, "-n", NAMESPACE, "patch", "networkpolicy", "hakopod-neon-control-ingress", "--type=json", "-p", json.dumps(patch, separators=(",", ":")))
+        updated = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "networkpolicy", "hakopod-neon-control-ingress", "-o", "json"))
+        if updated["metadata"]["uid"] != prior["uids"]["networkpolicy/hakopod-neon-control-ingress"] or updated["metadata"].get("annotations", {}).get(INSTALL_KEY) != prior["install_id"] or updated.get("spec") != policy["spec"]:
+            raise RuntimeError("bridge ingress policy ownership or specification changed")
+    prior["platform_ids"] = values; write_state(state, prior)
     kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
 
 def cleanup(kubeconfig):
     state = ROOT / "allowed-platforms.json"
-    resources = (("configmap","hakopod-neon-control"),("secret","hakopod-neon-control-tls"),("deployment","hakopod-neon-control"),("service","hakopod-control"),("networkpolicy","hakopod-neon-control-ingress"),("networkpolicy","hakopod-neon-control-egress"))
     if state.exists():
-        value = json.loads(protected(state.name).decode())
-        if set(value) != {"platform_ids","uids"}:
-            raise RuntimeError("bridge cleanup state is invalid")
-        for resource, uid in value["uids"].items():
-            current = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", resource, "-o", "json"))
-            if not UID.fullmatch(uid) or current["metadata"]["uid"] != uid:
-                raise RuntimeError("bridge cleanup refused foreign resource")
-        kube(kubeconfig, "-n", NAMESPACE, "delete", "deployment/hakopod-neon-control", "service/hakopod-control", "networkpolicy/hakopod-neon-control-ingress", "networkpolicy/hakopod-neon-control-egress", "configmap/hakopod-neon-control", "secret/hakopod-neon-control-tls", "--wait=true")
-        for kind, name in resources:
-            if kube(kubeconfig, "-n", NAMESPACE, "get", kind, name, "--ignore-not-found", "-o", "name").strip():
-                raise RuntimeError("bridge cleanup is incomplete")
+        cleanup_owned(kubeconfig, NAMESPACE, state, read_state(state, {"platform_ids"}, BRIDGE_RESOURCES), BRIDGE_RESOURCES)
+    elif any(observe(kubeconfig, NAMESPACE, resource) is not None for resource in BRIDGE_RESOURCES):
+        raise RuntimeError("bridge resources exist without an ownership journal")
     subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     state.unlink(missing_ok=True)
 
@@ -220,10 +291,6 @@ def probe_start(kubeconfig, platform_id, proxy_secret, ca_kind, scheduling=None)
     source = json.loads(kube(kubeconfig, "-n", namespace, "get", "deployment", "neon-proxy", "-o", "json"))
     proxy_image = owned_proxy_image(source, platform_id, proxy_secret)
     labels = {"app.kubernetes.io/name":"hakopod-neon-wrong-ca", "hakopod.io/neon-role":"proxy", "hakopod.io/managed-platform-id":platform_id}
-    names = (("configmap", "hakopod-neon-wrong-ca"), ("deployment", "hakopod-neon-wrong-ca"), ("networkpolicy", "hakopod-neon-wrong-ca-egress"))
-    for kind, name in names:
-        if kube(kubeconfig, "-n", namespace, "get", kind, name, "--ignore-not-found", "-o", "name").strip():
-            raise RuntimeError("issuer probe fixed-name resource already exists")
     config = {"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"hakopod-neon-wrong-ca","namespace":namespace,"labels":labels},"immutable":True,"data":{"ca.crt":protected("ca.crt" if ca_kind == "correct" else "wrong-ca.crt").decode()}}
     deployment = {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"hakopod-neon-wrong-ca","namespace":namespace,"labels":labels},"spec":{"replicas":1,"selector":{"matchLabels":{"app.kubernetes.io/name":"hakopod-neon-wrong-ca"}},"template":{"metadata":{"labels":labels},"spec":{"automountServiceAccountToken":False,"enableServiceLinks":False,"securityContext":{"runAsNonRoot":True,"runAsUser":10001,"runAsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"proxy","image":proxy_image,"command":["proxy"],"args":["--proxy=0.0.0.0:5432","--http=0.0.0.0:7001","--mgmt=127.0.0.1:7000","--tls-key=/proxy-auth/tls.key","--tls-cert=/proxy-auth/tls.crt","--auth-backend=control-plane","--auth-endpoint=https://hakopod-control.hakopod-system.svc/api/v1/internal/neon/proxy"],"env":[{"name":"NEON_PROXY_TO_CONTROLPLANE_TOKEN","valueFrom":{"secretKeyRef":{"name":proxy_secret,"key":"token"}}},{"name":"SSL_CERT_FILE","value":"/control-plane/ca.crt"}],"ports":[{"name":"postgres","containerPort":5432},{"name":"http","containerPort":7001}],"readinessProbe":{"httpGet":{"path":"/v1/status","port":"http"}},"resources":{"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"allowPrivilegeEscalation":False,"readOnlyRootFilesystem":True,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"proxy-auth","mountPath":"/proxy-auth","readOnly":True},{"name":"control-plane","mountPath":"/control-plane","readOnly":True}]}],"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"16Mi"}},{"name":"proxy-auth","secret":{"secretName":proxy_secret}},{"name":"control-plane","configMap":{"name":"hakopod-neon-wrong-ca","items":[{"key":"ca.crt","path":"ca.crt"}]}}]}}}}
     deployment["spec"]["template"]["spec"].update(scheduling or {})
@@ -231,17 +298,14 @@ def probe_start(kubeconfig, platform_id, proxy_secret, ca_kind, scheduling=None)
     current = json.loads(kube(kubeconfig, "-n", namespace, "get", "deployment", "neon-proxy", "-o", "json"))
     if current.get("metadata", {}).get("uid") != source["metadata"]["uid"] or owned_proxy_image(current, platform_id, proxy_secret) != proxy_image:
         raise RuntimeError("issuer probe source proxy changed")
-    kube(kubeconfig, "create", "-f", "-", data=json.dumps({"apiVersion":"v1","kind":"List","items":[config,deployment,policy]}, separators=(",", ":")).encode())
-    uids = {kind+"/"+name:json.loads(kube(kubeconfig, "-n", namespace, "get", kind, name, "-o", "json"))["metadata"]["uid"] for kind,name in names}
     state = ROOT / "issuer-probe-state.json"
-    temporary = state.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"platform_id":platform_id,"ca_kind":ca_kind,"uids":uids}, separators=(",", ":")) + "\n")
-    temporary.chmod(0o600); temporary.replace(state)
+    install_owned(kubeconfig, namespace, state, {"platform_id":platform_id,"ca_kind":ca_kind}, [config,deployment,policy], PROBE_RESOURCES)
     kube(kubeconfig, "-n", namespace, "rollout", "status", "deployment/hakopod-neon-wrong-ca", "--timeout=180s")
 
 def probe_verify_wrong(kubeconfig, platform_id):
-    state = json.loads(protected("issuer-probe-state.json").decode())
-    if set(state) != {"platform_id","ca_kind","uids"} or state.get("platform_id") != platform_id or state.get("ca_kind") != "wrong" or not all(UID.fullmatch(value) for value in state.get("uids", {}).values()):
+    path = ROOT / "issuer-probe-state.json"
+    state = read_state(path, {"platform_id", "ca_kind"}, PROBE_RESOURCES)
+    if state.get("platform_id") != platform_id or state.get("ca_kind") != "wrong" or set(recover_owned(kubeconfig, "managed-platform-" + platform_id, path, state, PROBE_RESOURCES)) != set(PROBE_RESOURCES):
         raise RuntimeError("wrong-issuer probe state differs")
     logs = kube(kubeconfig, "-n", "managed-platform-" + platform_id, "logs", "deployment/hakopod-neon-wrong-ca", "--tail=100")
     if not re.search(r"(?i)(unknownissuer|unknown issuer|certificate verify|invalid peer certificate|unable to get local issuer)", logs):
@@ -250,19 +314,12 @@ def probe_verify_wrong(kubeconfig, platform_id):
 def probe_stop(kubeconfig, platform_id):
     if not ID.fullmatch(platform_id):
         raise RuntimeError("issuer probe identity is malformed")
-    state = json.loads(protected("issuer-probe-state.json").decode())
-    if state.get("platform_id") != platform_id or set(state.get("uids", {})) != {"configmap/hakopod-neon-wrong-ca","deployment/hakopod-neon-wrong-ca","networkpolicy/hakopod-neon-wrong-ca-egress"}:
+    path = ROOT / "issuer-probe-state.json"
+    state = read_state(path, {"platform_id", "ca_kind"}, PROBE_RESOURCES)
+    if state.get("platform_id") != platform_id:
         raise RuntimeError("issuer probe cleanup state differs")
     namespace = "managed-platform-" + platform_id
-    for resource, uid in state["uids"].items():
-        current = json.loads(kube(kubeconfig, "-n", namespace, "get", resource, "-o", "json"))
-        if current["metadata"]["uid"] != uid:
-            raise RuntimeError("issuer probe resource ownership changed")
-    kube(kubeconfig, "-n", namespace, "delete", "deployment/hakopod-neon-wrong-ca", "configmap/hakopod-neon-wrong-ca", "networkpolicy/hakopod-neon-wrong-ca-egress", "--wait=true")
-    for resource in state["uids"]:
-        if kube(kubeconfig, "-n", namespace, "get", resource, "--ignore-not-found", "-o", "name").strip():
-            raise RuntimeError("issuer probe cleanup is incomplete")
-    (ROOT / "issuer-probe-state.json").unlink()
+    cleanup_owned(kubeconfig, namespace, path, state, PROBE_RESOURCES)
 
 def main():
     parser = argparse.ArgumentParser()
