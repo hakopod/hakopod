@@ -30,8 +30,8 @@ func TestVitessScopedCredentials(t *testing.T) {
 	}
 	init := string(data["init.sql"])
 	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") ||
-		!strings.Contains(init, "GRANT SELECT ON _vt.tables TO 'vt_app'@'localhost'") ||
-		!strings.Contains(init, "GRANT SELECT, UPDATE ON _vt.schema_migrations TO 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT, CREATE ON _vt.tables TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.tables FROM 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT, UPDATE, CREATE ON _vt.schema_migrations TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.schema_migrations FROM 'vt_app'@'localhost'") ||
 		strings.Contains(init, "GRANT ALL ON *.* TO 'vt_app'") || !strings.Contains(init, "REQUIRE SSL") {
 		t.Fatal("application or replication grants exceed their boundary")
 	}

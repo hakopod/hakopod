@@ -44,11 +44,13 @@ func vitessAccountData(s database.Spec, appPassword, replicationPassword []byte)
 	}
 	// mysqlctld and vttablet use this administrative account over a shared
 	// Unix socket. No remote administrative account or password is created.
+	// MySQL requires CREATE when granting access to a table that does not yet
+	// exist. Revoke it immediately; Vitess creates its metadata tables later.
 	initSQL := "SET @prior_super_read_only=@@global.super_read_only; SET GLOBAL super_read_only=OFF; SET sql_log_bin=0;\n" +
 		"DELETE FROM mysql.user WHERE User='' OR (User='root' AND Host!='localhost'); DROP DATABASE IF EXISTS test;\n" +
 		"CREATE DATABASE IF NOT EXISTS _vt; CREATE DATABASE IF NOT EXISTS app;\n" +
 		"CREATE USER 'vt_dba'@'localhost'; GRANT ALL ON *.* TO 'vt_dba'@'localhost' WITH GRANT OPTION;\n" +
-		"CREATE USER 'vt_app'@'localhost'; GRANT ALL ON app.* TO 'vt_app'@'localhost'; GRANT SELECT ON _vt.tables TO 'vt_app'@'localhost'; GRANT SELECT, UPDATE ON _vt.schema_migrations TO 'vt_app'@'localhost';\n" +
+		"CREATE USER 'vt_app'@'localhost'; GRANT ALL ON app.* TO 'vt_app'@'localhost'; GRANT SELECT, CREATE ON _vt.tables TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.tables FROM 'vt_app'@'localhost'; GRANT SELECT, UPDATE, CREATE ON _vt.schema_migrations TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.schema_migrations FROM 'vt_app'@'localhost';\n" +
 		"CREATE USER 'vt_appdebug'@'localhost'; GRANT SELECT ON app.* TO 'vt_appdebug'@'localhost';\n" +
 		"CREATE USER 'vt_allprivs'@'localhost'; GRANT ALL ON app.* TO 'vt_allprivs'@'localhost'; GRANT ALL ON _vt.* TO 'vt_allprivs'@'localhost';\n" +
 		"CREATE USER 'vt_filtered'@'localhost'; GRANT ALL ON app.* TO 'vt_filtered'@'localhost'; GRANT ALL ON _vt.* TO 'vt_filtered'@'localhost';\n" +

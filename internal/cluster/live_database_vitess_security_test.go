@@ -97,6 +97,11 @@ func testVitessSecurity(t *testing.T, ctx context.Context, c *Client, d database
 	}
 	for _, member := range health.Members {
 		checkVitessTabletData(t, ctx, c, d, member, false)
+		grants := &databaseBoundedWriter{limit: 1024}
+		query := "SELECT Table_name,Table_priv FROM mysql.tables_priv WHERE User='vt_app' AND Host='localhost' AND Db='_vt' ORDER BY Table_name"
+		if err := c.DatabaseExec(ctx, d, member, vitessLocalCommand("vt_dba", query), nil, grants); err != nil || strings.TrimSpace(grants.String()) != "schema_migrations\tSelect,Update\ntables\tSelect" {
+			t.Fatal("Vitess bootstrap did not leave only the required metadata table privileges")
+		}
 		for _, query := range []string{"SELECT authentication_string FROM mysql.user", "CREATE USER forbidden_global_user IDENTIFIED BY 'fixture'", fmt.Sprintf("SET GLOBAL max_connections=%d", globalBefore[member.Name]+1)} {
 			out := &databaseBoundedWriter{limit: 2048}
 			command := append([]string{"sh", "-c", `exec "$@" 2>&1`, "vitess-privilege-refusal"}, vitessLocalCommand("vt_app", query)...)
