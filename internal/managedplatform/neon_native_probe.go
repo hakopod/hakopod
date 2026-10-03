@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 )
 
 // NeonNativeProbeResult contains only provider facts which were observed by
@@ -17,6 +18,8 @@ type NeonNativeProbeResult struct {
 	TenantID                    string   `json:"tenant_id"`
 	TimelineID                  string   `json:"timeline_id"`
 	TenantGeneration            int64    `json:"tenant_generation"`
+	AttachedPageserver          string   `json:"attached_pageserver"`
+	AttachedPageserverNodeID    int64    `json:"attached_pageserver_node_id"`
 	TimelineGeneration          int64    `json:"timeline_generation"`
 	ComputeNames                []string `json:"compute_names"`
 	OwnershipCapabilityVerified bool     `json:"ownership_capability_verified"`
@@ -60,6 +63,18 @@ func (inspector *DurableNeonRuntime) ProbeNeonNative(ctx context.Context, reques
 		return NeonNativeProbeResult{}, fmt.Errorf("native Neon tenant identity does not match the accepted claim")
 	}
 	result.TenantGeneration = tenantGeneration
+	for _, node := range config.Pageservers {
+		if tenantIdentity == request.TenantID+"@"+strconv.FormatInt(node.NodeID, 10) {
+			if result.AttachedPageserver != "" {
+				return NeonNativeProbeResult{}, fmt.Errorf("native Neon pageserver registration is duplicated")
+			}
+			result.AttachedPageserver = "pageserver-" + node.Name
+			result.AttachedPageserverNodeID = node.NodeID
+		}
+	}
+	if result.AttachedPageserver == "" {
+		return NeonNativeProbeResult{}, fmt.Errorf("native Neon tenant is attached to an unowned pageserver")
+	}
 	result.TLSVerifiedServices = append(result.TLSVerifiedServices, "storage-controller")
 
 	timelineExists, timelineToken, err := inspector.inspectTimeline(ctx, request.TenantID, request.TimelineID)

@@ -38,6 +38,25 @@ func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *te
 	if plan.StorageClass != "encrypted-block" {
 		t.Fatalf("trusted storage class was not carried into the plan: %q", plan.StorageClass)
 	}
+	item := store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}
+	principal := store.Principal{ID: "requesting-operator"}
+	planner.ResolveNeonSecret = func(_ context.Context, got store.Principal, resource store.ManagedPlatform, logical string, ref managedplatform.SecretReference) (map[string][]byte, error) {
+		if got.ID != principal.ID || resource.ID != item.ID || logical != "compute-auth" || ref != spec.Secrets["compute-auth"] {
+			t.Fatal("compute preflight lost its caller or immutable reference")
+		}
+		return map[string][]byte{"config.json": []byte(`{"spec":{}}`)}, nil
+	}
+	if _, err = planner.PlanManagedPlatform(context.Background(), principal, item, 0, "create"); err == nil || !strings.Contains(err.Error(), "cluster object") {
+		t.Fatal("invalid compute template passed review")
+	}
+	planner.ResolveNeonSecret = func(context.Context, store.Principal, store.ManagedPlatform, string, managedplatform.SecretReference) (map[string][]byte, error) {
+		t.Fatal("deletion resolved a provisioning template")
+		return nil, nil
+	}
+	if _, err = planner.PlanManagedPlatform(context.Background(), principal, item, 1, "delete"); err != nil {
+		t.Fatal(err)
+	}
+	planner.ResolveNeonSecret = nil
 	bindingErr := errors.New("Neon binding changed")
 	planner.ValidateNeonQualification = func(context.Context) error { return bindingErr }
 	if _, err = planner.PlanManagedPlatform(context.Background(), store.Principal{}, store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}, 0, "create"); !errors.Is(err, bindingErr) {

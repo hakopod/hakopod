@@ -44,11 +44,13 @@ type NeonControlTarget struct {
 // The storage controller is the only component called directly for tenant,
 // timeline, pageserver, and safekeeper placement.
 type NeonRuntimeConfig struct {
+	ResolveComputeConfig                     func(context.Context, string, json.RawMessage) (json.RawMessage, error)
 	StorageController                        NeonControlTarget
 	Computes                                 []NeonControlTarget
 	Pageservers                              []NeonPageserverRegistration
 	Safekeepers                              []NeonSafekeeperRegistration
 	SafekeeperToken                          string
+	PageserverToken                          string
 	StateDirectory                           string
 	RequestTimeout                           time.Duration
 	RootCAs                                  *x509.CertPool
@@ -598,6 +600,13 @@ func (r *NeonRuntime) requestWithOwnership(ctx context.Context, target NeonContr
 }
 
 func (r *NeonRuntime) requestWithTokens(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken string) ([]byte, int, error) {
+	return r.requestWithSpecCAS(ctx, target, method, path, body, ownershipToken, deletionToken, "")
+}
+
+func (r *NeonRuntime) requestWithSpecCAS(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken, expectedSpec string) ([]byte, int, error) {
+	if expectedSpec != "" && (!validLowerHex(expectedSpec, 64) || !validNeonComputeOwnershipToken(ownershipToken)) {
+		return nil, 0, fmt.Errorf("invalid Neon compute configuration fence")
+	}
 	requestURI, err := url.ParseRequestURI(path)
 	if err != nil || !strings.HasPrefix(requestURI.Path, "/") || requestURI.Fragment != "" {
 		return nil, 0, fmt.Errorf("invalid Neon control path")
@@ -622,6 +631,9 @@ func (r *NeonRuntime) requestWithTokens(ctx context.Context, target NeonControlT
 	}
 	if deletionToken != "" {
 		req.Header.Set(neonDeletionHeader, deletionToken)
+	}
+	if expectedSpec != "" {
+		req.Header.Set("hakopod-expected-spec-sha256", expectedSpec)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {

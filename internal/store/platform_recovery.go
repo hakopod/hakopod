@@ -184,13 +184,7 @@ func (s *Store) ManagedPlatformRecoveryContract(ctx context.Context, id string, 
 	return item, plan, err
 }
 func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, revision int64) (map[string]PlatformResourceClaim, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT b.platform_id,b.platform_revision,b.component,b.resource_kind,
-		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.runtime_generation,r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
-		FROM platform_component_resources b
-		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL
-		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.released_at IS NULL
-		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=b.platform_id AND pending.platform_revision=b.platform_revision AND pending.component=b.component AND pending.resource_kind=b.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		ORDER BY b.component,b.resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
+	rows, err := s.Pool.Query(ctx, `SELECT `+platformResourceClaimColumns+` FROM effective_platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 ORDER BY component,resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +204,7 @@ func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, re
 }
 func (s *Store) ManagedPlatformRecoveryCurrentClaim(ctx context.Context, id, component string) (PlatformResourceClaim, error) {
 	var c PlatformResourceClaim
-	err := s.Pool.QueryRow(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,r.resource_id,r.immutable_generation,r.owner_operation_id,r.released_at FROM platform_component_resources r JOIN managed_platforms p ON p.id=r.platform_id AND p.revision=r.platform_revision WHERE r.platform_id=$1 AND r.component=$2 AND r.released_at IS NULL AND p.deleted_at IS NULL`, id, component).Scan(&c.PlatformID, &c.PlatformRevision, &c.Component, &c.Kind, &c.ResourceID, &c.ImmutableGeneration, &c.OwnerOperationID, &c.ReleasedAt)
+	err := s.Pool.QueryRow(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,r.resource_id,r.immutable_generation,r.owner_operation_id,r.released_at FROM effective_platform_component_resources r JOIN managed_platforms p ON p.id=r.platform_id AND p.revision=r.platform_revision WHERE r.platform_id=$1 AND r.component=$2 AND r.released_at IS NULL AND p.deleted_at IS NULL`, id, component).Scan(&c.PlatformID, &c.PlatformRevision, &c.Component, &c.Kind, &c.ResourceID, &c.ImmutableGeneration, &c.OwnerOperationID, &c.ReleasedAt)
 	return c, err
 }
 

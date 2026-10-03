@@ -37,7 +37,7 @@ func (s *Store) ClaimManagedPlatformMaintenance(ctx context.Context) (ManagedPla
 	err = tx.QueryRow(ctx, `UPDATE managed_platform_maintenance SET status='running',lease=$1,lease_until=clock_timestamp()+interval '30 seconds',attempt=attempt+1,updated_at=now()
 		WHERE id=(SELECT m.id FROM managed_platform_maintenance m JOIN managed_platforms p ON p.id=m.platform_id AND p.revision=m.revision AND p.deleted_at IS NULL
 			JOIN managed_platform_operations o ON o.id=m.operation_id AND o.platform_id=m.platform_id AND o.revision=m.revision AND o.status='succeeded'
-			WHERE (m.status='idle' OR m.status='running' AND m.lease_until<clock_timestamp()) AND m.next_attempt_at<=clock_timestamp() AND m.attempt<16 AND p.status='ready' AND p.desired_spec->>'tls_mode'='managed'
+			WHERE (m.status='idle' OR m.status='running' AND m.lease_until<clock_timestamp()) AND m.next_attempt_at<=clock_timestamp() AND m.attempt<16 AND p.status='ready' AND (p.kind='neon' OR p.desired_spec->>'tls_mode'='managed')
 			AND NOT EXISTS(SELECT 1 FROM managed_platform_operations active WHERE active.platform_id=m.platform_id AND active.status IN ('queued','running'))
 			AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE (recovery.source_platform_id=m.platform_id OR recovery.target_platform_id=m.platform_id) AND recovery.status IN ('queued','running'))
 			AND NOT (p.kind='supabase' AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE recovery.kind='restore' AND recovery.target_platform_id=p.id AND recovery.expected_target_revision=p.revision AND recovery.status IN ('succeeded','failed','cancelled')))
@@ -69,7 +69,7 @@ func (s *Store) managedPlatformMaintenanceFenceTx(ctx context.Context, tx pgx.Tx
 	err := tx.QueryRow(ctx, `SELECT `+managedPlatformOperationQualifiedColumns+`,p.project,p.environment FROM managed_platform_maintenance m
 		JOIN managed_platform_operations o ON o.id=m.operation_id JOIN managed_platforms p ON p.id=m.platform_id AND p.revision=m.revision
 		WHERE m.id=$1 AND m.platform_id=$2 AND m.revision=$3 AND m.operation_id=$4 AND m.lease=$5 AND m.status='running' AND m.lease_until>clock_timestamp()
-		AND o.status='succeeded' AND p.status='ready' AND p.desired_spec->>'tls_mode'='managed' AND p.deleted_at IS NULL
+		AND o.status='succeeded' AND p.status='ready' AND (p.kind='neon' OR p.desired_spec->>'tls_mode'='managed') AND p.deleted_at IS NULL
 		AND NOT (p.kind='supabase' AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE recovery.kind='restore' AND recovery.target_platform_id=p.id AND recovery.expected_target_revision=p.revision AND recovery.status IN ('succeeded','failed','cancelled')))
 		FOR UPDATE OF m,p`, supplied.MaintenanceID, supplied.PlatformID, supplied.Revision, supplied.ID, supplied.Lease).
 		Scan(&stored.ID, &stored.PlatformID, &stored.Revision, &stored.Kind, &stored.Status, &stored.Phase, &stored.Message, &stored.Spec, &stored.Plan, &stored.EncryptedSnapshot, &stored.Review, &stored.ReviewID, &stored.AuthorityFingerprint, &stored.CreatedAt, &stored.StartedAt, &stored.FinishedAt, &stored.IdentityID, &stored.KeyID, &stored.Lease, &stored.LeaseUntil, &stored.Attempt, &project, &environment)
@@ -106,6 +106,9 @@ func (s *Store) recordManagedPlatformMaintenanceStep(ctx context.Context, op Man
 		return err
 	}
 	next := "clock_timestamp()+interval '24 hours'"
+	if op.Spec.Kind == "neon" {
+		next = "clock_timestamp()+interval '30 seconds'"
+	}
 	if status == "queued" {
 		next = "clock_timestamp()+LEAST(interval '1 hour', interval '15 seconds' * power(2, LEAST(attempt,8)))"
 	}
@@ -124,7 +127,7 @@ func (s *Store) recordManagedPlatformMaintenanceStep(ctx context.Context, op Man
 		maintenanceStatus = "failed"
 	}
 	tag, err = tx.Exec(ctx, `UPDATE managed_platforms SET observation=observation || jsonb_strip_nulls($3::jsonb) || jsonb_build_object('maintenance',jsonb_build_object('status',$4::text,'phase',$5::text,'message',$6::text,'checked_at',clock_timestamp())),updated_at=now()
-		WHERE id=$1 AND revision=$2 AND status='ready' AND desired_spec->>'tls_mode'='managed' AND deleted_at IS NULL`, op.PlatformID, op.Revision, encoded, maintenanceStatus, phase, message)
+		WHERE id=$1 AND revision=$2 AND status='ready' AND (kind='neon' OR desired_spec->>'tls_mode'='managed') AND deleted_at IS NULL`, op.PlatformID, op.Revision, encoded, maintenanceStatus, phase, message)
 	if err != nil {
 		return err
 	}

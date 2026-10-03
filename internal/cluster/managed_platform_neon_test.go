@@ -204,8 +204,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 			t.Fatal("supported Neon topology exceeds the managed platform claim bound")
 		}
 	}
-	assert(t, 2, 3, 1, 47, 64)
-	assert(t, 8, 3, 6, 96, 124)
+	assert(t, 2, 3, 1, 48, 66)
+	assert(t, 8, 3, 6, 97, 126)
 
 	maximum := render(t, 8, 3, 6)
 	immutableRevisionObjects := 0
@@ -215,7 +215,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		}
 	}
 	kubernetesClaims := len(maximum.Objects) + len(maximum.RequiredSecrets) + 1
-	if immutableRevisionObjects != 16 || kubernetesClaims+immutableRevisionObjects != 121 {
+	// One previous callback secret also remains until the new revision is ready.
+	if immutableRevisionObjects != 16 || kubernetesClaims+immutableRevisionObjects+1 != 124 {
 		t.Fatalf("maximum update rollover inventory changed: Kubernetes=%d old immutable ConfigMaps=%d total=%d", kubernetesClaims, immutableRevisionObjects, kubernetesClaims+immutableRevisionObjects)
 	}
 	if maxSupabaseRuntimeObjects != managedplatform.MaxComponents*5 {

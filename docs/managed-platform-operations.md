@@ -150,10 +150,12 @@ StorageClass. Hakopod recomputes the image inventory and canonical
 StorageClass-parameter digests and compares the live cluster, class UID and
 provisioner before startup and again before platform or recovery changes.
 
-Neon secret snapshots contain the TLS identities and tokens used among the
-broker, compute, controller, pageserver, proxy and safekeeper services. The
-object-storage snapshot contains its access key pair. Keep the certificate
-authority relationships and service hostnames described in the
+Hakopod generates Neon's internal controller and storage tokens for each
+platform. The operator supplies the compute configuration, compute-control
+credential, proxy credential, controller-database password and object-storage
+access key pair. With operator-provided TLS, the snapshots also contain the
+service certificates. Review checks the compute template before accepting an
+operation. Keep the certificate authority relationships and service hostnames described in the
 [Neon security contract](managed-neon.md); placeholder PEM, JSON and token
 values in the repository template are documentation only and cannot authorize
 a deployment.

@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -53,6 +54,7 @@ func TestPrepareNativeNeonProbeReadsCompletedRevisionBindings(t *testing.T) {
 				"controller-auth": {Name: "controller-auth", Revision: 1},
 				"compute-auth":    {Name: "compute-auth", Revision: 1},
 				"safekeeper-auth": {Name: "safekeeper-auth", Revision: 1},
+				"pageserver-auth": {Name: "pageserver-auth", Revision: 1},
 			}}
 			op.Spec = spec
 			request := NeonRuntimeRequest{
@@ -62,11 +64,12 @@ func TestPrepareNativeNeonProbeReadsCompletedRevisionBindings(t *testing.T) {
 					"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
 					"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{"cluster":{"settings":[]}},"compute_ctl_config":{}}`)},
 					"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
+					"pageserver-auth-r1": {"token": []byte("pageserver-secret-token"), "ca.crt": ca},
 				},
 				ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID, Enabled: true, Roles: map[string]managedplatform.NeonProxyRoleState{"cloud_admin": {}}},
 			}
 			reader := &nativeProbeBindingFixture{binding: test.binding, err: test.err}
-			runtime, observed, route, err := prepareNeonNativeProbeRuntime(context.Background(), request, reader, nil, []string{"zone-a", "zone-b", "zone-c"})
+			runtime, observed, route, err := prepareNeonNativeProbeRuntime(context.Background(), request, reader, bytes.Repeat([]byte{1}, 32), []string{"zone-a", "zone-b", "zone-c"})
 			if err != nil || runtime == nil {
 				t.Fatalf("completed revision required lifecycle authority: %v", err)
 			}

@@ -40,7 +40,7 @@ type NativeManagedPlatformPlanner struct {
 	ValidateNeonQualification     func(context.Context) error
 }
 
-func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, _ store.Principal, item store.ManagedPlatform, _ int64, _ string) (managedplatform.Plan, error) {
+func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, principal store.Principal, item store.ManagedPlatform, _ int64, kind string) (managedplatform.Plan, error) {
 	nodes := p.CatalogNodes
 	if p.CatalogCapacity != nil {
 		capacity, err := p.CatalogCapacity(ctx, item.Project, item.Environment)
@@ -79,7 +79,26 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, 
 	if err == nil {
 		plan.Capability, err = reviewedPlatformCapability(ctx, name, released, plan.Capability, validate)
 	}
-	return nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan), err
+	plan = nativeacceptance.Plan(item.Project, item.Environment, item.Spec.Kind, plan)
+	if err == nil && item.Spec.Kind == "neon" && kind != "delete" && (plan.Capability.Available || p.ResolveNeonSecret != nil) {
+		err = p.validateNeonComputeTemplate(ctx, principal, item)
+	}
+	return plan, err
+}
+
+func (p *NativeManagedPlatformPlanner) validateNeonComputeTemplate(ctx context.Context, principal store.Principal, item store.ManagedPlatform) error {
+	if p.ResolveNeonSecret == nil {
+		return fmt.Errorf("Neon runtime resolution is unavailable")
+	}
+	ref, ok := item.Spec.Secrets["compute-auth"]
+	if !ok || ref.Name == "" || ref.Revision < 1 {
+		return fmt.Errorf("Neon compute authentication reference is unavailable")
+	}
+	snapshot, err := p.ResolveNeonSecret(ctx, principal, item, "compute-auth", ref)
+	if err != nil {
+		return fmt.Errorf("resolve Neon compute template: %w", err)
+	}
+	return cluster.ValidateNeonComputeTemplate(snapshot["config.json"])
 }
 
 func validateManagedPlatformPlacement(name string, spec managedplatform.Spec, nodes []managedplatform.CapacityNode, requireGrant bool) error {
@@ -174,6 +193,9 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 			bootstrap.Roles = roles
 		}
 		request := cluster.NeonRuntimeRequest{Render: render, SecretSnapshots: snapshots, ProxyEndpoint: bootstrap}
+		if err = cluster.PrepareNeonAuthenticationSnapshots(&request, p.EncryptionKey, kind); err != nil {
+			return nil, err
+		}
 		return cluster.SealManagedPlatformSnapshot(p.EncryptionKey, item.ID, expected+1, kind, cluster.ManagedPlatformSnapshot{ReviewedPlan: reviewed, Neon: &request})
 	default:
 		return nil, fmt.Errorf("managed platform kind is not configured")

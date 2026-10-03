@@ -127,25 +127,59 @@ func TestManagedPlatformMaintenanceExhaustionPersistsCooldown(t *testing.T) {
 }
 
 func TestManagedPlatformOperatorTLSDoesNotScheduleMaintenance(t *testing.T) {
-	s, principal, item, plan := managedPlatformFixture(t)
+	s, _, item, _, _ := recoveryStoreFixture(t)
 	ctx := context.Background()
-	review := managedPlatformReview(t, s, principal, item, plan, 0, "create")
-	if _, err := s.AcceptManagedPlatform(ctx, principal, item, plan, []byte("sealed-operator-tls"), review, 0, "operator-tls-create", "create"); err != nil {
-		t.Fatal(err)
-	}
-	op, err := s.ClaimManagedPlatformOperation(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = s.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "", nil); err != nil {
-		t.Fatal(err)
-	}
 	var count int
-	if err = s.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_platform_maintenance WHERE platform_id=$1", item.ID).Scan(&count); err != nil {
+	if err := s.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_platform_maintenance WHERE platform_id=$1", item.ID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
 		t.Fatal("operator-managed TLS scheduled automatic maintenance")
+	}
+}
+
+func TestNeonRuntimeMaintenanceIsPromptForBothTLSModes(t *testing.T) {
+	for _, mode := range []string{"operator", "managed"} {
+		t.Run(mode, func(t *testing.T) {
+			s, principal, item, plan := managedPlatformFixture(t)
+			ctx := context.Background()
+			if mode == "managed" {
+				enableManagedTLSFixture(&item)
+			}
+			review := managedPlatformReview(t, s, principal, item, plan, 0, "create")
+			if _, err := s.AcceptManagedPlatform(ctx, principal, item, plan, []byte("sealed-runtime"), review, 0, "neon-maintenance-"+mode, "create"); err != nil {
+				t.Fatal(err)
+			}
+			op, err := s.ClaimManagedPlatformOperation(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			checkDue := func() {
+				t.Helper()
+				var due bool
+				if err := s.Pool.QueryRow(ctx, `SELECT next_attempt_at>clock_timestamp() AND next_attempt_at<=clock_timestamp()+interval '31 seconds' FROM managed_platform_maintenance WHERE platform_id=$1`, item.ID).Scan(&due); err != nil || !due {
+					t.Fatal("Neon runtime replay was not scheduled within thirty seconds", err)
+				}
+			}
+			checkDue()
+			if _, err = s.Pool.Exec(ctx, `UPDATE managed_platform_maintenance SET next_attempt_at=clock_timestamp()-interval '1 second' WHERE platform_id=$1`, item.ID); err != nil {
+				t.Fatal(err)
+			}
+			maintenance, err := s.ClaimManagedPlatformMaintenance(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.CheckManagedPlatformOperation(ctx, maintenance); err != nil {
+				t.Fatal(err)
+			}
+			if err = s.RecordManagedPlatformStep(ctx, maintenance, "succeeded", "runtime-ready", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			checkDue()
+		})
 	}
 }
 
