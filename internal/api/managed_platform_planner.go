@@ -42,6 +42,8 @@ type NativeManagedPlatformPlanner struct {
 
 func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, principal store.Principal, item store.ManagedPlatform, _ int64, kind string) (managedplatform.Plan, error) {
 	nodes := p.CatalogNodes
+	schedulingPool := ""
+	schedulingRuntimeClass := ""
 	if p.CatalogCapacity != nil {
 		capacity, err := p.CatalogCapacity(ctx, item.Project, item.Environment)
 		if err != nil {
@@ -54,6 +56,8 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, 
 			return managedplatform.Plan{}, fmt.Errorf("workspace storage does not match the qualified platform storage")
 		}
 		nodes = capacity.Nodes
+		schedulingPool = capacity.SchedulingPool
+		schedulingRuntimeClass = capacity.SchedulingRuntimeClass
 	}
 	var plan managedplatform.Plan
 	var err error
@@ -72,6 +76,8 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, 
 	}
 	plan.Namespace = "managed-platform-" + item.ID
 	plan.StorageClass = p.ApprovedEncryptedStorageClass
+	plan.SchedulingPool = schedulingPool
+	plan.SchedulingRuntimeClass = schedulingRuntimeClass
 	plan.Capability.Available, plan.Capability.ClusterQualified, plan.Capability.PublicQualified = false, false, false
 	if err == nil {
 		err = validateManagedPlatformPlacement(name, item.Spec, nodes, p.CatalogCapacity != nil)
@@ -148,7 +154,7 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 		if p.ResolveSupabaseSecret == nil {
 			return nil, fmt.Errorf("Supabase runtime resolution is unavailable")
 		}
-		render := managedplatform.SupabaseRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.SupabaseImages), Revision: expected + 1, Identities: cloneSupabaseIdentities(p.SupabaseIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous}
+		render := managedplatform.SupabaseRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.SupabaseImages), Revision: expected + 1, Identities: cloneSupabaseIdentities(p.SupabaseIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous, SchedulingPool: reviewed.SchedulingPool, SchedulingRuntimeClass: reviewed.SchedulingRuntimeClass}
 		snapshots, resolveErr := resolveManagedPlatformSecrets(ctx, p.ResolveSupabaseSecret, principal, item, "Supabase")
 		if resolveErr != nil {
 			return nil, resolveErr
@@ -162,7 +168,7 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 		if p.ResolveNeonSecret == nil {
 			return nil, fmt.Errorf("Neon runtime resolution is unavailable")
 		}
-		render := managedplatform.NeonRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.NeonImages), Revision: expected + 1, Identities: cloneNeonIdentities(p.NeonIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ProxyControlPlaneOrigin: p.NeonProxyControlPlaneOrigin, ProxyControlPlaneCAPEM: p.NeonProxyControlPlaneCAPEM, ControlPlaneNamespace: p.NeonControlPlaneNamespace, ControlPlanePodLabels: cloneManagedPlatformStrings(p.NeonControlPlanePodLabels), ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous}
+		render := managedplatform.NeonRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.NeonImages), Revision: expected + 1, Identities: cloneNeonIdentities(p.NeonIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ProxyControlPlaneOrigin: p.NeonProxyControlPlaneOrigin, ProxyControlPlaneCAPEM: p.NeonProxyControlPlaneCAPEM, ControlPlaneNamespace: p.NeonControlPlaneNamespace, ControlPlanePodLabels: cloneManagedPlatformStrings(p.NeonControlPlanePodLabels), ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous, SchedulingPool: reviewed.SchedulingPool, SchedulingRuntimeClass: reviewed.SchedulingRuntimeClass}
 		snapshots, resolveErr := resolveManagedPlatformSecrets(ctx, p.ResolveNeonSecret, principal, item, "Neon")
 		if resolveErr != nil {
 			return nil, resolveErr

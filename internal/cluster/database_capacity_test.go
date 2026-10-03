@@ -12,6 +12,7 @@ import (
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -51,7 +52,7 @@ func TestManagedClusterPinsEveryNodeUID(t *testing.T) {
 
 func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 	ctx := context.Background()
-	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	name := "supabase-fixture"
 	labels := map[string]string{managedBy: "hakopod", "hakopod.io/managed-platform-id": id, "hakopod.io/managed-platform": name, "app.kubernetes.io/name": "supabase-auth", "app.kubernetes.io/component": "auth"}
@@ -139,7 +140,7 @@ func TestManagedPlatformGrantCoversOnlyScheduledSupabaseTemplate(t *testing.T) {
 
 func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	ctx := context.Background()
-	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	applicationID := "application-fixture"
 	applicationOwner := ownerID(applicationID)
 	applicationNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(applicationID), UID: "application-namespace", Labels: map[string]string{managedBy: "hakopod", ownerKey: applicationOwner, scopeKey: scopeLabel("project", "production")}}}
@@ -199,6 +200,68 @@ func TestManagedPlatformGrantDoesNotDoubleCountPoolWorkloads(t *testing.T) {
 	}
 	if err := c.CheckDatabaseNodeReservations(ctx, map[string]DatabaseNodeReservation{node.Name: databaseReservation}); err == nil {
 		t.Fatal("database-node accounting ignored a durable application envelope overrun")
+	}
+}
+
+func TestManagedPlatformReservationRequiresTrustedSchedulablePoolNode(t *testing.T) {
+	ctx := context.Background()
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker", Labels: map[string]string{"hakopod.com/pool": "databases", "sandbox": "ready"}}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: "hakopod.com/pool", Value: "databases", Effect: corev1.TaintEffectNoSchedule}}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	runtimeClass := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: "runsc"}, Handler: "runsc", Overhead: &nodev1.Overhead{PodFixed: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("50Mi")}}, Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{"sandbox": "ready"}}}
+	client := &Client{kube: fake.NewClientset(node, runtimeClass)}
+	reservation := ManagedPlatformNodeReservation{UID: "uid-worker", Architecture: "amd64", OperatingSystem: "linux", SchedulingPool: "databases", SchedulingRuntimeClass: "runsc", Capacity: managedplatform.Capacity{CPUMilli: 1000, MemoryBytes: 1 << 30}}
+	check := func() error {
+		return client.CheckManagedPlatformNodeReservations(ctx, map[string]ManagedPlatformNodeReservation{node.Name: reservation})
+	}
+	if err := check(); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*corev1.Node){
+		"wrong label":        func(n *corev1.Node) { n.Labels["hakopod.com/pool"] = "other" },
+		"missing pool taint": func(n *corev1.Node) { n.Spec.Taints = nil },
+		"disk pressure taint": func(n *corev1.Node) {
+			n.Spec.Taints = append(n.Spec.Taints, corev1.Taint{Key: "node.kubernetes.io/disk-pressure", Effect: corev1.TaintEffectNoSchedule})
+		},
+		"unschedulable": func(n *corev1.Node) { n.Spec.Unschedulable = true },
+		"not ready":     func(n *corev1.Node) { n.Status.Conditions[0].Status = corev1.ConditionFalse },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := node.DeepCopy()
+			mutate(changed)
+			if _, err := client.kube.CoreV1().Nodes().Update(ctx, changed, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := check(); err == nil {
+				t.Fatal("unsafe managed platform node was accepted")
+			}
+			if _, err := client.kube.CoreV1().Nodes().Update(ctx, node.DeepCopy(), metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	oversized, err := client.kube.NodeV1().RuntimeClasses().Get(ctx, "runsc", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized.Overhead.PodFixed[corev1.ResourceCPU] = resource.MustParse("21m")
+	if _, err = client.kube.NodeV1().RuntimeClasses().Update(ctx, oversized, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = check(); err == nil {
+		t.Fatal("managed platform node with excessive sandbox overhead was accepted")
+	}
+	oversized.Overhead.PodFixed[corev1.ResourceCPU] = resource.MustParse("20m")
+	oversized.Scheduling.NodeSelector["sandbox"] = "other"
+	if _, err = client.kube.NodeV1().RuntimeClasses().Update(ctx, oversized, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = check(); err == nil {
+		t.Fatal("managed platform node conflicting with sandbox scheduling was accepted")
+	}
+	if err := client.kube.NodeV1().RuntimeClasses().Delete(ctx, "runsc", metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := check(); err == nil {
+		t.Fatal("managed platform node without its trusted runtime class was accepted")
 	}
 }
 
@@ -318,6 +381,29 @@ func TestPodCapacityIncludesRestartableInitStagesAndOverhead(t *testing.T) {
 	if !workloadRequestsMatch(spec, managedplatform.Capacity{CPUMilli: 625, MemoryBytes: 625 + managedplatform.PodMemoryOverheadBytes}) {
 		t.Fatal("valid scheduler request envelope was rejected")
 	}
+	runtimeName := "runsc"
+	template := corev1.PodSpec{RuntimeClassName: &runtimeName, Containers: []corev1.Container{container("200m", "200", false)}}
+	if !workloadRequestsMatch(template, managedplatform.Capacity{CPUMilli: 200 + managedplatform.SandboxCPUOverheadMilli, MemoryBytes: 200 + managedplatform.PodMemoryOverheadBytes}) {
+		t.Fatal("sandboxed controller template did not match its reserved overhead")
+	}
+	planned := corev1.PodTemplateSpec{Spec: template}
+	pod := corev1.Pod{Spec: template}
+	pod.Spec.NodeName = "worker"
+	if !capacityTemplateMatches(pod, planned) {
+		t.Fatal("sandboxed admitted pod did not match its controller template")
+	}
+	pod.Spec.Overhead = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("50Mi")}
+	if cpu, memory, err := podCapacityUsage(pod.Spec); err != nil || cpu != 200+managedplatform.SandboxCPUOverheadMilli || memory != 200+managedplatform.PodMemoryOverheadBytes {
+		t.Fatalf("admitted sandbox overhead was not counted exactly once: %d %d %v", cpu, memory, err)
+	}
+	if !workloadRequestsMatch(pod.Spec, managedplatform.Capacity{CPUMilli: 200 + managedplatform.SandboxCPUOverheadMilli, MemoryBytes: 200 + managedplatform.PodMemoryOverheadBytes}) {
+		t.Fatal("admitted sandbox overhead was added twice during ownership matching")
+	}
+	otherRuntime := "other"
+	pod.Spec.RuntimeClassName = &otherRuntime
+	if capacityTemplateMatches(pod, planned) {
+		t.Fatal("pod with a changed runtime class inherited the trusted capacity envelope")
+	}
 	spec.Overhead[corev1.ResourceMemory] = *resource.NewQuantity(math.MaxInt64, resource.DecimalSI)
 	if _, _, err := podCapacityUsage(spec); err == nil {
 		t.Fatal("Pod overhead overflow was accepted")
@@ -349,7 +435,7 @@ func TestManagedClusterFileIsStrictAndBounded(t *testing.T) {
 }
 func TestDatabaseGrantAccountsForExistingPodsAndHeadroom(t *testing.T) {
 	ctx := context.Background()
-	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
+	node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", UID: "uid-worker"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, NodeInfo: corev1.NodeSystemInfo{Architecture: "amd64", OperatingSystem: "linux"}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("2Gi")}}}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "default"}, Spec: corev1.PodSpec{NodeName: "worker", Containers: []corev1.Container{{Name: "other", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}}}}}}
 	c := &Client{kube: fake.NewClientset(&node, pod)}
 	r := DatabaseNodeReservation{UID: "uid-worker", Capacity: database.Capacity{CPUMilli: 1000, MemoryBytes: 1024 << 20}, Scopes: []string{"owned/production"}}

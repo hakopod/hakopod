@@ -226,11 +226,16 @@ func (s *Service) validateManagedPlatformCapacity(ctx context.Context, project, 
 	if err != nil {
 		return err
 	}
+	reservations := managedPlatformNodeReservations(policy, owned)
+	return s.runtime.CheckManagedPlatformNodeReservations(bounded, reservations)
+}
+
+func managedPlatformNodeReservations(policy managedplatform.CapacityPolicy, owned managedplatform.CapacityPoolOwnership) map[string]cluster.ManagedPlatformNodeReservation {
 	reservations := make(map[string]cluster.ManagedPlatformNodeReservation, len(policy.Nodes))
 	for _, node := range policy.Nodes {
-		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, Capacity: policy.Capacity, Ownership: owned}
+		reservations[node.Name] = cluster.ManagedPlatformNodeReservation{UID: node.UID, Architecture: node.Architecture, OperatingSystem: node.OperatingSystem, SchedulingPool: policy.SchedulingPool, SchedulingRuntimeClass: policy.SchedulingRuntimeClass, Capacity: policy.Capacity, Ownership: owned}
 	}
-	return s.runtime.CheckManagedPlatformNodeReservations(bounded, reservations)
+	return reservations
 }
 
 func (s *Service) managedPlatformCatalogCapacity(ctx context.Context, project, environment string) (managedplatform.CapacityPolicy, error) {

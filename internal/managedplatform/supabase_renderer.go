@@ -41,6 +41,8 @@ type SupabaseRenderInput struct {
 	PreviousSpec                   *Spec
 	SharedStorageGID               int64
 	ApprovedExternalHTTPSCIDRs     []string
+	SchedulingPool                 string `json:"scheduling_pool,omitempty"`
+	SchedulingRuntimeClass         string `json:"scheduling_runtime_class,omitempty"`
 }
 
 // RuntimeIdentity is qualified with the pinned image before rendering. The
@@ -126,6 +128,9 @@ var supabaseDatabaseCredentialKeys = []string{
 func SupabaseAssetNames() []string { return append([]string(nil), supabaseAssetNames...) }
 
 func RenderSupabase(in SupabaseRenderInput) (SupabaseManifests, error) {
+	if !validSchedulingPolicy(in.SchedulingPool, in.SchedulingRuntimeClass) {
+		return SupabaseManifests{}, fmt.Errorf("managed platform scheduling pool is invalid")
+	}
 	plan, err := PlanSupabase(in.Spec, in.Images)
 	if err != nil {
 		return SupabaseManifests{}, err
@@ -450,7 +455,9 @@ exec /app/bin/server`}
 	if component.Name == "database" {
 		storageGID = identity.GID
 	}
-	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: componentLabels(labels, component.Name)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: boolPtr(false), EnableServiceLinks: boolPtr(false), Affinity: exactNodeAffinity(in.Spec.Placement.NodeNames[0]), NodeSelector: map[string]string{"kubernetes.io/arch": "amd64", "kubernetes.io/os": "linux"}, TerminationGracePeriodSeconds: int64Ptr(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: boolPtr(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &storageGID, SupplementalGroups: []int64{storageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: initContainers, Containers: []corev1.Container{container}, Volumes: volumes}}
+	pod := corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: componentLabels(labels, component.Name)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: boolPtr(false), EnableServiceLinks: boolPtr(false), NodeSelector: map[string]string{"kubernetes.io/arch": "amd64", "kubernetes.io/os": "linux"}, TerminationGracePeriodSeconds: int64Ptr(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: boolPtr(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &storageGID, SupplementalGroups: []int64{storageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: initContainers, Containers: []corev1.Container{container}, Volumes: volumes}}
+	applyTrustedNodePlacement(&pod.Spec, in.Spec.Placement.NodeNames[0], in.SchedulingPool, in.SchedulingRuntimeClass)
+	return pod
 }
 
 func supabasePolicies(meta func(string) metav1.ObjectMeta, labels map[string]string, components []Component, externalHTTPS []string) []runtime.Object {

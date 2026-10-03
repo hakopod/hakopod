@@ -66,6 +66,8 @@ type NeonRenderInput struct {
 	ControlPlanePodLabels         map[string]string
 	ApprovedExternalHTTPSCIDRs    []string
 	PreviousSpec                  *Spec
+	SchedulingPool                string `json:"scheduling_pool,omitempty"`
+	SchedulingRuntimeClass        string `json:"scheduling_runtime_class,omitempty"`
 	// RecoveryStoragePrefix comes from the durable recovery binding, not the
 	// public spec. It must stay beneath this platform's accepted object prefix.
 	RecoveryStoragePrefix string
@@ -82,6 +84,9 @@ type NeonManifests struct {
 }
 
 func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
+	if !validSchedulingPolicy(in.SchedulingPool, in.SchedulingRuntimeClass) {
+		return NeonManifests{}, fmt.Errorf("managed platform scheduling pool is invalid")
+	}
 	plan, err := PlanNeon(in.Spec, in.Images)
 	if err != nil {
 		return NeonManifests{}, err
@@ -425,7 +430,9 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.Ports = []corev1.ContainerPort{{Name: "http-control", ContainerPort: 3080}, {Name: "postgres", ContainerPort: 55433}}
 		podContainers := []corev1.Container{container, proxy}
 		policy := corev1.FSGroupChangeOnRootMismatch
-		return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), Affinity: exactNodeAffinity(neonNodeName(in.Spec, logicalName, ordinal)), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), FSGroup: &identity.GID, SupplementalGroups: []int64{identity.GID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: []corev1.Container{ownershipInit}, Containers: podContainers, Volumes: volumes}}
+		pod := corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), FSGroup: &identity.GID, SupplementalGroups: []int64{identity.GID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: []corev1.Container{ownershipInit}, Containers: podContainers, Volumes: volumes}}
+		applyTrustedNodePlacement(&pod.Spec, neonNodeName(in.Spec, logicalName, ordinal), in.SchedulingPool, in.SchedulingRuntimeClass)
+		return pod
 	} else if logicalName == "proxy" {
 		origin := strings.TrimSuffix(in.ProxyControlPlaneOrigin, "/")
 		configName := "neon-proxy-control-plane-ca-r" + strconv.FormatInt(in.Revision, 10)
@@ -438,7 +445,9 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 	}
 	neonPreparePeerTrust(&container, logicalName)
 	policy := corev1.FSGroupChangeOnRootMismatch
-	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), Affinity: exactNodeAffinity(neonNodeName(in.Spec, logicalName, ordinal)), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &in.SharedStorageGID, SupplementalGroups: []int64{in.SharedStorageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container}, Volumes: volumes}}
+	pod := corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &in.SharedStorageGID, SupplementalGroups: []int64{in.SharedStorageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container}, Volumes: volumes}}
+	applyTrustedNodePlacement(&pod.Spec, neonNodeName(in.Spec, logicalName, ordinal), in.SchedulingPool, in.SchedulingRuntimeClass)
+	return pod
 }
 
 func neonPlatformNodeSelector() map[string]string {

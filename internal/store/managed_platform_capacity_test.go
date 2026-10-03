@@ -478,11 +478,15 @@ func TestManagedPlatformCapacityFingerprintRejectsStaleReview(t *testing.T) {
 	ctx := context.Background()
 	policy := enableManagedPlatformCapacity(s, "node-a", "node-b", "node-c")
 	plan.StorageClass = "encrypted-block"
-	review := managedPlatformReview(t, s, p, item, plan, 0, "create")
-	policy.Capacity.CPUMilli++
+	policy.SchedulingPool = "databases"
+	policy.SchedulingRuntimeClass = "runsc"
+	plan.SchedulingPool = "databases"
+	plan.SchedulingRuntimeClass = "runsc"
 	s.ManagedPlatformCapacityBudget = func(context.Context, pgx.Tx, string, string) (managedplatform.CapacityPolicy, error) {
 		return policy, nil
 	}
+	review := managedPlatformReview(t, s, p, item, plan, 0, "create")
+	policy.SchedulingPool = "other-databases"
 	if _, err := s.AcceptManagedPlatform(ctx, p, item, plan, []byte("sealed"), review, 0, "stale-capacity-review", "create"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale capacity review accepted: %v", err)
 	}
