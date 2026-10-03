@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -15,13 +16,15 @@ import (
 
 type neonEmptyDeleteStore struct {
 	*fakeSupabaseOperationStore
-	proofCalls int
-	revoked    int
+	proofCalls  int
+	revoked     int
+	nativeState bool
+	proofError  error
 }
 
 func (s *neonEmptyDeleteStore) NeonProviderStateEmpty(_ context.Context, op store.ManagedPlatformOperation) (bool, error) {
 	s.proofCalls++
-	return op.Kind == "delete", nil
+	return op.Kind == "delete" && !s.nativeState, s.proofError
 }
 
 func (s *neonEmptyDeleteStore) ActivateNeonProxyEndpoint(context.Context, store.ManagedPlatformOperation, store.NeonProxyEndpointRecord) error {
@@ -42,8 +45,9 @@ func TestNeonUnprovisionedDeleteUsesOwnedNamespaceCleanup(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			op := store.ManagedPlatformOperation{ID: strings.Repeat("5", 32), PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete", Lease: "lease"}
 			op.Spec = managedplatform.Spec{
-				Kind: "neon",
-				Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3},
+				Kind:    "neon",
+				TLSMode: "managed",
+				Neon:    &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3},
 				Secrets: map[string]managedplatform.SecretReference{
 					"controller-auth": {Name: "controller-auth", Revision: 1},
 					"compute-auth":    {Name: "compute-auth", Revision: 1},
@@ -58,14 +62,14 @@ func TestNeonUnprovisionedDeleteUsesOwnedNamespaceCleanup(t *testing.T) {
 			}
 			state.claims[1] = []store.PlatformResourceClaim{{PlatformID: op.PlatformID, PlatformRevision: 1, Component: "namespace." + ns.Name, Kind: "runtime_component", ResourceID: uid, ImmutableGeneration: 1, OwnerOperationID: strings.Repeat("6", 32)}}
 			ca := supabaseGatewayCertificateFixture(t, []string{"neon.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
-			// An accepted snapshot already carries tenant storage authentication.
-			computeSnapshot := strings.Replace(validNeonComputeTemplate, `"spec":{`, `"spec":{"storage_auth_token":"fixture-storage-token",`, 1)
+			// A failed create can retain the raw operator template without attached
+			// storage authentication or any materialized managed TLS snapshots.
 			request := NeonRuntimeRequest{
 				Operation: op,
 				Render:    managedplatform.NeonRenderInput{Spec: op.Spec, PlatformID: op.PlatformID, Revision: op.Revision},
 				SecretSnapshots: map[string]map[string][]byte{
 					"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-					"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(computeSnapshot)},
+					"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
 					"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 				},
 				ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: op.PlatformID},
@@ -101,5 +105,26 @@ func TestNeonUnprovisionedDeleteUsesOwnedNamespaceCleanup(t *testing.T) {
 				t.Fatalf("cleanup claimed completion before namespace absence: %v", state.records)
 			}
 		})
+	}
+}
+
+func TestNeonIncompleteProviderPreparationDoesNotBypassNativeState(t *testing.T) {
+	for _, proofError := range []error{nil, errors.New("absence proof unavailable")} {
+		op := store.ManagedPlatformOperation{ID: strings.Repeat("5", 32), PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete", Lease: "lease"}
+		op.Spec = managedplatform.Spec{Kind: "neon", TLSMode: "managed", Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3}}
+		ns := supabaseTestNamespace(op)
+		state := &neonEmptyDeleteStore{fakeSupabaseOperationStore: newFakeSupabaseStore(), nativeState: true, proofError: proofError}
+		state.claims[1] = []store.PlatformResourceClaim{{PlatformID: op.PlatformID, PlatformRevision: 1, Component: "namespace." + ns.Name, Kind: "runtime_component", ResourceID: string(ns.UID), ImmutableGeneration: 1, OwnerOperationID: strings.Repeat("6", 32)}}
+		kube := fake.NewSimpleClientset(ns)
+		client := &Client{kube: kube}
+		request := NeonRuntimeRequest{Operation: op, Render: managedplatform.NeonRenderInput{Spec: op.Spec, PlatformID: op.PlatformID, Revision: op.Revision}}
+		if err := client.ReconcileNeonOperation(context.Background(), state, request, nil); err == nil || state.proofCalls != 1 {
+			t.Fatalf("incomplete provider configuration bypassed native-state checks: error=%v proofs=%d", err, state.proofCalls)
+		}
+		for _, action := range kube.Actions() {
+			if action.GetVerb() == "delete" || proofError != nil && action.GetVerb() != "get" && action.GetVerb() != "list" {
+				t.Fatalf("unproven provider absence allowed cleanup or a failed proof allowed mutation: %s %s", action.GetVerb(), action.GetResource().Resource)
+			}
+		}
 	}
 }
