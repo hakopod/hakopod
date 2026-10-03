@@ -54,7 +54,7 @@ CASE_EVENTS = {
 CASES = set(CASE_EVENTS)
 PRODUCER = {"runner_path": "examples/neon-native-acceptance/run.sh", "producer_path": "examples/neon-native-acceptance/evidence.py"}
 SOURCE_DIRS = ("internal", "auth", "templates", "cmd", "hack", "scripts", "examples/neon-native-acceptance")
-SOURCE_FILES = ("go.mod", "go.sum", "release/record-neon-qualification.py",
+SOURCE_FILES = ("go.mod", "go.sum", "examples/owned-pod-stream.py", "release/record-neon-qualification.py",
                 "release/verify-neon-runtime.py", "docs/managed-neon-qualification.md")
 
 
