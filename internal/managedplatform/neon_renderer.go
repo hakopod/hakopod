@@ -2,6 +2,7 @@ package managedplatform
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -28,6 +29,42 @@ const (
 	maxNeonControlPlaneCABundleBytes = 64 << 10
 	maxNeonControlPlaneCACerts       = 16
 )
+
+const neonComputeTLSConfig = `global
+  maxconn 64
+  ssl-default-bind-options ssl-min-ver TLSv1.2
+defaults
+  mode http
+  timeout connect 2s
+  timeout client 30s
+  timeout server 30s
+  timeout check 2s
+frontend compute_control
+  bind :3081 ssl crt /tmp/compute-tls.pem
+  default_backend compute_ctl
+backend compute_ctl
+  server local 127.0.0.1:3080
+frontend compute_readiness
+  bind :3082
+  http-request return status 200 content-type text/plain string ready if { method GET } { path -m str /ready } { nbsrv(compute_running) gt 0 }
+  http-request return status 503 content-type text/plain string unavailable
+backend compute_running
+  option httpchk
+  http-check send meth GET uri /status ver HTTP/1.1 hdr Host localhost hdr Authorization "Bearer ${HAKOPOD_COMPUTE_HEALTH_TOKEN}"
+  http-check expect status 200
+  http-check expect rstring '^[[:space:]]*[{][^{}]*"status"[[:space:]]*:[[:space:]]*"running"[^{}]*[}][[:space:]]*$'
+  server local 127.0.0.1:3080 check inter 2s fall 1 rise 1 init-state fully-down
+`
+
+const neonComputeHBAConfig = "local all cloud_admin trust\nlocal all all scram-sha-256\nhost all cloud_admin 127.0.0.1/32 trust\nhost all cloud_admin ::1/128 trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::/0 reject\n"
+
+const neonComputeTLSStartScript = "umask 077\n" +
+	"HAKOPOD_COMPUTE_HEALTH_TOKEN=$(cat /var/run/secrets/hakopod/compute-auth/token)\n" +
+	"case \"$HAKOPOD_COMPUTE_HEALTH_TOKEN\" in ''|*[!A-Za-z0-9_.-]*) echo 'Invalid compute health token format' >&2; exit 1 ;; esac\n" +
+	"[ \"${#HAKOPOD_COMPUTE_HEALTH_TOKEN}\" -le 8192 ] || exit 1\n" +
+	"export HAKOPOD_COMPUTE_HEALTH_TOKEN\n" +
+	"cat /var/run/secrets/hakopod/compute-auth/tls.crt /var/run/secrets/hakopod/compute-auth/tls.key > /tmp/compute-tls.pem\n" +
+	"exec haproxy -W -db -f /etc/haproxy/haproxy.cfg"
 
 const (
 	neonComputeOwnershipDirectory   = "/var/db/postgres/hakopod-ownership"
@@ -155,8 +192,8 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 	}
 
 	for _, component := range plan.Components {
-		// compute-tls is a sidecar in each compute pod so that compute_ctl remains
-		// bound to loopback while all management traffic crosses authenticated TLS.
+		// compute-tls terminates management TLS beside each compute. NetworkPolicy
+		// denies pod ingress to compute_ctl's raw HTTP port.
 		if component.Name == "compute-tls" {
 			continue
 		}
@@ -339,12 +376,16 @@ func neonRemoteStoragePrefix(in NeonRenderInput) string {
 }
 
 func neonComputeTLSConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, ordinal int) *corev1.ConfigMap {
-	name := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)
-	config := "global\n  maxconn 64\n  ssl-default-bind-options ssl-min-ver TLSv1.2\ndefaults\n  mode http\n  timeout connect 2s\n  timeout client 30s\n  timeout server 30s\nfrontend compute_control\n  bind :3081 ssl crt /tmp/compute-tls.pem\n  default_backend compute_ctl\nbackend compute_ctl\n  server local 127.0.0.1:3080\n"
+	name := neonComputeTLSConfigMapName(in.Revision, ordinal, neonComputeTLSConfig, neonComputeHBAConfig)
 	// compute_ctl administers PostgreSQL over loopback. Application connections
 	// must use TLS and SCRAM, including when they reach the compute directly.
-	hba := "local all cloud_admin trust\nlocal all all scram-sha-256\nhost all cloud_admin 127.0.0.1/32 trust\nhost all cloud_admin ::1/128 trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::/0 reject\n"
-	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"haproxy.cfg": config, "pg_hba.conf": hba}}
+	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"haproxy.cfg": neonComputeTLSConfig, "pg_hba.conf": neonComputeHBAConfig}}
+}
+
+func neonComputeTLSConfigMapName(revision int64, ordinal int, publicConfig, publicHBA string) string {
+	// Frame both public data values so any configuration change gets a new immutable name.
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d:%s%d:%s", len(publicConfig), publicConfig, len(publicHBA), publicHBA)))
+	return fmt.Sprintf("neon-compute-%d-tls-r%d-%x", ordinal, revision, digest[:8])
 }
 
 func neonControllerDatabaseConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput) *corev1.ConfigMap {
@@ -420,7 +461,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/tmp/neon-peer-ca.crt", "--enable-tls-wal-service-api", "--use-https-safekeeper-api", "--broker-endpoint=https://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token", "--hakopod-ownership-v1"}
 		container.Env = append(container.Env, neonObjectStorageEnv(in.Spec.Secrets["object-storage"])...)
 	} else if logicalName == "compute" {
-		configName := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)
+		configName := neonComputeTLSConfigMapName(in.Revision, ordinal, neonComputeTLSConfig, neonComputeHBAConfig)
 		volumes = append(volumes, neonPVCVolume("cache", "neon-compute-cache-"+strconv.Itoa(ordinal)), corev1.Volume{Name: "compute-tls-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}}}})
 		volumes = append(volumes, corev1.Volume{Name: "compute-postgres-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}, Items: []corev1.KeyToPath{{Key: "pg_hba.conf", Path: "pg_hba.conf"}}, DefaultMode: neonInt32(0444)}}})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "cache", MountPath: "/var/db/postgres"}, corev1.VolumeMount{Name: "compute-postgres-config", MountPath: "/etc/hakopod-postgres", ReadOnly: true})
@@ -430,7 +471,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		ownershipInit := corev1.Container{Name: "prepare-compute-ownership", Image: component.Image, ImagePullPolicy: corev1.PullIfNotPresent, SecurityContext: security, Resources: corev1.ResourceRequirements{Requests: neonResourceList(component.Resources), Limits: neonResourceList(component.Resources)}, Command: []string{"/bin/sh", "-ec"}, Args: []string{neonComputeOwnershipSetupScript, "prepare-compute-ownership", neonComputeOwnershipDirectory, ownershipIdentity}, VolumeMounts: []corev1.VolumeMount{{Name: "cache", MountPath: "/var/db/postgres"}}}
 		proxyIdentity := in.Identities["compute-tls"]
 		proxySecurity := &corev1.SecurityContext{AllowPrivilegeEscalation: neonBool(false), ReadOnlyRootFilesystem: neonBool(true), RunAsNonRoot: neonBool(true), RunAsUser: &proxyIdentity.UID, RunAsGroup: &proxyIdentity.GID, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
-		proxy := corev1.Container{Name: "compute-tls", Image: in.Images["compute-tls"], ImagePullPolicy: corev1.PullIfNotPresent, SecurityContext: proxySecurity, Resources: corev1.ResourceRequirements{Requests: neonResourceList(in.Spec.Resources["compute-tls"]), Limits: neonResourceList(in.Spec.Resources["compute-tls"])}, Command: []string{"/bin/sh", "-ec"}, Args: []string{"umask 077; cat /var/run/secrets/hakopod/compute-auth/tls.crt /var/run/secrets/hakopod/compute-auth/tls.key > /tmp/compute-tls.pem; exec haproxy -W -db -f /etc/haproxy/haproxy.cfg"}, Ports: []corev1.ContainerPort{{Name: "https-control", ContainerPort: 3081}}, VolumeMounts: []corev1.VolumeMount{{Name: "compute-auth", MountPath: "/var/run/secrets/hakopod/compute-auth", ReadOnly: true}, {Name: "compute-tls-config", MountPath: "/etc/haproxy", ReadOnly: true}, {Name: "tmp", MountPath: "/tmp"}}}
+		proxy := corev1.Container{Name: "compute-tls", Image: in.Images["compute-tls"], ImagePullPolicy: corev1.PullIfNotPresent, SecurityContext: proxySecurity, Resources: corev1.ResourceRequirements{Requests: neonResourceList(in.Spec.Resources["compute-tls"]), Limits: neonResourceList(in.Spec.Resources["compute-tls"])}, Command: []string{"/bin/sh", "-ec"}, Args: []string{neonComputeTLSStartScript}, Ports: []corev1.ContainerPort{{Name: "https-control", ContainerPort: 3081}, {Name: "readiness", ContainerPort: 3082}}, ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/ready", Port: intstr.FromInt32(3082)}}, TimeoutSeconds: 3, PeriodSeconds: 2, FailureThreshold: 1}, VolumeMounts: []corev1.VolumeMount{{Name: "compute-auth", MountPath: "/var/run/secrets/hakopod/compute-auth", ReadOnly: true}, {Name: "compute-tls-config", MountPath: "/etc/haproxy", ReadOnly: true}, {Name: "tmp", MountPath: "/tmp"}}}
 		container.Ports = []corev1.ContainerPort{{Name: "http-control", ContainerPort: 3080}, {Name: "postgres", ContainerPort: 55433}}
 		podContainers := []corev1.Container{container, proxy}
 		policy := corev1.FSGroupChangeOnRootMismatch
@@ -595,6 +636,7 @@ func neonProbes(component string) (readiness, liveness, startup *corev1.Probe) {
 		path = "/v1/status"
 	case "compute":
 		port = 3080
+		path = "/metrics"
 	case "proxy":
 		port = 7001
 		path = "/v1/status"
@@ -612,6 +654,12 @@ func neonProbes(component string) (readiness, liveness, startup *corev1.Probe) {
 	startup.InitialDelaySeconds = 0
 	startup.PeriodSeconds = 5
 	startup.FailureThreshold = 60
+	if component == "compute" {
+		// Empty compute_ctl must stay healthy until the controller configures it.
+		// Pod readiness requires PostgreSQL to accept connections and the sidecar
+		// to observe authenticated Running status. The native lifecycle also verifies ownership.
+		readiness.ProbeHandler = corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"/usr/local/bin/pg_isready", "-h", "127.0.0.1", "-p", "55433", "-U", "cloud_admin", "-d", "postgres", "-t", "2", "-q"}}}
+	}
 	return
 }
 
