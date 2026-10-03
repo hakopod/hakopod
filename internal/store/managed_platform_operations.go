@@ -377,7 +377,24 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		if components["pageserver"] && indexed("configmap.neon-pageserver-%d-r"+fmt.Sprint(op.Revision), op.Spec.Neon.Pageservers) {
 			return true
 		}
-		return components["compute"] && components["compute-tls"] && indexed("configmap.neon-compute-%d-tls-r"+fmt.Sprint(op.Revision), op.Spec.Neon.ComputeReplicas)
+		if !components["compute"] || !components["compute-tls"] {
+			return false
+		}
+		for i := 0; i < op.Spec.Neon.ComputeReplicas; i++ {
+			base := fmt.Sprintf("neon-compute-%d-tls-r%d", i, op.Revision)
+			// Retain admission for owned snapshots created before content addressing.
+			if name == base {
+				return true
+			}
+			digest, ok := strings.CutPrefix(name, base+"-")
+			if !ok || len(digest) != 16 || strings.IndexFunc(digest, func(r rune) bool {
+				return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f')
+			}) != -1 {
+				continue
+			}
+			return true
+		}
+		return false
 	}
 	if resourceKind == "pvc" {
 		if name == "neon-controller-database" && components["controller-database"] {
