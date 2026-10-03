@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,10 +57,14 @@ func TestValidateSupabaseDatabaseTLSRequiresOwnedNamesAndSeparateCA(t *testing.T
 func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 	spec := managedplatform.Spec{Supabase: &managedplatform.SupabaseConfig{DatabaseName: "postgres"}, Secrets: map[string]managedplatform.SecretReference{}}
 	values := map[string]map[string][]byte{}
-	roles := map[string]string{"auth-database-url": "supabase_auth_admin", "rest-database-url": "authenticator", "storage-database-url": "supabase_storage_admin"}
+	roles := map[string]string{"auth-database-url": "supabase_auth_admin", "rest-database-url": "authenticator", "storage-database-url": "supabase_storage_admin", "supavisor-database-url": "pgbouncer"}
 	for key, role := range roles {
 		spec.Secrets[key] = managedplatform.SecretReference{Name: key, Revision: 1}
-		values[key+"-r1"] = map[string][]byte{"value": []byte("postgresql://" + role + ":password@db:5432/postgres?sslmode=verify-full&sslrootcert=%2Fetc%2Fhakopod-database-ca%2Fca.crt")}
+		database := "postgres"
+		if key == "supavisor-database-url" {
+			database = "_supabase"
+		}
+		values[key+"-r1"] = map[string][]byte{"value": []byte("postgresql://" + role + ":password@db:5432/" + database + "?sslmode=verify-full&sslrootcert=%2Fetc%2Fhakopod-database-ca%2Fca.crt")}
 	}
 	if err := validateSupabaseDatabaseClientURLs(values, spec); err != nil {
 		t.Fatal(err)
@@ -83,6 +88,39 @@ func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 		values["auth-database-url-r1"]["value"] = []byte(bad)
 		if err := validateSupabaseDatabaseClientURLs(values, spec); err == nil {
 			t.Fatalf("unsafe database URL accepted: %s", bad)
+		}
+	}
+	values["auth-database-url-r1"]["value"] = []byte(valid)
+	pooler := values["supavisor-database-url-r1"]["value"]
+	for _, bad := range []string{
+		strings.Replace(string(pooler), "/_supabase?", "/postgres?", 1),
+		strings.Replace(string(pooler), "pgbouncer:", "postgres:", 1),
+		strings.Replace(string(pooler), "@db:5432", "@database:5432", 1),
+		strings.Replace(string(pooler), "sslmode=verify-full", "sslmode=require", 1),
+	} {
+		values["supavisor-database-url-r1"]["value"] = []byte(bad)
+		err := validateSupabaseDatabaseClientURLs(values, spec)
+		if err == nil || !strings.Contains(err.Error(), "supavisor-database-url") || strings.Contains(err.Error(), "password") {
+			t.Fatalf("unsafe Supavisor URL did not produce a redacted field-specific error: %v", err)
+		}
+	}
+}
+
+func TestValidateSupabaseRuntimeSecretsRequiresExactRealtimeKey(t *testing.T) {
+	spec := managedplatform.Spec{Secrets: map[string]managedplatform.SecretReference{"realtime-db-encryption-key": {Name: "realtime-db-encryption-key", Revision: 1}}}
+	values := map[string]map[string][]byte{"realtime-db-encryption-key-r1": {"value": []byte(strings.Repeat("x", 32))}}
+	if err := validateSupabaseRuntimeSecrets(values, spec); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []map[string][]byte{
+		{"value": []byte(strings.Repeat("secret-marker-", 3))},
+		{"value": []byte(strings.Repeat("x", 32)), "extra": []byte("secret-marker")},
+		{},
+	} {
+		values["realtime-db-encryption-key-r1"] = bad
+		err := validateSupabaseRuntimeSecrets(values, spec)
+		if err == nil || !strings.Contains(err.Error(), "realtime-db-encryption-key") || strings.Contains(err.Error(), "secret-marker") {
+			t.Fatalf("invalid Realtime key did not produce a redacted field-specific error: %v", err)
 		}
 	}
 }
