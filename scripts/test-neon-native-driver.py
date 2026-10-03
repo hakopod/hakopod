@@ -113,10 +113,17 @@ class Tests(unittest.TestCase):
             driver=self.bare_driver(); driver.platforms=[("a"*32,"source","b"*32)]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None
             driver.claim_namespace=mock.Mock(return_value=False); driver.delete=mock.Mock(); driver.command=mock.Mock(return_value="")
             namespace="managed-platform-"+"a"*32
-            driver.k=mock.Mock(side_effect=["",json.dumps({"items":[{"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}]})])
+            owned={"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}
+            driver.k=mock.Mock(side_effect=[json.dumps({"items":[owned]}),"",json.dumps({"items":[{"metadata":owned["metadata"],"spec":{}}]})])
             with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
             driver.delete.assert_called_once_with("a"*32,"source",240)
             receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
+    def test_cleanup_reports_large_volume_inventory_as_unverified(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.command=mock.Mock(return_value="")
+            driver.k=mock.Mock(side_effect=[json.dumps({"items":[{}]*513}),json.dumps({"items":[]})])
+            with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertFalse(receipt["persistent_volume_claim_refs_absent"])
     def test_main_records_termination_and_suppresses_reentrant_signals_during_cleanup(self):
         driver=mock.Mock(); driver.run.side_effect=DRIVER.TerminationRequested("termination signal received")
         handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
@@ -127,6 +134,14 @@ class Tests(unittest.TestCase):
         driver.record_failure.assert_called_once_with("termination-requested"); driver.cleanup.assert_called_once()
         ignored=[call for call in signal_call.call_args_list if call.args[1] is DRIVER.signal.SIG_IGN]
         self.assertEqual({call.args[0] for call in ignored},{DRIVER.signal.SIGINT,DRIVER.signal.SIGTERM})
+    def test_main_ignores_signals_before_normal_cleanup(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=mock.Mock(); driver.evidence=Path(directory); handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
+            def install(number,handler): previous=handlers[number]; handlers[number]=handler; return previous
+            def cleanup(): self.assertIs(handlers[DRIVER.signal.SIGINT],DRIVER.signal.SIG_IGN); self.assertIs(handlers[DRIVER.signal.SIGTERM],DRIVER.signal.SIG_IGN)
+            driver.cleanup.side_effect=cleanup; driver.command.return_value=""
+            with mock.patch.object(DRIVER,"parse",return_value=mock.Mock(source="/source")), mock.patch.object(DRIVER,"Driver",return_value=driver), mock.patch.object(DRIVER.signal,"signal",side_effect=install):
+                self.assertEqual(DRIVER.main([]),0)
     def test_runtime_uses_neon_roles_and_numbered_services(self):
         driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix")
         roles=("storage-controller","pageserver","safekeeper","compute","proxy")

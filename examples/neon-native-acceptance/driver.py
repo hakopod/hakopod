@@ -760,6 +760,16 @@ class Driver:
         self.cleanup_started=True
         failed=[]
         namespaces={"managed-platform-"+pid for pid,unused,unused_op in self.platforms}
+        owned_volumes={}
+        volume_audit_complete=True
+        try:
+            before=json.loads(self.k("get","pv","--chunk-size=128","-o","json")).get("items",[])
+            if len(before)>512: failed.append("persistent-volumes"); volume_audit_complete=False
+            else:
+                for item in before:
+                    metadata=item.get("metadata",{}); claim=item.get("spec",{}).get("claimRef",{})
+                    if claim.get("namespace") in namespaces and metadata.get("name") and metadata.get("uid"): owned_volumes[(metadata["name"],metadata["uid"])]={"name":metadata["name"],"uid":metadata["uid"],"claim_namespace":claim.get("namespace"),"claim_name":claim.get("name")}
+        except Exception:failed.append("persistent-volumes"); volume_audit_complete=False
         for pid,name,opid in reversed(self.platforms):
             try:
                 present=self.claim_namespace(pid,opid); expected=self.bound.get(pid)
@@ -775,14 +785,14 @@ class Driver:
                 if self.k("get","namespace","managed-platform-"+pid,"--ignore-not-found","-o","name").strip(): failed.append(pid); remaining_namespaces.append("managed-platform-"+pid)
             except Exception:failed.append(pid); namespace_audit_complete=False
         remaining_volumes=[]
-        volume_audit_complete=True
         try:
             volumes=json.loads(self.k("get","pv","--chunk-size=128","-o","json")).get("items",[])
-            if len(volumes)>512: failed.append("persistent-volumes")
+            if len(volumes)>512: failed.append("persistent-volumes"); volume_audit_complete=False
             else:
                 for item in volumes:
-                    claim=item.get("spec",{}).get("claimRef",{})
-                    if claim.get("namespace") in namespaces: remaining_volumes.append({"name":item.get("metadata",{}).get("name"),"uid":item.get("metadata",{}).get("uid"),"claim_namespace":claim.get("namespace"),"claim_name":claim.get("name")})
+                    metadata=item.get("metadata",{}); claim=item.get("spec",{}).get("claimRef",{}); identity=(metadata.get("name"),metadata.get("uid"))
+                    if identity in owned_volumes: remaining_volumes.append(owned_volumes[identity])
+                    elif claim.get("namespace") in namespaces: remaining_volumes.append({"name":metadata.get("name"),"uid":metadata.get("uid"),"claim_namespace":claim.get("namespace"),"claim_name":claim.get("name")})
                 if remaining_volumes: failed.append("persistent-volumes")
         except Exception:failed.append("persistent-volumes"); volume_audit_complete=False
         if not failed and self.pending_lifecycle is not None:
@@ -825,12 +835,14 @@ def main(argv=None):
     try:
         a=parse(argv); driver=Driver(a)
         for number in (signal.SIGINT,signal.SIGTERM): previous[number]=signal.signal(number,interrupted)
-        driver.run(); driver.cleanup(); log=driver.evidence/"sanitized.log"; log.write_text("Neon native acceptance completed; secrets and raw output withheld.\n"); os.chmod(log,0o600)
+        driver.run()
+        for number in (signal.SIGINT,signal.SIGTERM): signal.signal(number,signal.SIG_IGN)
+        driver.cleanup(); log=driver.evidence/"sanitized.log"; log.write_text("Neon native acceptance completed; secrets and raw output withheld.\n"); os.chmod(log,0o600)
         driver.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"finalize","--source",a.source,"--state",str(driver.evidence/"state.json"),"--events",str(driver.evidence/"events.json"),"--sanitized-log",str(log),"--report",str(driver.evidence/"report.json"),"--cleanup",str(driver.evidence/"cleanup.json")]); print(driver.evidence/"report.json"); return 0
     except (Exception,KeyboardInterrupt) as error:
         if driver:
-            driver.record_failure("termination-requested" if isinstance(error,(TerminationRequested,KeyboardInterrupt)) else "acceptance-failed")
             for number in (signal.SIGINT,signal.SIGTERM): signal.signal(number,signal.SIG_IGN)
+            driver.record_failure("termination-requested" if isinstance(error,(TerminationRequested,KeyboardInterrupt)) else "acceptance-failed")
             try:driver.cleanup()
             except Exception:pass
         print("Neon native acceptance failed: "+str(error),file=sys.stderr); return 1
