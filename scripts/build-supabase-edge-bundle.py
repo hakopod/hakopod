@@ -13,6 +13,8 @@ import urllib.request
 IMAGE = "docker.io/supabase/edge-runtime@sha256:b331c6422f4f4bebd6052357da5f3c87610128c8cb530390ca024eb68cf4bf2e"
 JOSE_META = "https://jsr.io/@panva/jose/6.2.12_meta.json"
 JOSE_LICENSE = "https://jsr.io/@panva/jose/6.2.12/LICENSE.md"
+JOSE_META_SHA256 = "45dd3888cff0c45dbd91ca5279f7fd4324227042d19df91504aa2c0678b3edcc"
+JOSE_LICENSE_SHA256 = "8078b0829d6c3e9ecde2f003e1966e4cad3efc6e7a640efbab0313cc166b1af1"
 MAX_DOWNLOAD = 1 << 20
 
 
@@ -68,12 +70,18 @@ def main() -> None:
 
     metadata = download(JOSE_META)
     license_text = download(JOSE_LICENSE)
+    if digest(metadata) != JOSE_META_SHA256 or digest(license_text) != JOSE_LICENSE_SHA256:
+        raise RuntimeError("downloaded JOSE metadata or license differs from the reviewed bytes")
     parsed = json.loads(metadata)
     license_entry = parsed.get("manifest", {}).get("/LICENSE.md", {})
     if license_entry.get("checksum") != "sha256-" + digest(license_text):
         raise RuntimeError("JOSE metadata does not bind the downloaded license")
 
     assets = repository / "internal/managedplatform/supabase-assets/functions"
+    if digest((assets / "vendor/jose-6.2.12-meta.json").read_bytes()) != JOSE_META_SHA256:
+        raise RuntimeError("committed JOSE metadata differs from the reviewed bytes")
+    if digest((assets / "vendor/jose-6.2.12-LICENSE.md").read_bytes()) != JOSE_LICENSE_SHA256:
+        raise RuntimeError("committed JOSE license differs from the reviewed bytes")
     (assets / "vendor").mkdir(exist_ok=True)
     (assets / "main.eszip.b64").write_bytes(base64.b64encode(bundles[0]) + b"\n")
     (assets / "vendor/jose-6.2.12-meta.json").write_bytes(metadata)

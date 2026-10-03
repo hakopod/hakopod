@@ -324,7 +324,7 @@ Deno.serve(async (req: Request) => {
         status: 404,
       })
     }
-  } catch {
+  } catch (e) {
     if (e instanceof Deno.errors.NotFound) {
       return getFunctionErrorResponse({
         code: RequestErrors.NotFound,

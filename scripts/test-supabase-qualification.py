@@ -139,6 +139,11 @@ class SupabaseQualificationTest(unittest.TestCase):
   state_path=self.write('event-state.json',self.producer_state());events_path=self.write('events.json',{'schema_version':1,'run_id':self.run_id,'events':[]});evidence=self.write('safe.json',{'observed':True})
   args=type('Args',(),{'state':state_path,'events':events_path,'case':'invented','evidence':evidence})()
   with self.assertRaisesRegex(ValueError,'Unknown'):EVIDENCE['add_event'](args)
+  args.case='edge-runtime-isolation'
+  with self.assertRaisesRegex(ValueError,'authentication observation'):EVIDENCE['add_event'](args)
+  evidence.write_text(json.dumps({'unauthenticated_status':401,'invalid_token_status':401,'invalid_token_code':'UNAUTHORIZED_INVALID_JWT_FORMAT','authenticated_fixture':True}))
+  EVIDENCE['add_event'](args)
+  self.assertEqual(EVIDENCE['load'](events_path)['events'][0]['case'],'edge-runtime-isolation')
   Path(self.temp.name,'final.json').write_text('{}');final_args=type('Args',(),{'state':state_path,'events':events_path,'report':Path(self.temp.name,'final.json'),'cleanup':Path(self.temp.name,'cleanup-final.json')})()
   with self.assertRaisesRegex(ValueError,'fresh'):EVIDENCE['finalize'](final_args)
  def test_producer_rejects_process_mismatch_and_incomplete_absence(self):
@@ -157,6 +162,16 @@ class SupabaseQualificationTest(unittest.TestCase):
  mode=${FAKE_CURL_MODE:?}
  all="$*"
  case "$mode:$all" in
+  edge:*'Bearer invalid'*)
+   headers='';body=''
+   while [ "$#" -gt 0 ]; do
+    [ "$1" = --dump-header ] && { shift; headers=$1; }
+    [ "$1" = --output ] && { shift; body=$1; }
+    shift
+   done
+   printf 'HTTP/1.1 401 Unauthorized\r\nsb-error-code: UNAUTHORIZED_INVALID_JWT_FORMAT\r\n\r\n' >"$headers"
+   printf '{"code":"UNAUTHORIZED_INVALID_JWT_FORMAT"}' >"$body"
+   printf 401;;
   edge:*--output*/dev/null*) printf 401;;
   edge:*) printf '{"message":"Hello from Edge Functions!"}';;
   studio:*'/mcp'*) printf 403;;
@@ -173,7 +188,7 @@ class SupabaseQualificationTest(unittest.TestCase):
   fake_jq=binary/'jq';fake_jq.write_text('''#!/bin/sh
 all="$*"
 case "$all" in
- *authenticated_fixture*) printf '{"authenticated_fixture":true,"unauthenticated_status":401}';;
+ *authenticated_fixture*) printf '{"authenticated_fixture":true,"unauthenticated_status":401,"invalid_token_status":401,"invalid_token_code":"UNAUTHORIZED_INVALID_JWT_FORMAT"}';;
  *basic_auth_status*) printf '{"anonymous_status":401,"service_role_status":401,"mcp_status":403,"basic_auth_status":200}';;
  *source_sha256*) printf '{"source_sha256":"a","rendered_sha256":"b","width":1,"height":1}';;
  *) cat >/dev/null;;
@@ -185,7 +200,7 @@ esac
    inputs[name]=Path(self.temp.name)/name;inputs[name].write_text('safe\n')
   environment=dict(os.environ,PATH=str(binary)+os.pathsep+os.environ['PATH'],FAKE_CURL_MODE='edge',HAKOPOD_BEHAVIOR_BASE_URL='https://example.test:18443',HAKOPOD_BEHAVIOR_HOST='example.test',HAKOPOD_BEHAVIOR_PORT='18443',HAKOPOD_BEHAVIOR_CA=str(inputs['ca']),HAKOPOD_BEHAVIOR_ANON_HEADERS=str(inputs['anon.headers']),HAKOPOD_BEHAVIOR_OWNER_HEADERS=str(inputs['owner.headers']),HAKOPOD_BEHAVIOR_SERVICE_HEADERS=str(inputs['service.headers']),HAKOPOD_BEHAVIOR_EVIDENCE_DIR=str(evidence_dir))
   subprocess.run(['sh',str(HERE/'examples/supabase-native-acceptance/behavior-checks.sh'),'edge'],check=True,env=environment,capture_output=True,text=True)
-  self.assertEqual(json.loads((evidence_dir/'edge-runtime-isolation.json').read_text()),{'authenticated_fixture':True,'unauthenticated_status':401})
+  self.assertEqual(json.loads((evidence_dir/'edge-runtime-isolation.json').read_text()),{'authenticated_fixture':True,'unauthenticated_status':401,'invalid_token_status':401,'invalid_token_code':'UNAUTHORIZED_INVALID_JWT_FORMAT'})
   environment['FAKE_CURL_MODE']='studio';environment['HAKOPOD_BEHAVIOR_STUDIO_HEADERS']=str(inputs['studio.headers'])
   subprocess.run(['sh',str(HERE/'examples/supabase-native-acceptance/behavior-checks.sh'),'studio'],check=True,env=environment,capture_output=True,text=True)
   studio=json.loads((evidence_dir/'studio-admin-isolation.json').read_text());self.assertEqual((studio['anonymous_status'],studio['service_role_status'],studio['mcp_status'],studio['basic_auth_status']),(401,401,403,200))
