@@ -68,6 +68,34 @@ func sameVitessTabletSet(before, after []database.Member) bool {
 	return len(want) == 0
 }
 
+// Recovery replaces gateways to close existing sessions. Wait only for those
+// owned replacements to become ready; changes to the tablets still abort it.
+func waitVitessRecoveryTopology(ctx context.Context, before database.Observation, observe func(context.Context) (database.Observation, error)) (database.Observation, error) {
+	wait, stop := context.WithTimeout(ctx, 3*time.Minute)
+	defer stop()
+	for {
+		if err := wait.Err(); err != nil {
+			return database.Observation{}, fmt.Errorf("Vitess recovery gateway readiness interrupted: %w", err)
+		}
+		next, err := observe(wait)
+		if next.Revision != before.Revision || !sameVitessTabletSet(before.Members, next.Members) {
+			return database.Observation{}, fmt.Errorf("Vitess topology changed during recovery")
+		}
+		if err == nil {
+			if next.Status != "ready" {
+				return database.Observation{}, fmt.Errorf("Vitess topology changed during recovery")
+			}
+			return next, nil
+		}
+		if !errors.Is(err, errVitessGatewayNotReady) {
+			return database.Observation{}, fmt.Errorf("Vitess recovery observation failed: %w", err)
+		}
+		if err := sleepContext(wait, time.Second); err != nil {
+			return database.Observation{}, fmt.Errorf("Vitess recovery gateway readiness interrupted: %w", err)
+		}
+	}
+}
+
 var vitessGTIDSet = regexp.MustCompile(`^[0-9a-fA-F:-]+(?:,[0-9a-fA-F:-]+)*$`)
 
 func vitessWaitForGTIDQuery(gtid string) (string, error) {
@@ -263,9 +291,11 @@ func (c *Client) RestoreVitessDatabase(ctx context.Context, d database.Resource,
 		}
 		gtids[i] = strings.TrimSpace(executed.String())
 	}
-	after, err := c.ObserveDatabase(ctx, d)
-	if err != nil || after.Status != "ready" || !sameVitessTabletSet(o.Members, after.Members) {
-		return fmt.Errorf("Vitess topology changed during recovery")
+	after, err := waitVitessRecoveryTopology(ctx, o, func(wait context.Context) (database.Observation, error) {
+		return c.ObserveDatabase(wait, d)
+	})
+	if err != nil {
+		return err
 	}
 	current, err := vitessObservedPrimaries(d, after)
 	if err != nil {

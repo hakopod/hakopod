@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +18,8 @@ import (
 )
 
 const vitessNativeViewQuery = `SELECT JSON_OBJECT('uuid',@@server_uuid,'readonly',@@super_read_only,'secure',@@require_secure_transport,'version',VERSION(),'channels',COALESCE((SELECT JSON_ARRAYAGG(JSON_OBJECT('host',HOST,'ssl',SSL_ALLOWED,'verify',SSL_VERIFY_SERVER_CERTIFICATE,'ca',SSL_CA_FILE)) FROM performance_schema.replication_connection_configuration),JSON_ARRAY()),'io_errors',(SELECT COUNT(*) FROM performance_schema.replication_connection_status WHERE SERVICE_STATE!='ON' OR LAST_ERROR_NUMBER!=0),'apply_errors',(SELECT COUNT(*) FROM performance_schema.replication_applier_status_by_worker WHERE SERVICE_STATE!='ON' OR LAST_ERROR_NUMBER!=0))`
+
+var errVitessGatewayNotReady = errors.New("Vitess gateways are not ready")
 
 type vitessNativeView struct {
 	UUID        string                                   `json:"uuid"`
@@ -126,22 +129,30 @@ func (c *Client) observeVitessSupport(ctx context.Context, d database.Resource, 
 		return fmt.Errorf("Vitess supporting component inventory exceeds its bound")
 	}
 	counts := map[string]int{}
+	gatewaysPending := false
 	for _, pod := range pods.Items {
 		if !c.vitessPodOwned(ctx, pod, object.GetUID()) || pod.DeletionTimestamp != nil || pod.Labels[databaseOwner] != d.ID {
 			return fmt.Errorf("Vitess supporting component ownership changed")
 		}
 		role := pod.Labels[vitessComponentLabel]
+		if !vitessPodMatches(pod, d) || !databasePodPolicyMatches(pod, policy) || !vitessPodIdentityMatches(pod, expectedIdentity) {
+			return fmt.Errorf("Vitess supporting component configuration changed")
+		}
 		member := database.Member{Name: pod.Name, UID: string(pod.UID), Role: role, Node: pod.Spec.NodeName, Phase: string(pod.Status.Phase)}
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-				member.Ready = vitessPodMatches(pod, d) && databasePodPolicyMatches(pod, policy) && vitessPodIdentityMatches(pod, expectedIdentity)
+				member.Ready = true
 			}
 		}
 		for _, state := range pod.Status.ContainerStatuses {
 			member.Restarts += state.RestartCount
 		}
 		if !member.Ready {
-			return fmt.Errorf("Vitess supporting components are not ready")
+			if role == "gateway" {
+				gatewaysPending = true
+			} else {
+				return fmt.Errorf("Vitess supporting components are not ready")
+			}
 		}
 		counts[role]++
 		if role == "gateway" {
@@ -151,8 +162,11 @@ func (c *Client) observeVitessSupport(ctx context.Context, d database.Resource, 
 			o.Coordination.Members = append(o.Coordination.Members, member)
 		}
 	}
-	if counts["gateway"] != d.Spec.VitessGateways() || counts["topology"] != 3 || counts["control"] != 1 || counts["orchestrator"] != d.Spec.Shards {
+	if counts["topology"] != 3 || counts["control"] != 1 || counts["orchestrator"] != d.Spec.Shards || counts["gateway"] > d.Spec.VitessGateways() {
 		return fmt.Errorf("Vitess supporting capacity does not match its allocation")
+	}
+	if gatewaysPending || counts["gateway"] < d.Spec.VitessGateways() {
+		return errVitessGatewayNotReady
 	}
 	c.observeDatabaseMemberPlacement(ctx, o.Routing.Members)
 	c.observeDatabaseMemberPlacement(ctx, o.Coordination.Members)
