@@ -210,7 +210,7 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 	maximum := render(t, 8, 3, 6)
 	immutableRevisionObjects := 0
 	for _, object := range maximum.Objects {
-		if config, ok := object.(*corev1.ConfigMap); ok && strings.HasSuffix(config.Name, "-r1") {
+		if config, ok := object.(*corev1.ConfigMap); ok && config.Immutable != nil && *config.Immutable && config.Labels["hakopod.io/revision"] == "1" {
 			immutableRevisionObjects++
 		}
 	}
