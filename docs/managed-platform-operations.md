@@ -150,12 +150,12 @@ StorageClass. Hakopod recomputes the image inventory and canonical
 StorageClass-parameter digests and compares the live cluster, class UID and
 provisioner before startup and again before platform or recovery changes.
 
-Hakopod generates Neon's internal controller and storage tokens for each
-platform. The operator supplies the compute configuration, compute-control
-credential, proxy credential, controller-database password and object-storage
+Hakopod generates Neon's internal controller, storage and compute-control tokens for each
+platform. The operator supplies the compute configuration,
+proxy credential, controller-database password and object-storage
 access key pair. With operator-provided TLS, the snapshots also contain the
-service certificates. Review checks the compute template before accepting an
-operation. Keep the certificate authority relationships and service hostnames described in the
+service certificates. Review checks the compute template's required fields and types before accepting an
+operation. Its `compute_ctl_config.jwks.keys` list may be empty because Hakopod replaces it with the platform's public compute key when sealing the operation. Keep the certificate authority relationships and service hostnames described in the
 [Neon security contract](managed-neon.md); placeholder PEM, JSON and token
 values in the repository template are documentation only and cannot authorize
 a deployment.

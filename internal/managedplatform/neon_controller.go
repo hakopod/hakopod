@@ -94,7 +94,7 @@ func BindNeonControllerRouting(raw json.RawMessage, platformID, tenantID, timeli
 		return nil, fmt.Errorf("Neon controller routing is not ready")
 	}
 	var root map[string]any
-	if len(raw) > maxNeonResponseBytes || json.Unmarshal(raw, &root) != nil {
+	if len(raw) > maxNeonResponseBytes || decodeNeonJSON(raw, &root) != nil {
 		return nil, fmt.Errorf("invalid Neon compute configuration")
 	}
 	spec, ok := root["spec"].(map[string]any)

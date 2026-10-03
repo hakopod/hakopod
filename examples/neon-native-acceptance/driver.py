@@ -20,6 +20,12 @@ def cpu_millis(value):
     if not isinstance(value,str) or not re.fullmatch(r"(?:[1-9][0-9]*m|[1-9][0-9]*)",value): raise RuntimeError("Neon acceptance CPU quantity is unsupported")
     return int(value[:-1]) if value.endswith("m") else int(value)*1000
 
+def restart_storage(probe, platform_id, revision, namespace_uid):
+    node=probe.get("attached_pageserver_node_id"); component=probe.get("attached_pageserver"); generation=probe.get("tenant_generation"); tenant=probe.get("tenant_id")
+    if probe.get("platform_id")!=platform_id or probe.get("platform_revision")!=revision or probe.get("namespace_uid")!=namespace_uid or probe.get("ownership_capability_verified") is not True or type(node) is not int or not 1<=node<=8 or component!="pageserver-"+str(node-1) or type(generation) is not int or generation<1 or not ID.fullmatch(str(tenant)):
+        raise RuntimeError("Neon restart active storage identity is not verified")
+    return {"component":component,"node_id":node,"tenant_id":tenant,"tenant_generation":generation}
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -128,7 +134,7 @@ class Driver:
             headers["idempotency-key"]=idem
         req=urllib.request.Request(self.a.api_url.rstrip("/")+path,data=raw,headers=headers,method=method)
         try:
-            with HTTP.open(req,timeout=45 if path.endswith("/native-probe") else 15) as response:
+            with HTTP.open(req,timeout=105 if path.endswith("/native-migrate") else 45 if path.endswith("/native-probe") else 15) as response:
                 if response.geturl() != req.full_url: raise RuntimeError("API redirect was refused")
                 data,status=response.read((1<<20)+1),response.status
         except urllib.error.HTTPError as error: data,status=error.read((1<<20)+1),error.code
@@ -609,8 +615,48 @@ class Driver:
         topology=self.cancellation_target_spec["neon"]; expected_sets=topology["compute_replicas"]+topology["pageservers"]+topology["safekeepers"]
         if set(value)!=required or value.get("schema_version")!=1 or value.get("operation_id")!=operation or value.get("project")!=self.a.project or value.get("environment")!="development" or value.get("source_platform_id")!=source or value.get("source_revision")!=source_revision or value.get("target_platform_id")!=target or value.get("target_revision")!=target_revision or value.get("artifact_id")!=artifact or value.get("manifest_sha256")!=manifest or value.get("namespace_uid")!=target_uid or not ID.fullmatch(str(value.get("tenant_id"))) or not ID.fullmatch(str(value.get("timeline_id"))) or type(value.get("tenant_generation")) is not int or value["tenant_generation"]<1 or type(value.get("timeline_generation")) is not int or value["timeline_generation"]<1 or type(value.get("journal_entries")) is not int or value["journal_entries"]<1 or not isinstance(counts,dict) or set(counts)!={"complete","empty_complete","untouched_complete"} or any(type(count) is not int or count<0 for count in counts.values()) or sum(counts.values())!=value["journal_entries"] or value.get("cleanup_pending") is not False or value.get("operation_authority_refused") is not True or value.get("deployment_count")!=1 or value.get("statefulset_count")!=expected_sets or value.get("workload_replicas_zero") is not True or value.get("pods_absent") is not True or value.get("staging_prefix_empty") is not True: raise RuntimeError("native cancellation receipt binding is invalid")
         return value
+    def tenant_migration(self,pid,uid):
+        path="/api/v1/managed-platforms/"+pid; current=self.api("GET",path); revision=current.get("revision")
+        before=self.api("POST",path+"/native-probe",{"expected_revision":revision})
+        active=restart_storage(before,pid,revision,uid); source=active["node_id"]
+        pageservers=current.get("spec",{}).get("neon",{}).get("pageservers")
+        if type(pageservers) is not int or not 2<=pageservers<=8 or source>pageservers: raise RuntimeError("Neon migration pageserver inventory is invalid")
+        destination=next(node for node in range(1,pageservers+1) if node!=source)
+        def computes():
+            namespace,pods=self.pods(pid)
+            sets=json.loads(self.k("-n",namespace,"get","statefulsets","-l","hakopod.io/neon-role=compute","-o","json"))["items"]
+            owners={item["metadata"]["name"]:item["metadata"]["uid"] for item in sets}; result={}
+            if set(owners)!={"neon-compute-0","neon-compute-1"}: raise RuntimeError("Neon migration requires exactly two owned computes")
+            for pod in pods:
+                meta=pod["metadata"]; labels=meta.get("labels",{}); component=labels.get("app.kubernetes.io/component")
+                if labels.get("hakopod.io/neon-role")!="compute": continue
+                if component not in {"compute-0","compute-1"} or component in result or not any(ref.get("kind")=="StatefulSet" and ref.get("name")=="neon-"+component and ref.get("uid")==owners["neon-"+component] for ref in meta.get("ownerReferences",[])): raise RuntimeError("Neon migration compute ownership is invalid")
+                statuses=pod.get("status",{}).get("containerStatuses",[])
+                if not statuses or not all(item.get("ready") is True for item in statuses): raise RuntimeError("Neon migration compute is not ready")
+                result[component]=meta["name"]
+            if set(result)!={"compute-0","compute-1"}: raise RuntimeError("Neon migration compute inventory is incomplete")
+            return namespace,result
+        namespace,pods=computes(); marker="hakopod-migration-"+self.run_id
+        self.sql(namespace,pods["compute-0"],"CREATE TABLE IF NOT EXISTS hakopod_native_acceptance(k text primary key,v text not null); INSERT INTO hakopod_native_acceptance VALUES ('migration','"+marker+"') ON CONFLICT (k) DO UPDATE SET v=excluded.v;")
+        if self.namespace(pid)["metadata"]["uid"]!=uid: raise RuntimeError("Neon migration namespace changed")
+        moved=self.api("POST",path+"/native-migrate",{"expected_revision":revision,"namespace_uid":uid,"source_node_id":source,"destination_node_id":destination})
+        expected={"platform_id":pid,"platform_revision":revision,"namespace_uid":uid,"tenant_id":before["tenant_id"],"timeline_id":before["timeline_id"],"source_node_id":source,"destination_node_id":destination,"generation_before":before["tenant_generation"],"tenant_owner_unchanged":True,"controller_move_completed":True,"compute_names":["compute-0","compute-1"],"compute_routing_verified":True}
+        if set(moved)!=set(expected)|{"generation_after"} or any(moved.get(key)!=value for key,value in expected.items()) or type(moved.get("generation_after")) is not int or moved["generation_after"]<=before["tenant_generation"]: raise RuntimeError("Neon migration observation is not exact")
+        namespace,pods=computes(); primary=self.sql(namespace,pods["compute-0"],"SELECT v FROM hakopod_native_acceptance WHERE k='migration'")
+        replica=""; deadline=time.monotonic()+90
+        while time.monotonic()<deadline:
+            try: replica=self.sql(namespace,pods["compute-1"],"SELECT v FROM hakopod_native_acceptance WHERE k='migration'")
+            except RuntimeError: replica=""
+            if replica==marker: break
+            time.sleep(2)
+        if primary!=marker or replica!=marker: raise RuntimeError("Neon migration did not preserve SQL on both computes")
+        after=self.api("POST",path+"/native-probe",{"expected_revision":revision})
+        if restart_storage(after,pid,revision,uid)["node_id"]!=destination or after.get("tenant_generation")!=moved["generation_after"] or after.get("tenant_id")!=before["tenant_id"] or after.get("timeline_id")!=before["timeline_id"]: raise RuntimeError("Neon migration placement changed during SQL verification")
+        return dict(moved,run_id=self.run_id,primary_sql_verified=True,replica_sql_verified=True,data_sha256=hashlib.sha256(marker.encode()).hexdigest())
     def restart(self,pid,uid):
-        ns,pods=self.pods(pid); chosen={}; components={"pageserver":"pageserver-0","compute":"compute-0"}
+        path="/api/v1/managed-platforms/"+pid; revision=self.api("GET",path)["revision"]
+        active_storage=restart_storage(self.api("POST",path+"/native-probe",{"expected_revision":revision}),pid,revision,uid)
+        ns,pods=self.pods(pid); chosen={}; components={"pageserver":active_storage["component"],"compute":"compute-0"}
         sets=json.loads(self.k("-n",ns,"get","statefulsets","-l","hakopod.io/managed-platform-id="+pid,"-o","json"))["items"]
         if len(sets)>16: raise RuntimeError("Neon restart StatefulSet inventory exceeded its bound")
         owners={item["metadata"]["name"]:item["metadata"]["uid"] for item in sets}
@@ -624,6 +670,7 @@ class Driver:
         if set(before)!={"pageserver","compute"}: raise RuntimeError("restart subjects are missing")
         if self.namespace(pid)["metadata"]["uid"]!=uid: raise RuntimeError("Neon restart namespace changed")
         seed="hakopod-"+self.run_id; self.sql(ns,chosen["compute"]["metadata"]["name"],"CREATE TABLE IF NOT EXISTS hakopod_native_acceptance(k text primary key,v text not null); INSERT INTO hakopod_native_acceptance VALUES ('restart','"+seed+"') ON CONFLICT (k) DO UPDATE SET v=excluded.v;")
+        if restart_storage(self.api("POST",path+"/native-probe",{"expected_revision":revision}),pid,revision,uid)!=active_storage: raise RuntimeError("Neon active storage moved before the restart")
         for pod in chosen.values():
             delete=json.dumps({"apiVersion":"v1","kind":"DeleteOptions","preconditions":{"uid":pod["metadata"]["uid"]}}).encode()
             self.command(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","delete","--raw","/api/v1/namespaces/"+ns+"/pods/"+pod["metadata"]["name"],"-f","-"],data=delete)
@@ -647,7 +694,7 @@ class Driver:
         restored=self.sql(ns,after["compute"]["metadata"]["name"],"SELECT v FROM hakopod_native_acceptance WHERE k='restart';")
         if restored!=seed or not failure_observed: raise RuntimeError("restart failure and restored SQL data were not both observed")
         digest=hashlib.sha256(restored.encode()).hexdigest()
-        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"storage_pod_uids_before":[before["pageserver"]],"storage_pod_uids_after":[after["pageserver"]["metadata"]["uid"]],"compute_pod_uids_before":[before["compute"]],"compute_pod_uids_after":[after["compute"]["metadata"]["uid"]],"restarted_components":components,"statefulset_uids":{role:owners["neon-"+component] for role,component in components.items()},"old_pods_absent":old_absent,"failure_observed":failure_observed,"service_recovered":restored==seed,"data_sha256":digest}
+        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"storage_pod_uids_before":[before["pageserver"]],"storage_pod_uids_after":[after["pageserver"]["metadata"]["uid"]],"compute_pod_uids_before":[before["compute"]],"compute_pod_uids_after":[after["compute"]["metadata"]["uid"]],"active_storage":active_storage,"restarted_components":components,"statefulset_uids":{role:owners["neon-"+component] for role,component in components.items()},"old_pods_absent":old_absent,"failure_observed":failure_observed,"service_recovered":restored==seed,"data_sha256":digest}
     def run(self):
         attestation=validate_attestation(self.a); nodes=json.loads(self.k("get","nodes","-o","json"))["items"]
         observed_nodes={item["metadata"]["name"]:item["metadata"]["uid"] for item in nodes}; cluster_uid=self.namespace_uid("kube-system")
@@ -672,7 +719,7 @@ class Driver:
         if restored_value!=seed: raise RuntimeError("restored target SQL did not match the pre-backup source value")
         evidence={"run_id":self.run_id,"platform_id":source["id"],"namespace_uid":source_uid,"target_platform_id":target["id"],"target_namespace_uid":target_uid,"format":receipt.get("format"),"parts":receipt.get("parts"),"tenant_id":neon.get("tenant_id"),"timeline_id":neon.get("timeline_id"),"tenant_generation":neon.get("tenant_generation"),"timeline_generation":neon.get("timeline_generation"),"commit_lsn":neon.get("commit_lsn"),"pageserver_remote_consistent_lsns":neon.get("pageserver_remote_consistent_lsns"),"source_object_prefix":neon.get("source_object_prefix"),"object_inventory_sha256":neon.get("object_inventory_sha256"),"object_count":neon.get("object_count"),"object_bytes":neon.get("object_bytes"),"restored_data_sha256":hashlib.sha256(restored_value.encode()).hexdigest(),"isolated_target":receipt.get("target_platform_id")==target["id"] and target_uid!=source_uid}; self.record("backup-recovery",evidence)
         self.record("restored-resource-update",self.restored_resource_update(target["id"],seed))
-        self.record("wal-quorum-fencing",self.wal_quorum_fencing(target["id"])); self.record("controller-recovery",self.controller_recovery(target["id"])); self.record("restart-failure",self.restart(target["id"],target_uid))
+        self.record("wal-quorum-fencing",self.wal_quorum_fencing(target["id"])); self.record("controller-recovery",self.controller_recovery(target["id"])); self.record("tenant-migration",self.tenant_migration(target["id"],target_uid)); self.record("restart-failure",self.restart(target["id"],target_uid))
         cancellation,cop=self.create(self.cancellation_target_spec); self.proxy_passwords[cancellation["id"]]=self.proxy_password_files["cancellation"]; cancellation_uid=self.namespace(cancellation["id"])["metadata"]["uid"]; self.bound[cancellation["id"]]=(cancellation_uid,cop["id"])
         path=self.evidence/"cancellation-target-create.json"; atomic(path,{k:cop[k] for k in ("id","platform_id","kind","status")}); self.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"bind-resource","--state",str(self.evidence/"state.json"),"--role","cancellation_target","--operation",str(path)])
         cc=self.api("GET","/api/v1/managed-platforms/"+cancellation["id"]); cancel_intent=dict(intent,target_platform_id=cancellation["id"],expected_target_revision=cc["revision"],confirm_target_name=self.cancellation_target_spec["name"])

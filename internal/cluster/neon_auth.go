@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,16 +13,13 @@ func ValidateNeonComputeTemplate(template []byte) error {
 	if len(template) == 0 || len(template) > 65536 {
 		return fmt.Errorf("Neon compute template must contain at most 64 KiB")
 	}
+	if err := validateNeonComputeTemplateFields(template); err != nil {
+		return err
+	}
 	for _, name := range []string{"compute-0", "compute-1"} {
 		if _, err := bindNeonComputeConfig(template, strings.Repeat("1", 32), strings.Repeat("2", 32), []string{"preflight-0.invalid:5454", "preflight-1.invalid:5454", "preflight-2.invalid:5454"}, name); err != nil {
 			return err
 		}
-	}
-	var config struct {
-		Control map[string]json.RawMessage `json:"compute_ctl_config"`
-	}
-	if json.Unmarshal(template, &config) != nil || config.Control == nil {
-		return fmt.Errorf("Neon compute template requires a compute_ctl_config object")
 	}
 	return nil
 }
@@ -80,6 +76,10 @@ func PrepareNeonAuthenticationSnapshots(request *NeonRuntimeRequest, key []byte,
 		name := secretSnapshotNameForCluster(ref)
 		data := copySecretData(request.SecretSnapshots[name])
 		data["config.json"], err = managedplatform.BindNeonTenantAuthentication(data["config.json"], key, request.Render.PlatformID, neonDeterministicID(request.Render.PlatformID, "tenant"))
+		if err != nil {
+			return err
+		}
+		data["config.json"], data["token"], err = managedplatform.BindNeonComputeAuthentication(data["config.json"], key, request.Render.PlatformID)
 		if err != nil {
 			return err
 		}

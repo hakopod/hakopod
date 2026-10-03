@@ -138,6 +138,14 @@ and platform identity. They are never stored in a pod, runtime snapshot or API
 response. A restore receives a token for the restored tenant under the target
 platform's trust. Keep the control-plane encryption key with its backups.
 
+Compute control uses another platform-specific Ed25519 key. Go replaces the
+template's public JWKS and control token before sealing an operation. The token
+uses scope `compute_ctl:admin` and audience `["compute"]`, matching the pinned
+provider's authorization rules. It can manage both computes in that platform;
+another platform's key cannot verify it. The same platform retains its key on
+restart, update and restore. User compute settings and leaf TLS material are
+preserved, and only the public key enters the compute configuration.
+
 The connection proxy also calls Hakopod's private HTTPS authentication API.
 Its operator configuration supplies that server's CA certificate bundle through
 `neon_proxy_control_plane_ca_pem`. The renderer mounts only the public CA bundle
