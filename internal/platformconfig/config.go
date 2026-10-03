@@ -271,6 +271,9 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 	}
 	if config.Capacity.Enabled {
 		planner.CatalogNodes = append([]managedplatform.CapacityNode{}, config.Capacity.Nodes...)
+		planner.CatalogCapacity = func(context.Context, string, string) (managedplatform.CapacityPolicy, error) {
+			return config.Capacity, nil
+		}
 	}
 	if config.Capacity.Enabled {
 		if err = config.Capacity.Validate(); err != nil {
