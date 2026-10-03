@@ -147,6 +147,15 @@ restart, update and restore. Only the public key enters the compute
 configuration. Go binds the control's TLS paths to the managed compute
 certificate and enables the provider's TLS feature.
 
+Compute startup and serving readiness have separate checks. The control process
+can start before PostgreSQL has been configured. Its metrics endpoint checks
+that the process responds. The TLS sidecar also checks the authenticated status
+endpoint, and keeps the pod unavailable until Neon reports `running`.
+PostgreSQL must accept connections as well. This prevents the data Service from
+publishing a compute while Neon is still applying its initial configuration.
+The lifecycle operation separately verifies the tenant, timeline and ownership
+before recording success.
+
 Go also owns the SQL port, listener, HBA policy, connection limits and WAL
 settings. Optional PostgreSQL settings remain configurable; conflicting owned
 settings are replaced. Raw PostgreSQL configuration accepts single-line

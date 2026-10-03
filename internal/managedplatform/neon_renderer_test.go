@@ -69,7 +69,11 @@ func TestNeonComputeAuthenticationIsImmutableAndTLSOnly(t *testing.T) {
 	}
 	for name, compute := range computes {
 		assertScheduledOnNode(t, compute.Spec.Template.Spec, spec.Placement.NodeNames[0])
-		config := configs[name+"-tls-r7"]
+		ordinal, err := strconv.Atoi(strings.TrimPrefix(name, "neon-compute-"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		config := configs[neonComputeTLSConfigMapName(7, ordinal, neonComputeTLSConfig, neonComputeHBAConfig)]
 		if config == nil || config.Immutable == nil || !*config.Immutable || len(config.OwnerReferences) != 1 || config.OwnerReferences[0].UID != types.UID("namespace-uid") {
 			t.Fatal("compute authentication policy is not immutable and owned")
 		}
@@ -94,12 +98,16 @@ func TestNeonComputeAuthenticationIsImmutableAndTLSOnly(t *testing.T) {
 			}
 		}
 		bound := false
+		tlsBound := false
 		for _, volume := range compute.Spec.Template.Spec.Volumes {
 			if volume.Name == "compute-postgres-config" && volume.ConfigMap != nil {
 				bound = volume.ConfigMap.Name == config.Name && reflect.DeepEqual(volume.ConfigMap.Items, []corev1.KeyToPath{{Key: "pg_hba.conf", Path: "pg_hba.conf"}})
 			}
+			if volume.Name == "compute-tls-config" && volume.ConfigMap != nil {
+				tlsBound = volume.ConfigMap.Name == config.Name
+			}
 		}
-		if !mounted || !bound {
+		if !mounted || !bound || !tlsBound {
 			t.Fatal("compute must mount its exact revision's authentication policy read-only")
 		}
 	}
@@ -167,12 +175,24 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 				ownershipModes["pageserver"] = true
 			}
 		case *corev1.Service:
+			for _, port := range value.Spec.Ports {
+				if port.Port == 3080 || port.Port == 3082 || port.TargetPort.IntVal == 3080 || port.TargetPort.IntVal == 3082 || port.TargetPort.StrVal == "readiness" {
+					t.Fatal("a Service exposes raw compute HTTP or its internal readiness listener")
+				}
+			}
 			services[value.Name] = value
 			publish := strings.HasPrefix(value.Name, "neon-pageserver-") || strings.HasPrefix(value.Name, "neon-safekeeper-") || strings.HasSuffix(value.Name, "-control")
 			if value.Spec.PublishNotReadyAddresses != publish {
 				t.Fatalf("service %s has unsafe bootstrap publication %t", value.Name, value.Spec.PublishNotReadyAddresses)
 			}
 		case *networkingv1.NetworkPolicy:
+			for _, rule := range value.Spec.Ingress {
+				for _, port := range rule.Ports {
+					if port.Port == nil || port.Port.IntVal == 3080 || port.Port.IntVal == 3082 || port.Port.StrVal == "readiness" {
+						t.Fatal("NetworkPolicy permits raw compute HTTP or readiness ingress")
+					}
+				}
+			}
 			policies[value.Name] = value
 		}
 	}
@@ -339,6 +359,10 @@ func assertNeonComputeOwnershipStorage(t *testing.T, pod corev1.PodSpec, identit
 	if len(pod.Containers) != 2 || pod.Containers[1].Name != "compute-tls" || !strings.Contains(strings.Join(pod.Containers[1].Args, " "), "haproxy") {
 		t.Fatal("compute management TLS sidecar is missing")
 	}
+	proxy := pod.Containers[1]
+	if !reflect.DeepEqual(proxy.Args, []string{neonComputeTLSStartScript}) || len(proxy.Env) != 0 || len(proxy.EnvFrom) != 0 || proxy.ReadinessProbe == nil || proxy.ReadinessProbe.HTTPGet == nil || proxy.ReadinessProbe.HTTPGet.Path != "/ready" || proxy.ReadinessProbe.HTTPGet.Port.IntVal != 3082 || len(proxy.ReadinessProbe.HTTPGet.HTTPHeaders) != 0 {
+		t.Fatal("sidecar must gate readiness without putting authentication in PodSpec or probe headers")
+	}
 	for _, mount := range pod.Containers[1].VolumeMounts {
 		if mount.Name == "cache" || mount.MountPath == "/var/db/postgres" {
 			t.Fatal("compute management TLS sidecar received the compute PVC")
@@ -479,5 +503,38 @@ func TestNeonComputeOwnershipSetupOnSetgidVolume(t *testing.T) {
 		if err != nil || info.Mode()&(os.ModePerm|os.ModeSetgid|os.ModeSetuid|os.ModeSticky) != mode {
 			t.Fatalf("ownership initializer changed refused directory mode: %v %v", info, err)
 		}
+	}
+}
+
+func TestNeonComputeProbesSeparateControlHealthFromSQLReadiness(t *testing.T) {
+	readiness, liveness, startup := neonProbes("compute")
+	for name, probe := range map[string]*corev1.Probe{"startup": startup, "liveness": liveness} {
+		if probe.HTTPGet == nil || probe.HTTPGet.Path != "/metrics" || probe.HTTPGet.Port.IntVal != 3080 || probe.HTTPGet.Scheme != corev1.URISchemeHTTP || len(probe.HTTPGet.HTTPHeaders) != 0 || probe.Exec != nil || probe.TCPSocket != nil {
+			t.Fatalf("%s probe must check the unauthenticated control-process health route without credentials", name)
+		}
+	}
+	want := []string{"/usr/local/bin/pg_isready", "-h", "127.0.0.1", "-p", "55433", "-U", "cloud_admin", "-d", "postgres", "-t", "2", "-q"}
+	if readiness.Exec == nil || !reflect.DeepEqual(readiness.Exec.Command, want) || readiness.HTTPGet != nil || readiness.TCPSocket != nil || readiness.TimeoutSeconds <= 2 {
+		t.Fatal("compute readiness must quietly check the local PostgreSQL listener with a bounded timeout")
+	}
+}
+
+func TestNeonComputeTLSConfigNameBindsAllPublicData(t *testing.T) {
+	name := neonComputeTLSConfigMapName(7, 0, neonComputeTLSConfig, neonComputeHBAConfig)
+	if name != neonComputeTLSConfigMapName(7, 0, neonComputeTLSConfig, neonComputeHBAConfig) || len(name) > 63 {
+		t.Fatal("public configuration name is not stable and bounded")
+	}
+	for _, changed := range []string{
+		neonComputeTLSConfigMapName(7, 0, neonComputeTLSConfig+"\n", neonComputeHBAConfig),
+		neonComputeTLSConfigMapName(7, 0, neonComputeTLSConfig, neonComputeHBAConfig+"\n"),
+		neonComputeTLSConfigMapName(8, 0, neonComputeTLSConfig, neonComputeHBAConfig),
+		neonComputeTLSConfigMapName(7, 1, neonComputeTLSConfig, neonComputeHBAConfig),
+	} {
+		if changed == name {
+			t.Fatal("changed configuration, revision or ordinal reused an immutable name")
+		}
+	}
+	if neonComputeTLSConfigMapName(7, 0, "ab", "c") == neonComputeTLSConfigMapName(7, 0, "a", "bc") {
+		t.Fatal("public configuration digest has ambiguous field framing")
 	}
 }
