@@ -68,6 +68,7 @@ func TestNeonComputeAuthenticationIsImmutableAndTLSOnly(t *testing.T) {
 		t.Fatal("writer and replica must both have an authentication policy")
 	}
 	for name, compute := range computes {
+		assertScheduledOnNode(t, compute.Spec.Template.Spec, spec.Placement.NodeNames[0])
 		config := configs[name+"-tls-r7"]
 		if config == nil || config.Immutable == nil || !*config.Immutable || len(config.OwnerReferences) != 1 || config.OwnerReferences[0].UID != types.UID("namespace-uid") {
 			t.Fatal("compute authentication policy is not immutable and owned")
@@ -137,9 +138,7 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 			if value.Name == "neon-storage-controller" && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
 				ownershipModes["storage-controller"] = true
 			}
-			if value.Spec.Template.Spec.NodeName != "node-a" {
-				t.Fatalf("deployment %s does not use its exact trusted Node name", value.Name)
-			}
+			assertScheduledOnNode(t, value.Spec.Template.Spec, "node-a")
 		case *appsv1.StatefulSet:
 			assertNeonLinuxAMD64Scheduling(t, value.Name, value.Spec.Template.Spec)
 			if value.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
@@ -151,9 +150,15 @@ func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 			if value.Name == "neon-compute-0" {
 				assertNeonComputeOwnershipStorage(t, value.Spec.Template.Spec, identities["compute"])
 			}
-			if value.Name == "neon-pageserver-1" && value.Spec.Template.Spec.NodeName != "node-b" {
-				t.Fatal("Neon storage placement treated a Node name as an unrelated hostname label")
+			expectedNode := map[string]string{
+				"neon-controller-database": "node-a", "neon-compute-0": "node-a",
+				"neon-pageserver-0": "node-a", "neon-pageserver-1": "node-b",
+				"neon-safekeeper-0": "node-a", "neon-safekeeper-1": "node-b", "neon-safekeeper-2": "node-c",
+			}[value.Name]
+			if expectedNode == "" {
+				t.Fatalf("unexpected Neon StatefulSet %s", value.Name)
 			}
+			assertScheduledOnNode(t, value.Spec.Template.Spec, expectedNode)
 			if strings.HasPrefix(value.Name, "neon-safekeeper-") && slices.Contains(value.Spec.Template.Spec.Containers[0].Args, "--hakopod-ownership-v1") {
 				ownershipModes["safekeeper"] = true
 			}
