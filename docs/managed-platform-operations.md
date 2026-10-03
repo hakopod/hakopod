@@ -108,6 +108,35 @@ unapproved storage, so the server refuses it until the operator fills it in.
 Its capacity numbers are an example allocation, not a workload sizing promise.
 Cloud operators omit its capacity sections and use the workspace grant.
 
+The [complete Neon operator template](../examples/managed-platforms/neon-operator.toml)
+contains the eight image and identity entries, private control-plane trust,
+release and StorageClass binding, and all eight secret snapshots. Its image
+digests, process identities and approval flags are deliberately unusable. Copy
+the release image inventory and identities from the matching qualification
+manifest; do not infer them from tags. Replace the public HTTPS CIDR with the
+smallest canonical ranges required by the object store and other approved
+external endpoints. The control-plane origin must be an exact HTTPS origin,
+and its namespace and labels must select only the Hakopod API pods that may
+reach it. `neon_proxy_token` authenticates that private control-plane API and
+must contain at least 32 random characters.
+
+For self-hosted installations, keep the template's capacity sections and bind
+at least three explicit node names to their live Kubernetes UIDs; the selected
+Neon platform must name every storage member and therefore may require more.
+For Cloud, remove the capacity sections; the workspace grant remains authoritative. In both modes, replace
+the qualification values with evidence for the live cluster and encrypted
+StorageClass. Hakopod recomputes the image inventory and canonical
+StorageClass-parameter digests and compares the live cluster, class UID and
+provisioner before startup and again before platform or recovery changes.
+
+Neon secret snapshots contain the TLS identities and tokens used among the
+broker, compute, controller, pageserver, proxy and safekeeper services. The
+object-storage snapshot contains its access key pair. Keep the certificate
+authority relationships and service hostnames described in the
+[Neon security contract](managed-neon.md); placeholder PEM, JSON and token
+values in the repository template are documentation only and cannot authorize
+a deployment.
+
 Copy the template to a protected location before adding credentials. Set its
 owner to the account that runs the API and its mode to `0600`, then set
 `HAKOPOD_MANAGED_PLATFORM_CONFIG_FILE` to its absolute path in the service

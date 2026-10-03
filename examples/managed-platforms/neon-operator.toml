@@ -1,0 +1,97 @@
+# Operator configuration template. This file contains no usable credentials or
+# approved runtime identities. Copy it to a mode-0600 file outside the repository
+# and replace every REPLACE value and zero digest before installation.
+schema_version = 1
+approved_encrypted_storage_class = "REPLACE_WITH_STORAGE_CLASS"
+shared_storage_gid = 0
+approved_external_https_cidrs = ["REPLACE_WITH_CANONICAL_PUBLIC_CIDR"]
+neon_proxy_control_plane_origin = "https://control.example.invalid"
+neon_control_plane_namespace = "hakopod-system"
+neon_proxy_token = "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
+
+[neon_control_plane_pod_labels]
+"app.kubernetes.io/name" = "hakopod-server"
+
+# Replace these placeholders with the complete image inventory from the
+# qualification manifest shipped with the installed release.
+[neon_images]
+broker = "ghcr.io/hakopod/neon-storage@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+compute = "ghcr.io/hakopod/neon-compute-v17@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+compute-tls = "ghcr.io/hakopod/neon-compute-tls@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+controller-database = "ghcr.io/hakopod/neon-controller-database@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+pageserver = "ghcr.io/hakopod/neon-storage@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+proxy = "ghcr.io/hakopod/neon-storage@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+safekeeper = "ghcr.io/hakopod/neon-storage@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+storage-controller = "ghcr.io/hakopod/neon-storage@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Use each image's qualified process UID and GID. Zero values deliberately make
+# this repository copy fail closed.
+[neon_identities]
+broker = { uid = 0, gid = 0 }
+compute = { uid = 0, gid = 0 }
+compute-tls = { uid = 0, gid = 0 }
+controller-database = { uid = 0, gid = 0 }
+pageserver = { uid = 0, gid = 0 }
+proxy = { uid = 0, gid = 0 }
+safekeeper = { uid = 0, gid = 0 }
+storage-controller = { uid = 0, gid = 0 }
+
+# Self-hosted servers reserve this pool. Cloud operators omit these sections;
+# the current workspace grant supplies capacity and approved nodes.
+[capacity]
+enabled = true
+pool = "REPLACE_WITH_CAPACITY_POOL"
+storage_class = "REPLACE_WITH_STORAGE_CLASS"
+
+[capacity.capacity]
+cpu_milli = 8000
+memory_bytes = 34359738368
+storage_gib = 256
+
+[[capacity.nodes]]
+name = "REPLACE_WITH_NODE_NAME_1"
+uid = "REPLACE_WITH_NODE_UID_1"
+architecture = "amd64"
+operating_system = "linux"
+
+[[capacity.nodes]]
+name = "REPLACE_WITH_NODE_NAME_2"
+uid = "REPLACE_WITH_NODE_UID_2"
+architecture = "amd64"
+operating_system = "linux"
+
+[[capacity.nodes]]
+name = "REPLACE_WITH_NODE_NAME_3"
+uid = "REPLACE_WITH_NODE_UID_3"
+architecture = "amd64"
+operating_system = "linux"
+
+# These values bind approval to one release, cluster and StorageClass. Keep
+# both booleans false until the provider evidence has been reviewed.
+[neon_qualification]
+schema_version = 1
+release = "neon-fa504217-pg17.11-linux-amd64"
+cluster_uid = "REPLACE_WITH_KUBE_SYSTEM_NAMESPACE_UID"
+storage_class_name = "REPLACE_WITH_STORAGE_CLASS"
+storage_class_uid = "REPLACE_WITH_STORAGE_CLASS_UID"
+storage_provisioner = "REPLACE_WITH_STORAGE_PROVISIONER"
+storage_parameters_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+image_inventory_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+provider_evidence_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_archive_sha256 = "f91a9e1a5945dd1d2e634c2438d5c11052d4f2e993dc2d09c82f25d6eff995da"
+postgres_commit = "1e01fcea2a6b38180021aa83e0051d95286d9096"
+consumer_patch_id = "627583b85d7c0f624245e3ac6a240e775a5eed01"
+encryption_at_rest = false
+reviewed = false
+
+# Replace demo/development with the exact project/environment scope. Snapshot
+# names are immutable: add a new revision when rotating any value.
+[secrets.demo.development]
+broker-auth-r1 = { "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+compute-auth-r1 = { "config.json" = "REPLACE_WITH_COMPUTE_CONFIG_JSON", token = "REPLACE_WITH_COMPUTE_TOKEN", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+controller-auth-r1 = { token = "REPLACE_WITH_CONTROLLER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+controller-database-password-r1 = { value = "REPLACE_WITH_DATABASE_PASSWORD", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+object-storage-r1 = { "access-key-id" = "REPLACE_WITH_ACCESS_KEY_ID", "secret-access-key" = "REPLACE_WITH_SECRET_ACCESS_KEY" }
+pageserver-auth-r1 = { token = "REPLACE_WITH_PAGESERVER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
+proxy-auth-r1 = { token = "REPLACE_WITH_PROXY_TOKEN", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY" }
+safekeeper-auth-r1 = { token = "REPLACE_WITH_SAFEKEEPER_TOKEN", "public-key.pem" = "REPLACE_WITH_PUBLIC_KEY", "tls.crt" = "REPLACE_WITH_PEM_CERTIFICATE", "tls.key" = "REPLACE_WITH_PEM_PRIVATE_KEY", "ca.crt" = "REPLACE_WITH_PEM_CA_CHAIN" }
