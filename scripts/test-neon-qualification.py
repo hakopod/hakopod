@@ -294,12 +294,13 @@ class Tests(unittest.TestCase):
 
     def test_failure_isolation_and_limit_observations_are_exact(self):
         state={"run_id":"4"*32,"resources":resources()}; common={"run_id":"4"*32,"platform_id":"6"*32,"namespace_uid":"uid-source"}
+        target=dict(common,platform_id="7"*32,namespace_uid="uid-recovery_target")
         observations={
             "isolation-authentication":{**common,"target_platform_id":"7"*32,"target_namespace_uid":"uid-recovery_target","source_tenant_id":"1"*32,"source_timeline_id":"2"*32,"target_tenant_id":"3"*32,"target_timeline_id":"4"*32,"source_marker_verified":True,"target_marker_absent":True,"bad_credentials_refused":True,"cross_platform_credentials_refused":True},
-            "connection-limits":{**common,"configured_max_connections":64,"attempted_connections":72,"concurrent_connections":60,"refused_connections":12,"service_recovered":True},
+            "connection-limits":{**common,"configured_max_connections":64,"attempted_connections":72,"concurrent_connections":60,"refused_connections":12,"backend_pids":list(range(100,160)),"held_markers_flushed":True,"sleeping_backends_verified":True,"service_recovered":True},
             "compute-roles":{**common,"primary_compute":"compute-0","replica_compute":"compute-1","primary_writable":True,"replica_read_only":True,"replica_write_refused":True,"replica_caught_up":True},
-            "wal-quorum-fencing":{**common,"safekeeper_count":3,"stopped_safekeepers":2,"write_refused_without_quorum":True,"quorum_restored":True,"write_recovered":True},
-            "controller-recovery":{**common,"controller_pod_uid_before":"old","controller_pod_uid_after":"new","tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":1,"timeline_generation":2,"identity_preserved":True,"service_recovered":True},
+            "wal-quorum-fencing":{**target,"safekeeper_count":3,"stopped_safekeepers":2,"stopped_statefulsets":{"neon-safekeeper-1":"set-1","neon-safekeeper-2":"set-2"},"stopped_pod_uids":["old-1","old-2"],"replicas_zero_before_write":True,"replicas_zero_after_refusal":True,"replacement_pods_absent":True,"write_refused_without_quorum":True,"quorum_restored":True,"write_recovered":True},
+            "controller-recovery":{**target,"controller_pod_uid_before":"old","controller_pod_uid_after":"new","tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":1,"timeline_generation":2,"identity_preserved":True,"service_recovered":True},
             "object-store-outage":{**common,"outage_observed":True,"backup_refused":True,"service_restored":True},
         }
         for case,value in observations.items():
@@ -307,6 +308,24 @@ class Tests(unittest.TestCase):
             broken=dict(value); flag=next(key for key in value if key.endswith(("refused","recovered","restored")))
             broken[flag]=False
             with self.assertRaisesRegex(ValueError,case): PRODUCER.validate_observation(case,broken,state)
+        for case in ("wal-quorum-fencing","controller-recovery"):
+            with self.assertRaisesRegex(ValueError,"exact fixture"): PRODUCER.validate_observation(case,dict(observations[case],**common),state)
+        limits=observations["connection-limits"]
+        for changed in ({"held_markers_flushed":False},{"sleeping_backends_verified":False},{"backend_pids":[100]*60},{"concurrent_connections":0},{"refused_connections":1}):
+            with self.assertRaisesRegex(ValueError,"connection-limits"): PRODUCER.validate_observation("connection-limits",dict(limits,**changed),state)
+        for field in ("replicas_zero_before_write","replicas_zero_after_refusal","replacement_pods_absent"):
+            with self.assertRaisesRegex(ValueError,"wal-quorum-fencing"): PRODUCER.validate_observation("wal-quorum-fencing",dict(observations["wal-quorum-fencing"],**{field:False}),state)
+
+    def test_restored_resource_update_evidence_requires_exact_transition_and_live_pod_cpu(self):
+        state={"run_id":"4"*32,"resources":resources()}
+        value={"run_id":"4"*32,"platform_id":"7"*32,"namespace_uid":"uid-recovery_target","operation_id":"a"*32,"revision_before":3,"revision_after":4,"compute_cpu_millis_before":500,"compute_cpu_millis_after":600,"compute_pods_before":{name:{"pod_uid":name+"-old","cpu_millis":500} for name in ("compute-0","compute-1")},"compute_pods_after":{name:{"pod_uid":name+"-new","cpu_millis":600} for name in ("compute-0","compute-1")},"tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":5,"timeline_generation":6,"identity_preserved":True,"stale_revision_refused":True,"topology_change_refused":True,"primary_compute":"compute-0","replica_compute":"compute-1","primary_writable":True,"replica_read_only":True,"replica_write_refused":True,"replica_caught_up":True,"restored_data_sha256":"3"*64}
+        PRODUCER.validate_observation("restored-resource-update",value,state)
+        for key,replacement in (("revision_after",5),("compute_cpu_millis_after",500),("identity_preserved",False),("stale_revision_refused",False),("topology_change_refused",False),("replica_read_only",False),("compute_pods_after",value["compute_pods_before"])):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError,"restored-resource-update"): PRODUCER.validate_observation("restored-resource-update",dict(value,**{key:replacement}),state)
+        with self.assertRaisesRegex(ValueError,"exact fixture"): PRODUCER.validate_observation("restored-resource-update",dict(value,platform_id="6"*32,namespace_uid="uid-source"),state)
+        incomplete=report(); incomplete["test_events"]=[event for event in incomplete["test_events"] if event["case"]!="restored-resource-update"]
+        with self.assertRaises(ValueError): self.validate(incomplete)
 
 class QualificationRecordTests(unittest.TestCase):
     def setUp(self):

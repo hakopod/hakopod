@@ -48,6 +48,7 @@ CASE_EVENTS = {
     "wal-quorum-fencing": {"quorum-loss-observed", "write-fenced", "quorum-restored", "write-recovered"},
     "controller-recovery": {"controller-restarted", "identity-preserved", "service-recovered"},
     "object-store-outage": {"outage-observed", "backup-refused", "service-restored"},
+    "restored-resource-update": {"reviewed-update-applied", "revision-advanced-once", "stale-revision-refused", "topology-change-refused", "identity-preserved", "pod-cpu-changed", "compute-roles-preserved", "restored-data-verified"},
 }
 CASES = set(CASE_EVENTS)
 PRODUCER = {"runner_path": "examples/neon-native-acceptance/run.sh", "producer_path": "examples/neon-native-acceptance/evidence.py"}
