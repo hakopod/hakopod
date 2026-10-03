@@ -23,7 +23,7 @@ import (
 
 const SupabaseUpstreamCommit = "d6c81b66c9999cb121dd8876f541313d484f157f"
 const supabasePostgresHBA = "local all all trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\n"
-const supabaseRealtimeOwnerSQL = "ALTER SCHEMA _realtime OWNER TO supabase_realtime_admin;\n"
+const supabaseRealtimeOwnerSQL = "ALTER SCHEMA _realtime OWNER TO supabase_realtime_admin;\nGRANT SET ON PARAMETER log_min_messages TO supabase_realtime_admin;\n"
 
 // SupabaseRenderInput contains only public desired state. Secret bodies are
 // resolved into immutable Kubernetes Secrets before this renderer is called.
@@ -79,7 +79,7 @@ var supabaseAssetSHA256 = map[string]string{
 	"api/envoy/cds.yaml":                      "1d7514b891370ed27c25911df008887402e16ab09273e6e433225bb7f09f7905",
 	"api/envoy/docker-entrypoint.sh":          "8a0c9503764de32ba39e0d81e73629457b13ec42ef19897e30e4918c996d0508",
 	"api/envoy/envoy.yaml":                    "3697f23b0be9ec5b829f937c600eb9b878f1f778ab510b42ad5e4f14742447e9",
-	"api/envoy/lds.template.yaml":             "c0c9218d57df78df195958d74c0501184a1db3fd451b2d2ed1ec649ef92420e2",
+	"api/envoy/lds.template.yaml":             "6fdba2deb7c5464ea322278569a5adb87132f50ef450e22ba6fdda4269388379",
 	"api/kong-entrypoint.sh":                  "aacdadade6adde6284163ea79e0d88decce0276796ae4749a15f018d56eda933",
 	"api/kong.yml":                            "c55d3f8064560188b12f2bdd0aa01ced36cd6cab3734b539c01604977b33ddc9",
 	"db/_supabase.sql":                        "9dce462adc04137d6afabcf28efa60a6c355270a4b32d7af58891ac4eb964c5f",

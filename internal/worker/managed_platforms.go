@@ -91,6 +91,9 @@ func managedPlatformErrorObservation(err error) (string, string) {
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {
+		if postgresError.Code == "40001" {
+			return "postgres_serialization", fmt.Sprintf("%T", postgresError)
+		}
 		return "postgres_error", fmt.Sprintf("%T", postgresError)
 	}
 	var networkError net.Error

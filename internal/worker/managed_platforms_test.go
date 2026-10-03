@@ -8,6 +8,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5/pgconn"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -23,6 +24,7 @@ func TestManagedPlatformErrorObservation(t *testing.T) {
 		{"store conflict", fmt.Errorf("wrapped: %w", store.ErrConflict), "store_conflict"},
 		{"stage preserves store conflict", &cluster.ManagedPlatformRuntimeError{Category: "capacity_admission", Err: store.ErrConflict}, "store_conflict"},
 		{"kubernetes conflict", apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"}, "redacted", errors.New("redacted")), "kubernetes_conflict"},
+		{"PostgreSQL serialization", &pgconn.PgError{Code: "40001", Message: "secret material"}, "postgres_serialization"},
 		{"safe stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_database_tls_validation", Err: errors.New("secret material")}, "supabase_database_tls_validation"},
 		{"safe apply stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_apply_statefulset", Err: errors.New("password=must-not-escape")}, "supabase_apply_statefulset"},
 		{"safe credential rotation stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_rotate_database_credentials", Err: errors.New("password=must-not-escape")}, "supabase_rotate_database_credentials"},

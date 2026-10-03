@@ -389,7 +389,8 @@ func TestSupabaseRendererEnforcesSharedVolumeAndStorageContracts(t *testing.T) {
 }
 
 func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
-	manifests, err := RenderSupabase(rendererFixture())
+	fixture := rendererFixture()
+	manifests, err := RenderSupabase(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,6 +423,16 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 	}
 	if bootstrap == nil || bootstrap.Data["99-z-hakopod-realtime-owner.sql"] != supabaseRealtimeOwnerSQL {
 		t.Fatal("database bootstrap does not keep Hakopod's post-migration ownership step separate from upstream assets")
+	}
+	if !strings.Contains(bootstrap.Data["99-z-hakopod-realtime-owner.sql"], "GRANT SET ON PARAMETER log_min_messages TO supabase_realtime_admin;") {
+		t.Fatal("Realtime owner cannot apply its pinned list_changes migration")
+	}
+	if !strings.Contains(fixture.Assets["api/envoy/lds.template.yaml"], "inline_string: |\n                        ${DASHBOARD_BASIC_AUTH}\n") {
+		t.Fatal("Envoy basic-auth user list is not newline terminated htpasswd data")
+	}
+	envoyTemplate := fixture.Assets["api/envoy/lds.template.yaml"]
+	if !strings.Contains(envoyTemplate, "%REQ_WITHOUT_QUERY(X-ENVOY-ORIGINAL-PATH?:PATH)%") || strings.Contains(envoyTemplate, "%REQ(REFERER)%") || strings.Contains(envoyTemplate, "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%") {
+		t.Fatal("Envoy access logging can expose request query strings or Referer credentials")
 	}
 	if bootstrap.Data[assetKey("db/realtime.sql")] != rendererFixture().Assets["db/realtime.sql"] {
 		t.Fatal("Hakopod ownership setup modified the pinned upstream realtime migration")
