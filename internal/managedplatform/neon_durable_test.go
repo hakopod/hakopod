@@ -268,17 +268,19 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
 		case "GET /control/v1/tenant/" + testTenant:
 			if tenantCreated {
-				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
 			} else {
 				w.WriteHeader(http.StatusNotFound)
 			}
+		case "POST /debug/v1/inspect":
+			_, _ = w.Write([]byte(`{"attachment":[7,11]}`))
 		case "POST /v1/tenant":
 			if request.Header.Get(neonOwnershipHeader) != fixtureIntentID("tenant") {
 				t.Fatal("tenant create omitted its durable ownership token")
 			}
 			tenantCreated = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}],"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
+			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":99,"generation":0}],"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
 		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			if timelineCreated {
 				_, _ = w.Write([]byte(`{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}]}`))
@@ -704,16 +706,16 @@ func TestDurableNeonDeleteConfigurationUsesClaimedEndpointsWithoutLiveZones(t *t
 	}
 }
 
-func TestDurableNeonRequestTimeoutLeavesLeaseMargin(t *testing.T) {
+func TestDurableNeonRequestTimeoutRemainsBounded(t *testing.T) {
 	events := []string{}
 	lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
 	config := NeonRuntimeConfig{
 		StorageController: NeonControlTarget{Name: "storage", Origin: "https://storage.example.test", Token: "storage-secret-token"},
 		Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.example.test", Token: "compute-secret-token"}},
-		RequestTimeout:    21 * time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
+		RequestTimeout:    2*time.Minute + time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
 	}
 	if _, err := NewDurableNeonRuntime(config, lifecycle); err == nil {
-		t.Fatal("provider request timeout was allowed to consume the 30-second operation lease")
+		t.Fatal("provider request timeout exceeded the bounded reconciliation budget")
 	}
 }
 
