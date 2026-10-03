@@ -340,7 +340,7 @@ func assertNeonComputeOwnershipStorage(t *testing.T, pod corev1.PodSpec, identit
 		}
 	}
 	compute := pod.Containers[0]
-	wantArgs := []string{"--pgdata=/var/db/postgres/compute", "--connstr=postgresql://cloud_admin@127.0.0.1:55433/postgres", "--compute-id=compute-0", "--external-http-port=3080", "--config=/var/run/secrets/hakopod/compute-auth/config.json", "--ownership-state-path=/var/db/postgres/hakopod-ownership/record.json"}
+	wantArgs := []string{"--pgbin=/usr/local/bin/postgres", "--pgdata=/var/db/postgres/compute", "--connstr=postgresql://cloud_admin@127.0.0.1:55433/postgres", "--compute-id=compute-0", "--external-http-port=3080", "--config=/var/run/secrets/hakopod/compute-auth/config.json", "--ownership-state-path=/var/db/postgres/hakopod-ownership/record.json"}
 	if !reflect.DeepEqual(compute.Command, []string{"compute_ctl"}) || !reflect.DeepEqual(compute.Args, wantArgs) {
 		t.Fatalf("compute executable vector changed or ownership state path is unsafe: %#v %#v", compute.Command, compute.Args)
 	}
