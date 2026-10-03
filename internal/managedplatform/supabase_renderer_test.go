@@ -289,9 +289,13 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pod *corev1.PodSpec
+	var bootstrap *corev1.ConfigMap
 	for _, object := range manifests.Objects {
 		if stateful, ok := object.(*appsv1.StatefulSet); ok && stateful.Name == "supabase-database" {
 			pod = &stateful.Spec.Template.Spec
+		}
+		if config, ok := object.(*corev1.ConfigMap); ok && strings.HasPrefix(config.Name, "supabase-database-bootstrap-") {
+			bootstrap = config
 		}
 	}
 	if pod == nil || len(pod.Containers) != 1 {
@@ -311,11 +315,18 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 	if environment["PGDATA"] != "/var/lib/postgresql/data/pgdata" {
 		t.Fatal("database PGDATA does not use the UID-owned child directory")
 	}
+	if bootstrap == nil || bootstrap.Data["99-z-hakopod-realtime-owner.sql"] != supabaseRealtimeOwnerSQL {
+		t.Fatal("database bootstrap does not keep Hakopod's post-migration ownership step separate from upstream assets")
+	}
+	if bootstrap.Data[assetKey("db/realtime.sql")] != rendererFixture().Assets["db/realtime.sql"] {
+		t.Fatal("Hakopod ownership setup modified the pinned upstream realtime migration")
+	}
 	want := map[string]bool{
 		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                  false,
 		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                       false,
 		"/docker-entrypoint-initdb.d/migrations/99-pooler.sql":                     false,
 		"/docker-entrypoint-initdb.d/migrations/99-realtime.sql":                   false,
+		"/docker-entrypoint-initdb.d/migrations/99-z-hakopod-realtime-owner.sql":   false,
 		"/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql":                 false,
 		"/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql":                      false,
 		"/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql": false,
