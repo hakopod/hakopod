@@ -184,7 +184,7 @@ class Tests(unittest.TestCase):
         pods={"items":[{"metadata":{"uid":"pod-"+str(i),"ownerReferences":[{"kind":"StatefulSet","name":"neon-safekeeper-"+str(i),"uid":"set-"+str(i)}]}} for i in range(3)]}
         driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps(pods),"","","","","",""])
         driver.absent_safekeepers=mock.Mock(return_value=True)
-        driver.proxy_query=mock.Mock(side_effect=["","INSERT 0 1\nyes"])
+        driver.proxy_query=mock.Mock(side_effect=["","0","INSERT 0 1\nyes"])
         result=driver.wal_quorum_fencing(pid)
         self.assertTrue(result["quorum_restored"])
         scale_calls=[call.args for call in driver.k.call_args_list if "scale" in call.args]
@@ -196,6 +196,10 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"changed before the write"): driver.wal_quorum_fencing(pid)
         driver.proxy_query.assert_not_called()
         self.assertEqual(len([call for call in driver.k.call_args_list if "--replicas=1" in call.args]),2)
+        driver.k.reset_mock(side_effect=True); driver.k.side_effect=[json.dumps(sets),json.dumps(pods),"","","","","",""]; driver.absent_safekeepers.side_effect=None; driver.absent_safekeepers.return_value=True
+        driver.proxy_query=mock.Mock(side_effect=["","1"])
+        with self.assertRaisesRegex(RuntimeError,"committed despite its refusal"): driver.wal_quorum_fencing(pid)
+        self.assertEqual(driver.proxy_query.call_count,2)
     def test_wal_absence_requires_zero_replicas_exact_owners_and_no_replacement_pods(self):
         driver=self.bare_driver(); stopped={"neon-safekeeper-1":"set-1","neon-safekeeper-2":"set-2"}
         sets={"items":[{"metadata":{"name":name,"uid":uid},"spec":{"replicas":0}} for name,uid in stopped.items()]}
@@ -212,22 +216,25 @@ class Tests(unittest.TestCase):
     def connection_fixture(self,mode="valid"):
         driver=self.bare_driver(); driver.run_id="b"*32; pid="a"*32; driver.bound={pid:("namespace-uid","operation")}; driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
         driver.proxy_password=mock.Mock(return_value="secret"); driver.proxy_environment=mock.Mock(return_value={}); driver.proxy_query=mock.Mock(side_effect=["64","1"])
-        clients=[]
+        clients=[]; successful=59 if mode=="non-superuser" else 60; baseline=[1] if mode=="non-superuser" else [1,2,3,4]
         def launch(argv,**kwargs):
             process=mock.MagicMock(); process.status=None; process.poll.side_effect=lambda:process.status; process.terminate.side_effect=lambda:setattr(process,"status",-15)
             if argv[0]=="kubectl": return process
             output=kwargs["stdout"]
             if "-c" not in argv:
                 def observe(data):
-                    if b"ready" in data: output.write(b"hakopod-observer-ready\n")
+                    if b"ready" in data:
+                        capacity={"max_connections":64,"superuser_reserved_connections":4,"reserved_connections":0,"role_superuser":mode!="non-superuser","role_reserved":False,"baseline_pids":baseline}
+                        output.write(("hakopod-capacity:"+json.dumps(capacity)+"\nhakopod-observer-ready\n").encode())
                     else:
                         attempt=re.search(rb"hakopod-active-([0-9]+):",data)[1].decode()
-                        count=59 if mode=="missing-backend" or mode=="delayed-sleep" and attempt=="0" else 60
-                        output.write(("".join("hakopod-active-"+attempt+":"+str(100+i)+"\n" for i in range(count))+"hakopod-observer-complete-"+attempt+"\n").encode())
+                        count=successful-1 if mode=="missing-backend" or mode=="delayed-sleep" and attempt=="0" else successful
+                        current_baseline=baseline+[5] if mode=="baseline-drift" else baseline
+                        output.write(("".join("hakopod-active-"+attempt+":"+str(100+i)+"\n" for i in range(count))+"hakopod-baseline-"+attempt+":"+json.dumps(current_baseline)+"\nhakopod-observer-complete-"+attempt+"\n").encode())
                     output.flush()
                 process.stdin.write.side_effect=observe; return process
             index=len(clients); clients.append(process)
-            if index<60:
+            if index<successful:
                 if mode!="unflushed-marker": output.write(("hakopod-held:"+str(100+index)+"\n").encode()); output.flush()
             else:
                 process.status=2; output.write(b"FATAL: password authentication failed\n" if mode=="authentication-failure" else b"FATAL: sorry, too many clients already\n"); output.flush()
@@ -243,8 +250,12 @@ class Tests(unittest.TestCase):
         driver,pid,launch,clients=self.connection_fixture("delayed-sleep")
         with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
             self.assertEqual(driver.connection_limits(pid)["concurrent_connections"],60)
+        driver,pid,launch,clients=self.connection_fixture("non-superuser")
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
+            result=driver.connection_limits(pid)
+            self.assertEqual(result["concurrent_connections"],59); self.assertEqual(result["effective_connection_limit"],60); self.assertFalse(result["role_superuser"])
     def test_connection_limit_rejects_unflushed_unconnected_or_unclassified_clients(self):
-        for mode,message in (("unflushed-marker","did not authenticate"),("missing-backend","independently observed"),("authentication-failure","unexpected reason")):
+        for mode,message in (("unflushed-marker","did not authenticate"),("missing-backend","independently observed"),("authentication-failure","unexpected reason"),("baseline-drift","baseline changed")):
             with self.subTest(mode=mode):
                 driver,pid,launch,clients=self.connection_fixture(mode)
                 with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"), mock.patch.object(DRIVER.time,"monotonic",side_effect=itertools.count(step=.2)):
@@ -282,6 +293,24 @@ class Tests(unittest.TestCase):
         driver.k=mock.Mock(return_value=json.dumps(sets)); driver.pods=mock.Mock(return_value=("namespace",pods)); self.assertEqual(driver.compute_cpu(pid,600)["compute-1"]["cpu_millis"],600)
         pods[1]["spec"]["containers"][0]["resources"]["requests"]["cpu"]="500m"
         with self.assertRaisesRegex(RuntimeError,"actual pod CPU"): driver.compute_cpu(pid,600)
+    def test_restart_waits_for_exact_owned_primary_and_storage_replacements(self):
+        driver=self.bare_driver(); pid="a"*32; driver.a.kubeconfig="/protected/kubeconfig"; driver.run_id="b"*32; namespace="managed-platform-"+pid
+        def pod(component,uid,ready=True,owner=None):
+            role="compute" if component.startswith("compute") else "pageserver"
+            return {"metadata":{"name":"neon-"+component+"-0","uid":uid,"labels":{"hakopod.io/neon-role":role,"app.kubernetes.io/component":component},"ownerReferences":[{"kind":"StatefulSet","name":"neon-"+component,"uid":owner or "set-"+component}]},"status":{"containerStatuses":[{"ready":True}] if ready else [],"conditions":[{"type":"Ready","status":"True"}]}}
+        before=[pod("compute-0","old-primary"),pod("compute-1","unchanged-replica"),pod("pageserver-0","old-storage")]
+        not_ready=[pod("compute-0","new-primary",False),before[1],pod("pageserver-0","new-storage",False)]
+        ready=[pod("compute-0","new-primary"),before[1],pod("pageserver-0","new-storage")]
+        relabeled=copy.deepcopy(before[0]); relabeled["metadata"].pop("labels")
+        driver.pods=mock.Mock(return_value=(namespace,before))
+        sets={"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1","pageserver-0")]}
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),*[json.dumps({"items":items}) for items in ([before[1]],not_ready,ready+[relabeled],ready)]]); driver.namespace=mock.Mock(return_value={"metadata":{"uid":"namespace-uid"}}); driver.command=mock.Mock(return_value=""); driver.sql=mock.Mock(side_effect=["","hakopod-"+driver.run_id])
+        with mock.patch.object(DRIVER.time,"sleep"): result=driver.restart(pid,"namespace-uid")
+        self.assertEqual(result["compute_pod_uids_after"],["new-primary"]); self.assertEqual(driver.k.call_count,5); self.assertTrue(result["old_pods_absent"])
+        self.assertTrue(all("-l" not in call.args for call in driver.k.call_args_list[1:]))
+        self.assertEqual([json.loads(call.kwargs["data"])["preconditions"]["uid"] for call in driver.command.call_args_list],["old-primary","old-storage"])
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[pod("compute-0","foreign-primary",owner="foreign-set"),pod("pageserver-0","new-storage")]})]); driver.sql=mock.Mock(return_value="")
+        with self.assertRaisesRegex(RuntimeError,"replacement ownership changed"): driver.restart(pid,"namespace-uid")
     def test_object_store_fault_requires_bounded_absolute_command(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             command=Path(directory)/"command.json"; driver=self.bare_driver(); driver.a.object_store_fault_command_file=str(command); driver.command=mock.Mock(return_value="running\n")
