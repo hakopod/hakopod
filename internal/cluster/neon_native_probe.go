@@ -54,8 +54,7 @@ func (c *Client) ProbeNeonNative(ctx context.Context, state *store.Store, op sto
 	if err != nil {
 		return observation, err
 	}
-	acceptedOperation := managedplatform.DurableOperation{ID: op.ID, PlatformID: op.PlatformID, Revision: op.Revision, Kind: op.Kind}
-	runtime, runtimeRequest, _, err := prepareNeonLifecycleWithAdapter(ctx, request, neonNativeProbeLifecycle{operation: acceptedOperation}, state, encryptionKey, zones)
+	runtime, runtimeRequest, _, err := prepareNeonNativeProbeRuntime(ctx, request, state, encryptionKey, zones)
 	if err != nil {
 		return observation, err
 	}
@@ -95,6 +94,38 @@ func (c *Client) ProbeNeonNative(ctx context.Context, state *store.Store, op sto
 	}
 	observation = NeonNativeProbeObservation{NeonNativeProbeResult: result, PlatformID: op.PlatformID, PlatformRevision: op.Revision, NamespaceUID: string(ns.UID), TLS: tlsObservation}
 	return observation, nil
+}
+
+type neonNativeProbeBindingReader interface {
+	NeonRecoveryBindingForTarget(context.Context, string, int64) (store.NeonRecoveryBinding, error)
+}
+
+// Native probes inspect completed revisions without acquiring mutation leases.
+// The surrounding probe rechecks the accepted snapshot and claims after use.
+type neonNativeProbeBindings struct {
+	reader    neonNativeProbeBindingReader
+	operation store.ManagedPlatformOperation
+}
+
+func (b neonNativeProbeBindings) NeonRecoveryBindingForLifecycle(ctx context.Context, op store.ManagedPlatformOperation) (store.NeonRecoveryBinding, error) {
+	if b.reader == nil || op.ID == "" || op.PlatformID == "" || op.Revision < 1 || op.Status != "succeeded" || op.Kind != "create" && op.Kind != "update" || !reflect.DeepEqual(op, b.operation) {
+		return store.NeonRecoveryBinding{}, store.ErrConflict
+	}
+	binding, err := b.reader.NeonRecoveryBindingForTarget(ctx, op.PlatformID, op.Revision)
+	if err != nil {
+		return store.NeonRecoveryBinding{}, err
+	}
+	if binding.TargetPlatformID != op.PlatformID || binding.TargetRevision < 1 || binding.TargetRevision > op.Revision {
+		return store.NeonRecoveryBinding{}, store.ErrConflict
+	}
+	return binding, nil
+}
+
+func prepareNeonNativeProbeRuntime(ctx context.Context, request NeonRuntimeRequest, reader neonNativeProbeBindingReader, encryptionKey []byte, zones []string) (*managedplatform.DurableNeonRuntime, managedplatform.NeonLifecycleRequest, managedplatform.NeonProxyEndpointState, error) {
+	op := request.Operation
+	accepted := managedplatform.DurableOperation{ID: op.ID, PlatformID: op.PlatformID, Revision: op.Revision, Kind: op.Kind}
+	bindings := neonNativeProbeBindings{reader: reader, operation: op}
+	return prepareNeonLifecycleWithAdapter(ctx, request, neonNativeProbeLifecycle{operation: accepted}, bindings, encryptionKey, zones)
 }
 
 // The constructor is allowed to read accepted snapshot bindings. Every
