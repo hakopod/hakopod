@@ -235,21 +235,7 @@ func validateNeonRevision(in NeonRenderInput) error {
 	if in.PreviousSpec == nil || in.PreviousSpec.Neon == nil {
 		return fmt.Errorf("Neon updates require the complete previous spec")
 	}
-	previous, current := in.PreviousSpec.Neon, in.Spec.Neon
-	if previous.ObjectStorageURL != current.ObjectStorageURL || previous.ObjectStorageBucket != current.ObjectStorageBucket || previous.ObjectStoragePrefix != current.ObjectStoragePrefix || previous.ObjectStorageRegion != current.ObjectStorageRegion || previous.PostgresVersion != current.PostgresVersion {
-		return fmt.Errorf("Neon storage identity and PostgreSQL version are immutable; restore into a new platform")
-	}
-	for _, key := range neonStorageKeys {
-		if in.Spec.Storage[key] < in.PreviousSpec.Storage[key] {
-			return fmt.Errorf("Neon storage %s cannot shrink in place", key)
-		}
-	}
-	for _, key := range neonSecretKeys {
-		if in.Spec.Secrets[key] != in.PreviousSpec.Secrets[key] {
-			return fmt.Errorf("Neon secret rotation requires a separately reviewed rolling protocol")
-		}
-	}
-	return nil
+	return ValidateNeonResourceUpdate(*in.PreviousSpec, in.Spec)
 }
 
 func neonComputeCount(spec Spec) int {

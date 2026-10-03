@@ -114,6 +114,11 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 			return nil, getErr
 		}
 		value := current.Spec
+		if kind == "update" && value.Kind == "neon" {
+			if err := managedplatform.ValidateNeonResourceUpdate(value, item.Spec); err != nil {
+				return nil, err
+			}
+		}
 		if (value.TLSMode == "managed") != (item.Spec.TLSMode == "managed") {
 			return nil, fmt.Errorf("TLS ownership mode cannot change in place")
 		}
