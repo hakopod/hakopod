@@ -10,4 +10,8 @@ The complete run must verify provider ownership, client-side certificate-chain a
 
 The driver accepts the API token only through a mode-600 file. Its work directory must be a fresh direct child named `hakopod-neon-native-*` under `/tmp` or `/srv/hakopod-backup-scratch`. The source, recovery target and fresh cancellation target specifications must be strict Neon specifications with distinct names and object-storage prefixes. Source identity comes from the gate attestation's exact file inventory and server binary digest; the runner has no caller-supplied tree labels. The inventory must contain exactly the eight digest-pinned components and matching qualified UID/GID/image records. `KUBECONFIG` must select `k3d-hakopod-dev`, whose identity and at least three nodes are independently bound by `evidence.py` and by the native server gate.
 
+`HAKOPOD_ACCEPTANCE_PROJECT` must equal the project recorded in the gate
+attestation. The runner passes that value explicitly to the driver so it cannot
+silently use the driver's development default for API operations.
+
 Qualification remains false until this complete destructive run succeeds on the named development cluster and its output passes the independent release verifier. The driver does not turn a source-only review, a blocked two-node run, or a development fixture into runtime qualification.

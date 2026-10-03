@@ -7,6 +7,7 @@ repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 : "${KUBECONFIG:?set the protected development kubeconfig}"
 : "${HAKOPOD_ACCEPTANCE_API_URL:?set the loopback native-acceptance API URL}"
 : "${HAKOPOD_ACCEPTANCE_API_TOKEN_FILE:?set the mode-600 disposable bearer-key file}"
+: "${HAKOPOD_ACCEPTANCE_PROJECT:?set the disposable project bound by the gate attestation}"
 : "${HAKOPOD_ACCEPTANCE_SPEC:?set the reviewed source Neon specification}"
 : "${HAKOPOD_ACCEPTANCE_TARGET_SPEC:?set the reviewed separate empty-target specification}"
 : "${HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC:?set the reviewed fresh cancellation-target specification}"
@@ -36,4 +37,5 @@ exec python3 "$script_dir/driver.py" --source "$repo_root" --kubeconfig "$KUBECO
   --cancellation-target-spec "$HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC" \
   --images "$HAKOPOD_ACCEPTANCE_IMAGES" --identities "$HAKOPOD_ACCEPTANCE_IDENTITIES" \
   --destination-id "$HAKOPOD_ACCEPTANCE_DESTINATION_ID" --destination-revision "$HAKOPOD_ACCEPTANCE_DESTINATION_REVISION" \
-  --work-dir "$HAKOPOD_ACCEPTANCE_WORK_DIR" --gate-attestation "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION"
+  --work-dir "$HAKOPOD_ACCEPTANCE_WORK_DIR" --gate-attestation "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION" \
+  --project "$HAKOPOD_ACCEPTANCE_PROJECT"
