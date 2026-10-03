@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fixed Neon native acceptance orchestration; evidence comes only from live probes."""
-import argparse, hashlib, json, os, re, resource, socket, ssl, struct, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, hashlib, json, os, re, resource, signal, socket, ssl, struct, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 ID = re.compile(r"^[0-9a-f]{32}$")
@@ -8,6 +8,8 @@ DIGEST = re.compile(r"^[0-9a-f]{64}$")
 COMPONENTS = {"broker", "compute", "compute-tls", "controller-database", "pageserver", "proxy", "safekeeper", "storage-controller"}
 MAX_COMMAND_OUTPUT = 2 << 20
 MAX_COMMAND_INPUT = 1 << 20
+
+class TerminationRequested(Exception): pass
 
 def bounded_process_output(output):
     if os.fstat(output.fileno()).st_size > MAX_COMMAND_OUTPUT: raise RuntimeError("Neon client output exceeded its bound")
@@ -95,7 +97,7 @@ class Driver:
         self.a=a; self.source_spec,self.target_spec,self.cancellation_target_spec=validate_contract(a); self.root=Path(a.work_dir); self.root.mkdir(mode=0o700); self.evidence=self.root/"evidence"; self.evidence.mkdir(mode=0o700)
         token=protected_text(a.token_file)
         if token != token.strip() or "\n" in token or "\r" in token: raise RuntimeError("API token is malformed")
-        self.token=token; self.platforms=[]; self.bound={}; self.run_id=""; self.foreign=None; self.native={}; self.pending_revocation=None; self.pending_lifecycle=None
+        self.token=token; self.platforms=[]; self.bound={}; self.run_id=""; self.foreign=None; self.native={}; self.pending_revocation=None; self.pending_lifecycle=None; self.cleanup_started=False; self.cleanup_completed=False
         if not 16 <= len(self.token) <= 4096: raise RuntimeError("API token is malformed")
         self.proxy_password_files={"source":a.source_proxy_password_file,"target":a.target_proxy_password_file,"cancellation":a.cancellation_proxy_password_file}; self.proxy_passwords={}
         values=[]
@@ -117,6 +119,12 @@ class Driver:
             except subprocess.TimeoutExpired:
                 process.kill(); process.wait(timeout=5)
                 raise RuntimeError("bounded acceptance command timed out")
+            except BaseException:
+                process.terminate()
+                try:process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait(timeout=5)
+                raise
             stdout.seek(0, os.SEEK_END); out_size=stdout.tell(); stderr.seek(0, os.SEEK_END); err_size=stderr.tell()
             if out_size > MAX_COMMAND_OUTPUT or err_size > MAX_COMMAND_OUTPUT or process.returncode not in expected: raise RuntimeError("bounded acceptance command failed; output withheld")
             (stderr if capture_stderr else stdout).seek(0); raw=(stderr if capture_stderr else stdout).read(MAX_COMMAND_OUTPUT + 1)
@@ -140,10 +148,11 @@ class Driver:
         except urllib.error.HTTPError as error: data,status=error.read((1<<20)+1),error.code
         if len(data)>1<<20 or status not in expected: raise RuntimeError("API returned an unexpected bounded response")
         return json.loads(data) if data else {}
-    def wait(self,path,seconds=900,allowed=("succeeded",)):
+    def wait(self,path,seconds=900,allowed=("succeeded",),observe=None):
         deadline=time.monotonic()+seconds
         while time.monotonic()<deadline:
             item=self.api("GET",path)
+            if observe is not None: observe()
             if item.get("status") in {"succeeded","failed","cancelled"}:
                 if item["status"] not in allowed: raise RuntimeError("operation terminal state was not accepted")
                 return item
@@ -164,13 +173,29 @@ class Driver:
         if platform.get("project")!=self.a.project or platform.get("environment")!="development" or platform.get("spec")!=spec or reviewed["review"].get("expected_revision")!=0: raise RuntimeError("create review did not echo the exact request")
         self.command([sys.executable,self.a.control_plane_bridge,"allow","--kubeconfig",self.a.kubeconfig,"--platform-id",platform["id"]],240)
         request={"id":platform["id"],"project":platform["project"],"environment":platform["environment"],"expected_revision":0,"kind":"create","spec":platform["spec"],"review":reviewed["review"]}
-        op=self.api("POST","/api/v1/managed-platforms/operations",request,"neon-create-"+platform["id"]); self.platforms.append((platform["id"],spec["name"])); return platform,self.wait("/api/v1/managed-platform-operations/"+op["id"])
-    def delete(self,platform_id,name):
-        current=self.api("GET","/api/v1/managed-platforms/"+platform_id); body={"id":platform_id,"project":self.a.project,"environment":"development","expected_revision":current["revision"],"kind":"delete","confirm_name":name,"spec":current["spec"]}
-        reviewed=self.api("POST","/api/v1/managed-platforms/reviews",body); body["review"]=reviewed["review"]; op=self.api("POST","/api/v1/managed-platforms/operations",body,"neon-delete-"+platform_id); self.wait("/api/v1/managed-platform-operations/"+op["id"])
+        op=self.api("POST","/api/v1/managed-platforms/operations",request,"neon-create-"+platform["id"])
+        if not ID.fullmatch(str(platform.get("id"))) or not ID.fullmatch(str(op.get("id"))) or op.get("platform_id")!=platform["id"] or op.get("kind")!="create": raise RuntimeError("accepted create operation identity is invalid")
+        self.platforms.append((platform["id"],spec["name"],op["id"]))
+        observe=lambda:self.claim_namespace(platform["id"],op["id"])
+        observe(); completed=self.wait("/api/v1/managed-platform-operations/"+op["id"],observe=observe)
+        if not observe(): raise RuntimeError("completed create operation has no owned namespace")
+        return platform,completed
+    def delete(self,platform_id,name,seconds=900):
+        current=self.api("GET","/api/v1/managed-platforms/"+platform_id)
+        if current.get("id")!=platform_id or current.get("project")!=self.a.project or current.get("environment")!="development" or current.get("spec",{}).get("name")!=name: raise RuntimeError("cleanup API resource identity changed")
+        body={"id":platform_id,"project":self.a.project,"environment":"development","expected_revision":current["revision"],"kind":"delete","confirm_name":name,"spec":current["spec"]}
+        reviewed=self.api("POST","/api/v1/managed-platforms/reviews",body); body["review"]=reviewed["review"]; op=self.api("POST","/api/v1/managed-platforms/operations",body,"neon-delete-"+platform_id); self.wait("/api/v1/managed-platform-operations/"+op["id"],seconds)
     def recover(self,intent,label):
         review=self.api("POST","/api/v1/managed-platform-recovery/reviews",intent); op=self.api("POST","/api/v1/managed-platform-recovery/operations",dict(intent,review=review),"neon-"+label+"-"+self.run_id); return self.wait("/api/v1/managed-platform-recovery-operations/"+op["id"],1200)
     def namespace(self,pid): return json.loads(self.k("get","namespace","managed-platform-"+pid,"-o","json"))
+    def claim_namespace(self,pid,opid):
+        raw=self.k("get","namespace","managed-platform-"+pid,"--ignore-not-found","-o","json")
+        if not raw.strip(): return False
+        metadata=json.loads(raw).get("metadata",{}); labels=metadata.get("labels",{})
+        if metadata.get("name")!="managed-platform-"+pid or not metadata.get("uid") or labels.get("hakopod.io/owner-operation-id")!=opid: raise RuntimeError("created namespace ownership differs from accepted operation")
+        identity=(metadata["uid"],opid); existing=self.bound.get(pid)
+        if existing is not None and existing!=identity: raise RuntimeError("created namespace identity changed")
+        self.bound[pid]=identity; return True
     def pods(self,pid):
         ns="managed-platform-"+pid; pods=json.loads(self.k("-n",ns,"get","pods","-l","hakopod.io/managed-platform-id="+pid,"-o","json"))["items"]
         if not pods or len(pods)>32: raise RuntimeError("pod inventory is incomplete")
@@ -730,17 +755,36 @@ class Driver:
     def namespace_uid(self,name):
         value=json.loads(self.k("get","namespace",name,"-o","json")); return value.get("metadata",{}).get("uid","")
     def cleanup(self):
+        if self.cleanup_completed: return
+        if self.cleanup_started: raise RuntimeError("owned cleanup is already active")
+        self.cleanup_started=True
         failed=[]
-        for pid,name in reversed(self.platforms):
+        namespaces={"managed-platform-"+pid for pid,unused,unused_op in self.platforms}
+        for pid,name,opid in reversed(self.platforms):
             try:
-                current=self.namespace(pid); expected=self.bound.get(pid)
-                if expected is None or current["metadata"]["uid"]!=expected[0] or current["metadata"].get("labels",{}).get("hakopod.io/owner-operation-id")!=expected[1]: raise RuntimeError("cleanup target identity changed")
-                self.delete(pid,name)
+                present=self.claim_namespace(pid,opid); expected=self.bound.get(pid)
+                if present:
+                    current=self.namespace(pid)
+                    if expected is None or current["metadata"]["uid"]!=expected[0] or current["metadata"].get("labels",{}).get("hakopod.io/owner-operation-id")!=expected[1]: raise RuntimeError("cleanup target identity changed")
+                self.delete(pid,name,240)
             except Exception:failed.append(pid)
-        for pid,_ in self.platforms:
+        remaining_namespaces=[]
+        namespace_audit_complete=True
+        for pid,unused,unused_op in self.platforms:
             try:
-                if self.k("get","namespace","managed-platform-"+pid,"--ignore-not-found","-o","name").strip():failed.append(pid)
-            except Exception:failed.append(pid)
+                if self.k("get","namespace","managed-platform-"+pid,"--ignore-not-found","-o","name").strip(): failed.append(pid); remaining_namespaces.append("managed-platform-"+pid)
+            except Exception:failed.append(pid); namespace_audit_complete=False
+        remaining_volumes=[]
+        volume_audit_complete=True
+        try:
+            volumes=json.loads(self.k("get","pv","--chunk-size=128","-o","json")).get("items",[])
+            if len(volumes)>512: failed.append("persistent-volumes")
+            else:
+                for item in volumes:
+                    claim=item.get("spec",{}).get("claimRef",{})
+                    if claim.get("namespace") in namespaces: remaining_volumes.append({"name":item.get("metadata",{}).get("name"),"uid":item.get("metadata",{}).get("uid"),"claim_namespace":claim.get("namespace"),"claim_name":claim.get("name")})
+                if remaining_volumes: failed.append("persistent-volumes")
+        except Exception:failed.append("persistent-volumes"); volume_audit_complete=False
         if not failed and self.pending_lifecycle is not None:
             self.pending_lifecycle.update(stopped=True,deleted=True,branch_deleted=True); self.record("tenant-timeline-compute-lifecycle",self.pending_lifecycle); self.pending_lifecycle=None
         if self.foreign is not None:
@@ -752,13 +796,22 @@ class Driver:
                 if self.pending_revocation is not None:
                     self.pending_revocation["foreign_resources_preserved"]=True; self.record("revocation-cleanup",self.pending_revocation); self.pending_revocation=None
                 if self.namespace_uid(namespace)!=uid: raise RuntimeError("foreign sentinel namespace identity changed")
-                self.k("delete","namespace",namespace,"--wait=true",timeout=180)
+                self.k("delete","namespace",namespace,"--wait=true",timeout=120)
                 if self.k("get","namespace",namespace,"--ignore-not-found","-o","name").strip(): raise RuntimeError("foreign sentinel cleanup is incomplete")
                 self.foreign=None
             except Exception: failed.append(namespace)
-        try:self.command([sys.executable,self.a.control_plane_bridge,"cleanup","--kubeconfig",self.a.kubeconfig],240)
+        try:self.command([sys.executable,self.a.control_plane_bridge,"cleanup","--kubeconfig",self.a.kubeconfig],120)
         except Exception:failed.append("control-plane-bridge")
+        resources=[{"platform_id":pid,"namespace":"managed-platform-"+pid,"namespace_uid":self.bound.get(pid,(None,None))[0],"create_operation_id":opid} for pid,unused,opid in self.platforms]
+        atomic(self.evidence/"cleanup-attempt.json",{"schema_version":1,"status":"incomplete" if failed else "verified","run_id":self.run_id,"resources":resources,"namespaces_absent":namespace_audit_complete and not remaining_namespaces,"persistent_volume_claim_refs_absent":volume_audit_complete and not remaining_volumes,"remaining_namespaces":sorted(remaining_namespaces),"remaining_persistent_volumes":remaining_volumes,"failure_categories":sorted(set(failed))})
         if failed: raise RuntimeError("owned cleanup is incomplete")
+        self.cleanup_completed=True
+
+    def record_failure(self,code):
+        state=self.evidence/"state.json"
+        if state.is_file() and not state.is_symlink():
+            try:self.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"fail","--state",str(state),"--code",code])
+            except Exception:pass
 
 def parse(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
@@ -767,12 +820,20 @@ def parse(argv=None):
 
 def main(argv=None):
     driver=None
+    previous={}
+    def interrupted(number,frame): raise TerminationRequested("termination signal received")
     try:
-        a=parse(argv); driver=Driver(a); driver.run(); driver.cleanup(); log=driver.evidence/"sanitized.log"; log.write_text("Neon native acceptance completed; secrets and raw output withheld.\n"); os.chmod(log,0o600)
+        a=parse(argv); driver=Driver(a)
+        for number in (signal.SIGINT,signal.SIGTERM): previous[number]=signal.signal(number,interrupted)
+        driver.run(); driver.cleanup(); log=driver.evidence/"sanitized.log"; log.write_text("Neon native acceptance completed; secrets and raw output withheld.\n"); os.chmod(log,0o600)
         driver.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"finalize","--source",a.source,"--state",str(driver.evidence/"state.json"),"--events",str(driver.evidence/"events.json"),"--sanitized-log",str(log),"--report",str(driver.evidence/"report.json"),"--cleanup",str(driver.evidence/"cleanup.json")]); print(driver.evidence/"report.json"); return 0
-    except Exception as error:
+    except (Exception,KeyboardInterrupt) as error:
         if driver:
+            driver.record_failure("termination-requested" if isinstance(error,(TerminationRequested,KeyboardInterrupt)) else "acceptance-failed")
+            for number in (signal.SIGINT,signal.SIGTERM): signal.signal(number,signal.SIG_IGN)
             try:driver.cleanup()
             except Exception:pass
         print("Neon native acceptance failed: "+str(error),file=sys.stderr); return 1
+    finally:
+        for number,handler in previous.items(): signal.signal(number,handler)
 if __name__=="__main__": raise SystemExit(main())
