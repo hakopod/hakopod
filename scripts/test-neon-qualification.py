@@ -2,6 +2,7 @@
 """Focused tests for fail-closed Neon qualification tooling."""
 import hashlib, importlib.util, json, tempfile, unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 def load(name, path):
@@ -24,6 +25,23 @@ def images():
         "storage-controller": storage,
     }
 def identities(values): return {name: {"uid": 10001, "gid": 10001, "image": value} for name, value in values.items()}
+def release_source(root, values, metadata, qualified=False):
+    path = Path(root) / "internal/managedplatform/neon_qualification.go"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    constants = {
+        "NeonReleaseQualificationID": "neon-fa504217-pg17.11-linux-amd64",
+        "NeonReleaseSourceArchiveSHA256": metadata["source_archive"]["sha256"],
+        "NeonReleasePostgresCommit": metadata["postgres_commit"],
+        "NeonReleaseConsumerPatchID": metadata["consumer_patch_id"],
+    }
+    declarations = [f'const {name} = "{value}"' for name, value in constants.items()]
+    rows = [f'\t"{name}": "{value}",' for name, value in sorted(values.items())]
+    gate = "true" if qualified else "false"
+    path.write_text("\n".join(["package managedplatform", *declarations,
+        "var neonReleaseImages = map[string]string{", *rows, "}",
+        f"func NeonReleaseQualified() bool {{ return {gate} }}", ""]))
+    return path
+
 def build():
     values = images()
     stage_images = {"storage": values["storage-controller"], "compute-tools": reference("compute-tools", "2"), "compute-runtime": values["compute"]}
@@ -78,6 +96,98 @@ def report():
 
 class Tests(unittest.TestCase):
     def validate(self, value): VERIFY.validate_acceptance(value, value["source_files"], value["images"], value["identities"])
+    def test_release_gate_and_exact_inventory(self):
+        evidence, metadata = build()
+        with tempfile.TemporaryDirectory() as temporary:
+            for qualified in (False, True):
+                release_source(temporary, evidence["images"], metadata, qualified)
+                flags = VERIFY.capabilities(temporary, evidence["images"], metadata)
+                self.assertIs(flags["release_runtime_qualified"], qualified)
+                for field in ("cluster_qualified", "development_cluster_qualified",
+                              "encrypted_storage_class_qualified", "public_endpoint_qualified",
+                              "physical_zones_qualified"):
+                    self.assertIs(flags[field], False)
+                changed = dict(evidence["images"], proxy=reference("changed", "8"))
+                with self.assertRaisesRegex(ValueError, "compiled release inventory"):
+                    VERIFY.release_runtime_qualified(temporary, changed, metadata)
+
+    def test_empty_candidate_inventory_cannot_qualify_a_release(self):
+        evidence, metadata = build()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = release_source(temporary, {}, metadata)
+            path.write_text(path.read_text().replace("map[string]string{\n}", "map[string]string{}"))
+            self.assertFalse(VERIFY.release_runtime_qualified(temporary, evidence["images"], metadata))
+            path.write_text(path.read_text().replace("return false", "return true"))
+            with self.assertRaisesRegex(ValueError, "complete digest-pinned"):
+                VERIFY.release_runtime_qualified(temporary, evidence["images"], metadata)
+
+    def test_release_contract_rejects_changed_provenance_or_duplicate_declarations(self):
+        evidence, metadata = build()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = release_source(temporary, evidence["images"], metadata, True)
+            original = path.read_text()
+            changes = (
+                original.replace(metadata["postgres_commit"], "4" * 40),
+                original.replace(metadata["consumer_patch_id"], "5" * 40),
+                original.replace(metadata["source_archive"]["sha256"], "8" * 64),
+                original + "func NeonReleaseQualified() bool { return false }\n",
+                original.replace('"broker":', '"proxy":'),
+            )
+            for source in changes:
+                path.write_text(source)
+                with self.assertRaises(ValueError):
+                    VERIFY.release_runtime_qualified(temporary, evidence["images"], metadata)
+
+    def test_release_capability_flags_require_exact_booleans(self):
+        evidence, metadata = build()
+        with tempfile.TemporaryDirectory() as temporary:
+            release_source(temporary, evidence["images"], metadata, True)
+            expected = VERIFY.capabilities(temporary, evidence["images"], metadata)
+            VERIFY.validate_capabilities(expected, expected)
+            for key in expected:
+                changed = dict(expected)
+                changed[key] = int(expected[key])
+                with self.assertRaisesRegex(ValueError, "capability boundary"):
+                    VERIFY.validate_capabilities(changed, expected)
+            changed = dict(expected, cluster_qualified=True)
+            with self.assertRaisesRegex(ValueError, "capability boundary"):
+                VERIFY.validate_capabilities(changed, expected)
+
+    def test_closed_release_gate_refuses_before_pull_or_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "release-output"
+            manifest = {"capability": {"release_runtime_qualified": False}}
+            with mock.patch.object(VERIFY, "validate_metadata", return_value=manifest), \
+                    mock.patch.object(VERIFY, "verify_images") as pull:
+                with self.assertRaisesRegex(ValueError, "release gate is closed"):
+                    VERIFY.verify(Path(temporary) / "record", output)
+                pull.assert_not_called()
+                self.assertFalse(output.exists())
+
+    def test_legacy_development_manifest_cannot_be_used_for_release(self):
+        legacy = dict.fromkeys(("platform", "source", "source_files", "images",
+                               "identities", "tooling", "files", "capability"))
+        legacy.update(schema_version=1, platform="linux/amd64")
+        with mock.patch.object(VERIFY, "read_json", return_value=legacy):
+            with self.assertRaisesRegex(ValueError, "manifest is malformed"):
+                VERIFY.validate_metadata(Path("legacy"))
+
+    def test_authorization_sources_are_sealed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in VERIFY.SOURCE_DIRS:
+                (root / name).mkdir(parents=True, exist_ok=True)
+            for name in VERIFY.SOURCE_FILES:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture source\n")
+            authorization = root / "auth/runtime.go"
+            authorization.write_text("original authorization\n")
+            before = VERIFY.source_files(root)
+            authorization.write_text("changed authorization\n")
+            after = VERIFY.source_files(root)
+            self.assertNotEqual(before["auth/runtime.go"], after["auth/runtime.go"])
+
     def test_complete(self): self.validate(report())
     def test_extra_field(self):
         value=report(); value["invented"]=True
@@ -171,5 +281,84 @@ class Tests(unittest.TestCase):
             output=Path(temporary)/"out"
             with self.assertRaises((FileNotFoundError,ValueError)): RECORD.assemble(ROOT,Path(temporary)/"archive",Path(temporary)/"build",Path(temporary)/"report",output)
             self.assertFalse(output.exists())
+
+class QualificationRecordTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.root = self.base / "source"
+        for name in VERIFY.SOURCE_DIRS:
+            (self.root / name).mkdir(parents=True, exist_ok=True)
+        for name in (*VERIFY.SOURCE_FILES, *VERIFY.PRODUCER.values()):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("test fixture source\n")
+        self.build, self.metadata = build()
+        self.archive = self.base / "archive"
+        self.archive.write_bytes(b"test fixture source archive")
+        archive_metadata = dict(self.metadata["source_archive"],
+            sha256=VERIFY.file_hash(self.archive), size_bytes=self.archive.stat().st_size)
+        self.metadata["source_archive"] = archive_metadata
+        self.build["source_archive"] = archive_metadata
+        release_source(self.root, {}, self.metadata)
+        self.report = report()
+        self.refresh_report_sources()
+        self.output = self.base / "record"
+        # The source metadata parser has separate tests; all source, archive,
+        # acceptance, compiled-gate, recorder and manifest checks run here.
+        metadata_patch = mock.patch.object(VERIFY, "source_metadata", return_value=self.metadata)
+        metadata_patch.start()
+        self.addCleanup(metadata_patch.stop)
+        verifier_patch = mock.patch.object(RECORD, "VERIFIER", vars(VERIFY))
+        verifier_patch.start()
+        self.addCleanup(verifier_patch.stop)
+
+    def refresh_report_sources(self):
+        sources = VERIFY.source_files(self.root)
+        self.report.update(source_files=sources, source_files_after=dict(sources),
+            runner_sha256=VERIFY.file_hash(self.root / VERIFY.PRODUCER["runner_path"]),
+            producer_sha256=VERIFY.file_hash(self.root / VERIFY.PRODUCER["producer_path"]))
+
+    def assemble(self):
+        build_path, report_path = self.base / "build.json", self.base / "report.json"
+        build_path.write_text(json.dumps(self.build))
+        report_path.write_text(json.dumps(self.report))
+        return RECORD.assemble(self.root, self.archive, build_path, report_path, self.output)
+
+    def test_empty_closed_gate_records_but_cannot_publish(self):
+        manifest = self.assemble()
+        self.assertFalse(manifest["capability"]["release_runtime_qualified"])
+        self.assertEqual(VERIFY.validate_metadata(self.output, self.root), manifest)
+        calls = []
+        verified = self.base / "verified"
+        with self.assertRaisesRegex(ValueError, "release gate is closed"):
+            VERIFY.verify(self.output, verified, self.root, lambda *args: calls.append(args))
+        self.assertEqual(calls, [])
+        self.assertFalse(verified.exists())
+
+    def test_final_source_records_release_without_deployment_approval(self):
+        release_source(self.root, self.build["images"], self.metadata, True)
+        self.refresh_report_sources()
+        manifest = self.assemble()
+        self.assertTrue(manifest["capability"]["release_runtime_qualified"])
+        self.assertFalse(manifest["capability"]["cluster_qualified"])
+        self.assertEqual(VERIFY.validate_metadata(self.output, self.root), manifest)
+
+    def test_opening_gate_requires_new_native_evidence(self):
+        self.assemble()
+        release_source(self.root, self.build["images"], self.metadata, True)
+        with self.assertRaisesRegex(ValueError, "source changed"):
+            VERIFY.validate_metadata(self.output, self.root)
+
+    def test_record_cannot_promote_a_closed_gate(self):
+        self.assemble()
+        path = self.output / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["capability"]["release_runtime_qualified"] = True
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "capability boundary"):
+            VERIFY.validate_metadata(self.output, self.root)
+
 
 if __name__ == "__main__": unittest.main()

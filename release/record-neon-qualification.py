@@ -25,18 +25,19 @@ def assemble(source, source_archive, build_path, report_path, output):
     runner_hash = VERIFIER["file_hash"](runner)
     if report["runner_sha256"] != runner_hash:
         raise ValueError("Neon native report used another evidence producer")
+    capability = VERIFIER["capabilities"](source, images, metadata)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix="." + output.name + "-", dir=output.parent))
     archive = {k: metadata["source_archive"][k] for k in ("sha256", "size_bytes", "member_count", "repeat_comparison", "global_member_order")}
     manifest = {
-        "schema_version": 1, "platform": "linux/amd64",
+        "schema_version": 2, "platform": "linux/amd64",
         "source": {"repository": metadata["upstream_repository"], "commit": metadata["upstream_commit"], "candidate_tree": metadata["combined_candidate_tree"],
                    "postgres_commit": metadata["postgres_commit"], "postgres_tree": metadata["postgres_tree"], "consumer_patch_id": metadata["consumer_patch_id"],
                    "archive": archive, "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]}},
         "source_files": sources, "images": images, "identities": identities,
         "tooling": {"recorder_sha256": VERIFIER["file_hash"](source / "release/record-neon-qualification.py"), "verifier_sha256": VERIFIER["file_hash"](source / "release/verify-neon-runtime.py"), "runner_sha256": runner_hash, "producer_sha256": VERIFIER["file_hash"](source / VERIFIER["PRODUCER"]["producer_path"])},
         "files": {},
-        "capability": {"development_evidence_recorded": True, "cluster_qualified": False, "public_endpoint_qualified": False, "physical_zones_qualified": False},
+        "capability": capability,
     }
     try:
         shutil.copyfile(build_path, temporary / "build-provenance.json")
