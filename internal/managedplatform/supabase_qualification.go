@@ -15,7 +15,7 @@ var supabaseReleaseImages = map[string]string{
 	"database":      "docker.io/supabase/postgres@sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b",
 	"edge-runtime":  "docker.io/supabase/edge-runtime@sha256:b331c6422f4f4bebd6052357da5f3c87610128c8cb530390ca024eb68cf4bf2e",
 	"image-proxy":   "docker.io/darthsim/imgproxy@sha256:80200afeaa85c4abb58bbcb84deadab6d6cf5c79ac7af0694ff22e2b5de1477b",
-	"pooler":        "docker.io/hakopod/supavisor@sha256:94712de6f5752f1e43f8ec3096d2b51e62475406b77982052b2c0f1179cc7d4a",
+	"pooler":        "ghcr.io/hakopod/managed-supabase-pooler@sha256:91930deeb066e948a287f74e680388e7e54d397005f430c2e3e71f36799d07ec",
 	"postgres-meta": "docker.io/supabase/postgres-meta@sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e",
 	"realtime":      "docker.io/supabase/realtime@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76",
 	"rest":          "docker.io/postgrest/postgrest@sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0",

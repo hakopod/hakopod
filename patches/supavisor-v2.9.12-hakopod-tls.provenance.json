@@ -15,9 +15,11 @@
   "rebar3_version": "3.24.0",
   "built_oci": {
     "platform": "linux/amd64",
-    "manifest_digest": "sha256:94712de6f5752f1e43f8ec3096d2b51e62475406b77982052b2c0f1179cc7d4a",
-    "config_digest": "sha256:4c2a423545f42839fa1d6daa0014b0cecd683cdf5bd57b91ed5bd69ad2ecfa15",
-    "tar_sha256": "sha256:e12aad282eca721d08a5b35d0052aa1156a7518c68deaf7e89beaeaa4d68714c",
+    "repository": "ghcr.io/hakopod/managed-supabase-pooler",
+    "tag": "v2.9.12-hakopod.2",
+    "manifest_digest": "sha256:91930deeb066e948a287f74e680388e7e54d397005f430c2e3e71f36799d07ec",
+    "config_digest": "sha256:faae07c69216fe140f4f7e5356f4405c8bce4dcff582864bec932b120ad32b91",
+    "tar_sha256": "sha256:fd7a1e3a0ac9cd1e5f61638feb2c8f6dc295bf2fc2ff1530ceb74ffb06654582",
     "user": "65534:65534",
     "entrypoint": ["/usr/bin/tini", "-s", "-g", "--", "/app/limits.sh"],
     "cmd": ["/app/bin/server"]
@@ -25,6 +27,8 @@
   "verification": {
     "format": "passed",
     "focused_tls_options": "passed",
+    "deterministic_cached_reexport": "passed",
+    "anonymous_pull": "passed",
     "native_tls_acceptance": "pending"
   },
   "qualification": "The image remains unqualified until correct-CA, wrong-CA, wrong-host and pg_stat_ssl native acceptance pass."

@@ -3,7 +3,7 @@ set -eu
 
 : "${KUBECONFIG:?set the protected development kubeconfig}"
 : "${HAKOPOD_SUPABASE_NAMESPACE:?set the disposable managed-platform namespace}"
-: "${HAKOPOD_SUPAVISOR_MANIFEST_DIGEST:=sha256:94712de6f5752f1e43f8ec3096d2b51e62475406b77982052b2c0f1179cc7d4a}"
+: "${HAKOPOD_SUPAVISOR_MANIFEST_DIGEST:=sha256:91930deeb066e948a287f74e680388e7e54d397005f430c2e3e71f36799d07ec}"
 
 kubectl_bin=${KUBECTL_BIN:-kubectl}
 context=k3d-hakopod-dev
