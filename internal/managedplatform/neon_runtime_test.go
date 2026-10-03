@@ -114,9 +114,9 @@ func TestNeonRuntimeCreatesStorageBeforeAttachingComputeAndPersistsNoSecret(t *t
 	}
 }
 
-func TestNeonRuntimeRejectsWrongComputeAttachmentAndKeepsQualificationFalse(t *testing.T) {
-	if capability := NeonRuntimeQualification(); capability.Available || capability.ClusterQualified || capability.PublicQualified {
-		t.Fatal("unqualified Neon runtime became available")
+func TestNeonRuntimeRejectsWrongComputeAttachmentAndKeepsPublicAccessClosed(t *testing.T) {
+	if capability := NeonRuntimeQualification(); capability.Available != NeonReleaseQualified() || capability.ClusterQualified != NeonReleaseQualified() || capability.PublicQualified {
+		t.Fatal("Neon runtime capability differs from its private release qualification")
 	}
 	_, err := validateNeonLifecycleRequest(NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, ComputeConfig: map[string]json.RawMessage{"primary": json.RawMessage(`{"spec":{"tenant_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timeline_id":"` + testTimeline + `","safekeeper_connstrings":["a","b","c"],"storage_auth_token":"token"},"compute_ctl_config":{}}`)}}, []NeonControlTarget{{Name: "primary"}})
 	if err == nil {

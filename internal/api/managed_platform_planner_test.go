@@ -10,7 +10,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
-func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *testing.T) {
+func TestNativeManagedPlatformPlannerRequiresCurrentOperatorQualification(t *testing.T) {
 	spec := managedplatform.Spec{SchemaVersion: 1, Name: "neon-fixture", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Placement: managedplatform.Placement{NodeNames: []string{"node-a", "node-b", "node-c"}}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-fixture", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "fixture", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
 	images := map[string]string{}
 	for _, name := range managedplatform.NeonComponents() {
@@ -25,12 +25,15 @@ func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *te
 	}
 	checks := 0
 	planner := NativeManagedPlatformPlanner{NeonImages: images, ApprovedEncryptedStorageClass: "encrypted-block", ValidateNeonQualification: func(context.Context) error { checks++; return nil }}
+	planner.ResolveNeonSecret = func(context.Context, store.Principal, store.ManagedPlatform, string, managedplatform.SecretReference) (map[string][]byte, error) {
+		return map[string][]byte{"config.json": []byte(`{"spec":{"format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[],"databases":[],"settings":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)}, nil
+	}
 	plan, err := planner.PlanManagedPlatform(context.Background(), store.Principal{}, store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}, 0, "create")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Capability.Available || plan.Capability.ClusterQualified || plan.Capability.PublicQualified {
-		t.Fatalf("capacity-ready planning promoted an unqualified native platform: %#v", plan.Capability)
+	if plan.Capability.Available != managedplatform.NeonReleaseQualified() || plan.Capability.ClusterQualified != managedplatform.NeonReleaseQualified() || plan.Capability.PublicQualified {
+		t.Fatalf("operator-reviewed capability differs from private release qualification: %#v", plan.Capability)
 	}
 	if checks != 1 {
 		t.Fatalf("Neon operator binding checks = %d, want 1", checks)
@@ -40,6 +43,12 @@ func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *te
 	}
 	item := store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}
 	principal := store.Principal{ID: "requesting-operator"}
+	planner.ValidateNeonQualification = nil
+	plan, err = planner.PlanManagedPlatform(context.Background(), principal, item, 0, "create")
+	if err != nil || plan.Capability.Available || plan.Capability.ClusterQualified || plan.Capability.PublicQualified {
+		t.Fatalf("capacity or release qualification bypassed missing operator approval: %#v, %v", plan.Capability, err)
+	}
+	planner.ValidateNeonQualification = func(context.Context) error { return nil }
 	planner.ResolveNeonSecret = func(_ context.Context, got store.Principal, resource store.ManagedPlatform, logical string, ref managedplatform.SecretReference) (map[string][]byte, error) {
 		if got.ID != principal.ID || resource.ID != item.ID || logical != "compute-auth" || ref != spec.Secrets["compute-auth"] {
 			t.Fatal("compute preflight lost its caller or immutable reference")
@@ -79,7 +88,7 @@ func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *te
 	}
 }
 
-func TestSupabasePlannerRechecksOperatorBindingButKeepsReleaseGateClosed(t *testing.T) {
+func TestSupabasePlannerRechecksOperatorBindingAndKeepsPublicAccessClosed(t *testing.T) {
 	entry := managedplatform.CatalogEntries()[0]
 	spec := entry.DefaultSpec
 	spec.Name = "supabase-fixture"
@@ -101,9 +110,15 @@ func TestSupabasePlannerRechecksOperatorBindingButKeepsReleaseGateClosed(t *test
 	if checks != 1 {
 		t.Fatalf("operator binding checks = %d, want 1", checks)
 	}
-	if plan.Capability.Available || plan.Capability.ClusterQualified || plan.Capability.PublicQualified {
-		t.Fatalf("operator binding bypassed the closed release gate: %#v", plan.Capability)
+	if plan.Capability.Available != managedplatform.SupabaseReleaseQualified() || plan.Capability.ClusterQualified != managedplatform.SupabaseReleaseQualified() || plan.Capability.PublicQualified {
+		t.Fatalf("operator-reviewed capability differs from private release qualification: %#v", plan.Capability)
 	}
+	planner.ValidateSupabaseQualification = nil
+	plan, err = planner.PlanManagedPlatform(context.Background(), store.Principal{}, store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}, 0, "create")
+	if err != nil || plan.Capability.Available || plan.Capability.ClusterQualified || plan.Capability.PublicQualified {
+		t.Fatalf("release qualification bypassed missing operator approval: %#v, %v", plan.Capability, err)
+	}
+	planner.ValidateSupabaseQualification = func(context.Context) error { return nil }
 	planner.CatalogNodes[0].Architecture = "arm64"
 	if _, err = planner.PlanManagedPlatform(context.Background(), store.Principal{}, store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}, 0, "create"); err == nil || !strings.Contains(err.Error(), "requires linux/amd64") {
 		t.Fatalf("selected ARM node was not refused before apply: %v", err)

@@ -40,6 +40,8 @@ The proxy check also runs an authenticated SQL query through the managed endpoin
 
 The `hakopod_native_acceptance` build tag compiles a separate Linux test binary from the same source. A normal shipping binary rejects native acceptance configuration. The tagged binary admits one named development project, one platform kind, and the `k3d-hakopod-dev` context. Before opening PostgreSQL or running migrations, it verifies the protected run configuration, exact binary and source files, cluster and node UIDs, a loopback API address, and a disposable control database named for that run. It stops at the configured expiry, which cannot exceed four hours. Public endpoint qualification stays false.
 
+The tagged binary can test an unreleased candidate with its release gates open without claiming that the development storage is approved for production. Before allowing a missing operator binding at startup, it rechecks the complete active attestation for that platform kind. Supplied bindings still require normal validation, and this exception is unavailable to Cloud's workspace-capacity path and ordinary shipping builds. The test report keeps encrypted-storage and deployment qualification false. All three managed-platform native runs must use the same frozen candidate before its gates and evidence can be published.
+
 The run attestation must bind the unchanged source inventory, build tag and binary digest. Product API handlers, authorization, reconciler, renderer, recovery code and manifests use that inventory. An edited candidate tree cannot qualify shipping source, and successful development acceptance alone does not enable a feature in a release.
 
 Create the record only after the real reports exist:
@@ -47,7 +49,7 @@ Create the record only after the real reports exist:
 ```sh
 python3 release/record-neon-qualification.py \
   --source "$PWD" \
-  --source-archive /srv/hakopod-backup-scratch/neon-packaging-v2/output/neon-provider-source.tar.gz \
+  --source-archive /path/to/neon-provider-source.tar.gz \
   --build-report /path/to/build-provenance.json \
   --report /path/to/native-acceptance.json \
   --output /path/to/fresh-managed-neon-record
