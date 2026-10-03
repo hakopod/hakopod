@@ -26,7 +26,7 @@ const (
 	// Change this only in the final candidate whose complete native evidence
 	// and exact image digests ship with the release. The acceptance build flag
 	// cannot enable a shipping binary.
-	vitessReleaseQualified = false
+	vitessReleaseQualified = true
 )
 
 var vitessDatabaseResource = schema.GroupVersionResource{Group: "planetscale.com", Version: "v2", Resource: "vitessclusters"}
