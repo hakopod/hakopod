@@ -88,7 +88,7 @@ class Driver:
             values.append(password)
         if len(set(values))!=3: raise RuntimeError("proxy SQL credentials must be distinct per platform")
         if not Path(a.psql).is_absolute() or not os.access(a.psql,os.X_OK): raise RuntimeError("PostgreSQL client executable is unavailable")
-    def command(self, argv, timeout=30, data=None, env=None, expected=(0,)):
+    def command(self, argv, timeout=30, data=None, env=None, expected=(0,), capture_stderr=False):
         if not isinstance(argv, (list, tuple)) or not 1 <= len(argv) <= 128 or any(not isinstance(item, str) or not item or "\x00" in item or len(item.encode()) > 8192 for item in argv): raise RuntimeError("acceptance command is malformed")
         if type(timeout) not in (int, float) or not 1 <= timeout <= 1800: raise RuntimeError("acceptance command timeout is invalid")
         if data is not None and (not isinstance(data, bytes) or len(data) > MAX_COMMAND_INPUT): raise RuntimeError("acceptance command input is invalid or unbounded")
@@ -102,7 +102,7 @@ class Driver:
                 raise RuntimeError("bounded acceptance command timed out")
             stdout.seek(0, os.SEEK_END); out_size=stdout.tell(); stderr.seek(0, os.SEEK_END); err_size=stderr.tell()
             if out_size > MAX_COMMAND_OUTPUT or err_size > MAX_COMMAND_OUTPUT or process.returncode not in expected: raise RuntimeError("bounded acceptance command failed; output withheld")
-            stdout.seek(0); raw=stdout.read(MAX_COMMAND_OUTPUT + 1)
+            (stderr if capture_stderr else stdout).seek(0); raw=(stderr if capture_stderr else stdout).read(MAX_COMMAND_OUTPUT + 1)
         try: return raw.decode("utf-8")
         except UnicodeDecodeError as error: raise RuntimeError("acceptance command output is not UTF-8") from error
     def k(self,*argv,timeout=30): return self.command(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev",*argv],timeout)
@@ -188,9 +188,9 @@ class Driver:
         probe=self.native.get(pid,{}); computes=probe.get("compute_names"); tls_observed=probe.get("tls",{})
         if any(tls_observed.get(field) is not True for field in ("client_verification_enforced","server_verified","plaintext_refused")) or set(tls_observed.get("services",[]))!=required: raise RuntimeError("five-service provider TLS evidence is missing")
         expected_computes=["compute-"+str(i) for i in range(self.source_spec["neon"]["compute_replicas"])]
-        if not ID.fullmatch(str(probe.get("tenant_id"))) or not ID.fullmatch(str(probe.get("timeline_id"))) or type(probe.get("tenant_generation")) is not int or type(probe.get("timeline_generation")) is not int or sorted(computes or [])!=expected_computes: raise RuntimeError("native durable lifecycle identity is missing")
+        if not ID.fullmatch(str(probe.get("tenant_id"))) or not ID.fullmatch(str(probe.get("timeline_id"))) or type(probe.get("tenant_generation")) is not int or type(probe.get("timeline_generation")) is not int or sorted(computes or [])!=expected_computes or any(probe.get(field) is not True for field in ("tenant_created","timeline_created","compute_started")): raise RuntimeError("native durable lifecycle identity is missing")
         tls={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"client_verification_enforced":tls_observed["client_verification_enforced"],"server_verified":tls_observed["server_verified"],"plaintext_refused":tls_observed["plaintext_refused"],"services":sorted(tls_observed["services"])}
-        lifecycle={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"tenant_id":probe["tenant_id"],"timeline_id":probe["timeline_id"],"tenant_generation":probe["tenant_generation"],"timeline_generation":probe["timeline_generation"],"compute_names":computes,"created":True,"stopped":False,"deleted":False}
+        lifecycle={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"tenant_id":probe["tenant_id"],"timeline_id":probe["timeline_id"],"tenant_generation":probe["tenant_generation"],"timeline_generation":probe["timeline_generation"],"compute_names":computes,"created":True,"stopped":False,"deleted":False,"branch_created":probe["timeline_created"]}
         return tls,lifecycle
     def managed_tls(self,pid,revision,operation_id):
         namespace="managed-platform-"+pid; ca=self.root/"managed-tls-ca.crt"; injected_path=self.evidence/"managed-tls-injected.json"
@@ -266,8 +266,9 @@ class Driver:
         ca=self.root/"managed-tls-ca.crt"
         environment.update(PGPASSWORD=password,PGOPTIONS="endpoint="+pid,PGAPPNAME="hakopod_neon_native_acceptance",PGCONNECT_TIMEOUT="10",PGHOST="neon-proxy",PGHOSTADDR="127.0.0.1",PGPORT=str(self.a.local_port),PGUSER="cloud_admin",PGDATABASE="postgres",PGSSLMODE="verify-full",PGSSLROOTCERT=str(ca))
         return environment
-    def proxy_query(self,pid,password,statement,expect_success=True,timeout=45):
+    def proxy_query(self,pid,password,statement,expect_success=True,timeout=45,expected_error=None):
         if not isinstance(statement,str) or not statement or len(statement)>8192 or "\x00" in statement: raise RuntimeError("proxy SQL statement is invalid")
+        if not expect_success and (not isinstance(expected_error,str) or not expected_error): raise RuntimeError("proxy SQL failure contract is missing")
         environment=self.proxy_environment(pid,password)
         errors=tempfile.TemporaryFile()
         forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n","managed-platform-"+pid,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
@@ -278,7 +279,9 @@ class Driver:
                     with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
                 except OSError: time.sleep(.2)
             else: raise RuntimeError("Neon proxy SQL port-forward did not become ready")
-            return self.command([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c",statement],timeout,env=environment,expected=(0,) if expect_success else (1,2)).strip()
+            observed=self.command([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c",statement],timeout,env=environment,expected=(0,) if expect_success else (1,2,3),capture_stderr=not expect_success).strip()
+            if not expect_success and re.search(expected_error,observed,re.IGNORECASE) is None: raise RuntimeError("Neon proxy SQL failed for an unexpected reason")
+            return observed
         finally:
             forward.terminate()
             try:forward.wait(timeout=5)
@@ -303,8 +306,9 @@ class Driver:
         source_value=self.proxy_query(source,password,"SELECT v FROM hakopod_native_acceptance WHERE k='backup'")
         target_empty=self.proxy_query(target,target_password,"SELECT to_regclass('public.hakopod_native_acceptance') IS NULL")
         if source_value!=marker or target_empty!="t": raise RuntimeError("Neon tenant SQL isolation was not observed")
-        self.proxy_query(source,password+"-invalid","SELECT 1",expect_success=False,timeout=20)
-        self.proxy_query(target,password,"SELECT 1",expect_success=False,timeout=20); self.proxy_query(source,target_password,"SELECT 1",expect_success=False,timeout=20)
+        auth_error=r"password authentication failed|authentication failed"
+        self.proxy_query(source,password+"-invalid","SELECT 1",expect_success=False,timeout=20,expected_error=auth_error)
+        self.proxy_query(target,password,"SELECT 1",expect_success=False,timeout=20,expected_error=auth_error); self.proxy_query(source,target_password,"SELECT 1",expect_success=False,timeout=20,expected_error=auth_error)
         return {"run_id":self.run_id,"platform_id":source,"namespace_uid":self.bound[source][0],"target_platform_id":target,"target_namespace_uid":self.bound[target][0],"source_tenant_id":source_probe["tenant_id"],"source_timeline_id":source_probe["timeline_id"],"target_tenant_id":target_probe["tenant_id"],"target_timeline_id":target_probe["timeline_id"],"source_marker_verified":True,"target_marker_absent":True,"bad_credentials_refused":True,"cross_platform_credentials_refused":True}
     def connection_limits(self,pid):
         password=self.proxy_password(pid); maximum=int(self.proxy_query(pid,password,"SHOW max_connections"))
@@ -320,10 +324,14 @@ class Driver:
             else: raise RuntimeError("Neon connection-limit port-forward did not become ready")
             for _ in range(maximum+8):
                 output=tempfile.TemporaryFile(); outputs.append(output)
-                processes.append(subprocess.Popen([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c","SELECT pg_sleep(15)"],stdin=subprocess.DEVNULL,stdout=output,stderr=output,close_fds=True,env=environment))
+                processes.append(subprocess.Popen([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c","SELECT 'hakopod-held'; SELECT pg_sleep(20)"],stdin=subprocess.DEVNULL,stdout=output,stderr=output,close_fds=True,env=environment))
             time.sleep(12)
-            active=sum(process.poll() is None for process in processes); refused=sum(process.poll() not in (None,0) for process in processes)
-            if active>maximum or refused<1: raise RuntimeError("Neon connection limit did not refuse bounded excess clients")
+            active=sum(process.poll() is None for process in processes); held=0; refused=0
+            for process,output in zip(processes,outputs):
+                output.flush(); output.seek(0); observed=output.read(MAX_COMMAND_OUTPUT).decode("utf-8","replace")
+                if process.poll() is None and "hakopod-held" in observed: held+=1
+                elif process.poll() not in (None,0) and re.search(r"too many (?:clients|connections)|remaining connection slots are reserved",observed,re.IGNORECASE): refused+=1
+            if active>maximum or held<maximum-4 or refused<1: raise RuntimeError("Neon connection limit did not hold successful clients and specifically refuse bounded excess")
         finally:
             for process in processes:
                 if process.poll() is None: process.terminate()
@@ -336,27 +344,29 @@ class Driver:
             except subprocess.TimeoutExpired: forward.kill(); forward.wait(timeout=5)
             errors.close()
         if self.proxy_query(pid,password,"SELECT 1")!="1": raise RuntimeError("Neon SQL did not recover after the connection-limit probe")
-        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"configured_max_connections":maximum,"attempted_connections":maximum+8,"concurrent_connections":active,"refused_connections":refused,"service_recovered":True}
+        return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"configured_max_connections":maximum,"attempted_connections":maximum+8,"concurrent_connections":held,"refused_connections":refused,"service_recovered":True}
     def wal_quorum_fencing(self,pid):
         namespace="managed-platform-"+pid; password=self.proxy_password(pid)
         sets=json.loads(self.k("-n",namespace,"get","statefulsets","-l","hakopod.io/managed-platform-id="+pid,"-o","json"))["items"]
-        safekeepers=sorted(item["metadata"]["name"] for item in sets if item["metadata"].get("labels",{}).get("hakopod.io/neon-role")=="safekeeper")
-        if len(safekeepers)!=3: raise RuntimeError("Neon WAL quorum subject inventory is not exact")
-        stopped=safekeepers[1:]
+        safekeeper_sets=sorted((item for item in sets if item["metadata"].get("labels",{}).get("hakopod.io/neon-role")=="safekeeper"),key=lambda item:item["metadata"]["name"])
+        if len(safekeeper_sets)!=3 or any(item.get("spec",{}).get("replicas")!=1 for item in safekeeper_sets): raise RuntimeError("Neon WAL quorum subject inventory is not exact")
+        safekeepers=[item["metadata"]["name"] for item in safekeeper_sets]; stopped=safekeepers[1:]
+        pods=json.loads(self.k("-n",namespace,"get","pods","-l","hakopod.io/neon-role=safekeeper","-o","json"))["items"]
+        stopped_uids={pod["metadata"]["uid"] for pod in pods if any(ref.get("kind")=="StatefulSet" and ref.get("name") in stopped and ref.get("uid")==next(item["metadata"]["uid"] for item in safekeeper_sets if item["metadata"]["name"]==ref.get("name")) for ref in pod["metadata"].get("ownerReferences",[]))}
+        if len(stopped_uids)!=2: raise RuntimeError("Neon WAL quorum pod ownership is not exact")
         try:
-            for name in stopped:self.k("-n",namespace,"scale","statefulset/"+name,"--replicas=0",timeout=60)
+            for name in stopped:self.k("-n",namespace,"scale","statefulset/"+name,"--current-replicas=1","--replicas=0",timeout=60)
             deadline=time.monotonic()+120
             while time.monotonic()<deadline:
                 pods=json.loads(self.k("-n",namespace,"get","pods","-l","hakopod.io/neon-role=safekeeper","-o","json"))["items"]
-                names={pod["metadata"].get("labels",{}).get("statefulset.kubernetes.io/pod-name") for pod in pods}
-                if not set(stopped)&names: break
+                if not stopped_uids&{pod["metadata"]["uid"] for pod in pods}: break
                 time.sleep(2)
             else: raise RuntimeError("Neon WAL quorum loss did not become observable")
-            self.proxy_query(pid,password,"SET statement_timeout='8s'; INSERT INTO hakopod_native_acceptance VALUES ('wal-quorum','must-not-commit') ON CONFLICT (k) DO UPDATE SET v=excluded.v",expect_success=False,timeout=20)
+            self.proxy_query(pid,password,"SET statement_timeout='8s'; INSERT INTO hakopod_native_acceptance VALUES ('wal-quorum','must-not-commit') ON CONFLICT (k) DO UPDATE SET v=excluded.v",expect_success=False,timeout=20,expected_error=r"canceling statement due to statement timeout|could not.*safekeeper|quorum")
         finally:
             restore_errors=[]
             for name in stopped:
-                try:self.k("-n",namespace,"scale","statefulset/"+name,"--replicas=1",timeout=60)
+                try:self.k("-n",namespace,"scale","statefulset/"+name,"--current-replicas=0","--replicas=1",timeout=60)
                 except Exception:restore_errors.append(name)
             for name in stopped:
                 try:self.k("-n",namespace,"rollout","status","statefulset/"+name,"--timeout=180s",timeout=200)
@@ -367,13 +377,14 @@ class Driver:
         return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"safekeeper_count":3,"stopped_safekeepers":2,"write_refused_without_quorum":True,"quorum_restored":True,"write_recovered":True}
     def controller_recovery(self,pid):
         namespace="managed-platform-"+pid; before=self.api("POST","/api/v1/managed-platforms/"+pid+"/native-probe",{"expected_revision":self.api("GET","/api/v1/managed-platforms/"+pid)["revision"]})
+        sets=json.loads(self.k("-n",namespace,"get","statefulsets","-l","hakopod.io/neon-role=storage-controller","-o","json"))["items"]
         pods=json.loads(self.k("-n",namespace,"get","pods","-l","hakopod.io/neon-role=storage-controller","-o","json"))["items"]
-        if len(pods)!=1: raise RuntimeError("Neon controller recovery subject is not exact")
-        old_uid=pods[0]["metadata"]["uid"]; self.k("-n",namespace,"delete","pod",pods[0]["metadata"]["name"],"--wait=false")
+        if len(sets)!=1 or len(pods)!=1 or not any(ref.get("kind")=="StatefulSet" and ref.get("name")==sets[0]["metadata"]["name"] and ref.get("uid")==sets[0]["metadata"]["uid"] for ref in pods[0]["metadata"].get("ownerReferences",[])): raise RuntimeError("Neon controller recovery subject is not exact")
+        old_uid=pods[0]["metadata"]["uid"]; delete=json.dumps({"apiVersion":"v1","kind":"DeleteOptions","preconditions":{"uid":old_uid}}).encode(); self.command(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","delete","--raw","/api/v1/namespaces/"+namespace+"/pods/"+pods[0]["metadata"]["name"],"-f","-"],data=delete)
         replacement=None; deadline=time.monotonic()+240
         while time.monotonic()<deadline:
             current=json.loads(self.k("-n",namespace,"get","pods","-l","hakopod.io/neon-role=storage-controller","-o","json"))["items"]
-            ready=[pod for pod in current if pod["metadata"]["uid"]!=old_uid and all(item.get("ready") for item in pod.get("status",{}).get("containerStatuses",[]))]
+            ready=[pod for pod in current if pod["metadata"]["uid"]!=old_uid and pod.get("status",{}).get("containerStatuses") and all(item.get("ready") for item in pod["status"]["containerStatuses"]) and any(item.get("type")=="Ready" and item.get("status")=="True" for item in pod.get("status",{}).get("conditions",[])) and any(ref.get("kind")=="StatefulSet" and ref.get("uid")==sets[0]["metadata"]["uid"] for ref in pod["metadata"].get("ownerReferences",[]))]
             if len(ready)==1: replacement=ready[0]; break
             time.sleep(2)
         if replacement is None: raise RuntimeError("Neon storage controller did not recover")
@@ -400,8 +411,11 @@ class Driver:
         finally:self.object_store_fault("start")
         if self.object_store_fault("status")!="running": raise RuntimeError("Neon object store did not recover")
         return {"run_id":self.run_id,"platform_id":intent["source_platform_id"],"namespace_uid":self.bound[intent["source_platform_id"]][0],"outage_observed":True,"backup_refused":True,"service_restored":True}
-    def sql(self,ns,pod,statement,expect_success=True):
-        return self.command(["kubectl","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",ns,"exec",pod,"-c","compute","--","psql","-XAt","postgresql://cloud_admin@127.0.0.1:55433/postgres?sslmode=require","-v","ON_ERROR_STOP=1","-c",statement],45,expected=(0,) if expect_success else (1,2)).strip()
+    def sql(self,ns,pod,statement,expect_success=True,expected_error=None):
+        if not expect_success and (not isinstance(expected_error,str) or not expected_error): raise RuntimeError("compute SQL failure contract is missing")
+        observed=self.command(["kubectl","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",ns,"exec",pod,"-c","compute","--","psql","-XAt","postgresql://cloud_admin@127.0.0.1:55433/postgres?sslmode=require","-v","ON_ERROR_STOP=1","-c",statement],45,expected=(0,) if expect_success else (1,2,3),capture_stderr=not expect_success).strip()
+        if not expect_success and re.search(expected_error,observed,re.IGNORECASE) is None: raise RuntimeError("compute SQL failed for an unexpected reason")
+        return observed
     def compute_roles(self,pid,marker):
         namespace,pods=self.pods(pid); computes=sorted((pod for pod in pods if pod["metadata"]["labels"].get("hakopod.io/neon-role")=="compute"),key=lambda pod:pod["metadata"]["labels"].get("app.kubernetes.io/component",""))
         if len(computes)!=2: raise RuntimeError("Neon primary/replica acceptance requires exactly two computes")
@@ -409,7 +423,7 @@ class Driver:
         if [pod["metadata"]["labels"].get("app.kubernetes.io/component") for pod in computes]!=["compute-0","compute-1"]: raise RuntimeError("Neon compute role labels are not exact")
         primary_mode=self.sql(namespace,primary["metadata"]["name"],"SHOW transaction_read_only"); replica_mode=self.sql(namespace,replica["metadata"]["name"],"SHOW transaction_read_only")
         if primary_mode!="off" or replica_mode!="on": raise RuntimeError("Neon compute primary and replica roles are not enforced")
-        self.sql(namespace,replica["metadata"]["name"],"INSERT INTO hakopod_native_acceptance VALUES ('replica-write','forbidden')",expect_success=False)
+        self.sql(namespace,replica["metadata"]["name"],"INSERT INTO hakopod_native_acceptance VALUES ('replica-write','forbidden')",expect_success=False,expected_error=r"read-only transaction|cannot execute INSERT")
         observed=""; deadline=time.monotonic()+90
         while time.monotonic()<deadline:
             try:observed=self.sql(namespace,replica["metadata"]["name"],"SELECT v FROM hakopod_native_acceptance WHERE k='backup'")
@@ -419,9 +433,11 @@ class Driver:
         if observed!=marker: raise RuntimeError("Neon compute replica did not receive the primary marker")
         return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"primary_compute":"compute-0","replica_compute":"compute-1","primary_writable":True,"replica_read_only":True,"replica_write_refused":True,"replica_caught_up":True}
     def compute_pod(self,pid):
-        ns,pods=self.pods(pid); matches=[p for p in pods if p["metadata"]["labels"].get("hakopod.io/neon-role")=="compute" and all(x.get("ready") for x in p.get("status",{}).get("containerStatuses",[]))]
+        ns,pods=self.pods(pid); matches=[p for p in pods if p["metadata"]["labels"].get("hakopod.io/neon-role")=="compute" and p.get("status",{}).get("containerStatuses") and all(x.get("ready") for x in p["status"]["containerStatuses"]) and any(x.get("type")=="Ready" and x.get("status")=="True" for x in p.get("status",{}).get("conditions",[]))]
         if len(matches)!=self.source_spec["neon"]["compute_replicas"]: raise RuntimeError("ready compute inventory is incomplete")
-        matches.sort(key=lambda item:item["metadata"]["name"]); return ns,matches[0]["metadata"]["name"]
+        matches.sort(key=lambda item:item["metadata"]["labels"].get("app.kubernetes.io/component",""))
+        if matches[0]["metadata"]["labels"].get("app.kubernetes.io/component")!="compute-0": raise RuntimeError("writable compute is unavailable")
+        return ns,matches[0]["metadata"]["name"]
     def recovery_receipt(self,value,operation,artifact,source,source_revision,source_uid,target,target_revision):
         required={"operation_id","status","artifact_id","manifest_sha256","source_platform_id","source_revision","source_namespace_uid","target_platform_id","target_revision","format","parts","neon"}
         if set(value)!=required or value.get("operation_id")!=operation or value.get("status")!="succeeded" or value.get("artifact_id")!=artifact or not DIGEST.fullmatch(str(value.get("manifest_sha256"))) or value.get("source_platform_id")!=source or value.get("source_revision")!=source_revision or value.get("source_namespace_uid")!=source_uid or value.get("target_platform_id")!=target or value.get("target_revision")!=target_revision or value.get("format")!="hakopod-neon-recovery-v1" or value.get("parts")!=["tenant.json","timeline.json","remote-storage.tar"] or not isinstance(value.get("neon"),dict): raise RuntimeError("native recovery receipt binding is invalid")
@@ -433,7 +449,11 @@ class Driver:
         if set(value)!=required or value.get("schema_version")!=1 or value.get("operation_id")!=operation or value.get("project")!=self.a.project or value.get("environment")!="development" or value.get("source_platform_id")!=source or value.get("source_revision")!=source_revision or value.get("target_platform_id")!=target or value.get("target_revision")!=target_revision or value.get("artifact_id")!=artifact or value.get("manifest_sha256")!=manifest or value.get("namespace_uid")!=target_uid or not ID.fullmatch(str(value.get("tenant_id"))) or not ID.fullmatch(str(value.get("timeline_id"))) or type(value.get("tenant_generation")) is not int or value["tenant_generation"]<1 or type(value.get("timeline_generation")) is not int or value["timeline_generation"]<1 or type(value.get("journal_entries")) is not int or value["journal_entries"]<1 or not isinstance(counts,dict) or set(counts)!={"complete","empty_complete","untouched_complete"} or any(type(count) is not int or count<0 for count in counts.values()) or sum(counts.values())!=value["journal_entries"] or value.get("cleanup_pending") is not False or value.get("operation_authority_refused") is not True or value.get("deployment_count")!=1 or value.get("statefulset_count")!=expected_sets or value.get("workload_replicas_zero") is not True or value.get("pods_absent") is not True or value.get("staging_prefix_empty") is not True: raise RuntimeError("native cancellation receipt binding is invalid")
         return value
     def restart(self,pid,uid):
-        ns,pods=self.pods(pid); chosen={p["metadata"]["labels"].get("hakopod.io/neon-role"):p for p in pods if p["metadata"]["labels"].get("hakopod.io/neon-role") in ("pageserver","compute")}
+        ns,pods=self.pods(pid); chosen={}
+        for pod in pods:
+            role=pod["metadata"]["labels"].get("hakopod.io/neon-role"); component=pod["metadata"]["labels"].get("app.kubernetes.io/component")
+            if role=="pageserver" and "pageserver" not in chosen: chosen["pageserver"]=pod
+            if role=="compute" and component=="compute-0": chosen["compute"]=pod
         before={k:v["metadata"]["uid"] for k,v in chosen.items()}
         if set(before)!={"pageserver","compute"}: raise RuntimeError("restart subjects are missing")
         seed="hakopod-"+self.run_id; self.sql(ns,chosen["compute"]["metadata"]["name"],"CREATE TABLE IF NOT EXISTS hakopod_native_acceptance(k text primary key,v text not null); INSERT INTO hakopod_native_acceptance VALUES ('restart','"+seed+"') ON CONFLICT (k) DO UPDATE SET v=excluded.v;")
@@ -496,7 +516,7 @@ class Driver:
                 if self.k("get","namespace","managed-platform-"+pid,"--ignore-not-found","-o","name").strip():failed.append(pid)
             except Exception:failed.append(pid)
         if not failed and self.pending_lifecycle is not None:
-            self.pending_lifecycle.update(stopped=True,deleted=True,branch_created=True,branch_deleted=True); self.record("tenant-timeline-compute-lifecycle",self.pending_lifecycle); self.pending_lifecycle=None
+            self.pending_lifecycle.update(stopped=True,deleted=True,branch_deleted=True); self.record("tenant-timeline-compute-lifecycle",self.pending_lifecycle); self.pending_lifecycle=None
         if self.foreign is not None:
             namespace,uid,name=self.foreign
             try:
