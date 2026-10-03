@@ -714,6 +714,20 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	if _, err := validateNeonLifecycleRequest(request, r.control.config.Computes); err != nil {
 		return err
 	}
+	// A failed initial provision may have created only Kubernetes objects. The
+	// durable store must check all revisions under the delete lease before an
+	// unavailable provider can be skipped; revision-local reads are insufficient.
+	if state, ok := r.lifecycle.(interface {
+		NeonProviderStateEmpty(context.Context) (bool, error)
+	}); ok {
+		empty, err := state.NeonProviderStateEmpty(ctx)
+		if err != nil {
+			return err
+		}
+		if empty {
+			return r.lifecycle.Heartbeat(ctx)
+		}
+	}
 	if err := r.control.verifyOwnershipCapability(ctx); err != nil {
 		return err
 	}
