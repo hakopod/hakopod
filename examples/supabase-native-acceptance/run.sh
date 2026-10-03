@@ -384,6 +384,21 @@ BEGIN
      OR (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = '_realtime') <> 'supabase_realtime_admin' THEN
     RAISE EXCEPTION 'realtime schema ownership differs';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM _realtime.tenants
+    WHERE external_id = 'realtime-dev' AND jwt_secret LIKE 'g1:%'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM _realtime.extensions
+    WHERE tenant_external_id = 'realtime-dev'
+      AND type = 'postgres_cdc_rls'
+      AND settings->>'ssl_enforced' = 'true'
+      AND settings->>'db_host' LIKE 'g1:%'
+      AND settings->>'db_password' LIKE 'g1:%'
+  ) THEN
+    RAISE EXCEPTION 'realtime secure encryption or tenant TLS policy differs';
+  END IF;
 END
 $hakopod$;
 SQL
@@ -679,6 +694,8 @@ target_base=https://$target_host:$target_port
 target_curl_tls="--noproxy $target_host --resolve $target_host:$target_port:127.0.0.1 --cacert $HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_GATEWAY_CA"
 tries=0
 until curl $target_curl_tls --fail --silent --max-time 2 "$target_base/auth/v1/health" >/dev/null; do tries=$((tries+1)); [ "$tries" -lt 30 ] || { echo "restored Supabase target did not become reachable" >&2; exit 1; }; sleep 1; done
+kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$target_namespace" exec statefulset/supabase-database -- \
+  psql -U postgres -v ON_ERROR_STOP=1 -Atc "select exists(select 1 from _realtime.tenants where external_id='realtime-dev' and jwt_secret like 'g1:%') and exists(select 1 from _realtime.extensions where tenant_external_id='realtime-dev' and type='postgres_cdc_rls' and settings->>'ssl_enforced'='true' and settings->>'db_host' like 'g1:%' and settings->>'db_password' like 'g1:%')" | grep -qx t || { echo "restored Realtime encryption or tenant TLS policy differs" >&2; exit 1; }
 curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/rest/v1/hakopod_acceptance?id=eq.$row_id&select=id,value" --header @"$target_service_headers" | jq -e --arg id "$row_id" 'length==1 and .[0].id==$id and .[0].value=="realtime-observed"' >/dev/null
 [ "$(curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/storage/v1/object/authenticated/$bucket/$object" --header @"$target_service_headers")" = hakopod-native-storage ]
 curl $target_curl_tls --fail --silent --show-error --max-time 10 "$target_base/functions/v1/hello" --header @"$target_service_headers" | jq -e '. == {message:"Hello from Edge Functions!"}' >/dev/null

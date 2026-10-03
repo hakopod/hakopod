@@ -128,7 +128,7 @@ func TestValidateSupabaseRuntimeSecretsRequiresExactEncryptionKeyLengths(t *test
 		"vault-encryption-key":       {Name: "vault-encryption-key", Revision: 1},
 	}}
 	values := map[string]map[string][]byte{
-		"realtime-db-encryption-key-r1": {"value": []byte(strings.Repeat("x", 16))},
+		"realtime-db-encryption-key-r1": {"value": []byte(strings.Repeat("x", 32))},
 		"vault-encryption-key-r1":       {"value": []byte(strings.Repeat("y", 32))},
 	}
 	if err := validateSupabaseRuntimeSecrets(values, spec); err != nil {
@@ -138,8 +138,8 @@ func TestValidateSupabaseRuntimeSecretsRequiresExactEncryptionKeyLengths(t *test
 		name string
 		bad  map[string][]byte
 	}{
-		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 32))}},
-		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 16)), "extra": []byte("secret-marker")}},
+		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 16))}},
+		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 32)), "extra": []byte("secret-marker")}},
 		{name: "realtime-db-encryption-key", bad: map[string][]byte{}},
 		{name: "vault-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("y", 64))}},
 		{name: "vault-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("y", 32)), "extra": []byte("secret-marker")}},

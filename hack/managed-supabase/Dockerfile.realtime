@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1.19.0@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+FROM docker.io/library/node@sha256:5cbc7caba8c2c0f0bca675d1b61b9f2857e1cf1853c6164ee9dd409501a936e7 AS node
+FROM docker.io/hexpm/elixir@sha256:f431729a164ee50f6e0178f8ce707bdf21763537258c7640f508502c4007293e AS builder
+
+ARG SOURCE_DATE_EPOCH=1791003582
+ENV MIX_ENV=prod SOURCE_DATE_EPOCH=1791003582
+
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends build-essential curl git patch \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local /usr/local
+
+WORKDIR /app
+ADD --checksum=sha256:bd2c71cb8e6e2fb51568902bb2d7480de2a06ad3d11add80b8d01ca8c8d0ead5 \
+  https://codeload.github.com/supabase/realtime/tar.gz/ef866244e88428bbd286f3e4ac88eb5e54a41bd4 /tmp/realtime.tar.gz
+RUN tar -xzf /tmp/realtime.tar.gz --strip-components=1 && rm /tmp/realtime.tar.gz
+COPY patches/realtime-v2.134.10-hakopod-tls.patch /tmp/realtime.patch
+RUN echo '6d6a01f493cb265ae32ae792f91bc61ed4cb6d34e5ac984a3ff32e232b942343  /tmp/realtime.patch' | sha256sum -c - \
+  && patch -p1 < /tmp/realtime.patch \
+  && rm /tmp/realtime.patch
+
+RUN mix local.hex 2.3.1 --force \
+  && curl --proto '=https' --tlsv1.2 -fsSL https://github.com/erlang/rebar3/releases/download/3.24.0/rebar3 -o /tmp/rebar3 \
+  && echo 'd2d31cfb98904b8e4917300a75f870de12cb5167cd6214d1043e973a56668a54  /tmp/rebar3' | sha256sum -c - \
+  && install -m 0755 /tmp/rebar3 /root/.mix/rebar3 \
+  && rm /tmp/rebar3
+ENV MIX_REBAR3=/root/.mix/rebar3
+RUN mix deps.get --only prod \
+  && mix deps.compile \
+  && cd assets && npm ci --omit=dev \
+  && cd /app && mix assets.deploy \
+  && mix compile \
+  && mix release
+
+FROM docker.io/supabase/realtime@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76
+ARG SOURCE_DATE_EPOCH=1791003582
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
+      org.opencontainers.image.version="v2.134.10-hakopod.1" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      io.hakopod.realtime.upstream-repository="https://github.com/supabase/realtime" \
+      io.hakopod.realtime.upstream-commit="ef866244e88428bbd286f3e4ac88eb5e54a41bd4" \
+      io.hakopod.realtime.upstream-source-sha256="bd2c71cb8e6e2fb51568902bb2d7480de2a06ad3d11add80b8d01ca8c8d0ead5" \
+      io.hakopod.realtime.patch-sha256="6d6a01f493cb265ae32ae792f91bc61ed4cb6d34e5ac984a3ff32e232b942343"
+COPY --from=builder --chown=nobody:root /app/_build/prod/rel/realtime /app
