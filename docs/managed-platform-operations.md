@@ -161,7 +161,9 @@ variable substitutions. Use TOML multiline strings for PEM, SQL and YAML.
 
 Each database client needs its own role credential. The role-bootstrap SQL
 must set the same passwords used by the Auth, REST, Realtime, Storage,
-postgres-meta and Supavisor snapshots. Auth, REST and Storage connection URLs
+postgres-meta and Supavisor snapshots. The Supavisor snapshot contains a
+`value` URL for the `pgbouncer` role in the `_supabase` database and a matching
+`password` value; that role owns only the `_supavisor` metadata schema. Auth, REST and Storage connection URLs
 must verify the `db` hostname using the mounted database CA. Database
 certificates must cover both `db` and its namespace-qualified Service name;
 the gateway certificate must match the configured HTTPS origin. The Envoy

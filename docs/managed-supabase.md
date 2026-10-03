@@ -10,6 +10,10 @@ imgproxy, postgres-meta, Studio, Edge Runtime and Supavisor. Every service must
 have a bounded resource allocation and an immutable image digest before a plan
 can be produced.
 
+This release supports the fixed application database name `postgres`. Its
+pinned initialization assets target that database explicitly, so other names
+are rejected during review instead of reaching Kubernetes.
+
 Candidate admission reserves at least 500m CPU and 2 GiB memory for PostgreSQL,
 and 250m CPU and 512 MiB memory each for Realtime and Supavisor. These are
 Hakopod safety floors for later acceptance, not upstream sizing guarantees or

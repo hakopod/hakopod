@@ -321,6 +321,9 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 	if bootstrap.Data[assetKey("db/realtime.sql")] != rendererFixture().Assets["db/realtime.sql"] {
 		t.Fatal("Hakopod ownership setup modified the pinned upstream realtime migration")
 	}
+	if !strings.Contains(bootstrap.Data[assetKey("db/pooler.sql")], "alter schema _supavisor owner to pgbouncer;") {
+		t.Fatal("Supavisor metadata role does not own its isolated schema")
+	}
 	want := map[string]bool{
 		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                  false,
 		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                       false,

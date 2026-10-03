@@ -626,16 +626,26 @@ func validateSupabaseDatabaseClientURLs(values map[string]map[string][]byte, spe
 	for _, item := range expected {
 		ref := spec.Secrets[item.key]
 		data := values[secretSnapshotNameForCluster(ref)]
-		if len(data) != 1 || len(data["value"]) == 0 {
-			return fmt.Errorf("Supabase %s must contain only a nonempty value", item.key)
+		expectedValues := 1
+		if item.key == "supavisor-database-url" {
+			expectedValues = 2
+		}
+		if len(data) != expectedValues || len(data["value"]) == 0 || item.key == "supavisor-database-url" && len(data["password"]) == 0 {
+			return fmt.Errorf("Supabase %s does not contain its exact required values", item.key)
 		}
 		u, err := url.Parse(string(data["value"]))
+		if err != nil || u == nil {
+			return fmt.Errorf("Supabase %s must be a valid PostgreSQL URL", item.key)
+		}
 		password, hasPassword := "", false
 		if u.User != nil {
 			password, hasPassword = u.User.Password()
 		}
-		if err != nil || u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != item.role || !hasPassword || password == "" || u.Path != "/"+item.database {
+		if u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != item.role || !hasPassword || password == "" || u.Path != "/"+item.database {
 			return fmt.Errorf("Supabase %s must use its expected database role, database, and TLS hostname", item.key)
+		}
+		if item.key == "supavisor-database-url" && !bytes.Equal([]byte(password), data["password"]) {
+			return fmt.Errorf("Supabase supavisor-database-url password must match its URL credential")
 		}
 		query, err := url.ParseQuery(u.RawQuery)
 		if err != nil || len(query) != 2 || len(query["sslmode"]) != 1 || query["sslmode"][0] != "verify-full" || len(query["sslrootcert"]) != 1 || query["sslrootcert"][0] != "/etc/hakopod-database-ca/ca.crt" {

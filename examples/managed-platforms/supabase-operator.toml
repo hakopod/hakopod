@@ -100,5 +100,5 @@ secret-key-r1 = { value = "REPLACE_WITH_SECRET_API_KEY", edge-json = "REPLACE_WI
 storage-s3-access-key-r1 = { value = "REPLACE_WITH_STORAGE_ACCESS_KEY" }
 storage-s3-secret-key-r1 = { value = "REPLACE_WITH_STORAGE_SECRET_KEY" }
 storage-database-url-r1 = { value = "REPLACE_WITH_STORAGE_DATABASE_URL" }
-supavisor-database-url-r1 = { value = "REPLACE_WITH_SUPAVISOR_DATABASE_URL" }
+supavisor-database-url-r1 = { value = "REPLACE_WITH_SUPAVISOR_DATABASE_URL", password = "REPLACE_WITH_MATCHING_SUPAVISOR_DATABASE_PASSWORD" }
 vault-encryption-key-r1 = { value = "REPLACE_WITH_VAULT_ENCRYPTION_KEY" }

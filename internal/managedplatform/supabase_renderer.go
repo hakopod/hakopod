@@ -85,7 +85,7 @@ var supabaseAssetSHA256 = map[string]string{
 	"db/init/data.sql":                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	"db/jwt.sql":                          "c1d3f5c01e44646c2e533c5a1c111821cc49cb5a4c2534e08cddad61d8fb0339",
 	"db/logs.sql":                         "f0463ce5030907acef49326d2bffd36002df0718035071be7c99bd7fc897c63d",
-	"db/pooler.sql":                       "df97ebe148d94cfb92a5e37ebf972dfd496be195f0915ecf14396b2cf50efecb",
+	"db/pooler.sql":                       "71d066fbfe5f780c4ff78bc4c78ac600d48718795cc1b87538207716f13e5743",
 	"db/realtime.sql":                     "7e9e442e7fc4dae05544c07b67bede37a00d84644304dfce4d937134cb4c8f88",
 	"db/roles.sql":                        "3ad717b225daa38aa982da26750f35641eb404e1eb5e69a763c22236ab96c1b2",
 	"db/webhooks.sql":                     "05a61316b899374253891cbba66ce073d9273f33983c3f47961eda3aa26c2823",
