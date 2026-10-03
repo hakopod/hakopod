@@ -813,7 +813,7 @@ class Driver:
         try:self.command([sys.executable,self.a.control_plane_bridge,"cleanup","--kubeconfig",self.a.kubeconfig],120)
         except Exception:failed.append("control-plane-bridge")
         resources=[{"platform_id":pid,"namespace":"managed-platform-"+pid,"namespace_uid":self.bound.get(pid,(None,None))[0],"create_operation_id":opid} for pid,unused,opid in self.platforms]
-        atomic(self.evidence/"cleanup-attempt.json",{"schema_version":1,"status":"incomplete" if failed else "verified","run_id":self.run_id,"resources":resources,"namespaces_absent":namespace_audit_complete and not remaining_namespaces,"persistent_volume_claim_refs_absent":volume_audit_complete and not remaining_volumes,"remaining_namespaces":sorted(remaining_namespaces),"remaining_persistent_volumes":remaining_volumes,"failure_categories":sorted(set(failed))})
+        atomic(self.evidence/"cleanup-attempt.json",{"schema_version":1,"status":"incomplete" if failed else "verified","run_id":self.run_id,"resources":resources,"owned_persistent_volumes":[owned_volumes[key] for key in sorted(owned_volumes)],"namespaces_absent":namespace_audit_complete and not remaining_namespaces,"persistent_volume_claim_refs_absent":volume_audit_complete and not remaining_volumes,"remaining_namespaces":sorted(remaining_namespaces),"remaining_persistent_volumes":remaining_volumes,"failure_categories":sorted(set(failed))})
         if failed: raise RuntimeError("owned cleanup is incomplete")
         self.cleanup_completed=True
 
