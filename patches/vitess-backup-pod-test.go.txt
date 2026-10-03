@@ -6,41 +6,95 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestHakopodBackupReceivesTLS(t *testing.T) {
-	resources := corev1.ResourceRequirements{Requests:corev1.ResourceList{corev1.ResourceCPU:resource.MustParse("100m"),corev1.ResourceMemory:resource.MustParse("256Mi")},Limits:corev1.ResourceList{corev1.ResourceCPU:resource.MustParse("100m"),corev1.ResourceMemory:resource.MustParse("256Mi")}}
+	resources := corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi")}}
 	spec := &Spec{
-		Images:planetscalev2.VitessKeyspaceImages{Vtbackup:"test-backup", Mysqld:&planetscalev2.MysqldImage{Mysql80Compatible:"test-mysql"}},
-		Vttablet:&planetscalev2.VttabletSpec{Resources:resources,ExtraFlags:map[string]string{"topo-etcd-tls-ca":"/trust/ca.crt","db-ssl-mode":"verify_identity","queryserver-config-pool-size":"32"}},
-		Mysqld:&planetscalev2.MysqldSpec{Resources:resources},
-		ExtraVolumes:[]corev1.Volume{{Name:"trust",VolumeSource:corev1.VolumeSource{Secret:&corev1.SecretVolumeSource{SecretName:"database-tls"}}}},
-		ExtraVolumeMounts:[]corev1.VolumeMount{{Name:"trust",MountPath:"/trust",ReadOnly:true}},
+		Images:            planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
+		Vttablet:          &planetscalev2.VttabletSpec{Resources: resources, ExtraFlags: map[string]string{"topo-etcd-tls-ca": "/trust/ca.crt", "db-ssl-mode": "verify_identity", "queryserver-config-pool-size": "32"}},
+		Mysqld:            &planetscalev2.MysqldSpec{Resources: resources},
+		ExtraVolumes:      []corev1.Volume{{Name: "trust", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "database-tls"}}}},
+		ExtraVolumeMounts: []corev1.VolumeMount{{Name: "trust", MountPath: "/trust", ReadOnly: true}},
 	}
-	pod := NewBackupPod(client.ObjectKey{Namespace:"database",Name:"backup"},&BackupSpec{TabletSpec:spec,InitialBackup:true},"test-mysql")
-	args := strings.Join(pod.Spec.Containers[0].Args," ")
-	if !strings.Contains(args,"topo-etcd-tls-ca=/trust/ca.crt") || !strings.Contains(args,"db-ssl-mode=verify_identity") || strings.Contains(args,"queryserver-config-pool-size") { t.Fatal("backup TLS flags were dropped or unsupported tablet flags leaked") }
-	volume,mount:=false,false
-	for _,v:=range pod.Spec.Volumes { if v.Name=="trust" && v.Secret!=nil && v.Secret.SecretName=="database-tls" { volume=true } }
-	for _,v:=range pod.Spec.Containers[0].VolumeMounts { if v.Name=="trust" && v.MountPath=="/trust" && v.ReadOnly { mount=true } }
-	if !volume || !mount { t.Fatal("backup trust volume is absent") }
-	for _,c:=range pod.Spec.InitContainers { if c.Resources.Limits.Cpu().IsZero() || c.Resources.Limits.Memory().IsZero() { t.Fatal("backup init container has unbounded resources") } }
+	pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "backup"}, &BackupSpec{TabletSpec: spec, InitialBackup: true}, "test-mysql")
+	args := strings.Join(pod.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "topo-etcd-tls-ca=/trust/ca.crt") || !strings.Contains(args, "db-ssl-mode=verify_identity") || strings.Contains(args, "queryserver-config-pool-size") {
+		t.Fatal("backup TLS flags were dropped or unsupported tablet flags leaked")
+	}
+	volume, mount := false, false
+	for _, v := range pod.Spec.Volumes {
+		if v.Name == "trust" && v.Secret != nil && v.Secret.SecretName == "database-tls" {
+			volume = true
+		}
+	}
+	for _, v := range pod.Spec.Containers[0].VolumeMounts {
+		if v.Name == "trust" && v.MountPath == "/trust" && v.ReadOnly {
+			mount = true
+		}
+	}
+	if !volume || !mount {
+		t.Fatal("backup trust volume is absent")
+	}
+	for _, c := range pod.Spec.InitContainers {
+		if c.Resources.Limits.Cpu().IsZero() || c.Resources.Limits.Memory().IsZero() {
+			t.Fatal("backup init container has unbounded resources")
+		}
+	}
 }
 
 func TestHakopodFirstLiveBackupUsesDedicatedFlagAndStableName(t *testing.T) {
 	spec := &Spec{
-		Images: planetscalev2.VitessKeyspaceImages{Vtbackup:"test-backup", Mysqld:&planetscalev2.MysqldImage{Mysql80Compatible:"test-mysql"}},
+		Images:   planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
 		Vttablet: &planetscalev2.VttabletSpec{}, Mysqld: &planetscalev2.MysqldSpec{},
 	}
-	pod := NewBackupPod(client.ObjectKey{Namespace:"database",Name:"first"}, &BackupSpec{TabletSpec:spec,AllowFirstBackup:true}, "test-mysql")
-	args := strings.Join(pod.Spec.Containers[0].Args," ")
-	if !strings.Contains(args,"allow_first_backup=true") || strings.Contains(args,"initial_backup=true") {
+	pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "first"}, &BackupSpec{TabletSpec: spec, AllowFirstBackup: true}, "test-mysql")
+	args := strings.Join(pod.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "allow_first_backup=true") || strings.Contains(args, "initial_backup=true") {
 		t.Fatal("first live backup did not remain distinct from empty initialization")
 	}
 	keyRange := planetscalev2.VitessKeyRange{}
-	if FirstLiveBackupPodName("database","app",keyRange) == InitialBackupPodName("database","app",keyRange) {
+	if FirstLiveBackupPodName("database", "app", keyRange) == InitialBackupPodName("database", "app", keyRange) {
 		t.Fatal("first live backup reuses the immutable empty-init pod name")
+	}
+}
+
+func TestHakopodBackupResourcesIncludeBothProcesses(t *testing.T) {
+	resources := func(cpu, memory string) corev1.ResourceRequirements {
+		return corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}
+	}
+	spec := &Spec{
+		Images:   planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
+		Vttablet: &planetscalev2.VttabletSpec{Resources: resources("100m", "256Mi")},
+		Mysqld:   &planetscalev2.MysqldSpec{Resources: resources("500m", "1Gi")},
+		ExtraEnv: []corev1.EnvVar{{Name: "GOMAXPROCS", Value: "1"}, {Name: "GOMEMLIMIT", Value: "192MiB"}},
+	}
+	for _, mode := range []struct{ initial, firstLive bool }{{true, false}, {false, false}, {false, true}} {
+		pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "backup"}, &BackupSpec{TabletSpec: spec, InitialBackup: mode.initial, AllowFirstBackup: mode.firstLive}, "test-mysql")
+		container := pod.Spec.Containers[0]
+		for _, allocation := range []corev1.ResourceList{container.Resources.Requests, container.Resources.Limits} {
+			if allocation.Cpu().String() != "600m" || allocation.Memory().String() != "1536Mi" {
+				t.Fatal("backup omitted the Go or MySQL resource budget", allocation)
+			}
+		}
+		values := map[string]string{}
+		for _, env := range container.Env {
+			values[env.Name] = env.Value
+		}
+		if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "448MiB" {
+			t.Fatal("backup lost its separate Go process budget")
+		}
+		args := strings.Join(container.Args, " ")
+		if !strings.Contains(args, "concurrency=1") || strings.Contains(args, "concurrency=10") {
+			t.Fatal("backup file concurrency is unbounded", args)
+		}
+	}
+	if spec.Mysqld.Resources.Limits.Memory().String() != "1Gi" || spec.Vttablet.Resources.Limits.Memory().String() != "256Mi" {
+		t.Fatal("backup rendering changed tablet resources")
+	}
+	if restoreConcurrency != 1 {
+		t.Fatal("tablet restore concurrency exceeds its process budget")
 	}
 }

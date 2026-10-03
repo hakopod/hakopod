@@ -9,7 +9,7 @@ COPY --from=0 / /
 
 LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
       io.hakopod.vitess.upstream="0f1ed062dec171e0adfab796110549752901e299" \
-      io.hakopod.vitess.patch="replication-identity-semisync-safe-logs-v4"
+      io.hakopod.vitess.patch="replication-identity-semisync-safe-logs-bounded-backup-v5"
 
 ENV PATH="/vt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     VTROOT="/vt" \

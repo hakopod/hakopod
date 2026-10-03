@@ -38,10 +38,10 @@ GIB = 1024 ** 3
 CASE_CPU_MILLI = {
     # These are the exact CPUReservationMilli envelopes for the fixed native
     # fixtures. Recovery keeps two two-shard clusters alive concurrently.
-    'lifecycle': 8450,
-    'recovery': 16900,
-    'reseed': 6350,
-    'revocation': 4900,
+    'lifecycle': 8850,
+    'recovery': 17700,
+    'reseed': 6550,
+    'revocation': 5100,
 }
 VITESS_CRDS = {
     'etcdlockservers.planetscale.com',

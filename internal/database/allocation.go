@@ -39,7 +39,7 @@ func (s Spec) CPUReservationMilli() (int64, error) {
 		total += cpuMilli(VitessTopologyCPU) * int64(s.VitessTopologyMembers()+1)
 		total += cpuMilli(VitessOperatorCPU) * 2
 		total += cpuMilli(VitessBackupControllerCPU)
-		total += 2 * int64(s.Shards) * cpuMilli(s.CPU)
+		total += 2 * int64(s.Shards) * (cpuMilli(s.CPU) + cpuMilli(VitessTabletCPU))
 	}
 	total += cpuMilli(OracleBrokerCPU) * int64(s.OracleBrokerInstances())
 	return total, nil
