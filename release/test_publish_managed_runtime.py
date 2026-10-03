@@ -74,7 +74,7 @@ class PublicationTests(unittest.TestCase):
                     publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest())
 
     def test_supporting_platform_images_use_only_reviewed_repositories(self):
-        for name in ("managed-neon-compute-tls", "managed-neon-controller-database", "managed-supabase-pooler"):
+        for name in ("managed-neon-compute-tls", "managed-neon-controller-database", "managed-supabase-pooler", "managed-supabase-realtime"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 _, image = self.fixture(root)

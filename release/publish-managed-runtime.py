@@ -15,7 +15,7 @@ import time
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 SHA = re.compile(r"[0-9a-f]{64}")
 ASSET = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\.oci\.tar")
-REPOSITORY = re.compile(r"ghcr\.io/hakopod/(?:(?:managed-)?(?:vitess(?:-operator|-runtime|-server)?|neon-(?:storage|compute-tools|compute-runtime|compute-v17|compute-tls|controller-database))|managed-supabase-pooler)")
+REPOSITORY = re.compile(r"ghcr\.io/hakopod/(?:(?:managed-)?(?:vitess(?:-operator|-runtime|-server)?|neon-(?:storage|compute-tools|compute-runtime|compute-v17|compute-tls|controller-database))|managed-supabase-(?:pooler|realtime))")
 SOURCE = "https://github.com/hakopod/hakopod"
 MAX_ARCHIVE = 2 * 1024**3
 MAX_UNPACKED = 4 * 1024**3
