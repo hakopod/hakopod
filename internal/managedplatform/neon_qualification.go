@@ -11,9 +11,18 @@ const NeonReleaseSourceArchiveSHA256 = "f91a9e1a5945dd1d2e634c2438d5c11052d4f2e9
 const NeonReleasePostgresCommit = "1e01fcea2a6b38180021aa83e0051d95286d9096"
 const NeonReleaseConsumerPatchID = "627583b85d7c0f624245e3ac6a240e775a5eed01"
 
-// The immutable release image inventory is populated only after the candidate
-// images have passed the committed native acceptance run.
-var neonReleaseImages = map[string]string{}
+// The immutable candidate image inventory is release-visible only after the
+// exact source and images pass native acceptance and the gate opens.
+var neonReleaseImages = map[string]string{
+	"broker":              "ghcr.io/hakopod/neon-storage@sha256:a787c50ec7a89677e6ee2b17878bb251ecb2f2cc8c7a1f267a3c78e900b69e24",
+	"compute":             "ghcr.io/hakopod/neon-compute-v17@sha256:51ecb134e515abd0b30956f07b5ce8cd9740a791d9ff9d4b658143e9d2be2610",
+	"compute-tls":         "ghcr.io/hakopod/neon-compute-tls@sha256:edd0d8aa4edcb1a79ee3341eb5047c7e9ef75bdc441ccea07c00cd3325cf4fda",
+	"controller-database": "ghcr.io/hakopod/neon-controller-database@sha256:26e0e6816f8c67af5ef256255562da07b03fe3368f2aa7585ce08b85bdd4c586",
+	"pageserver":          "ghcr.io/hakopod/neon-storage@sha256:a787c50ec7a89677e6ee2b17878bb251ecb2f2cc8c7a1f267a3c78e900b69e24",
+	"proxy":               "ghcr.io/hakopod/neon-storage@sha256:a787c50ec7a89677e6ee2b17878bb251ecb2f2cc8c7a1f267a3c78e900b69e24",
+	"safekeeper":          "ghcr.io/hakopod/neon-storage@sha256:a787c50ec7a89677e6ee2b17878bb251ecb2f2cc8c7a1f267a3c78e900b69e24",
+	"storage-controller":  "ghcr.io/hakopod/neon-storage@sha256:a787c50ec7a89677e6ee2b17878bb251ecb2f2cc8c7a1f267a3c78e900b69e24",
+}
 
 // NeonReleaseQualified changes only after the exact source, image inventory,
 // runtime, recovery and real-cluster evidence pass the release verifier.
