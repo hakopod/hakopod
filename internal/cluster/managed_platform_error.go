@@ -9,6 +9,8 @@ type ManagedPlatformRuntimeError struct {
 
 func (e *ManagedPlatformRuntimeError) Error() string {
 	safe := map[string]string{
+		"platform_identity":                    "managed platform certificate reconciliation failed",
+		"platform_tls_observe":                 "managed platform served certificate verification is pending",
 		"capacity_admission":                   "managed platform reconciliation capacity admission failed",
 		"neon_snapshot_mismatch":               "Neon runtime snapshot does not match the durable operation",
 		"neon_snapshot_missing":                "Neon runtime snapshot is unavailable",

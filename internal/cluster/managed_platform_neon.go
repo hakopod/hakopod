@@ -182,6 +182,15 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		if apierrors.IsNotFound(namespaceErr) || ns.DeletionTimestamp != nil {
 			return c.deleteSupabaseOperation(ctx, state, op, before)
 		}
+		if request.Render.Spec.TLSMode == "managed" {
+			prior, current, err := loadSupabaseClaims(ctx, state, op)
+			if err != nil {
+				return err
+			}
+			if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+				return err
+			}
+		}
 		zones, err := c.neonLifecycleZones(ctx, op.Kind, request.Render.Spec)
 		if err != nil {
 			return err
@@ -210,10 +219,6 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 			return fmt.Errorf("read Neon recovery binding: %w", bindingErr)
 		}
 	}
-	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
-	if err != nil {
-		return err
-	}
 	prior, current, err := loadSupabaseClaims(ctx, state, op)
 	if err != nil {
 		return err
@@ -223,9 +228,19 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		return err
 	}
 	request.Render.NamespaceUID = ns.UID
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+		return err
+	}
+	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
+	if err != nil {
+		return err
+	}
 	manifests, err := managedplatform.RenderNeon(request.Render)
 	if err != nil {
 		return err
+	}
+	if op.Spec.TLSMode == "managed" {
+		manifests.RetainSecretSnapshots = append(manifests.RetainSecretSnapshots, managedplatform.ManagedTLSIssuerSecret)
 	}
 	if err = validateNeonSecretSnapshot(request.SecretSnapshots, manifests.RequiredSecrets, request.Render.Spec, request.Render.PlatformID); err != nil {
 		return err
@@ -249,8 +264,10 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if bootstrap.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-bootstrap", "Neon infrastructure is not ready for lifecycle provisioning.", neonObservationMap(bootstrap))
 	}
-	if _, err = lifecycle.Provision(ctx, runtimeRequest); err != nil {
-		return err
+	if !op.Maintenance {
+		if _, err = lifecycle.Provision(ctx, runtimeRequest); err != nil {
+			return err
+		}
 	}
 	observation, err := c.ObserveNeon(ctx, op, manifests, current)
 	if err != nil {
@@ -259,9 +276,20 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if observation.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-ready", "Neon serving components are not ready.", neonObservationMap(observation))
 	}
+	result := neonObservationMap(observation)
+	if op.Spec.TLSMode == "managed" {
+		tlsObservation, err := c.observeManagedPlatformTLS(ctx, state, op, ns, request.Render.Spec, request.SecretSnapshots, current, before)
+		if err != nil {
+			return managedPlatformRuntimeError("platform_tls_observe", err)
+		}
+		result["tls"] = tlsObservation
+	}
 	prune := managedplatform.SupabaseManifests{PruneConfigMapsBeforeRevision: manifests.PruneConfigMapsBeforeRevision, RetainSecretSnapshots: manifests.RetainSecretSnapshots}
 	if err = c.pruneSupabaseSnapshots(ctx, state, op, ns, prune, prior, current, before); err != nil {
 		return err
+	}
+	if op.Maintenance {
+		return state.RecordManagedPlatformStep(ctx, op, "succeeded", "tls-ready", "Neon certificate maintenance is verified.", result)
 	}
 	// A second pass must re-observe every durable identity without issuing a new
 	// create before the proxy route becomes visible.
@@ -280,7 +308,6 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if err = durableStore.ActivateNeonProxyEndpoint(ctx, op, record); err != nil {
 		return err
 	}
-	result := neonObservationMap(observation)
 	result["tenant_id"] = recovered.TenantID
 	result["timeline_id"] = recovered.TimelineID
 	result["safekeeper_count"] = recovered.SafekeeperCount

@@ -78,6 +78,8 @@ type ManagedPlatformOperation struct {
 	Lease                string                `json:"-"`
 	LeaseUntil           *time.Time            `json:"-"`
 	Attempt              int                   `json:"attempt"`
+	Maintenance          bool                  `json:"-"`
+	MaintenanceID        string                `json:"-"`
 }
 
 type ManagedPlatformReview struct {

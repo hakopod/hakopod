@@ -113,6 +113,9 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 			return nil, getErr
 		}
 		value := current.Spec
+		if (value.TLSMode == "managed") != (item.Spec.TLSMode == "managed") {
+			return nil, fmt.Errorf("TLS ownership mode cannot change in place")
+		}
 		previous = &value
 	}
 	switch item.Spec.Kind {
@@ -225,6 +228,13 @@ func resolveManagedPlatformSecrets(ctx context.Context, resolver SupabaseSecretS
 			return nil, fmt.Errorf("resolve %s secret %s: %w", label, key, err)
 		}
 		copy := copyManagedPlatformSecret(data)
+		if item.Spec.TLSMode == "managed" {
+			for _, tlsKey := range []string{"ca.key", "tls.key", "tls.crt", "ca.crt"} {
+				if _, present := copy[tlsKey]; present {
+					return nil, fmt.Errorf("managed TLS secret %s must contain credentials only", key)
+				}
+			}
+		}
 		if old, ok := snapshots[name]; ok && !reflect.DeepEqual(old, copy) {
 			return nil, fmt.Errorf("%s secret snapshot %s resolved inconsistently", label, name)
 		}

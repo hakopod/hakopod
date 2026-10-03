@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+ "github.com/hakopod/hakopod/internal/managedplatform"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -236,6 +238,7 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return name == op.Plan.Namespace
 	}
 	if resourceKind == "secret" {
+        if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) { return true }
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
@@ -322,6 +325,7 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		return name == "managed-platform-"+op.PlatformID
 	}
 	if resourceKind == "secret" {
+        if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) { return true }
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
