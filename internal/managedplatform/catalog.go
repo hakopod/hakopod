@@ -30,7 +30,7 @@ func CatalogEntries() []CatalogEntry {
 	supabase.Storage["database"] = 10
 	supabase.Supabase = &SupabaseConfig{DatabaseName: "postgres", JWTExpirySeconds: 3600, RESTMaxRows: 1000, StorageFileLimitBytes: 50 << 20, PoolSize: 10, PoolMaxClients: 100}
 	neon := defaults("neon", NeonVersion, NeonComponents(), NeonStorageKeys())
-	neon.Neon = &NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 16, ProxyControlPlanePatchSHA256: NeonProxyControlPlanePatchSHA256}
+	neon.Neon = &NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 1, ProxyControlPlanePatchSHA256: NeonProxyControlPlanePatchSHA256}
 	return []CatalogEntry{
 		{Kind: "supabase", Version: SupabaseVersion, MinimumNodes: 1, MaximumNodes: 1, RequiredSecretKeys: supabase.UserSecretKeys(SupabaseRequiredSecretKeys()), DefaultSpec: supabase, Capability: Capability{Reason: "Supabase runtime, encrypted storage, recovery and native acceptance remain unqualified"}},
 		{Kind: "neon", Version: NeonVersion, MinimumNodes: 3, MaximumNodes: 8, RequiredSecretKeys: neon.UserSecretKeys(NeonSecretKeys()), DefaultSpec: neon, Capability: NeonRuntimeQualification()},

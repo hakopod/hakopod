@@ -100,7 +100,7 @@ func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 		Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
 		SecretSnapshots: map[string]map[string][]byte{
 			"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{},"compute_ctl_config":{}}`)},
+			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{"cluster":{"settings":[]}},"compute_ctl_config":{}}`)},
 			"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 		},
 		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
@@ -168,7 +168,7 @@ func TestManagedPlatformClaimReaderAllowsBoundedNeonRevisionRollover(t *testing.
 func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 	render := func(t *testing.T, pageservers, safekeepers, computes int) managedplatform.NeonManifests {
 		t.Helper()
-		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 64, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
+		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
 		for i := 0; i < max(3, pageservers); i++ {
 			spec.Placement.NodeNames = append(spec.Placement.NodeNames, fmt.Sprintf("node-%d", i))
 		}

@@ -10,6 +10,13 @@ controller also needs durable metadata. Hakopod must manage tenant and timeline
 identity, compute configuration, authentication and storage placement together.
 Three safekeepers alone do not make the complete service highly available.
 
+Each platform currently owns one tenant and one timeline. Its `branch_limit`
+must be `1`; creating additional branches or forks is not exposed. Compute node
+zero is the writer. Additional compute nodes use Neon's read-only replica mode
+and follow that timeline. Each compute permits 64 total PostgreSQL connections,
+including four reserved for administration. The connection proxy routes to
+compute zero; the replicas do not automatically replace it as writer.
+
 The source foundation requires a complete component allocation, versioned
 secret references, object-store scope and digest-pinned images. Its availability,
 cluster and public endpoint gates stay closed. These checks describe required

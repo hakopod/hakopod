@@ -6,7 +6,7 @@ import (
 )
 
 func neonCandidateSpec() Spec {
-	s := Spec{SchemaVersion: 1, Name: "analytics", Kind: "neon", Version: NeonVersion, Resources: map[string]Resources{}, Storage: map[string]int64{}, Secrets: map[string]SecretReference{}, Placement: Placement{NodeNames: []string{"node-a", "node-b", "node-c"}}, Neon: &NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 16, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-objects", ObjectStorageRegion: "test-region-1", ObjectStoragePrefix: "analytics", ProxyControlPlanePatchSHA256: NeonProxyControlPlanePatchSHA256}}
+	s := Spec{SchemaVersion: 1, Name: "analytics", Kind: "neon", Version: NeonVersion, Resources: map[string]Resources{}, Storage: map[string]int64{}, Secrets: map[string]SecretReference{}, Placement: Placement{NodeNames: []string{"node-a", "node-b", "node-c"}}, Neon: &NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-objects", ObjectStorageRegion: "test-region-1", ObjectStoragePrefix: "analytics", ProxyControlPlanePatchSHA256: NeonProxyControlPlanePatchSHA256}}
 	for _, key := range NeonComponents() {
 		s.Resources[key] = Resources{CPU: "500m", Memory: "2Gi"}
 	}
@@ -43,6 +43,7 @@ func TestNeonRejectsIncompleteStorageAndUnsafeRemoteCredentials(t *testing.T) {
 	for _, mutate := range []func(*Spec){
 		func(s *Spec) { s.Version = "latest" },
 		func(s *Spec) { s.Neon.Safekeepers = 1 },
+		func(s *Spec) { s.Neon.BranchLimit = 2 },
 		func(s *Spec) { delete(s.Resources, "storage-controller") },
 		func(s *Spec) { delete(s.Storage, "safekeeper") },
 		func(s *Spec) { delete(s.Secrets, "object-storage") },

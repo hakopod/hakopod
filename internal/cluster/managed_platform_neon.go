@@ -419,7 +419,7 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 		name := "compute-" + strconv.Itoa(i)
 		controlHost := "neon-" + name + "-control." + namespace + ".svc"
 		config.Computes = append(config.Computes, managedplatform.NeonControlTarget{Name: name, Origin: "https://" + controlHost + ":3081", Token: string(computeToken)})
-		raw, configErr := bindNeonComputeConfig(template, tenantID, timelineID, safekeepers)
+		raw, configErr := bindNeonComputeConfig(template, tenantID, timelineID, safekeepers, name)
 		if configErr != nil {
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
 		}
@@ -438,7 +438,11 @@ func neonDeterministicID(platformID, purpose string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekeepers []string) (json.RawMessage, error) {
+func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekeepers []string, computeName string) (json.RawMessage, error) {
+	ordinal, err := strconv.Atoi(strings.TrimPrefix(computeName, "compute-"))
+	if err != nil || ordinal < 0 || ordinal > 5 || computeName != "compute-"+strconv.Itoa(ordinal) {
+		return nil, fmt.Errorf("Neon compute identity is invalid")
+	}
 	var root map[string]any
 	if err := json.Unmarshal(template, &root); err != nil {
 		return nil, fmt.Errorf("decode Neon compute configuration: %w", err)
@@ -450,6 +454,40 @@ func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekee
 	spec["tenant_id"] = tenantID
 	spec["timeline_id"] = timelineID
 	spec["safekeeper_connstrings"] = append([]string(nil), safekeepers...)
+	// Upstream defaults every compute to Primary. Only compute-0 may write;
+	// the other computes follow the same timeline in hot standby mode.
+	spec["mode"] = "Primary"
+	if ordinal > 0 {
+		spec["mode"] = "Replica"
+	}
+	cluster, ok := spec["cluster"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Neon compute configuration requires a cluster object")
+	}
+	settings, ok := cluster["settings"].([]any)
+	if !ok && cluster["settings"] != nil {
+		return nil, fmt.Errorf("Neon compute settings must be a list")
+	}
+	bounded := make([]any, 0, len(settings)+3)
+	for _, setting := range settings {
+		option, ok := setting.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("Neon compute setting must be an object")
+		}
+		name, ok := option["name"].(string)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("Neon compute setting requires a name")
+		}
+		switch name {
+		case "max_connections", "superuser_reserved_connections", "reserved_connections":
+			continue
+		}
+		bounded = append(bounded, option)
+	}
+	for _, setting := range [][2]string{{"max_connections", "64"}, {"superuser_reserved_connections", "4"}, {"reserved_connections", "0"}} {
+		bounded = append(bounded, map[string]any{"name": setting[0], "value": setting[1], "vartype": "integer"})
+	}
+	cluster["settings"] = bounded
 	encoded, err := json.Marshal(root)
 	if err != nil || len(encoded) > 1<<20 {
 		return nil, fmt.Errorf("Neon compute configuration is invalid")
