@@ -30,7 +30,7 @@ func neonAuthPublicKey(t *testing.T, value []byte) ed25519.PublicKey {
 	return public
 }
 
-func TestNeonComputeAuthenticationMatchesProviderAndPreservesUserConfiguration(t *testing.T) {
+func TestNeonComputeAuthenticationMatchesProviderAndOwnsTLSPaths(t *testing.T) {
 	key := bytes.Repeat([]byte{9}, 32)
 	raw := json.RawMessage(`{"spec":{"format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[],"databases":[]}},"compute_ctl_config":{"jwks":{"keys":[]},"tls":{"key_path":"/tls/key","cert_path":"/tls/cert"}}}`)
 	publicKeys := map[string]ed25519.PublicKey{}
@@ -49,7 +49,7 @@ func TestNeonComputeAuthenticationMatchesProviderAndPreservesUserConfiguration(t
 				TLS map[string]string `json:"tls"`
 			} `json:"compute_ctl_config"`
 		}
-		if json.Unmarshal(bound, &config) != nil || len(config.Control.JWKS.Keys) != 1 || config.Control.TLS["key_path"] != "/tls/key" || config.Control.TLS["cert_path"] != "/tls/cert" {
+		if json.Unmarshal(bound, &config) != nil || len(config.Control.JWKS.Keys) != 1 || config.Control.TLS["key_path"] != "/var/run/secrets/hakopod/compute-auth/tls.key" || config.Control.TLS["cert_path"] != "/var/run/secrets/hakopod/compute-auth/tls.crt" {
 			t.Fatal("compute control fields were lost")
 		}
 		var original map[string]json.RawMessage

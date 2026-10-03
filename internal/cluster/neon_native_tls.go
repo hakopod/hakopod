@@ -4,6 +4,7 @@ package cluster
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -23,6 +24,7 @@ type neonNativeTLSObservation struct {
 	ServerVerified             bool     `json:"server_verified"`
 	PlaintextRefused           bool     `json:"plaintext_refused"`
 	Services                   []string `json:"services"`
+	ComputeSQLNames            []string `json:"compute_sql_names"`
 }
 
 // These facts concern the contacted listeners and certificate verification.
@@ -59,6 +61,7 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 	}
 	for i := 0; i < request.Render.Spec.Neon.ComputeReplicas; i++ {
 		listeners = append(listeners, listener{"compute", "compute-auth", "neon-compute-" + strconv.Itoa(i) + "-control." + namespace + ".svc", "3081", false})
+		listeners = append(listeners, listener{"compute-sql", "compute-auth", "neon-compute-" + strconv.Itoa(i) + "." + namespace + ".svc", "55433", true})
 	}
 	// The proxy certificate itself is the accepted trust anchor. It is kept
 	// inside the server snapshot; no certificate or secret is returned.
@@ -79,10 +82,13 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 				return result, err
 			}
 		}
-		if err := probeNeonNativeListener(ctx, net.JoinHostPort(target.host, target.port), target.host, pool, target.postgres); err != nil {
+		if err := probeNeonNativeListener(ctx, net.JoinHostPort(target.host, target.port), target.host, pool, target.postgres, target.role == "compute-sql"); err != nil {
 			return result, fmt.Errorf("native Neon %s TLS listener was not verified", target.role)
 		}
 		roles[target.role] = true
+		if target.role == "compute-sql" {
+			result.ComputeSQLNames = append(result.ComputeSQLNames, strings.TrimPrefix(strings.SplitN(target.host, ".", 2)[0], "neon-"))
+		}
 	}
 	for role := range roles {
 		result.Services = append(result.Services, role)
@@ -92,7 +98,7 @@ func probeNeonNativeTLS(ctx context.Context, request NeonRuntimeRequest) (neonNa
 	return result, nil
 }
 
-func probeNeonNativeListener(ctx context.Context, address, hostname string, roots *x509.CertPool, postgres bool) error {
+func probeNeonNativeListener(ctx context.Context, address, hostname string, roots *x509.CertPool, postgres, requireHBA bool) error {
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	connection, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -160,11 +166,7 @@ func probeNeonNativeListener(ctx context.Context, address, hostname string, root
 		if _, err = io.ReadFull(plain, body); err != nil {
 			return err
 		}
-		text := strings.ToLower(string(body))
-		if !strings.Contains(text, "ssl") && !strings.Contains(text, "tls") && !strings.Contains(text, "insecure") && !strings.Contains(text, "encryption") {
-			return fmt.Errorf("PostgreSQL rejection did not require TLS")
-		}
-		return nil
+		return verifyNeonPostgresTLSRefusal(body, requireHBA)
 	}
 	if _, err = io.WriteString(plain, "GET / HTTP/1.1\r\nHost: "+hostname+"\r\nConnection: close\r\n\r\n"); err != nil {
 		return err
@@ -205,4 +207,34 @@ func neonNativeConnectionDeadline(ctx context.Context) time.Time {
 		return outer
 	}
 	return deadline
+}
+
+// A password failure or unreachable service cannot qualify the SQL HBA policy.
+// Only a bounded PostgreSQL ErrorResponse with its explicit transport refusal
+// qualifies; the response text itself is never returned to callers or logs.
+func verifyNeonPostgresTLSRefusal(body []byte, requireHBA bool) error {
+	fields := map[byte]string{}
+	for len(body) > 1 {
+		end := bytes.IndexByte(body[1:], 0)
+		if end < 0 || body[0] == 0 {
+			return fmt.Errorf("PostgreSQL rejection is malformed")
+		}
+		if _, duplicate := fields[body[0]]; duplicate {
+			return fmt.Errorf("PostgreSQL rejection has duplicate fields")
+		}
+		fields[body[0]] = string(body[1 : 1+end])
+		body = body[2+end:]
+	}
+	if len(body) != 1 || body[0] != 0 {
+		return fmt.Errorf("PostgreSQL rejection is incomplete")
+	}
+	message := strings.ToLower(fields['M'])
+	if requireHBA {
+		if fields['C'] != "28000" || !strings.Contains(message, "pg_hba.conf rejects connection") || !strings.Contains(message, "no encryption") {
+			return fmt.Errorf("PostgreSQL did not explicitly reject plaintext through HBA")
+		}
+	} else if !strings.Contains(message, "ssl") && !strings.Contains(message, "tls") && !strings.Contains(message, "insecure") && !strings.Contains(message, "encryption") {
+		return fmt.Errorf("PostgreSQL rejection did not require TLS")
+	}
+	return nil
 }

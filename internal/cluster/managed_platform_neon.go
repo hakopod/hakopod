@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -469,58 +468,7 @@ func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekee
 	if err != nil || ordinal < 0 || ordinal > 5 || computeName != "compute-"+strconv.Itoa(ordinal) {
 		return nil, fmt.Errorf("Neon compute identity is invalid")
 	}
-	var root map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(template))
-	decoder.UseNumber()
-	if err := decoder.Decode(&root); err != nil || !json.Valid(template) {
-		return nil, fmt.Errorf("decode Neon compute configuration")
-	}
-	spec, ok := root["spec"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("Neon compute configuration requires a spec object")
-	}
-	spec["tenant_id"] = tenantID
-	spec["timeline_id"] = timelineID
-	spec["safekeeper_connstrings"] = append([]string(nil), safekeepers...)
-	// Upstream defaults every compute to Primary. Only compute-0 may write;
-	// the other computes follow the same timeline in hot standby mode.
-	spec["mode"] = "Primary"
-	if ordinal > 0 {
-		spec["mode"] = "Replica"
-	}
-	cluster, ok := spec["cluster"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("Neon compute configuration requires a cluster object")
-	}
-	settings, ok := cluster["settings"].([]any)
-	if !ok && cluster["settings"] != nil {
-		return nil, fmt.Errorf("Neon compute settings must be a list")
-	}
-	bounded := make([]any, 0, len(settings)+3)
-	for _, setting := range settings {
-		option, ok := setting.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("Neon compute setting must be an object")
-		}
-		name, ok := option["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("Neon compute setting requires a name")
-		}
-		switch name {
-		case "max_connections", "superuser_reserved_connections", "reserved_connections":
-			continue
-		}
-		bounded = append(bounded, option)
-	}
-	for _, setting := range [][2]string{{"max_connections", "64"}, {"superuser_reserved_connections", "4"}, {"reserved_connections", "0"}} {
-		bounded = append(bounded, map[string]any{"name": setting[0], "value": setting[1], "vartype": "integer"})
-	}
-	cluster["settings"] = bounded
-	encoded, err := json.Marshal(root)
-	if err != nil || len(encoded) > 1<<20 {
-		return nil, fmt.Errorf("Neon compute configuration is invalid")
-	}
-	return encoded, nil
+	return managedplatform.BindNeonComputeRuntime(template, tenantID, timelineID, safekeepers, ordinal > 0)
 }
 
 func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []string, spec managedplatform.Spec, platformID string) error {

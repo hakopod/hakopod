@@ -113,30 +113,10 @@ func BindNeonControllerRouting(raw json.RawMessage, platformID, tenantID, timeli
 	for i, member := range members {
 		hosts[i] = fmt.Sprintf("neon-safekeeper-%d.%s.svc:5454", member.ID-1, namespace)
 	}
-	spec["safekeeper_connstrings"] = hosts
 	spec["safekeepers_generation"] = state.Safekeepers.Generation
-	cluster, ok := spec["cluster"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("Neon compute cluster configuration is missing")
+	if err := bindNeonWALRouting(spec, hosts); err != nil {
+		return nil, err
 	}
-	settings, ok := cluster["settings"].([]any)
-	if !ok && cluster["settings"] != nil {
-		return nil, fmt.Errorf("Neon compute settings are invalid")
-	}
-	filtered := make([]any, 0, len(settings)+1)
-	for _, value := range settings {
-		setting, ok := value.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("Neon compute setting is invalid")
-		}
-		switch setting["name"] {
-		case "neon.pageserver_connstring", "neon.safekeepers", "neon.stripe_size", "neon.safekeepers_generation", "neon.safekeeper_conninfo_options":
-			continue
-		}
-		filtered = append(filtered, setting)
-	}
-	filtered = append(filtered, map[string]any{"name": "neon.safekeeper_conninfo_options", "value": "sslmode=verify-full sslrootcert=/var/run/secrets/hakopod/safekeeper-auth/ca.crt", "vartype": "string"})
-	cluster["settings"] = filtered
 	return json.Marshal(root)
 }
 

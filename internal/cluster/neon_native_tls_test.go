@@ -24,13 +24,13 @@ func TestNativeNeonTLSRequiresTrustedHostnameAndPlaintextRefusal(t *testing.T) {
 	address := strings.TrimPrefix(server.URL, "https://")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := probeNeonNativeListener(ctx, address, "example.com", roots, false); err != nil {
+	if err := probeNeonNativeListener(ctx, address, "example.com", roots, false, false); err != nil {
 		t.Fatalf("verified HTTPS listener failed: %v", err)
 	}
-	if err := probeNeonNativeListener(ctx, address, "invalid-native-probe.invalid", roots, false); err == nil {
+	if err := probeNeonNativeListener(ctx, address, "invalid-native-probe.invalid", roots, false, false); err == nil {
 		t.Fatal("probe admitted the wrong hostname")
 	}
-	if err := probeNeonNativeListener(ctx, address, "example.com", x509.NewCertPool(), false); err == nil {
+	if err := probeNeonNativeListener(ctx, address, "example.com", x509.NewCertPool(), false, false); err == nil {
 		t.Fatal("probe admitted an untrusted certificate")
 	}
 }
@@ -69,7 +69,7 @@ func TestNativeNeonTLSRejectsPlaintextEvenWhenTLSAlsoWorks(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := probeNeonNativeListener(ctx, listener.Addr().String(), "example.com", roots, false); err == nil {
+	if err := probeNeonNativeListener(ctx, listener.Addr().String(), "example.com", roots, false, false); err == nil {
 		t.Fatal("probe qualified a listener which also serves plaintext")
 	}
 	_ = listener.Close()
@@ -134,7 +134,7 @@ func TestNativeNeonPostgresTLSRequiresExplicitPlaintextRejection(t *testing.T) {
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			err = probeNeonNativeListener(ctx, listener.Addr().String(), "example.com", roots, true)
+			err = probeNeonNativeListener(ctx, listener.Addr().String(), "example.com", roots, true, false)
 			if rejection && err != nil || !rejection && err == nil {
 				t.Fatalf("unexpected plaintext classification: %v", err)
 			}
@@ -145,5 +145,23 @@ func TestNativeNeonPostgresTLSRequiresExplicitPlaintextRejection(t *testing.T) {
 				t.Fatal("PostgreSQL TLS fixture did not stop")
 			}
 		})
+	}
+}
+
+func TestNativeNeonComputeSQLRequiresHBARejectionBeforeAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		body  string
+		valid bool
+	}{
+		{"SFATAL\x00C28000\x00Mpg_hba.conf rejects connection for host \"10.1.2.3\", user \"native_tls_probe\", database \"postgres\", no encryption\x00\x00", true},
+		{"SFATAL\x00C28P01\x00Mpassword authentication failed\x00\x00", false},
+		{"SFATAL\x00C28000\x00MTLS connection required\x00\x00", false},
+		{"SFATAL\x00C08006\x00Mpg_hba.conf rejects connection, no encryption\x00\x00", false},
+		{"SFATAL\x00C28000\x00C28P01\x00Mpg_hba.conf rejects connection, no encryption\x00\x00", false},
+		{"SFATAL\x00C28000\x00Mpg_hba.conf rejects connection, no encryption\x00", false},
+	} {
+		if err := verifyNeonPostgresTLSRefusal([]byte(test.body), true); (err == nil) != test.valid {
+			t.Fatal("compute SQL plaintext evidence was misclassified")
+		}
 	}
 }
