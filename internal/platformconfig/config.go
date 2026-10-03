@@ -18,6 +18,7 @@ import (
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/nativeacceptance"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 	"github.com/pelletier/go-toml/v2"
@@ -112,6 +113,15 @@ type Options struct {
 	CatalogCapacity  func(context.Context, string, string) (managedplatform.CapacityPolicy, error)
 }
 
+func allowsUnboundOperatorQualification(options Options, kind string) bool {
+	if options.ExternalCapacity {
+		return false
+	}
+	bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return nativeacceptance.AllowsUnboundOperatorQualification(bounded, kind)
+}
+
 // Attach gives the standalone and embedded servers the same runtime and gates.
 func Attach(server *api.Server, path, encodedKey string, options Options) error {
 	if server == nil {
@@ -161,10 +171,10 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if supabaseConfigured && managedplatform.SupabaseReleaseQualified() && config.SupabaseQualification == nil {
+	if supabaseConfigured && managedplatform.SupabaseReleaseQualified() && config.SupabaseQualification == nil && !allowsUnboundOperatorQualification(options, "supabase") {
 		return nil, nil, nil, fmt.Errorf("Supabase release requires a reviewed operator qualification binding")
 	}
-	if neonConfigured && managedplatform.NeonReleaseQualified() && config.NeonQualification == nil {
+	if neonConfigured && managedplatform.NeonReleaseQualified() && config.NeonQualification == nil && !allowsUnboundOperatorQualification(options, "neon") {
 		return nil, nil, nil, fmt.Errorf("Neon release requires a reviewed operator qualification binding")
 	}
 	key := decodeManagedPlatformKey(encodedKey)
