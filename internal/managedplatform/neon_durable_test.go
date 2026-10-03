@@ -225,6 +225,8 @@ func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
 		switch request.Method + " " + request.URL.Path {
 		case "GET /control/v1/hakopod/ownership":
 			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
+		case "POST /v1/tenant":
+			w.WriteHeader(http.StatusConflict)
 		case "GET /control/v1/tenant/" + testTenant:
 			_, _ = w.Write([]byte(`{"ownership_token":"ffffffffffffffffffffffffffffffff","ownership_state":"completed"}`))
 		case "POST /debug/v1/inspect":
@@ -248,10 +250,10 @@ func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
 	}
 	runtime := durableNeonRuntimeForTest(t, storage, compute, lifecycle)
 	runtime.control.config.allowUnqualifiedOwnershipProtocolForTest = false
-	if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil || !strings.Contains(err.Error(), "different ownership token") {
+	if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil || !strings.Contains(err.Error(), "resume Neon tenant left a pending intent") {
 		t.Fatalf("foreign provider ownership was accepted: %v", err)
 	}
-	if lifecycle.intents["tenant"].Confirmed || len(lifecycle.claims) != 0 || len(events) != 0 {
+	if lifecycle.intents["tenant"].Confirmed || len(lifecycle.claims) != 0 || strings.Join(events, "|") != "heartbeat" {
 		t.Fatal("foreign provider ownership was converted into a durable claim")
 	}
 }

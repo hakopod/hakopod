@@ -322,6 +322,27 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			return state, fmt.Errorf("Neon tenant ownership claim is invalid: %w", err)
 		}
 	}
+	if !tenantOwned && ownershipRequired {
+		intent, pendingCreate, intentErr := pendingIntentFor(pending, "tenant", "neon_tenant", request.TenantID)
+		if intentErr != nil {
+			return state, intentErr
+		}
+		if pendingCreate {
+			// The provider may have persisted the tenant before completing its
+			// ownership record. Replay the exact intent through its token and
+			// request-hash fence before inspecting the canonical attachment.
+			if err = r.lifecycle.Heartbeat(ctx); err != nil {
+				return state, err
+			}
+			response, replayErr := r.control.doJSONOwned(ctx, r.control.config.StorageController, http.MethodPost, "/v1/tenant", neonTenantCreateBody(request), intent.ID, http.StatusCreated)
+			if replayErr != nil {
+				return state, fmt.Errorf("resume Neon tenant left a pending intent: %w", replayErr)
+			}
+			if err = verifyNeonOwnershipToken(response, intent.ID); err != nil {
+				return state, fmt.Errorf("resume Neon tenant returned invalid ownership: %w", err)
+			}
+		}
+	}
 	tenantExists, tenantIdentity, tenantGeneration, observedTenantToken, _, _, err := r.inspectTenant(ctx, request.TenantID)
 	if err != nil {
 		return state, err
@@ -372,10 +393,7 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return state, err
 		}
-		body := map[string]any{"new_tenant_id": request.TenantID}
-		if request.RecoveryTenantGeneration > 0 {
-			body["generation"] = request.RecoveryTenantGeneration
-		}
+		body := neonTenantCreateBody(request)
 		var response []byte
 		var createErr error
 		if ownershipRequired {
@@ -1564,6 +1582,14 @@ func verifiedNeonSafekeeperRegistrationIdentity(body []byte, want NeonSafekeeper
 		return "", err
 	}
 	return neonStorageIdentity("safekeeper", want.Name, want.NodeID, want.Generation, want.Host, observed.AvailabilityZone), nil
+}
+
+func neonTenantCreateBody(request NeonLifecycleRequest) map[string]any {
+	body := map[string]any{"new_tenant_id": request.TenantID}
+	if request.RecoveryTenantGeneration > 0 {
+		body["generation"] = request.RecoveryTenantGeneration
+	}
+	return body
 }
 
 func verifiedTenantCreate(body []byte, tenantID string) (string, int64, error) {
