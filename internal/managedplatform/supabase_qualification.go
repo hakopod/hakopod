@@ -7,7 +7,7 @@ import (
 )
 
 const SupabaseReleaseQualificationID = "supabase-0.8.2-linux-amd64"
-const SupabaseReleaseImageInventorySHA256 = "645f540fc1ae2a5ded50cd2d4955bb8fc2bca7b21ad92a7f54186ae505362be4"
+const SupabaseReleaseImageInventorySHA256 = "75cb73bff931e71bb5205b20b1a54b1362f7fa63029466568867d4d18bffff5a"
 
 var supabaseReleaseImages = map[string]string{
 	"api-gateway":   "docker.io/envoyproxy/envoy@sha256:be87c8b52663c1164a5bdf3c5419017a269cb3d8c74be1ec93638a71f1ffbd4b",
@@ -17,7 +17,7 @@ var supabaseReleaseImages = map[string]string{
 	"image-proxy":   "docker.io/darthsim/imgproxy@sha256:80200afeaa85c4abb58bbcb84deadab6d6cf5c79ac7af0694ff22e2b5de1477b",
 	"pooler":        "ghcr.io/hakopod/managed-supabase-pooler@sha256:91930deeb066e948a287f74e680388e7e54d397005f430c2e3e71f36799d07ec",
 	"postgres-meta": "docker.io/supabase/postgres-meta@sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e",
-	"realtime":      "docker.io/supabase/realtime@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76",
+	"realtime":      "ghcr.io/hakopod/managed-supabase-realtime@sha256:ccefaabfbd219a4ab4d40892302a0dafef3c534c24ec47f2011d3a5e792dc302",
 	"rest":          "docker.io/postgrest/postgrest@sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0",
 	"storage":       "docker.io/supabase/storage-api@sha256:63da55733ce9d7592d860739acb94f0b6189d880b7565d247ee5b195be854db1",
 	"studio":        "docker.io/supabase/studio@sha256:0f797270d236090c79fd26a97a1e5d1cf7ec5f36e93b9b4c3c453e1cb1aeadab",
