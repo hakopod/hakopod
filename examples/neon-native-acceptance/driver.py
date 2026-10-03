@@ -263,7 +263,7 @@ class Driver:
         if not ID.fullmatch(pid): raise RuntimeError("proxy SQL endpoint identity is invalid")
         if password!=password.strip() or any(char in password for char in "\r\n"): raise RuntimeError("proxy SQL credential is malformed")
         environment={key:value for key,value in os.environ.items() if not key.startswith("PG") and key!="PSQLRC"}
-        ca=self.root/"managed-tls-ca.crt"
+        ca=self.platform_ca(pid)
         environment.update(PGPASSWORD=password,PGOPTIONS="endpoint="+pid,PGAPPNAME="hakopod_neon_native_acceptance",PGCONNECT_TIMEOUT="10",PGHOST="neon-proxy",PGHOSTADDR="127.0.0.1",PGPORT=str(self.a.local_port),PGUSER="cloud_admin",PGDATABASE="postgres",PGSSLMODE="verify-full",PGSSLROOTCERT=str(ca))
         return environment
     def proxy_query(self,pid,password,statement,expect_success=True,timeout=45,expected_error=None):
@@ -272,6 +272,44 @@ class Driver:
         environment=self.proxy_environment(pid,password)
         errors=tempfile.TemporaryFile()
         forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n","managed-platform-"+pid,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
+    def platform_ca(self,pid):
+        if not isinstance(pid,str) or not ID.fullmatch(pid) or pid not in self.bound:
+            raise RuntimeError("proxy trust platform identity is not bound")
+        cache=getattr(self,"proxy_ca_files",{})
+        if pid in cache:
+            path,digest=cache[pid]
+            if hashlib.sha256(protected_text(path,64<<10).encode()).hexdigest()!=digest:
+                raise RuntimeError("cached platform trust changed")
+            return path
+        if len(cache)>=3: raise RuntimeError("platform trust inventory exceeded its bound")
+        trust=self.api("GET","/api/v1/managed-platforms/"+pid+"/trust")
+        if not isinstance(trust,dict) or set(trust)!={"certificate_pem","fingerprint","issuer","not_before","expires_at"}:
+            raise RuntimeError("platform trust response is incomplete")
+        pem=trust["certificate_pem"]
+        if not isinstance(pem,str) or not 1<len(pem.encode())<=64<<10 or re.fullmatch(r"-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\r\n]+\n-----END CERTIFICATE-----\n?",pem) is None:
+            raise RuntimeError("platform trust must contain one public CA")
+        try:
+            der=ssl.PEM_cert_to_DER_cert(pem)
+            context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.load_verify_locations(cadata=pem)
+            fingerprint=hashlib.sha256(der).hexdigest()
+            issuer=["CN=Hakopod platform "+pid,"OU=managed-platform-"+pid]
+            if context.cert_store_stats()["x509_ca"]!=1 or trust["fingerprint"]!=fingerprint or sorted(trust["issuer"].split(","))!=sorted(issuer):
+                raise ValueError("trust identity differs")
+            from datetime import datetime, timezone
+            before=datetime.fromisoformat(trust["not_before"].replace("Z","+00:00"))
+            expires=datetime.fromisoformat(trust["expires_at"].replace("Z","+00:00"))
+            if before.tzinfo is None or expires.tzinfo is None or not before<=datetime.now(timezone.utc)<expires:
+                raise ValueError("trust validity differs")
+        except (ValueError,TypeError,AttributeError,ssl.SSLError):
+            raise RuntimeError("platform CA identity or validity is invalid") from None
+        path=self.root/("proxy-ca-"+pid+"-"+fingerprint[:16]+".crt")
+        fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        with os.fdopen(fd,"w") as output:
+            output.write(pem); output.flush(); os.fsync(output.fileno())
+        cache[pid]=(path,hashlib.sha256(pem.encode()).hexdigest())
+        self.proxy_ca_files=cache
+        return path
         try:
             for _ in range(150):
                 if forward.poll() is not None: raise RuntimeError("Neon proxy SQL port-forward exited")
