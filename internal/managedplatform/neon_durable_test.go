@@ -623,8 +623,8 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	if tenantDeletePreflights != 3 || tenantDeletePreparations != 2 || tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 4 || timelineDescribeCalls != 4 || safekeeperTimelineCalls != 12 {
 		t.Fatalf("owned deletion did not preflight, prepare, and recheck provider state: tenant preflights=%d tenant preparations=%d tenant deletes=%d timeline deletes=%d tenant describes=%d timeline describes=%d safekeeper timeline describes=%d", tenantDeletePreflights, tenantDeletePreparations, tenantDeletes, timelineDeletes, tenantDescribeCalls, timelineDescribeCalls, safekeeperTimelineCalls)
 	}
-	if _, ok := lifecycle.claims["tenant"]; ok {
-		t.Fatal("tenant claim was not released after the verified delete")
+	if _, ok := lifecycle.claims["tenant"]; !ok {
+		t.Fatal("tenant tombstone authority was released before namespace absence")
 	}
 	if _, ok := lifecycle.claims["timeline"]; ok {
 		t.Fatal("timeline claim was not released after the verified delete")
