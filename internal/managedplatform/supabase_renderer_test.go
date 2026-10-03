@@ -431,8 +431,8 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 		t.Fatal("Envoy basic-auth user list is not newline terminated htpasswd data")
 	}
 	envoyTemplate := fixture.Assets["api/envoy/lds.template.yaml"]
-	if !strings.Contains(envoyTemplate, "%REQ_WITHOUT_QUERY(X-ENVOY-ORIGINAL-PATH?:PATH)%") || strings.Contains(envoyTemplate, "%REQ(REFERER)%") || strings.Contains(envoyTemplate, "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%") {
-		t.Fatal("Envoy access logging can expose request query strings or Referer credentials")
+	if strings.Contains(envoyTemplate, "%REQ_WITHOUT_QUERY(") || strings.Contains(envoyTemplate, "%REQ(REFERER)%") || strings.Contains(envoyTemplate, "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%") || strings.Contains(envoyTemplate, "%REQ(:PATH)%") || strings.Contains(envoyTemplate, "%REQ(USER-AGENT)%") {
+		t.Fatal("Envoy access logging can expose request targets or header credentials")
 	}
 	if bootstrap.Data[assetKey("db/realtime.sql")] != rendererFixture().Assets["db/realtime.sql"] {
 		t.Fatal("Hakopod ownership setup modified the pinned upstream realtime migration")
