@@ -282,6 +282,16 @@ class Tests(unittest.TestCase):
             with self.assertRaises((FileNotFoundError,ValueError)): RECORD.assemble(ROOT,Path(temporary)/"archive",Path(temporary)/"build",Path(temporary)/"report",output)
             self.assertFalse(output.exists())
 
+    def test_tls_requires_authenticated_proxy_query_after_trust_checks(self):
+        logical={"broker-auth","compute-auth","controller-auth","controller-database-password","pageserver-auth","proxy-auth","safekeeper-auth"}
+        snapshots={name:{} for name in logical}; common={"status":"passed","ca_fingerprint":"same-ca"}
+        observation={"run_id":"4"*32,"platform_id":"6"*32,"namespace_uid":"uid-source","client_verification_enforced":True,"server_verified":True,"plaintext_refused":True,"services":["storage-controller","pageserver","safekeeper","compute","proxy"],"managed_tls":{"before":dict(common,snapshots=snapshots),"injection":dict(common,transition_journal_complete=True,near_expiry_leaf_fingerprint="old-leaf"),"renewal":dict(common,snapshots=snapshots,all_snapshots_owned_and_valid=True,served_proxy_leaf_fingerprint="new-leaf")},"control_plane_trust":{"correct_issuer_reached_authentication":True,"wrong_issuer_refused":True,"proxy_authenticated_query":True}}
+        state={"run_id":"4"*32,"resources":resources()}
+        PRODUCER.validate_observation("tls",observation,state)
+        for replacement in (False,None):
+            observation["control_plane_trust"]["proxy_authenticated_query"]=replacement
+            with self.assertRaisesRegex(ValueError,"authenticated SQL"): PRODUCER.validate_observation("tls",observation,state)
+
 class QualificationRecordTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

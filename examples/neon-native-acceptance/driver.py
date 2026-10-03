@@ -80,13 +80,16 @@ class Driver:
         if token != token.strip() or "\n" in token or "\r" in token: raise RuntimeError("API token is malformed")
         self.token=token; self.platforms=[]; self.bound={}; self.run_id=""; self.foreign=None; self.native={}; self.pending_revocation=None; self.pending_lifecycle=None
         if not 16 <= len(self.token) <= 4096: raise RuntimeError("API token is malformed")
-    def command(self, argv, timeout=30, data=None):
+        password=protected_text(a.proxy_password_file)
+        if password!=password.strip() or any(char in password for char in "\r\n"): raise RuntimeError("proxy SQL credential is malformed")
+        if not Path(a.psql).is_absolute() or not os.access(a.psql,os.X_OK): raise RuntimeError("PostgreSQL client executable is unavailable")
+    def command(self, argv, timeout=30, data=None, env=None):
         if not isinstance(argv, (list, tuple)) or not 1 <= len(argv) <= 128 or any(not isinstance(item, str) or not item or "\x00" in item or len(item.encode()) > 8192 for item in argv): raise RuntimeError("acceptance command is malformed")
         if type(timeout) not in (int, float) or not 1 <= timeout <= 1800: raise RuntimeError("acceptance command timeout is invalid")
         if data is not None and (not isinstance(data, bytes) or len(data) > MAX_COMMAND_INPUT): raise RuntimeError("acceptance command input is invalid or unbounded")
         def limits(): resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_COMMAND_OUTPUT + 1, MAX_COMMAND_OUTPUT + 1))
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-            process = subprocess.Popen(argv, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL, stdout=stdout, stderr=stderr, close_fds=True, preexec_fn=limits)
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL, stdout=stdout, stderr=stderr, close_fds=True, preexec_fn=limits, env=env)
             try: process.communicate(data, timeout=timeout)
             except subprocess.TimeoutExpired:
                 process.kill(); process.wait(timeout=5)
@@ -248,7 +251,32 @@ class Driver:
             self.command([sys.executable,self.a.control_plane_bridge,"probe-verify-wrong",*base],60)
         finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
         if wrong!=b"E": raise RuntimeError("wrong control-plane issuer was not rejected")
-        return {"correct_issuer_reached_authentication":True,"wrong_issuer_refused":True}
+        self.authenticated_proxy_query(pid)
+        return {"correct_issuer_reached_authentication":True,"wrong_issuer_refused":True,"proxy_authenticated_query":True}
+    def authenticated_proxy_query(self,pid):
+        if not ID.fullmatch(pid): raise RuntimeError("proxy SQL endpoint identity is invalid")
+        password=protected_text(self.a.proxy_password_file)
+        if password!=password.strip() or any(char in password for char in "\r\n"): raise RuntimeError("proxy SQL credential is malformed")
+        environment={key:value for key,value in os.environ.items() if not key.startswith("PG") and key!="PSQLRC"}
+        ca=self.root/"managed-tls-ca.crt"
+        environment.update(PGPASSWORD=password,PGOPTIONS="endpoint="+pid,PGCONNECT_TIMEOUT="10",PGHOST="neon-proxy",PGHOSTADDR="127.0.0.1",PGPORT=str(self.a.local_port),PGUSER="cloud_admin",PGDATABASE="postgres",PGSSLMODE="verify-full",PGSSLROOTCERT=str(ca))
+        errors=tempfile.TemporaryFile()
+        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n","managed-platform-"+pid,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
+        try:
+            for _ in range(150):
+                if forward.poll() is not None: raise RuntimeError("Neon proxy SQL port-forward exited")
+                try:
+                    with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
+                except OSError: time.sleep(.2)
+            else: raise RuntimeError("Neon proxy SQL port-forward did not become ready")
+            observed=self.command([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c","SELECT current_user || ':' || current_database()"],45,env=environment).strip()
+            if observed!="cloud_admin:postgres": raise RuntimeError("Neon proxy SQL authenticated identity differs")
+        finally:
+            forward.terminate()
+            try:forward.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                forward.kill(); forward.wait(timeout=5)
+            errors.close()
     def sql(self,ns,pod,statement):
         return self.command(["kubectl","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",ns,"exec",pod,"-c","compute","--","psql","-XAt","postgresql://cloud_admin@127.0.0.1:55433/postgres?sslmode=require","-v","ON_ERROR_STOP=1","-c",statement],45).strip()
     def compute_pod(self,pid):
@@ -346,7 +374,7 @@ class Driver:
 
 def parse(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ("source","kubeconfig","api-url","token-file","source-spec","target-spec","cancellation-target-spec","images","identities","destination-id","work-dir","gate-attestation","project","managed-tls-helper","runtime-spec-digest-helper","control-psql-command-file","control-plane-bridge","openssl"):p.add_argument("--"+name,required=True)
+    for name in ("source","kubeconfig","api-url","token-file","source-spec","target-spec","cancellation-target-spec","images","identities","destination-id","work-dir","gate-attestation","project","managed-tls-helper","runtime-spec-digest-helper","control-psql-command-file","control-plane-bridge","openssl","psql","proxy-password-file"):p.add_argument("--"+name,required=True)
     p.add_argument("--destination-revision",required=True,type=int); p.add_argument("--local-port",required=True,type=int); return p.parse_args(argv)
 
 def main(argv=None):
