@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { ErrorState, Loading } from '../components/shared'
 import { canAccess, useResourceScope, useScope } from '../lib/scope'
 import { useManagedPlatform, useManagedPlatformCatalog } from '../lib/managed-platforms'
 import { PlatformForm, PlatformFormState } from './platforms.new'
@@ -51,15 +51,6 @@ function Configure({ id }: { id: string }) {
     return (
       <PlatformFormState editing>
         <ErrorState error={catalog.error || new Error('Platform configuration unavailable')} />
-      </PlatformFormState>
-    )
-  if (query.data.spec.kind !== 'supabase')
-    return (
-      <PlatformFormState editing>
-        <Empty
-          title="Configuration updates unavailable"
-          description="This platform does not yet support managed configuration updates."
-        />
       </PlatformFormState>
     )
   return (
