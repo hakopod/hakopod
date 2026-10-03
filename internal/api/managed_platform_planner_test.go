@@ -46,8 +46,8 @@ func TestNativeManagedPlatformPlannerDoesNotPromoteCapacityToQualification(t *te
 		}
 		return map[string][]byte{"config.json": []byte(`{"spec":{}}`)}, nil
 	}
-	if _, err = planner.PlanManagedPlatform(context.Background(), principal, item, 0, "create"); err == nil || !strings.Contains(err.Error(), "cluster object") {
-		t.Fatal("invalid compute template passed review")
+	if _, err = planner.PlanManagedPlatform(context.Background(), principal, item, 0, "create"); err == nil || !strings.Contains(err.Error(), "Neon compute template") {
+		t.Fatalf("invalid compute template was not rejected by template validation: %v", err)
 	}
 	planner.ResolveNeonSecret = func(context.Context, store.Principal, store.ManagedPlatform, string, managedplatform.SecretReference) (map[string][]byte, error) {
 		t.Fatal("deletion resolved a provisioning template")
