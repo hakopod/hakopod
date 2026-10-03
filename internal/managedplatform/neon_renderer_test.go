@@ -442,4 +442,42 @@ func TestNeonComputeOwnershipSetupFailsClosed(t *testing.T) {
 	if err = run(wrongIdentity); err == nil {
 		t.Fatal("ownership initializer accepted a directory owned by another compute identity")
 	}
+	wrongGroup := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid()+1) + ":700"
+	if err = run(wrongGroup); err == nil {
+		t.Fatal("ownership initializer accepted a directory with another compute group")
+	}
+}
+
+func TestNeonComputeOwnershipSetupOnSetgidVolume(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0770|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(parent, "ownership")
+	expected := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid()) + ":700"
+	run := func() error {
+		return exec.Command("/bin/sh", "-ec", neonComputeOwnershipSetupScript, "prepare-compute-ownership", directory, expected).Run()
+	}
+	if err := run(); err != nil {
+		t.Fatalf("ownership initializer rejected a private directory on a setgid volume: %v", err)
+	}
+	info, err := os.Lstat(directory)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 || info.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("fixture did not create a private setgid directory: %v %v", info, err)
+	}
+	if err := run(); err != nil {
+		t.Fatalf("ownership initializer rejected its existing private setgid directory: %v", err)
+	}
+	for _, mode := range []os.FileMode{0770 | os.ModeSetgid, 0700 | os.ModeSetuid, 0700 | os.ModeSticky} {
+		if err := os.Chmod(directory, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(); err == nil {
+			t.Fatalf("ownership initializer accepted unsafe mode %v", mode)
+		}
+		info, err := os.Lstat(directory)
+		if err != nil || info.Mode()&(os.ModePerm|os.ModeSetgid|os.ModeSetuid|os.ModeSticky) != mode {
+			t.Fatalf("ownership initializer changed refused directory mode: %v %v", info, err)
+		}
+	}
 }
