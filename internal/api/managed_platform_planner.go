@@ -27,6 +27,7 @@ type NativeManagedPlatformPlanner struct {
 	NeonImages                    map[string]string
 	NeonIdentities                map[string]managedplatform.NeonRuntimeIdentity
 	NeonProxyControlPlaneOrigin   string
+	NeonProxyControlPlaneCAPEM    string
 	NeonControlPlaneNamespace     string
 	NeonControlPlanePodLabels     map[string]string
 	NeonProxyToken                string
@@ -137,7 +138,7 @@ func (p *NativeManagedPlatformPlanner) SealManagedPlatformSnapshot(ctx context.C
 		if p.ResolveNeonSecret == nil {
 			return nil, fmt.Errorf("Neon runtime resolution is unavailable")
 		}
-		render := managedplatform.NeonRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.NeonImages), Revision: expected + 1, Identities: cloneNeonIdentities(p.NeonIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ProxyControlPlaneOrigin: p.NeonProxyControlPlaneOrigin, ControlPlaneNamespace: p.NeonControlPlaneNamespace, ControlPlanePodLabels: cloneManagedPlatformStrings(p.NeonControlPlanePodLabels), ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous}
+		render := managedplatform.NeonRenderInput{Spec: item.Spec, PlatformID: item.ID, Images: cloneManagedPlatformStrings(p.NeonImages), Revision: expected + 1, Identities: cloneNeonIdentities(p.NeonIdentities), ApprovedEncryptedStorageClass: p.ApprovedEncryptedStorageClass, SharedStorageGID: p.SharedStorageGID, ProxyControlPlaneOrigin: p.NeonProxyControlPlaneOrigin, ProxyControlPlaneCAPEM: p.NeonProxyControlPlaneCAPEM, ControlPlaneNamespace: p.NeonControlPlaneNamespace, ControlPlanePodLabels: cloneManagedPlatformStrings(p.NeonControlPlanePodLabels), ApprovedExternalHTTPSCIDRs: append([]string(nil), p.ApprovedExternalHTTPSCIDRs...), PreviousSpec: previous}
 		snapshots, resolveErr := resolveManagedPlatformSecrets(ctx, p.ResolveNeonSecret, principal, item, "Neon")
 		if resolveErr != nil {
 			return nil, resolveErr

@@ -1,6 +1,9 @@
 package managedplatform
 
 import (
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"regexp"
@@ -19,7 +22,12 @@ import (
 	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 )
 
-const maxNeonRenderedObjects = 104
+const maxNeonRenderedObjects = 105
+
+const (
+	maxNeonControlPlaneCABundleBytes = 64 << 10
+	maxNeonControlPlaneCACerts       = 16
+)
 
 const (
 	neonComputeOwnershipDirectory   = "/var/db/postgres/hakopod-ownership"
@@ -53,6 +61,7 @@ type NeonRenderInput struct {
 	ApprovedEncryptedStorageClass string
 	SharedStorageGID              int64
 	ProxyControlPlaneOrigin       string
+	ProxyControlPlaneCAPEM        string
 	ControlPlaneNamespace         string
 	ControlPlanePodLabels         map[string]string
 	ApprovedExternalHTTPSCIDRs    []string
@@ -94,6 +103,9 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 	if err = ValidateHTTPSOrigin(in.ProxyControlPlaneOrigin, "Neon proxy control-plane origin"); err != nil {
 		return NeonManifests{}, err
 	}
+	if err = ValidateNeonControlPlaneCABundle(in.ProxyControlPlaneCAPEM); err != nil {
+		return NeonManifests{}, err
+	}
 	if err = ValidateNeonNetworkTrust(in.ControlPlaneNamespace, in.ControlPlanePodLabels, in.ApprovedExternalHTTPSCIDRs); err != nil {
 		return NeonManifests{}, err
 	}
@@ -108,7 +120,7 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 	meta := func(name string) metav1.ObjectMeta {
 		return metav1.ObjectMeta{Name: name, Namespace: plan.Namespace, Labels: neonCopyStrings(labels), OwnerReferences: []metav1.OwnerReference{owner}}
 	}
-	objects := []runtime.Object{}
+	objects := []runtime.Object{neonProxyControlPlaneCAConfigMap(meta, in)}
 
 	objects = append(objects, neonPVC(meta, in, "controller-database", "controller-database"))
 	objects = append(objects, neonControllerDatabaseConfigMap(meta, in))
@@ -176,6 +188,41 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 		pruneBefore = 0
 	}
 	return NeonManifests{Namespace: ns, ExpectedUID: in.NamespaceUID, Objects: objects, RequiredSecrets: secrets, TLSRequired: true, PruneConfigMapsBeforeRevision: pruneBefore, RetainSecretSnapshots: append([]string(nil), secrets...)}, nil
+}
+
+func ValidateNeonControlPlaneCABundle(value string) error {
+	if len(value) == 0 || len(value) > maxNeonControlPlaneCABundleBytes {
+		return fmt.Errorf("Neon proxy control-plane CA must be a non-empty certificate bundle of at most 64 KiB")
+	}
+	remaining := bytes.TrimSpace([]byte(value))
+	if len(remaining) == 0 {
+		return fmt.Errorf("Neon proxy control-plane CA must be a non-empty certificate bundle of at most 64 KiB")
+	}
+	count := 0
+	for len(remaining) > 0 {
+		if !bytes.HasPrefix(remaining, []byte("-----BEGIN CERTIFICATE-----")) {
+			return fmt.Errorf("Neon proxy control-plane CA must contain certificates only")
+		}
+		block, rest := pem.Decode(remaining)
+		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return fmt.Errorf("Neon proxy control-plane CA must contain valid certificate PEM blocks only")
+		}
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil || !certificate.IsCA || !certificate.BasicConstraintsValid || certificate.KeyUsage&x509.KeyUsageCertSign == 0 {
+			return fmt.Errorf("Neon proxy control-plane CA bundle contains a certificate that is not a certificate authority")
+		}
+		count++
+		if count > maxNeonControlPlaneCACerts {
+			return fmt.Errorf("Neon proxy control-plane CA bundle exceeds 16 certificates")
+		}
+		remaining = bytes.TrimSpace(rest)
+	}
+	return nil
+}
+
+func neonProxyControlPlaneCAConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput) *corev1.ConfigMap {
+	name := "neon-proxy-control-plane-ca-r" + strconv.FormatInt(in.Revision, 10)
+	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"ca.crt": in.ProxyControlPlaneCAPEM}}
 }
 
 func validateNeonRevision(in NeonRenderInput) error {
@@ -306,9 +353,13 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 		return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), FSGroup: &identity.GID, SupplementalGroups: []int64{identity.GID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, InitContainers: []corev1.Container{ownershipInit}, Containers: podContainers, Volumes: volumes}}
 	} else if logicalName == "proxy" {
 		origin := strings.TrimSuffix(in.ProxyControlPlaneOrigin, "/")
+		configName := "neon-proxy-control-plane-ca-r" + strconv.FormatInt(in.Revision, 10)
+		mode := int32(0444)
+		volumes = append(volumes, corev1.Volume{Name: "control-plane-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}, DefaultMode: &mode}}})
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "control-plane-ca", MountPath: "/etc/hakopod-control-plane", ReadOnly: true})
 		container.Command = []string{"proxy"}
 		container.Args = []string{"--proxy=0.0.0.0:5432", "--http=0.0.0.0:7001", "--mgmt=127.0.0.1:7000", "--tls-key=/var/run/secrets/hakopod/proxy-auth/tls.key", "--tls-cert=/var/run/secrets/hakopod/proxy-auth/tls.crt", "--auth-backend=control-plane", "--auth-endpoint=" + origin + "/api/v1/internal/neon/proxy"}
-		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["proxy-auth"], "NEON_PROXY_TO_CONTROLPLANE_TOKEN", "token"))
+		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["proxy-auth"], "NEON_PROXY_TO_CONTROLPLANE_TOKEN", "token"), corev1.EnvVar{Name: "SSL_CERT_FILE", Value: "/etc/hakopod-control-plane/ca.crt"})
 	}
 	policy := corev1.FSGroupChangeOnRootMismatch
 	return corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: neonComponentLabels(labels, instanceName, logicalName)}, Spec: corev1.PodSpec{AutomountServiceAccountToken: neonBool(false), EnableServiceLinks: neonBool(false), NodeName: neonNodeName(in.Spec, logicalName, ordinal), NodeSelector: neonPlatformNodeSelector(), TerminationGracePeriodSeconds: neonInt64(30), SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: neonBool(true), RunAsUser: &identity.UID, RunAsGroup: &identity.GID, FSGroup: &in.SharedStorageGID, SupplementalGroups: []int64{in.SharedStorageGID}, FSGroupChangePolicy: &policy, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}, Containers: []corev1.Container{container}, Volumes: volumes}}

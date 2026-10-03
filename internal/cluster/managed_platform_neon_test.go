@@ -185,7 +185,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		for _, key := range managedplatform.NeonSecretKeys() {
 			spec.Secrets[key] = managedplatform.SecretReference{Name: "neon-" + key, Revision: 1}
 		}
-		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
+		ca := supabaseGatewayCertificateFixture(t, []string{"control.example.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
+		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ProxyControlPlaneCAPEM: string(ca), ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,8 +204,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 			t.Fatal("supported Neon topology exceeds the managed platform claim bound")
 		}
 	}
-	assert(t, 2, 3, 1, 46, 63)
-	assert(t, 8, 3, 6, 95, 123)
+	assert(t, 2, 3, 1, 47, 64)
+	assert(t, 8, 3, 6, 96, 124)
 
 	maximum := render(t, 8, 3, 6)
 	immutableRevisionObjects := 0
@@ -214,7 +215,7 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		}
 	}
 	kubernetesClaims := len(maximum.Objects) + len(maximum.RequiredSecrets) + 1
-	if immutableRevisionObjects != 15 || kubernetesClaims+immutableRevisionObjects != 119 {
+	if immutableRevisionObjects != 16 || kubernetesClaims+immutableRevisionObjects != 121 {
 		t.Fatalf("maximum update rollover inventory changed: Kubernetes=%d old immutable ConfigMaps=%d total=%d", kubernetesClaims, immutableRevisionObjects, kubernetesClaims+immutableRevisionObjects)
 	}
 	if maxSupabaseRuntimeObjects != managedplatform.MaxComponents*5 {
