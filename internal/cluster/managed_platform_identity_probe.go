@@ -11,7 +11,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +22,9 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport/spdy"
 )
 
@@ -153,13 +157,16 @@ func (c *Client) platformTLSProbePod(ctx context.Context, op store.ManagedPlatfo
 	return pod, nil
 }
 
-// Port forwarding reaches an exact owned pod without publishing a listener or
-// requiring unqualified client tools inside application images. The only local
-// listener is loopback, ephemeral and closed when this bounded probe completes.
+// Owned Pod streams avoid publishing provider listeners. Ordinary runtimes use
+// an ephemeral loopback port forward; runsc uses fixed tools in the qualified
+// container. Both transports close when the bounded probe completes.
 func (c *Client) platformTLSStream(ctx context.Context, pod *corev1.Pod, port int) (net.Conn, func(), error) {
 	noop := func() {}
 	if c.execConfig == nil {
 		return nil, noop, fmt.Errorf("managed platform TLS probe transport is unavailable")
+	}
+	if pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == "runsc" {
+		return c.platformTLSExecStream(ctx, pod, port)
 	}
 	transport, upgrader, err := spdy.RoundTripperFor(c.execConfig)
 	if err != nil {
@@ -193,7 +200,7 @@ func (c *Client) platformTLSStream(ctx context.Context, pod *corev1.Pod, port in
 	case <-ready:
 	}
 	current, err := c.kube.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
-	if err != nil || current.UID != pod.UID || current.DeletionTimestamp != nil {
+	if err != nil || current.UID != pod.UID || current.DeletionTimestamp != nil || !reflect.DeepEqual(current.OwnerReferences, pod.OwnerReferences) || !reflect.DeepEqual(current.Spec, pod.Spec) {
 		closeStream()
 		return nil, noop, fmt.Errorf("managed platform TLS probe member changed during transport setup")
 	}
@@ -209,6 +216,96 @@ func (c *Client) platformTLSStream(ctx context.Context, pod *corev1.Pod, port in
 	}
 	cleanup := func() { _ = conn.Close(); closeStream() }
 	return conn, cleanup, nil
+}
+
+// runsc keeps listeners in its userspace network stack, which kubelet's
+// network-namespace port forwarding cannot reach. A fixed byte stream inside
+// the owned container reaches loopback without terminating TLS or applying
+// credentials. The caller still verifies the service name and certificate.
+func (c *Client) platformTLSExecStream(ctx context.Context, pod *corev1.Pod, port int) (net.Conn, func(), error) {
+	noop := func() {}
+	container, command, err := platformTLSExecCommand(pod, port)
+	if err != nil {
+		return nil, noop, err
+	}
+	current, err := c.kube.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil || current.UID != pod.UID || current.DeletionTimestamp != nil || !reflect.DeepEqual(current.OwnerReferences, pod.OwnerReferences) || !reflect.DeepEqual(current.Spec, pod.Spec) {
+		return nil, noop, fmt.Errorf("managed platform TLS probe member changed before stream")
+	}
+	lifetime, cancel := context.WithTimeout(ctx, 12*time.Second)
+	u := c.restClient().Post().Resource("pods").Namespace(pod.Namespace).Name(pod.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{Container: container, Command: command, Stdin: true, Stdout: true, Stderr: true}, scheme.ParameterCodec).URL()
+	executor, err := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, u)
+	if err != nil {
+		cancel()
+		return nil, noop, fmt.Errorf("managed platform TLS probe stream is unavailable")
+	}
+	conn, stream := net.Pipe()
+	var once sync.Once
+	closeStream := func() { once.Do(func() { cancel(); _ = conn.Close(); _ = stream.Close() }) }
+	go func() {
+		defer closeStream()
+		_ = executor.StreamWithContext(lifetime, remotecommand.StreamOptions{Stdin: stream, Stdout: stream, Stderr: io.Discard})
+	}()
+	go func() { <-lifetime.Done(); closeStream() }()
+	return &platformTLSExecConnection{Conn: conn, close: closeStream}, closeStream, nil
+}
+
+type platformTLSExecConnection struct {
+	net.Conn
+	close func()
+}
+
+func (c *platformTLSExecConnection) Close() error { c.close(); return nil }
+
+func platformTLSExecCommand(pod *corev1.Pod, port int) (string, []string, error) {
+	if pod == nil || pod.UID == "" || pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
+		return "", nil, fmt.Errorf("managed platform TLS stream member is unstable")
+	}
+	component := pod.Labels["app.kubernetes.io/component"]
+	container := ""
+	switch {
+	case component == "database" && port == 5432:
+		container = "database"
+	case component == "api-gateway" && port == 8443:
+		container = "api-gateway"
+	case component == "broker" && port == 50051, component == "controller-database" && port == 5432, component == "storage-controller" && port == 6699, component == "proxy" && port == 5432:
+		container = component
+	case platformTLSMember(component, "pageserver", 8) && port == 9898:
+		container = "pageserver"
+	case platformTLSMember(component, "safekeeper", 3) && port == 7676:
+		container = "safekeeper"
+	case platformTLSMember(component, "compute", 6) && port == 3081:
+		container = "compute-tls"
+	case platformTLSMember(component, "compute", 6) && port == 55433:
+		container = "compute"
+	default:
+		return "", nil, fmt.Errorf("managed platform TLS stream listener is not allowed")
+	}
+	count := 0
+	for _, item := range pod.Spec.Containers {
+		for _, declared := range item.Ports {
+			if declared.ContainerPort == int32(port) {
+				if item.Name != container || managedplatform.ValidateImages(map[string]string{container: item.Image}, []string{container}) != nil || declared.Protocol != "" && declared.Protocol != corev1.ProtocolTCP {
+					return "", nil, fmt.Errorf("managed platform TLS stream container changed")
+				}
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		return "", nil, fmt.Errorf("managed platform TLS stream listener inventory changed")
+	}
+	if container == "compute-tls" {
+		return container, []string{"/bin/sh", "-ec", "exec nc -w 12 127.0.0.1 " + strconv.Itoa(port)}, nil
+	}
+	script := "set -eu\nexec 3<>/dev/tcp/127.0.0.1/" + strconv.Itoa(port) + "\ncat <&3 & reader=$!\ntrap 'kill \"$reader\" 2>/dev/null || true' EXIT\ncat >&3"
+	return container, []string{"/bin/bash", "-c", script}, nil
+}
+
+func platformTLSMember(component, role string, maximum int) bool {
+	value, found := strings.CutPrefix(component, role+"-")
+	ordinal, err := strconv.Atoi(value)
+	return found && err == nil && ordinal >= 0 && ordinal < maximum && value == strconv.Itoa(ordinal)
 }
 
 func verifyPlatformTLSConnection(ctx context.Context, conn net.Conn, target platformTLSProbeTarget, expected []byte, roots *x509.CertPool) (*x509.Certificate, error) {
@@ -288,6 +385,10 @@ func (c *Client) observeManagedPlatformTLS(ctx context.Context, state ManagedPla
 		stop()
 		if err != nil {
 			return result, err
+		}
+		after, err := c.platformTLSProbePod(ctx, op, ns, target.component, current)
+		if err != nil || after.UID != pod.UID || !reflect.DeepEqual(after.OwnerReferences, pod.OwnerReferences) || !reflect.DeepEqual(after.Spec, pod.Spec) {
+			return result, fmt.Errorf("managed platform TLS member changed during verification")
 		}
 		digest := sha256.Sum256(leaf.Raw)
 		result.Certificates = append(result.Certificates, PlatformTLSCertificateObservation{Component: target.component, Fingerprint: hex.EncodeToString(digest[:]), ExpiresAt: leaf.NotAfter, Verified: true})
