@@ -21,6 +21,7 @@ func Configure(context.Context) (string, error) {
 
 func Plan(_, _, _ string, plan managedplatform.Plan) managedplatform.Plan { return plan }
 func Recovery(_, _, _ string) bool                                        { return false }
+func AllowsUnboundOperatorQualification(context.Context, string) bool     { return false }
 func Recheck(context.Context, string, string, string) error {
 	return fmt.Errorf("native acceptance requires a separately compiled development binary")
 }

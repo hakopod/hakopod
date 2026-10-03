@@ -61,6 +61,12 @@ func TestUnconfiguredServerHasNoTypedNilRuntime(t *testing.T) {
 	}
 }
 
+func TestShippingConfigDoesNotAllowUnboundOperatorQualification(t *testing.T) {
+	if allowsUnboundOperatorQualification(Options{}, "neon") || allowsUnboundOperatorQualification(Options{ExternalCapacity: true}, "neon") {
+		t.Fatal("shipping configuration allowed an unbound operator qualification")
+	}
+}
+
 func TestEmbeddingPreservesWorkspaceAdmissionAndCapacity(t *testing.T) {
 	policy := managedplatform.CapacityPolicy{Enabled: true, Pool: "workspace", StorageClass: "encrypted", Capacity: managedplatform.Capacity{CPUMilli: 1000, MemoryBytes: 1 << 30, StorageGiB: 10}, Nodes: []managedplatform.CapacityNode{{Name: "worker", UID: "worker-uid", Architecture: "amd64", OperatingSystem: "linux"}}}
 	db := &store.Store{RequireManagedPlatformAdmission: true}
