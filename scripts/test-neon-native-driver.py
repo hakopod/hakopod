@@ -117,7 +117,7 @@ class Tests(unittest.TestCase):
             driver.k=mock.Mock(side_effect=[json.dumps({"items":[owned]}),"",json.dumps({"items":[{"metadata":owned["metadata"],"spec":{}}]})])
             with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
             driver.delete.assert_called_once_with("a"*32,"source",240)
-            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"][0]["uid"],"pv-uid"); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
     def test_cleanup_reports_large_volume_inventory_as_unverified(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.command=mock.Mock(return_value="")
@@ -415,7 +415,7 @@ class Tests(unittest.TestCase):
             driver.record.assert_called_once_with("tenant-timeline-compute-lifecycle",{"created":True,"stopped":True,"deleted":True,"branch_created":True,"branch_deleted":True})
             self.assertIsNone(driver.pending_lifecycle); self.assertTrue(driver.cleanup_completed)
             receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text())
-            self.assertTrue(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["status"],"verified")
+            self.assertTrue(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"],[]); self.assertEqual(receipt["status"],"verified")
     def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
         driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
         value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
