@@ -2,8 +2,6 @@ import * as jose from 'jsr:@panva/jose@6.2.12'
 
 console.log('main function started')
 
-const MAX_WORKER_RETRIES = 3
-
 const JWT_SECRET = Deno.env.get('JWT_SECRET')
 const SUPABASE_JWKS = parseJwks(Deno.env.get('SUPABASE_JWKS'))
 const LOCAL_JWKS = SUPABASE_JWKS ? jose.createLocalJWKSet(SUPABASE_JWKS) : null
@@ -209,8 +207,8 @@ async function isValidLegacyJWT(jwt: string): Promise<AuthFailure | null> {
 
   try {
     await jose.jwtVerify(jwt, secretKey);
-  } catch (e) {
-    console.error('Symmetric Legacy JWT verification error', e);
+  } catch {
+    console.error('JWT verification failed: UNAUTHORIZED_LEGACY_JWT');
     return { code: RequestErrors.InvalidLegacyJWT }
   }
   return null
@@ -224,8 +222,8 @@ async function isValidJWT(jwt: string): Promise<AuthFailure | null> {
 
   try {
     await jose.jwtVerify(jwt, LOCAL_JWKS);
-  } catch (e) {
-    console.error('Asymmetric JWT verification error', e);
+  } catch {
+    console.error('JWT verification failed: UNAUTHORIZED_ASYMMETRIC_JWT');
     return { code: RequestErrors.InvalidAsymmetricJWT }
   }
 
@@ -250,8 +248,8 @@ async function isValidHybridJWT(jwt: string): Promise<AuthFailure | null> {
   let jwtAlgorithm: string | undefined
   try {
     jwtAlgorithm = jose.decodeProtectedHeader(jwt).alg
-  } catch (e) {
-    console.error('JWT format error', e)
+  } catch {
+    console.error('JWT verification failed: UNAUTHORIZED_INVALID_JWT_FORMAT')
     return {
       code: RequestErrors.InvalidTokenFormat,
       message: 'Invalid JWT format',
@@ -292,8 +290,8 @@ Deno.serve(async (req: Request) => {
       if (authFailure) {
         return getAuthErrorResponse(authFailure)
       }
-    } catch (e) {
-      console.error(e)
+    } catch {
+      console.error('JWT verification failed: UNAUTHORIZED_INVALID_JWT_FORMAT')
       return getAuthErrorResponse({
         code: RequestErrors.InvalidTokenFormat,
         message: 'Invalid JWT format',
@@ -326,7 +324,7 @@ Deno.serve(async (req: Request) => {
         status: 404,
       })
     }
-  } catch (e) {
+  } catch {
     if (e instanceof Deno.errors.NotFound) {
       return getFunctionErrorResponse({
         code: RequestErrors.NotFound,
@@ -334,7 +332,7 @@ Deno.serve(async (req: Request) => {
         status: 404,
       })
     }
-    console.error(e)
+    console.error('Function path inspection failed')
     return getFunctionErrorResponse({
       code: RequestErrors.BootError,
       message: 'Function failed to start (please check logs)',
@@ -356,13 +354,7 @@ Deno.serve(async (req: Request) => {
   const envVarsObj = { ...Deno.env.toObject(), SUPABASE_FUNCTION_SLUG: service_name }
   const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
 
-  const callWorker = async (req: Request, retriesLeft = MAX_WORKER_RETRIES): Promise<Response> => {
-    // Preserve the body before fetch() can consume it, even on a failed attempt.
-    // Must run before `new Request(req)` below, which takes over the body.
-    // The unread retry branch can buffer the entire body in main-worker memory,
-    // even when the first attempt succeeds.
-    const retryReq = retriesLeft > 0 ? req.clone() : null
-
+  const callWorker = async (req: Request): Promise<Response> => {
     try {
       const worker = await EdgeRuntime.userWorkers.create({
         servicePath,
@@ -379,16 +371,9 @@ Deno.serve(async (req: Request) => {
       EdgeRuntime.applySupabaseTag(req, userReq)
       return handleWorkerResponse(await worker.fetch(userReq))
     } catch (e) {
-      // Retirement rejects before dispatch, so user code has not run yet.
-      if (e instanceof Deno.errors.WorkerAlreadyRetired && retryReq) {
-        console.warn(`${service_name}: worker retired before dispatch; retrying (${retriesLeft} left)`)
-        // Request.clone() does not copy the tag that connects streaming to the client.
-        EdgeRuntime.applySupabaseTag(req, retryReq)
-        return await callWorker(retryReq, retriesLeft - 1)
-      }
-
-      console.error(e)
-      return getFunctionErrorResponse(resolveRuntimeError(e))
+      const failure = resolveRuntimeError(e)
+      console.error(`Edge function request failed: ${failure.code}`)
+      return getFunctionErrorResponse(failure)
     }
   }
 

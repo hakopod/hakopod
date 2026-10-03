@@ -55,6 +55,17 @@ func TestSupabaseRendererUsesFrozenOfflineEdgeBundle(t *testing.T) {
 			t.Fatalf("mounted function asset %s retains a runtime registry import", name)
 		}
 	}
+	router := functionsConfig.Data[assetKey("functions/main/index.ts")]
+	verifyAt := strings.Index(router, "if (req.method !== 'OPTIONS' && VERIFY_JWT)")
+	dispatchAt := strings.Index(router, "EdgeRuntime.userWorkers.create")
+	if verifyAt < 0 || dispatchAt < 0 || verifyAt >= dispatchAt {
+		t.Fatal("Edge router does not verify JWTs before user-worker dispatch")
+	}
+	for _, forbidden := range []string{"req.clone()", "console.error(e)", "MAX_WORKER_RETRIES"} {
+		if strings.Contains(router, forbidden) {
+			t.Fatalf("Edge router retains unsafe request or error handling %q", forbidden)
+		}
+	}
 
 	pod := functionsDeployment.Spec.Template.Spec
 	if len(pod.Containers) != 1 || !containsSequence(pod.Containers[0].Args, []string{"--main-service", "/home/deno/functions/main.eszip"}) {
