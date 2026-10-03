@@ -762,7 +762,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	if op.Kind != "delete" || request.OperationID != op.ID {
 		return fmt.Errorf("Neon deletion request does not match the leased operation")
 	}
-	if _, err := validateNeonLifecycleRequest(request, r.control.config.Computes); err != nil {
+	if err := validateNeonDeletionIdentity(request); err != nil {
 		return err
 	}
 	// A failed initial provision may have created only Kubernetes objects. The
@@ -1086,6 +1086,13 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	// Storage-controller registration claims remain until Kubernetes confirms
 	// the owned namespace is gone. This prevents a crash between individual
 	// releases from leaving a live registration without an ownership claim.
+	return nil
+}
+
+func validateNeonDeletionIdentity(request NeonLifecycleRequest) error {
+	if !neonID.MatchString(request.OperationID) || !neonID.MatchString(request.TenantID) || !neonID.MatchString(request.TimelineID) {
+		return fmt.Errorf("operation, tenant, and timeline IDs must be 32 lowercase hexadecimal characters")
+	}
 	return nil
 }
 

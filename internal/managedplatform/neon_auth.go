@@ -159,13 +159,27 @@ func BindNeonComputeAuthentication(raw json.RawMessage, key []byte, platformID s
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode Neon compute authentication")
 	}
+	token, err := NeonComputeAuthenticationToken(key, platformID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return bound, token, nil
+}
+
+// NeonComputeAuthenticationToken reconstructs the platform-scoped compute
+// control credential without requiring a provisioning configuration template.
+func NeonComputeAuthenticationToken(key []byte, platformID string) ([]byte, error) {
+	signer, err := neonSigningKey(key, platformID, "compute")
+	if err != nil {
+		return nil, err
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{"scope": "compute_ctl:admin", "aud": []string{"compute"}})
 	token.Header["kid"] = "hakopod-compute-v1"
 	signed, err := token.SignedString(signer)
 	if err != nil {
-		return nil, nil, fmt.Errorf("sign Neon compute control credential")
+		return nil, fmt.Errorf("sign Neon compute control credential")
 	}
-	return bound, []byte(signed), nil
+	return []byte(signed), nil
 }
 
 func neonSignedToken(key ed25519.PrivateKey, scope, tenantID string) (string, error) {
