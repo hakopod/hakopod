@@ -185,7 +185,7 @@ func (s *Store) ManagedPlatformRecoveryContract(ctx context.Context, id string, 
 }
 func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, revision int64) (map[string]PlatformResourceClaim, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT b.platform_id,b.platform_revision,b.component,b.resource_kind,
-		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
+		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.runtime_generation,r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
 		FROM platform_component_resources b
 		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL
 		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.released_at IS NULL
@@ -289,6 +289,9 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 		return op, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044269)"); err != nil {
+		return op, err
+	}
 	if err = lockManagedPlatformMutations(ctx, tx, intent.SourcePlatformID, intent.TargetPlatformID); err != nil {
 		return op, err
 	}
@@ -336,6 +339,12 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 	platformIDs := []string{intent.SourcePlatformID}
 	if intent.TargetPlatformID != "" {
 		platformIDs = append(platformIDs, intent.TargetPlatformID)
+	}
+	if err = rejectPlatformRuntimeOverlapTx(ctx, tx, platformIDs); err != nil {
+		return op, err
+	}
+	if err = rejectUnfinishedPlatformMaintenanceRecoveryTx(ctx, tx, platformIDs); err != nil {
+		return op, err
 	}
 	var overlapping bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE status IN ('queued','running') AND (source_platform_id=ANY($1) OR target_platform_id=ANY($1)))`, platformIDs).Scan(&overlapping); err != nil {
@@ -646,24 +655,10 @@ func (s *Store) PreparePlatformRecoveryWorkload(ctx context.Context, op platform
 	return current, prior, tx.Commit(ctx)
 }
 func (s *Store) ReconcilePlatformRecoveryDeployment(ctx context.Context, op platformbackup.Operation, name, uid, token string, generation int64, replicas int32) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_deployments SET current_generation=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND deployment_uid=$3 AND transition_token=$4 AND target_replicas=$6 AND current_generation+1=$5 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$7 AND status='running' AND lease_until>=clock_timestamp())`, op.ID, name, uid, token, generation, replicas, op.Lease)
-	if err != nil {
-		return err
-	}
-	if r.RowsAffected() != 1 {
-		return ErrConflict
-	}
-	return nil
+	return s.completePlatformRecoveryWorkloadGeneration(ctx, op, name, uid, generation-1, generation, token, &replicas, nil)
 }
 func (s *Store) CompletePlatformRecoveryDeployment(ctx context.Context, op platformbackup.Operation, name, uid string, oldGeneration, newGeneration int64) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_deployments SET current_generation=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND deployment_uid=$3 AND current_generation=$4 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$6 AND status='running' AND lease_until>=clock_timestamp())`, op.ID, name, uid, oldGeneration, newGeneration, op.Lease)
-	if err != nil {
-		return err
-	}
-	if r.RowsAffected() != 1 {
-		return ErrConflict
-	}
-	return nil
+	return s.completePlatformRecoveryWorkloadGeneration(ctx, op, name, uid, oldGeneration, newGeneration, "", nil, nil)
 }
 func (s *Store) PlatformRecoveryDeploymentGeneration(ctx context.Context, op platformbackup.Operation, name string, baseline int64) (int64, error) {
 	var generation int64

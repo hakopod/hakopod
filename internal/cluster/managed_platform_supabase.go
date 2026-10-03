@@ -37,6 +37,9 @@ const maxSupabaseRuntimeObjects = managedplatform.MaxComponents * 5
 var errSupabasePrunePending = errors.New("Supabase snapshot deletion is still in progress")
 
 type ManagedPlatformOperationStore interface {
+	PlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, string) (store.PlatformRuntimeMutation, error)
+	PreparePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
+	CompletePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
 	CheckManagedPlatformOperation(context.Context, store.ManagedPlatformOperation) error
 	HeartbeatManagedPlatformOperation(context.Context, store.ManagedPlatformOperation) error
 	ClaimPlatformResource(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim) error
@@ -792,17 +795,17 @@ func reserveSupabaseCreate(ctx context.Context, state ManagedPlatformOperationSt
 
 func claimOrAdvanceSupabaseObject(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, kind string, object metav1.Object, priorClaims, currentClaims map[string]store.PlatformResourceClaim, allowUnclaimed bool) error {
 	key := supabaseClaimKey(kind, object.GetName())
-	if len(key) > 63 || object.GetUID() == "" {
+	if len(key) > 63 || object.GetUID() == "" || platformRuntimeGeneration(kind, object) < 1 {
 		return fmt.Errorf("invalid Supabase runtime object identity")
 	}
 	if claim, ok := currentClaims[key]; ok {
-		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 			return fmt.Errorf("Supabase resource claim identity changed for %s", key)
 		}
 		return state.VerifyPlatformResourceClaim(ctx, op, claim)
 	}
 	if claim, ok := priorClaims[key]; ok {
-		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 			return fmt.Errorf("Supabase resource claim identity changed for %s", key)
 		}
 		if err := state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
@@ -813,7 +816,7 @@ func claimOrAdvanceSupabaseObject(ctx context.Context, state ManagedPlatformOper
 		delete(priorClaims, key)
 		return state.VerifyPlatformResourceClaim(ctx, op, claim)
 	}
-	claim := store.PlatformResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key, Kind: "runtime_component", ResourceID: string(object.GetUID()), ImmutableGeneration: 1, OwnerOperationID: op.ID}
+	claim := store.PlatformResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key, Kind: "runtime_component", ResourceID: string(object.GetUID()), ImmutableGeneration: platformRuntimeGeneration(kind, object), OwnerOperationID: op.ID}
 	intents, err := state.PlatformResourceIntents(ctx, op, op.Revision)
 	if err != nil {
 		return err
@@ -1008,16 +1011,10 @@ func (c *Client) applySupabaseDeployment(ctx context.Context, state ManagedPlatf
 	if err = verifySupabaseOwned(existing, op.PlatformID, ns.UID); err != nil {
 		return err
 	}
-	if err = claimOrAdvanceSupabaseObject(ctx, state, op, "deployment", existing, prior, current, false); err != nil {
-		return err
-	}
 	desired = desired.DeepCopy()
-	desired.ResourceVersion = existing.ResourceVersion
-	if err = before(); err != nil {
-		return err
-	}
-	_, err = api.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
+	return applyPlatformRuntimeMutation(ctx, state, op, "deployment", existing, desired, prior, current, before, func(object runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+		return api.Update(ctx, object.(*appsv1.Deployment), options)
+	})
 }
 
 func (c *Client) applySupabaseStatefulSet(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, desired *appsv1.StatefulSet, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
@@ -1045,19 +1042,12 @@ func (c *Client) applySupabaseStatefulSet(ctx context.Context, state ManagedPlat
 	if err = verifySupabaseOwned(existing, op.PlatformID, ns.UID); err != nil {
 		return err
 	}
-	if err = claimOrAdvanceSupabaseObject(ctx, state, op, "statefulset", existing, prior, current, false); err != nil {
-		return err
-	}
 	desired = desired.DeepCopy()
-	desired.ResourceVersion = existing.ResourceVersion
-	// Kubernetes defaults podManagementPolicy on creation. It is immutable on
-	// StatefulSet updates, so retain the value observed from the owned object.
+	// This Kubernetes default is immutable after creation.
 	desired.Spec.PodManagementPolicy = existing.Spec.PodManagementPolicy
-	if err = before(); err != nil {
-		return err
-	}
-	_, err = api.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
+	return applyPlatformRuntimeMutation(ctx, state, op, "statefulset", existing, desired, prior, current, before, func(object runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+		return api.Update(ctx, object.(*appsv1.StatefulSet), options)
+	})
 }
 
 func (c *Client) applySupabaseNetworkPolicy(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, desired *networkingv1.NetworkPolicy, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
@@ -1209,7 +1199,7 @@ func (c *Client) ObserveSupabase(ctx context.Context, op store.ManagedPlatformOp
 
 func verifySupabaseClaimedUID(kind string, object metav1.Object, current map[string]store.PlatformResourceClaim) error {
 	claim, ok := current[supabaseClaimKey(kind, object.GetName())]
-	if !ok || claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+	if !ok || claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 		return fmt.Errorf("Supabase readiness claim identity changed for %s", object.GetName())
 	}
 	return nil

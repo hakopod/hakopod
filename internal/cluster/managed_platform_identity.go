@@ -195,6 +195,12 @@ func platformTLSSecretName(logical string, data map[string][]byte) string {
 }
 
 func validPlatformTLSLeaf(data, credentials map[string][]byte, ca *x509.Certificate, caPEM []byte, names []string, ips []net.IP, now time.Time, proxy bool) bool {
+	return validPlatformTLSLeafUntil(data, credentials, ca, caPEM, names, ips, now, now.Add(platformTLSRenewBefore), proxy)
+}
+
+// Recovery may use a leaf during its renewal window while it is still valid.
+// Issuance uses the separate renewal deadline to decide when to replace it.
+func validPlatformTLSLeafUntil(data, credentials map[string][]byte, ca *x509.Certificate, caPEM []byte, names []string, ips []net.IP, now, validUntil time.Time, proxy bool) bool {
 	expected := len(credentials) + 3
 	if proxy {
 		expected--
@@ -215,7 +221,7 @@ func validPlatformTLSLeaf(data, credentials map[string][]byte, ca *x509.Certific
 		return false
 	}
 	cert, err := x509.ParseCertificate(pair.Certificate[0])
-	return err == nil && !cert.IsCA && !now.Before(cert.NotBefore) && cert.NotAfter.After(now.Add(platformTLSRenewBefore)) && cert.CheckSignatureFrom(ca) == nil && reflect.DeepEqual(cert.DNSNames, names) && sameCertificateIPs(cert.IPAddresses, ips) && reflect.DeepEqual(cert.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth})
+	return err == nil && !cert.IsCA && !now.Before(cert.NotBefore) && cert.NotAfter.After(validUntil) && !now.Before(ca.NotBefore) && ca.NotAfter.After(validUntil) && cert.CheckSignatureFrom(ca) == nil && reflect.DeepEqual(cert.DNSNames, names) && sameCertificateIPs(cert.IPAddresses, ips) && reflect.DeepEqual(cert.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth})
 }
 
 func issuePlatformTLSLeaf(credentials map[string][]byte, ca *x509.Certificate, signer crypto.Signer, caPEM []byte, names []string, ips []net.IP, now time.Time, proxy bool) (map[string][]byte, error) {
@@ -424,7 +430,7 @@ func (c *Client) readManagedPlatformTLS(ctx context.Context, platformID string, 
 			if candidate.Immutable == nil || !*candidate.Immutable || candidate.Name != platformTLSSecretName(logical, candidate.Data) || claims["secret."+candidate.Name].ResourceID != string(candidate.UID) {
 				return fmt.Errorf("managed platform recovery TLS snapshot ownership changed")
 			}
-			if !validPlatformTLSLeaf(candidate.Data, credentials, ca, root.Data["ca.crt"], names, ips, time.Now(), logical == "proxy-auth") {
+			if !validPlatformTLSLeafUntil(candidate.Data, credentials, ca, root.Data["ca.crt"], names, ips, time.Now(), time.Now(), logical == "proxy-auth") {
 				continue
 			}
 			selected = candidate.Name

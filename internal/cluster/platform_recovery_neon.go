@@ -1071,25 +1071,12 @@ func (r *NeonRecoveryRuntime) rebindStoragePrefix(ctx context.Context, op platfo
 				}
 			}
 		}
-		if reflect.DeepEqual(current.Spec.Template, *desiredTemplate) && valueOrOne(current.Spec.Replicas) == 0 {
-			continue
-		}
-		token := recoveryTransitionToken(op.ID, name+"-storage-prefix", current.Generation, 0)
-		if _, _, err = r.Store.PreparePlatformRecoveryWorkload(ctx, op, item.ID, "statefulset", name, string(current.UID), current.Generation, valueOrOne(current.Spec.Replicas), 0, claim.ImmutableGeneration, token); err != nil {
-			return err
-		}
-		copy := current.DeepCopy()
-		copy.Spec.Template = *desiredTemplate
-		copy.Spec.Replicas = new(int32)
-		if copy.Annotations == nil {
-			copy.Annotations = map[string]string{}
-		}
-		copy.Annotations["hakopod.io/recovery-transition"] = token
-		updated, updateErr := r.Cluster.kube.AppsV1().StatefulSets(ns.Name).Update(ctx, copy, metav1.UpdateOptions{})
-		if updateErr != nil {
-			return updateErr
-		}
-		if err = r.Store.CompletePlatformRecoveryDeployment(ctx, op, name, string(current.UID), current.Generation, updated.Generation); err != nil {
+		desiredSet := current.DeepCopy()
+		desiredSet.Spec.Template = *desiredTemplate
+		desiredSet.Spec.Replicas = new(int32)
+		if err = applyRecoveryStatefulSetMutation(ctx, r.Store, op, item.ID, current, desiredSet, claim.ImmutableGeneration, func() error { return r.fence(ctx, op) }, func(value *appsv1.StatefulSet, options metav1.UpdateOptions) (*appsv1.StatefulSet, error) {
+			return r.Cluster.kube.AppsV1().StatefulSets(ns.Name).Update(ctx, value, options)
+		}); err != nil {
 			return err
 		}
 	}
@@ -1315,27 +1302,13 @@ func (r *NeonRecoveryRuntime) waitStoragePods(ctx context.Context, platformID, n
 	}
 }
 func (r *NeonRecoveryRuntime) transitionStatefulSet(ctx context.Context, op platformbackup.Operation, item store.ManagedPlatform, set *appsv1.StatefulSet, target int32, claimed int64) error {
-	if err := r.fence(ctx, op); err != nil {
-		return err
-	}
-	current := valueOrOne(set.Spec.Replicas)
-	token := recoveryTransitionToken(op.ID, set.Name, set.Generation, target)
-	_, _, err := r.Store.PreparePlatformRecoveryWorkload(ctx, op, item.ID, "statefulset", set.Name, string(set.UID), set.Generation, current, target, claimed, token)
-	if err != nil {
-		return err
-	}
-	copy := set.DeepCopy()
-	copy.Spec.Replicas = &target
-	if copy.Annotations == nil {
-		copy.Annotations = map[string]string{}
-	}
-	copy.Annotations["hakopod.io/recovery-transition"] = token
-	updated, err := r.Cluster.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, copy, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-	return r.Store.CompletePlatformRecoveryDeployment(ctx, op, set.Name, string(set.UID), set.Generation, updated.Generation)
+	desired := set.DeepCopy()
+	desired.Spec.Replicas = &target
+	return applyRecoveryStatefulSetMutation(ctx, r.Store, op, item.ID, set, desired, claimed, func() error { return r.fence(ctx, op) }, func(value *appsv1.StatefulSet, options metav1.UpdateOptions) (*appsv1.StatefulSet, error) {
+		return r.Cluster.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, value, options)
+	})
 }
+
 func (r *NeonRecoveryRuntime) waitServingPods(ctx context.Context, platformID, namespace string, expected int) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
