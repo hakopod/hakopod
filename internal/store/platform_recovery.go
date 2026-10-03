@@ -426,8 +426,14 @@ func (s *Store) ClaimPlatformRecovery(ctx context.Context, lease string) (platfo
 		return platformbackup.Operation{}, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044269)"); err != nil {
+		return platformbackup.Operation{}, err
+	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT id FROM managed_platform_recovery_operations WHERE (status='queued' AND next_attempt_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY cleanup_required DESC,next_attempt_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT r.id FROM managed_platform_recovery_operations r WHERE ((r.status='queued' AND r.next_attempt_at<=now()) OR (r.status='running' AND r.lease_until<now()))
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_operations o WHERE (o.platform_id=r.source_platform_id OR o.platform_id=r.target_platform_id) AND o.status IN ('queued','running'))
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_maintenance m WHERE (m.platform_id=r.source_platform_id OR m.platform_id=r.target_platform_id) AND m.status='running' AND m.lease_until>=clock_timestamp())
+		ORDER BY r.cleanup_required DESC,r.next_attempt_at,r.created_at,r.id FOR UPDATE OF r SKIP LOCKED LIMIT 1`).Scan(&id)
 	if err != nil {
 		return platformbackup.Operation{}, err
 	}

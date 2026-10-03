@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -23,6 +24,9 @@ type ManagedPlatformRuntime interface {
 func (w *Worker) runManagedPlatform(parent context.Context) {
 	claimCtx, cancelClaim := context.WithTimeout(parent, 3*time.Second)
 	operation, err := w.Store.ClaimManagedPlatformOperation(claimCtx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		operation, err = w.Store.ClaimManagedPlatformMaintenance(claimCtx)
+	}
 	cancelClaim()
 	if err != nil {
 		return
@@ -55,6 +59,7 @@ var managedPlatformSafeCategories = map[string]struct{}{
 	"supabase_snapshot_missing": {}, "supabase_namespace": {},
 	"supabase_observe": {}, "supabase_qualification": {}, "neon_qualification": {}, "supabase_render": {}, "unsupported_kind": {},
 	"supabase_rotate_database_credentials": {},
+	"platform_identity":                    {}, "platform_tls_observe": {},
 }
 
 func managedPlatformErrorObservation(err error) (string, string) {

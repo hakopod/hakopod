@@ -18,6 +18,9 @@ var managedPlatformComponent = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.:-]{0,61}
 const managedPlatformOperationQualifiedColumns = `o.id,o.platform_id,o.revision,o.kind,o.status,o.phase,o.message,o.desired_spec,o.resolved_plan,o.encrypted_snapshot,o.review,o.review_id,o.authority_fingerprint,o.created_at,o.started_at,o.finished_at,o.identity_id,o.key_id,o.lease,o.lease_until,o.attempt`
 
 func (s *Store) managedPlatformOperationFenceTx(ctx context.Context, tx pgx.Tx, supplied ManagedPlatformOperation) (ManagedPlatformOperation, string, string, error) {
+	if supplied.Maintenance {
+		return s.managedPlatformMaintenanceFenceTx(ctx, tx, supplied)
+	}
 	var project, environment string
 	var stored ManagedPlatformOperation
 	row := tx.QueryRow(ctx, `SELECT `+managedPlatformOperationQualifiedColumns+`,p.project,p.environment
@@ -58,7 +61,8 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 		return ManagedPlatformOperation{}, err
 	}
 	var active int
-	if err = tx.QueryRow(ctx, "SELECT count(*) FROM managed_platform_operations WHERE status='running' AND lease_until>=clock_timestamp()").Scan(&active); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM managed_platform_operations WHERE status='running' AND lease_until>=clock_timestamp())+
+		(SELECT count(*) FROM managed_platform_maintenance WHERE status='running' AND lease_until>=clock_timestamp())`).Scan(&active); err != nil {
 		return ManagedPlatformOperation{}, err
 	}
 	if active >= 8 {
@@ -76,6 +80,8 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 		WHERE (o.status='queued' OR o.status='running' AND o.lease_until<clock_timestamp()) AND o.next_attempt_at<=clock_timestamp() AND o.attempt<240
 		AND p.revision=o.revision AND p.deleted_at IS NULL
 		AND NOT EXISTS(SELECT 1 FROM managed_platform_operations active WHERE active.platform_id=o.platform_id AND active.status='running' AND active.lease_until>=clock_timestamp())
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_maintenance maintenance WHERE maintenance.platform_id=o.platform_id AND maintenance.status='running' AND maintenance.lease_until>=clock_timestamp())
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE (recovery.source_platform_id=o.platform_id OR recovery.target_platform_id=o.platform_id) AND recovery.status IN ('queued','running'))
 		ORDER BY o.next_attempt_at,o.created_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1)
 		RETURNING `+managedPlatformOperationColumns, lease))
 	if err != nil {
@@ -128,7 +134,11 @@ func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op Manage
 	if op, _, _, err = s.managedPlatformOperationFenceTx(ctx, tx, op); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, "UPDATE managed_platform_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.ID, op.Lease)
+	query, id := "UPDATE managed_platform_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.ID
+	if op.Maintenance {
+		query, id = "UPDATE managed_platform_maintenance SET lease_until=clock_timestamp()+interval '30 seconds',updated_at=now() WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.MaintenanceID
+	}
+	tag, err := tx.Exec(ctx, query, id, op.Lease)
 	if err != nil {
 		return err
 	}
@@ -139,6 +149,9 @@ func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op Manage
 }
 
 func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatformOperation, status, phase, message string, observation map[string]any) error {
+	if op.Maintenance {
+		return s.recordManagedPlatformMaintenanceStep(ctx, op, status, phase, message, observation)
+	}
 	if status != "queued" && status != "succeeded" && status != "failed" && status != "cancelled" || len(phase) > 64 || len(message) > 512 {
 		return ErrInput
 	}
@@ -194,6 +207,14 @@ func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatfor
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrConflict
+	}
+	if status == "succeeded" && op.Kind != "delete" && op.Spec.TLSMode == "managed" {
+		_, err = tx.Exec(ctx, `INSERT INTO managed_platform_maintenance(id,platform_id,revision,operation_id,next_attempt_at)
+			VALUES($1,$2,$3,$4,clock_timestamp()+interval '12 hours')
+			ON CONFLICT(platform_id) DO UPDATE SET revision=EXCLUDED.revision,operation_id=EXCLUDED.operation_id,status='idle',phase='scheduled',message='',observation='{}',attempt=0,next_attempt_at=EXCLUDED.next_attempt_at,lease='',lease_until=NULL,updated_at=now()`, NewID(), op.PlatformID, op.Revision, op.ID)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
