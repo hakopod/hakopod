@@ -39,6 +39,8 @@ A renewal creates a new immutable Secret and changes the workload's reference. K
 
 Certificate maintenance uses a separate durable lease. It keeps the reviewed platform revision and credentials. It does not create another Neon tenant, change proxy authorization or replay a Supabase database password migration. Maintenance must wait for lifecycle and recovery work, and it rechecks the platform's capacity and runtime qualification. Restarting the control plane resumes from owned Secrets and PostgreSQL claims.
 
+A restored Supabase target keeps its gateway and application services stopped for inspection. Certificate maintenance preserves that isolation. Its Security tab explains that maintenance is paused until you review and apply a new platform revision. The source platform continues its own maintenance schedule.
+
 The platform observation records the issuer fingerprint, each verified endpoint's leaf fingerprint and expiry, and the verification time. These are public certificate facts; they do not expose key material.
 
 ## Connecting clients and restoring data
