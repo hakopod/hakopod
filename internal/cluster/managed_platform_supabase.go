@@ -660,7 +660,7 @@ func validateSupabaseRuntimeSecrets(values map[string]map[string][]byte, spec ma
 		name   string
 		length int
 	}{
-		{name: "realtime-db-encryption-key", length: 16},
+		{name: "realtime-db-encryption-key", length: 32},
 		{name: "vault-encryption-key", length: 32},
 	} {
 		ref := spec.Secrets[item.name]

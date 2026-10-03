@@ -304,7 +304,7 @@ func TestSupabaseRendererWiresRequiredRuntimeConfiguration(t *testing.T) {
 	expect := map[string]map[string]string{
 		"auth":         {"GOTRUE_API_HOST": "0.0.0.0", "API_EXTERNAL_URL": "https://data.example.test/auth/v1", "GOTRUE_SITE_URL": "https://app.example.test"},
 		"rest":         {"PGRST_DB_SCHEMAS": "public,storage,graphql_public", "PGRST_DB_MAX_ROWS": "1000"},
-		"realtime":     {"DB_HOST": "db", "DB_PORT": "5432", "DB_USER": "hakopod_realtime"},
+		"realtime":     {"DB_HOST": "db", "DB_PORT": "5432", "DB_USER": "hakopod_realtime", "DB_ENC_WRITE_GCM": "true"},
 		"storage":      {"POSTGREST_URL": "http://rest:3000", "IMGPROXY_URL": "http://imgproxy:5001", "STORAGE_PUBLIC_URL": "https://data.example.test"},
 		"edge-runtime": {"SUPABASE_URL": "https://api-gw:8443", "VERIFY_JWT": "true"},
 	}
@@ -323,6 +323,18 @@ func TestSupabaseRendererWiresRequiredRuntimeConfiguration(t *testing.T) {
 		t.Fatal("Edge Runtime command is incomplete")
 	}
 	realtime := containers["realtime"]
+	var realtimeEncryptionKey corev1.EnvVar
+	for _, item := range realtime.Env {
+		if item.Name == "DB_ENC_KEY_GCM" {
+			realtimeEncryptionKey = item
+		}
+		if item.Name == "DB_ENC_KEY" {
+			t.Fatal("Realtime still receives the legacy AES-128-ECB encryption key")
+		}
+	}
+	if realtimeEncryptionKey.ValueFrom == nil || realtimeEncryptionKey.ValueFrom.SecretKeyRef == nil || realtimeEncryptionKey.ValueFrom.SecretKeyRef.Key != "value" {
+		t.Fatal("Realtime AES-256-GCM encryption key is not wired from the immutable secret snapshot")
+	}
 	if len(realtime.Command) != 2 || realtime.Command[0] != "/bin/sh" || len(realtime.Args) != 1 || !strings.Contains(realtime.Args[0], "/app/bin/migrate") || !strings.Contains(realtime.Args[0], "exec /app/bin/server") || strings.Contains(realtime.Args[0], "sudo") || strings.Contains(realtime.Args[0], "set -x") || strings.Contains(realtime.Args[0], "/app/run.sh") {
 		t.Fatal("Realtime did not bypass the privileged or credential-logging entrypoint")
 	}

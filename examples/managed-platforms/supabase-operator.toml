@@ -92,7 +92,7 @@ pooler-api-jwt-secret-r1 = { value = "REPLACE_WITH_SEPARATE_POOLER_ADMIN_JWT_SEC
 postgres-meta-database-password-r1 = { value = "REPLACE_WITH_META_DATABASE_PASSWORD" }
 publishable-key-r1 = { value = "REPLACE_WITH_PUBLISHABLE_KEY", edge-json = "REPLACE_WITH_EDGE_PUBLISHABLE_KEYS_JSON" }
 realtime-database-password-r1 = { value = "REPLACE_WITH_REALTIME_DATABASE_PASSWORD" }
-realtime-db-encryption-key-r1 = { value = "REPLACE_WITH_EXACTLY_16_BYTES" }
+realtime-db-encryption-key-r1 = { value = "REPLACE_WITH_EXACTLY_32_BYTES" }
 rest-database-url-r1 = { value = "REPLACE_WITH_REST_DATABASE_URL" }
 secret-key-base-r1 = { value = "REPLACE_WITH_SECRET_KEY_BASE" }
 service-role-key-r1 = { value = "REPLACE_WITH_SERVICE_ROLE_JWT" }
