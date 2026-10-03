@@ -6261,7 +6261,8 @@ export interface components {
             public_url: string;
             site_url: string;
             redirect_urls?: string[];
-            database_name: string;
+            /** @constant */
+            database_name: "postgres";
             jwt_expiry_seconds: number;
             rest_max_rows: number;
             storage_file_limit_bytes: number;
@@ -6279,7 +6280,8 @@ export interface components {
             pageservers: number;
             /** @constant */
             safekeepers: 3;
-            branch_limit: number;
+            /** @constant */
+            branch_limit: 1;
             /**
              * Format: uri
              * @description Exact HTTPS object-storage origin on port 443. The server rejects credentials, paths, query strings and unsafe network destinations.
@@ -6440,7 +6442,8 @@ export interface components {
                 pageservers: number;
                 /** @constant */
                 safekeepers: 3;
-                branch_limit: number;
+                /** @constant */
+                branch_limit: 1;
                 object_storage_url: string;
                 object_storage_bucket: string;
                 object_storage_region: string;

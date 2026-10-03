@@ -3,7 +3,7 @@ schemas['ManagedPlatformResources'] = obj({'cpu': S, 'memory': S}, ['cpu','memor
 schemas['ManagedPlatformPlacement'] = obj({'node_names': {'type':'array','items':S,'minItems':1,'maxItems':48,'uniqueItems':True}, 'spread': {'type':'string','enum':['','nodes','zones']}}, ['node_names'])
 schemas['SupabaseConfig'] = obj({
     'public_url': S, 'site_url': S, 'redirect_urls': {'type':'array','items':S,'maxItems':32,'uniqueItems':True},
-    'database_name': S, 'jwt_expiry_seconds': I, 'rest_max_rows': I,
+    'database_name': {'type':'string','const':'postgres'}, 'jwt_expiry_seconds': I, 'rest_max_rows': I,
     'storage_file_limit_bytes': I, 'pool_size': I, 'pool_max_clients': I,
     'email_signup': {'type':'boolean','const':False},
     'anonymous_signup': B, 'smtp_secret': ref('ManagedPlatformSecretReference'),
@@ -13,7 +13,7 @@ schemas['NeonConfig'] = obj({
     'compute_replicas': {'type':'integer','minimum':1,'maximum':6},
     'pageservers': {'type':'integer','minimum':2,'maximum':8},
     'safekeepers': {'type':'integer','const':3},
-    'branch_limit': {'type':'integer','minimum':1,'maximum':64},
+    'branch_limit': {'type':'integer','const':1},
     'object_storage_url': {'type':'string','maxLength':2048,'format':'uri','description':'Exact HTTPS object-storage origin on port 443. The server rejects credentials, paths, query strings and unsafe network destinations.'},
     'object_storage_bucket': {'type':'string','pattern':'^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'},
     'object_storage_region': {'type':'string','pattern':'^[a-z0-9][a-z0-9-]{0,62}$'},
