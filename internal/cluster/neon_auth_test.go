@@ -200,14 +200,18 @@ func TestNeonDeleteAuthenticationDoesNotRequireComputeTemplate(t *testing.T) {
 		request.Render.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
 		request.SecretSnapshots[logical+"-r1"] = map[string][]byte{"token": []byte("unchanged")}
 	}
+	delete(request.SecretSnapshots["compute-auth-r1"], "token")
+	request.SecretSnapshots["compute-auth-r1"]["config.json"] = []byte(`{"spec":`)
+	request.SecretSnapshots["compute-auth-r1"]["tls.crt"] = []byte("retained-certificate")
 	if err := PrepareNeonAuthenticationSnapshots(&request, bytes.Repeat([]byte{9}, 32), "delete"); err != nil {
 		t.Fatal(err)
 	}
 	if string(request.SecretSnapshots["controller-auth-r1"]["token"]) == "unchanged" {
 		t.Fatal("delete snapshot lacks native storage authority")
 	}
-	if !reflect.DeepEqual(request.SecretSnapshots["compute-auth-r1"], map[string][]byte{"token": []byte("unchanged")}) {
-		t.Fatal("delete snapshot changed compute configuration")
+	compute := request.SecretSnapshots["compute-auth-r1"]
+	if len(compute["token"]) == 0 || string(compute["config.json"]) != `{"spec":` || string(compute["tls.crt"]) != "retained-certificate" {
+		t.Fatal("delete snapshot did not add compute authority while preserving retained configuration")
 	}
 }
 

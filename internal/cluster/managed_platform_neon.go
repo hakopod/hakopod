@@ -386,7 +386,13 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}
-	computeToken, err := secret("compute-auth", "token")
+	deprovisionOnly := op.Kind == "delete"
+	var computeToken []byte
+	if deprovisionOnly {
+		computeToken, err = managedplatform.NeonComputeAuthenticationToken(encryptionKey, op.PlatformID)
+	} else {
+		computeToken, err = secret("compute-auth", "token")
+	}
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}
@@ -415,7 +421,6 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon secret %s contains an invalid CA bundle", logical)
 		}
 	}
-	deprovisionOnly := op.Kind == "delete"
 	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), PageserverToken: string(pageserverToken), RequestTimeout: 2 * time.Minute, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
 	if reader, ok := bindings.(neonControllerStateReader); ok && !deprovisionOnly {
 		config.ResolveComputeConfig = neonControllerComputeResolver(reader, op.PlatformID, op.Revision, request.Render.Spec.Neon.Pageservers)
@@ -451,24 +456,28 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	for _, node := range config.Safekeepers {
 		safekeepers = append(safekeepers, node.Host+":5454")
 	}
-	template, err := secret("compute-auth", "config.json")
-	if err != nil {
-		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
+	var template []byte
+	if !deprovisionOnly {
+		template, err = secret("compute-auth", "config.json")
+		if err != nil {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
+		}
 	}
-	lifecycleRequest = managedplatform.NeonLifecycleRequest{OperationID: op.ID, TenantID: tenantID, TimelineID: timelineID, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{}}
+	lifecycleRequest = managedplatform.NeonLifecycleRequest{OperationID: op.ID, TenantID: tenantID, TimelineID: timelineID, CreateTenant: !deprovisionOnly, ComputeConfig: map[string]json.RawMessage{}}
 	for i := 0; i < request.Render.Spec.Neon.ComputeReplicas; i++ {
 		name := "compute-" + strconv.Itoa(i)
 		controlHost := "neon-" + name + "-control." + namespace + ".svc"
 		config.Computes = append(config.Computes, managedplatform.NeonControlTarget{Name: name, Origin: "https://" + controlHost + ":3081", Token: string(computeToken)})
+		if deprovisionOnly {
+			continue
+		}
 		raw, configErr := bindNeonComputeConfig(template, tenantID, timelineID, safekeepers, name)
 		if configErr != nil {
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
 		}
-		if !deprovisionOnly {
-			raw, configErr = managedplatform.BindNeonTenantAuthentication(raw, encryptionKey, op.PlatformID, tenantID)
-			if configErr != nil {
-				return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
-			}
+		raw, configErr = managedplatform.BindNeonTenantAuthentication(raw, encryptionKey, op.PlatformID, tenantID)
+		if configErr != nil {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
 		}
 		lifecycleRequest.ComputeConfig[name] = raw
 	}

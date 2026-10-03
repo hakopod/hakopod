@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -126,22 +127,46 @@ func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 		},
 	}
 	ca := supabaseGatewayCertificateFixture(t, []string{"neon.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
-	request := NeonRuntimeRequest{
+	baseRequest := NeonRuntimeRequest{
 		Operation: op,
 		Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
 		SecretSnapshots: map[string]map[string][]byte{
 			"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
+			"compute-auth-r1":    {"ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
 			"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 		},
 		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
 	}
-	lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(context.Background(), request, neonClaimReadStore{}, nil, nil)
-	if err != nil {
-		t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
-	}
-	if lifecycle == nil || lifecycleRequest.OperationID != op.ID || route.EndpointID != platformID {
-		t.Fatal("delete factory did not reconstruct the durable Neon lifecycle")
+	for _, test := range []struct {
+		name     string
+		template []byte
+	}{
+		{name: "valid", template: []byte(validNeonComputeTemplate)},
+		{name: "missing"},
+		{name: "malformed", template: []byte(`{"spec":`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := baseRequest
+			request.SecretSnapshots = make(map[string]map[string][]byte, len(baseRequest.SecretSnapshots))
+			for name, values := range baseRequest.SecretSnapshots {
+				request.SecretSnapshots[name] = make(map[string][]byte, len(values))
+				for key, value := range values {
+					request.SecretSnapshots[name][key] = append([]byte(nil), value...)
+				}
+			}
+			if test.template == nil {
+				delete(request.SecretSnapshots["compute-auth-r1"], "config.json")
+			} else {
+				request.SecretSnapshots["compute-auth-r1"]["config.json"] = test.template
+			}
+			lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(context.Background(), request, neonClaimReadStore{}, bytes.Repeat([]byte{9}, 32), nil)
+			if err != nil {
+				t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
+			}
+			if lifecycle == nil || lifecycleRequest.OperationID != op.ID || lifecycleRequest.CreateTenant || len(lifecycleRequest.ComputeConfig) != 0 || route.EndpointID != platformID {
+				t.Fatal("delete factory did not reconstruct the durable Neon lifecycle without provisioning configuration")
+			}
+		})
 	}
 }
 

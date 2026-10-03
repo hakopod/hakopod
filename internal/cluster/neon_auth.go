@@ -68,13 +68,19 @@ func PrepareNeonAuthenticationSnapshots(request *NeonRuntimeRequest, key []byte,
 	}
 	// Deletion needs storage authority, but never configures a compute. A stale
 	// template must not prevent removing an otherwise owned platform.
-	if operationKind != "delete" {
-		ref, ok := request.Render.Spec.Secrets["compute-auth"]
-		if !ok || ref.Name == "" || ref.Revision < 1 {
-			return fmt.Errorf("Neon compute authentication reference is unavailable")
+	ref, ok := request.Render.Spec.Secrets["compute-auth"]
+	if !ok || ref.Name == "" || ref.Revision < 1 {
+		return fmt.Errorf("Neon compute authentication reference is unavailable")
+	}
+	name := secretSnapshotNameForCluster(ref)
+	data := copySecretData(request.SecretSnapshots[name])
+	if operationKind == "delete" {
+		data["token"], err = managedplatform.NeonComputeAuthenticationToken(key, request.Render.PlatformID)
+		if err != nil {
+			return err
 		}
-		name := secretSnapshotNameForCluster(ref)
-		data := copySecretData(request.SecretSnapshots[name])
+		prepared[name] = data
+	} else {
 		data["config.json"], err = managedplatform.BindNeonSQLAuthentication(data["config.json"], request.ProxyEndpoint.Roles)
 		if err != nil {
 			return err

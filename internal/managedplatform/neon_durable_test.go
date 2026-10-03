@@ -102,6 +102,39 @@ func durableNeonRequest() NeonLifecycleRequest {
 	return NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{"primary": raw}}
 }
 
+func durableNeonDeleteRequest() NeonLifecycleRequest {
+	return NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, ComputeConfig: map[string]json.RawMessage{}}
+}
+
+func TestDurableNeonDeletionRejectsMalformedLifecycleIdentities(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*DurableOperation, *NeonLifecycleRequest)
+	}{
+		{name: "operation", mutate: func(op *DurableOperation, request *NeonLifecycleRequest) {
+			op.ID = "ABC"
+			request.OperationID = op.ID
+		}},
+		{name: "tenant", mutate: func(_ *DurableOperation, request *NeonLifecycleRequest) { request.TenantID = strings.Repeat("A", 32) }},
+		{name: "timeline", mutate: func(_ *DurableOperation, request *NeonLifecycleRequest) { request.TimelineID = strings.Repeat("g", 32) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			events := []string{}
+			op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete"}
+			request := durableNeonDeleteRequest()
+			test.mutate(&op, &request)
+			lifecycle := &durableNeonFixture{op: op, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
+			runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{config: NeonRuntimeConfig{DeprovisionOnly: true}}}
+			if err := runtime.Deprovision(context.Background(), request); err == nil || !strings.Contains(err.Error(), "32 lowercase hexadecimal") {
+				t.Fatalf("malformed deletion identity was accepted: %v", err)
+			}
+			if len(events) != 0 || lifecycle.claimsCalls != 0 || lifecycle.intentsCalls != 0 {
+				t.Fatal("malformed deletion identity reached durable or provider state")
+			}
+		})
+	}
+}
+
 func TestDurableNeonProvisionChecksCompleteOwnershipCapabilityBeforeState(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -376,7 +409,7 @@ func TestDurableNeonDeletionRejectsChangedTenantAttachmentBeforeMutation(t *test
 		"timeline":        {PlatformID: op.PlatformID, PlatformRevision: 1, Component: "timeline", Kind: "neon_timeline", ResourceID: strings.Repeat("c", 64), ImmutableGeneration: 13, OwnerOperationID: strings.Repeat("b", 32)},
 		"compute-primary": {PlatformID: op.PlatformID, PlatformRevision: 1, Component: "compute-primary", Kind: "runtime_component", ResourceID: computeClaimID, ImmutableGeneration: 1, OwnerOperationID: strings.Repeat("b", 32)},
 	}, intents: map[string]DurableResourceIntent{}, events: &events}
-	if err = durableNeonRuntimeForTest(t, storage, compute, lifecycle).Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err = durableNeonRuntimeForTest(t, storage, compute, lifecycle).Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("changed tenant generation and node did not block deletion")
 	}
 }
@@ -560,7 +593,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	for component, claim := range lifecycle.claims {
 		claimsBefore[component] = claim
 	}
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("foreign remote descendant did not block deletion")
 	}
 	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 {
@@ -573,7 +606,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 		t.Fatal("failed tenant preflight advanced or released ownership claims")
 	}
 	rejectTenantDeletePreflight = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("failed tenant deletion fence preparation did not block deletion")
 	}
 	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 || !reflect.DeepEqual(lifecycle.claims, claimsBefore) || len(events) != 0 {
@@ -584,7 +617,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	// pageserver timeline teardown but preceded safekeeper cleanup.
 	tenantDeletionToken = "55555555555555555555555555555555"
 	controllerTimelinePresent = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if tenantDeletePreflights != 3 || tenantDeletePreparations != 2 || tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 4 || timelineDescribeCalls != 4 || safekeeperTimelineCalls != 12 {
@@ -945,21 +978,21 @@ func TestDurableNeonDeletionResumesAfterClaimsWereReleased(t *testing.T) {
 		}
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}}}
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatalf("deletion did not resume after tenant, timeline, and compute claims were released: %v", err)
 	}
 	if len(lifecycle.claims) != len(pageservers)+len(safekeepers) {
 		t.Fatal("storage registration claims were released before namespace deletion")
 	}
 	registrationsPresent = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatalf("authenticated missing storage registrations were not treated as already deleted: %v", err)
 	}
 	if len(lifecycle.claims) != len(pageservers)+len(safekeepers) {
 		t.Fatal("missing storage registration claims were released before namespace deletion")
 	}
 	attached = true
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("attached compute without an ownership claim was accepted")
 	}
 }
