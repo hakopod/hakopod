@@ -383,7 +383,7 @@ func (s *Store) EffectiveNeonRecoveryClaims(ctx context.Context, op platformback
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT b.platform_id,b.platform_revision,b.component,b.resource_kind,
-		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
+		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.runtime_generation,r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
 		FROM platform_component_resources b
 		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.recovery_operation_id=$3 AND r.phase='confirmed' AND r.replacement_released_at IS NULL
 		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.released_at IS NULL
@@ -430,7 +430,7 @@ func (s *Store) VerifyNeonRecoveryResource(ctx context.Context, op platformbacku
 		return err
 	}
 	var valid bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_recovery_overrides r JOIN platform_component_resources b ON b.platform_id=r.platform_id AND b.platform_revision=r.platform_revision AND b.component=r.component AND b.resource_kind=r.resource_kind WHERE r.recovery_operation_id=$1 AND r.platform_id=$2 AND r.platform_revision=$3 AND r.artifact_id=$4 AND r.manifest_sha256=$5 AND r.component=$6 AND r.resource_kind=$7 AND r.replacement_resource_id=$8 AND r.replacement_generation=$9 AND r.prior_owner_operation_id=$10 AND r.phase IN ('confirmed','adopted') AND r.replacement_released_at IS NULL AND b.owner_operation_id=r.prior_owner_operation_id AND b.released_at IS NULL)`, op.ID, binding.TargetPlatformID, binding.TargetRevision, binding.ArtifactID, binding.ManifestSHA256, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid)
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_recovery_overrides r JOIN platform_component_resources b ON b.platform_id=r.platform_id AND b.platform_revision=r.platform_revision AND b.component=r.component AND b.resource_kind=r.resource_kind WHERE r.recovery_operation_id=$1 AND r.platform_id=$2 AND r.platform_revision=$3 AND r.artifact_id=$4 AND r.manifest_sha256=$5 AND r.component=$6 AND r.resource_kind=$7 AND r.replacement_resource_id=$8 AND COALESCE(r.runtime_generation,r.replacement_generation)=$9 AND r.prior_owner_operation_id=$10 AND r.phase IN ('confirmed','adopted') AND r.replacement_released_at IS NULL AND b.owner_operation_id=r.prior_owner_operation_id AND b.released_at IS NULL)`, op.ID, binding.TargetPlatformID, binding.TargetRevision, binding.ArtifactID, binding.ManifestSHA256, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid)
 	if err != nil {
 		return err
 	}

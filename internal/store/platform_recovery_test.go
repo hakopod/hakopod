@@ -217,6 +217,9 @@ func TestPlatformRecoveryReviewRevisionReplayLeaseArtifactAndCancellation(t *tes
 	if _, err = s.HeartbeatPlatformRecovery(ctx, stale); err == nil {
 		t.Fatal("stale lease renewed")
 	}
+	if _, err = s.Pool.Exec(ctx, `INSERT INTO platform_component_resources(platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id) SELECT $1,1,'deployment.supabase-auth','runtime_component','deployment-uid',7,id FROM managed_platform_operations WHERE platform_id=$1 AND revision=1`, item.ID); err != nil {
+		t.Fatal(err)
+	}
 	token := strings.Repeat("1", 64)
 	if _, prior, err := s.PreparePlatformRecoveryDeployment(ctx, claimed, item.ID, "supabase-auth", "deployment-uid", 7, 2, 0, 7, token); err != nil || prior != 2 {
 		t.Fatalf("deployment baseline was not journaled: %d %v", prior, err)
@@ -236,6 +239,14 @@ func TestPlatformRecoveryReviewRevisionReplayLeaseArtifactAndCancellation(t *tes
 	if _, _, err := s.PreparePlatformRecoveryDeployment(ctx, stale, item.ID, "supabase-auth", "deployment-uid", 8, 0, 2, 7, strings.Repeat("3", 64)); err == nil {
 		t.Fatal("stale lease changed deployment journal")
 	}
+	if err = s.CompletePlatformRecoveryDeployment(ctx, claimed, "supabase-auth", "deployment-uid", 8, 9); err != nil {
+		t.Fatal(err)
+	}
+	runtimeClaim, err := s.ManagedPlatformRecoveryCurrentClaim(ctx, item.ID, "deployment.supabase-auth")
+	if err != nil || runtimeClaim.ImmutableGeneration != 9 {
+		t.Fatal("backup pause/resume left a stale lifecycle claim", err)
+	}
+
 	if prior, err := s.SavePlatformRecoveryDatabaseState(ctx, claimed, item.ID, false); err != nil || prior {
 		t.Fatalf("database baseline was not journaled: %v %v", prior, err)
 	}

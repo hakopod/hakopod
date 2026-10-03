@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
- "github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/managedplatform"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -259,7 +259,9 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return name == op.Plan.Namespace
 	}
 	if resourceKind == "secret" {
-        if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) { return true }
+		if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) {
+			return true
+		}
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
@@ -346,7 +348,9 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		return name == "managed-platform-"+op.PlatformID
 	}
 	if resourceKind == "secret" {
-        if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) { return true }
+		if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) {
+			return true
+		}
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
@@ -720,15 +724,13 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,
-		COALESCE(o.replacement_resource_id,r.resource_id),COALESCE(o.replacement_generation,r.immutable_generation),r.owner_operation_id,r.released_at
+		COALESCE(o.replacement_resource_id,r.resource_id),COALESCE(o.runtime_generation,o.replacement_generation,r.immutable_generation),r.owner_operation_id,r.released_at
 		FROM platform_component_resources r
 		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind
 			AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
 		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.released_at IS NULL
 		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		AND EXISTS(SELECT 1 FROM managed_platform_operations o JOIN managed_platforms p ON p.id=o.platform_id
-			WHERE o.id=$3 AND o.platform_id=$1 AND o.revision=$4 AND o.lease=$5 AND o.status='running' AND o.lease_until>clock_timestamp() AND p.revision=o.revision AND p.deleted_at IS NULL)
-		ORDER BY r.component,r.resource_kind LIMIT $6`, op.PlatformID, revision, op.ID, op.Revision, op.Lease, MaxManagedPlatformResources+1)
+		ORDER BY r.component,r.resource_kind LIMIT $3`, op.PlatformID, revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -777,7 +779,7 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
 		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.component=$3 AND r.resource_kind=$4
 		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		AND COALESCE(o.replacement_resource_id,r.resource_id)=$5 AND COALESCE(o.replacement_generation,r.immutable_generation)=$6
+		AND COALESCE(o.replacement_resource_id,r.resource_id)=$5 AND COALESCE(o.runtime_generation,o.replacement_generation,r.immutable_generation)=$6
 		AND r.owner_operation_id=$7 AND r.released_at IS NULL)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid); err != nil {
 		return err
 	}
@@ -817,7 +819,7 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	var overrideOperationID string
 	err = tx.QueryRow(ctx, `SELECT b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
 		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind
-			AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$6 AND r.replacement_generation=$7
+			AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$6 AND COALESCE(r.runtime_generation,r.replacement_generation)=$7
 		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$5 AND b.released_at IS NULL
 		AND (b.resource_id=$6 AND b.immutable_generation=$7 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration).Scan(&baseResourceID, &baseGeneration, &overrideOperationID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -856,7 +858,7 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if _, err = tx.Exec(ctx, `INSERT INTO platform_component_resources(platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, op.PlatformID, op.Revision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, op.ID); err != nil {
 		return err
 	}
-	tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='adopted',adopted_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND prior_owner_operation_id=$6 AND replacement_resource_id=$7 AND replacement_generation=$8 AND phase='confirmed' AND replacement_released_at IS NULL`, overrideOperationID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration)
+	tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='adopted',adopted_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND prior_owner_operation_id=$6 AND replacement_resource_id=$7 AND COALESCE(runtime_generation,replacement_generation)=$8 AND phase='confirmed' AND replacement_released_at IS NULL`, overrideOperationID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration)
 	if err != nil {
 		return err
 	}
@@ -949,7 +951,7 @@ func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	var intentID, baseResourceID, recoveryOperationID string
 	var baseGeneration int64
 	if err = tx.QueryRow(ctx, `SELECT COALESCE(b.intent_id,''),b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
-		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$5 AND r.replacement_generation=$6
+		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$5 AND COALESCE(r.runtime_generation,r.replacement_generation)=$6
 		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$7 AND b.released_at IS NULL
 		AND (b.resource_id=$5 AND b.immutable_generation=$6 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&intentID, &baseResourceID, &baseGeneration, &recoveryOperationID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
@@ -966,7 +968,7 @@ func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlat
 		return ErrConflict
 	}
 	if recoveryOperationID != "" {
-		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='replacement_released',replacement_released_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND replacement_resource_id=$6 AND replacement_generation=$7 AND phase='confirmed' AND replacement_released_at IS NULL`, recoveryOperationID, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration)
+		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='replacement_released',replacement_released_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND replacement_resource_id=$6 AND COALESCE(runtime_generation,replacement_generation)=$7 AND phase='confirmed' AND replacement_released_at IS NULL`, recoveryOperationID, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration)
 		if err != nil {
 			return err
 		}

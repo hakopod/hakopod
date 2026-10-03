@@ -234,3 +234,38 @@ func TestManagedPlatformRecoveryKeepsSeparateIssuerAndRefusesUnclaimedMaterial(t
 		t.Fatal("recovery target reused source issuer material")
 	}
 }
+
+func TestManagedPlatformRecoveryAcceptsValidLeafWithinRenewalWindow(t *testing.T) {
+	c, state, op, ns, prior, current := platformTLSFixture(t)
+	ctx := context.Background()
+	before := func() error { return nil }
+	root, ca, signer, err := c.prepareManagedPlatformIssuer(ctx, state, op, ns, prior, current, before, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current["namespace."+ns.Name] = store.PlatformResourceClaim{ResourceID: string(ns.UID)}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames(op.Spec.Kind) {
+		names, ips, err := platformTLSNames(op.Spec, op.PlatformID, logical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, err := issuePlatformTLSLeaf(map[string][]byte{}, ca, signer, root.Data["ca.crt"], names, ips, time.Now().Add(-24*24*time.Hour), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if validPlatformTLSLeaf(leaf, map[string][]byte{}, ca, root.Data["ca.crt"], names, ips, time.Now(), false) {
+			t.Fatal("six-day leaf was not due for renewal")
+		}
+		if err = c.applySupabaseSecret(ctx, state, op, ns, platformTLSSecretName(logical, leaf), leaf, prior, current, before); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := op.Spec
+	snapshots := map[string]map[string][]byte{}
+	if err = c.readManagedPlatformTLS(ctx, op.PlatformID, &spec, nil, &snapshots, current); err != nil {
+		t.Fatal("recovery rejected still-valid TLS material", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatal("recovery did not resolve its owned TLS snapshots")
+	}
+}

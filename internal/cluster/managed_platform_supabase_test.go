@@ -35,15 +35,17 @@ func TestSupabaseDatabaseMigrationScriptIsOneBoundedTransaction(t *testing.T) {
 }
 
 type fakeSupabaseOperationStore struct {
-	claims       map[int64][]store.PlatformResourceClaim
-	intents      map[int64][]store.PlatformResourceIntent
-	heartbeats   int
-	advances     int
-	verifies     int
-	releases     int
-	cancels      int
-	records      []string
-	heartbeatErr error
+	mutations           map[string]store.PlatformRuntimeMutation
+	completeMutationErr error
+	claims              map[int64][]store.PlatformResourceClaim
+	intents             map[int64][]store.PlatformResourceIntent
+	heartbeats          int
+	advances            int
+	verifies            int
+	releases            int
+	cancels             int
+	records             []string
+	heartbeatErr        error
 }
 
 func (s *fakeSupabaseOperationStore) CheckManagedPlatformOperation(context.Context, store.ManagedPlatformOperation) error {
@@ -117,10 +119,10 @@ func supabaseTestNamespace(op store.ManagedPlatformOperation) *corev1.Namespace 
 	return &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "managed-platform-" + op.PlatformID, UID: types.UID("namespace-uid"), Labels: map[string]string{"app.kubernetes.io/managed-by": "hakopod", "hakopod.io/managed-platform-id": op.PlatformID}}}
 }
 func supabaseTestMeta(op store.ManagedPlatformOperation, ns *corev1.Namespace, name string) metav1.ObjectMeta {
-	return metav1.ObjectMeta{Name: name, Namespace: ns.Name, UID: types.UID(name + "-uid"), ResourceVersion: "1", Labels: supabaseLabels(op), OwnerReferences: []metav1.OwnerReference{supabaseNamespaceOwner(ns)}}
+	return metav1.ObjectMeta{Name: name, Namespace: ns.Name, UID: types.UID(name + "-uid"), ResourceVersion: "1", Generation: 1, Labels: supabaseLabels(op), OwnerReferences: []metav1.OwnerReference{supabaseNamespaceOwner(ns)}}
 }
 func newFakeSupabaseStore() *fakeSupabaseOperationStore {
-	return &fakeSupabaseOperationStore{claims: map[int64][]store.PlatformResourceClaim{}, intents: map[int64][]store.PlatformResourceIntent{}}
+	return &fakeSupabaseOperationStore{mutations: map[string]store.PlatformRuntimeMutation{}, claims: map[int64][]store.PlatformResourceClaim{}, intents: map[int64][]store.PlatformResourceIntent{}}
 }
 
 func TestSupabaseMutationStopsWhenHeartbeatFails(t *testing.T) {
@@ -526,4 +528,25 @@ func TestSupabasePruneListBoundIsEnforced(t *testing.T) {
 	if err == nil {
 		t.Fatal("over-bound ConfigMap list was accepted")
 	}
+}
+
+func (s *fakeSupabaseOperationStore) PlatformRuntimeMutation(_ context.Context, _ store.ManagedPlatformOperation, component string) (store.PlatformRuntimeMutation, error) {
+	return s.mutations[component], nil
+}
+func (s *fakeSupabaseOperationStore) PreparePlatformRuntimeMutation(_ context.Context, _ store.ManagedPlatformOperation, _ store.PlatformResourceClaim, m store.PlatformRuntimeMutation) error {
+	if old := s.mutations[m.Component]; old.Token != "" && old != m {
+		return store.ErrConflict
+	}
+	s.mutations[m.Component] = m
+	return nil
+}
+func (s *fakeSupabaseOperationStore) CompletePlatformRuntimeMutation(_ context.Context, _ store.ManagedPlatformOperation, _ store.PlatformResourceClaim, m store.PlatformRuntimeMutation) error {
+	if s.completeMutationErr != nil {
+		return s.completeMutationErr
+	}
+	if s.mutations[m.Component] != m {
+		return store.ErrConflict
+	}
+	delete(s.mutations, m.Component)
+	return nil
 }
