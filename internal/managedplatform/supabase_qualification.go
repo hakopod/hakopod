@@ -7,7 +7,7 @@ import (
 )
 
 const SupabaseReleaseQualificationID = "supabase-0.8.2-linux-amd64"
-const SupabaseReleaseImageInventorySHA256 = "bb146a329003ff44a860626ded38ed71b88c9169856980958c9859148ed1f4ec"
+const SupabaseReleaseImageInventorySHA256 = "645f540fc1ae2a5ded50cd2d4955bb8fc2bca7b21ad92a7f54186ae505362be4"
 
 var supabaseReleaseImages = map[string]string{
 	"api-gateway":   "docker.io/envoyproxy/envoy@sha256:be87c8b52663c1164a5bdf3c5419017a269cb3d8c74be1ec93638a71f1ffbd4b",
