@@ -233,7 +233,7 @@ spec:
 EOF
 )
   if [ -n "$scheduling_pool" ]; then
-    pod_manifest=$(printf '%s' "$pod_manifest" | k create --dry-run=client -f - -o json | jq --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --argjson nodes "$node_names" '.spec.runtimeClassName=$runtime | .spec.nodeSelector["hakopod.com/pool"]=$pool | .spec.tolerations=[{key:"hakopod.com/pool",operator:"Equal",value:$pool,effect:"NoSchedule"}] | .spec.affinity={nodeAffinity:{requiredDuringSchedulingIgnoredDuringExecution:{nodeSelectorTerms:[{matchFields:[{key:"metadata.name",operator:"In",values:$nodes}]}]}}}')
+    pod_manifest=$(printf '%s' "$pod_manifest" | k create --dry-run=client -f - -o json | jq --arg pool "$scheduling_pool" --arg runtime "$scheduling_runtime_class" --argjson nodes "$node_names" '.spec.runtimeClassName=$runtime | .spec.nodeSelector["hakopod.com/pool"]=$pool | .spec.tolerations=[{key:"hakopod.com/pool",operator:"Equal",value:$pool,effect:"NoSchedule"}] | .spec.affinity={nodeAffinity:{requiredDuringSchedulingIgnoredDuringExecution:{nodeSelectorTerms:[$nodes[] | {matchFields:[{key:"metadata.name",operator:"In",values:[.]}]}]}}}')
   fi
   pod_json=$(printf '%s' "$pod_manifest" | k create -f - -o json)
   active_pod_uid=$(printf '%s' "$pod_json" | jq -er '.metadata.uid')
