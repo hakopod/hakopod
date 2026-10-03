@@ -224,7 +224,7 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	if bindings, ok := state.(neonRecoveryBindingStore); ok {
 		binding, bindingErr := bindings.NeonRecoveryBindingForLifecycle(ctx, op)
 		if bindingErr == nil {
-			request.Render.Spec.Neon.ObjectStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
+			request.Render.RecoveryStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
 		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
 			return managedPlatformRuntimeError("neon_recovery_binding", bindingErr)
 		}

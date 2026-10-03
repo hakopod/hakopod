@@ -1031,7 +1031,7 @@ func (r *NeonRecoveryRuntime) rebindStoragePrefix(ctx context.Context, op platfo
 		return fmt.Errorf("target Neon namespace ownership changed")
 	}
 	request.Render.NamespaceUID = ns.UID
-	request.Render.Spec.Neon.ObjectStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
+	request.Render.RecoveryStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
 	manifests, err := managedplatform.RenderNeon(request.Render)
 	if err != nil {
 		return err
