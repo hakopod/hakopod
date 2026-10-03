@@ -1,6 +1,7 @@
 package managedplatform
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,87 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+func TestSupabaseRendererUsesFrozenOfflineEdgeBundle(t *testing.T) {
+	manifests, err := RenderSupabase(rendererFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var functionsConfig *corev1.ConfigMap
+	var functionsDeployment *appsv1.Deployment
+	for _, object := range manifests.Objects {
+		switch object := object.(type) {
+		case *corev1.ConfigMap:
+			if strings.HasPrefix(object.Name, "supabase-functions-") {
+				functionsConfig = object
+			}
+		case *appsv1.Deployment:
+			if object.Name == "supabase-edge-runtime" {
+				functionsDeployment = object
+			}
+		}
+	}
+	if functionsConfig == nil || functionsDeployment == nil {
+		t.Fatal("functions ConfigMap or deployment is missing")
+	}
+	bundle := functionsConfig.Data[assetKey("functions/main.eszip.b64")]
+	if bundle == "" {
+		t.Fatal("functions ConfigMap omits the frozen Edge Runtime bundle")
+	}
+	serialized, err := json.Marshal(functionsConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(serialized) >= 1024*1024 {
+		t.Fatalf("functions ConfigMap is %d bytes, exceeding the Kubernetes 1 MiB limit", len(serialized))
+	}
+	for name, value := range functionsConfig.Data {
+		if (name == assetKey("functions/deno.jsonc") || name == assetKey("functions/hello/index.ts")) && (strings.Contains(value, "jsr:") || strings.Contains(value, "npm:")) {
+			t.Fatalf("mounted function asset %s retains a runtime registry import", name)
+		}
+	}
+
+	pod := functionsDeployment.Spec.Template.Spec
+	if len(pod.Containers) != 1 || !containsSequence(pod.Containers[0].Args, []string{"--main-service", "/home/deno/functions/main.eszip"}) {
+		t.Fatal("Edge Runtime does not start from the frozen ESZIP")
+	}
+	var seed *corev1.Container
+	for i := range pod.InitContainers {
+		if pod.InitContainers[i].Name == "seed-functions" {
+			seed = &pod.InitContainers[i]
+			break
+		}
+	}
+	if seed == nil || len(seed.Args) != 1 {
+		t.Fatal("functions bundle seed init container is missing")
+	}
+	command := seed.Args[0]
+	for _, required := range []string{"base64 -d /seed/main.eszip.b64 > /target/.main.eszip.tmp", "chmod 0444 /target/.main.eszip.tmp", "mv /target/.main.eszip.tmp /target/main.eszip"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("functions seed command omits %q", required)
+		}
+	}
+	if strings.Contains(command, "if [ ! -e /target/main.eszip ]") {
+		t.Fatal("functions seed command can preserve a stale bundle across revisions")
+	}
+}
+
+func containsSequence(values, sequence []string) bool {
+	for i := 0; i+len(sequence) <= len(values); i++ {
+		match := true
+		for j := range sequence {
+			if values[i+j] != sequence[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
 
 func rendererFixture() SupabaseRenderInput {
 	spec := supabaseCandidateSpec()
@@ -226,7 +308,7 @@ func TestSupabaseRendererWiresRequiredRuntimeConfiguration(t *testing.T) {
 			}
 		}
 	}
-	if got := containers["edge-runtime"].Args; len(got) != 5 || got[4] != "/home/deno/functions/main" {
+	if got := containers["edge-runtime"].Args; len(got) != 5 || got[4] != "/home/deno/functions/main.eszip" {
 		t.Fatal("Edge Runtime command is incomplete")
 	}
 	realtime := containers["realtime"]

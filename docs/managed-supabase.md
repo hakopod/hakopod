@@ -78,9 +78,14 @@ hashes. Restore targets a separate empty Supabase resource.
 
 ## Renderer candidate
 
-The renderer embeds and verifies the SHA-256 digest of the exact 23-file inventory from upstream commit
-`d6c81b66c9999cb121dd8876f541313d484f157f`. It puts non-secret bootstrap
-and service files in immutable ConfigMaps. It deliberately does not run the
+The renderer starts from the audited assets at upstream commit
+`d6c81b66c9999cb121dd8876f541313d484f157f` and verifies the SHA-256 digest
+of every reviewed asset. Hakopod changes the Compose-only Realtime hostname,
+makes the isolated `pgbouncer` role own only the `_supavisor` metadata schema,
+adds a separate owned Realtime post-migration step, and freezes the Edge Runtime
+router and its exact JOSE dependency into a reproducible offline bundle. The
+source, resolved JSR metadata and dependency license remain in the reviewed
+inventory. Non-secret bootstrap and service files use immutable ConfigMaps. It deliberately does not run the
 upstream Envoy entrypoint because that script substitutes credentials through
 `sed`. A trusted secret-resolution step must instead create the immutable
 `envoy-runtime-config` Secret snapshot containing `lds.yaml` before apply.
@@ -100,9 +105,7 @@ provide the namespace UID observed immediately before apply. The reconciler
 must reject a changed UID and verify each object's complete owner chain. Only
 the API gateway accepts traffic from a namespace labelled as Hakopod managed
 ingress; the renderer creates no public route, and public routing must require
-TLS. Kubernetes Service names match the upstream internal names. The only
-asset adaptation changes the Compose-only Realtime hostname in `cds.yaml` to
-the same-namespace `realtime` Service.
+TLS. Kubernetes Service names match the upstream internal names.
 
 Email signup and every non-empty SMTP secret reference are rejected by
 admission until a bounded SMTP egress contract is implemented. Edge Functions have no external network access by default. An

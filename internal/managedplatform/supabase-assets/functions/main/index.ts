@@ -1,4 +1,4 @@
-import * as jose from 'jsr:@panva/jose@6'
+import * as jose from 'jsr:@panva/jose@6.2.12'
 
 console.log('main function started')
 
