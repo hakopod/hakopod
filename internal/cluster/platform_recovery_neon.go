@@ -218,6 +218,15 @@ func (r *NeonRecoveryRuntime) contract(ctx context.Context, id string, revision 
 	if req.Render.PlatformID != id || req.Render.Revision != revision || !bytes.Equal(store.JSON(req.Render.Spec), store.JSON(item.Spec)) {
 		return item, plan, accepted, req, fmt.Errorf("accepted Neon runtime snapshot does not match the platform revision")
 	}
+	if req.Render.Spec.TLSMode == "managed" {
+		claims, err := r.Store.ManagedPlatformRecoveryClaims(ctx, item.ID, item.Revision)
+		if err != nil {
+			return item, plan, accepted, req, err
+		}
+		if err = r.Cluster.readManagedPlatformTLS(ctx, item.ID, &req.Render.Spec, &req.Render.PreviousSpec, &req.SecretSnapshots, claims); err != nil {
+			return item, plan, accepted, req, err
+		}
+	}
 	return item, plan, accepted, req, nil
 }
 

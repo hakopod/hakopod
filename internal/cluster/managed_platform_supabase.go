@@ -94,12 +94,18 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 		return managedPlatformRuntimeError("supabase_namespace", err)
 	}
 	request.Render.NamespaceUID = ns.UID
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+		return managedPlatformRuntimeError("platform_identity", err)
+	}
 	if err = c.prepareSupabaseDatabaseClaim(ctx, state, op, ns, &request.Render, prior, current, before); err != nil {
 		return managedPlatformRuntimeError("supabase_claims", err)
 	}
 	manifests, err := managedplatform.RenderSupabase(request.Render)
 	if err != nil {
 		return managedPlatformRuntimeError("supabase_render", err)
+	}
+	if op.Spec.TLSMode == "managed" {
+		manifests.RetainSecretSnapshots = append(manifests.RetainSecretSnapshots, managedplatform.ManagedTLSIssuerSecret)
 	}
 	tlsName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["gateway-tls-certificate"])
 	runtimeName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["envoy-runtime-config"])
@@ -132,7 +138,7 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	objects = filtered
 	if marker != nil {
 		key := supabaseClaimKey("configmap", marker.Name)
-		if _, applied := current[key]; !applied {
+		if _, applied := current[key]; !applied && !op.Maintenance {
 			if err = c.rotateSupabaseDatabaseCredentials(ctx, op, ns, request, before); err != nil {
 				return managedPlatformRuntimeError("supabase_rotate_database_credentials", err)
 			}
@@ -157,12 +163,20 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	if observation.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-ready", "Supabase components are not ready.", supabaseObservationMap(observation))
 	}
+	result := supabaseObservationMap(observation)
+	if op.Spec.TLSMode == "managed" {
+		tlsObservation, err := c.observeManagedPlatformTLS(ctx, state, op, ns, request.Render.Spec, request.SecretSnapshots, current, before)
+		if err != nil {
+			return managedPlatformRuntimeError("platform_tls_observe", err)
+		}
+		result["tls"] = tlsObservation
+	}
 	if err = c.pruneSupabaseSnapshots(ctx, state, op, ns, manifests, prior, current, before); errors.Is(err, errSupabasePrunePending) {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-prune", "Old Supabase snapshots are still being deleted.", supabaseObservationMap(observation))
 	} else if err != nil {
 		return err
 	}
-	return state.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "Supabase runtime is ready in the cluster.", supabaseObservationMap(observation))
+	return state.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "Supabase runtime is ready in the cluster.", result)
 }
 
 func (c *Client) rotateSupabaseDatabaseCredentials(ctx context.Context, op store.ManagedPlatformOperation, ns *corev1.Namespace, request SupabaseRuntimeRequest, before func() error) error {
