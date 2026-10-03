@@ -31,7 +31,7 @@ class Tests(unittest.TestCase):
         return policy_path,gate_path,gate,policy,[cluster,nodes,observed]
 
     def expected_scheduling(self):
-        return {"nodeSelector":{BRIDGE.POOL_KEY:"native-final"},"tolerations":[{"key":BRIDGE.POOL_KEY,"operator":"Equal","value":"native-final","effect":"NoSchedule"}],"runtimeClassName":"runsc","affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchFields":[{"key":"metadata.name","operator":"In","values":["node-1","node-2","node-3"]}]}]}}}}
+        return {"nodeSelector":{BRIDGE.POOL_KEY:"native-final"},"tolerations":[{"key":BRIDGE.POOL_KEY,"operator":"Equal","value":"native-final","effect":"NoSchedule"}],"runtimeClassName":"runsc","affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchFields":[{"key":"metadata.name","operator":"In","values":[name]}]} for name in ["node-1","node-2","node-3"]]}}}}
 
     def test_empty_policy_preserves_legacy_bridge(self):
         with mock.patch.object(BRIDGE,"kube") as kube, mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
@@ -112,13 +112,13 @@ class Tests(unittest.TestCase):
         for ca_kind in ("correct","wrong"):
             created=[]
             def kube(_config,*args,data=None):
-                if args[:3]==("create","-f","-"): created.append(json.loads(data)); return ""
-                if "--ignore-not-found" in args or "rollout" in args: return ""
+                if "rollout" in args: return ""
                 if "neon-proxy" in args: return json.dumps(source)
-                return json.dumps({"metadata":{"uid":"11111111-2222-3333-4444-555555555555"}})
-            with tempfile.TemporaryDirectory() as directory, mock.patch.object(BRIDGE,"ROOT",Path(directory)), mock.patch.object(BRIDGE,"kube",side_effect=kube), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
+                raise AssertionError(args)
+            def install(_config,_namespace,_state,_value,objects,_resources): created.extend(objects)
+            with tempfile.TemporaryDirectory() as directory, mock.patch.object(BRIDGE,"ROOT",Path(directory)), mock.patch.object(BRIDGE,"kube",side_effect=kube), mock.patch.object(BRIDGE,"install_owned",side_effect=install), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
                 BRIDGE.probe_start("/kubeconfig",platform,secret,ca_kind,scheduling)
-            actual=next(item for item in created[0]["items"] if item["kind"]=="Deployment")["spec"]["template"]["spec"]
+            actual=next(item for item in created if item["kind"]=="Deployment")["spec"]["template"]["spec"]
             self.assertEqual({key:actual[key] for key in scheduling},scheduling)
             self.assertNotIn("nodeName",actual)
 
@@ -167,6 +167,125 @@ class Tests(unittest.TestCase):
             BRIDGE.owned_proxy_image(changed, platform, secret)
         with self.assertRaisesRegex(RuntimeError, "image or TLS"):
             BRIDGE.owned_proxy_image(deployment, platform, "foreign-secret")
+
+    def test_admission_preflight_checks_deployments_and_their_pods(self):
+        with mock.patch.object(BRIDGE, "protected", return_value=b"development fixture"):
+            objects = json.loads(BRIDGE.manifest(["a"*32], self.expected_scheduling()))["items"]
+        with mock.patch.object(BRIDGE, "kube") as kube:
+            BRIDGE.validate_manifests("/kubeconfig", objects)
+        args, kwargs = kube.call_args
+        self.assertIn("--dry-run=server", args)
+        candidates = json.loads(kwargs["data"])["items"]
+        self.assertEqual(len(candidates), len(objects)+1)
+        deployment = next(item for item in objects if item["kind"] == "Deployment")
+        pod = next(item for item in candidates if item["kind"] == "Pod")
+        self.assertEqual(pod["spec"], deployment["spec"]["template"]["spec"])
+        for term in pod["spec"]["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]:
+            self.assertEqual(len(term["matchFields"][0]["values"]), 1)
+
+    def ownership_fixture(self, directory, fail=None):
+        # Explicit development API fixture; no invented real-cluster evidence.
+        namespace = "fixture"
+        ns_uid = "aaaaaaaa-2222-3333-4444-555555555555"
+        objects = [{"apiVersion":"v1", "kind":"ConfigMap", "metadata":{"name":name,"namespace":namespace}, "data":{"fixture":"development"}} for name in ["one", "two"]]
+        resources = ("configmap/one", "configmap/two")
+        state = Path(directory)/"state.json"
+        live, deleted, calls = {}, [], []
+        def kube(_config, *args, data=None):
+            calls.append(args)
+            if "--dry-run=server" in args:
+                if fail == "admission": raise RuntimeError("fixture admission failure")
+                return ""
+            if args[:2] == ("get", "namespace"): return json.dumps({"metadata":{"uid":ns_uid}})
+            if args[:3] == ("-n", namespace, "get"): return json.dumps(live[args[3]]) if args[3] in live else ""
+            if args[:3] == ("create", "-f", "-"):
+                item = json.loads(data); name = item["metadata"]["name"]
+                journal = json.loads(state.read_text())
+                self.assertEqual(item["metadata"]["annotations"][BRIDGE.INSTALL_KEY], journal["install_id"])
+                self.assertEqual(state.stat().st_mode & 0o777, 0o600)
+                item["metadata"]["uid"] = ("1" if name == "one" else "2")*8+"-2222-3333-4444-555555555555"
+                if name == "two" and fail == "rejected": raise RuntimeError("fixture create rejected")
+                live["configmap/"+name] = item
+                if name == "two" and fail == "response-lost": raise RuntimeError("fixture response lost")
+                return json.dumps(item)
+            if args[:2] == ("delete", "--raw"):
+                name = args[2].split("/")[-1]; key = "configmap/"+name
+                options = json.loads(data)
+                self.assertEqual(options["preconditions"], {"uid":live[key]["metadata"]["uid"]})
+                deleted.append(key); del live[key]; return "{}"
+            raise AssertionError(args)
+        return namespace, objects, resources, state, live, deleted, calls, kube
+
+    def test_admission_failure_has_no_create_or_ownership_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            namespace, objects, resources, state, live, deleted, calls, kube = self.ownership_fixture(directory, "admission")
+            with mock.patch.object(BRIDGE, "kube", side_effect=kube), self.assertRaisesRegex(RuntimeError, "admission"):
+                BRIDGE.install_owned("/kubeconfig", namespace, state, {}, objects, resources)
+            self.assertFalse(state.exists()); self.assertFalse(live); self.assertFalse(deleted)
+            self.assertFalse(any(args[:3] == ("create", "-f", "-") for args in calls))
+
+    def test_partial_create_and_lost_response_cleanup_use_persisted_ownership(self):
+        for failure in ("rejected", "response-lost"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                namespace, objects, resources, state, live, deleted, _, kube = self.ownership_fixture(directory, failure)
+                with mock.patch.object(BRIDGE, "kube", side_effect=kube), mock.patch.object(BRIDGE, "ROOT", Path(directory)):
+                    with self.assertRaisesRegex(RuntimeError, "helper create failed"):
+                        BRIDGE.install_owned("/kubeconfig", namespace, state, {}, objects, resources)
+                    journal = BRIDGE.read_state(state, set(), resources)
+                    self.assertEqual(set(journal["uids"]), {"configmap/one"})
+                    BRIDGE.cleanup_owned("/kubeconfig", namespace, state, journal, resources)
+                self.assertEqual(len(deleted), 1 if failure == "rejected" else 2)
+                self.assertFalse(live); self.assertFalse(state.exists())
+
+    def test_cleanup_refuses_foreign_marker_changed_uid_or_namespace(self):
+        for changed in ("marker", "uid", "namespace"):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                namespace, objects, resources, state, live, deleted, _, kube = self.ownership_fixture(directory)
+                with mock.patch.object(BRIDGE, "kube", side_effect=kube):
+                    journal = BRIDGE.install_owned("/kubeconfig", namespace, state, {}, objects, resources)
+                    if changed == "marker": live["configmap/two"]["metadata"]["annotations"][BRIDGE.INSTALL_KEY] = "b"*32
+                    elif changed == "uid": live["configmap/two"]["metadata"]["uid"] = "bbbbbbbb-2222-3333-4444-555555555555"
+                    else: journal["namespace_uid"] = "bbbbbbbb-2222-3333-4444-555555555555"
+                    with self.assertRaisesRegex(RuntimeError, "foreign|namespace"):
+                        BRIDGE.cleanup_owned("/kubeconfig", namespace, state, journal, resources)
+                self.assertFalse(deleted); self.assertTrue(state.exists())
+
+    def test_cleanup_retry_accepts_an_already_absent_owned_resource(self):
+        with tempfile.TemporaryDirectory() as directory:
+            namespace, objects, resources, state, live, deleted, _, kube = self.ownership_fixture(directory)
+            with mock.patch.object(BRIDGE, "kube", side_effect=kube):
+                journal = BRIDGE.install_owned("/kubeconfig", namespace, state, {}, objects, resources)
+                del live["configmap/one"]
+                BRIDGE.cleanup_owned("/kubeconfig", namespace, state, journal, resources)
+            self.assertEqual(deleted, ["configmap/two"]); self.assertFalse(state.exists())
+
+    def test_allowlist_patch_conditions_reject_replaced_policy(self):
+        for drift in (None, "replacement", "spec"):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); (root/"allowed-platforms.json").write_text("fixture")
+                uid = "11111111-2222-3333-4444-555555555555"
+                prior = {"platform_ids":["a"*32], "install_id":"b"*32, "namespace_uid":uid, "uids":{name:uid for name in BRIDGE.BRIDGE_RESOURCES}}
+                owned = {"metadata":{"uid":uid,"resourceVersion":"17","annotations":{BRIDGE.INSTALL_KEY:prior["install_id"]}}}
+                patches = []
+                def kube(_config, *args, data=None):
+                    if "patch" in args:
+                        self.assertIn("--type=json", args)
+                        patch = json.loads(args[args.index("-p")+1]); patches.append(patch)
+                        self.assertEqual(patch[:2], [{"op":"test","path":"/metadata/uid","value":uid},{"op":"test","path":"/metadata/resourceVersion","value":"17"}])
+                        if drift == "replacement": raise RuntimeError("fixture JSON Patch UID test failed")
+                        owned["spec"] = {} if drift == "spec" else patch[2]["value"]
+                        return "{}"
+                    if "rollout" in args: return ""
+                    return json.dumps(owned)
+                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"read_state",return_value=prior), mock.patch.object(BRIDGE,"recover_owned",return_value=prior["uids"]), mock.patch.object(BRIDGE,"observe",return_value=owned), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"), mock.patch.object(BRIDGE,"kube",side_effect=kube), mock.patch.object(BRIDGE,"write_state") as write:
+                    if drift:
+                        with self.assertRaisesRegex(RuntimeError,"UID test failed|specification changed"): BRIDGE.allow("/kubeconfig","c"*32)
+                        write.assert_not_called()
+                        self.assertEqual(prior["platform_ids"],["a"*32])
+                    else:
+                        BRIDGE.allow("/kubeconfig","c"*32)
+                        self.assertEqual(prior["platform_ids"],["a"*32,"c"*32])
+                self.assertEqual(len(patches),1)
 
 
 if __name__ == "__main__":
