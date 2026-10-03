@@ -66,6 +66,9 @@ type NeonRenderInput struct {
 	ControlPlanePodLabels         map[string]string
 	ApprovedExternalHTTPSCIDRs    []string
 	PreviousSpec                  *Spec
+	// RecoveryStoragePrefix comes from the durable recovery binding, not the
+	// public spec. It must stay beneath this platform's accepted object prefix.
+	RecoveryStoragePrefix string
 }
 
 type NeonManifests struct {
@@ -82,6 +85,13 @@ func RenderNeon(in NeonRenderInput) (NeonManifests, error) {
 	plan, err := PlanNeon(in.Spec, in.Images)
 	if err != nil {
 		return NeonManifests{}, err
+	}
+	if in.RecoveryStoragePrefix != "" {
+		in.RecoveryStoragePrefix = strings.TrimSuffix(in.RecoveryStoragePrefix, "/")
+		prefix := in.Spec.Neon.ObjectStoragePrefix + "/recovery/"
+		if !strings.HasPrefix(in.RecoveryStoragePrefix, prefix) || !neonID.MatchString(strings.TrimPrefix(in.RecoveryStoragePrefix, prefix)) {
+			return NeonManifests{}, fmt.Errorf("Neon recovery storage must use an operation beneath the accepted object prefix")
+		}
 	}
 	if in.Revision < 1 || in.NamespaceUID == "" || !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(in.PlatformID) {
 		return NeonManifests{}, fmt.Errorf("Neon rendering requires a positive revision and observed namespace UID")
@@ -307,9 +317,16 @@ func neonPVC(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name, stor
 
 func neonConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name string, ordinal int) *corev1.ConfigMap {
 	c := in.Spec.Neon
-	remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='%s/pageserver'}", c.ObjectStorageURL, c.ObjectStorageBucket, c.ObjectStorageRegion, strings.Trim(c.ObjectStoragePrefix, "/"))
+	remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='%s/pageserver'}", c.ObjectStorageURL, c.ObjectStorageBucket, c.ObjectStorageRegion, neonRemoteStoragePrefix(in))
 	config := fmt.Sprintf("listen_pg_addr='0.0.0.0:6400'\nlisten_http_addr='127.0.0.1:9897'\nlisten_https_addr='0.0.0.0:9898'\npg_distrib_dir='/usr/local'\nhttp_auth_type='NeonJWT'\npg_auth_type='NeonJWT'\nenable_tls_page_service_api=true\nssl_key_file='/var/run/secrets/hakopod/pageserver-auth/tls.key'\nssl_cert_file='/var/run/secrets/hakopod/pageserver-auth/tls.crt'\nssl_ca_file='/tmp/neon-peer-ca.crt'\nbroker_endpoint='https://neon-broker:50051'\ncontrol_plane_api='https://neon-storage-controller:6699/upcall/v1/'\nauth_validation_public_key_path='/var/run/secrets/hakopod/pageserver-auth/public-key.pem'\nhakopod_ownership_v1=true\nremote_storage=%s\n", remote)
 	return &corev1.ConfigMap{ObjectMeta: meta("neon-" + name + "-r" + strconv.FormatInt(in.Revision, 10)), Immutable: neonBool(true), Data: map[string]string{"identity.toml": fmt.Sprintf("id=%d\n", ordinal+1), "pageserver.toml": config}}
+}
+
+func neonRemoteStoragePrefix(in NeonRenderInput) string {
+	if in.RecoveryStoragePrefix != "" {
+		return in.RecoveryStoragePrefix
+	}
+	return in.Spec.Neon.ObjectStoragePrefix
 }
 
 func neonComputeTLSConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, ordinal int) *corev1.ConfigMap {
@@ -384,7 +401,7 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 	} else if logicalName == "safekeeper" {
 		volumes = append(volumes, neonPVCVolume("data", "neon-"+instanceName))
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/neon"})
-		remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/safekeeper-%d'}", in.Spec.Neon.ObjectStorageURL, in.Spec.Neon.ObjectStorageBucket, in.Spec.Neon.ObjectStorageRegion, strings.Trim(in.Spec.Neon.ObjectStoragePrefix, "/"), ordinal)
+		remote := fmt.Sprintf("{endpoint='%s',bucket_name='%s',bucket_region='%s',prefix_in_bucket='/%s/safekeeper-%d'}", in.Spec.Neon.ObjectStorageURL, in.Spec.Neon.ObjectStorageBucket, in.Spec.Neon.ObjectStorageRegion, neonRemoteStoragePrefix(in), ordinal)
 		container.Command = []string{"safekeeper"}
 		container.Args = []string{"--datadir=/var/lib/neon", "--id=" + strconv.Itoa(ordinal+1), "--listen-pg=0.0.0.0:5454", "--advertise-pg=neon-" + instanceName + ":5454", "--listen-http=127.0.0.1:7677", "--listen-https=0.0.0.0:7676", "--ssl-key-file=/var/run/secrets/hakopod/safekeeper-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/safekeeper-auth/tls.crt", "--ssl-ca-file=/tmp/neon-peer-ca.crt", "--enable-tls-wal-service-api", "--use-https-safekeeper-api", "--broker-endpoint=https://neon-broker:50051", "--remote-storage=" + remote, "--pg-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--http-auth-public-key-path=/var/run/secrets/hakopod/safekeeper-auth/public-key.pem", "--auth-token-path=/var/run/secrets/hakopod/safekeeper-auth/token", "--hakopod-ownership-v1"}
 		container.Env = append(container.Env, neonObjectStorageEnv(in.Spec.Secrets["object-storage"])...)
