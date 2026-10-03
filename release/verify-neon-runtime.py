@@ -379,7 +379,11 @@ def docker(args, config):
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen(["docker", *args], stdout=stdout, stderr=stderr, text=False,
             start_new_session=True, env=dict(os.environ, DOCKER_CONFIG=str(config)))
-        resource.prlimit(process.pid, resource.RLIMIT_FSIZE, (2 * 1024 * 1024, 2 * 1024 * 1024))
+        # docker cp writes the requested container file itself, so its file-size
+        # limit must admit the same bounded binary size accepted by file_hash.
+        # Other commands only write the temporary stdout and stderr files.
+        file_limit = 512 * 1024 * 1024 if args and args[0] == "cp" else 2 * 1024 * 1024
+        resource.prlimit(process.pid, resource.RLIMIT_FSIZE, (file_limit, file_limit))
         try: process.wait(timeout=600)
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL); process.wait(); raise ValueError("Docker verification timed out")
