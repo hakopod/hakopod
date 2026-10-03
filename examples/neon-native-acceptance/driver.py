@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fixed Neon native acceptance orchestration; evidence comes only from live probes."""
-import argparse, hashlib, json, os, re, resource, signal, socket, ssl, struct, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, hashlib, importlib.util, json, os, re, resource, signal, socket, ssl, struct, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 ID = re.compile(r"^[0-9a-f]{32}$")
@@ -244,37 +244,24 @@ class Driver:
     def managed_tls(self,pid,revision,operation_id):
         namespace="managed-platform-"+pid; ca=self.root/"managed-tls-ca.crt"; injected_path=self.evidence/"managed-tls-injected.json"
         common=[sys.executable,self.a.managed_tls_helper,"--kubectl","kubectl","--kubeconfig",self.a.kubeconfig,"--namespace",namespace,"--platform-id",pid,"--platform-revision",str(revision),"--owner-operation-id",operation_id,"--proxy-host","neon-proxy","--api-url",self.a.api_url.rstrip("/"),"--api-token-file",self.a.token_file,"--project",self.a.project,"--environment","development","--ca-file",str(ca),"--private-tmp",str(self.root),"--spec-digest-helper",self.a.runtime_spec_digest_helper,"--psql-command-file",self.a.control_psql_command_file,"--openssl",self.a.openssl,"--local-port",str(self.a.local_port)]
-        errors=tempfile.TemporaryFile()
-        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",namespace,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
-        try:
-            deadline=time.monotonic()+30
-            while time.monotonic()<deadline:
-                if forward.poll() is not None: raise RuntimeError("Neon proxy port-forward exited")
-                try:
-                    with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
-                except OSError: time.sleep(.2)
-            else: raise RuntimeError("Neon proxy port-forward did not become ready")
+        with self.proxy_forward(pid,lifetime=900):
             before=json.loads(self.command([*common,"observe"],60))
             injected=json.loads(self.command([*common,"inject"],180))
             atomic(injected_path,injected)
             renewed=json.loads(self.command([*common,"await-renewal","--input",str(injected_path)],480))
-        finally:
-            forward.terminate()
-            try: forward.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                forward.kill(); forward.wait(timeout=5)
-            errors.close()
         return {"before":before,"injection":injected,"renewal":renewed}
+    def proxy_forward(self,pid,local_port=None,probe=False,maximum=16,lifetime=180):
+        if pid not in self.bound: raise RuntimeError("proxy stream platform is not bound")
+        spec=importlib.util.spec_from_file_location("neon_proxy_stream",Path(__file__).with_name("proxy-stream.py"))
+        module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        namespace_uid,operation_id=self.bound[pid]
+        target=module.ProxyTarget(self.a.kubeconfig,pid,namespace_uid,operation_id,load(self.a.images)["proxy"],lambda *args:json.loads(self.k(*args)),probe=probe)
+        target()
+        return module.STREAM.OwnedPodForward(self.a.local_port if local_port is None else local_port,target,maximum,lifetime=lifetime)
     def proxy_auth_message(self,namespace,target,local_port,ca,platform_id):
-        errors=tempfile.TemporaryFile()
-        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",namespace,"port-forward",target,str(local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
-        try:
-            for _ in range(150):
-                if forward.poll() is not None: raise RuntimeError("Neon proxy trust port-forward exited")
-                try:
-                    raw=socket.create_connection(("127.0.0.1",local_port),timeout=.2); break
-                except OSError: time.sleep(.2)
-            else: raise RuntimeError("Neon proxy trust port-forward did not become ready")
+        if namespace!="managed-platform-"+platform_id or target!="deployment/hakopod-neon-wrong-ca": raise RuntimeError("issuer probe target is invalid")
+        with self.proxy_forward(platform_id,local_port=local_port,probe=True):
+            raw=socket.create_connection(("127.0.0.1",local_port),timeout=10)
             try:
                 raw.sendall(struct.pack("!II",8,80877103))
                 if raw.recv(1)!=b"S": raise RuntimeError("Neon proxy trust probe refused TLS")
@@ -285,12 +272,6 @@ class Driver:
                     connection.settimeout(10)
                     return connection.recv(1)
             finally: raw.close()
-        finally:
-            forward.terminate()
-            try:forward.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                forward.kill(); forward.wait(timeout=5)
-            errors.close()
     def control_plane_trust(self,pid):
         namespace="managed-platform-"+pid; deployment=json.loads(self.k("-n",namespace,"get","deployment","neon-proxy","-o","json"))
         secrets=[volume.get("secret",{}).get("secretName") for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume.get("name")=="proxy-auth"]
@@ -357,24 +338,10 @@ class Driver:
         if not isinstance(statement,str) or not statement or len(statement)>8192 or "\x00" in statement: raise RuntimeError("proxy SQL statement is invalid")
         if not expect_success and (not isinstance(expected_error,str) or not expected_error): raise RuntimeError("proxy SQL failure contract is missing")
         environment=self.proxy_environment(pid,password)
-        errors=tempfile.TemporaryFile()
-        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n","managed-platform-"+pid,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
-        try:
-            for _ in range(150):
-                if forward.poll() is not None: raise RuntimeError("Neon proxy SQL port-forward exited")
-                try:
-                    with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
-                except OSError: time.sleep(.2)
-            else: raise RuntimeError("Neon proxy SQL port-forward did not become ready")
+        with self.proxy_forward(pid,lifetime=max(180,timeout+30)):
             observed=self.command([self.a.psql,"-XAtw","-v","ON_ERROR_STOP=1","-c",statement],timeout,env=environment,expected=(0,) if expect_success else (1,2,3),capture_stderr=not expect_success).strip()
             if not expect_success and re.search(expected_error,observed,re.IGNORECASE) is None: raise RuntimeError("Neon proxy SQL failed for an unexpected reason")
             return observed
-        finally:
-            forward.terminate()
-            try:forward.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                forward.kill(); forward.wait(timeout=5)
-            errors.close()
     def authenticated_proxy_query(self,pid):
         password=self.proxy_password(pid)
         observed=self.proxy_query(pid,password,"SELECT current_user || ':' || current_database()")
@@ -400,17 +367,11 @@ class Driver:
     def connection_limits(self,pid):
         password=self.proxy_password(pid); maximum=int(self.proxy_query(pid,password,"SHOW max_connections"))
         if not 10<=maximum<=120: raise RuntimeError("Neon connection limit is absent or outside the bounded probe")
-        environment=self.proxy_environment(pid,password); errors=tempfile.TemporaryFile(); outputs=[]; processes=[]; observer=None
+        environment=self.proxy_environment(pid,password); outputs=[]; processes=[]; observer=None
         application="hakopod_limit_"+self.run_id; environment["PGAPPNAME"]=application
         observer_output=tempfile.TemporaryFile()
-        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n","managed-platform-"+pid,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
+        forward=self.proxy_forward(pid,maximum=maximum+10).start()
         try:
-            for _ in range(150):
-                if forward.poll() is not None: raise RuntimeError("Neon connection-limit port-forward exited")
-                try:
-                    with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
-                except OSError: time.sleep(.2)
-            else: raise RuntimeError("Neon connection-limit port-forward did not become ready")
             observer_environment=dict(environment,PGAPPNAME="hakopod_limit_observer_"+self.run_id)
             observer=subprocess.Popen([self.a.psql,"-XAtqw","-v","ON_ERROR_STOP=1"],stdin=subprocess.PIPE,stdout=observer_output,stderr=observer_output,close_fds=True,env=observer_environment,preexec_fn=process_output_limit)
             capacity_query="SELECT 'hakopod-capacity:' || json_build_object('max_connections',current_setting('max_connections')::int,'superuser_reserved_connections',current_setting('superuser_reserved_connections')::int,'reserved_connections',current_setting('reserved_connections')::int,'role_superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),'role_reserved',pg_has_role(current_user,'pg_use_reserved_connections','member'),'baseline_pids',(SELECT COALESCE(json_agg(pid ORDER BY pid),'[]'::json) FROM pg_stat_activity WHERE backend_type='client backend'))::text; SELECT 'hakopod-observer-ready';\n"
@@ -472,12 +433,13 @@ class Driver:
             for process in processes:
                 try:process.wait(timeout=5)
                 except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=5)
-            for output in outputs: output.close()
-            forward.terminate()
-            try:forward.wait(timeout=5)
-            except subprocess.TimeoutExpired: forward.kill(); forward.wait(timeout=5)
-            errors.close()
-            observer_output.close()
+            try:
+                for output in outputs: output.close()
+            finally:
+                try: forward.close()
+                finally:
+                    observer_output.close()
+                    forward.check_healthy()
         if self.proxy_query(pid,password,"SELECT 1")!="1": raise RuntimeError("Neon SQL did not recover after the connection-limit probe")
         return {"run_id":self.run_id,"platform_id":pid,"namespace_uid":self.bound[pid][0],"configured_max_connections":maximum,"attempted_connections":maximum+8,"concurrent_connections":held,"refused_connections":refused,"backend_pids":sorted(backend_pids),"baseline_backend_pids":baseline,"superuser_reserved_connections":capacity["superuser_reserved_connections"],"reserved_connections":capacity["reserved_connections"],"role_superuser":capacity["role_superuser"],"role_reserved":capacity["role_reserved"],"effective_connection_limit":effective,"held_markers_flushed":True,"sleeping_backends_verified":True,"baseline_unchanged":True,"service_recovered":True}
     def absent_safekeepers(self,namespace,stopped,old_uids):
