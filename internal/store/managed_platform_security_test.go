@@ -72,7 +72,7 @@ func TestManagedPlatformClaimTransferAndObservationBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current.Spec.Neon.BranchLimit++
+	current.Spec.Neon.ComputeReplicas++
 	updateReview := managedPlatformReview(t, s, p, current, plan, current.Revision, "update")
 	if _, err = s.AcceptManagedPlatform(ctx, p, current, plan, []byte("sealed-update"), updateReview, current.Revision, "transfer-update", "update"); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestManagedPlatformOperationReplayUsesCurrentAuthorityAndExactRequest(t *te
 		t.Fatal("authorized exact replay was not returned redacted", err)
 	}
 	changed := item
-	changed.Spec.Neon.BranchLimit++
+	changed.Spec.Neon.ComputeReplicas++
 	if _, err = s.ManagedPlatformOperationReplay(ctx, p, changed, plan, 0, "replay-before-review", "create"); !errors.Is(err, ErrConflict) {
 		t.Fatal("changed request replay was accepted", err)
 	}

@@ -47,8 +47,11 @@ func (s Spec) ValidateNeon() error {
 	if c.PostgresVersion != "17" {
 		return fmt.Errorf("the Neon source candidate requires PostgreSQL 17")
 	}
-	if c.ComputeReplicas < 1 || c.ComputeReplicas > 6 || c.Pageservers < 2 || c.Pageservers > 8 || c.Safekeepers != 3 || c.BranchLimit < 1 || c.BranchLimit > 64 {
-		return fmt.Errorf("Neon requires 1-6 compute replicas, 2-8 pageservers, three safekeepers and a 1-64 branch limit")
+	if c.ComputeReplicas < 1 || c.ComputeReplicas > 6 || c.Pageservers < 2 || c.Pageservers > 8 || c.Safekeepers != 3 {
+		return fmt.Errorf("Neon requires 1-6 compute nodes, 2-8 pageservers and three safekeepers")
+	}
+	if c.BranchLimit != 1 {
+		return fmt.Errorf("this Neon release supports one managed branch per platform")
 	}
 	if err := s.Placement.Validate("cluster", max(3, c.Pageservers)); err != nil {
 		return err

@@ -266,7 +266,7 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 				safekeepers[i] = fmt.Sprintf("neon-safekeeper-%d.%s.svc:5454", i, "managed-platform-"+item.ID)
 			}
 			for name, raw := range lifecycle.ComputeConfig {
-				lifecycle.ComputeConfig[name], err = bindNeonComputeConfig(raw, binding.TenantID, binding.TimelineID, safekeepers)
+				lifecycle.ComputeConfig[name], err = bindNeonComputeConfig(raw, binding.TenantID, binding.TimelineID, safekeepers, name)
 				if err != nil {
 					return nil, lifecycle, nil, err
 				}

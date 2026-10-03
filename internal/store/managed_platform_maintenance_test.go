@@ -171,7 +171,7 @@ func TestManagedPlatformMaintenanceRejectsStaleRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Pool.Exec(ctx, `UPDATE managed_platforms SET revision=revision+1,desired_spec=jsonb_set(desired_spec,'{neon,branch_limit}',to_jsonb((desired_spec->'neon'->>'branch_limit')::int+1)) WHERE id=$1`, item.ID); err != nil {
+	if _, err = s.Pool.Exec(ctx, `UPDATE managed_platforms SET revision=revision+1,desired_spec=jsonb_set(desired_spec,'{neon,compute_replicas}',to_jsonb((desired_spec->'neon'->>'compute_replicas')::int+1)) WHERE id=$1`, item.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.CheckManagedPlatformOperation(ctx, maintenance); !errors.Is(err, ErrConflict) {
