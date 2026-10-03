@@ -527,7 +527,7 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return empty, err
 	}
-	if err = rejectPlatformRuntimeOverlapTx(ctx, tx, []string{item.ID}); err != nil {
+	if err = rejectPlatformRuntimeLifecycleOverlapTx(ctx, tx, []string{item.ID}); err != nil {
 		return empty, err
 	}
 	if err = validateManagedPlatformIntent(item, plan, expected, kind); err != nil {

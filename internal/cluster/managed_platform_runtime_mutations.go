@@ -44,6 +44,11 @@ func platformRuntimeGeneration(kind string, object metav1.Object) int64 {
 // Server-side dry run captures Kubernetes defaults before journaling the exact
 // desired spec. A retry only advances ownership for that spec, UID and token.
 func applyPlatformRuntimeMutation(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, kind string, existing, desired runtime.Object, prior, current map[string]store.PlatformResourceClaim, before func() error, update func(runtime.Object, metav1.UpdateOptions) (runtime.Object, error)) error {
+	var err error
+	existing, err = repairTerminalPlatformRuntimeMutation(ctx, state, op, kind, existing, prior, before, update)
+	if err != nil {
+		return err
+	}
 	observed := existing.(metav1.Object)
 	key := supabaseClaimKey(kind, observed.GetName())
 	pending, err := state.PlatformRuntimeMutation(ctx, op, key)

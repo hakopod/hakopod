@@ -37,6 +37,8 @@ const maxSupabaseRuntimeObjects = managedplatform.MaxComponents * 5
 var errSupabasePrunePending = errors.New("Supabase snapshot deletion is still in progress")
 
 type ManagedPlatformOperationStore interface {
+	PlatformRuntimeMutationForRepair(context.Context, store.ManagedPlatformOperation, string) (store.PlatformRuntimeRepair, error)
+	ResolvePlatformRuntimeMutationRepair(context.Context, store.ManagedPlatformOperation, store.PlatformRuntimeRepair, bool) error
 	PlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, string) (store.PlatformRuntimeMutation, error)
 	PreparePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
 	CompletePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
@@ -97,6 +99,9 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 		return managedPlatformRuntimeError("supabase_namespace", err)
 	}
 	request.Render.NamespaceUID = ns.UID
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return managedPlatformRuntimeError("supabase_claims", err)
+	}
 	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
 		return managedPlatformRuntimeError("platform_identity", err)
 	}
@@ -701,7 +706,7 @@ func loadSupabaseClaims(ctx context.Context, state ManagedPlatformOperationStore
 			return nil, nil, fmt.Errorf("managed platform prior resource claim bound exceeded")
 		}
 		for _, claim := range claims {
-			if claim.PlatformID != op.PlatformID || claim.PlatformRevision != op.Revision-1 || claim.ReleasedAt != nil {
+			if claim.PlatformID != op.PlatformID || claim.PlatformRevision < 1 || claim.PlatformRevision >= op.Revision || claim.ReleasedAt != nil {
 				return nil, nil, fmt.Errorf("invalid managed platform prior resource claim")
 			}
 			if op.Spec.Kind == "neon" && neonLifecycleClaimComponent(claim.Component) {
@@ -1367,6 +1372,11 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 	nsName := "managed-platform-" + op.PlatformID
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, nsName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
+		for component := range prior {
+			if err = resolveAbsentTerminalPlatformRuntimeMutation(ctx, state, op, component, prior); err != nil {
+				return err
+			}
+		}
 		for _, intent := range append(priorIntents, currentIntents...) {
 			if intent.ConfirmedAt == nil {
 				if err = state.CancelPlatformResourceIntent(ctx, op, intent); err != nil {
@@ -1455,24 +1465,32 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 			return err
 		}
 	}
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return err
+	}
 	for key, claim := range prior {
 		if op.Spec.Kind == "neon" && neonLifecycleClaimComponent(key) {
 			continue
 		}
 		object, findErr := c.supabaseClaimedObject(ctx, ns.Name, key)
-		if apierrors.IsNotFound(findErr) && ns.DeletionTimestamp != nil {
+		if apierrors.IsNotFound(findErr) {
 			if err = state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
 				return err
 			}
 			claim.PlatformRevision, claim.OwnerOperationID = op.Revision, op.ID
-			current[key] = claim
+			if ns.DeletionTimestamp != nil {
+				current[key] = claim
+			} else if err = state.ReleasePlatformResourceClaim(ctx, op, claim); err != nil {
+				return err
+			}
 			delete(prior, key)
 			continue
 		}
 		if findErr != nil {
 			return findErr
 		}
-		if string(object.GetUID()) != claim.ResourceID || verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID) != nil {
+		kind, _, _ := strings.Cut(key, ".")
+		if string(object.GetUID()) != claim.ResourceID || platformRuntimeGeneration(kind, object) != claim.ImmutableGeneration || verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID) != nil {
 			return fmt.Errorf("Supabase deletion claim identity changed for %s", key)
 		}
 		if err = state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
@@ -1490,16 +1508,23 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 			continue
 		}
 		object, findErr := c.supabaseClaimedObject(ctx, ns.Name, key)
-		if apierrors.IsNotFound(findErr) && ns.DeletionTimestamp != nil {
+		if apierrors.IsNotFound(findErr) {
 			if err = state.VerifyPlatformResourceClaim(ctx, op, claim); err != nil {
 				return err
+			}
+			if ns.DeletionTimestamp == nil {
+				if err = state.ReleasePlatformResourceClaim(ctx, op, claim); err != nil {
+					return err
+				}
+				delete(current, key)
 			}
 			continue
 		}
 		if findErr != nil {
 			return findErr
 		}
-		if string(object.GetUID()) != claim.ResourceID {
+		kind, _, _ := strings.Cut(key, ".")
+		if string(object.GetUID()) != claim.ResourceID || platformRuntimeGeneration(kind, object) != claim.ImmutableGeneration {
 			return fmt.Errorf("Supabase deletion claim identity changed for %s", key)
 		}
 		if err = verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID); err != nil {
