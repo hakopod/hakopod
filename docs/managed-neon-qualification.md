@@ -1,6 +1,6 @@
 # Managed Neon qualification
 
-Hakopod keeps Neon unavailable until a release has complete native evidence tied to its source and images. The recorder does not enable Neon or change the runtime capability. The producer records fixed observations and rejects caller-authored pass events. The native driver creates only admitted development resources and refuses missing provider evidence. A complete native run is still pending.
+Hakopod keeps Neon unavailable until a release has complete native evidence tied to its source and images. The recorder does not enable Neon or change the runtime capability. The producer records fixed observations and rejects caller-authored pass events. The native driver creates only admitted development resources and refuses missing provider evidence. Read the qualification manifest shipped with a release for its recorded results; this guide defines the checks that record must pass.
 
 The version 2 qualification manifest records `release_runtime_qualified` only when the tested source has an open release gate and its complete image inventory matches the compiled release inventory. The compiled archive digest, PostgreSQL commit and compatibility patch must also match the build provenance. Changing the gate, image list or source after acceptance requires a new native run. Closed-gate evidence can be recorded for review; release verification rejects it before pulling images or creating release output.
 
