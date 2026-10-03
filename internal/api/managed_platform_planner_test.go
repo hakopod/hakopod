@@ -10,7 +10,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
-func TestNativeManagedPlatformPlannerRequiresCurrentOperatorQualification(t *testing.T) {
+func neonPlannerFixture() (managedplatform.Spec, map[string]string) {
 	spec := managedplatform.Spec{SchemaVersion: 1, Name: "neon-fixture", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Placement: managedplatform.Placement{NodeNames: []string{"node-a", "node-b", "node-c"}}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-fixture", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "fixture", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
 	images := map[string]string{}
 	for _, name := range managedplatform.NeonComponents() {
@@ -23,8 +23,13 @@ func TestNativeManagedPlatformPlannerRequiresCurrentOperatorQualification(t *tes
 	for _, name := range managedplatform.NeonSecretKeys() {
 		spec.Secrets[name] = managedplatform.SecretReference{Name: "neon-" + name, Revision: 1}
 	}
+	return spec, images
+}
+
+func TestNativeManagedPlatformPlannerRequiresCurrentOperatorQualification(t *testing.T) {
+	spec, images := neonPlannerFixture()
 	checks := 0
-	planner := NativeManagedPlatformPlanner{NeonImages: images, ApprovedEncryptedStorageClass: "encrypted-block", ValidateNeonQualification: func(context.Context) error { checks++; return nil }}
+	planner := NativeManagedPlatformPlanner{NeonImages: images, ApprovedEncryptedStorageClass: "encrypted-block", ValidateNeonQualification: func(context.Context) error { checks++; return nil }, ValidateNeonPlacement: func(context.Context, managedplatform.Spec) error { return nil }}
 	planner.ResolveNeonSecret = func(context.Context, store.Principal, store.ManagedPlatform, string, managedplatform.SecretReference) (map[string][]byte, error) {
 		return map[string][]byte{"config.json": []byte(`{"spec":{"format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[],"databases":[],"settings":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)}, nil
 	}
@@ -85,6 +90,46 @@ func TestNativeManagedPlatformPlannerRequiresCurrentOperatorQualification(t *tes
 		if err == nil || !strings.Contains(err.Error(), test.reason) || plan.Capability.Available {
 			t.Fatalf("Neon accepted incompatible or ungranted placement: %+v, %v", plan.Capability, err)
 		}
+	}
+}
+
+func TestNeonPlannerChecksLivePlacementBeforeReviewAndSeal(t *testing.T) {
+	spec, images := neonPlannerFixture()
+	item := store.ManagedPlatform{ID: strings.Repeat("b", 32), Project: "demo", Environment: "development", Spec: spec}
+	planner := NativeManagedPlatformPlanner{NeonImages: images, ApprovedEncryptedStorageClass: "encrypted-block"}
+	if _, err := planner.PlanManagedPlatform(context.Background(), store.Principal{}, item, 0, "create"); err == nil || !strings.Contains(err.Error(), "live placement validation is unavailable") {
+		t.Fatalf("missing live topology validator was accepted: %v", err)
+	}
+	placementErr := errors.New("safekeeper placement zones are not distinct")
+	checks := 0
+	planner.ValidateNeonPlacement = func(_ context.Context, got managedplatform.Spec) error {
+		checks++
+		if got.Kind != "neon" || strings.Join(got.Placement.NodeNames, ",") != strings.Join(spec.Placement.NodeNames, ",") {
+			t.Fatal("live placement validation lost the requested storage node order")
+		}
+		return placementErr
+	}
+	planner.ValidateNeonQualification = func(context.Context) error {
+		t.Fatal("invalid topology reached qualification validation")
+		return nil
+	}
+	planner.ResolveNeonSecret = func(context.Context, store.Principal, store.ManagedPlatform, string, managedplatform.SecretReference) (map[string][]byte, error) {
+		t.Fatal("invalid topology reached secret resolution")
+		return nil, nil
+	}
+	for _, kind := range []string{"create", "update"} {
+		plan, err := planner.PlanManagedPlatform(context.Background(), store.Principal{}, item, 0, kind)
+		if !errors.Is(err, placementErr) || plan.Capability.Available {
+			t.Fatalf("%s accepted invalid live topology: %#v %v", kind, plan.Capability, err)
+		}
+	}
+	if _, err := planner.SealManagedPlatformSnapshot(context.Background(), store.Principal{}, item, managedplatform.Plan{}, 0, "create"); err == nil || checks != 3 {
+		t.Fatalf("snapshot sealing did not recheck live topology: checks=%d error=%v", checks, err)
+	}
+	planner.ValidateNeonQualification = nil
+	planner.ValidateNeonPlacement = nil
+	if _, err := planner.PlanManagedPlatform(context.Background(), store.Principal{}, item, 1, "delete"); err != nil || checks != 3 {
+		t.Fatalf("deletion depended on live provisioning topology: %v", err)
 	}
 }
 

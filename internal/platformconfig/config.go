@@ -245,6 +245,7 @@ func Configure(path string, db *store.Store, kube *cluster.Client, encodedKey st
 		}
 	}
 	planner.ValidateNeonQualification = validateNeonQualification
+	planner.ValidateNeonPlacement = kube.ValidateNeonPlacement
 	planner.CatalogCapacity = options.CatalogCapacity
 	planner.CatalogSecrets = map[string]map[string][]managedplatform.SecretReference{}
 	for project, environments := range config.Secrets {

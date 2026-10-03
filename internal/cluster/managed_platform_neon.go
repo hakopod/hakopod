@@ -134,6 +134,7 @@ func (c *Client) neonAvailabilityZones(ctx context.Context, spec managedplatform
 		return nil, fmt.Errorf("Neon availability-zone inventory is unavailable without explicit placement.node_names")
 	}
 	zones := make([]string, members)
+	safekeeperZones := make(map[string]bool, 3)
 	for i, name := range spec.Placement.NodeNames[:members] {
 		node, err := c.kube.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -150,9 +151,24 @@ func (c *Client) neonAvailabilityZones(ctx context.Context, spec managedplatform
 		if node.Name != name || node.DeletionTimestamp != nil || !ready || len(utilvalidation.IsDNS1123Label(zone)) != 0 {
 			return nil, fmt.Errorf("Neon placement node %s has no ready trusted availability-zone identity", name)
 		}
+		// Safekeeper i uses placement node i. Extra pageserver placements
+		// cannot compensate for a repeated zone among these three members.
+		if i < 3 {
+			if safekeeperZones[zone] {
+				return nil, fmt.Errorf("Neon requires the first three placement nodes to be in distinct availability zones")
+			}
+			safekeeperZones[zone] = true
+		}
 		zones[i] = zone
 	}
 	return zones, nil
+}
+
+// ValidateNeonPlacement checks live storage topology before a create or update
+// is reviewed and again before its immutable runtime snapshot is sealed.
+func (c *Client) ValidateNeonPlacement(ctx context.Context, spec managedplatform.Spec) error {
+	_, err := c.neonAvailabilityZones(ctx, spec)
+	return err
 }
 
 func (c *Client) neonLifecycleZones(ctx context.Context, kind string, spec managedplatform.Spec) ([]string, error) {

@@ -38,6 +38,7 @@ type NativeManagedPlatformPlanner struct {
 	CatalogSecrets                map[string]map[string][]managedplatform.SecretReference
 	ValidateSupabaseQualification func(context.Context) error
 	ValidateNeonQualification     func(context.Context) error
+	ValidateNeonPlacement         func(context.Context, managedplatform.Spec) error
 }
 
 func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, principal store.Principal, item store.ManagedPlatform, _ int64, kind string) (managedplatform.Plan, error) {
@@ -81,6 +82,13 @@ func (p *NativeManagedPlatformPlanner) PlanManagedPlatform(ctx context.Context, 
 	plan.Capability.Available, plan.Capability.ClusterQualified, plan.Capability.PublicQualified = false, false, false
 	if err == nil {
 		err = validateManagedPlatformPlacement(name, item.Spec, nodes, p.CatalogCapacity != nil)
+	}
+	if err == nil && item.Spec.Kind == "neon" && kind != "delete" {
+		if p.ValidateNeonPlacement == nil {
+			err = fmt.Errorf("Neon live placement validation is unavailable")
+		} else {
+			err = p.ValidateNeonPlacement(ctx, item.Spec)
+		}
 	}
 	if err == nil {
 		plan.Capability, err = reviewedPlatformCapability(ctx, name, released, plan.Capability, validate)
