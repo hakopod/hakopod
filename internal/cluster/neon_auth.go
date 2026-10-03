@@ -75,6 +75,10 @@ func PrepareNeonAuthenticationSnapshots(request *NeonRuntimeRequest, key []byte,
 		}
 		name := secretSnapshotNameForCluster(ref)
 		data := copySecretData(request.SecretSnapshots[name])
+		data["config.json"], err = managedplatform.BindNeonSQLAuthentication(data["config.json"], request.ProxyEndpoint.Roles)
+		if err != nil {
+			return err
+		}
 		data["config.json"], err = managedplatform.BindNeonTenantAuthentication(data["config.json"], key, request.Render.PlatformID, neonDeterministicID(request.Render.PlatformID, "tenant"))
 		if err != nil {
 			return err

@@ -72,7 +72,7 @@ func TestNeonProxyAccessReturnsOnlyRequestedRole(t *testing.T) {
 }
 
 func TestConfiguredNeonProxyAuthorityAcceptsCloudAdminRole(t *testing.T) {
-	const scram = "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy"
+	const scram = "SCRAM-SHA-256$4096:c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	config := NeonProxyEndpointConfig{
 		Enabled:    true,
 		Address:    "neon-compute-0.managed-platform-bootstrap.svc:55433",
@@ -104,7 +104,7 @@ func TestDatabaseNeonProxyAuthorityDecryptsOwnedRouteAndExactRole(t *testing.T) 
 	const timelineID = "22222222222222222222222222222222"
 	roles := map[string]managedplatform.NeonProxyRoleState{
 		"app": {
-			SCRAMSecret:            "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy",
+			SCRAMSecret:            "SCRAM-SHA-256$4096:c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 			AllowedIPs:             []string{"10.0.0.0/8"},
 			AllowedVPCEndpointIDs:  []string{"vpce-123"},
 			BlockPublicConnections: true,

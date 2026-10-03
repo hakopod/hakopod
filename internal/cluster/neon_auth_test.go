@@ -14,12 +14,14 @@ const validNeonComputeTemplate = `{"spec":{"format_version":1,"suspend_timeout_s
 
 func TestNeonAuthenticationSnapshotKeepsUserConfigurationAndNoSigner(t *testing.T) {
 	request := NeonRuntimeRequest{Render: managedplatform.NeonRenderInput{PlatformID: strings.Repeat("a", 32), Spec: managedplatform.Spec{Kind: "neon", Secrets: map[string]managedplatform.SecretReference{}}}, SecretSnapshots: map[string]map[string][]byte{}}
+	const sqlVerifier = "SCRAM-SHA-256$4096:c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	request.ProxyEndpoint.Roles = map[string]managedplatform.NeonProxyRoleState{"cloud_admin": {SCRAMSecret: sqlVerifier}}
 	for _, logical := range []string{"controller-auth", "pageserver-auth", "safekeeper-auth", "compute-auth"} {
 		request.Render.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
 		request.SecretSnapshots[logical+"-r1"] = map[string][]byte{"token": []byte("old")}
 	}
 	compute := request.SecretSnapshots["compute-auth-r1"]
-	compute["config.json"] = []byte(`{"spec":{"storage_auth_token":"old","mode":"Replica","format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[],"databases":[],"settings":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)
+	compute["config.json"] = []byte(`{"spec":{"storage_auth_token":"old","mode":"Replica","format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[{"name":"cloud_admin","options":[]}],"databases":[],"settings":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)
 	compute["tls.crt"], compute["tls.key"], compute["ca.crt"] = []byte("leaf-certificate"), []byte("leaf-key"), []byte("issuer-certificate")
 	if err := PrepareNeonAuthenticationSnapshots(&request, bytes.Repeat([]byte{9}, 32), "create"); err != nil {
 		t.Fatal(err)
@@ -32,6 +34,9 @@ func TestNeonAuthenticationSnapshotKeepsUserConfigurationAndNoSigner(t *testing.
 	}
 	if !bytes.Contains(request.SecretSnapshots["compute-auth-r1"]["config.json"], []byte(`"Replica"`)) {
 		t.Fatal("compute mode changed")
+	}
+	if !bytes.Contains(request.SecretSnapshots["compute-auth-r1"]["config.json"], []byte(sqlVerifier)) {
+		t.Fatal("accepted compute snapshot lacks the proxy's SQL verifier")
 	}
 	for _, field := range []string{"tls.crt", "tls.key", "ca.crt"} {
 		if !bytes.Equal(request.SecretSnapshots["compute-auth-r1"][field], compute[field]) {
@@ -203,5 +208,26 @@ func TestNeonDeleteAuthenticationDoesNotRequireComputeTemplate(t *testing.T) {
 	}
 	if !reflect.DeepEqual(request.SecretSnapshots["compute-auth-r1"], map[string][]byte{"token": []byte("unchanged")}) {
 		t.Fatal("delete snapshot changed compute configuration")
+	}
+}
+
+func TestNeonSQLAuthenticationSnapshotFailureIsAtomic(t *testing.T) {
+	request := NeonRuntimeRequest{Render: managedplatform.NeonRenderInput{PlatformID: strings.Repeat("a", 32), Spec: managedplatform.Spec{Kind: "neon", Secrets: map[string]managedplatform.SecretReference{}}}, SecretSnapshots: map[string]map[string][]byte{}}
+	for _, logical := range []string{"controller-auth", "pageserver-auth", "safekeeper-auth", "compute-auth"} {
+		request.Render.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
+		request.SecretSnapshots[logical+"-r1"] = map[string][]byte{"token": []byte("unchanged")}
+	}
+	request.SecretSnapshots["compute-auth-r1"]["config.json"] = []byte(validNeonComputeTemplate)
+	request.ProxyEndpoint.Roles = map[string]managedplatform.NeonProxyRoleState{"cloud_admin": {SCRAMSecret: "invalid"}}
+	before, err := json.Marshal(request.SecretSnapshots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareNeonAuthenticationSnapshots(&request, bytes.Repeat([]byte{9}, 32), "create"); err == nil {
+		t.Fatal("invalid SQL credentials entered an accepted snapshot")
+	}
+	after, err := json.Marshal(request.SecretSnapshots)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("failed SQL authentication binding changed another secret snapshot")
 	}
 }

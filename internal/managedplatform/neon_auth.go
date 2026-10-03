@@ -9,9 +9,108 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var neonSQLRoleName = regexp.MustCompile(`^[a-z0-9_](?:[-_a-z0-9]{0,61}[a-z0-9_])?$`)
+
+// ValidateNeonSQLRoleCredential uses PostgreSQL's SCRAM verifier shape. A string
+// that only resembles SCRAM can otherwise become a different SQL password.
+func ValidateNeonSQLRoleCredential(name, secret string) error {
+	if !neonSQLRoleName.MatchString(name) || len(secret) > 4096 {
+		return fmt.Errorf("Neon SQL role credential is invalid")
+	}
+	parts := strings.Split(secret, "$")
+	if len(parts) != 3 || parts[0] != "SCRAM-SHA-256" {
+		return fmt.Errorf("Neon SQL role requires a SCRAM-SHA-256 verifier")
+	}
+	parameters, keys := strings.Split(parts[1], ":"), strings.Split(parts[2], ":")
+	if len(parameters) != 2 || len(keys) != 2 {
+		return fmt.Errorf("Neon SQL SCRAM verifier is malformed")
+	}
+	iterations, err := strconv.ParseUint(parameters[0], 10, 31)
+	if err != nil || iterations < 1000 || iterations > 999999999 || strconv.FormatUint(iterations, 10) != parameters[0] {
+		return fmt.Errorf("Neon SQL SCRAM iteration count is invalid")
+	}
+	for i, encoded := range []string{parameters[1], keys[0], keys[1]} {
+		decoded, err := base64.StdEncoding.Strict().DecodeString(encoded)
+		if err != nil || base64.StdEncoding.EncodeToString(decoded) != encoded || i == 0 && (len(decoded) == 0 || len(decoded) > 1024) || i > 0 && len(decoded) != sha256.Size {
+			return fmt.Errorf("Neon SQL SCRAM verifier has invalid salt or keys")
+		}
+	}
+	return nil
+}
+
+// BindNeonSQLAuthentication installs the accepted proxy verifiers in the
+// compute spec before it is sealed. A shared operator template stays unchanged.
+func BindNeonSQLAuthentication(raw json.RawMessage, proxyRoles map[string]NeonProxyRoleState) (json.RawMessage, error) {
+	if len(raw) == 0 || len(raw) > 65536 || len(proxyRoles) == 0 || len(proxyRoles) > 64 {
+		return nil, fmt.Errorf("Neon SQL authentication binding is incomplete")
+	}
+	var root map[string]any
+	if decodeNeonJSON(raw, &root) != nil {
+		return nil, fmt.Errorf("Neon SQL authentication template is invalid")
+	}
+	spec, _ := root["spec"].(map[string]any)
+	cluster, _ := spec["cluster"].(map[string]any)
+	roles, ok := cluster["roles"].([]any)
+	if !ok || len(roles) > 128 {
+		return nil, fmt.Errorf("Neon SQL authentication requires bounded compute roles")
+	}
+	for name, role := range proxyRoles {
+		if err := ValidateNeonSQLRoleCredential(name, role.SCRAMSecret); err != nil {
+			return nil, err
+		}
+	}
+	seen := make(map[string]bool, len(roles))
+	for _, value := range roles {
+		role, ok := value.(map[string]any)
+		name, named := role["name"].(string)
+		if !ok || !named || name == "" || seen[name] {
+			return nil, fmt.Errorf("Neon compute roles must have unique names")
+		}
+		seen[name] = true
+		if proxy, bound := proxyRoles[name]; bound {
+			role["encrypted_password"] = proxy.SCRAMSecret
+			options, ok := role["options"].([]any)
+			if !ok && role["options"] != nil {
+				return nil, fmt.Errorf("Neon compute role options are invalid")
+			}
+			filtered := make([]any, 0, len(options))
+			for _, option := range options {
+				fields, ok := option.(map[string]any)
+				optionName, named := fields["name"].(string)
+				if !ok || !named {
+					return nil, fmt.Errorf("Neon compute role option is invalid")
+				}
+				switch strings.ToUpper(strings.TrimSpace(optionName)) {
+				case "LOGIN", "NOLOGIN", "PASSWORD", "ENCRYPTED PASSWORD", "UNENCRYPTED PASSWORD":
+					// The provider appends LOGIN and the accepted password itself.
+					continue
+				}
+				filtered = append(filtered, option)
+			}
+			role["options"] = filtered
+		}
+	}
+	for name := range proxyRoles {
+		if !seen[name] {
+			// New template roles receive the provider's administrative grants.
+			// Credentials must never silently expand that reviewed inventory.
+			return nil, fmt.Errorf("Neon proxy roles must be declared in the reviewed compute template")
+		}
+	}
+	cluster["roles"] = roles
+	bound, err := json.Marshal(root)
+	if err != nil || len(bound) > 65536 {
+		return nil, fmt.Errorf("Neon SQL authentication exceeds the compute template bound")
+	}
+	return bound, nil
+}
 
 // Native signing keys stay in the control process. Domain-separated derivation
 // keeps each platform independent and survives replay of its encrypted snapshot.
