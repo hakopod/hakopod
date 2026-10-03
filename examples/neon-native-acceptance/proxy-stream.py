@@ -42,14 +42,16 @@ def probe_journal(platform_id, namespace_uid):
 
 
 class ProxyTarget:
-    def __init__(self, kubeconfig, platform_id, namespace_uid, operation_id, image, kube, probe=False):
+    def __init__(self, kubeconfig, platform_id, namespace_uid, operation_id, image, kube, probe=False, component="proxy"):
         require(re.fullmatch(r"[0-9a-f]{32}", platform_id) and UID.fullmatch(namespace_uid) and
                 re.fullmatch(r"[0-9a-f]{32}", operation_id), "proxy stream platform binding is invalid")
         require(re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", image), "proxy stream image is not pinned")
+        require(component in ("proxy", "storage-controller") and (not probe or component == "proxy"), "stream component is unsupported")
+        self.component, self.port = component, 5432 if component == "proxy" else 6699
         self.kubeconfig, self.platform_id = kubeconfig, platform_id
         self.namespace_uid, self.operation_id, self.image = namespace_uid, operation_id, image
         self.namespace, self.kube = "managed-platform-" + platform_id, kube
-        self.name = "hakopod-neon-wrong-ca" if probe else "neon-proxy"
+        self.name = "hakopod-neon-wrong-ca" if probe else "neon-" + component
         self.journal = probe_journal(platform_id, namespace_uid) if probe else None
         self.workload_uid = self.journal["uids"]["deployment/" + self.name] if probe else None
         self.lock = threading.Lock()
@@ -65,7 +67,7 @@ class ProxyTarget:
         if self.journal is not None:
             require(probe_journal(self.platform_id, self.namespace_uid) == self.journal, "issuer probe journal changed")
         listing = self.kube("-n", self.namespace, "get", "deployments,replicasets,pods", "--chunk-size=97", "-l",
-                            "hakopod.io/managed-platform-id=" + self.platform_id + ",hakopod.io/neon-role=proxy", "-o", "json")
+                            "hakopod.io/managed-platform-id=" + self.platform_id + ",hakopod.io/neon-role=" + self.component, "-o", "json")
         items = listing.get("items", [])
         require(1 <= len(items) <= 96 and not listing.get("metadata", {}).get("continue"), "proxy stream inventory is incomplete or unbounded")
         matches = [item for item in items if item["kind"] == "Deployment" and item["metadata"]["name"] == self.name]
@@ -83,7 +85,7 @@ class ProxyTarget:
             refs = dm.get("ownerReferences", [])
             require(refs == [{"apiVersion": "v1", "kind": "Namespace", "name": self.namespace, "uid": self.namespace_uid}] and
                     dm.get("labels", {}).get("app.kubernetes.io/managed-by") == "hakopod" and
-                    dm.get("labels", {}).get("app.kubernetes.io/component") == "proxy", "proxy stream workload ownership differs")
+                    dm.get("labels", {}).get("app.kubernetes.io/component") == self.component, "proxy stream workload ownership differs")
 
         def owned(item, kind, uid):
             owners = item["metadata"].get("ownerReferences", [])
@@ -107,11 +109,11 @@ class ProxyTarget:
                 replica["spec"]["template"]["spec"] == template and
                 pod["spec"].get("runtimeClassName") == "runsc" and
                 pod["spec"].get("automountServiceAccountToken") is False and
-                len(containers) == len(template_containers) == 1 and containers[0].get("name") == "proxy" and
+                len(containers) == len(template_containers) == 1 and containers[0].get("name") == self.component and
                 containers[0].get("image") == template_containers[0].get("image") == self.image and
-                any(port.get("containerPort") == 5432 for port in containers[0].get("ports", [])), "proxy stream Pod runtime differs")
+                any(port.get("containerPort") == self.port for port in containers[0].get("ports", [])), "proxy stream Pod runtime differs")
         return {"kubeconfig": self.kubeconfig, "context": "k3d-hakopod-dev", "namespace": self.namespace,
                 "namespace_uid": self.namespace_uid, "pod": pod["metadata"]["name"], "pod_uid": pod["metadata"]["uid"],
                 "owner_kind": "ReplicaSet", "owner_name": replica["metadata"]["name"], "owner_uid": replica["metadata"]["uid"],
                 "workload_kind": "Deployment", "workload_name": self.name, "workload_uid": dm["uid"],
-                "container": "proxy", "image": self.image, "port": 5432}
+                "container": self.component, "image": self.image, "port": self.port}

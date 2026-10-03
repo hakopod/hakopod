@@ -50,6 +50,7 @@ CASE_EVENTS = {
     "tenant-migration": {"owned-destination-verified", "generation-advanced", "ownership-preserved", "compute-routing-updated", "primary-data-verified", "replica-data-verified"},
     "object-store-outage": {"outage-observed", "backup-refused", "service-restored"},
     "restored-resource-update": {"reviewed-update-applied", "revision-advanced-once", "stale-revision-refused", "topology-change-refused", "identity-preserved", "pod-cpu-changed", "compute-roles-preserved", "restored-data-verified"},
+    "partial-create-cleanup": {"owned-child-reserved", "create-refused", "parent-api-delete-succeeded", "child-tombstone-verified", "cross-platform-authority-refused", "target-preserved"},
 }
 CASES = set(CASE_EVENTS)
 PRODUCER = {"runner_path": "examples/neon-native-acceptance/run.sh", "producer_path": "examples/neon-native-acceptance/evidence.py"}
@@ -131,14 +132,15 @@ def source_metadata(root):
                 "postgres_commit", "postgres_tree", "postgres_patch", "postgres_patch_sha256",
                 "consumer_patch_id", "consumer_patch", "consumer_patch_sha256",
                 "transport_patch", "transport_patch_sha256", "reconfigure_patch", "reconfigure_patch_sha256",
-                "placement_patch", "placement_patch_sha256",
+                "placement_patch", "placement_patch_sha256", "filesystem_patch", "filesystem_patch_sha256",
+                "applying_delete_patch", "applying_delete_patch_sha256",
                 "frozen_combined_patch_sha256", "combined_candidate_tree", "source_archive",
                 "qualification", "rejected_artifacts"}
     if set(data) != expected or type(data["schema_version"]) is not int or data["schema_version"] != 2:
         raise ValueError("Neon source metadata is missing or malformed")
     if data["upstream_repository"] != "https://github.com/neondatabase/neon.git" or not COMMIT.fullmatch(data["upstream_commit"]):
         raise ValueError("Neon upstream identity is invalid")
-    for name in ("proxy_patch", "ownership_patch", "postgres_patch", "consumer_patch", "transport_patch", "reconfigure_patch", "placement_patch"):
+    for name in ("proxy_patch", "ownership_patch", "postgres_patch", "consumer_patch", "transport_patch", "reconfigure_patch", "placement_patch", "filesystem_patch", "applying_delete_patch"):
         patch = Path(root) / data[name]
         if file_hash(patch) != data[name + "_sha256"]:
             raise ValueError("Neon patch identity changed: " + name)
@@ -162,7 +164,7 @@ def source_metadata(root):
 
 def source_patch_hashes(metadata):
     return {**{name: metadata[name + "_patch_sha256"]
-               for name in ("proxy", "ownership", "postgres", "consumer", "transport", "reconfigure", "placement")},
+               for name in ("proxy", "ownership", "postgres", "consumer", "transport", "reconfigure", "placement", "filesystem", "applying_delete")},
             "combined": metadata["frozen_combined_patch_sha256"]}
 
 

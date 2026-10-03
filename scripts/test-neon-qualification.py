@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Focused tests for fail-closed Neon qualification tooling."""
-import hashlib, importlib.util, json, tempfile, unittest
+import copy, hashlib, importlib.util, json, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -71,6 +71,8 @@ def build():
         "transport_patch_sha256": "8" * 64,
         "reconfigure_patch_sha256": "9" * 64,
         "placement_patch_sha256": "0" * 64,
+        "filesystem_patch_sha256": "4" * 64,
+        "applying_delete_patch_sha256": "5" * 64,
         "frozen_combined_patch_sha256": "f" * 64,
     }
     evidence = {
@@ -101,7 +103,7 @@ def report():
 class Tests(unittest.TestCase):
     def validate(self, value): VERIFY.validate_acceptance(value, value["source_files"], value["images"], value["identities"])
     def test_build_requires_each_exact_runtime_patch(self):
-        for name in ("transport", "reconfigure", "placement"):
+        for name in ("transport", "reconfigure", "placement", "filesystem", "applying_delete"):
             with self.subTest(patch=name):
                 evidence, metadata = build()
                 VERIFY.validate_build(evidence, metadata)
@@ -219,6 +221,67 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"cannot qualify"): self.validate(value)
     def test_missing_case(self):
         with self.assertRaisesRegex(ValueError,"incomplete"): VERIFY.validate_events(events()[:-1],"4"*32,60)
+    def test_partial_create_cleanup_requires_owned_failure_and_cleanup(self):
+        state = {"run_id": "4" * 32, "resources": resources()}
+        tenant, timeline, ancestor = "1" * 32, "2" * 32, "3" * 32
+        request = json.dumps({"new_timeline_id": timeline, "ancestor_timeline_id": ancestor,
+                              "ancestor_start_lsn": None, "pg_version": None},
+                             sort_keys=True, separators=(",", ":")).encode()
+        request_hash = hashlib.sha256(b"timeline\0" + (tenant + "/" + timeline).encode() + b"\0" + request).hexdigest()
+        target = {"revision": 4, "namespace_uid": "uid-recovery_target", "tenant_id": "9" * 32,
+                  "timeline_id": "a" * 32, "tenant_generation": 5, "timeline_generation": 6,
+                  "pod_uids": ["pod-target"], "data_sha256": hashlib.sha256(("backup-" + state["run_id"]).encode()).hexdigest()}
+        value = {
+            "run_id": state["run_id"], "platform_id": "6" * 32, "namespace_uid": "uid-source",
+            "target_platform_id": "7" * 32, "target_namespace_uid": "uid-recovery_target", "source_revision": 1,
+            "tenant_id": tenant, "timeline_id": timeline, "ancestor_timeline_id": ancestor,
+            "normalized_request_sha256": hashlib.sha256(request).hexdigest(), "controller_request_hash": request_hash,
+            "ownership_token_sha256": "b" * 64, "create_http_status": 500, "create_error_sha256": "c" * 64,
+            "ledger_before": {"resource_kind": "timeline", "external_key": tenant + "/" + timeline,
+                              "state": "applying", "result": None, "request_hash": request_hash,
+                              "ownership_token_sha256": "b" * 64, "timeline_rows": 0},
+            "data_prefix_objects_before": 0, "data_prefix_objects_after": 0, "reservation_before_sha256": "d" * 64,
+            "source_persistent_volume_ids": [{"name": "pv-source", "uid": "pv-source-uid"}],
+            "target_before": target, "target_after": copy.deepcopy(target),
+            "prior_lifecycle_sha256": "e" * 64, "backup_recovery_sha256": "f" * 64, "preparation_sha256": "0" * 64,
+            "delete_operation": {"id": "b" * 32, "platform_id": "6" * 32, "kind": "delete", "status": "succeeded", "revision": 2},
+            "tombstone": {"schema_version": 1, "ownership_token_sha256": "b" * 64, "request_hash": request_hash, "body_sha256": "a" * 64},
+            "tenant_fence": {"schema_version": 1, "delete_token_sha256": "b" * 64, "authorization_digest": "c" * 64, "body_sha256": "d" * 64},
+            "foreign_authority": {"source_bearer_http_status": 401, "source_owner_delete_http_status": 409, "validate_only": True},
+            "source_namespace_absent": True, "source_persistent_volumes_absent": True,
+        }
+        PRODUCER.validate_observation("partial-create-cleanup", value, state)
+        mutations = (
+            (("run_id",), "5" * 32), (("target_platform_id",), "6" * 32),
+            (("source_revision",), True), (("create_http_status",), 503),
+            (("controller_request_hash",), "0" * 64),
+            (("ledger_before", "state"), "completed"), (("ledger_before", "result"), "present"),
+            (("ledger_before", "timeline_rows"), 1), (("ledger_before", "timeline_rows"), False),
+            (("ledger_before", "ownership_token_sha256"), "a" * 64),
+            (("data_prefix_objects_before",), 1), (("data_prefix_objects_after",), False),
+            (("delete_operation", "status"), "failed"), (("delete_operation", "revision"), 3),
+            (("tombstone", "ownership_token_sha256"), "e" * 64), (("tombstone", "schema_version"), True),
+            (("tenant_fence", "authorization_digest"), "invalid"),
+            (("foreign_authority", "source_bearer_http_status"), 200),
+            (("foreign_authority", "source_owner_delete_http_status"), 200),
+            (("foreign_authority", "validate_only"), False),
+            (("target_after", "revision"), 5), (("target_after", "pod_uids"), ["replacement"]),
+            (("source_persistent_volume_ids",), []),
+            (("source_namespace_absent",), False), (("source_persistent_volumes_absent",), False),
+        )
+        for keys, replacement in mutations:
+            changed = copy.deepcopy(value)
+            field = changed
+            for key in keys[:-1]:
+                field = field[key]
+            field[keys[-1]] = replacement
+            with self.subTest(keys=keys, replacement=replacement):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    PRODUCER.validate_observation("partial-create-cleanup", changed, state)
+        incomplete = report()
+        incomplete["test_events"] = [item for item in incomplete["test_events"] if item["case"] != "partial-create-cleanup"]
+        with self.assertRaises(ValueError):
+            self.validate(incomplete)
     def test_duplicate_case(self):
         value=events(); value.append(dict(value[0]))
         with self.assertRaisesRegex(ValueError,"duplicate"): VERIFY.validate_events(value)
