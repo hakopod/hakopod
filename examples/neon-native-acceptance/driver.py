@@ -107,6 +107,12 @@ class Driver:
             values.append(password)
         if len(set(values))!=3: raise RuntimeError("proxy SQL credentials must be distinct per platform")
         if not Path(a.psql).is_absolute() or not os.access(a.psql,os.X_OK): raise RuntimeError("PostgreSQL client executable is unavailable")
+        if getattr(a,"scheduling_policy",""): self.command(self.bridge_argv("verify-scheduling"),120)
+    def bridge_argv(self,action,*args):
+        argv=[sys.executable,self.a.control_plane_bridge,action,"--kubeconfig",self.a.kubeconfig,*args]
+        policy=getattr(self.a,"scheduling_policy","")
+        if policy: argv.extend(["--scheduling-policy",policy,"--gate-attestation",self.a.gate_attestation])
+        return argv
     def command(self, argv, timeout=30, data=None, env=None, expected=(0,), capture_stderr=False):
         if not isinstance(argv, (list, tuple)) or not 1 <= len(argv) <= 128 or any(not isinstance(item, str) or not item or "\x00" in item or len(item.encode()) > 8192 for item in argv): raise RuntimeError("acceptance command is malformed")
         if type(timeout) not in (int, float) or not 1 <= timeout <= 1800: raise RuntimeError("acceptance command timeout is invalid")
@@ -171,7 +177,7 @@ class Driver:
         if reviewed.get("blocked") is not False or not reviewed.get("review",{}).get("id"): raise RuntimeError("native capability gate remains closed")
         platform=reviewed["platform"]
         if platform.get("project")!=self.a.project or platform.get("environment")!="development" or platform.get("spec")!=spec or reviewed["review"].get("expected_revision")!=0: raise RuntimeError("create review did not echo the exact request")
-        self.command([sys.executable,self.a.control_plane_bridge,"allow","--kubeconfig",self.a.kubeconfig,"--platform-id",platform["id"]],240)
+        self.command(self.bridge_argv("allow","--platform-id",platform["id"]),240)
         request={"id":platform["id"],"project":platform["project"],"environment":platform["environment"],"expected_revision":0,"kind":"create","spec":platform["spec"],"review":reviewed["review"]}
         op=self.api("POST","/api/v1/managed-platforms/operations",request,"neon-create-"+platform["id"])
         if not ID.fullmatch(str(platform.get("id"))) or not ID.fullmatch(str(op.get("id"))) or op.get("platform_id")!=platform["id"] or op.get("kind")!="create": raise RuntimeError("accepted create operation identity is invalid")
@@ -289,16 +295,16 @@ class Driver:
         namespace="managed-platform-"+pid; deployment=json.loads(self.k("-n",namespace,"get","deployment","neon-proxy","-o","json"))
         secrets=[volume.get("secret",{}).get("secretName") for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume.get("name")=="proxy-auth"]
         if len(secrets)!=1 or not re.fullmatch(r"platform-tls-proxy-[0-9a-f]{16}-r1",secrets[0] or ""): raise RuntimeError("active Neon proxy TLS snapshot is ambiguous")
-        base=["--kubeconfig",self.a.kubeconfig,"--platform-id",pid]
-        self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","correct"],240)
+        base=["--platform-id",pid]
+        self.command(self.bridge_argv("probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","correct"),240)
         try: correct=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt",pid)
-        finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
+        finally:self.command(self.bridge_argv("probe-stop",*base),240)
         if correct!=b"R": raise RuntimeError("correct control-plane issuer did not reach PostgreSQL authentication")
-        self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","wrong"],240)
+        self.command(self.bridge_argv("probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","wrong"),240)
         try:
             wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt",pid)
-            self.command([sys.executable,self.a.control_plane_bridge,"probe-verify-wrong",*base],60)
-        finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
+            self.command(self.bridge_argv("probe-verify-wrong",*base),60)
+        finally:self.command(self.bridge_argv("probe-stop",*base),240)
         if wrong!=b"E": raise RuntimeError("wrong control-plane issuer was not rejected")
         self.authenticated_proxy_query(pid)
         return {"correct_issuer_reached_authentication":True,"wrong_issuer_refused":True,"proxy_authenticated_query":True}
@@ -810,7 +816,7 @@ class Driver:
                 if self.k("get","namespace",namespace,"--ignore-not-found","-o","name").strip(): raise RuntimeError("foreign sentinel cleanup is incomplete")
                 self.foreign=None
             except Exception: failed.append(namespace)
-        try:self.command([sys.executable,self.a.control_plane_bridge,"cleanup","--kubeconfig",self.a.kubeconfig],120)
+        try:self.command(self.bridge_argv("cleanup"),120)
         except Exception:failed.append("control-plane-bridge")
         resources=[{"platform_id":pid,"namespace":"managed-platform-"+pid,"namespace_uid":self.bound.get(pid,(None,None))[0],"create_operation_id":opid} for pid,unused,opid in self.platforms]
         atomic(self.evidence/"cleanup-attempt.json",{"schema_version":1,"status":"incomplete" if failed else "verified","run_id":self.run_id,"resources":resources,"owned_persistent_volumes":[owned_volumes[key] for key in sorted(owned_volumes)],"namespaces_absent":namespace_audit_complete and not remaining_namespaces,"persistent_volume_claim_refs_absent":volume_audit_complete and not remaining_volumes,"remaining_namespaces":sorted(remaining_namespaces),"remaining_persistent_volumes":remaining_volumes,"failure_categories":sorted(set(failed))})
@@ -826,6 +832,7 @@ class Driver:
 def parse(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("source","kubeconfig","api-url","token-file","source-spec","target-spec","cancellation-target-spec","images","identities","destination-id","work-dir","gate-attestation","project","managed-tls-helper","runtime-spec-digest-helper","control-psql-command-file","control-plane-bridge","object-store-fault-command-file","openssl","psql","source-proxy-password-file","target-proxy-password-file","cancellation-proxy-password-file"):p.add_argument("--"+name,required=True)
+    p.add_argument("--scheduling-policy",default="")
     p.add_argument("--destination-revision",required=True,type=int); p.add_argument("--local-port",required=True,type=int); return p.parse_args(argv)
 
 def main(argv=None):

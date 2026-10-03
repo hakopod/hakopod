@@ -94,7 +94,15 @@ class Tests(unittest.TestCase):
         with self.assertRaises(DRIVER.TerminationRequested): driver.command(["command"])
         process.terminate.assert_called_once(); process.wait.assert_called_once_with(timeout=5)
     def bare_driver(self):
-        driver=DRIVER.Driver.__new__(DRIVER.Driver); driver.a=mock.Mock(api_url="http://127.0.0.1:8800"); driver.token="protected-token-value"; return driver
+        driver=DRIVER.Driver.__new__(DRIVER.Driver); driver.a=mock.Mock(api_url="http://127.0.0.1:8800",scheduling_policy=""); driver.token="protected-token-value"; return driver
+    def test_bridge_forwards_trusted_scheduling_separately_for_every_action(self):
+        driver=self.bare_driver(); driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.gate_attestation="/protected/gate"
+        for action in ("verify-scheduling","allow","probe-start","probe-verify-wrong","probe-stop","cleanup"):
+            plain=driver.bridge_argv(action,"--platform-id","a"*32)
+            self.assertNotIn("--scheduling-policy",plain)
+            driver.a.scheduling_policy="/protected/policy"
+            self.assertEqual(driver.bridge_argv(action,"--platform-id","a"*32),plain+["--scheduling-policy","/protected/policy","--gate-attestation","/protected/gate"])
+            driver.a.scheduling_policy=""
     def test_create_tracks_accepted_operation_and_binds_namespace_before_failure(self):
         driver=self.bare_driver(); driver.a.project="native-neon"; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.platforms=[]; driver.bound={}
         pid,opid="a"*32,"b"*32; spec=neon("source","source-prefix")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Install the disposable, mutually authenticated Neon control-plane bridge."""
-import argparse, base64, json, os, pathlib, re, subprocess, sys
+import argparse, base64, datetime, hashlib, json, os, pathlib, re, stat, subprocess, sys
 
 ID = re.compile(r"^[0-9a-f]{32}$")
 UID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -8,6 +8,63 @@ ROOT = pathlib.Path("/srv/hakopod-backup-scratch/neon-native-prereq-v1/control-p
 IMAGE = "ghcr.io/hakopod/neon-compute-tls@sha256:edd0d8aa4edcb1a79ee3341eb5047c7e9ef75bdc441ccea07c00cd3325cf4fda"
 NAMESPACE = "hakopod-system"
 UNIT = "hakopod-neon-control-relay.service"
+POOL_KEY = "hakopod.com/pool"
+DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+def protected_policy_input(path):
+    if not pathlib.Path(path).is_absolute():
+        raise RuntimeError("scheduling input path must be absolute")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or not 1 < info.st_size <= 2 << 20:
+            raise RuntimeError("scheduling input is not protected and bounded")
+        value = source.read((2 << 20) + 1)
+    if len(value) > 2 << 20:
+        raise RuntimeError("scheduling input exceeded its bound")
+    return value
+
+def scheduling_policy(path, gate_path, kubeconfig):
+    if not path:
+        return {}
+    raw = protected_policy_input(path)
+    policy = json.loads(raw)
+    gate_raw = protected_policy_input(gate_path)
+    gate = json.loads(gate_raw)
+    if set(policy) != {"schema_version", "gate_sha256", "scheduling_pool", "runtime_class"} or type(policy["schema_version"]) is not int or policy["schema_version"] != 1 or policy["gate_sha256"] != hashlib.sha256(gate_raw).hexdigest() or not DNS_LABEL.fullmatch(str(policy["scheduling_pool"])):
+        raise RuntimeError("scheduling policy binding is invalid")
+    expires = datetime.datetime.fromisoformat(gate["expires_at"].replace("Z", "+00:00"))
+    nodes = gate.get("node_uids")
+    if gate.get("schema_version") != 1 or gate.get("kind") != "neon" or gate.get("context") != "k3d-hakopod-dev" or gate.get("environment") != "development" or pathlib.Path(gate["kubeconfig"]).resolve() != pathlib.Path(kubeconfig).resolve() or expires.tzinfo is None or expires <= datetime.datetime.now(datetime.timezone.utc) or not isinstance(nodes, dict) or not 3 <= len(nodes) <= 8 or len(set(nodes.values())) != len(nodes) or any(not UID.fullmatch(str(uid)) for uid in [gate.get("cluster_uid"), *nodes.values()]):
+        raise RuntimeError("scheduling gate identity is invalid or expired")
+    cluster = json.loads(kube(kubeconfig, "get", "namespace", "kube-system", "-o", "json"))
+    current_nodes = json.loads(kube(kubeconfig, "get", "nodes", "-o", "json"))["items"]
+    if cluster["metadata"]["uid"] != gate["cluster_uid"] or {item["metadata"]["name"]:item["metadata"]["uid"] for item in current_nodes} != nodes:
+        raise RuntimeError("scheduling cluster identity changed")
+    pool = policy["scheduling_pool"]
+    for node in current_nodes:
+        taints = [item for item in node.get("spec", {}).get("taints", []) if item.get("key") == POOL_KEY]
+        blocked = [item for item in node.get("spec", {}).get("taints", []) if item.get("key") != POOL_KEY and item.get("effect") in ("NoSchedule", "NoExecute")]
+        expected = {"key":POOL_KEY, "value":pool, "effect":"NoSchedule"}
+        if node["metadata"].get("deletionTimestamp") or node.get("spec", {}).get("unschedulable") or node["metadata"].get("labels", {}).get(POOL_KEY) != pool or taints != [expected] or blocked or not any(item.get("type") == "Ready" and item.get("status") == "True" for item in node.get("status", {}).get("conditions", [])):
+            raise RuntimeError("attested scheduling pool is not ready and exact")
+    result = {"nodeSelector":{POOL_KEY:pool}, "tolerations":[{"key":POOL_KEY, "operator":"Equal", "value":pool, "effect":"NoSchedule"}], "affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchFields":[{"key":"metadata.name", "operator":"In", "values":sorted(nodes)}]}]}}}}
+    runtime = policy["runtime_class"]
+    if runtime is not None:
+        if not isinstance(runtime, dict) or set(runtime) != {"name", "uid", "handler", "pod_fixed", "node_selector"} or not DNS_LABEL.fullmatch(str(runtime["name"])) or not DNS_LABEL.fullmatch(str(runtime["handler"])) or not UID.fullmatch(str(runtime["uid"])) or not isinstance(runtime["pod_fixed"], dict) or set(runtime["pod_fixed"]) not in (set(), {"cpu", "memory"}) or runtime["pod_fixed"] and (not re.fullmatch(r"[1-9][0-9]{0,3}m", str(runtime["pod_fixed"]["cpu"])) or not re.fullmatch(r"[1-9][0-9]{0,3}Mi", str(runtime["pod_fixed"]["memory"]))):
+            raise RuntimeError("scheduling runtime identity is invalid")
+        selector = runtime["node_selector"]
+        if not isinstance(selector, dict) or len(selector) > 8 or any(not isinstance(key, str) or not 1 <= len(key) <= 253 or not isinstance(value, str) or not DNS_LABEL.fullmatch(value) for key, value in selector.items()):
+            raise RuntimeError("scheduling runtime node selector is invalid")
+        observed = json.loads(kube(kubeconfig, "get", "runtimeclass", runtime["name"], "-o", "json"))
+        expected_scheduling = {"nodeSelector":selector} if selector else {}
+        if observed["metadata"]["uid"] != runtime["uid"] or observed["metadata"].get("deletionTimestamp") or observed.get("handler") != runtime["handler"] or observed.get("overhead", {}).get("podFixed", {}) != runtime["pod_fixed"] or observed.get("scheduling", {}) != expected_scheduling:
+            raise RuntimeError("scheduling runtime identity or overhead changed")
+        if any(any(node["metadata"].get("labels", {}).get(key) != value for key, value in selector.items()) for node in current_nodes) or POOL_KEY in selector and selector[POOL_KEY] != pool:
+            raise RuntimeError("attested nodes do not match the runtime selector")
+        result["nodeSelector"].update(selector)
+        result["runtimeClassName"] = runtime["name"]
+    return result
 
 def run(argv, data=None, timeout=60):
     result = subprocess.run(argv, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
@@ -56,7 +113,7 @@ backend api
     subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     run(["systemd-run", "--unit=" + UNIT.removesuffix(".service"), "--property=RuntimeMaxSec=3h", "--property=MemoryMax=134217728", "--property=CPUQuota=50%", "--property=NoNewPrivileges=yes", "docker", "run", "--rm", "--network", "host", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--mount", "type=bind,src=" + str(runtime) + ",dst=/bridge,readonly", IMAGE, "haproxy", "-W", "-db", "-f", "/bridge/haproxy.cfg"])
 
-def manifest(platform_ids):
+def manifest(platform_ids, scheduling=None):
     config = """global
   maxconn 64
   log stdout format raw local0
@@ -81,9 +138,10 @@ backend relay
       {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-ingress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Ingress"],"ingress":[{"from":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["proxy","storage-controller"]}]}}],"ports":[{"protocol":"TCP","port":443}]}]}},
       {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-egress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Egress"],"egress":[{"to":[{"ipBlock":{"cidr":"172.18.0.1/32"}}],"ports":[{"protocol":"TCP","port":19443}]}]}}
     ]
+    next(item for item in objects if item["kind"] == "Deployment")["spec"]["template"]["spec"].update(scheduling or {})
     return json.dumps({"apiVersion":"v1","kind":"List","items":objects}, separators=(",", ":")).encode()
 
-def allow(kubeconfig, platform_id):
+def allow(kubeconfig, platform_id, scheduling=None):
     if not ID.fullmatch(platform_id):
         raise RuntimeError("platform identity is malformed")
     state = ROOT / "allowed-platforms.json"
@@ -107,9 +165,14 @@ def allow(kubeconfig, platform_id):
         for kind, name in resources:
             if kube(kubeconfig, "-n", NAMESPACE, "get", kind, name, "--ignore-not-found", "-o", "name").strip():
                 raise RuntimeError("bridge fixed-name resource already exists")
-        kube(kubeconfig, "create", "-f", "-", data=manifest(values))
+        kube(kubeconfig, "create", "-f", "-", data=manifest(values, scheduling))
         uids = {kind+"/"+name:json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", kind, name, "-o", "json"))["metadata"]["uid"] for kind,name in resources}
     else:
+        if scheduling:
+            current = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "deployment", "hakopod-neon-control", "-o", "json"))
+            pod = current["spec"]["template"]["spec"]
+            if {key:pod[key] for key in ("nodeSelector", "tolerations", "runtimeClassName", "affinity") if key in pod} != scheduling or pod.get("nodeName"):
+                raise RuntimeError("existing bridge scheduling differs")
         policy = next(item for item in json.loads(manifest(values))["items"] if item["kind"] == "NetworkPolicy" and item["metadata"]["name"] == "hakopod-neon-control-ingress")
         kube(kubeconfig, "-n", NAMESPACE, "patch", "networkpolicy", "hakopod-neon-control-ingress", "--type=merge", "-p", json.dumps({"spec":policy["spec"]}, separators=(",", ":")))
         if json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "networkpolicy", "hakopod-neon-control-ingress", "-o", "json"))["metadata"]["uid"] != uids["networkpolicy/hakopod-neon-control-ingress"]:
@@ -148,7 +211,7 @@ def owned_proxy_image(deployment, platform_id, proxy_secret):
         raise RuntimeError("issuer probe source image or TLS snapshot is invalid")
     return containers[0]["image"]
 
-def probe_start(kubeconfig, platform_id, proxy_secret, ca_kind):
+def probe_start(kubeconfig, platform_id, proxy_secret, ca_kind, scheduling=None):
     if not ID.fullmatch(platform_id) or not re.fullmatch(r"platform-tls-proxy-[0-9a-f]{16}-r1", proxy_secret):
         raise RuntimeError("issuer probe identity is malformed")
     if ca_kind not in ("correct", "wrong"):
@@ -163,6 +226,7 @@ def probe_start(kubeconfig, platform_id, proxy_secret, ca_kind):
             raise RuntimeError("issuer probe fixed-name resource already exists")
     config = {"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"hakopod-neon-wrong-ca","namespace":namespace,"labels":labels},"immutable":True,"data":{"ca.crt":protected("ca.crt" if ca_kind == "correct" else "wrong-ca.crt").decode()}}
     deployment = {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"hakopod-neon-wrong-ca","namespace":namespace,"labels":labels},"spec":{"replicas":1,"selector":{"matchLabels":{"app.kubernetes.io/name":"hakopod-neon-wrong-ca"}},"template":{"metadata":{"labels":labels},"spec":{"automountServiceAccountToken":False,"enableServiceLinks":False,"securityContext":{"runAsNonRoot":True,"runAsUser":10001,"runAsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"proxy","image":proxy_image,"command":["proxy"],"args":["--proxy=0.0.0.0:5432","--http=0.0.0.0:7001","--mgmt=127.0.0.1:7000","--tls-key=/proxy-auth/tls.key","--tls-cert=/proxy-auth/tls.crt","--auth-backend=control-plane","--auth-endpoint=https://hakopod-control.hakopod-system.svc/api/v1/internal/neon/proxy"],"env":[{"name":"NEON_PROXY_TO_CONTROLPLANE_TOKEN","valueFrom":{"secretKeyRef":{"name":proxy_secret,"key":"token"}}},{"name":"SSL_CERT_FILE","value":"/control-plane/ca.crt"}],"ports":[{"name":"postgres","containerPort":5432},{"name":"http","containerPort":7001}],"readinessProbe":{"httpGet":{"path":"/v1/status","port":"http"}},"resources":{"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"allowPrivilegeEscalation":False,"readOnlyRootFilesystem":True,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"proxy-auth","mountPath":"/proxy-auth","readOnly":True},{"name":"control-plane","mountPath":"/control-plane","readOnly":True}]}],"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"16Mi"}},{"name":"proxy-auth","secret":{"secretName":proxy_secret}},{"name":"control-plane","configMap":{"name":"hakopod-neon-wrong-ca","items":[{"key":"ca.crt","path":"ca.crt"}]}}]}}}}
+    deployment["spec"]["template"]["spec"].update(scheduling or {})
     policy = {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-wrong-ca-egress","namespace":namespace,"labels":labels},"spec":{"podSelector":{"matchLabels":{"app.kubernetes.io/name":"hakopod-neon-wrong-ca"}},"policyTypes":["Egress"],"egress":[{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":NAMESPACE}},"podSelector":{"matchLabels":{"app.kubernetes.io/name":"hakopod-neon-control"}}}],"ports":[{"protocol":"TCP","port":443}]}]}}
     current = json.loads(kube(kubeconfig, "-n", namespace, "get", "deployment", "neon-proxy", "-o", "json"))
     if current.get("metadata", {}).get("uid") != source["metadata"]["uid"] or owned_proxy_image(current, platform_id, proxy_secret) != proxy_image:
@@ -202,16 +266,21 @@ def probe_stop(kubeconfig, platform_id):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("host-start", "allow", "cleanup", "probe-start", "probe-verify-wrong", "probe-stop"))
+    parser.add_argument("action", choices=("host-start", "allow", "cleanup", "probe-start", "probe-verify-wrong", "probe-stop", "verify-scheduling"))
     parser.add_argument("--kubeconfig")
     parser.add_argument("--platform-id")
     parser.add_argument("--proxy-secret")
     parser.add_argument("--ca-kind")
+    parser.add_argument("--scheduling-policy", default="")
+    parser.add_argument("--gate-attestation", default="")
     args = parser.parse_args()
+    # Cleanup remains available when the gate expires or a node becomes unavailable.
+    scheduling = scheduling_policy(args.scheduling_policy, args.gate_attestation, args.kubeconfig) if args.action in ("allow", "probe-start", "verify-scheduling") else {}
     if args.action == "host-start": start_host()
-    elif args.action == "allow": allow(args.kubeconfig, args.platform_id)
+    elif args.action == "verify-scheduling": return
+    elif args.action == "allow": allow(args.kubeconfig, args.platform_id, scheduling)
     elif args.action == "cleanup": cleanup(args.kubeconfig)
-    elif args.action == "probe-start": probe_start(args.kubeconfig, args.platform_id, args.proxy_secret, args.ca_kind)
+    elif args.action == "probe-start": probe_start(args.kubeconfig, args.platform_id, args.proxy_secret, args.ca_kind, scheduling)
     elif args.action == "probe-verify-wrong": probe_verify_wrong(args.kubeconfig, args.platform_id)
     else: probe_stop(args.kubeconfig, args.platform_id)
 

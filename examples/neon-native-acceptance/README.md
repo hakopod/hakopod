@@ -30,4 +30,20 @@ and an exact namespace allowlist. The driver proves that the pinned proxy
 client reaches PostgreSQL authentication with that CA and rejects a separately
 issued CA with a certificate-verification error.
 
+When trusted placement uses a dedicated pool, set
+`HAKOPOD_ACCEPTANCE_SCHEDULING_POLICY` to a protected operator-owned JSON file,
+separate from the customer specifications. Its exact fields are
+`schema_version: 1`, `gate_sha256`, `scheduling_pool` and `runtime_class`.
+`runtime_class` is either null or an object with `name`, `uid`, `handler`,
+`node_selector` and `pod_fixed` (the observed `cpu` and `memory` overhead, or an
+empty object when no overhead is declared). Bind this file's digest
+in final preparation. The bridge verifies the gate digest and expiry, live
+cluster and node UIDs, matching pool labels and NoSchedule taints, and the
+RuntimeClass UID, handler, node selector and overhead before creating helpers.
+Every attested node must satisfy that runtime selector. Both helper
+Deployments use the explicit pool selector, required affinity to the attested
+node names, one Equal NoSchedule toleration and the optional verified
+RuntimeClass. Other blocking taints are refused. Empty policy preserves the default
+scheduling behavior. Cleanup does not require an unexpired scheduling gate.
+
 Qualification remains false until this complete destructive run succeeds on the named development cluster and its output passes the independent release verifier. The driver does not turn a source-only review, a blocked two-node run, or a development fixture into runtime qualification.
