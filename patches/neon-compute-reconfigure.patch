@@ -1,5 +1,42 @@
+diff --git a/compute_tools/src/compute.rs b/compute_tools/src/compute.rs
+index 10f00d231..e069af5e4 100644
+--- a/compute_tools/src/compute.rs
++++ b/compute_tools/src/compute.rs
+@@ -1828,7 +1828,7 @@ pub fn prewarm_postgres_vm_memory(&self) -> Result<()> {
+     pub fn start_postgres(&self, storage_auth_token: Option<String>) -> Result<PostgresHandle> {
+         let pgdata_path = Path::new(&self.params.pgdata);
+ 
+-        let env_vars: Vec<(String, String)> = if self.params.lakebase_mode {
++        let mut env_vars: Vec<(String, String)> = if self.params.lakebase_mode {
+             let databricks_env_vars = {
+                 let state = self.state.lock().unwrap();
+                 let spec = &state.pspec.as_ref().unwrap().spec;
+@@ -1846,7 +1846,11 @@ pub fn start_postgres(&self, storage_auth_token: Option<String>) -> Result<Postg
+             );
+ 
+             let mut env_vars = databricks_env_vars.to_env_var_list();
+-            env_vars.extend(storage_auth_token.map(|t| ("NEON_AUTH_TOKEN".to_string(), t)));
++            env_vars.extend(
++                storage_auth_token
++                    .as_ref()
++                    .map(|t| ("NEON_AUTH_TOKEN".to_string(), t.clone())),
++            );
+             env_vars
+         } else if let Some(storage_auth_token) = &storage_auth_token {
+             vec![("NEON_AUTH_TOKEN".to_owned(), storage_auth_token.to_owned())]
+@@ -1854,6 +1858,10 @@ pub fn start_postgres(&self, storage_auth_token: Option<String>) -> Result<Postg
+             vec![]
+         };
+ 
++        if self.ownership.enabled() {
++            env_vars.extend(storage_auth_token.map(|token| ("PGPASSWORD".to_owned(), token)));
++        }
++
+         // Run postgres as a child process.
+         let mut pg = maybe_cgexec(&self.params.pgbin)
+             .args(["-D", &self.params.pgdata])
 diff --git a/compute_tools/src/http/routes/configure.rs b/compute_tools/src/http/routes/configure.rs
-index c06de8e..944bb1f 100644
+index c06de8e3c..944bb1f45 100644
 --- a/compute_tools/src/http/routes/configure.rs
 +++ b/compute_tools/src/http/routes/configure.rs
 @@ -92,12 +92,24 @@ pub(in crate::http) async fn configure(
@@ -30,7 +67,7 @@ index c06de8e..944bb1f 100644
      JsonResponse::success(StatusCode::OK, body)
  }
 diff --git a/compute_tools/src/http/routes/mod.rs b/compute_tools/src/http/routes/mod.rs
-index 4ec7197..ddefd83 100644
+index 4ec7197d6..ddefd831e 100644
 --- a/compute_tools/src/http/routes/mod.rs
 +++ b/compute_tools/src/http/routes/mod.rs
 @@ -1,4 +1,4 @@
@@ -39,7 +76,7 @@ index 4ec7197..ddefd83 100644
  
  use crate::compute::ComputeState;
  
-@@ -23,8 +23,13 @@ pub(in crate::http) mod terminate;
+@@ -23,8 +23,13 @@
  pub(in crate::http) fn compute_status_response(
      state: &ComputeState,
      durable_operation_uuid: Option<String>,
@@ -112,7 +149,7 @@ index 4ec7197..ddefd83 100644
      }
  }
 diff --git a/compute_tools/src/http/routes/status.rs b/compute_tools/src/http/routes/status.rs
-index e1e44d2..330a381 100644
+index e1e44d2d9..330a38130 100644
 --- a/compute_tools/src/http/routes/status.rs
 +++ b/compute_tools/src/http/routes/status.rs
 @@ -22,7 +22,24 @@ pub(in crate::http) async fn get_status(State(compute): State<Arc<ComputeNode>>)
@@ -142,10 +179,19 @@ index e1e44d2..330a381 100644
      JsonResponse::success(StatusCode::OK, body)
  }
 diff --git a/compute_tools/src/ownership.rs b/compute_tools/src/ownership.rs
-index e4f6ef5..09f7d7c 100644
+index e4f6ef53d..2ae0aace7 100644
 --- a/compute_tools/src/ownership.rs
 +++ b/compute_tools/src/ownership.rs
-@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
+@@ -10,7 +10,7 @@
+ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+ 
+ use anyhow::{Context, Result, anyhow, bail};
+-use compute_api::spec::ComputeSpec;
++use compute_api::spec::{ComputeMode, ComputeSpec};
+ use http::HeaderMap;
+ use nix::errno::Errno;
+ use nix::fcntl::{Flock, FlockArg, OFlag};
+@@ -20,6 +20,7 @@
  use uuid::Uuid;
  
  pub const HAKOPOD_OWNERSHIP_TOKEN_HEADER: &str = "hakopod-ownership-token";
@@ -162,7 +208,7 @@ index e4f6ef5..09f7d7c 100644
      state: OwnershipState,
  }
  
-@@ -120,7 +123,9 @@ impl ComputeOwnership {
+@@ -120,7 +123,9 @@ pub fn authorize_configure(
          if spec.operation_uuid.as_deref() != Some(token) {
              return Err(OwnershipError::Conflict);
          }
@@ -172,7 +218,7 @@ index e4f6ef5..09f7d7c 100644
          let mut guard = self.lock_record().map_err(OwnershipError::Persistence)?;
          let record = self.read_record().map_err(OwnershipError::Persistence)?;
          *guard = record.clone();
-@@ -132,12 +137,29 @@ impl ComputeOwnership {
+@@ -132,12 +137,29 @@ pub fn authorize_configure(
              {
                  Ok(())
              }
@@ -202,7 +248,7 @@ index e4f6ef5..09f7d7c 100644
                      state: OwnershipState::Active,
                  };
                  self.persist_new(&record)
-@@ -148,6 +170,18 @@ impl ComputeOwnership {
+@@ -148,6 +170,18 @@ pub fn authorize_configure(
          }
      }
  
@@ -237,7 +283,7 @@ index e4f6ef5..09f7d7c 100644
      Ok(())
  }
  
-@@ -469,13 +512,136 @@ fn sync_directory(parent: &Path) -> Result<()> {
+@@ -469,13 +512,202 @@ fn sync_directory(parent: &Path) -> Result<()> {
          .context("sync compute ownership state directory")
  }
  
@@ -342,6 +388,64 @@ index e4f6ef5..09f7d7c 100644
 +    value_hash(&value)
 +}
 +
++fn unique_setting<'a>(spec: &'a ComputeSpec, name: &str) -> Option<&'a str> {
++    let mut matching = spec
++        .cluster
++        .settings
++        .as_ref()?
++        .iter()
++        .filter(|setting| setting.name == name);
++    let setting = matching.next()?;
++    if matching.next().is_some() || setting.vartype != "string" {
++        return None;
++    }
++    setting.value.as_deref()
++}
++
++fn replica_wal_settings_safe(spec: &ComputeSpec) -> bool {
++    let Some(tenant) = spec.tenant_id else {
++        return false;
++    };
++    let Some(timeline) = spec.timeline_id else {
++        return false;
++    };
++    let Some(conninfo) = unique_setting(spec, "primary_conninfo") else {
++        return false;
++    };
++    let Some(hosts) = conninfo
++        .split(' ')
++        .next()
++        .and_then(|value| value.strip_prefix("host="))
++    else {
++        return false;
++    };
++    let hosts: Vec<_> = hosts.split(',').collect();
++    if hosts.len() != 3
++        || hosts.iter().any(|host| {
++            host.is_empty()
++                || host
++                    .chars()
++                    .any(|value| !value.is_ascii_alphanumeric() && !matches!(value, '.' | '-'))
++        })
++        || hosts[0] == hosts[1]
++        || hosts[0] == hosts[2]
++        || hosts[1] == hosts[2]
++    {
++        return false;
++    }
++    let expected = format!(
++        "host={} port=5454,5454,5454 options='-c timeline_id={} tenant_id={}' application_name=replica replication=true sslmode=verify-full sslrootcert=/var/run/secrets/hakopod/safekeeper-auth/ca.crt connect_timeout=5",
++        hosts.join(","),
++        timeline,
++        tenant
++    );
++    conninfo == expected
++        && unique_setting(spec, "primary_slot_name") == Some(format!("repl_{timeline}_").as_str())
++        && unique_setting(spec, "hot_standby") == Some("on")
++        && unique_setting(spec, "recovery_prefetch") == Some("off")
++        && unique_setting(spec, "synchronous_standby_names") == Some("")
++}
++
 +fn supported_routing_spec(spec: &ComputeSpec) -> bool {
 +    spec.tenant_id.is_some()
 +        && spec.timeline_id.is_some()
@@ -352,11 +456,19 @@ index e4f6ef5..09f7d7c 100644
 +        && spec.pageserver_connection_info.is_none()
 +        && spec.shard_stripe_size.is_none()
 +        && spec.safekeepers_generation.is_some()
-+        && spec.safekeeper_connstrings.len() == 3
-+        && spec
-+            .safekeeper_connstrings
-+            .iter()
-+            .all(|value| safekeeper_address_safe(value))
++        && match spec.mode {
++            ComputeMode::Primary => {
++                spec.safekeeper_connstrings.len() == 3
++                    && spec
++                        .safekeeper_connstrings
++                        .iter()
++                        .all(|value| safekeeper_address_safe(value))
++            }
++            ComputeMode::Replica => {
++                spec.safekeeper_connstrings.is_empty() && replica_wal_settings_safe(spec)
++            }
++            ComputeMode::Static(_) => false,
++        }
 +}
 +
 +// Keep this explicit projection byte-for-byte compatible with Hakopod's Go
@@ -376,7 +488,7 @@ index e4f6ef5..09f7d7c 100644
  fn write_canonical_json(value: &Value, output: &mut Vec<u8>) -> Result<()> {
      match value {
          Value::Null => output.extend_from_slice(b"null"),
-@@ -553,6 +719,226 @@ mod tests {
+@@ -553,6 +785,330 @@ fn spec(token: &str) -> ComputeSpec {
          spec
      }
  
@@ -393,6 +505,43 @@ index e4f6ef5..09f7d7c 100644
 +        ];
 +        spec.safekeepers_generation = Some(4);
 +        spec
++    }
++
++    fn replica_spec(token: &str) -> ComputeSpec {
++        let mut spec = routed_spec(token);
++        spec.mode = ComputeMode::Replica;
++        spec.safekeeper_connstrings.clear();
++        let tenant = spec.tenant_id.unwrap();
++        let timeline = spec.timeline_id.unwrap();
++        let conninfo = format!(
++            "host=safekeeper-0,safekeeper-1,safekeeper-2 port=5454,5454,5454 options='-c timeline_id={timeline} tenant_id={tenant}' application_name=replica replication=true sslmode=verify-full sslrootcert=/var/run/secrets/hakopod/safekeeper-auth/ca.crt connect_timeout=5"
++        );
++        let setting = |name: &str, value: String| compute_api::spec::GenericOption {
++            name: name.into(),
++            value: Some(value),
++            vartype: "string".into(),
++        };
++        spec.cluster.settings = Some(vec![
++            setting("primary_conninfo", conninfo),
++            setting("primary_slot_name", format!("repl_{timeline}_")),
++            setting("hot_standby", "on".into()),
++            setting("recovery_prefetch", "off".into()),
++            setting("synchronous_standby_names", "".into()),
++        ]);
++        spec
++    }
++
++    fn setting_mut<'a>(
++        spec: &'a mut ComputeSpec,
++        name: &str,
++    ) -> &'a mut compute_api::spec::GenericOption {
++        spec.cluster
++            .settings
++            .as_mut()
++            .unwrap()
++            .iter_mut()
++            .find(|setting| setting.name == name)
++            .unwrap()
 +    }
 +
 +    fn cas_headers(token: &str, spec: &ComputeSpec) -> HeaderMap {
@@ -554,6 +703,73 @@ index e4f6ef5..09f7d7c 100644
 +    }
 +
 +    #[test]
++    fn replica_routing_update_preserves_wal_role_and_tls() {
++        let paths = TestPath::new();
++        let token = Uuid::new_v4().simple().to_string();
++        let ownership = ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap();
++        let original = replica_spec(&token);
++        assert!(supported_routing_spec(&original));
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        let mut relocated = original.clone();
++        relocated.pageserver_connstring =
++            Some("postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt".into());
++        ownership
++            .authorize_configure(&cas_headers(&token, &original), &relocated)
++            .unwrap();
++
++        let mut rejected = Vec::new();
++        let mut primary = relocated.clone();
++        primary.mode = ComputeMode::Primary;
++        rejected.push(primary);
++        let mut nonempty = relocated.clone();
++        nonempty.safekeeper_connstrings = vec!["safekeeper-0:5454".into()];
++        rejected.push(nonempty);
++        let mut disabled_tls = relocated.clone();
++        let value = unique_setting(&disabled_tls, "primary_conninfo")
++            .unwrap()
++            .to_owned();
++        setting_mut(&mut disabled_tls, "primary_conninfo").value =
++            Some(value.replace("sslmode=verify-full", "sslmode=disable"));
++        rejected.push(disabled_tls);
++        let mut password = relocated.clone();
++        setting_mut(&mut password, "primary_conninfo")
++            .value
++            .as_mut()
++            .unwrap()
++            .push_str(" password=forbidden");
++        rejected.push(password);
++        let mut foreign = relocated.clone();
++        let value = unique_setting(&foreign, "primary_conninfo")
++            .unwrap()
++            .to_owned();
++        setting_mut(&mut foreign, "primary_conninfo").value =
++            Some(value.replace("safekeeper-0", "foreign"));
++        rejected.push(foreign);
++        let mut slot = relocated.clone();
++        setting_mut(&mut slot, "primary_slot_name").value = Some("repl_other_".into());
++        rejected.push(slot);
++        for changed in rejected {
++            assert!(
++                ownership
++                    .authorize_configure(&cas_headers(&token, &relocated), &changed)
++                    .is_err()
++            );
++        }
++    }
++
++    #[test]
++    fn replica_routing_projection_matches_go_canonical_bytes() {
++        let spec = replica_spec("unused");
++        let canonical = br#"{"pageserver_connstring":"postgresql://pageserver-0:6400?sslmode=verify-full&sslrootcert=/ca.crt","safekeeper_connstrings":[],"safekeepers_generation":4,"tenant_id":"11111111111111111111111111111111","timeline_id":"22222222222222222222222222222222"}"#;
++        assert_eq!(
++            routing_hash(&spec).unwrap(),
++            hex::encode(Sha256::digest(canonical))
++        );
++    }
++
++    #[test]
 +    fn concurrent_routing_updates_have_only_one_cas_winner() {
 +        let paths = TestPath::new();
 +        let token = Uuid::new_v4().simple().to_string();
@@ -604,7 +820,7 @@ index e4f6ef5..09f7d7c 100644
      fn configure_is_exactly_replayable_and_restart_safe() {
          let paths = TestPath::new();
 diff --git a/libs/compute_api/src/responses.rs b/libs/compute_api/src/responses.rs
-index 197814f..40ec56e 100644
+index 197814fbd..40ec56eee 100644
 --- a/libs/compute_api/src/responses.rs
 +++ b/libs/compute_api/src/responses.rs
 @@ -147,6 +147,15 @@ pub struct ComputeStatusResponse {
