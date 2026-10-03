@@ -15,6 +15,7 @@ class SupabaseQualificationTest(unittest.TestCase):
   asset=self.root/'internal/managedplatform/supabase-assets/api/config.yml';asset.parent.mkdir(parents=True);asset.write_text('static: true\n')
   (self.root/'templates/catalog.json').write_text('{}\n');(self.root/'cmd/hakopod-server/main.go').write_text('package main\n')
   runner=self.root/'examples/supabase-native-acceptance/run.sh';runner.write_text('#!/bin/sh\nexit 0\n');producer=runner.with_name('evidence.py');producer.write_text('# producer\n')
+  (self.root/'examples/owned-pod-stream.py').write_text('# bounded owned Pod relay\n')
   release=self.root/'release';release.mkdir();shutil.copyfile(HERE/'release/verify-supabase-runtime.py',release/'verify-supabase-runtime.py');shutil.copyfile(HERE/'release/record-supabase-qualification.py',release/'record-supabase-qualification.py')
   self.images={n:'registry.example/'+n+'@sha256:'+'a'*64 for n in VERIFY['COMPONENTS']}
   self.write_release_contract(False)
