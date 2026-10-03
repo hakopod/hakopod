@@ -241,7 +241,7 @@ function Detail() {
           <section className="db-panel">
             <div className="db-panel-heading">
               <h2>Requested resources</h2>
-              {canManage && item.spec.kind === 'supabase' && (
+              {canManage && (
                 <Button asChild variant="primary">
                   <Link
                     to="/platforms/$platformId/configure"

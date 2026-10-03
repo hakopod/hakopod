@@ -138,9 +138,11 @@ export function PlatformForm({
   initial?: ManagedPlatform
 }) {
   const initial = useRef(initialInput).current
+  const resourcesOnly = initial?.spec.kind === 'neon'
   const pathname = useLocation().pathname
   const basePath = initial ? `/platforms/${initial.id}/configure` : '/platforms/new'
-  const stepID = pathname === basePath ? 'platform' : pathname.split('/').at(-1) || 'platform'
+  const firstStep = resourcesOnly ? 'resources' : 'platform'
+  const stepID = pathname === basePath ? firstStep : pathname.split('/').at(-1) || firstStep
   const [kind, setKind] = useState<'supabase' | 'neon'>(
     initial?.spec.kind || catalog.items[0]?.kind || 'supabase',
   )
@@ -195,7 +197,9 @@ export function PlatformForm({
   const entry = catalog.items.find((item) => item.kind === kind)
   const draft = drafts[kind]
   const requiredSecrets = platformSecretKeys(entry, initial?.spec)
-  const steps = platformSteps(kind, requiredSecrets)
+  const steps = platformSteps(kind, requiredSecrets).filter(
+    (step) => !resourcesOnly || step.stage === 'Resources' || step.stage === 'Review',
+  )
   const resourceName = stepID.startsWith('resource-') ? stepID.slice('resource-'.length) : ''
   const resourceExists = Boolean(
     resourceName && draft && (resourceName in draft.resources || resourceName in draft.storage),
@@ -233,7 +237,7 @@ export function PlatformForm({
         <Empty
           title="Step unavailable"
           description="Return to the first step to continue configuring this platform."
-          action={<Button onClick={() => void go('platform')}>First step</Button>}
+          action={<Button onClick={() => void go(firstStep)}>First step</Button>}
         />
       </PlatformFormState>
     )
@@ -276,21 +280,10 @@ export function PlatformForm({
     setSecretsByKind((values) => ({ ...values, [kind]: { ...values[kind], [key]: value } }))
     resetReview()
   }
-  const spec = completePlatformSpec(
-    draft,
-    nodes,
-    requiredSecrets,
-    secrets,
-    catalog.secret_references,
-  )
-  const stages: PlatformStage[] = [
-    'Platform',
-    'Settings',
-    'Placement',
-    'Secrets',
-    'Resources',
-    'Review',
-  ]
+  const spec = resourcesOnly
+    ? { ...initial.spec, resources: draft.resources }
+    : completePlatformSpec(draft, nodes, requiredSecrets, secrets, catalog.secret_references)
+  const stages: PlatformStage[] = [...new Set(steps.map((step) => step.stage))]
   const secretKeys = stepID.startsWith('secrets-')
     ? requiredSecrets.slice((Number(stepID.slice(8)) - 1) * 4, Number(stepID.slice(8)) * 4)
     : []
@@ -374,7 +367,7 @@ export function PlatformForm({
     >
       <nav
         aria-label="Platform setup"
-        className="mb-4 flex flex-wrap gap-x-4 gap-y-2 border-b border-border pb-3"
+        className="hako-page-steps mb-4 flex flex-wrap gap-x-4 gap-y-2 border-b border-border pb-3"
       >
         {stages.map((stage) => {
           const target = steps.find((step) => step.stage === stage)
@@ -459,7 +452,6 @@ export function PlatformForm({
             draft={draft}
             busy={busy}
             update={update}
-            editing={Boolean(initial)}
           />
         )}
         {stepID === 'placement' && (
@@ -575,6 +567,9 @@ export function PlatformForm({
             title="Resource allocation"
             description="The server checks these requests against the available capacity before creation. Open a component to change its allocation."
           >
+            {resourcesOnly && (
+              <Note>Change CPU and memory here. Storage, nodes, topology and secret references stay fixed.</Note>
+            )}
             <ul className="divide-y divide-border">
               {[...new Set([...Object.keys(draft.resources), ...Object.keys(draft.storage)])].map(
                 (name) => (
@@ -605,7 +600,7 @@ export function PlatformForm({
           </FormSection>
         )}
         {resourceExists && (
-          <ResourceFields name={resourceName} draft={draft} busy={busy} update={update} />
+          <ResourceFields name={resourceName} draft={draft} busy={busy} update={update} lockStorage={resourcesOnly} />
         )}
         {stepID === 'review' && (
           <FormSection title="Plan">
@@ -779,8 +774,7 @@ function PlatformSettings({
   draft,
   busy,
   update,
-  editing,
-}: SettingsProps & { step: string; editing: boolean }) {
+}: SettingsProps & { step: string }) {
   if (draft.kind === 'supabase') {
     const config = draft.supabase
     const set = (fields: Partial<typeof config>) =>
@@ -921,11 +915,12 @@ function PlatformSettings({
         {step === 'topology' ? (
           <>
             <NumberField
-              label="Compute replicas"
+              label="Compute nodes"
               value={config.compute_replicas}
               min={1}
               max={6}
               busy={busy}
+              describedBy="neon-compute-help"
               set={(value) => set({ compute_replicas: value })}
             />
             <NumberField
@@ -936,15 +931,8 @@ function PlatformSettings({
               busy={busy}
               set={(value) => set({ pageservers: value })}
             />
-            <NumberField
-              label="Branch limit"
-              value={config.branch_limit}
-              min={1}
-              max={64}
-              busy={busy}
-              set={(value) => set({ branch_limit: value })}
-            />
-            <p className="field-help self-center">Three safekeepers store the write-ahead log.</p>
+            <p id="neon-compute-help" className="field-help self-center">One compute accepts writes. Additional computes are read-only replicas, with 64 total connections per compute.</p>
+            <p className="field-help self-center">This release manages one branch per platform. Three safekeepers store the write-ahead log.</p>
           </>
         ) : (
           <>
@@ -992,7 +980,7 @@ function PlatformSettings({
   )
 }
 
-function ResourceFields({ name, draft, busy, update }: SettingsProps & { name: string }) {
+function ResourceFields({ name, draft, busy, update, lockStorage = false }: SettingsProps & { name: string; lockStorage?: boolean }) {
   const resource = draft.resources[name]
   return (
     <FormSection title={humanName(name)}>
@@ -1040,7 +1028,7 @@ function ResourceFields({ name, draft, busy, update }: SettingsProps & { name: s
             value={draft.storage[name]}
             min={1}
             max={1024}
-            busy={busy}
+            busy={busy || lockStorage}
             set={(value) => update({ ...draft, storage: { ...draft.storage, [name]: value } })}
           />
         )}
@@ -1055,6 +1043,7 @@ function NumberField({
   max,
   busy,
   set,
+  describedBy,
 }: {
   label: string
   value: number
@@ -1062,6 +1051,7 @@ function NumberField({
   max: number
   busy: boolean
   set: (value: number) => void
+  describedBy?: string
 }) {
   return (
     <label>
@@ -1073,6 +1063,7 @@ function NumberField({
         max={max}
         value={value}
         disabled={busy}
+        aria-describedby={describedBy}
         onChange={(event) => set(Number(event.target.value))}
       />
     </label>
