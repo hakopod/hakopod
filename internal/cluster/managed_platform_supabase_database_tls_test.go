@@ -122,21 +122,36 @@ func TestValidateSupabaseDatabaseClientURLsRequiresVerifyFull(t *testing.T) {
 	}
 }
 
-func TestValidateSupabaseRuntimeSecretsRequiresExactRealtimeKey(t *testing.T) {
-	spec := managedplatform.Spec{Secrets: map[string]managedplatform.SecretReference{"realtime-db-encryption-key": {Name: "realtime-db-encryption-key", Revision: 1}}}
-	values := map[string]map[string][]byte{"realtime-db-encryption-key-r1": {"value": []byte(strings.Repeat("x", 32))}}
+func TestValidateSupabaseRuntimeSecretsRequiresExactEncryptionKeyLengths(t *testing.T) {
+	spec := managedplatform.Spec{Secrets: map[string]managedplatform.SecretReference{
+		"realtime-db-encryption-key": {Name: "realtime-db-encryption-key", Revision: 1},
+		"vault-encryption-key":       {Name: "vault-encryption-key", Revision: 1},
+	}}
+	values := map[string]map[string][]byte{
+		"realtime-db-encryption-key-r1": {"value": []byte(strings.Repeat("x", 16))},
+		"vault-encryption-key-r1":       {"value": []byte(strings.Repeat("y", 32))},
+	}
 	if err := validateSupabaseRuntimeSecrets(values, spec); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []map[string][]byte{
-		{"value": []byte(strings.Repeat("secret-marker-", 3))},
-		{"value": []byte(strings.Repeat("x", 32)), "extra": []byte("secret-marker")},
-		{},
+	for _, tc := range []struct {
+		name string
+		bad  map[string][]byte
+	}{
+		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 32))}},
+		{name: "realtime-db-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("x", 16)), "extra": []byte("secret-marker")}},
+		{name: "realtime-db-encryption-key", bad: map[string][]byte{}},
+		{name: "vault-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("y", 64))}},
+		{name: "vault-encryption-key", bad: map[string][]byte{"value": []byte(strings.Repeat("y", 32)), "extra": []byte("secret-marker")}},
+		{name: "vault-encryption-key", bad: map[string][]byte{}},
 	} {
-		values["realtime-db-encryption-key-r1"] = bad
+		snapshot := tc.name + "-r1"
+		good := values[snapshot]
+		values[snapshot] = tc.bad
 		err := validateSupabaseRuntimeSecrets(values, spec)
-		if err == nil || !strings.Contains(err.Error(), "realtime-db-encryption-key") || strings.Contains(err.Error(), "secret-marker") {
-			t.Fatalf("invalid Realtime key did not produce a redacted field-specific error: %v", err)
+		values[snapshot] = good
+		if err == nil || !strings.Contains(err.Error(), tc.name) || strings.Contains(err.Error(), "secret-marker") {
+			t.Fatalf("invalid %s did not produce a redacted field-specific error: %v", tc.name, err)
 		}
 	}
 }

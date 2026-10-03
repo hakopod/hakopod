@@ -656,10 +656,18 @@ func validateSupabaseDatabaseClientURLs(values map[string]map[string][]byte, spe
 }
 
 func validateSupabaseRuntimeSecrets(values map[string]map[string][]byte, spec managedplatform.Spec) error {
-	ref := spec.Secrets["realtime-db-encryption-key"]
-	data := values[secretSnapshotNameForCluster(ref)]
-	if len(data) != 1 || len(data["value"]) != 32 {
-		return fmt.Errorf("Supabase realtime-db-encryption-key value must be exactly 32 bytes")
+	for _, item := range []struct {
+		name   string
+		length int
+	}{
+		{name: "realtime-db-encryption-key", length: 16},
+		{name: "vault-encryption-key", length: 32},
+	} {
+		ref := spec.Secrets[item.name]
+		data := values[secretSnapshotNameForCluster(ref)]
+		if len(data) != 1 || len(data["value"]) != item.length {
+			return fmt.Errorf("Supabase %s value must be exactly %d bytes", item.name, item.length)
+		}
 	}
 	return nil
 }

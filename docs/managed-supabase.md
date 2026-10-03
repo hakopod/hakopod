@@ -145,6 +145,9 @@ Legacy JWT and API keys remain immutable until dual-key verification and token
 retirement are implemented. The pg-meta, Realtime and pooler encryption keys
 remain immutable until their stored data can be re-encrypted. Storage access
 keys remain immutable until the object store can prove an overlap window.
+Realtime's database encryption key must contain exactly 16 bytes, and the
+pooler's vault encryption key must contain exactly 32 bytes. Create, update and
+recovery reject other lengths before applying workload Secrets.
 `jwt.sql` remains first-boot-only; the database does not receive the JWT signing
 secret. After a successful rollout, reconciliation prunes owned ConfigMaps
 older than the reported revision threshold and owned Secret snapshots outside
