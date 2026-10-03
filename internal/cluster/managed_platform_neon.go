@@ -52,6 +52,15 @@ func (a neonLifecycleAdapter) Operation() managedplatform.DurableOperation {
 func (a neonLifecycleAdapter) Heartbeat(ctx context.Context) error {
 	return a.state.HeartbeatManagedPlatformOperation(ctx, a.op)
 }
+func (a neonLifecycleAdapter) NeonProviderStateEmpty(ctx context.Context) (bool, error) {
+	state, ok := a.state.(interface {
+		NeonProviderStateEmpty(context.Context, store.ManagedPlatformOperation) (bool, error)
+	})
+	if !ok {
+		return false, nil
+	}
+	return state.NeonProviderStateEmpty(ctx, a.op)
+}
 func (a neonLifecycleAdapter) Claims(ctx context.Context, revision int64) ([]managedplatform.DurableResourceClaim, error) {
 	values, err := a.state.PlatformResourceClaims(ctx, a.op, revision)
 	if err != nil {

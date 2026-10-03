@@ -26,6 +26,10 @@ func (l *managedPlatformLifecycle) Heartbeat(ctx context.Context) error {
 	return l.store.HeartbeatManagedPlatformOperation(ctx, l.operation)
 }
 
+func (l *managedPlatformLifecycle) NeonProviderStateEmpty(ctx context.Context) (bool, error) {
+	return l.store.NeonProviderStateEmpty(ctx, l.operation)
+}
+
 func durablePlatformClaim(claim PlatformResourceClaim) managedplatform.DurableResourceClaim {
 	return managedplatform.DurableResourceClaim{PlatformID: claim.PlatformID, PlatformRevision: claim.PlatformRevision, Component: claim.Component, Kind: claim.Kind, ResourceID: claim.ResourceID, ImmutableGeneration: claim.ImmutableGeneration, OwnerOperationID: claim.OwnerOperationID}
 }
