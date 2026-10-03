@@ -284,7 +284,7 @@ def management_routes(platform_ids):
         raise RuntimeError("bridge platform allowlist is invalid")
     groups = {6699:["neon-storage-controller"], 9898:["neon-pageserver-"+str(i) for i in range(8)],
               7676:["neon-safekeeper-"+str(i) for i in range(3)], 3081:["neon-compute-"+str(i)+"-control" for i in range(6)]}
-    lines = ["resolvers kube", "  parse-resolv-conf", "  timeout resolve 1s", "  timeout retry 1s", "  hold valid 1s", ""]
+    lines = ["resolvers kube", "  parse-resolv-conf", "  timeout resolve 1s", "  timeout retry 1s", "  hold nx 1s", "  hold valid 1s", ""]
     for port, services in groups.items():
         routes = [(service+".managed-platform-"+platform_id+".svc",
                    service+".managed-platform-"+platform_id+".svc.cluster.local",
@@ -295,7 +295,7 @@ def management_routes(platform_ids):
         lines += ["  use_backend "+backend+" if { req.ssl_sni -i "+sni+" }" for sni,unused,backend in routes]
         lines += [""]
         for unused,target,backend in routes:
-            lines += ["backend "+backend, "  mode tcp", "  timeout connect 2s", "  timeout server 90s", "  server target "+target+":"+str(port)+" resolvers kube init-addr last,libc,none", ""]
+            lines += ["backend "+backend, "  mode tcp", "  timeout connect 2s", "  timeout server 90s", "  server target "+target+":"+str(port)+" resolvers kube resolve-prefer ipv4 init-addr last,libc,none check inter 2s", ""]
     return "\n".join(lines)
 
 def manifest(platform_ids, scheduling=None):
