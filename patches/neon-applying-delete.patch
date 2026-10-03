@@ -1,0 +1,1172 @@
+diff --git a/libs/pageserver_api/src/models.rs b/libs/pageserver_api/src/models.rs
+index bf7c893d4..a2015973e 100644
+--- a/libs/pageserver_api/src/models.rs
++++ b/libs/pageserver_api/src/models.rs
+@@ -340,6 +340,9 @@ pub struct OwnedTimelineDelete {
+     pub timeline_id: TimelineId,
+     pub ownership_token: String,
+     pub ownership_request_hash: String,
++    /// Set by the controller only for a durably owned, unfinished creation.
++    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
++    pub may_be_absent: bool,
+ }
+ 
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+@@ -2010,6 +2013,30 @@ mod tests {
+ 
+     use super::*;
+ 
++    #[test]
++    fn owned_timeline_delete_absence_requires_explicit_authority() {
++        let original = json!({
++            "timeline_id": "767b7bf935d4c2aee2428b7434c39aa7",
++            "ownership_token": "ab5ce2f2c43543ca0e1b6f2fa47270ae",
++            "ownership_request_hash": "5f4851a48fa71e04d8e3e787e01417a29b834f2c8d2c196816554408fd0dbd18"
++        });
++        let legacy: OwnedTimelineDelete = serde_json::from_value(original.clone()).unwrap();
++        assert!(!legacy.may_be_absent);
++        assert_eq!(serde_json::to_value(&legacy).unwrap(), original);
++
++        let explicit = OwnedTimelineDelete {
++            may_be_absent: true,
++            ..legacy
++        };
++        let encoded = serde_json::to_value(&explicit).unwrap();
++        assert_eq!(encoded["may_be_absent"], true);
++        assert!(
++            serde_json::from_value::<OwnedTimelineDelete>(encoded)
++                .unwrap()
++                .may_be_absent
++        );
++    }
++
+     #[test]
+     fn test_tenantinfo_serde() {
+         // Test serialization/deserialization of TenantInfo
+diff --git a/pageserver/src/tenant.rs b/pageserver/src/tenant.rs
+index 66750f72d..a65c7c7d0 100644
+--- a/pageserver/src/tenant.rs
++++ b/pageserver/src/tenant.rs
+@@ -1047,6 +1047,131 @@ pub(crate) async fn tombstone_remote_timeline_ownership(
+     }
+ }
+ 
++pub(crate) async fn tombstone_expected_remote_timeline_ownership(
++    remote_storage: &GenericRemoteStorage,
++    tenant_shard_id: &TenantShardId,
++    timeline_id: &TimelineId,
++    expected: &TimelineOwnershipRecord,
++    may_be_absent: bool,
++    cancel: &CancellationToken,
++) -> Result<(), ApiError> {
++    if let Some(tombstone) = read_remote_timeline_ownership_tombstone(
++        remote_storage,
++        tenant_shard_id,
++        timeline_id,
++        cancel,
++    )
++    .await
++    .map_err(ApiError::InternalServerError)?
++    {
++        if tombstone == *expected {
++            return Ok(());
++        }
++        return Err(ApiError::Conflict(
++            "timeline deletion tombstone conflicts with authorized ownership".to_string(),
++        ));
++    }
++    match read_remote_timeline_ownership(remote_storage, tenant_shard_id, timeline_id, cancel)
++        .await
++        .map_err(ApiError::InternalServerError)?
++    {
++        Some(record) if record != *expected => {
++            return Err(ApiError::Conflict(
++                "timeline deletion ownership reservation does not match".to_string(),
++            ));
++        }
++        None if !may_be_absent => {
++            return Err(ApiError::Conflict(
++                "timeline has no durable ownership record".to_string(),
++            ));
++        }
++        Some(_) => {}
++        None => {
++            // The tenant deletion fence is already durable before this helper is called.
++            // Claim the previously absent reservation key before publishing the tombstone.
++            // Its create-if-absent semantics closes the only window in which an in-flight
++            // creator could otherwise install a foreign reservation between our read and
++            // tombstone write.
++            let reservation_path =
++                remote_timeline_client::remote_timeline_ownership_reservation_path(
++                    tenant_shard_id,
++                    timeline_id,
++                );
++            let encoded = serde_json::to_vec(expected)
++                .map_err(|error| ApiError::InternalServerError(error.into()))?;
++            match remote_storage
++                .upload_if_absent(Bytes::from(encoded), &reservation_path, cancel)
++                .await
++            {
++                Ok(()) => {}
++                Err(ConditionalCreateError::AlreadyExists) => {
++                    let winner = read_remote_timeline_ownership(
++                        remote_storage,
++                        tenant_shard_id,
++                        timeline_id,
++                        cancel,
++                    )
++                    .await
++                    .map_err(ApiError::InternalServerError)?;
++                    if winner.as_ref() != Some(expected) {
++                        return Err(ApiError::Conflict(
++                            "timeline ownership changed while deletion claimed its reservation"
++                                .to_string(),
++                        ));
++                    }
++                }
++                Err(ConditionalCreateError::Other(error)) => {
++                    return Err(ApiError::InternalServerError(error));
++                }
++            }
++        }
++    }
++
++    let path = remote_timeline_client::remote_timeline_ownership_tombstone_path(
++        tenant_shard_id,
++        timeline_id,
++    );
++    let encoded = serde_json::to_vec(expected)
++        .map_err(|error| ApiError::InternalServerError(error.into()))?;
++    match remote_storage
++        .upload_if_absent(Bytes::from(encoded), &path, cancel)
++        .await
++    {
++        Ok(()) => {}
++        Err(ConditionalCreateError::AlreadyExists) => {
++            let existing = read_remote_timeline_ownership_tombstone(
++                remote_storage,
++                tenant_shard_id,
++                timeline_id,
++                cancel,
++            )
++            .await
++            .map_err(ApiError::InternalServerError)?;
++            if existing.as_ref() != Some(expected) {
++                return Err(ApiError::Conflict(
++                    "timeline deletion tombstone conflicts with authorized ownership".to_string(),
++                ));
++            }
++        }
++        Err(ConditionalCreateError::Other(error)) => {
++            return Err(ApiError::InternalServerError(error));
++        }
++    }
++
++    if let Some(record) =
++        read_remote_timeline_ownership(remote_storage, tenant_shard_id, timeline_id, cancel)
++            .await
++            .map_err(ApiError::InternalServerError)?
++    {
++        if record != *expected {
++            return Err(ApiError::Conflict(
++                "timeline ownership changed while deletion tombstone was published".to_string(),
++            ));
++        }
++    }
++    Ok(())
++}
++
+ /// Arguments to [`TenantShard::create_timeline`].
+ ///
+ /// Not usable as an idempotency key for timeline creation because if [`CreateTimelineParamsBranch::ancestor_start_lsn`]
+@@ -6544,6 +6669,188 @@ mod tests {
+     static TEST_KEY: Lazy<Key> =
+         Lazy::new(|| Key::from_slice(&hex!("010000000033333333444444445500000001")));
+ 
++    #[tokio::test]
++    async fn expected_ownership_tombstone_handles_partial_create_states() {
++        let harness = TenantHarness::create("expected_ownership_tombstone_partial_create")
++            .await
++            .unwrap();
++        let cancel = CancellationToken::new();
++        let tenant_shard_id = harness.tenant_shard_id;
++        let expected = TimelineOwnershipRecord {
++            schema_version: 1,
++            token: "11111111111111111111111111111111".to_string(),
++            request_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
++                .to_string(),
++        };
++
++        let absent_id = TimelineId::from_array([0x31; 16]);
++        let rejected = tombstone_expected_remote_timeline_ownership(
++            &harness.remote_storage,
++            &tenant_shard_id,
++            &absent_id,
++            &expected,
++            false,
++            &cancel,
++        )
++        .await;
++        assert!(matches!(rejected, Err(ApiError::Conflict(_))));
++        assert!(
++            read_remote_timeline_ownership_tombstone(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &absent_id,
++                &cancel,
++            )
++            .await
++            .unwrap()
++            .is_none(),
++            "a rejected absent authorization must not publish a tombstone"
++        );
++
++        tombstone_expected_remote_timeline_ownership(
++            &harness.remote_storage,
++            &tenant_shard_id,
++            &absent_id,
++            &expected,
++            true,
++            &cancel,
++        )
++        .await
++        .unwrap();
++        assert_eq!(
++            read_remote_timeline_ownership(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &absent_id,
++                &cancel,
++            )
++            .await
++            .unwrap(),
++            Some(expected.clone()),
++            "absence cleanup must atomically claim the reservation before tombstoning"
++        );
++        assert_eq!(
++            read_remote_timeline_ownership_tombstone(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &absent_id,
++                &cancel,
++            )
++            .await
++            .unwrap(),
++            Some(expected.clone())
++        );
++        // Exact retries take the conditional-create AlreadyExists path and remain idempotent.
++        tombstone_expected_remote_timeline_ownership(
++            &harness.remote_storage,
++            &tenant_shard_id,
++            &absent_id,
++            &expected,
++            true,
++            &cancel,
++        )
++        .await
++        .unwrap();
++
++        let active_id = TimelineId::from_array([0x32; 16]);
++        let reservation_path = remote_timeline_client::remote_timeline_ownership_reservation_path(
++            &tenant_shard_id,
++            &active_id,
++        );
++        harness
++            .remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&expected).unwrap()),
++                &reservation_path,
++                &cancel,
++            )
++            .await
++            .unwrap();
++        tombstone_expected_remote_timeline_ownership(
++            &harness.remote_storage,
++            &tenant_shard_id,
++            &active_id,
++            &expected,
++            false,
++            &cancel,
++        )
++        .await
++        .unwrap();
++
++        let foreign_id = TimelineId::from_array([0x33; 16]);
++        let foreign = TimelineOwnershipRecord {
++            schema_version: 1,
++            token: "22222222222222222222222222222222".to_string(),
++            request_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
++                .to_string(),
++        };
++        let foreign_path = remote_timeline_client::remote_timeline_ownership_reservation_path(
++            &tenant_shard_id,
++            &foreign_id,
++        );
++        harness
++            .remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&foreign).unwrap()),
++                &foreign_path,
++                &cancel,
++            )
++            .await
++            .unwrap();
++        assert!(matches!(
++            tombstone_expected_remote_timeline_ownership(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &foreign_id,
++                &expected,
++                true,
++                &cancel,
++            )
++            .await,
++            Err(ApiError::Conflict(_))
++        ));
++        assert!(
++            read_remote_timeline_ownership_tombstone(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &foreign_id,
++                &cancel,
++            )
++            .await
++            .unwrap()
++            .is_none(),
++            "a foreign reservation must be rejected without mutation"
++        );
++
++        let foreign_tombstone_id = TimelineId::from_array([0x34; 16]);
++        let foreign_tombstone_path =
++            remote_timeline_client::remote_timeline_ownership_tombstone_path(
++                &tenant_shard_id,
++                &foreign_tombstone_id,
++            );
++        harness
++            .remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&foreign).unwrap()),
++                &foreign_tombstone_path,
++                &cancel,
++            )
++            .await
++            .unwrap();
++        assert!(matches!(
++            tombstone_expected_remote_timeline_ownership(
++                &harness.remote_storage,
++                &tenant_shard_id,
++                &foreign_tombstone_id,
++                &expected,
++                true,
++                &cancel,
++            )
++            .await,
++            Err(ApiError::Conflict(_))
++        ));
++    }
++
+     #[cfg(feature = "testing")]
+     struct TestTimelineSpecification {
+         start_lsn: Lsn,
+diff --git a/pageserver/src/tenant/mgr.rs b/pageserver/src/tenant/mgr.rs
+index 5920bdd09..7bf533239 100644
+--- a/pageserver/src/tenant/mgr.rs
++++ b/pageserver/src/tenant/mgr.rs
+@@ -787,7 +787,12 @@ struct OwnedTenantDeletePlan {
+     digest: String,
+     authorization_digest: String,
+     timeline_paths: Vec<remote_storage::RemotePath>,
+-    tombstones: Vec<(TenantShardId, TimelineId, String)>,
++    tombstones: Vec<(
++        TenantShardId,
++        TimelineId,
++        super::TimelineOwnershipRecord,
++        bool,
++    )>,
+ }
+ 
+ #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+@@ -1408,7 +1413,11 @@ async fn validate_owned_tenant_delete(
+                 || supplied
+                     .insert(
+                         owned_timeline.timeline_id,
+-                        (token.clone(), request_hash.clone()),
++                        (
++                            token.clone(),
++                            request_hash.clone(),
++                            owned_timeline.may_be_absent,
++                        ),
+                     )
+                     .is_some()
+             {
+@@ -1441,13 +1450,18 @@ async fn validate_owned_tenant_delete(
+         authorization_hasher.update(b"hakopod-pageserver-tenant-delete-authorization-v1\0");
+         authorization_hasher.update(tenant_id.to_string().as_bytes());
+         authorization_hasher.update(b"\0");
+-        for (timeline_id, (token, request_hash)) in &supplied {
++        for (timeline_id, (token, request_hash, may_be_absent)) in &supplied {
+             authorization_hasher.update(timeline_id.to_string().as_bytes());
+             authorization_hasher.update(b"\0");
+             authorization_hasher.update(token.as_bytes());
+             authorization_hasher.update(b"\0");
+             authorization_hasher.update(request_hash.as_bytes());
+             authorization_hasher.update(b"\0");
++            // Preserve the v1 authorization digest for ordinary completed timelines so an
++            // already-prepared deletion remains resumable after this field was introduced.
++            if *may_be_absent {
++                authorization_hasher.update(b"hakopod-may-be-absent-v1\0");
++            }
+         }
+         let authorization_digest = hex::encode(authorization_hasher.finalize());
+ 
+@@ -1455,7 +1469,8 @@ async fn validate_owned_tenant_delete(
+         hasher.update(b"hakopod-pageserver-tenant-delete-preflight-v1\0");
+         hasher.update(tenant_id.to_string().as_bytes());
+         hasher.update(b"\0");
+-        for (timeline_id, (token, request_hash)) in &supplied {
++        let mut tombstones = Vec::new();
++        for (timeline_id, (token, request_hash, may_be_absent)) in &supplied {
+             let unsharded = TenantShardId::unsharded(tenant_id);
+             let record = super::read_remote_timeline_ownership(
+                 &self.resources.remote_storage,
+@@ -1463,17 +1478,22 @@ async fn validate_owned_tenant_delete(
+                 timeline_id,
+                 &self.cancel,
+             )
+-            .await?
+-            .ok_or_else(|| {
+-                DeleteTenantError::OwnershipConflict(format!(
+-                    "timeline {tenant_id}/{timeline_id} has no durable ownership reservation"
+-                ))
+-            })?;
+-            if record.token != *token || record.request_hash != *request_hash {
++            .await?;
++            let expected = super::TimelineOwnershipRecord {
++                schema_version: 1,
++                token: token.clone(),
++                request_hash: request_hash.clone(),
++            };
++            if record.as_ref().is_some_and(|record| record != &expected) {
+                 return Err(DeleteTenantError::OwnershipConflict(format!(
+                     "timeline {tenant_id}/{timeline_id} ownership reservation does not match"
+                 )));
+             }
++            if record.is_none() && !may_be_absent {
++                return Err(DeleteTenantError::OwnershipConflict(format!(
++                    "timeline {tenant_id}/{timeline_id} has no durable ownership reservation"
++                )));
++            }
+             let tombstone = super::read_remote_timeline_ownership_tombstone(
+                 &self.resources.remote_storage,
+                 &unsharded,
+@@ -1481,11 +1501,14 @@ async fn validate_owned_tenant_delete(
+                 &self.cancel,
+             )
+             .await?;
+-            if tombstone.as_ref().is_some_and(|value| value != &record) {
++            if tombstone.as_ref().is_some_and(|value| value != &expected) {
+                 return Err(DeleteTenantError::OwnershipConflict(format!(
+                     "timeline {tenant_id}/{timeline_id} ownership tombstone does not match"
+                 )));
+             }
++            if tombstone.is_none() {
++                tombstones.push((unsharded, *timeline_id, expected, *may_be_absent));
++            }
+             hasher.update(b"authorized\0");
+             hasher.update(timeline_id.to_string().as_bytes());
+             hasher.update(b"\0");
+@@ -1494,6 +1517,8 @@ async fn validate_owned_tenant_delete(
+             hasher.update(request_hash.as_bytes());
+             hasher.update(if tombstone.is_some() {
+                 b"\0tombstoned\0".as_slice()
++            } else if record.is_none() {
++                b"\0absent-authorized\0".as_slice()
+             } else {
+                 b"\0active\0".as_slice()
+             });
+@@ -1501,7 +1526,6 @@ async fn validate_owned_tenant_delete(
+ 
+         let mut checked = 0usize;
+         let mut timeline_paths = Vec::new();
+-        let mut tombstones = Vec::new();
+         let mut ownership_records = HashMap::new();
+         for remote_tenant_shard_id in tenant_shards {
+             hasher.update(b"shard\0");
+@@ -1551,7 +1575,7 @@ async fn validate_owned_tenant_delete(
+                         )));
+                     }
+                 }
+-                let (token, request_hash) = supplied.get(&timeline_id).ok_or_else(|| {
++                let (token, request_hash, _) = supplied.get(&timeline_id).ok_or_else(|| {
+                     DeleteTenantError::OwnershipConflict(format!(
+                         "timeline {remote_tenant_shard_id}/{timeline_id} has no owned deletion authorization"
+                     ))
+@@ -1575,10 +1599,7 @@ async fn validate_owned_tenant_delete(
+                             "timeline {remote_tenant_shard_id}/{timeline_id} ownership tombstone does not match"
+                         )));
+                     }
+-                    None => {
+-                        tombstones.push((remote_tenant_shard_id, timeline_id, token.clone()));
+-                        "active"
+-                    }
++                    None => "active",
+                 };
+                 hasher.update(b"timeline\0");
+                 hasher.update(remote_tenant_shard_id.to_string().as_bytes());
+@@ -1805,12 +1826,13 @@ async fn delete_local(
+                 ));
+             }
+ 
+-            for (remote_tenant_shard_id, timeline_id, token) in plan.tombstones {
+-                super::tombstone_remote_timeline_ownership(
++            for (remote_tenant_shard_id, timeline_id, expected, may_be_absent) in plan.tombstones {
++                super::tombstone_expected_remote_timeline_ownership(
+                     &self.resources.remote_storage,
+                     &remote_tenant_shard_id,
+                     &timeline_id,
+-                    &token,
++                    &expected,
++                    may_be_absent,
+                     &self.cancel,
+                 )
+                 .await
+@@ -3413,7 +3435,9 @@ mod tests {
+     use std::collections::BTreeMap;
+     use std::sync::Arc;
+ 
++    use bytes::Bytes;
+     use camino::Utf8PathBuf;
++    use pageserver_api::models::OwnedTimelineDelete;
+     use storage_broker::BrokerClientChannel;
+     use tracing::Instrument;
+ 
+@@ -3427,6 +3451,178 @@ mod tests {
+         },
+     };
+ 
++    #[tokio::test]
++    async fn owned_delete_plans_no_path_partial_creates_without_mutating_preflight() {
++        let h = TenantHarness::create("owned_delete_plans_no_path_partial_creates")
++            .await
++            .unwrap();
++        let (basebackup_cache, _) = BasebackupCache::new(Utf8PathBuf::new(), None);
++        let manager = TenantManager {
++            tenants: std::sync::RwLock::new(TenantsMap::Open(BTreeMap::new())),
++            conf: h.conf,
++            resources: TenantSharedResources {
++                broker_client: BrokerClientChannel::connect_lazy("foobar.com")
++                    .await
++                    .unwrap(),
++                remote_storage: h.remote_storage.clone(),
++                deletion_queue_client: h.deletion_queue.new_client(),
++                l0_flush_global_state: crate::l0_flush::L0FlushGlobalState::new(
++                    h.conf.l0_flush.clone(),
++                ),
++                basebackup_cache,
++                feature_resolver: crate::feature_resolver::FeatureResolver::new_disabled(),
++            },
++            cancel: tokio_util::sync::CancellationToken::new(),
++            background_purges: BackgroundPurges::default(),
++        };
++        let tenant_id = h.tenant_shard_id.tenant_id;
++        let shard_id = pageserver_api::shard::TenantShardId::unsharded(tenant_id);
++        let token = "11111111111111111111111111111111";
++        let request_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
++        let owned = |timeline_id, may_be_absent| OwnedTimelineDelete {
++            timeline_id,
++            ownership_token: token.to_string(),
++            ownership_request_hash: request_hash.to_string(),
++            may_be_absent,
++        };
++
++        let absent_id = utils::id::TimelineId::from_array([0x41; 16]);
++        assert!(
++            manager
++                .validate_owned_tenant_delete(tenant_id, &[owned(absent_id, false)])
++                .await
++                .is_err()
++        );
++        assert!(
++            super::super::read_remote_timeline_ownership(
++                &h.remote_storage,
++                &shard_id,
++                &absent_id,
++                &manager.cancel,
++            )
++            .await
++            .unwrap()
++            .is_none()
++        );
++        let absent_plan = manager
++            .validate_owned_tenant_delete(tenant_id, &[owned(absent_id, true)])
++            .await
++            .unwrap();
++        assert!(absent_plan.timeline_paths.is_empty());
++        assert_eq!(absent_plan.tombstones.len(), 1);
++        assert!(
++            super::super::read_remote_timeline_ownership_tombstone(
++                &h.remote_storage,
++                &shard_id,
++                &absent_id,
++                &manager.cancel,
++            )
++            .await
++            .unwrap()
++            .is_none(),
++            "preflight must remain read-only"
++        );
++
++        let active_id = utils::id::TimelineId::from_array([0x42; 16]);
++        let exact = super::super::TimelineOwnershipRecord {
++            schema_version: 1,
++            token: token.to_string(),
++            request_hash: request_hash.to_string(),
++        };
++        h.remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&exact).unwrap()),
++                &super::super::remote_timeline_client::remote_timeline_ownership_reservation_path(
++                    &shard_id, &active_id,
++                ),
++                &manager.cancel,
++            )
++            .await
++            .unwrap();
++        let active_plan = manager
++            .validate_owned_tenant_delete(tenant_id, &[owned(active_id, false)])
++            .await
++            .unwrap();
++        assert!(active_plan.timeline_paths.is_empty());
++        assert_eq!(active_plan.tombstones.len(), 1);
++
++        let foreign_id = utils::id::TimelineId::from_array([0x43; 16]);
++        let foreign = super::super::TimelineOwnershipRecord {
++            schema_version: 1,
++            token: "22222222222222222222222222222222".to_string(),
++            request_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
++                .to_string(),
++        };
++        h.remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&foreign).unwrap()),
++                &super::super::remote_timeline_client::remote_timeline_ownership_reservation_path(
++                    &shard_id,
++                    &foreign_id,
++                ),
++                &manager.cancel,
++            )
++            .await
++            .unwrap();
++        assert!(
++            manager
++                .validate_owned_tenant_delete(tenant_id, &[owned(foreign_id, true)])
++                .await
++                .is_err()
++        );
++
++        let foreign_tombstone_id = utils::id::TimelineId::from_array([0x45; 16]);
++        h.remote_storage
++            .upload_if_absent(
++                Bytes::from(serde_json::to_vec(&foreign).unwrap()),
++                &super::super::remote_timeline_client::remote_timeline_ownership_tombstone_path(
++                    &shard_id,
++                    &foreign_tombstone_id,
++                ),
++                &manager.cancel,
++            )
++            .await
++            .unwrap();
++        assert!(
++            manager
++                .validate_owned_tenant_delete(tenant_id, &[owned(foreign_tombstone_id, true)],)
++                .await
++                .is_err()
++        );
++        assert!(
++            super::super::read_remote_timeline_ownership(
++                &h.remote_storage,
++                &shard_id,
++                &foreign_tombstone_id,
++                &manager.cancel,
++            )
++            .await
++            .unwrap()
++            .is_none(),
++            "foreign tombstone rejection must not claim a reservation during preflight"
++        );
++
++        let data_id = utils::id::TimelineId::from_array([0x44; 16]);
++        let data_object =
++            super::super::remote_timeline_client::remote_timeline_path(&shard_id, &data_id)
++                .join(camino::Utf8Path::new("partial-initdb-object"));
++        h.remote_storage
++            .upload_if_absent(
++                Bytes::from_static(b"partial"),
++                &data_object,
++                &manager.cancel,
++            )
++            .await
++            .unwrap();
++        assert!(
++            manager
++                .validate_owned_tenant_delete(tenant_id, &[owned(data_id, true)])
++                .await
++                .is_err(),
++            "absence authorization must not adopt a timeline data prefix"
++        );
++    }
++
+     #[tokio::test(start_paused = true)]
+     async fn shutdown_awaits_in_progress_tenant() {
+         // Test that if an InProgress tenant is in the map during shutdown, the shutdown will gracefully
+diff --git a/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/down.sql b/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/down.sql
+new file mode 100644
+index 000000000..655e64b89
+--- /dev/null
++++ b/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/down.sql
+@@ -0,0 +1,19 @@
++DO $$
++BEGIN
++    IF EXISTS (
++        SELECT 1
++        FROM hakopod_resource_ownership
++        WHERE resource_kind = 'timeline'
++          AND state IN ('deleting', 'tombstoned')
++          AND result IS NULL
++    ) THEN
++        RAISE EXCEPTION 'unfinished timeline ownership deletions must be resolved before rollback';
++    END IF;
++END
++$$;
++
++ALTER TABLE hakopod_resource_ownership
++    DROP CONSTRAINT hakopod_resource_ownership_check,
++    ADD CONSTRAINT hakopod_resource_ownership_check CHECK (
++        (state IN ('completed', 'deleting', 'tombstoned')) = (result IS NOT NULL)
++    );
+diff --git a/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/up.sql b/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/up.sql
+new file mode 100644
+index 000000000..b378c5fff
+--- /dev/null
++++ b/storage_controller/migrations/2026-10-04-000001_unfinished_timeline_ownership_delete/up.sql
+@@ -0,0 +1,10 @@
++ALTER TABLE hakopod_resource_ownership
++    DROP CONSTRAINT hakopod_resource_ownership_check,
++    ADD CONSTRAINT hakopod_resource_ownership_check CHECK (
++        (result IS NOT NULL AND state IN ('completed', 'deleting', 'tombstoned'))
++        OR
++        (result IS NULL AND (
++            state NOT IN ('completed', 'deleting', 'tombstoned')
++            OR (resource_kind = 'timeline' AND state IN ('deleting', 'tombstoned'))
++        ))
++    );
+diff --git a/storage_controller/src/persistence.rs b/storage_controller/src/persistence.rs
+index 31405c2e8..514813302 100644
+--- a/storage_controller/src/persistence.rs
++++ b/storage_controller/src/persistence.rs
+@@ -377,6 +377,70 @@ pub(crate) async fn begin_ownership_delete(
+         .await
+     }
+ 
++    /// Delete transition used only while tenant deletion holds the exclusive tenant lock.
++    /// It admits an unfinished timeline creation, but binds every ownership field before CAS.
++    pub(crate) async fn begin_tenant_cleanup_timeline_delete(
++        &self,
++        token: Uuid,
++        external_key: &str,
++        request_hash: &[u8; 32],
++    ) -> DatabaseResult<OwnershipDecision> {
++        let external_key = external_key.to_owned();
++        let request_hash = request_hash.to_vec();
++        self.with_conn(move |conn| {
++            let external_key = external_key.clone();
++            let request_hash = request_hash.clone();
++            Box::pin(async move {
++                let row = diesel::sql_query(
++                    "SELECT ownership_token, resource_kind, external_key, request_hash, \
++                     state::text AS state, result, delete_token FROM hakopod_resource_ownership \
++                     WHERE ownership_token = $1 FOR UPDATE",
++                )
++                .bind::<diesel::sql_types::Uuid, _>(token)
++                .get_result::<OwnershipRow>(conn)
++                .await
++                .optional()?
++                .ok_or_else(|| {
++                    DatabaseError::Cas(
++                        "tenant cleanup ownership token does not identify a resource".into(),
++                    )
++                })?;
++                match tenant_cleanup_timeline_delete_decision(
++                    &row,
++                    token,
++                    &external_key,
++                    &request_hash,
++                )? {
++                    OwnershipDecision::Begin => {
++                        let updated = diesel::sql_query(
++                            "UPDATE hakopod_resource_ownership SET state = 'deleting', \
++                             updated_at = now() WHERE ownership_token = $1 \
++                             AND resource_kind = 'timeline' AND external_key = $2 \
++                             AND request_hash = $3 \
++                             AND ((state = 'completed' AND result IS NOT NULL) \
++                               OR (state = 'applying' AND result IS NULL))",
++                        )
++                        .bind::<diesel::sql_types::Uuid, _>(token)
++                        .bind::<diesel::sql_types::Text, _>(&external_key)
++                        .bind::<diesel::sql_types::Binary, _>(&request_hash)
++                        .execute(conn)
++                        .await?;
++                        if updated == 1 {
++                            Ok(OwnershipDecision::Begin)
++                        } else {
++                            Err(DatabaseError::Cas(
++                                "tenant cleanup ownership transition lost its compare-and-swap"
++                                    .into(),
++                            ))
++                        }
++                    }
++                    decision => Ok(decision),
++                }
++            })
++        })
++        .await
++    }
++
+     pub(crate) async fn finish_ownership_delete(&self, token: Uuid) -> DatabaseResult<()> {
+         self.with_conn(move |conn| {
+             Box::pin(async move {
+@@ -772,6 +836,232 @@ fn ownership_delete_decision(row: OwnershipRow) -> DatabaseResult<OwnershipDecis
+     }
+ }
+ 
++fn tenant_cleanup_timeline_delete_decision(
++    row: &OwnershipRow,
++    token: Uuid,
++    external_key: &str,
++    request_hash: &[u8],
++) -> DatabaseResult<OwnershipDecision> {
++    if row.ownership_token != token
++        || row.resource_kind != "timeline"
++        || row.external_key != external_key
++        || row.request_hash != request_hash
++    {
++        return Err(DatabaseError::Cas(
++            "tenant cleanup ownership token, kind, key, or request hash conflicts".into(),
++        ));
++    }
++    match (row.state.as_str(), row.result.is_some()) {
++        ("completed", true) | ("applying", false) => Ok(OwnershipDecision::Begin),
++        ("deleting", _) => Ok(OwnershipDecision::Resume),
++        ("tombstoned", _) => Ok(OwnershipDecision::Gone),
++        _ => Err(DatabaseError::Cas(
++            "resource is not in a tenant-cleanup deletable ownership state".into(),
++        )),
++    }
++}
++
++#[test]
++fn test_tenant_cleanup_timeline_delete_decision() {
++    let token = Uuid::from_u128(1);
++    let key = "11111111111111111111111111111111/22222222222222222222222222222222";
++    let hash = vec![7; 32];
++    let mut row = OwnershipRow {
++        ownership_token: token,
++        resource_kind: "timeline".into(),
++        external_key: key.into(),
++        request_hash: hash.clone(),
++        state: "applying".into(),
++        result: None,
++        delete_token: None,
++    };
++    assert_eq!(
++        tenant_cleanup_timeline_delete_decision(&row, token, key, &hash).unwrap(),
++        OwnershipDecision::Begin
++    );
++    row.state = "deleting".into();
++    assert_eq!(
++        tenant_cleanup_timeline_delete_decision(&row, token, key, &hash).unwrap(),
++        OwnershipDecision::Resume
++    );
++    row.state = "completed".into();
++    assert!(tenant_cleanup_timeline_delete_decision(&row, token, key, &hash).is_err());
++    row.result = Some(serde_json::json!({"created": true}));
++    assert_eq!(
++        tenant_cleanup_timeline_delete_decision(&row, token, key, &hash).unwrap(),
++        OwnershipDecision::Begin
++    );
++    assert!(tenant_cleanup_timeline_delete_decision(&row, Uuid::from_u128(2), key, &hash).is_err());
++    assert!(tenant_cleanup_timeline_delete_decision(&row, token, "other/key", &hash).is_err());
++    assert!(tenant_cleanup_timeline_delete_decision(&row, token, key, &[8; 32]).is_err());
++}
++
++#[tokio::test]
++#[ignore = "requires an isolated migrated PostgreSQL database in HAKOPOD_TEST_DATABASE_URL"]
++async fn test_tenant_cleanup_timeline_delete_persistence() {
++    let database_url = std::env::var("HAKOPOD_TEST_DATABASE_URL")
++        .expect("HAKOPOD_TEST_DATABASE_URL must name an isolated test database");
++    let persistence = Persistence::new(database_url).await;
++    persistence.migration_run().await.unwrap();
++
++    let tenant_token = Uuid::from_u128(0x1000);
++    let tenant_hash = [6; 32];
++    let token = Uuid::from_u128(0x1001);
++    let tenant_id = Uuid::from_u128(0x2001).simple().to_string();
++    let timeline_id = Uuid::from_u128(0x3001).simple().to_string();
++    let key = format!("{tenant_id}/{timeline_id}");
++    let hash = [7; 32];
++    assert_eq!(
++        persistence
++            .reserve_ownership(tenant_token, "tenant", &tenant_id, &tenant_hash)
++            .await
++            .unwrap(),
++        OwnershipDecision::Begin
++    );
++    persistence
++        .complete_ownership(tenant_token, serde_json::json!({"created": true}))
++        .await
++        .unwrap();
++    assert_eq!(
++        persistence
++            .reserve_ownership(token, "timeline", &key, &hash)
++            .await
++            .unwrap(),
++        OwnershipDecision::Begin
++    );
++
++    for (wrong_token, wrong_key, wrong_hash) in [
++        (Uuid::from_u128(0x1002), key.as_str(), hash),
++        (token, "other/key", hash),
++        (token, key.as_str(), [8; 32]),
++    ] {
++        assert!(
++            persistence
++                .begin_tenant_cleanup_timeline_delete(wrong_token, wrong_key, &wrong_hash)
++                .await
++                .is_err()
++        );
++        assert_eq!(
++            persistence
++                .get_ownership("timeline", &key)
++                .await
++                .unwrap()
++                .unwrap()
++                .state,
++            "applying"
++        );
++    }
++
++    assert_eq!(
++        persistence
++            .begin_tenant_cleanup_timeline_delete(token, &key, &hash)
++            .await
++            .unwrap(),
++        OwnershipDecision::Begin
++    );
++    assert_eq!(
++        persistence
++            .begin_tenant_cleanup_timeline_delete(token, &key, &hash)
++            .await
++            .unwrap(),
++        OwnershipDecision::Resume
++    );
++
++    let completed_token = Uuid::from_u128(0x1003);
++    let completed_key = format!("{tenant_id}/{}", Uuid::from_u128(0x3002).simple());
++    persistence
++        .reserve_ownership(completed_token, "timeline", &completed_key, &hash)
++        .await
++        .unwrap();
++    persistence
++        .complete_ownership(completed_token, serde_json::json!({"created": true}))
++        .await
++        .unwrap();
++    assert_eq!(
++        persistence
++            .begin_tenant_cleanup_timeline_delete(completed_token, &completed_key, &hash)
++            .await
++            .unwrap(),
++        OwnershipDecision::Begin
++    );
++
++    let malformed_token = Uuid::from_u128(0x1004);
++    let malformed_key = format!("{tenant_id}/{}", Uuid::from_u128(0x3003).simple());
++    persistence
++        .reserve_ownership(malformed_token, "timeline", &malformed_key, &hash)
++        .await
++        .unwrap();
++    let malformed_update = persistence
++        .with_conn(move |conn| {
++            Box::pin(async move {
++                diesel::sql_query(
++                    "UPDATE hakopod_resource_ownership SET state = 'completed', result = NULL \
++                     WHERE ownership_token = $1",
++                )
++                .bind::<diesel::sql_types::Uuid, _>(malformed_token)
++                .execute(conn)
++                .await?;
++                Ok(())
++            })
++        })
++        .await;
++    assert!(malformed_update.is_err());
++    assert_eq!(
++        persistence
++            .get_ownership("timeline", &malformed_key)
++            .await
++            .unwrap()
++            .unwrap()
++            .state,
++        "applying"
++    );
++
++    let invalid_tenant_delete = persistence
++        .with_conn(move |conn| {
++            Box::pin(async move {
++                diesel::sql_query(
++                    "UPDATE hakopod_resource_ownership SET state = 'deleting', result = NULL \
++                     WHERE ownership_token = $1",
++                )
++                .bind::<diesel::sql_types::Uuid, _>(tenant_token)
++                .execute(conn)
++                .await?;
++                Ok(())
++            })
++        })
++        .await;
++    assert!(invalid_tenant_delete.is_err());
++    assert_eq!(
++        persistence
++            .get_ownership("tenant", &tenant_id)
++            .await
++            .unwrap()
++            .unwrap()
++            .state,
++        "completed"
++    );
++
++    persistence
++        .with_conn(move |conn| {
++            Box::pin(async move {
++                diesel::sql_query(
++                    "DELETE FROM hakopod_resource_ownership WHERE ownership_token = ANY($1)",
++                )
++                .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(vec![
++                    tenant_token,
++                    token,
++                    completed_token,
++                    malformed_token,
++                ])
++                .execute(conn)
++                .await?;
++                Ok(())
++            })
++        })
++        .await
++        .unwrap();
++}
++
+ impl From<OwnershipRow> for OwnershipRecord {
+     fn from(row: OwnershipRow) -> Self {
+         Self {
+diff --git a/storage_controller/src/service.rs b/storage_controller/src/service.rs
+index a7a26645f..afbe9cc1f 100644
+--- a/storage_controller/src/service.rs
++++ b/storage_controller/src/service.rs
+@@ -813,6 +813,18 @@ pub(crate) async fn begin_ownership_delete(
+             .map_err(Into::into)
+     }
+ 
++    pub(crate) async fn begin_tenant_cleanup_timeline_delete(
++        &self,
++        token: uuid::Uuid,
++        external_key: &str,
++        request_hash: &[u8; 32],
++    ) -> Result<crate::persistence::OwnershipDecision, ApiError> {
++        self.persistence
++            .begin_tenant_cleanup_timeline_delete(token, external_key, request_hash)
++            .await
++            .map_err(Into::into)
++    }
++
+     pub(crate) async fn finish_ownership_delete(&self, token: uuid::Uuid) -> Result<(), ApiError> {
+         self.persistence
+             .finish_ownership_delete(token)
+@@ -884,12 +896,16 @@ pub(crate) async fn preflight_owned_timelines_for_tenant(
+                 let timeline_id = TimelineId::from_str(timeline_id)
+                     .context("timeline id loaded from ownership ledger")
+                     .map_err(ApiError::InternalServerError)?;
+-                if !matches!(record.state.as_str(), "completed" | "deleting") {
+-                    return Err(ApiError::Conflict(format!(
+-                        "owned timeline {timeline_id} is in non-deletable state {}",
+-                        record.state
+-                    )));
+-                }
++                let may_be_absent = match (record.state.as_str(), record.result.is_some()) {
++                    ("applying", false) | ("deleting", false) => true,
++                    ("completed", true) | ("deleting", true) => false,
++                    _ => {
++                        return Err(ApiError::Conflict(format!(
++                            "owned timeline {timeline_id} is in non-deletable state {}",
++                            record.state
++                        )));
++                    }
++                };
+                 let request_hash: [u8; 32] = record.request_hash.try_into().map_err(|_| {
+                     ApiError::InternalServerError(anyhow::anyhow!(
+                         "owned timeline {timeline_id} has an invalid request hash"
+@@ -901,6 +917,7 @@ pub(crate) async fn preflight_owned_timelines_for_tenant(
+                         timeline_id,
+                         ownership_token: record.token.simple().to_string(),
+                         ownership_request_hash: hex::encode(request_hash),
++                        may_be_absent,
+                     },
+                 ))
+             })
+@@ -3913,11 +3930,23 @@ pub(crate) async fn tenant_delete(
+                     }
+                 }
+                 for (timeline_token, timeline) in &owned_records {
++                    let request_hash: [u8; 32] = hex::decode(&timeline.ownership_request_hash)
++                        .map_err(|_| {
++                            ApiError::Conflict(
++                                "invalid timeline ownership request hash".to_string(),
++                            )
++                        })?
++                        .try_into()
++                        .map_err(|_| {
++                            ApiError::Conflict(
++                                "invalid timeline ownership request hash".to_string(),
++                            )
++                        })?;
+                     match self
+-                        .begin_ownership_delete(
++                        .begin_tenant_cleanup_timeline_delete(
+                             *timeline_token,
+-                            "timeline",
+                             &format!("{tenant_id}/{}", timeline.timeline_id),
++                            &request_hash,
+                         )
+                         .await?
+                     {
+diff --git a/storage_controller/src/service/safekeeper_service.rs b/storage_controller/src/service/safekeeper_service.rs
+index 96a7ff593..ebc17cb14 100644
+--- a/storage_controller/src/service/safekeeper_service.rs
++++ b/storage_controller/src/service/safekeeper_service.rs
+@@ -115,7 +115,16 @@ pub(super) async fn preflight_tenant_delete_safekeepers(
+                     });
+             }
+         }
+-        if seen.len() != expected.len() {
++        // Timeline creation persists the controller row before contacting any safekeeper.
++        // Reconciliation retains that row until all selected safekeepers have deleted the
++        // timeline. Consequently, an absent controller row has no remote members to query;
++        // every possible remote record is represented by `timelines` and validated above.
++        let required_present = owned_timelines
++            .iter()
++            .filter(|entry| !entry.may_be_absent)
++            .map(|entry| entry.timeline_id)
++            .collect::<HashSet<_>>();
++        if !required_present.is_subset(&seen) {
+             return Err(ApiError::Conflict(
+                 "ownership ledger and safekeeper timeline sets do not match".to_string(),
+             ));

@@ -10,10 +10,12 @@ readonly CONSUMER_PATCH_SHA256="f425b69c6d20153ea3fbba2633d53adc77007f4d84468423
 readonly TRANSPORT_PATCH_SHA256="3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
 readonly RECONFIGURE_PATCH_SHA256="96b5f4e211186ea60281128029c668ad12bb6d3cf3a552879363fe24750458c9"
 readonly PLACEMENT_PATCH_SHA256="9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
+readonly FILESYSTEM_PATCH_SHA256="2cab4695d0d4e7029bbe2c9523d42929c4c9a19a2c25dd5e7064e830882e1256"
+readonly APPLYING_DELETE_PATCH_SHA256="e86ee6ac05bbb4efe05349563b96ea520dc574a2b9ea04adfd9687829040a204"
 readonly POSTGRES_COMMIT="1e01fcea2a6b38180021aa83e0051d95286d9096"
 readonly POSTGRES_TREE="5aca82893a42d97c0fce65a8f63d02d9e0587a19"
 readonly CONSUMER_PATCH_ID="627583b85d7c0f624245e3ac6a240e775a5eed01"
-readonly COMBINED_CANDIDATE_TREE="a7ad594e43903c469c7f9b8a3233bb683f4d721e"
+readonly COMBINED_CANDIDATE_TREE="3358ae2e6529d42fe723ed566678978665d3b7a6"
 
 usage() {
   echo "usage: $0 OUTPUT_DIRECTORY [UPSTREAM_CHECKOUT]" >&2
@@ -32,6 +34,8 @@ consumer_patch="$repository_root/patches/neon-pg17.11-consumers.patch"
 transport_patch="$repository_root/patches/neon-storage-tls.patch"
 reconfigure_patch="$repository_root/patches/neon-compute-reconfigure.patch"
 placement_patch="$repository_root/patches/neon-controller-placement.patch"
+filesystem_patch="$repository_root/patches/neon-layer-publish.patch"
+applying_delete_patch="$repository_root/patches/neon-applying-delete.patch"
 
 printf '%s  %s\n' "$PROXY_PATCH_SHA256" "$proxy_patch" | sha256sum --check --status
 printf '%s  %s\n' "$OWNERSHIP_PATCH_SHA256" "$ownership_patch" | sha256sum --check --status
@@ -40,6 +44,8 @@ printf '%s  %s\n' "$CONSUMER_PATCH_SHA256" "$consumer_patch" | sha256sum --check
 printf '%s  %s\n' "$TRANSPORT_PATCH_SHA256" "$transport_patch" | sha256sum --check --status
 printf '%s  %s\n' "$RECONFIGURE_PATCH_SHA256" "$reconfigure_patch" | sha256sum --check --status
 printf '%s  %s\n' "$PLACEMENT_PATCH_SHA256" "$placement_patch" | sha256sum --check --status
+printf '%s  %s\n' "$FILESYSTEM_PATCH_SHA256" "$filesystem_patch" | sha256sum --check --status
+printf '%s  %s\n' "$APPLYING_DELETE_PATCH_SHA256" "$applying_delete_patch" | sha256sum --check --status
 
 work_directory=$(mktemp -d "${TMPDIR:-/tmp}/hakopod-neon-source.XXXXXXXX")
 archive="${output_directory}/neon-provider-source.tar.gz"
@@ -76,6 +82,10 @@ git -C "$source_directory" apply --check "$reconfigure_patch"
 git -C "$source_directory" apply "$reconfigure_patch"
 git -C "$source_directory" apply --check "$placement_patch"
 git -C "$source_directory" apply "$placement_patch"
+git -C "$source_directory" apply --check "$filesystem_patch"
+git -C "$source_directory" apply "$filesystem_patch"
+git -C "$source_directory" apply --check "$applying_delete_patch"
+git -C "$source_directory" apply "$applying_delete_patch"
 git -C "$source_directory" add -A
 [[ "$(git -C "$source_directory" write-tree)" == "$COMBINED_CANDIDATE_TREE" ]] || { echo "refusing archive: combined candidate tree mismatch" >&2; exit 1; }
 
@@ -116,6 +126,8 @@ rm -f -- "$archive_temporary"
   printf '%s  %s\n' "$TRANSPORT_PATCH_SHA256" "patches/neon-storage-tls.patch"
   printf '%s  %s\n' "$RECONFIGURE_PATCH_SHA256" "patches/neon-compute-reconfigure.patch"
   printf '%s  %s\n' "$PLACEMENT_PATCH_SHA256" "patches/neon-controller-placement.patch"
+  printf '%s  %s\n' "$FILESYSTEM_PATCH_SHA256" "patches/neon-layer-publish.patch"
+  printf '%s  %s\n' "$APPLYING_DELETE_PATCH_SHA256" "patches/neon-applying-delete.patch"
 } >"$output_directory/SHA256SUMS"
 cat >"$output_directory/provenance.txt" <<EOF
 upstream_repository=$UPSTREAM_REPOSITORY
@@ -127,6 +139,8 @@ consumer_patch_sha256=$CONSUMER_PATCH_SHA256
 transport_patch_sha256=$TRANSPORT_PATCH_SHA256
 reconfigure_patch_sha256=$RECONFIGURE_PATCH_SHA256
 placement_patch_sha256=$PLACEMENT_PATCH_SHA256
+filesystem_patch_sha256=$FILESYSTEM_PATCH_SHA256
+applying_delete_patch_sha256=$APPLYING_DELETE_PATCH_SHA256
 postgres_commit=$POSTGRES_COMMIT
 postgres_tree=$POSTGRES_TREE
 consumer_patch_id=$CONSUMER_PATCH_ID
