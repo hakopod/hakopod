@@ -35,7 +35,7 @@ expected_context=k3d-hakopod-dev
 : "${HAKOPOD_ACCEPTANCE_DISPOSABLE:?set HAKOPOD_ACCEPTANCE_DISPOSABLE=1 for an isolated disposable fixture}"
 [ "$HAKOPOD_ACCEPTANCE_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicit disposable fixture marker" >&2; exit 2; }
 [ "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_DISPOSABLE" = 1 ] || { echo "acceptance requires an explicitly disposable recovery target" >&2; exit 2; }
-for command in kubectl curl jq websocat sha256sum openssl python3 docker; do command -v "$command" >/dev/null 2>&1 || { echo "$command is required" >&2; exit 2; }; done
+for command in kubectl curl jq websocat sha256sum openssl python3 docker go timeout; do command -v "$command" >/dev/null 2>&1 || { echo "$command is required" >&2; exit 2; }; done
 kubectl_bin=$(command -v kubectl)
 kubectl() { command "$kubectl_bin" --request-timeout=15s "$@"; }
 context=$(kubectl --kubeconfig "$KUBECONFIG" config current-context)
