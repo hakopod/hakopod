@@ -98,6 +98,10 @@ def add_event(args):
  state=state_value(args.state);stream=load(args.events)
  if stream.get('schema_version')!=1 or stream.get('run_id')!=state['run_id'] or set(stream)!={'schema_version','run_id','events'} or not isinstance(stream['events'],list):raise ValueError('Supabase event stream belongs to another run')
  if args.case not in VERIFY['REQUIRED_CASES'] or any(item.get('case')==args.case for item in stream['events']):raise ValueError('Unknown or duplicate Supabase acceptance case')
+ if args.case=='edge-runtime-isolation':
+  observation=load(args.evidence)
+  expected={'unauthenticated_status':401,'invalid_token_status':401,'invalid_token_code':'UNAUTHORIZED_INVALID_JWT_FORMAT','authenticated_fixture':True}
+  if observation!=expected:raise ValueError('Supabase Edge authentication observation is invalid')
  elapsed=time.monotonic()-state['started_monotonic'];stream['events'].append({'sequence':len(stream['events'])+1,'case':args.case,'status':'passed','run_id':state['run_id'],'evidence_sha256':VERIFY['file_hash'](args.evidence),'elapsed_seconds':round(elapsed,3)});atomic_json(args.events,stream)
 
 def record_failure(args):

@@ -64,7 +64,7 @@ PY
   invalid_headers="$HAKOPOD_BEHAVIOR_EVIDENCE_DIR/edge-invalid-token.headers"
   invalid=$(curl_tls --silent --show-error --dump-header "$invalid_headers" --output "$invalid_body" --write-out '%{http_code}' "$HAKOPOD_BEHAVIOR_BASE_URL/functions/v1/hello" --header 'authorization: Bearer invalid')
   [ "$invalid" = 401 ] || { echo 'edge function accepted a malformed bearer token' >&2; exit 1; }
-  grep -Eiq '^sb-error-code:[[:space:]]*UNAUTHORIZED_INVALID_JWT_FORMAT\r?$' "$invalid_headers" || { echo 'edge function omitted the malformed-token error header' >&2; exit 1; }
+  tr -d '\r' <"$invalid_headers" | grep -Eiq '^sb-error-code:[[:space:]]*UNAUTHORIZED_INVALID_JWT_FORMAT$' || { echo 'edge function omitted the malformed-token error header' >&2; exit 1; }
   jq -e '.code=="UNAUTHORIZED_INVALID_JWT_FORMAT"' "$invalid_body" >/dev/null
   curl_tls --fail --silent --show-error "$HAKOPOD_BEHAVIOR_BASE_URL/functions/v1/hello" --header @"$HAKOPOD_BEHAVIOR_OWNER_HEADERS" | jq -e '. == {message:"Hello from Edge Functions!"}' >/dev/null
   rm -f "$invalid_body" "$invalid_headers"
