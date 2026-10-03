@@ -315,7 +315,7 @@ backend relay
   server relay 172.18.0.1:19443 ssl ca-file /bridge-config/ca.crt crt /bridge/client.pem verify required verifyhost 172.18.0.1 check
 \n""" + management_routes(platform_ids)
     config_name = "hakopod-neon-control-" + hashlib.sha256(config.encode()).hexdigest()[:16]
-    labels = {"app.kubernetes.io/name": "hakopod-server", "hakopod.io/native-acceptance": "neon"}
+    labels = {"app.kubernetes.io/name": "hakopod-neon-control", "hakopod.io/native-acceptance": "neon"}
     ports = [{"name":"https","containerPort":443}] + [{"name":"manage-"+str(port),"containerPort":port} for port in (6699,9898,7676,3081)]
     objects = [
       {"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":config_name,"namespace":NAMESPACE,"labels":labels},"immutable":True,"data":{"haproxy.cfg":config,"ca.crt":protected("ca.crt").decode()}},

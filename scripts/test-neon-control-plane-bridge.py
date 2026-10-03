@@ -155,7 +155,7 @@ class Tests(unittest.TestCase):
         self.assertIn("neon-compute-5-control.managed-platform-" + platform + ".svc.cluster.local:3081", config)
         self.assertNotIn("req.ssl_sni -i neon-pageserver-7.managed-platform-" + platform + ".svc.cluster.local", config)
         self.assertNotIn("ssl crt", config.split("frontend management_6699", 1)[1])
-        self.assertEqual(deployment["spec"]["template"]["metadata"]["labels"]["app.kubernetes.io/name"], "hakopod-server")
+        self.assertEqual(deployment["spec"]["template"]["metadata"]["labels"]["app.kubernetes.io/name"], "hakopod-neon-control")
         self.assertEqual(service["spec"]["ports"], [{"name":"https","port":443,"targetPort":"https"}])
         policy = next(item for item in objects if item["metadata"]["name"] == "hakopod-neon-control-egress")
         self.assertEqual(policy["spec"]["egress"][2]["to"][0]["namespaceSelector"]["matchExpressions"][0]["values"], [platform])
