@@ -136,6 +136,86 @@ class Tests(unittest.TestCase):
         self.assertEqual(rules[0]["ports"], [{"protocol": "TCP", "port": 443}])
         self.assertEqual(rules[0]["from"], [{"namespaceSelector": {"matchExpressions": [{"key": "hakopod.io/managed-platform-id", "operator": "In", "values": platforms}]}, "podSelector": {"matchExpressions": [{"key": "hakopod.io/neon-role", "operator": "In", "values": ["proxy", "storage-controller"]}]}}])
 
+    def test_management_bridge_is_exact_sni_passthrough_for_registered_platforms(self):
+        platform = "a" * 32
+        with mock.patch.object(BRIDGE, "protected", return_value=b"fixture"):
+            objects = json.loads(BRIDGE.manifest([platform]))["items"]
+        config = next(item for item in objects if item["kind"] == "ConfigMap")["data"]["haproxy.cfg"]
+        deployment = next(item for item in objects if item["kind"] == "Deployment")
+        service = next(item for item in objects if item["kind"] == "Service")
+        self.assertIn("parse-resolv-conf", config)
+        self.assertIn("tcp-request content accept if { req.ssl_hello_type 1 }", config)
+        self.assertNotIn("tcp-request content reject", config)
+        self.assertIn("req.ssl_sni -i neon-storage-controller.managed-platform-" + platform + ".svc", config)
+        self.assertIn("req.ssl_sni -i neon-pageserver-7.managed-platform-" + platform + ".svc", config)
+        self.assertIn("neon-pageserver-7.managed-platform-" + platform + ".svc.cluster.local:9898", config)
+        self.assertIn("neon-safekeeper-2.managed-platform-" + platform + ".svc.cluster.local:7676", config)
+        self.assertIn("neon-compute-5-control.managed-platform-" + platform + ".svc.cluster.local:3081", config)
+        self.assertNotIn("req.ssl_sni -i neon-pageserver-7.managed-platform-" + platform + ".svc.cluster.local", config)
+        self.assertNotIn("ssl crt", config.split("frontend management_6699", 1)[1])
+        self.assertEqual(deployment["spec"]["template"]["metadata"]["labels"]["app.kubernetes.io/name"], "hakopod-server")
+        self.assertEqual(service["spec"]["ports"], [{"name":"https","port":443,"targetPort":"https"}])
+        policy = next(item for item in objects if item["metadata"]["name"] == "hakopod-neon-control-egress")
+        self.assertEqual(policy["spec"]["egress"][2]["to"][0]["namespaceSelector"]["matchExpressions"][0]["values"], [platform])
+        self.assertEqual({item["port"] for item in policy["spec"]["egress"][1]["ports"]},{53})
+        self.assertIn("timeout server 90s",config)
+
+    def test_management_routes_reject_stale_or_unregistered_platforms(self):
+        with self.assertRaisesRegex(RuntimeError, "allowlist"):
+            BRIDGE.management_routes([])
+        with self.assertRaisesRegex(RuntimeError, "allowlist"):
+            BRIDGE.management_routes(["b"*32, "a"*32])
+        config = BRIDGE.management_routes(["a"*32])
+        self.assertNotIn("managed-platform-" + "b"*32, config)
+        for port in (6699,9898,7676,3081):
+            section = config.split("frontend management_"+str(port),1)[1].split("frontend management_",1)[0]
+            self.assertIn("tcp-request content accept if { req.ssl_hello_type 1 }", section)
+            self.assertNotIn("tcp-request content reject", section)
+
+    def test_management_config_is_immutable_and_content_changes_with_registration(self):
+        with mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
+            first=json.loads(BRIDGE.manifest(["a"*32]))["items"]
+            second=json.loads(BRIDGE.manifest(["a"*32,"b"*32]))["items"]
+        one=next(item for item in first if item["kind"]=="ConfigMap")
+        two=next(item for item in second if item["kind"]=="ConfigMap")
+        self.assertIs(one["immutable"],True)
+        self.assertNotEqual(one["data"]["haproxy.cfg"],two["data"]["haproxy.cfg"])
+        d1=next(item for item in first if item["kind"]=="Deployment")["spec"]["template"]["metadata"]["annotations"]
+        d2=next(item for item in second if item["kind"]=="Deployment")["spec"]["template"]["metadata"]["annotations"]
+        self.assertNotEqual(d1,d2)
+
+    def test_owned_spec_patch_binds_uid_and_resource_version(self):
+        resource="networkpolicy/hakopod-neon-control-ingress"; uid="1"*8+"-2222-3333-4444-555555555555"; install="b"*32
+        current={"metadata":{"uid":uid,"resourceVersion":"17","annotations":{BRIDGE.INSTALL_KEY:install}},"spec":{"old":True}}
+        desired={"spec":{"new":True}}
+        def kube(_config,*args,data=None):
+            if "patch" in args:
+                patch=json.loads(args[args.index("-p")+1])
+                self.assertEqual(patch[:2],[{"op":"test","path":"/metadata/uid","value":uid},{"op":"test","path":"/metadata/resourceVersion","value":"17"}])
+                current["spec"]=patch[2]["value"]; return "{}"
+            return json.dumps(current)
+        with mock.patch.object(BRIDGE,"kube",side_effect=kube):
+            BRIDGE.patch_owned_spec("/kubeconfig",BRIDGE.NAMESPACE,resource,current,desired,{"install_id":install,"uids":{resource:uid}})
+        foreign=copy.deepcopy(current);foreign["metadata"]["uid"]="2"*8+"-2222-3333-4444-555555555555"
+        with mock.patch.object(BRIDGE,"kube") as call, self.assertRaisesRegex(RuntimeError,"foreign"):
+            BRIDGE.patch_owned_spec("/kubeconfig",BRIDGE.NAMESPACE,resource,foreign,desired,{"install_id":install,"uids":{resource:uid}})
+        call.assert_not_called()
+
+    def test_bridge_update_admission_creates_only_new_config_and_candidate_pod(self):
+        with mock.patch.object(BRIDGE,"protected",return_value=b"fixture"):
+            objects=json.loads(BRIDGE.manifest(["a"*32]))["items"]
+        with mock.patch.object(BRIDGE,"kube") as kube:
+            BRIDGE.validate_bridge_update("/kubeconfig",objects,True)
+            args,kwargs=kube.call_args
+            self.assertIn("--dry-run=server",args)
+            candidates=json.loads(kwargs["data"])["items"]
+            self.assertEqual({item["kind"] for item in candidates},{"ConfigMap","Pod"})
+            self.assertNotIn("Deployment",{item["kind"] for item in candidates})
+            kube.reset_mock()
+            BRIDGE.validate_bridge_update("/kubeconfig",objects,False)
+            candidates=json.loads(kube.call_args.kwargs["data"])["items"]
+            self.assertEqual([item["kind"] for item in candidates],["Pod"])
+
     def proxy(self):
         platform = "a" * 32
         secret = "platform-tls-proxy-" + "b" * 16 + "-r1"
@@ -259,33 +339,20 @@ class Tests(unittest.TestCase):
                 BRIDGE.cleanup_owned("/kubeconfig", namespace, state, journal, resources)
             self.assertEqual(deleted, ["configmap/two"]); self.assertFalse(state.exists())
 
-    def test_allowlist_patch_conditions_reject_replaced_policy(self):
-        for drift in (None, "replacement", "spec"):
-            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory); (root/"allowed-platforms.json").write_text("fixture")
-                uid = "11111111-2222-3333-4444-555555555555"
-                prior = {"platform_ids":["a"*32], "install_id":"b"*32, "namespace_uid":uid, "uids":{name:uid for name in BRIDGE.BRIDGE_RESOURCES}}
-                owned = {"metadata":{"uid":uid,"resourceVersion":"17","annotations":{BRIDGE.INSTALL_KEY:prior["install_id"]}}}
-                patches = []
-                def kube(_config, *args, data=None):
-                    if "patch" in args:
-                        self.assertIn("--type=json", args)
-                        patch = json.loads(args[args.index("-p")+1]); patches.append(patch)
-                        self.assertEqual(patch[:2], [{"op":"test","path":"/metadata/uid","value":uid},{"op":"test","path":"/metadata/resourceVersion","value":"17"}])
-                        if drift == "replacement": raise RuntimeError("fixture JSON Patch UID test failed")
-                        owned["spec"] = {} if drift == "spec" else patch[2]["value"]
-                        return "{}"
-                    if "rollout" in args: return ""
-                    return json.dumps(owned)
-                with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"read_state",return_value=prior), mock.patch.object(BRIDGE,"recover_owned",return_value=prior["uids"]), mock.patch.object(BRIDGE,"observe",return_value=owned), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"), mock.patch.object(BRIDGE,"kube",side_effect=kube), mock.patch.object(BRIDGE,"write_state") as write:
-                    if drift:
-                        with self.assertRaisesRegex(RuntimeError,"UID test failed|specification changed"): BRIDGE.allow("/kubeconfig","c"*32)
-                        write.assert_not_called()
-                        self.assertEqual(prior["platform_ids"],["a"*32])
-                    else:
-                        BRIDGE.allow("/kubeconfig","c"*32)
-                        self.assertEqual(prior["platform_ids"],["a"*32,"c"*32])
-                self.assertEqual(len(patches),1)
+    def test_allow_registers_platform_before_owned_bridge_refresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root/"allowed-platforms.json").write_text("fixture")
+            uid = "11111111-2222-3333-4444-555555555555"
+            config_name="hakopod-neon-control-"+"1"*16
+            resources=BRIDGE.bridge_resources([config_name])
+            prior = {"platform_ids":["a"*32], "config_names":[config_name], "install_id":"b"*32, "namespace_uid":uid, "uids":{name:uid for name in resources}}
+            writes=[]
+            def refresh(_config,_state,value,_objects):
+                self.assertEqual(value["platform_ids"],["a"*32,"c"*32])
+                self.assertEqual(writes[-1]["platform_ids"],value["platform_ids"])
+            with mock.patch.object(BRIDGE,"ROOT",root), mock.patch.object(BRIDGE,"read_bridge_state",return_value=(prior,resources)), mock.patch.object(BRIDGE,"recover_owned",return_value=prior["uids"]), mock.patch.object(BRIDGE,"protected",return_value=b"fixture"), mock.patch.object(BRIDGE,"write_state",side_effect=lambda _p,v:writes.append(copy.deepcopy(v))), mock.patch.object(BRIDGE,"refresh_bridge",side_effect=refresh):
+                BRIDGE.allow("/kubeconfig","c"*32)
+            self.assertEqual(prior["platform_ids"],["a"*32,"c"*32])
 
 
 if __name__ == "__main__":

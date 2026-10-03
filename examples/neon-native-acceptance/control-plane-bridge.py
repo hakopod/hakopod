@@ -11,7 +11,7 @@ UNIT = "hakopod-neon-control-relay.service"
 POOL_KEY = "hakopod.com/pool"
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 INSTALL_KEY = "hakopod.io/native-acceptance-install"
-BRIDGE_RESOURCES = ("configmap/hakopod-neon-control", "secret/hakopod-neon-control-tls", "deployment/hakopod-neon-control", "service/hakopod-control", "networkpolicy/hakopod-neon-control-ingress", "networkpolicy/hakopod-neon-control-egress")
+BRIDGE_FIXED_RESOURCES = ("secret/hakopod-neon-control-tls", "deployment/hakopod-neon-control", "service/hakopod-control", "networkpolicy/hakopod-neon-control-ingress", "networkpolicy/hakopod-neon-control-egress")
 PROBE_RESOURCES = ("configmap/hakopod-neon-wrong-ca", "deployment/hakopod-neon-wrong-ca", "networkpolicy/hakopod-neon-wrong-ca-egress")
 
 def protected_policy_input(path):
@@ -108,6 +108,16 @@ def read_state(path, fields, resources):
         raise RuntimeError("helper ownership journal is invalid")
     return value
 
+def bridge_resources(config_names):
+    if not isinstance(config_names,list) or not 1 <= len(config_names) <= 3 or len(set(config_names)) != len(config_names) or any(not re.fullmatch(r"hakopod-neon-control-[0-9a-f]{16}",str(name)) for name in config_names):
+        raise RuntimeError("bridge configuration inventory is invalid")
+    return BRIDGE_FIXED_RESOURCES + tuple("configmap/"+name for name in config_names)
+
+def read_bridge_state(path):
+    value=json.loads(protected(path.name))
+    resources=bridge_resources(value.get("config_names"))
+    return read_state(path,{"platform_ids","config_names"},resources),resources
+
 def recover_owned(kubeconfig, namespace, path, value, resources):
     current = json.loads(kube(kubeconfig, "get", "namespace", namespace, "-o", "json"))
     if current["metadata"]["uid"] != value["namespace_uid"]:
@@ -131,6 +141,15 @@ def validate_manifests(kubeconfig, objects):
         template = item["spec"]["template"]
         candidates.append({"apiVersion":"v1", "kind":"Pod", "metadata":{**template["metadata"], "name":item["metadata"]["name"]+"-preflight", "namespace":item["metadata"]["namespace"]}, "spec":template["spec"]})
     kube(kubeconfig, "create", "--dry-run=server", "-f", "-", "-o", "name", data=json.dumps({"apiVersion":"v1", "kind":"List", "items":candidates}).encode())
+
+def validate_bridge_update(kubeconfig, objects, include_config):
+    deployment=next(item for item in objects if item["kind"]=="Deployment")
+    template=deployment["spec"]["template"]
+    pod={"apiVersion":"v1","kind":"Pod","metadata":{**template["metadata"],"name":"hakopod-neon-control-update-preflight","namespace":NAMESPACE},"spec":template["spec"]}
+    candidates=[pod]
+    if include_config:
+        candidates.append(next(item for item in objects if item["kind"]=="ConfigMap"))
+    kube(kubeconfig,"create","--dry-run=server","-f","-","-o","name",data=json.dumps({"apiVersion":"v1","kind":"List","items":candidates}).encode())
 
 def install_owned(kubeconfig, namespace, path, value, objects, resources):
     if path.exists(): raise RuntimeError("helper ownership journal already exists")
@@ -171,6 +190,65 @@ def cleanup_owned(kubeconfig, namespace, path, value, resources):
         time.sleep(1)
     path.unlink()
 
+def patch_owned_spec(kubeconfig, namespace, resource, current, desired, value):
+    meta = current.get("metadata", {})
+    if meta.get("uid") != value["uids"].get(resource) or meta.get("annotations", {}).get(INSTALL_KEY) != value["install_id"] or not meta.get("resourceVersion"):
+        raise RuntimeError("helper update refused foreign resource")
+    patch = [{"op":"test","path":"/metadata/uid","value":meta["uid"]},
+             {"op":"test","path":"/metadata/resourceVersion","value":meta["resourceVersion"]},
+             {"op":"replace","path":"/spec","value":desired["spec"]}]
+    kind,name = resource.split("/")
+    kube(kubeconfig, "-n", namespace, "patch", kind, name, "--type=json", "-p", json.dumps(patch,separators=(",",":")))
+    updated = json.loads(kube(kubeconfig, "-n", namespace, "get", resource, "-o", "json"))
+    if updated.get("metadata", {}).get("uid") != meta["uid"] or updated.get("metadata", {}).get("annotations", {}).get(INSTALL_KEY) != value["install_id"] or updated.get("spec") != desired["spec"]:
+        raise RuntimeError("helper update ownership or specification changed")
+
+def refresh_bridge(kubeconfig, path, value, objects):
+    desired = {item["kind"].lower()+"/"+item["metadata"]["name"]:item for item in objects}
+    wanted = next(item for item in objects if item["kind"] == "ConfigMap")
+    config_name = wanted["metadata"]["name"]
+    config_resource = "configmap/"+config_name
+    if config_name not in value["config_names"]:
+        # Persist the new owned name before creation so a lost response can be
+        # recovered by its unpredictable install marker without adopting a name.
+        value["config_names"].append(config_name)
+        value["config_names"].sort()
+        write_state(path,value)
+        validate_bridge_update(kubeconfig,objects,True)
+        wanted["metadata"].setdefault("annotations",{})[INSTALL_KEY]=value["install_id"]
+        created = json.loads(kube(kubeconfig,"create","-f","-","-o","json",data=json.dumps(wanted).encode()))
+        meta = created.get("metadata", {})
+        if not UID.fullmatch(str(meta.get("uid"))) or meta.get("annotations", {}).get(INSTALL_KEY) != value["install_id"]:
+            raise RuntimeError("bridge configuration create response differs")
+        value["uids"][config_resource]=meta["uid"]; write_state(path,value)
+    else:
+        validate_bridge_update(kubeconfig,objects,False)
+        current=observe(kubeconfig,NAMESPACE,config_resource)
+        if current is None or current.get("metadata",{}).get("uid") != value["uids"].get(config_resource) or current.get("metadata",{}).get("annotations",{}).get(INSTALL_KEY) != value["install_id"] or current.get("data") != wanted.get("data") or current.get("immutable") is not True:
+            raise RuntimeError("bridge configuration ownership or content changed")
+    deployment_resource = "deployment/hakopod-neon-control"
+    deployment = observe(kubeconfig,NAMESPACE,deployment_resource)
+    meta = deployment.get("metadata",{})
+    if meta.get("uid") != value["uids"].get(deployment_resource) or meta.get("annotations",{}).get(INSTALL_KEY) != value["install_id"] or not meta.get("resourceVersion"):
+        raise RuntimeError("bridge deployment ownership changed")
+    annotation = desired[deployment_resource]["spec"]["template"]["metadata"]["annotations"]["hakopod.io/bridge-config-sha256"]
+    volumes=deployment.get("spec",{}).get("template",{}).get("spec",{}).get("volumes",[])
+    indexes=[i for i,item in enumerate(volumes) if item.get("name")=="config"]
+    if len(indexes)!=1: raise RuntimeError("bridge deployment config mount changed")
+    patch = [{"op":"test","path":"/metadata/uid","value":meta["uid"]},
+             {"op":"test","path":"/metadata/resourceVersion","value":meta["resourceVersion"]},
+             {"op":"replace","path":"/spec/template/spec/volumes/"+str(indexes[0])+"/configMap/name","value":config_name},
+             {"op":"replace","path":"/spec/template/metadata/annotations/hakopod.io~1bridge-config-sha256","value":annotation}]
+    kube(kubeconfig,"-n",NAMESPACE,"patch","deployment","hakopod-neon-control","--type=json","-p",json.dumps(patch,separators=(",",":")))
+    updated = json.loads(kube(kubeconfig,"-n",NAMESPACE,"get",deployment_resource,"-o","json"))
+    updated_volumes=updated.get("spec",{}).get("template",{}).get("spec",{}).get("volumes",[])
+    if updated.get("metadata",{}).get("uid") != meta["uid"] or updated.get("metadata",{}).get("annotations",{}).get(INSTALL_KEY) != value["install_id"] or updated.get("spec",{}).get("template",{}).get("metadata",{}).get("annotations",{}).get("hakopod.io/bridge-config-sha256") != annotation or len(updated_volumes) <= indexes[0] or updated_volumes[indexes[0]].get("configMap",{}).get("name") != config_name:
+        raise RuntimeError("bridge deployment rollout identity changed")
+    for resource in ("networkpolicy/hakopod-neon-control-ingress", "networkpolicy/hakopod-neon-control-egress"):
+        current = observe(kubeconfig,NAMESPACE,resource)
+        patch_owned_spec(kubeconfig,NAMESPACE,resource,current,desired[resource],value)
+    kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
+
 def start_host():
     runtime = ROOT / "host-runtime"
     runtime.mkdir(mode=0o750, exist_ok=True)
@@ -201,6 +279,25 @@ backend api
     subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     run(["systemd-run", "--unit=" + UNIT.removesuffix(".service"), "--property=RuntimeMaxSec=3h", "--property=MemoryMax=134217728", "--property=CPUQuota=50%", "--property=NoNewPrivileges=yes", "docker", "run", "--rm", "--network", "host", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--mount", "type=bind,src=" + str(runtime) + ",dst=/bridge,readonly", IMAGE, "haproxy", "-W", "-db", "-f", "/bridge/haproxy.cfg"])
 
+def management_routes(platform_ids):
+    if not isinstance(platform_ids, list) or not 1 <= len(platform_ids) <= 3 or platform_ids != sorted(set(platform_ids)) or any(not ID.fullmatch(str(value)) for value in platform_ids):
+        raise RuntimeError("bridge platform allowlist is invalid")
+    groups = {6699:["neon-storage-controller"], 9898:["neon-pageserver-"+str(i) for i in range(8)],
+              7676:["neon-safekeeper-"+str(i) for i in range(3)], 3081:["neon-compute-"+str(i)+"-control" for i in range(6)]}
+    lines = ["resolvers kube", "  parse-resolv-conf", "  timeout resolve 1s", "  timeout retry 1s", "  hold valid 1s", ""]
+    for port, services in groups.items():
+        routes = [(service+".managed-platform-"+platform_id+".svc",
+                   service+".managed-platform-"+platform_id+".svc.cluster.local",
+                   "route_"+str(port)+"_"+platform_id+"_"+service.replace("-","_"))
+                  for platform_id in platform_ids for service in services]
+        lines += ["frontend management_"+str(port), "  bind :"+str(port), "  mode tcp", "  timeout client 90s", "  tcp-request inspect-delay 5s",
+                  "  tcp-request content accept if { req.ssl_hello_type 1 }"]
+        lines += ["  use_backend "+backend+" if { req.ssl_sni -i "+sni+" }" for sni,unused,backend in routes]
+        lines += [""]
+        for unused,target,backend in routes:
+            lines += ["backend "+backend, "  mode tcp", "  timeout connect 2s", "  timeout server 90s", "  server target "+target+":"+str(port)+" resolvers kube init-addr last,libc,none", ""]
+    return "\n".join(lines)
+
 def manifest(platform_ids, scheduling=None):
     config = """global
   maxconn 64
@@ -216,15 +313,17 @@ frontend service
   default_backend relay
 backend relay
   server relay 172.18.0.1:19443 ssl ca-file /bridge-config/ca.crt crt /bridge/client.pem verify required verifyhost 172.18.0.1 check
-"""
-    labels = {"app.kubernetes.io/name": "hakopod-neon-control", "hakopod.io/native-acceptance": "neon"}
+\n""" + management_routes(platform_ids)
+    config_name = "hakopod-neon-control-" + hashlib.sha256(config.encode()).hexdigest()[:16]
+    labels = {"app.kubernetes.io/name": "hakopod-server", "hakopod.io/native-acceptance": "neon"}
+    ports = [{"name":"https","containerPort":443}] + [{"name":"manage-"+str(port),"containerPort":port} for port in (6699,9898,7676,3081)]
     objects = [
-      {"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"hakopod-neon-control","namespace":NAMESPACE,"labels":labels},"immutable":True,"data":{"haproxy.cfg":config,"ca.crt":protected("ca.crt").decode()}},
+      {"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":config_name,"namespace":NAMESPACE,"labels":labels},"immutable":True,"data":{"haproxy.cfg":config,"ca.crt":protected("ca.crt").decode()}},
       {"apiVersion":"v1","kind":"Secret","metadata":{"name":"hakopod-neon-control-tls","namespace":NAMESPACE,"labels":labels},"type":"Opaque","immutable":True,"data":{name:base64.b64encode(protected(name)).decode() for name in ("service.pem","client.pem")}},
-      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"hakopod-neon-control","namespace":NAMESPACE,"labels":labels},"spec":{"replicas":1,"selector":{"matchLabels":labels},"template":{"metadata":{"labels":labels},"spec":{"automountServiceAccountToken":False,"enableServiceLinks":False,"securityContext":{"runAsNonRoot":True,"runAsUser":99,"runAsGroup":99,"fsGroup":99,"sysctls":[{"name":"net.ipv4.ip_unprivileged_port_start","value":"0"}],"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"bridge","image":IMAGE,"imagePullPolicy":"IfNotPresent","args":["haproxy","-W","-db","-f","/bridge-config/haproxy.cfg"],"ports":[{"name":"https","containerPort":443}],"readinessProbe":{"tcpSocket":{"port":"https"},"periodSeconds":2,"timeoutSeconds":1},"resources":{"requests":{"cpu":"25m","memory":"32Mi"},"limits":{"cpu":"100m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":False,"readOnlyRootFilesystem":True,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"config","mountPath":"/bridge-config","readOnly":True},{"name":"tls","mountPath":"/bridge","readOnly":True}]}],"volumes":[{"name":"config","configMap":{"name":"hakopod-neon-control","items":[{"key":"haproxy.cfg","path":"haproxy.cfg"},{"key":"ca.crt","path":"ca.crt"}],"defaultMode":288}},{"name":"tls","secret":{"secretName":"hakopod-neon-control-tls","items":[{"key":"service.pem","path":"service.pem"},{"key":"client.pem","path":"client.pem"}],"defaultMode":288}}]}}}},
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"hakopod-neon-control","namespace":NAMESPACE,"labels":labels},"spec":{"replicas":1,"selector":{"matchLabels":labels},"template":{"metadata":{"labels":labels,"annotations":{"hakopod.io/bridge-config-sha256":hashlib.sha256(config.encode()).hexdigest()}},"spec":{"automountServiceAccountToken":False,"enableServiceLinks":False,"securityContext":{"runAsNonRoot":True,"runAsUser":99,"runAsGroup":99,"fsGroup":99,"sysctls":[{"name":"net.ipv4.ip_unprivileged_port_start","value":"0"}],"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"bridge","image":IMAGE,"imagePullPolicy":"IfNotPresent","args":["haproxy","-W","-db","-f","/bridge-config/haproxy.cfg"],"ports":ports,"readinessProbe":{"tcpSocket":{"port":"https"},"periodSeconds":2,"timeoutSeconds":1},"resources":{"requests":{"cpu":"25m","memory":"32Mi"},"limits":{"cpu":"100m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":False,"readOnlyRootFilesystem":True,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"config","mountPath":"/bridge-config","readOnly":True},{"name":"tls","mountPath":"/bridge","readOnly":True}]}],"volumes":[{"name":"config","configMap":{"name":config_name,"items":[{"key":"haproxy.cfg","path":"haproxy.cfg"},{"key":"ca.crt","path":"ca.crt"}],"defaultMode":288}},{"name":"tls","secret":{"secretName":"hakopod-neon-control-tls","items":[{"key":"service.pem","path":"service.pem"},{"key":"client.pem","path":"client.pem"}],"defaultMode":288}}]}}}},
       {"apiVersion":"v1","kind":"Service","metadata":{"name":"hakopod-control","namespace":NAMESPACE,"labels":labels},"spec":{"selector":labels,"ports":[{"name":"https","port":443,"targetPort":"https"}]}},
       {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-ingress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Ingress"],"ingress":[{"from":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["proxy","storage-controller"]}]}}],"ports":[{"protocol":"TCP","port":443}]}]}},
-      {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-egress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Egress"],"egress":[{"to":[{"ipBlock":{"cidr":"172.18.0.1/32"}}],"ports":[{"protocol":"TCP","port":19443}]}]}}
+      {"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"hakopod-neon-control-egress","namespace":NAMESPACE,"labels":labels},"spec":{"podSelector":{"matchLabels":labels},"policyTypes":["Egress"],"egress":[{"to":[{"ipBlock":{"cidr":"172.18.0.1/32"}}],"ports":[{"protocol":"TCP","port":19443}]},{"to":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"kube-system"}}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},{"to":[{"namespaceSelector":{"matchExpressions":[{"key":"hakopod.io/managed-platform-id","operator":"In","values":platform_ids}]},"podSelector":{"matchExpressions":[{"key":"hakopod.io/neon-role","operator":"In","values":["storage-controller","pageserver","safekeeper","compute"]}]}}],"ports":[{"protocol":"TCP","port":port} for port in (6699,9898,7676,3081)]}]}}
     ]
     next(item for item in objects if item["kind"] == "Deployment")["spec"]["template"]["spec"].update(scheduling or {})
     return json.dumps({"apiVersion":"v1","kind":"List","items":objects}, separators=(",", ":")).encode()
@@ -233,7 +332,7 @@ def allow(kubeconfig, platform_id, scheduling=None):
     if not ID.fullmatch(platform_id):
         raise RuntimeError("platform identity is malformed")
     state = ROOT / "allowed-platforms.json"
-    prior = read_state(state, {"platform_ids"}, BRIDGE_RESOURCES) if state.exists() else None
+    prior,resources = read_bridge_state(state) if state.exists() else (None,None)
     values = prior["platform_ids"] if prior else []
     if not isinstance(values, list) or len(values) > 3 or any(not ID.fullmatch(str(value)) for value in values):
         raise RuntimeError("bridge platform allowlist is invalid")
@@ -241,33 +340,33 @@ def allow(kubeconfig, platform_id, scheduling=None):
     if len(values) > 3 or any(not ID.fullmatch(value) for value in values):
         raise RuntimeError("bridge platform allowlist is invalid")
     if prior is None:
-        prior = install_owned(kubeconfig, NAMESPACE, state, {"platform_ids":values}, json.loads(manifest(values, scheduling))["items"], BRIDGE_RESOURCES)
+        objects=json.loads(manifest(values,scheduling))["items"]
+        config_name=next(item for item in objects if item["kind"]=="ConfigMap")["metadata"]["name"]
+        resources=bridge_resources([config_name])
+        prior = install_owned(kubeconfig, NAMESPACE, state, {"platform_ids":values,"config_names":[config_name]}, objects, resources)
     else:
-        if set(recover_owned(kubeconfig, NAMESPACE, state, prior, BRIDGE_RESOURCES)) != set(BRIDGE_RESOURCES):
+        if set(recover_owned(kubeconfig, NAMESPACE, state, prior, resources)) != set(resources):
             raise RuntimeError("bridge install is incomplete; cleanup is required")
         if scheduling:
             current = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "deployment", "hakopod-neon-control", "-o", "json"))
             pod = current["spec"]["template"]["spec"]
             if {key:pod[key] for key in ("nodeSelector", "tolerations", "runtimeClassName", "affinity") if key in pod} != scheduling or pod.get("nodeName"):
                 raise RuntimeError("existing bridge scheduling differs")
-        policy = next(item for item in json.loads(manifest(values))["items"] if item["kind"] == "NetworkPolicy" and item["metadata"]["name"] == "hakopod-neon-control-ingress")
-        owned = observe(kubeconfig, NAMESPACE, "networkpolicy/hakopod-neon-control-ingress")
-        if owned is None or owned["metadata"]["uid"] != prior["uids"]["networkpolicy/hakopod-neon-control-ingress"] or owned["metadata"].get("annotations", {}).get(INSTALL_KEY) != prior["install_id"]:
-            raise RuntimeError("bridge ingress policy ownership changed")
-        patch = [{"op":"test", "path":"/metadata/uid", "value":owned["metadata"]["uid"]}, {"op":"test", "path":"/metadata/resourceVersion", "value":owned["metadata"]["resourceVersion"]}, {"op":"replace", "path":"/spec", "value":policy["spec"]}]
-        kube(kubeconfig, "-n", NAMESPACE, "patch", "networkpolicy", "hakopod-neon-control-ingress", "--type=json", "-p", json.dumps(patch, separators=(",", ":")))
-        updated = json.loads(kube(kubeconfig, "-n", NAMESPACE, "get", "networkpolicy", "hakopod-neon-control-ingress", "-o", "json"))
-        if updated["metadata"]["uid"] != prior["uids"]["networkpolicy/hakopod-neon-control-ingress"] or updated["metadata"].get("annotations", {}).get(INSTALL_KEY) != prior["install_id"] or updated.get("spec") != policy["spec"]:
-            raise RuntimeError("bridge ingress policy ownership or specification changed")
+        prior["platform_ids"] = values; write_state(state, prior)
+        refresh_bridge(kubeconfig,state,prior,json.loads(manifest(values,scheduling))["items"])
     prior["platform_ids"] = values; write_state(state, prior)
-    kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
+    if len(values)==1:
+        kube(kubeconfig, "-n", NAMESPACE, "rollout", "status", "deployment/hakopod-neon-control", "--timeout=180s")
 
 def cleanup(kubeconfig):
     state = ROOT / "allowed-platforms.json"
     if state.exists():
-        cleanup_owned(kubeconfig, NAMESPACE, state, read_state(state, {"platform_ids"}, BRIDGE_RESOURCES), BRIDGE_RESOURCES)
-    elif any(observe(kubeconfig, NAMESPACE, resource) is not None for resource in BRIDGE_RESOURCES):
-        raise RuntimeError("bridge resources exist without an ownership journal")
+        value,resources=read_bridge_state(state)
+        cleanup_owned(kubeconfig,NAMESPACE,state,value,resources)
+    else:
+        configs=json.loads(kube(kubeconfig,"-n",NAMESPACE,"get","configmaps","-l","hakopod.io/native-acceptance=neon","-o","json")).get("items",[])
+        if len(configs)>3 or configs or any(observe(kubeconfig, NAMESPACE, resource) is not None for resource in BRIDGE_FIXED_RESOURCES):
+            raise RuntimeError("bridge resources exist without an ownership journal")
     subprocess.run(["systemctl", "stop", UNIT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     state.unlink(missing_ok=True)
 
