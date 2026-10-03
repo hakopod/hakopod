@@ -6,7 +6,9 @@ The version 2 qualification manifest records `release_runtime_qualified` only wh
 
 The record binds the upstream Neon repository and commit, the reproducible archive digest, byte size, member count and ordering checks, the reviewed patches and their frozen combined tree, and a complete Hakopod source inventory. That inventory covers `internal`, `auth`, `templates`, `cmd`, `hack`, `scripts`, the Go module files, and the Neon recorder, verifier and qualification document. Generated qualification output is outside the inventory, avoiding a circular manifest.
 
-The build report is a schema-versioned JSON object. It must identify native `linux/amd64`, the upstream source and candidate tree, archive metadata, all reviewed patch hashes, all eight component image references, and the UID/GID bound to each component image. The patches cover proxy timeouts, ownership, PostgreSQL compatibility, storage TLS, compute reconfiguration and committed controller placement. Each of the `storage`, `compute-tools`, and `compute-runtime` stages must provide an immutable published image reference, manifest and config digests, and a complete absolute-path binary hash map. Rejected archives listed in `hack/managed-neon/source-metadata.toml` are not accepted by substituting their digest for the canonical archive.
+The build report is a schema-versioned JSON object. It identifies native `linux/amd64`, the upstream source and candidate tree, archive metadata, every reviewed patch hash, all eight component image references, and the UID/GID bound to each image. The patches cover proxy timeouts, ownership, PostgreSQL compatibility, storage TLS, compute reconfiguration, committed controller placement, storage-file publication on shared sandbox mounts and deletion after interrupted creation.
+
+Each of the `storage`, `compute-tools`, and `compute-runtime` stages must provide a published image digest, its manifest and config digests, and hashes for every required binary. Archives listed as rejected in `hack/managed-neon/source-metadata.toml` remain ineligible for qualification.
 
 ## Selected PostgreSQL source and rejected prebuilt candidate
 
@@ -20,9 +22,25 @@ An official base and separately built tools have different source provenance. An
 
 Reusing a prebuilt base would require a reviewed build-record change, a current security baseline and the same native acceptance checks. Its capture must also check each added binary's ELF interpreter, shared libraries and required symbol versions against the exact base filesystem before assembly. Downloading or assembling an image does not enable a runtime capability.
 
+## Storage on sandboxed volumes
+
+Neon normally publishes a completed layer with `renameat2(RENAME_NOREPLACE)`. gVisor [rejects that flag on shared mounts](https://github.com/google/gvisor/blob/master/pkg/sentry/fsimpl/gofer/filesystem.go), which are its [default for bind mounts](https://gvisor.dev/docs/user_guide/filesystem/#exclusive-bind-mounts). The layer-publication patch handles that specific `EINVAL` response by creating a hard link without replacing an existing destination. It syncs the destination directory before removing the temporary name, then syncs the source directory.
+
+The fallback accepts only regular source files. Other rename errors remain errors. If linking, syncing or removing the temporary name fails, it preserves the remaining names for recovery. Focused tests cover overwrite refusal and the durability failure paths; native acceptance must also pass with the exact patched image and sandbox runtime. The patch does not change the sandbox's mount policy.
+
+## Deletion after interrupted creation
+
+A timeline can fail before Neon finishes creating its storage. The deletion patch lets the controller clean up that unfinished timeline when its durable ownership record matches the tenant, timeline, token and original request. The controller holds the tenant lock while checking provider ownership. A completed timeline still requires its recorded storage; only an unfinished creation may have no storage yet.
+
+The pageserver validates the full deletion plan before changing data. After the tenant deletion fence is in place, it uses conditional writes to reserve any missing ownership record and record its deletion. Existing records must match exactly. The unfinished state survives a retry, so a crash during cleanup does not turn missing storage into a new ownership conflict. Qualification must cover partial creation, retries and refusal of conflicting ownership as well as normal deletion.
+
+The controller migration preserves unfinished deletion records and their tombstones. Once these records exist, rolling back to the previous schema is refused because that schema cannot represent them. The rollback does not remove or rewrite ownership records. Keep a compatible controller image available for recovery.
+
 ## Native acceptance
 
 The native report must come from context `k3d-hakopod-dev` with at least three named nodes and carry identical source inventories before and after the run. It binds the committed runner and producer hashes, a unique run ID, bounded elapsed time, cluster UID, exact images, and observed process identities. The source, recovery target and separate cancellation target each bind their platform ID, namespace UID and successful create operation. Finalization independently checks namespace and persistent-volume absence for all three.
+
+The interrupted-create check requests a branch whose ancestor does not exist. It requires the provider's specific failure, an unfinished ownership record and no timeline data. It then deletes the parent through Hakopod's normal reviewed API and checks the matching tombstone, tenant fence, namespace and volume removal. Another admitted platform must retain its identity and SQL data, and refuse the deleted platform's credentials and ownership authority. Protected request and response witnesses are checked again when the report is finalized.
 
 The fixed observations cover ownership capability, server certificates, client-side certificate and hostname checks, plaintext refusal, tenant/timeline/compute lifecycle, tenant isolation, scoped SQL authentication, connection limits, primary and replica behavior, WAL quorum fencing, controller recovery, object-store outage handling, backup/recovery, restart/failure and cancellation cleanup. Native TLS inspection includes the HTTPS broker and the PostgreSQL controller database in addition to the storage-controller, pageserver, safekeeper, compute-control and proxy listeners. It requires verified owned hostnames and independently rejects an empty trust pool, a mismatched hostname and plaintext. The SQL checks use distinct protected passwords for the source, recovery target and cancellation target. They require invalid and cross-platform credentials to fail through the proxy, while keeping password values out of command arguments and evidence. These checks do not establish mutual TLS.
 
