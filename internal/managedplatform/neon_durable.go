@@ -1738,6 +1738,16 @@ func (r *DurableNeonRuntime) inspectTimeline(ctx context.Context, tenantID, time
 	if status == http.StatusNotFound {
 		return false, "", nil
 	}
+	if status == http.StatusServiceUnavailable {
+		// The controller's detailed endpoint maps a missing pageserver
+		// timeline to 503. Its canonical endpoint preserves timeline 404s
+		// while converting missing tenants to 503. Only that 404 proves
+		// absence; a successful fallback cannot establish ownership.
+		_, canonicalStatus, canonicalErr := r.control.request(ctx, r.control.config.StorageController, http.MethodGet, "/v1/tenant/"+tenantID+"/timeline/"+timelineID, nil)
+		if canonicalErr == nil && canonicalStatus == http.StatusNotFound {
+			return false, "", nil
+		}
+	}
 	if status != http.StatusOK {
 		return false, "", fmt.Errorf("Neon timeline inspection returned HTTP %d", status)
 	}
