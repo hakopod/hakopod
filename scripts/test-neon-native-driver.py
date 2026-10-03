@@ -87,8 +87,46 @@ class Tests(unittest.TestCase):
             driver.command(["true","bad\x00argument"])
         observed=driver.command([os.environ.get("PYTHON","python3"),"-c","import sys; sys.stderr.write('classified failure'); raise SystemExit(3)"],expected=(3,),capture_stderr=True)
         self.assertEqual(observed,"classified failure")
+    @mock.patch.object(DRIVER.subprocess,"Popen")
+    def test_command_terminates_child_when_signal_interrupts_wait(self,popen):
+        process=mock.MagicMock(); process.communicate.side_effect=DRIVER.TerminationRequested("stop"); popen.return_value=process
+        driver=self.bare_driver()
+        with self.assertRaises(DRIVER.TerminationRequested): driver.command(["command"])
+        process.terminate.assert_called_once(); process.wait.assert_called_once_with(timeout=5)
     def bare_driver(self):
         driver=DRIVER.Driver.__new__(DRIVER.Driver); driver.a=mock.Mock(api_url="http://127.0.0.1:8800"); driver.token="protected-token-value"; return driver
+    def test_create_tracks_accepted_operation_and_binds_namespace_before_failure(self):
+        driver=self.bare_driver(); driver.a.project="native-neon"; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.platforms=[]; driver.bound={}
+        pid,opid="a"*32,"b"*32; spec=neon("source","source-prefix")
+        review={"blocked":False,"platform":{"id":pid,"project":"native-neon","environment":"development","spec":spec},"review":{"id":"c"*32,"expected_revision":0}}
+        driver.api=mock.Mock(side_effect=[review,{"id":opid,"platform_id":pid,"kind":"create"},{"status":"failed"}]); driver.command=mock.Mock(return_value="")
+        driver.k=mock.Mock(return_value=json.dumps({"metadata":{"name":"managed-platform-"+pid,"uid":"namespace-uid","labels":{"hakopod.io/owner-operation-id":opid}}}))
+        with self.assertRaisesRegex(RuntimeError,"terminal state"): driver.create(spec)
+        self.assertEqual(driver.platforms,[(pid,"source",opid)]); self.assertEqual(driver.bound[pid],("namespace-uid",opid))
+    def test_claim_namespace_fails_closed_on_foreign_operation(self):
+        driver=self.bare_driver(); driver.bound={}; pid,opid="a"*32,"b"*32
+        driver.k=mock.Mock(return_value=json.dumps({"metadata":{"name":"managed-platform-"+pid,"uid":"foreign-uid","labels":{"hakopod.io/owner-operation-id":"c"*32}}}))
+        with self.assertRaisesRegex(RuntimeError,"ownership differs"): driver.claim_namespace(pid,opid)
+        self.assertEqual(driver.bound,{})
+    def test_cleanup_rejects_owned_namespace_persistent_volume_claim(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[("a"*32,"source","b"*32)]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None
+            driver.claim_namespace=mock.Mock(return_value=False); driver.delete=mock.Mock(); driver.command=mock.Mock(return_value="")
+            namespace="managed-platform-"+"a"*32
+            driver.k=mock.Mock(side_effect=["",json.dumps({"items":[{"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}]})])
+            with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+            driver.delete.assert_called_once_with("a"*32,"source",240)
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
+    def test_main_records_termination_and_suppresses_reentrant_signals_during_cleanup(self):
+        driver=mock.Mock(); driver.run.side_effect=DRIVER.TerminationRequested("termination signal received")
+        handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
+        def install(number,handler):
+            previous=handlers[number]; handlers[number]=handler; return previous
+        with mock.patch.object(DRIVER,"parse",return_value=mock.Mock()), mock.patch.object(DRIVER,"Driver",return_value=driver), mock.patch.object(DRIVER.signal,"signal",side_effect=install) as signal_call:
+            self.assertEqual(DRIVER.main([]),1)
+        driver.record_failure.assert_called_once_with("termination-requested"); driver.cleanup.assert_called_once()
+        ignored=[call for call in signal_call.call_args_list if call.args[1] is DRIVER.signal.SIG_IGN]
+        self.assertEqual({call.args[0] for call in ignored},{DRIVER.signal.SIGINT,DRIVER.signal.SIGTERM})
     def test_runtime_uses_neon_roles_and_numbered_services(self):
         driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix")
         roles=("storage-controller","pageserver","safekeeper","compute","proxy")
@@ -356,10 +394,13 @@ class Tests(unittest.TestCase):
         self.assertEqual(driver.object_store_fault.call_args_list,[mock.call("stop"),mock.call("start")])
         self.assertEqual(driver.api.call_args_list[-1].args[1],"/api/v1/managed-platform-recovery-operations/"+"c"*32+"/cancel")
     def test_cleanup_records_lifecycle_only_after_namespaces_are_absent(self):
-        driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.pending_lifecycle={"created":True,"branch_created":True}; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"
-        driver.record=mock.Mock(); driver.command=mock.Mock(return_value=""); driver.cleanup()
-        driver.record.assert_called_once_with("tenant-timeline-compute-lifecycle",{"created":True,"stopped":True,"deleted":True,"branch_created":True,"branch_deleted":True})
-        self.assertIsNone(driver.pending_lifecycle)
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="a"*32; driver.pending_lifecycle={"created":True,"branch_created":True}; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.cleanup_started=False; driver.cleanup_completed=False; driver.evidence=Path(directory)
+            driver.record=mock.Mock(); driver.command=mock.Mock(return_value=""); driver.k=mock.Mock(return_value=json.dumps({"items":[]})); driver.cleanup()
+            driver.record.assert_called_once_with("tenant-timeline-compute-lifecycle",{"created":True,"stopped":True,"deleted":True,"branch_created":True,"branch_deleted":True})
+            self.assertIsNone(driver.pending_lifecycle); self.assertTrue(driver.cleanup_completed)
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text())
+            self.assertTrue(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["status"],"verified")
     def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
         driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
         value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
