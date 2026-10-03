@@ -303,9 +303,14 @@ PY
 capture_logs before-replacement
 
 port=${HAKOPOD_ACCEPTANCE_LOCAL_PORT:-18443}
-port_forward_log=$work_dir/port-forward.log
-kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" port-forward service/api-gw "$port:8443" >"$port_forward_log" 2>&1 &
+gateway_image=$(jq -er '.["api-gateway"]' "$HAKOPOD_ACCEPTANCE_IMAGES")
+port_forward_log=$work_dir/gateway-stream.log
+port_ready=$work_dir/gateway-stream.ready
+python3 "$script_dir/gateway-stream.py" --kubeconfig "$KUBECONFIG" --context "$expected_context" --namespace "$namespace" --namespace-uid "$namespace_uid" --platform-id "$HAKOPOD_ACCEPTANCE_PLATFORM_ID" --image "$gateway_image" --listen-port "$port" --ready-file "$port_ready" >"$port_forward_log" 2>&1 &
 forward_pid=$!
+tries=0
+until [ -s "$port_ready" ] && kill -0 "$forward_pid" 2>/dev/null; do tries=$((tries+1)); [ "$tries" -lt 20 ] || { echo "Supabase gateway stream did not become ready" >&2; exit 1; }; sleep 1; done
+[ "$(cat "$port_ready")" = "$port" ] || { echo "Supabase gateway stream bound an unexpected port" >&2; exit 1; }
 base=https://$gateway_host:$port
 curl_tls="--noproxy $gateway_host --resolve $gateway_host:$port:127.0.0.1 --cacert $HAKOPOD_ACCEPTANCE_GATEWAY_CA"
 tries=0
@@ -600,8 +605,11 @@ kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace"
 kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" rollout status deployment --timeout=5m >/dev/null
 kill "$forward_pid" 2>/dev/null || true
 wait "$forward_pid" 2>/dev/null || true
-kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" port-forward service/api-gw "$port:8443" >"$port_forward_log" 2>&1 &
+rm -f "$port_ready"
+python3 "$script_dir/gateway-stream.py" --kubeconfig "$KUBECONFIG" --context "$expected_context" --namespace "$namespace" --namespace-uid "$namespace_uid" --platform-id "$HAKOPOD_ACCEPTANCE_PLATFORM_ID" --image "$gateway_image" --listen-port "$port" --ready-file "$port_ready" >"$port_forward_log" 2>&1 &
 forward_pid=$!
+tries=0
+until [ -s "$port_ready" ] && kill -0 "$forward_pid" 2>/dev/null; do tries=$((tries+1)); [ "$tries" -lt 20 ] || { echo "Supabase gateway stream did not refresh after restart" >&2; exit 1; }; sleep 1; done
 tries=0
 until curl $curl_tls --fail --silent --max-time 2 "$base/auth/v1/health" >/dev/null; do tries=$((tries+1)); [ "$tries" -lt 30 ] || { echo "Supabase gateway did not return after restart" >&2; exit 1; }; sleep 1; done
 edge_fixture_after=$(kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$namespace" exec deployment/supabase-edge-runtime -- sha256sum /home/deno/functions/hello/index.ts | awk '{print $1}')
@@ -716,8 +724,11 @@ printf '%s' "$target_namespace_json" | jq -e --arg id "$HAKOPOD_ACCEPTANCE_RECOV
 target_platform=$(curl --max-filesize 1048576 --fail --silent --show-error --max-time 10 "$HAKOPOD_ACCEPTANCE_API_URL/api/v1/managed-platforms/$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_ID" --header @"$api_headers")
 target_host=$(printf '%s' "$target_platform" | jq -er '.spec.supabase.public_url | sub("^https://";"") | sub("/$";"")')
 target_port=$((port+1))
-kubectl --kubeconfig "$KUBECONFIG" --context "$expected_context" -n "$target_namespace" port-forward service/api-gw "$target_port:8443" >"$work_dir/recovery-port-forward.log" 2>&1 &
+target_port_ready=$work_dir/recovery-gateway-stream.ready
+python3 "$script_dir/gateway-stream.py" --kubeconfig "$KUBECONFIG" --context "$expected_context" --namespace "$target_namespace" --namespace-uid "$target_namespace_uid" --platform-id "$HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_ID" --image "$gateway_image" --listen-port "$target_port" --ready-file "$target_port_ready" >"$work_dir/recovery-gateway-stream.log" 2>&1 &
 recovery_forward_pid=$!
+tries=0
+until [ -s "$target_port_ready" ] && kill -0 "$recovery_forward_pid" 2>/dev/null; do tries=$((tries+1)); [ "$tries" -lt 20 ] || { echo "restored Supabase gateway stream did not become ready" >&2; exit 1; }; sleep 1; done
 target_base=https://$target_host:$target_port
 target_curl_tls="--noproxy $target_host --resolve $target_host:$target_port:127.0.0.1 --cacert $HAKOPOD_ACCEPTANCE_RECOVERY_TARGET_GATEWAY_CA"
 tries=0
