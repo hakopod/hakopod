@@ -56,6 +56,7 @@ exec python3 "$script_dir/driver.py" --source "$repo_root" --kubeconfig "$KUBECO
   --runtime-spec-digest-helper "$HAKOPOD_ACCEPTANCE_RUNTIME_SPEC_DIGEST_HELPER" \
   --control-psql-command-file "$HAKOPOD_ACCEPTANCE_CONTROL_PSQL_COMMAND_FILE" \
   --control-plane-bridge "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE" \
+  --scheduling-policy "${HAKOPOD_ACCEPTANCE_SCHEDULING_POLICY:-}" \
   --object-store-fault-command-file "$HAKOPOD_ACCEPTANCE_OBJECT_STORE_FAULT_COMMAND_FILE" \
   --psql "$HAKOPOD_ACCEPTANCE_PSQL" --source-proxy-password-file "$HAKOPOD_ACCEPTANCE_SOURCE_PROXY_PASSWORD_FILE" \
   --target-proxy-password-file "$HAKOPOD_ACCEPTANCE_TARGET_PROXY_PASSWORD_FILE" \
