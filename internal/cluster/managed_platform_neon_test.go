@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -111,6 +112,58 @@ func TestNeonDeleteDoesNotDependOnLiveNodeReadiness(t *testing.T) {
 	}
 	if _, err = client.neonLifecycleZones(context.Background(), "create", spec); err == nil {
 		t.Fatal("create bypassed trusted live availability-zone discovery")
+	}
+}
+
+func TestNeonPlacementRequiresDistinctSafekeeperZonesBeforeApply(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		zones []string
+		valid bool
+	}{
+		{name: "one zone", zones: []string{"zone-a", "zone-a", "zone-a"}},
+		{name: "two zones", zones: []string{"zone-a", "zone-b", "zone-a"}},
+		{name: "later pageserver does not supply missing safekeeper zone", zones: []string{"zone-a", "zone-a", "zone-b", "zone-c"}},
+		{name: "three safekeeper zones", zones: []string{"zone-a", "zone-b", "zone-c"}, valid: true},
+		{name: "later pageserver may share a zone", zones: []string{"zone-a", "zone-b", "zone-c", "zone-a"}, valid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			kube := fake.NewSimpleClientset()
+			spec := managedplatform.Spec{Kind: "neon", Neon: &managedplatform.NeonConfig{Pageservers: len(test.zones), Safekeepers: 3}}
+			for i, zone := range test.zones {
+				name := fmt.Sprintf("node-%d", i)
+				spec.Placement.NodeNames = append(spec.Placement.NodeNames, name)
+				node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"topology.kubernetes.io/zone": zone}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}
+				if err := kube.Tracker().Add(node); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client := &Client{kube: kube}
+			err := client.ValidateNeonPlacement(context.Background(), spec)
+			if test.valid {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "first three placement nodes") {
+				t.Fatalf("invalid safekeeper topology was not refused: %v", err)
+			}
+			for _, kind := range []string{"create", "update"} {
+				op := store.ManagedPlatformOperation{ID: strings.Repeat("a", 32), PlatformID: strings.Repeat("b", 32), Revision: 1, Kind: kind, Lease: "fixture-lease"}
+				request := NeonRuntimeRequest{Operation: op, Render: managedplatform.NeonRenderInput{PlatformID: op.PlatformID, Revision: op.Revision, Spec: spec}}
+				err = client.ReconcileNeonOperation(context.Background(), &store.Store{}, request, nil)
+				var runtimeErr *ManagedPlatformRuntimeError
+				if !errors.As(err, &runtimeErr) || runtimeErr.SafeCategory() != "neon_node_inventory" {
+					t.Fatalf("%s did not stop before runtime changes: %v", kind, err)
+				}
+			}
+			for _, action := range kube.Actions() {
+				if action.GetVerb() != "get" || action.GetResource().Resource != "nodes" {
+					t.Fatalf("invalid topology reached a Kubernetes side effect: %s %s", action.GetVerb(), action.GetResource().Resource)
+				}
+			}
+		})
 	}
 }
 
