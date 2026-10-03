@@ -315,7 +315,10 @@ func neonConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, name
 func neonComputeTLSConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput, ordinal int) *corev1.ConfigMap {
 	name := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)
 	config := "global\n  maxconn 64\n  ssl-default-bind-options ssl-min-ver TLSv1.2\ndefaults\n  mode http\n  timeout connect 2s\n  timeout client 30s\n  timeout server 30s\nfrontend compute_control\n  bind :3081 ssl crt /tmp/compute-tls.pem\n  default_backend compute_ctl\nbackend compute_ctl\n  server local 127.0.0.1:3080\n"
-	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"haproxy.cfg": config}}
+	// compute_ctl administers PostgreSQL over loopback. Application connections
+	// must use TLS and SCRAM, including when they reach the compute directly.
+	hba := "local all cloud_admin trust\nlocal all all scram-sha-256\nhost all cloud_admin 127.0.0.1/32 trust\nhost all cloud_admin ::1/128 trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::/0 reject\n"
+	return &corev1.ConfigMap{ObjectMeta: meta(name), Immutable: neonBool(true), Data: map[string]string{"haproxy.cfg": config, "pg_hba.conf": hba}}
 }
 
 func neonControllerDatabaseConfigMap(meta func(string) metav1.ObjectMeta, in NeonRenderInput) *corev1.ConfigMap {
@@ -388,7 +391,8 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 	} else if logicalName == "compute" {
 		configName := "neon-compute-" + strconv.Itoa(ordinal) + "-tls-r" + strconv.FormatInt(in.Revision, 10)
 		volumes = append(volumes, neonPVCVolume("cache", "neon-compute-cache-"+strconv.Itoa(ordinal)), corev1.Volume{Name: "compute-tls-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}}}})
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "cache", MountPath: "/var/db/postgres"})
+		volumes = append(volumes, corev1.Volume{Name: "compute-postgres-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}, Items: []corev1.KeyToPath{{Key: "pg_hba.conf", Path: "pg_hba.conf"}}, DefaultMode: neonInt32(0444)}}})
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "cache", MountPath: "/var/db/postgres"}, corev1.VolumeMount{Name: "compute-postgres-config", MountPath: "/etc/hakopod-postgres", ReadOnly: true})
 		container.Command = []string{"compute_ctl"}
 		container.Args = []string{"--pgdata=/var/db/postgres/compute", "--connstr=postgresql://cloud_admin@127.0.0.1:55433/postgres", "--compute-id=" + instanceName, "--external-http-port=3080", "--config=/var/run/secrets/hakopod/compute-auth/config.json", "--ownership-state-path=" + neonComputeOwnershipStatePath}
 		ownershipIdentity := fmt.Sprintf("%d:%d:700", identity.UID, identity.GID)

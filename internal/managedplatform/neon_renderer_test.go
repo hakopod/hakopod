@@ -39,6 +39,71 @@ func neonTestControlPlaneCAPEM(t *testing.T) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
+func TestNeonComputeAuthenticationIsImmutableAndTLSOnly(t *testing.T) {
+	spec := neonCandidateSpec()
+	spec.Neon.ComputeReplicas = 2
+	images := map[string]string{}
+	identities := map[string]NeonRuntimeIdentity{}
+	for _, name := range NeonComponents() {
+		images[name] = "registry.example.test/neon/" + name + "@sha256:" + strings.Repeat("a", 64)
+		identities[name] = NeonRuntimeIdentity{UID: 10001, GID: 10001}
+	}
+	manifests, err := RenderNeon(NeonRenderInput{Spec: spec, PreviousSpec: &spec, PlatformID: strings.Repeat("a", 32), Revision: 7, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 10001, ProxyControlPlaneOrigin: "https://control.example.test", ProxyControlPlaneCAPEM: neonTestControlPlaneCAPEM(t), ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configs := map[string]*corev1.ConfigMap{}
+	computes := map[string]*appsv1.StatefulSet{}
+	for _, object := range manifests.Objects {
+		switch value := object.(type) {
+		case *corev1.ConfigMap:
+			configs[value.Name] = value
+		case *appsv1.StatefulSet:
+			if strings.HasPrefix(value.Name, "neon-compute-") {
+				computes[value.Name] = value
+			}
+		}
+	}
+	if len(computes) != 2 {
+		t.Fatal("writer and replica must both have an authentication policy")
+	}
+	for name, compute := range computes {
+		config := configs[name+"-tls-r7"]
+		if config == nil || config.Immutable == nil || !*config.Immutable || len(config.OwnerReferences) != 1 || config.OwnerReferences[0].UID != types.UID("namespace-uid") {
+			t.Fatal("compute authentication policy is not immutable and owned")
+		}
+		policy := config.Data["pg_hba.conf"]
+		for _, address := range []string{"0.0.0.0/0", "::/0"} {
+			refusal := strings.Index(policy, "hostnossl all all "+address+" reject\n")
+			secure := strings.Index(policy, "hostssl all all "+address+" scram-sha-256\n")
+			if refusal < 0 || secure <= refusal {
+				t.Fatal("compute must reject plaintext before allowing authenticated TLS")
+			}
+		}
+		for _, line := range strings.Split(policy, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 && fields[len(fields)-1] == "trust" && line != "local all cloud_admin trust" && line != "host all cloud_admin 127.0.0.1/32 trust" && line != "host all cloud_admin ::1/128 trust" {
+				t.Fatal("compute authentication trusts a non-local administrator connection")
+			}
+		}
+		mounted := false
+		for _, mount := range compute.Spec.Template.Spec.Containers[0].VolumeMounts {
+			if mount.Name == "compute-postgres-config" {
+				mounted = mount.ReadOnly && mount.MountPath == "/etc/hakopod-postgres" && mount.SubPath == ""
+			}
+		}
+		bound := false
+		for _, volume := range compute.Spec.Template.Spec.Volumes {
+			if volume.Name == "compute-postgres-config" && volume.ConfigMap != nil {
+				bound = volume.ConfigMap.Name == config.Name && reflect.DeepEqual(volume.ConfigMap.Items, []corev1.KeyToPath{{Key: "pg_hba.conf", Path: "pg_hba.conf"}})
+			}
+		}
+		if !mounted || !bound {
+			t.Fatal("compute must mount its exact revision's authentication policy read-only")
+		}
+	}
+}
+
 func TestRenderNeonIncludesCompletePinnedStack(t *testing.T) {
 	spec := neonCandidateSpec()
 	spec.Placement.NodeNames = []string{"node-a", "node-b", "node-c"}
