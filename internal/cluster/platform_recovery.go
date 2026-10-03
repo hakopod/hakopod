@@ -236,7 +236,7 @@ func (r *SupabaseRecoveryRuntime) ResolveEmptyTarget(ctx context.Context, op pla
 	}
 	var out strings.Builder
 	query := `DO $$ DECLARE r record; occupied boolean; BEGIN IF (SELECT count(*) FROM auth.users)+(SELECT count(*) FROM storage.objects)+(SELECT count(*) FROM storage.buckets)>0 THEN RAISE EXCEPTION 'target contains Supabase data'; END IF; FOR r IN SELECT schemaname,tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations' LOOP EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I LIMIT 1)',r.schemaname,r.tablename) INTO occupied; IF occupied THEN RAISE EXCEPTION 'target contains application data'; END IF; END LOOP; END $$; SELECT 0;`
-	if err = r.exec(ctx, pod, "database", []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", target.Spec.Supabase.DatabaseName, "-c", query}, nil, &out); err != nil || strings.TrimSpace(out.String()) != "0" {
+	if err = r.exec(ctx, pod, "database", []string{"psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", target.Spec.Supabase.DatabaseName, "-c", query}, nil, &out); err != nil || strings.TrimSpace(out.String()) != "0" {
 		return fmt.Errorf("recovery requires a separate empty Supabase target")
 	}
 	for _, component := range []struct{ name, path string }{{"storage", "/var/lib/storage"}, {"studio", "/app/snippets"}} {
