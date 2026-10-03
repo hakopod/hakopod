@@ -1,0 +1,249 @@
+--- a/pageserver/src/tenant/storage_layer/layer.rs
++++ b/pageserver/src/tenant/storage_layer/layer.rs
+@@ -1,3 +1,4 @@
++use std::io;
+ use std::ops::Range;
+ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+ use std::sync::{Arc, Weak};
+@@ -38,6 +39,225 @@
+ 
+ pub const S3_UPLOAD_LIMIT: u64 = 4_500_000_000;
+ 
++fn publish_layer_file(src: &Utf8Path, dst: &Utf8Path) -> anyhow::Result<()> {
++    publish_layer_file_with_rename(src, dst, || {
++        utils::fs_ext::rename_noreplace(src.as_std_path(), dst.as_std_path())
++    })
++}
++
++fn publish_layer_file_with_rename(
++    src: &Utf8Path,
++    dst: &Utf8Path,
++    rename: impl FnOnce() -> nix::Result<()>,
++) -> anyhow::Result<()> {
++    match rename() {
++        Ok(()) => Ok(()),
++        Err(nix::errno::Errno::EINVAL) => publish_layer_file_by_link(src, dst),
++        Err(error) => Err(error.into()),
++    }
++}
++
++/// Publish a completed regular layer when the filesystem does not implement
++/// `RENAME_NOREPLACE`. Creating the hard link is the atomic no-overwrite step.
++/// If a later durability operation fails, keep every name that still exists so
++/// recovery can decide which one to remove.
++fn publish_layer_file_by_link(src: &Utf8Path, dst: &Utf8Path) -> anyhow::Result<()> {
++    publish_layer_file_by_link_with(
++        src,
++        dst,
++        |src, dst| std::fs::hard_link(src, dst),
++        utils::crashsafe::fsync,
++        |src| std::fs::remove_file(src),
++    )
++}
++
++fn publish_layer_file_by_link_with(
++    src: &Utf8Path,
++    dst: &Utf8Path,
++    hard_link: impl FnOnce(&Utf8Path, &Utf8Path) -> io::Result<()>,
++    mut fsync: impl FnMut(&Utf8Path) -> io::Result<()>,
++    unlink: impl FnOnce(&Utf8Path) -> io::Result<()>,
++) -> anyhow::Result<()> {
++    let metadata = src
++        .symlink_metadata()
++        .with_context(|| format!("inspect completed layer file {src}"))?;
++    if !metadata.file_type().is_file() {
++        return Err(io::Error::new(
++            io::ErrorKind::InvalidInput,
++            format!("completed layer source is not a regular file: {src}"),
++        )
++        .into());
++    }
++
++    hard_link(src, dst).with_context(|| format!("link completed layer file {src} as {dst}"))?;
++
++    let dst_parent = dst
++        .parent()
++        .ok_or_else(|| io::Error::other(format!("layer destination {dst} has no parent")))?;
++    fsync(dst_parent).with_context(|| format!("fsync layer destination directory {dst_parent}"))?;
++
++    unlink(src).with_context(|| format!("unlink temporary layer file {src}"))?;
++
++    let src_parent = src
++        .parent()
++        .ok_or_else(|| io::Error::other(format!("temporary layer {src} has no parent")))?;
++    fsync(src_parent).with_context(|| format!("fsync temporary layer directory {src_parent}"))?;
++
++    Ok(())
++}
++
++#[cfg(test)]
++mod publish_layer_file_tests {
++    use super::*;
++
++    #[test]
++    fn falls_back_to_link_when_rename_noreplace_is_unsupported() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"layer contents").unwrap();
++
++        publish_layer_file_with_rename(&src, &dst, || Err(nix::errno::Errno::EINVAL)).unwrap();
++
++        assert!(!src.exists());
++        assert_eq!(std::fs::read(dst).unwrap(), b"layer contents");
++    }
++
++    #[test]
++    fn fallback_does_not_replace_an_existing_destination() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"new contents").unwrap();
++        std::fs::write(&dst, b"existing contents").unwrap();
++
++        let error = publish_layer_file_with_rename(&src, &dst, || Err(nix::errno::Errno::EINVAL))
++            .unwrap_err();
++
++        assert_eq!(
++            error.downcast_ref::<io::Error>().unwrap().kind(),
++            io::ErrorKind::AlreadyExists
++        );
++        assert_eq!(std::fs::read(&src).unwrap(), b"new contents");
++        assert_eq!(std::fs::read(&dst).unwrap(), b"existing contents");
++    }
++
++    #[test]
++    fn fallback_rejects_a_non_regular_source() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary-directory");
++        let dst = testdir.path().join("completed");
++        std::fs::create_dir(&src).unwrap();
++
++        let error = publish_layer_file_with_rename(&src, &dst, || Err(nix::errno::Errno::EINVAL))
++            .unwrap_err();
++
++        assert_eq!(
++            error.downcast_ref::<io::Error>().unwrap().kind(),
++            io::ErrorKind::InvalidInput
++        );
++        assert!(src.is_dir());
++        assert!(!dst.exists());
++    }
++
++    #[test]
++    fn does_not_fallback_for_other_rename_errors() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"layer contents").unwrap();
++
++        let error = publish_layer_file_with_rename(&src, &dst, || Err(nix::errno::Errno::EPERM))
++            .unwrap_err();
++
++        assert_eq!(
++            error.downcast_ref::<nix::errno::Errno>(),
++            Some(&nix::errno::Errno::EPERM)
++        );
++        assert_eq!(std::fs::read(&src).unwrap(), b"layer contents");
++        assert!(!dst.exists());
++    }
++
++    #[test]
++    fn fallback_keeps_both_names_when_destination_sync_fails() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"layer contents").unwrap();
++
++        let error = publish_layer_file_by_link_with(
++            &src,
++            &dst,
++            |src, dst| std::fs::hard_link(src, dst),
++            |_| Err(io::Error::other("injected sync failure")),
++            |_| panic!("source must not be unlinked after a sync failure"),
++        )
++        .unwrap_err();
++
++        assert!(
++            error
++                .to_string()
++                .contains("fsync layer destination directory")
++        );
++        assert_eq!(std::fs::read(&src).unwrap(), b"layer contents");
++        assert_eq!(std::fs::read(&dst).unwrap(), b"layer contents");
++    }
++
++    #[test]
++    fn fallback_keeps_both_names_when_unlink_fails() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"layer contents").unwrap();
++
++        let error = publish_layer_file_by_link_with(
++            &src,
++            &dst,
++            |src, dst| std::fs::hard_link(src, dst),
++            |_| Ok(()),
++            |_| Err(io::Error::other("injected unlink failure")),
++        )
++        .unwrap_err();
++
++        assert!(error.to_string().contains("unlink temporary layer file"));
++        assert_eq!(std::fs::read(&src).unwrap(), b"layer contents");
++        assert_eq!(std::fs::read(&dst).unwrap(), b"layer contents");
++    }
++
++    #[test]
++    fn fallback_keeps_destination_when_source_directory_sync_fails() {
++        let testdir = camino_tempfile::tempdir().unwrap();
++        let src = testdir.path().join("temporary");
++        let dst = testdir.path().join("completed");
++        std::fs::write(&src, b"layer contents").unwrap();
++        let mut sync_count = 0;
++
++        let error = publish_layer_file_by_link_with(
++            &src,
++            &dst,
++            |src, dst| std::fs::hard_link(src, dst),
++            |_| {
++                sync_count += 1;
++                if sync_count == 1 {
++                    Ok(())
++                } else {
++                    Err(io::Error::other("injected second sync failure"))
++                }
++            },
++            |src| std::fs::remove_file(src),
++        )
++        .unwrap_err();
++
++        assert!(
++            error
++                .to_string()
++                .contains("fsync temporary layer directory")
++        );
++        assert!(!src.exists());
++        assert_eq!(std::fs::read(&dst).unwrap(), b"layer contents");
++    }
++}
++
+ /// A Layer contains all data in a "rectangle" consisting of a range of keys and
+ /// range of LSNs.
+ ///
+@@ -278,11 +498,10 @@
+ 
+         let downloaded = resident.expect("just initialized");
+ 
+-        // We never want to overwrite an existing file, so we use `RENAME_NOREPLACE`.
+-        // TODO: this leaves the temp file in place if the rename fails, risking us running
+-        // out of space. Should we clean it up here or does the calling context deal with this?
+-        utils::fs_ext::rename_noreplace(temp_path.as_std_path(), owner.local_path().as_std_path())
+-            .with_context(|| format!("rename temporary file as correct path for {owner}"))?;
++        // Publish without ever replacing an existing layer. Unsupported no-replace renames use a
++        // regular-file hard-link fallback with explicit directory durability.
++        publish_layer_file(temp_path, owner.local_path())
++            .with_context(|| format!("publish temporary file as correct path for {owner}"))?;
+ 
+         Ok(ResidentLayer { downloaded, owner })
+     }

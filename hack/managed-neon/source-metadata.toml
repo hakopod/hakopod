@@ -18,20 +18,25 @@ reconfigure_patch = "patches/neon-compute-reconfigure.patch"
 reconfigure_patch_sha256 = "96b5f4e211186ea60281128029c668ad12bb6d3cf3a552879363fe24750458c9"
 placement_patch = "patches/neon-controller-placement.patch"
 placement_patch_sha256 = "9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
-frozen_combined_patch_sha256 = "23995f89ce5eac5251cbc2ef827284ad7f0a77a7f3426cd507962613efe8cfd0"
-combined_candidate_tree = "a7ad594e43903c469c7f9b8a3233bb683f4d721e"
+filesystem_patch = "patches/neon-layer-publish.patch"
+filesystem_patch_sha256 = "2cab4695d0d4e7029bbe2c9523d42929c4c9a19a2c25dd5e7064e830882e1256"
+applying_delete_patch = "patches/neon-applying-delete.patch"
+applying_delete_patch_sha256 = "e86ee6ac05bbb4efe05349563b96ea520dc574a2b9ea04adfd9687829040a204"
+frozen_combined_patch_sha256 = "e5627bf2ac61b21335d4d27e91b558e05d382f2a8cfb45634d428a2de96be8dc"
+combined_candidate_tree = "3358ae2e6529d42fe723ed566678978665d3b7a6"
 
-# Apply proxy, ownership, PostgreSQL consumer, storage TLS, compute reconfiguration
-# and controller placement patches in that order. The combined patch and candidate
-# tree bind all six; the separate PostgreSQL tree binds the vendored server source.
+# Apply proxy, ownership, PostgreSQL consumer, storage TLS, compute reconfiguration,
+# controller placement, layer publication and applying-delete patches in that order.
+# The combined patch and candidate tree bind all eight; the separate PostgreSQL tree
+# binds the vendored server source.
 
 [source_archive]
-sha256 = "f9f319a5298022e3fb6c876189e36c3f90397e734862314696853df0de0075a7"
-size_bytes = 113919882
-member_count = 30844
+sha256 = "159a483577cdc75896ded03d5a2d472b94d87fd827a2c263715b5972b7dd565e"
+size_bytes = 113930440
+member_count = 30847
 repeat_comparison = "PASS"
 global_member_order = "PASS"
-location = "/srv/hakopod-build/neon-platform-final-v1/source-v4/neon-provider-source.tar.gz"
+location = "/srv/hakopod-build/neon-layer-final-v1/source-v2/neon-provider-source.tar.gz"
 
 [qualification]
 images_built = false
