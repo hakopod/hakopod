@@ -23,6 +23,7 @@ schemas['NeonConfig'] = obj({
 schemas['ManagedPlatformSpec'] = obj({
     'schema_version': {'type':'integer','const':1}, 'name': S,
     'kind': {'type':'string','enum':['supabase','neon']}, 'version': {'type':'string','enum':['0.8.2','fa504217c61bbcaf5c512d75830564541f917f8f']},
+    'tls_mode': {'type':'string','enum':['managed','operator'],'description':'Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates.'},
     'resources': mapping(ref('ManagedPlatformResources')), 'storage': mapping(I),
     'secrets': mapping(ref('ManagedPlatformSecretReference')),
     'placement': ref('ManagedPlatformPlacement'), 'supabase': ref('SupabaseConfig'), 'neon': ref('NeonConfig'),
@@ -67,7 +68,10 @@ schemas['ManagedPlatformCatalogNode'] = obj({'name':S,'uid':S,'architecture':S,'
 schemas['ManagedPlatformCatalogEntry'] = obj({'kind':{'type':'string','enum':['neon','supabase']},'version':S,'minimum_nodes':I,'maximum_nodes':I,'required_secret_keys':array(S),'default_spec':ref('ManagedPlatformDefaults'),'capability':ref('ManagedPlatformCapability')}, ['kind','version','minimum_nodes','maximum_nodes','required_secret_keys','default_spec','capability'])
 schemas['ManagedPlatformCatalog'] = obj({'project':S,'environment':S,'storage_class':S,'nodes':{'type':'array','items':ref('ManagedPlatformCatalogNode'),'maxItems':48},'secret_references':{'type':'array','items':ref('ManagedPlatformSecretReference'),'maxItems':64},'items':{'type':'array','items':ref('ManagedPlatformCatalogEntry'),'maxItems':2}}, ['project','environment','storage_class','nodes','secret_references','items'])
 schemas['ManagedPlatformReview'] = obj({'id':S,'expected_revision':I,'kind':{'type':'string','enum':['create','update','delete']},'request_hash':S,'authority_fingerprint':S,'capacity_fingerprint':S,'expires_at':T,'blocked_reasons':array(S)}, ['id','expected_revision','kind','request_hash','expires_at','blocked_reasons'])
-schemas['ManagedPlatformObservation'] = obj({'status':S,'phase':S,'revision':I,'namespace_uid':S,'ready_components':I,'expected_components':I,'pending':array(S),'tenant_id':S,'timeline_id':S,'safekeeper_count':I,'attached_computes':array(S),'proxy_endpoint_id':S,'proxy_generation':I})
+schemas['ManagedPlatformTLSCertificate'] = obj({'component':S,'fingerprint':S,'expires_at':T,'verified':B}, ['component','fingerprint','expires_at','verified'])
+schemas['ManagedPlatformTLSObservation'] = obj({'mode':{'type':'string','const':'managed'},'issuer_fingerprint':S,'certificates':{'type':'array','items':ref('ManagedPlatformTLSCertificate'),'maxItems':32},'verified_at':T}, ['mode','issuer_fingerprint','certificates','verified_at'])
+schemas['ManagedPlatformMaintenanceObservation'] = obj({'status':{'type':'string','enum':['pending','failed','succeeded']},'phase':S,'message':S,'checked_at':T}, ['status','phase','message','checked_at'])
+schemas['ManagedPlatformObservation'] = obj({'status':S,'phase':S,'revision':I,'namespace_uid':S,'ready_components':I,'expected_components':I,'pending':array(S),'tenant_id':S,'timeline_id':S,'safekeeper_count':I,'attached_computes':array(S),'proxy_endpoint_id':S,'proxy_generation':I,'tls':ref('ManagedPlatformTLSObservation'),'maintenance':ref('ManagedPlatformMaintenanceObservation')})
 schemas['ManagedPlatform'] = obj({'id':S,'project':S,'environment':S,'revision':I,'spec':ref('ManagedPlatformSpec'),'status':S,'observation':ref('ManagedPlatformObservation'),'reserved_cpu_milli':I,'reserved_memory_bytes':I,'reserved_storage_gib':I,'created_at':T,'updated_at':T,'deleted_at':{'anyOf':[T,{'type':'null'}]}}, ['id','project','environment','revision','spec','status','observation','reserved_cpu_milli','reserved_memory_bytes','reserved_storage_gib','created_at','updated_at'])
 schemas['ManagedPlatformOperation'] = obj({'id':S,'platform_id':S,'revision':I,'kind':S,'status':S,'phase':S,'message':S,'spec':ref('ManagedPlatformSpec'),'plan':ref('ManagedPlatformPlan'),'review':ref('ManagedPlatformReview'),'review_id':S,'created_at':T,'started_at':T,'finished_at':T,'attempt':I}, ['id','platform_id','revision','kind','status','phase','message','spec','plan','review','review_id','created_at','attempt'])
 schemas['ManagedPlatformIntent'] = obj({'id':S,'project':S,'environment':S,'expected_revision':I,'kind':{'type':'string','enum':['create','update','delete']},'spec':ref('ManagedPlatformSpec'),'review':ref('ManagedPlatformReview'),'confirm_name':S}, ['project','environment','expected_revision','kind','spec'])
@@ -108,6 +112,8 @@ for parameter in paths['/managed-platforms']['get']['parameters']:
     parameter['required'] = False
 paths['/managed-platforms']['get']['description'] = 'List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected.'
 route('/managed-platforms/{id}','get','getManagedPlatform',ref('ManagedPlatform'))
+route('/managed-platforms/{id}/trust','get','getManagedPlatformPublicTrust',ref('DatabasePublicTrust'))
+paths['/managed-platforms/{id}/trust']['get']['description'] = 'Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable.'
 route('/managed-platforms/{id}/operations','get','listManagedPlatformOperations',items('ManagedPlatformOperation'))
 route('/managed-platform-operations/{id}','get','getManagedPlatformOperation',ref('ManagedPlatformOperation'))
 route('/managed-platforms/reviews','post','reviewManagedPlatform',ref('ManagedPlatformReviewResponse'),ref('ManagedPlatformIntent'))

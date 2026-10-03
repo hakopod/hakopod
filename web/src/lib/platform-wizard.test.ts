@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { completePlatformSpec, platformSteps } from './platform-wizard'
-import type { ManagedPlatformDefaults } from './managed-platforms'
+import { completePlatformSpec, platformSecretKeys, platformSteps } from './platform-wizard'
+import type {
+  ManagedPlatformCatalogEntry,
+  ManagedPlatformDefaults,
+  ManagedPlatformSpec,
+} from './managed-platforms'
 
 const draft = {
   schema_version: 1,
@@ -64,4 +68,48 @@ test('both guided flows include a final review and paginate a large secret inven
     assert.ok(steps.some((step) => step.id === 'placement'))
     assert.ok(steps.some((step) => step.id === 'resources'))
   }
+})
+
+test('configure preserves legacy certificate references when new defaults use managed TLS', () => {
+  const entry = {
+    kind: 'supabase',
+    version: '0.8.2',
+    minimum_nodes: 1,
+    maximum_nodes: 1,
+    capability: {
+      available: false,
+      cluster_qualified: false,
+      public_qualified: false,
+      reason: 'Unit test fixture',
+    },
+    required_secret_keys: ['auth'],
+    default_spec: { ...draft, tls_mode: 'managed' },
+  } satisfies ManagedPlatformCatalogEntry
+  const initial = {
+    ...draft,
+    secrets: {
+      auth: { name: 'auth', revision: 1 },
+      'database-tls-certificate': { name: 'database-ca', revision: 2 },
+      'gateway-tls-certificate': { name: 'gateway-ca', revision: 3 },
+    },
+  } as ManagedPlatformSpec
+  const keys = platformSecretKeys(entry, initial)
+  assert.deepEqual(keys, ['auth', 'database-tls-certificate', 'gateway-tls-certificate'])
+  const refs = Object.values(initial.secrets)
+  const selected = Object.fromEntries(
+    Object.entries(initial.secrets).map(([key, ref]) => [key, `${ref.name}@${ref.revision}`]),
+  )
+  const completed = completePlatformSpec(initial, ['node-a'], keys, selected, refs)
+  assert.deepEqual(completed?.secrets, initial.secrets)
+  assert.equal(completed?.tls_mode, undefined)
+  assert.deepEqual(platformSecretKeys(entry), ['auth'])
+  const created = completePlatformSpec(
+    entry.default_spec,
+    ['node-a'],
+    ['auth'],
+    { auth: 'auth@1' },
+    refs,
+  )
+  assert.equal(created?.tls_mode, 'managed')
+  assert.deepEqual(Object.keys(created!.secrets), ['auth'])
 })

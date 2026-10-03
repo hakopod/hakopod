@@ -10188,6 +10188,44 @@
         }
       }
     },
+    "/managed-platforms/{id}/trust": {
+      "get": {
+        "operationId": "getManagedPlatformPublicTrust",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicTrust"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable."
+      }
+    },
     "/managed-platforms/{id}/operations": {
       "get": {
         "operationId": "listManagedPlatformOperations",
@@ -24659,6 +24697,14 @@
             ],
             "const": "0.8.2"
           },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
+          },
           "resources": {
             "type": "object",
             "additionalProperties": {
@@ -24744,6 +24790,14 @@
               "fa504217c61bbcaf5c512d75830564541f917f8f"
             ],
             "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
           },
           "resources": {
             "type": "object",
@@ -25000,6 +25054,14 @@
             ],
             "const": "0.8.2"
           },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
+          },
           "resources": {
             "type": "object",
             "additionalProperties": {
@@ -25081,6 +25143,14 @@
               "fa504217c61bbcaf5c512d75830564541f917f8f"
             ],
             "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
           },
           "resources": {
             "type": "object",
@@ -25452,6 +25522,88 @@
           "blocked_reasons"
         ]
       },
+      "ManagedPlatformTLSCertificate": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "component",
+          "fingerprint",
+          "expires_at",
+          "verified"
+        ]
+      },
+      "ManagedPlatformTLSObservation": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "managed"
+          },
+          "issuer_fingerprint": {
+            "type": "string"
+          },
+          "certificates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformTLSCertificate"
+            },
+            "maxItems": 32
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "mode",
+          "issuer_fingerprint",
+          "certificates",
+          "verified_at"
+        ]
+      },
+      "ManagedPlatformMaintenanceObservation": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "succeeded"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "phase",
+          "message",
+          "checked_at"
+        ]
+      },
       "ManagedPlatformObservation": {
         "type": "object",
         "properties": {
@@ -25499,6 +25651,12 @@
           },
           "proxy_generation": {
             "type": "integer"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/ManagedPlatformTLSObservation"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/ManagedPlatformMaintenanceObservation"
           }
         },
         "required": []

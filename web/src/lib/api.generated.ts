@@ -2628,6 +2628,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/managed-platforms/{id}/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable. */
+        get: operations["getManagedPlatformPublicTrust"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/managed-platforms/{id}/operations": {
         parameters: {
             query?: never;
@@ -6289,6 +6306,11 @@ export interface components {
              * @enum {string}
              */
             version: "0.8.2";
+            /**
+             * @description Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates.
+             * @enum {string}
+             */
+            tls_mode?: "managed" | "operator";
             resources: {
                 [key: string]: components["schemas"]["ManagedPlatformResources"];
             };
@@ -6322,6 +6344,11 @@ export interface components {
              * @enum {string}
              */
             version: "fa504217c61bbcaf5c512d75830564541f917f8f";
+            /**
+             * @description Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates.
+             * @enum {string}
+             */
+            tls_mode?: "managed" | "operator";
             resources: {
                 [key: string]: components["schemas"]["ManagedPlatformResources"];
             };
@@ -6352,6 +6379,11 @@ export interface components {
              * @enum {string}
              */
             version: "0.8.2";
+            /**
+             * @description Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates.
+             * @enum {string}
+             */
+            tls_mode?: "managed" | "operator";
             resources: {
                 [key: string]: components["schemas"]["ManagedPlatformResources"];
             };
@@ -6382,6 +6414,11 @@ export interface components {
              * @enum {string}
              */
             version: "fa504217c61bbcaf5c512d75830564541f917f8f";
+            /**
+             * @description Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates.
+             * @enum {string}
+             */
+            tls_mode?: "managed" | "operator";
             resources: {
                 [key: string]: components["schemas"]["ManagedPlatformResources"];
             };
@@ -6471,6 +6508,29 @@ export interface components {
             expires_at: string;
             blocked_reasons: string[];
         };
+        ManagedPlatformTLSCertificate: {
+            component: string;
+            fingerprint: string;
+            /** Format: date-time */
+            expires_at: string;
+            verified: boolean;
+        };
+        ManagedPlatformTLSObservation: {
+            /** @constant */
+            mode: "managed";
+            issuer_fingerprint: string;
+            certificates: components["schemas"]["ManagedPlatformTLSCertificate"][];
+            /** Format: date-time */
+            verified_at: string;
+        };
+        ManagedPlatformMaintenanceObservation: {
+            /** @enum {string} */
+            status: "pending" | "failed" | "succeeded";
+            phase: string;
+            message: string;
+            /** Format: date-time */
+            checked_at: string;
+        };
         ManagedPlatformObservation: {
             status?: string;
             phase?: string;
@@ -6485,6 +6545,8 @@ export interface components {
             attached_computes?: string[];
             proxy_endpoint_id?: string;
             proxy_generation?: number;
+            tls?: components["schemas"]["ManagedPlatformTLSObservation"];
+            maintenance?: components["schemas"]["ManagedPlatformMaintenanceObservation"];
         };
         ManagedPlatform: {
             id: string;
@@ -14536,6 +14598,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManagedPlatform"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getManagedPlatformPublicTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePublicTrust"];
                 };
             };
             /** @description Error */
