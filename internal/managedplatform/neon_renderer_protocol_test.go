@@ -59,6 +59,16 @@ func TestNeonStorageConfigurationUsesAuthenticatedUpstreamProtocols(t *testing.T
 				continue
 			}
 			container := value.Spec.Template.Spec.Containers[0]
+			for _, flag := range []string{"--timelines-onto-safekeepers", "--use-https-pageserver-api", "--use-https-safekeeper-api"} {
+				if !slices.Contains(container.Args, flag) {
+					t.Fatalf("controller requires the upstream presence flag %s", flag)
+				}
+				for _, arg := range container.Args {
+					if strings.HasPrefix(arg, flag+"=") {
+						t.Fatalf("controller rejects an explicit value for %s", flag)
+					}
+				}
+			}
 			if !slices.Contains(container.Args, "--control-plane-url=https://control.example.test/api/v1/internal/neon/storage-controller/"+platformID+"/1") {
 				t.Fatal("controller callback is not scoped to the platform revision")
 			}
