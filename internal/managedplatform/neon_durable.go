@@ -102,13 +102,13 @@ func NewDurableNeonRuntime(config NeonRuntimeConfig, lifecycle DurableLifecycle)
 	if config.RequestTimeout == 0 {
 		config.RequestTimeout = 20 * time.Second
 	}
-	if config.RequestTimeout < time.Second || config.RequestTimeout > 20*time.Second {
-		return nil, fmt.Errorf("Neon request timeout must be between one and 20 seconds")
+	if config.RequestTimeout < time.Second || config.RequestTimeout > 2*time.Minute {
+		return nil, fmt.Errorf("Neon request timeout must be between one second and two minutes")
 	}
 	if config.RootCAs == nil {
 		return nil, fmt.Errorf("Neon runtime requires an explicit control-plane CA pool")
 	}
-	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: config.RootCAs}, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 4, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: config.RequestTimeout / 2, MaxResponseHeaderBytes: 32 << 10}
+	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: config.RootCAs}, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 4, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: config.RequestTimeout, MaxResponseHeaderBytes: 32 << 10}
 	client := &http.Client{Transport: transport, Timeout: config.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return fmt.Errorf("Neon control redirects are not permitted")
 	}}
@@ -409,9 +409,24 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 				return state, fmt.Errorf("create Neon tenant returned invalid ownership: %w", err)
 			}
 		}
-		tenantIdentity, tenantGeneration, err = verifiedTenantCreate(response, request.TenantID)
-		if err != nil {
-			return state, err
+		if ownershipRequired {
+			// Create responses may retain generation zero from before the
+			// provider reconciled its attachment. Confirm only the current
+			// completed ownership record and canonical attachment instead.
+			var exists bool
+			var token, ownershipState string
+			exists, tenantIdentity, tenantGeneration, token, ownershipState, _, err = r.inspectTenant(ctx, request.TenantID)
+			if err != nil {
+				return state, err
+			}
+			if !exists || token != intent.ID || ownershipState != "completed" {
+				return state, fmt.Errorf("created Neon tenant lacks its completed ownership and attachment")
+			}
+		} else {
+			tenantIdentity, tenantGeneration, err = verifiedTenantCreate(response, request.TenantID)
+			if err != nil {
+				return state, err
+			}
 		}
 		resourceID := tenantIdentity
 		if ownershipRequired {
