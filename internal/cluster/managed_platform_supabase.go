@@ -127,6 +127,9 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	if err = validateSupabaseDatabaseClientURLs(request.SecretSnapshots, request.Render.Spec); err != nil {
 		return managedPlatformRuntimeError("supabase_database_url_validation", err)
 	}
+	if err = validateSupabaseRuntimeSecrets(request.SecretSnapshots, request.Render.Spec); err != nil {
+		return managedPlatformRuntimeError("supabase_runtime_secret_validation", err)
+	}
 	for _, name := range manifests.RequiredSecrets {
 		if err = c.applySupabaseSecret(ctx, state, op, ns, name, request.SecretSnapshots[name], prior, current, before); err != nil {
 			return managedPlatformRuntimeError("supabase_apply_secret", err)
@@ -612,22 +615,41 @@ func validateSupabaseDatabaseTLS(data map[string][]byte, namespace string) error
 }
 
 func validateSupabaseDatabaseClientURLs(values map[string]map[string][]byte, spec managedplatform.Spec) error {
-	expectedRoles := map[string]string{
-		"auth-database-url":    "supabase_auth_admin",
-		"rest-database-url":    "authenticator",
-		"storage-database-url": "supabase_storage_admin",
+	expected := []struct {
+		key, role, database string
+	}{
+		{"auth-database-url", "supabase_auth_admin", spec.Supabase.DatabaseName},
+		{"rest-database-url", "authenticator", spec.Supabase.DatabaseName},
+		{"storage-database-url", "supabase_storage_admin", spec.Supabase.DatabaseName},
+		{"supavisor-database-url", "pgbouncer", "_supabase"},
 	}
-	for key, expectedRole := range expectedRoles {
-		ref := spec.Secrets[key]
+	for _, item := range expected {
+		ref := spec.Secrets[item.key]
 		data := values[secretSnapshotNameForCluster(ref)]
+		if len(data) != 1 || len(data["value"]) == 0 {
+			return fmt.Errorf("Supabase %s must contain only a nonempty value", item.key)
+		}
 		u, err := url.Parse(string(data["value"]))
-		if err != nil || u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != expectedRole || u.Path != "/"+spec.Supabase.DatabaseName {
-			return fmt.Errorf("Supabase %s must use its expected database role, database, and TLS hostname", key)
+		password, hasPassword := "", false
+		if u.User != nil {
+			password, hasPassword = u.User.Password()
+		}
+		if err != nil || u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != item.role || !hasPassword || password == "" || u.Path != "/"+item.database {
+			return fmt.Errorf("Supabase %s must use its expected database role, database, and TLS hostname", item.key)
 		}
 		query, err := url.ParseQuery(u.RawQuery)
 		if err != nil || len(query) != 2 || len(query["sslmode"]) != 1 || query["sslmode"][0] != "verify-full" || len(query["sslrootcert"]) != 1 || query["sslrootcert"][0] != "/etc/hakopod-database-ca/ca.crt" {
-			return fmt.Errorf("Supabase %s must use database hostname verification and the mounted CA without connection overrides", key)
+			return fmt.Errorf("Supabase %s must use database hostname verification and the mounted CA without connection overrides", item.key)
 		}
+	}
+	return nil
+}
+
+func validateSupabaseRuntimeSecrets(values map[string]map[string][]byte, spec managedplatform.Spec) error {
+	ref := spec.Secrets["realtime-db-encryption-key"]
+	data := values[secretSnapshotNameForCluster(ref)]
+	if len(data) != 1 || len(data["value"]) != 32 {
+		return fmt.Errorf("Supabase realtime-db-encryption-key value must be exactly 32 bytes")
 	}
 	return nil
 }
