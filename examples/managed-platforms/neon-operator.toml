@@ -6,6 +6,11 @@ approved_encrypted_storage_class = "REPLACE_WITH_STORAGE_CLASS"
 shared_storage_gid = 0
 approved_external_https_cidrs = ["REPLACE_WITH_CANONICAL_PUBLIC_CIDR"]
 neon_proxy_control_plane_origin = "https://control.example.invalid"
+# Supply the public CA certificates that verify the control-plane server.
+# This trust is required even when the platform uses managed TLS.
+neon_proxy_control_plane_ca_pem = """
+REPLACE_WITH_PEM_CA_CERTIFICATES
+"""
 neon_control_plane_namespace = "hakopod-system"
 neon_proxy_token = "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
 
