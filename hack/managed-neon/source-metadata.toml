@@ -15,23 +15,23 @@ ownership_patch_sha256 = "a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2
 transport_patch = "patches/neon-storage-tls.patch"
 transport_patch_sha256 = "3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
 reconfigure_patch = "patches/neon-compute-reconfigure.patch"
-reconfigure_patch_sha256 = "12931e80616072403d44935d4e80a800c0e8576c549e107e9ddfa09c433595ca"
+reconfigure_patch_sha256 = "96b5f4e211186ea60281128029c668ad12bb6d3cf3a552879363fe24750458c9"
 placement_patch = "patches/neon-controller-placement.patch"
 placement_patch_sha256 = "9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
-frozen_combined_patch_sha256 = "1834ce6082a57388d408a3cb2d162fb970ad064324c06329e627bd5b3ea5f5f0"
-combined_candidate_tree = "5f24bced00ee471993649acdfbb3fe4e82f7eb30"
+frozen_combined_patch_sha256 = "23995f89ce5eac5251cbc2ef827284ad7f0a77a7f3426cd507962613efe8cfd0"
+combined_candidate_tree = "a7ad594e43903c469c7f9b8a3233bb683f4d721e"
 
 # Apply proxy, ownership, PostgreSQL consumer, storage TLS, compute reconfiguration
 # and controller placement patches in that order. The combined patch and candidate
 # tree bind all six; the separate PostgreSQL tree binds the vendored server source.
 
 [source_archive]
-sha256 = "d60f451fa12899cc4c63991b804e2eb9deb3cf1202d36955e450299432ab76aa"
-size_bytes = 113923211
+sha256 = "f9f319a5298022e3fb6c876189e36c3f90397e734862314696853df0de0075a7"
+size_bytes = 113919882
 member_count = 30844
 repeat_comparison = "PASS"
 global_member_order = "PASS"
-location = "/srv/hakopod-build/neon-platform-final-v1/source-v3/neon-provider-source.tar.gz"
+location = "/srv/hakopod-build/neon-platform-final-v1/source-v4/neon-provider-source.tar.gz"
 
 [qualification]
 images_built = false

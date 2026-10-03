@@ -7,7 +7,7 @@ import (
 )
 
 const NeonReleaseQualificationID = "neon-fa504217-pg17.11-linux-amd64"
-const NeonReleaseSourceArchiveSHA256 = "d60f451fa12899cc4c63991b804e2eb9deb3cf1202d36955e450299432ab76aa"
+const NeonReleaseSourceArchiveSHA256 = "f9f319a5298022e3fb6c876189e36c3f90397e734862314696853df0de0075a7"
 const NeonReleasePostgresCommit = "1e01fcea2a6b38180021aa83e0051d95286d9096"
 const NeonReleaseConsumerPatchID = "627583b85d7c0f624245e3ac6a240e775a5eed01"
 
