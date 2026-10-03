@@ -152,8 +152,11 @@ def validate_observation(case, observation, value):
         required = common | {"mutation_capability_required", "foreign_owner_refused", "deletion_token_required", "owner_operation_id", "resource_intent_ids"}
         valid = set(observation) == required and all(observation[k] is True for k in ("mutation_capability_required", "foreign_owner_refused", "deletion_token_required")) and ID.fullmatch(observation["owner_operation_id"]) and 3 <= len(observation["resource_intent_ids"]) <= 16 and all(ID.fullmatch(x) for x in observation["resource_intent_ids"])
     elif case == "tls":
-        required = common | {"client_verification_enforced", "server_verified", "plaintext_refused", "services"}
-        valid = set(observation) == required and all(observation[k] is True for k in ("client_verification_enforced", "server_verified", "plaintext_refused")) and set(observation["services"]) == {"storage-controller", "pageserver", "safekeeper", "compute", "proxy"}
+        required = common | {"client_verification_enforced", "server_verified", "plaintext_refused", "services", "managed_tls", "control_plane_trust"}
+        managed = observation.get("managed_tls", {}); before, injection, renewal = managed.get("before", {}), managed.get("injection", {}), managed.get("renewal", {})
+        logical = {"broker-auth", "compute-auth", "controller-auth", "controller-database-password", "pageserver-auth", "proxy-auth", "safekeeper-auth"}
+        trust = observation.get("control_plane_trust", {})
+        valid = set(observation) == required and all(observation[k] is True for k in ("client_verification_enforced", "server_verified", "plaintext_refused")) and set(observation["services"]) == {"storage-controller", "pageserver", "safekeeper", "compute", "proxy"} and set(managed) == {"before", "injection", "renewal"} and all(item.get("status") == "passed" for item in (before, injection, renewal)) and set(before.get("snapshots", {})) == logical and set(renewal.get("snapshots", {})) == logical and injection.get("transition_journal_complete") is True and renewal.get("all_snapshots_owned_and_valid") is True and before.get("ca_fingerprint") == injection.get("ca_fingerprint") == renewal.get("ca_fingerprint") and injection.get("near_expiry_leaf_fingerprint") != renewal.get("served_proxy_leaf_fingerprint") and trust == {"correct_issuer_authenticated": True, "wrong_issuer_refused": True}
     elif case == "tenant-timeline-compute-lifecycle":
         required = common | {"tenant_id", "timeline_id", "tenant_generation", "timeline_generation", "compute_names", "created", "stopped", "deleted"}
         names = observation.get("compute_names")

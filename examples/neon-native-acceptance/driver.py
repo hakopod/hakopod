@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fixed Neon native acceptance orchestration; evidence comes only from live probes."""
-import argparse, hashlib, json, os, re, resource, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, hashlib, json, os, re, resource, socket, ssl, struct, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 ID = re.compile(r"^[0-9a-f]{32}$")
@@ -136,6 +136,7 @@ class Driver:
         if reviewed.get("blocked") is not False or not reviewed.get("review",{}).get("id"): raise RuntimeError("native capability gate remains closed")
         platform=reviewed["platform"]
         if platform.get("project")!=self.a.project or platform.get("environment")!="development" or platform.get("spec")!=spec or reviewed["review"].get("expected_revision")!=0: raise RuntimeError("create review did not echo the exact request")
+        self.command([sys.executable,self.a.control_plane_bridge,"allow","--kubeconfig",self.a.kubeconfig,"--platform-id",platform["id"]],240)
         request={"id":platform["id"],"project":platform["project"],"environment":platform["environment"],"expected_revision":0,"kind":"create","spec":platform["spec"],"review":reviewed["review"]}
         op=self.api("POST","/api/v1/managed-platforms/operations",request,"neon-create-"+platform["id"]); self.platforms.append((platform["id"],spec["name"])); return platform,self.wait("/api/v1/managed-platform-operations/"+op["id"])
     def delete(self,platform_id,name):
@@ -182,6 +183,67 @@ class Driver:
         tls={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"client_verification_enforced":tls_observed["client_verification_enforced"],"server_verified":tls_observed["server_verified"],"plaintext_refused":tls_observed["plaintext_refused"],"services":sorted(tls_observed["services"])}
         lifecycle={"run_id":self.run_id,"platform_id":pid,"namespace_uid":uid,"tenant_id":probe["tenant_id"],"timeline_id":probe["timeline_id"],"tenant_generation":probe["tenant_generation"],"timeline_generation":probe["timeline_generation"],"compute_names":computes,"created":True,"stopped":False,"deleted":False}
         return tls,lifecycle
+    def managed_tls(self,pid,revision,operation_id):
+        namespace="managed-platform-"+pid; ca=self.root/"managed-tls-ca.crt"; injected_path=self.evidence/"managed-tls-injected.json"
+        common=[sys.executable,self.a.managed_tls_helper,"--kubectl","kubectl","--kubeconfig",self.a.kubeconfig,"--namespace",namespace,"--platform-id",pid,"--platform-revision",str(revision),"--owner-operation-id",operation_id,"--proxy-host","neon-proxy","--api-url",self.a.api_url.rstrip("/"),"--api-token-file",self.a.token_file,"--project",self.a.project,"--environment","development","--ca-file",str(ca),"--private-tmp",str(self.root),"--spec-digest-helper",self.a.runtime_spec_digest_helper,"--psql-command-file",self.a.control_psql_command_file,"--openssl",self.a.openssl,"--local-port",str(self.a.local_port)]
+        errors=tempfile.TemporaryFile()
+        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",namespace,"port-forward","service/neon-proxy",str(self.a.local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
+        try:
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline:
+                if forward.poll() is not None: raise RuntimeError("Neon proxy port-forward exited")
+                try:
+                    with socket.create_connection(("127.0.0.1",self.a.local_port),timeout=.2): break
+                except OSError: time.sleep(.2)
+            else: raise RuntimeError("Neon proxy port-forward did not become ready")
+            before=json.loads(self.command([*common,"observe"],60))
+            injected=json.loads(self.command([*common,"inject"],180))
+            atomic(injected_path,injected)
+            renewed=json.loads(self.command([*common,"await-renewal","--input",str(injected_path)],480))
+        finally:
+            forward.terminate()
+            try: forward.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                forward.kill(); forward.wait(timeout=5)
+            errors.close()
+        return {"before":before,"injection":injected,"renewal":renewed}
+    def proxy_auth_message(self,namespace,target,local_port,ca):
+        errors=tempfile.TemporaryFile()
+        forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",namespace,"port-forward",target,str(local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
+        try:
+            for _ in range(150):
+                if forward.poll() is not None: raise RuntimeError("Neon proxy trust port-forward exited")
+                try:
+                    raw=socket.create_connection(("127.0.0.1",local_port),timeout=.2); break
+                except OSError: time.sleep(.2)
+            else: raise RuntimeError("Neon proxy trust port-forward did not become ready")
+            try:
+                raw.sendall(struct.pack("!II",8,80877103))
+                if raw.recv(1)!=b"S": raise RuntimeError("Neon proxy trust probe refused TLS")
+                context=ssl.create_default_context(cafile=str(ca))
+                with context.wrap_socket(raw,server_hostname="neon-proxy") as connection:
+                    payload=struct.pack("!I",196608)+b"user\x00cloud_admin\x00database\x00postgres\x00\x00"
+                    connection.sendall(struct.pack("!I",len(payload)+4)+payload)
+                    connection.settimeout(10)
+                    return connection.recv(1)
+            finally: raw.close()
+        finally:
+            forward.terminate()
+            try:forward.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                forward.kill(); forward.wait(timeout=5)
+            errors.close()
+    def control_plane_trust(self,pid):
+        namespace="managed-platform-"+pid; deployment=json.loads(self.k("-n",namespace,"get","deployment","neon-proxy","-o","json"))
+        secrets=[volume.get("secret",{}).get("secretName") for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume.get("name")=="proxy-auth"]
+        if len(secrets)!=1 or not re.fullmatch(r"platform-tls-proxy-[0-9a-f]{16}-r1",secrets[0] or ""): raise RuntimeError("active Neon proxy TLS snapshot is ambiguous")
+        correct=self.proxy_auth_message(namespace,"service/neon-proxy",self.a.local_port,self.root/"managed-tls-ca.crt")
+        if correct!=b"R": raise RuntimeError("correct control-plane issuer did not reach PostgreSQL authentication")
+        self.command([sys.executable,self.a.control_plane_bridge,"wrong-start","--kubeconfig",self.a.kubeconfig,"--platform-id",pid,"--proxy-secret",secrets[0]],240)
+        try: wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
+        finally:self.command([sys.executable,self.a.control_plane_bridge,"wrong-stop","--kubeconfig",self.a.kubeconfig,"--platform-id",pid],240)
+        if wrong!=b"E": raise RuntimeError("wrong control-plane issuer was not rejected")
+        return {"correct_issuer_authenticated":True,"wrong_issuer_refused":True}
     def sql(self,ns,pod,statement):
         return self.command(["kubectl","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",ns,"exec",pod,"-c","compute","--","psql","-XAt","postgresql://cloud_admin@127.0.0.1:55433/postgres?sslmode=require","-v","ON_ERROR_STOP=1","-c",statement],45).strip()
     def compute_pod(self,pid):
@@ -228,7 +290,7 @@ class Driver:
             namespace=self.namespace(platform["id"]); self.bound[platform["id"]]=(namespace["metadata"]["uid"],op["id"])
             path=self.evidence/(role+"-create.json"); atomic(path,{k:op[k] for k in ("id","platform_id","kind","status")}); self.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"bind-resource","--state",str(self.evidence/"state.json"),"--role",role,"--operation",str(path)])
         self.command([sys.executable,str(Path(__file__).with_name("evidence.py")),"observe-identities","--state",str(self.evidence/"state.json")],180)
-        source_uid=self.namespace(source["id"])["metadata"]["uid"]; self.record("ownership-capability",self.ownership(source["id"],sop["id"])); tls,lifecycle=self.runtime(source["id"],source_uid); self.record("tls",tls); self.pending_lifecycle=lifecycle
+        source_uid=self.namespace(source["id"])["metadata"]["uid"]; self.record("ownership-capability",self.ownership(source["id"],sop["id"])); tls,lifecycle=self.runtime(source["id"],source_uid); source_current=self.api("GET","/api/v1/managed-platforms/"+source["id"]); tls["managed_tls"]=self.managed_tls(source["id"],source_current["revision"],sop["id"]); tls["control_plane_trust"]=self.control_plane_trust(source["id"]); self.record("tls",tls); self.pending_lifecycle=lifecycle
         source_ns,source_compute=self.compute_pod(source["id"]); seed="backup-"+self.run_id; self.sql(source_ns,source_compute,"CREATE TABLE IF NOT EXISTS hakopod_native_acceptance(k text primary key,v text not null); INSERT INTO hakopod_native_acceptance VALUES ('backup','"+seed+"') ON CONFLICT (k) DO UPDATE SET v=excluded.v;")
         sc=self.api("GET","/api/v1/managed-platforms/"+source["id"]); tc=self.api("GET","/api/v1/managed-platforms/"+target["id"])
         backup=self.recover({"kind":"backup","project":self.a.project,"environment":"development","source_platform_id":source["id"],"destination_id":self.a.destination_id,"destination_revision":self.a.destination_revision,"expected_source_revision":sc["revision"]},"backup"); artifact=backup.get("result_artifact_id")
@@ -273,12 +335,14 @@ class Driver:
                 if self.k("get","namespace",namespace,"--ignore-not-found","-o","name").strip(): raise RuntimeError("foreign sentinel cleanup is incomplete")
                 self.foreign=None
             except Exception: failed.append(namespace)
+        try:self.command([sys.executable,self.a.control_plane_bridge,"cleanup","--kubeconfig",self.a.kubeconfig],240)
+        except Exception:failed.append("control-plane-bridge")
         if failed: raise RuntimeError("owned cleanup is incomplete")
 
 def parse(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ("source","kubeconfig","api-url","token-file","source-spec","target-spec","cancellation-target-spec","images","identities","destination-id","work-dir","gate-attestation"):p.add_argument("--"+name,required=True)
-    p.add_argument("--destination-revision",required=True,type=int); p.add_argument("--project",default="native-neon"); return p.parse_args(argv)
+    for name in ("source","kubeconfig","api-url","token-file","source-spec","target-spec","cancellation-target-spec","images","identities","destination-id","work-dir","gate-attestation","project","managed-tls-helper","runtime-spec-digest-helper","control-psql-command-file","control-plane-bridge","openssl"):p.add_argument("--"+name,required=True)
+    p.add_argument("--destination-revision",required=True,type=int); p.add_argument("--local-port",required=True,type=int); return p.parse_args(argv)
 
 def main(argv=None):
     driver=None

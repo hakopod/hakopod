@@ -14,4 +14,12 @@ The driver accepts the API token only through a mode-600 file. Its work director
 attestation. The runner passes that value explicitly to the driver so it cannot
 silently use the driver's development default for API operations.
 
+The managed TLS phase uses `managed-tls.py` and the compiled
+`runtime-spec-digest.go` helper. It verifies the public trust response, all
+seven active Neon certificate snapshots and their durable ownership claims,
+then replaces the proxy snapshot with a short-lived leaf through the same
+fenced runtime-mutation journal used by production maintenance. The run waits
+for automatic renewal, requires stable CA trust and records which individual
+snapshots changed. It does not assume that unrelated healthy leaves rotate.
+
 Qualification remains false until this complete destructive run succeeds on the named development cluster and its output passes the independent release verifier. The driver does not turn a source-only review, a blocked two-node run, or a development fixture into runtime qualification.

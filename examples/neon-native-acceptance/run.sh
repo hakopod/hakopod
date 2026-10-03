@@ -17,6 +17,12 @@ repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 : "${HAKOPOD_ACCEPTANCE_DESTINATION_REVISION:?set its current revision}"
 : "${HAKOPOD_ACCEPTANCE_WORK_DIR:?set a fresh protected work directory}"
 : "${HAKOPOD_ACCEPTANCE_GATE_ATTESTATION:?set the reviewed gate attestation}"
+: "${HAKOPOD_ACCEPTANCE_MANAGED_TLS_HELPER:?set the Neon managed TLS helper}"
+: "${HAKOPOD_ACCEPTANCE_RUNTIME_SPEC_DIGEST_HELPER:?set the typed runtime-spec digest helper}"
+: "${HAKOPOD_ACCEPTANCE_CONTROL_PSQL_COMMAND_FILE:?set the protected control-database command argv}"
+: "${HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE:?set the control-plane bridge helper}"
+: "${HAKOPOD_ACCEPTANCE_OPENSSL:?set the reviewed OpenSSL executable}"
+: "${HAKOPOD_ACCEPTANCE_LOCAL_PORT:?set a free loopback port for the Neon proxy}"
 : "${HAKOPOD_ACCEPTANCE_DISPOSABLE:?set to 1 for this destructive disposable run}"
 
 [ "$HAKOPOD_ACCEPTANCE_DISPOSABLE" = 1 ] || { echo 'native acceptance requires an explicit disposable marker' >&2; exit 2; }
@@ -26,7 +32,7 @@ for command in kubectl python3 stat; do command -v "$command" >/dev/null 2>&1 ||
 [ ! -e "$HAKOPOD_ACCEPTANCE_WORK_DIR" ] && [ ! -L "$HAKOPOD_ACCEPTANCE_WORK_DIR" ] || { echo 'use a fresh work directory' >&2; exit 2; }
 case "$HAKOPOD_ACCEPTANCE_WORK_DIR" in /tmp/hakopod-neon-native-*|/srv/hakopod-backup-scratch/hakopod-neon-native-*) ;; *) echo 'work directory is outside accepted scratch roots' >&2; exit 2;; esac
 case "$HAKOPOD_ACCEPTANCE_API_URL" in http://127.0.0.1:*|http://localhost:*) ;; *) echo 'acceptance API must be loopback HTTP' >&2; exit 2;; esac
-for file in "$KUBECONFIG" "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE" "$HAKOPOD_ACCEPTANCE_SPEC" "$HAKOPOD_ACCEPTANCE_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_IMAGES" "$HAKOPOD_ACCEPTANCE_IDENTITIES" "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION"; do
+for file in "$KUBECONFIG" "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE" "$HAKOPOD_ACCEPTANCE_SPEC" "$HAKOPOD_ACCEPTANCE_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_CANCELLATION_TARGET_SPEC" "$HAKOPOD_ACCEPTANCE_IMAGES" "$HAKOPOD_ACCEPTANCE_IDENTITIES" "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION" "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE"; do
   [ -f "$file" ] && [ ! -L "$file" ] || { echo 'an acceptance input is missing or symbolic' >&2; exit 2; }
 done
 [ "$(stat -c %a "$HAKOPOD_ACCEPTANCE_API_TOKEN_FILE")" = 600 ] || { echo 'API token file must be mode 600' >&2; exit 2; }
@@ -38,4 +44,8 @@ exec python3 "$script_dir/driver.py" --source "$repo_root" --kubeconfig "$KUBECO
   --images "$HAKOPOD_ACCEPTANCE_IMAGES" --identities "$HAKOPOD_ACCEPTANCE_IDENTITIES" \
   --destination-id "$HAKOPOD_ACCEPTANCE_DESTINATION_ID" --destination-revision "$HAKOPOD_ACCEPTANCE_DESTINATION_REVISION" \
   --work-dir "$HAKOPOD_ACCEPTANCE_WORK_DIR" --gate-attestation "$HAKOPOD_ACCEPTANCE_GATE_ATTESTATION" \
-  --project "$HAKOPOD_ACCEPTANCE_PROJECT"
+  --project "$HAKOPOD_ACCEPTANCE_PROJECT" --managed-tls-helper "$HAKOPOD_ACCEPTANCE_MANAGED_TLS_HELPER" \
+  --runtime-spec-digest-helper "$HAKOPOD_ACCEPTANCE_RUNTIME_SPEC_DIGEST_HELPER" \
+  --control-psql-command-file "$HAKOPOD_ACCEPTANCE_CONTROL_PSQL_COMMAND_FILE" \
+  --control-plane-bridge "$HAKOPOD_ACCEPTANCE_CONTROL_PLANE_BRIDGE" \
+  --openssl "$HAKOPOD_ACCEPTANCE_OPENSSL" --local-port "$HAKOPOD_ACCEPTANCE_LOCAL_PORT"
