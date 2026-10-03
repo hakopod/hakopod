@@ -65,6 +65,10 @@ func TestNeonComputeAuthenticationMatchesProviderAndOwnsTLSPaths(t *testing.T) {
 			t.Fatal("compute public key is invalid")
 		}
 		publicKeys[platform], credentials[platform] = ed25519.PublicKey(public), token
+		reconstructed, err := NeonComputeAuthenticationToken(key, platform)
+		if err != nil || !bytes.Equal(reconstructed, token) {
+			t.Fatal("reconstructed compute credential differs from create authentication")
+		}
 		parsed, err := jwt.Parse(string(token), func(*jwt.Token) (any, error) { return ed25519.PublicKey(public), nil }, jwt.WithValidMethods([]string{"EdDSA"}), jwt.WithAudience("compute"))
 		if err != nil || !parsed.Valid || parsed.Claims.(jwt.MapClaims)["scope"] != "compute_ctl:admin" || parsed.Claims.(jwt.MapClaims)["compute_id"] != nil {
 			t.Fatal("compute credential does not satisfy provider signature, scope and audience")
@@ -78,6 +82,9 @@ func TestNeonComputeAuthenticationMatchesProviderAndOwnsTLSPaths(t *testing.T) {
 				t.Fatal("compute signer entered the snapshot")
 			}
 		}
+	}
+	if bytes.Equal(credentials[strings.Repeat("a", 32)], credentials[strings.Repeat("b", 32)]) {
+		t.Fatal("different platforms received the same compute credential")
 	}
 	if _, err := jwt.Parse(string(credentials[strings.Repeat("a", 32)]), func(*jwt.Token) (any, error) { return publicKeys[strings.Repeat("b", 32)], nil }, jwt.WithValidMethods([]string{"EdDSA"}), jwt.WithAudience("compute")); err == nil {
 		t.Fatal("compute authority crossed platform trust")
