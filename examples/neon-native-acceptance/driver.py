@@ -207,7 +207,7 @@ class Driver:
                 forward.kill(); forward.wait(timeout=5)
             errors.close()
         return {"before":before,"injection":injected,"renewal":renewed}
-    def proxy_auth_message(self,namespace,target,local_port,ca):
+    def proxy_auth_message(self,namespace,target,local_port,ca,platform_id):
         errors=tempfile.TemporaryFile()
         forward=subprocess.Popen(["kubectl","--request-timeout=15s","--kubeconfig",self.a.kubeconfig,"--context","k3d-hakopod-dev","-n",namespace,"port-forward",target,str(local_port)+":5432"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,close_fds=True)
         try:
@@ -222,7 +222,7 @@ class Driver:
                 if raw.recv(1)!=b"S": raise RuntimeError("Neon proxy trust probe refused TLS")
                 context=ssl.create_default_context(cafile=str(ca))
                 with context.wrap_socket(raw,server_hostname="neon-proxy") as connection:
-                    payload=struct.pack("!I",196608)+b"user\x00cloud_admin\x00database\x00postgres\x00\x00"
+                    payload=struct.pack("!I",196608)+b"user\x00cloud_admin\x00database\x00postgres\x00options\x00endpoint="+platform_id.encode()+b"\x00\x00"
                     connection.sendall(struct.pack("!I",len(payload)+4)+payload)
                     connection.settimeout(10)
                     return connection.recv(1)
@@ -239,12 +239,12 @@ class Driver:
         if len(secrets)!=1 or not re.fullmatch(r"platform-tls-proxy-[0-9a-f]{16}-r1",secrets[0] or ""): raise RuntimeError("active Neon proxy TLS snapshot is ambiguous")
         base=["--kubeconfig",self.a.kubeconfig,"--platform-id",pid]
         self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","correct"],240)
-        try: correct=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
+        try: correct=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt",pid)
         finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
         if correct!=b"R": raise RuntimeError("correct control-plane issuer did not reach PostgreSQL authentication")
         self.command([sys.executable,self.a.control_plane_bridge,"probe-start",*base,"--proxy-secret",secrets[0],"--ca-kind","wrong"],240)
         try:
-            wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt")
+            wrong=self.proxy_auth_message(namespace,"deployment/hakopod-neon-wrong-ca",self.a.local_port+1,self.root/"managed-tls-ca.crt",pid)
             self.command([sys.executable,self.a.control_plane_bridge,"probe-verify-wrong",*base],60)
         finally:self.command([sys.executable,self.a.control_plane_bridge,"probe-stop",*base],240)
         if wrong!=b"E": raise RuntimeError("wrong control-plane issuer was not rejected")

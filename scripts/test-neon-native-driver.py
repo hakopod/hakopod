@@ -119,6 +119,17 @@ class Tests(unittest.TestCase):
         result=driver.ownership(pid,opid)
         self.assertTrue(result["foreign_owner_refused"])
         self.assertEqual(driver.api.call_args_list[1].args,("POST","/api/v1/managed-platforms/"+pid+"/native-probe",{"expected_revision":1}))
+    @mock.patch.object(DRIVER.ssl,"create_default_context")
+    @mock.patch.object(DRIVER.socket,"create_connection")
+    @mock.patch.object(DRIVER.subprocess,"Popen")
+    def test_proxy_auth_binds_platform_endpoint_in_startup_options(self,popen,create_connection,create_context):
+        platform_id="e"*32; raw=mock.MagicMock(); raw.recv.return_value=b"S"; create_connection.return_value=raw
+        connection=mock.MagicMock(); connection.__enter__.return_value=connection; connection.recv.return_value=b"R"; create_context.return_value.wrap_socket.return_value=connection
+        process=mock.MagicMock(); process.poll.return_value=None; popen.return_value=process
+        driver=self.bare_driver(); driver.a.kubeconfig="/protected/kubeconfig"
+        self.assertEqual(driver.proxy_auth_message("managed-platform-"+platform_id,"deployment/proxy",15433,Path("/protected/ca.crt"),platform_id),b"R")
+        payload=connection.sendall.call_args.args[0]
+        self.assertEqual(payload[8:],b"user\x00cloud_admin\x00database\x00postgres\x00options\x00endpoint="+platform_id.encode()+b"\x00\x00")
     def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
         driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
         value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
