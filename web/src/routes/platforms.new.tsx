@@ -21,7 +21,12 @@ import {
   type ManagedPlatform,
 } from '../lib/managed-platforms'
 import { projectRouteScopeMatches } from '../lib/projects'
-import { completePlatformSpec, platformSteps, type PlatformStage } from '../lib/platform-wizard'
+import {
+  completePlatformSpec,
+  platformSecretKeys,
+  platformSteps,
+  type PlatformStage,
+} from '../lib/platform-wizard'
 
 export const Route = createFileRoute('/platforms/new')({
   validateSearch: platformSearch,
@@ -189,7 +194,8 @@ export function PlatformForm({
       : navigate({ to: '/platforms/new/$step', params: { step }, search: scope })
   const entry = catalog.items.find((item) => item.kind === kind)
   const draft = drafts[kind]
-  const steps = platformSteps(kind, entry?.required_secret_keys || [])
+  const requiredSecrets = platformSecretKeys(entry, initial?.spec)
+  const steps = platformSteps(kind, requiredSecrets)
   const resourceName = stepID.startsWith('resource-') ? stepID.slice('resource-'.length) : ''
   const resourceExists = Boolean(
     resourceName && draft && (resourceName in draft.resources || resourceName in draft.storage),
@@ -273,7 +279,7 @@ export function PlatformForm({
   const spec = completePlatformSpec(
     draft,
     nodes,
-    entry.required_secret_keys,
+    requiredSecrets,
     secrets,
     catalog.secret_references,
   )
@@ -286,10 +292,7 @@ export function PlatformForm({
     'Review',
   ]
   const secretKeys = stepID.startsWith('secrets-')
-    ? entry.required_secret_keys.slice(
-        (Number(stepID.slice(8)) - 1) * 4,
-        Number(stepID.slice(8)) * 4,
-      )
+    ? requiredSecrets.slice((Number(stepID.slice(8)) - 1) * 4, Number(stepID.slice(8)) * 4)
     : []
   async function submit() {
     if (mutation.current) return
@@ -632,8 +635,16 @@ export function PlatformForm({
               <div>
                 <dt className="text-muted-foreground">Secret references</dt>
                 <dd>
-                  {entry.required_secret_keys.filter((key) => Boolean(secrets[key])).length} of{' '}
-                  {entry.required_secret_keys.length} selected
+                  {requiredSecrets.filter((key) => Boolean(secrets[key])).length} of{' '}
+                  {requiredSecrets.length} selected
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">TLS certificates</dt>
+                <dd>
+                  {draft.tls_mode === 'managed'
+                    ? 'Issued and renewed by Hakopod'
+                    : 'Supplied by your operator'}
                 </dd>
               </div>
             </dl>

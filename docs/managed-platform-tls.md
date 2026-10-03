@@ -45,4 +45,6 @@ The platform observation records the issuer fingerprint, each verified endpoint'
 
 Download the platform's public CA certificate from its trust endpoint and configure clients to verify the server hostname. Managed certificates are issued by the platform's own CA; they are not automatically trusted by browsers or a computer's system certificate store. A public hostname in a certificate does not by itself publish the database or make that CA publicly trusted.
 
+In the dashboard, open the platform's **Security** tab and choose **Download public CA**. The same public certificate is available through `GET /api/v1/managed-platforms/{id}/trust`, `hakopod platform trust PLATFORM_ID`, and the SDK's `client.managedPlatform(id).trust()`. The CLI returns JSON; the PEM certificate is in `certificate_pem`. A scoped reader can access it. Missing ownership or an issuer that has not been verified makes the endpoint unavailable.
+
 A recovery target has its own namespace and issuer. Restoring data does not copy the source's TLS private keys or make the target impersonate the source. Application credentials that must remain compatible with the restored data are checked separately. Neon recovery reads the target's currently claimed certificate snapshots and refuses a missing, changed or unmaintained identity.

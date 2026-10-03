@@ -1,5 +1,6 @@
 import type {
   ManagedPlatformCatalog,
+  ManagedPlatformCatalogEntry,
   ManagedPlatformDefaults,
   ManagedPlatformSpec,
 } from './managed-platforms'
@@ -7,6 +8,20 @@ import type {
 export type PlatformStage =
   'Platform' | 'Settings' | 'Placement' | 'Secrets' | 'Resources' | 'Review'
 export type PlatformStep = { id: string; title: string; stage: PlatformStage }
+
+export function platformSecretKeys(
+  entry: ManagedPlatformCatalogEntry | undefined,
+  initial?: ManagedPlatformSpec,
+): string[] {
+  if (!entry) return []
+  // Existing operator-managed certificates remain part of the reviewed revision.
+  return [
+    ...new Set([
+      ...entry.required_secret_keys,
+      ...(initial?.kind === entry.kind ? Object.keys(initial.secrets) : []),
+    ]),
+  ]
+}
 
 export function platformSteps(kind: string, secretKeys: string[]): PlatformStep[] {
   const settings =

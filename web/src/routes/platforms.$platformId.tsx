@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
 import { ServiceIcon } from '../components/service-icon'
 import { PlatformRecoveryHistory } from '../components/platform-recovery'
+import { PlatformSecurity } from '../components/platform-security'
 import { useResourceScope, useScope, canAccess } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import {
@@ -14,7 +15,7 @@ import {
   useManagedPlatformOperations,
 } from '../lib/managed-platforms'
 
-const platformTabs = ['overview', 'recovery', 'activity', 'configuration'] as const
+const platformTabs = ['overview', 'security', 'recovery', 'activity', 'configuration'] as const
 type PlatformTab = (typeof platformTabs)[number]
 export const Route = createFileRoute('/platforms/$platformId')({
   validateSearch: (
@@ -168,6 +169,9 @@ function Detail() {
               </dl>
             </section>
           )}
+        </Tabs.Content>
+        <Tabs.Content value="security" className="tab-content">
+          <PlatformSecurity platform={item} stale={Boolean(query.error)} />
         </Tabs.Content>
         <Tabs.Content value="recovery" className="tab-content">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">

@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/store"
@@ -104,7 +105,7 @@ func readManagedPlatformSpec(path string) (managedplatform.Spec, error) {
 
 func managedPlatformCommand(ctx context.Context, c *client, project, environment string, args []string, file, idem, confirm string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return &exitError{2, "platform requires list, catalog, show, review, apply, update, delete, operations, operation, recovery-review, recovery-apply, recovery-operations, recovery-operation or recovery-cancel"}
+		return &exitError{2, "platform requires list, catalog, show, trust, review, apply, update, delete, operations, operation, recovery-review, recovery-apply, recovery-operations, recovery-operation or recovery-cancel"}
 	}
 	action, id := args[0], ""
 	if len(args) == 2 {
@@ -150,6 +151,12 @@ func managedPlatformCommand(ctx context.Context, c *client, project, environment
 	case "show":
 		var out store.ManagedPlatform
 		if err := c.request(ctx, "GET", "/managed-platforms/"+url.PathEscape(id), nil, "", &out); err != nil {
+			return err
+		}
+		return printJSON(out)
+	case "trust":
+		var out database.PublicTrust
+		if err := c.request(ctx, "GET", "/managed-platforms/"+url.PathEscape(id)+"/trust", nil, "", &out); err != nil {
 			return err
 		}
 		return printJSON(out)
