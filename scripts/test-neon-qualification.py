@@ -10,6 +10,7 @@ def load(name, path):
 VERIFY = load("verify_neon", ROOT / "release/verify-neon-runtime.py")
 RECORD = load("record_neon", ROOT / "release/record-neon-qualification.py")
 PRODUCER = load("neon_evidence", ROOT / "examples/neon-native-acceptance/evidence.py")
+DRIVER = load("neon_driver", ROOT / "examples/neon-native-acceptance/driver.py")
 
 def reference(name, digit): return "registry.example/neon-" + name + "@sha256:" + digit * 64
 def images():
@@ -67,6 +68,9 @@ def build():
         "ownership_patch_sha256": "e" * 64,
         "postgres_patch_sha256": "6" * 64,
         "consumer_patch_sha256": "7" * 64,
+        "transport_patch_sha256": "8" * 64,
+        "reconfigure_patch_sha256": "9" * 64,
+        "placement_patch_sha256": "0" * 64,
         "frozen_combined_patch_sha256": "f" * 64,
     }
     evidence = {
@@ -79,7 +83,7 @@ def build():
         "postgres_tree": metadata["postgres_tree"],
         "consumer_patch_id": metadata["consumer_patch_id"],
         "source_archive": dict(metadata["source_archive"]),
-        "patches": {"proxy": metadata["proxy_patch_sha256"], "ownership": metadata["ownership_patch_sha256"], "postgres": metadata["postgres_patch_sha256"], "consumer": metadata["consumer_patch_sha256"], "combined": metadata["frozen_combined_patch_sha256"]},
+        "patches": VERIFY.source_patch_hashes(metadata),
         "images": values,
         "identities": identities(values),
         "image_stages": stages,
@@ -96,6 +100,18 @@ def report():
 
 class Tests(unittest.TestCase):
     def validate(self, value): VERIFY.validate_acceptance(value, value["source_files"], value["images"], value["identities"])
+    def test_build_requires_each_exact_runtime_patch(self):
+        for name in ("transport", "reconfigure", "placement"):
+            with self.subTest(patch=name):
+                evidence, metadata = build()
+                VERIFY.validate_build(evidence, metadata)
+                del evidence["patches"][name]
+                with self.assertRaisesRegex(ValueError, "patch provenance"):
+                    VERIFY.validate_build(evidence, metadata)
+                evidence["patches"][name] = "a" * 64
+                with self.assertRaisesRegex(ValueError, "patch provenance"):
+                    VERIFY.validate_build(evidence, metadata)
+
     def test_release_gate_and_exact_inventory(self):
         evidence, metadata = build()
         with tempfile.TemporaryDirectory() as temporary:
@@ -317,10 +333,45 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"wal-quorum-fencing"): PRODUCER.validate_observation("wal-quorum-fencing",dict(observations["wal-quorum-fencing"],**{field:False}),state)
         non_superuser=dict(limits,role_superuser=False,effective_connection_limit=60,baseline_backend_pids=[1],concurrent_connections=59,refused_connections=13,backend_pids=list(range(100,159)))
         PRODUCER.validate_observation("connection-limits",non_superuser,state)
-        restart={**target,"storage_pod_uids_before":["storage-old"],"storage_pod_uids_after":["storage-new"],"compute_pod_uids_before":["compute-old"],"compute_pod_uids_after":["compute-new"],"restarted_components":{"pageserver":"pageserver-0","compute":"compute-0"},"statefulset_uids":{"pageserver":"storage-set","compute":"compute-set"},"old_pods_absent":True,"failure_observed":True,"service_recovered":True,"data_sha256":"3"*64}
+        restart={**target,"storage_pod_uids_before":["storage-old"],"storage_pod_uids_after":["storage-new"],"compute_pod_uids_before":["compute-old"],"compute_pod_uids_after":["compute-new"],"active_storage":{"component":"pageserver-1","node_id":2,"tenant_id":"1"*32,"tenant_generation":7},"restarted_components":{"pageserver":"pageserver-1","compute":"compute-0"},"statefulset_uids":{"pageserver":"storage-set","compute":"compute-set"},"old_pods_absent":True,"failure_observed":True,"service_recovered":True,"data_sha256":"3"*64}
         PRODUCER.validate_observation("restart-failure",restart,state)
-        for changed in ({"old_pods_absent":False},{"compute_pod_uids_after":["compute-old"]},{"restarted_components":{"pageserver":"pageserver-0","compute":"compute-1"}}):
+        for changed in ({"old_pods_absent":False},{"compute_pod_uids_after":["compute-old"]},{"restarted_components":{"pageserver":"pageserver-1","compute":"compute-1"}},{"restarted_components":{"pageserver":"pageserver-0","compute":"compute-0"}},{"active_storage":None},{"active_storage":dict(restart["active_storage"],node_id=1)}):
             with self.assertRaisesRegex(ValueError,"restart-failure"): PRODUCER.validate_observation("restart-failure",dict(restart,**changed),state)
+
+    def test_restart_uses_the_verified_active_pageserver(self):
+        probe={"platform_id":"7"*32,"platform_revision":4,"namespace_uid":"owned-namespace","ownership_capability_verified":True,"attached_pageserver":"pageserver-1","attached_pageserver_node_id":2,"tenant_id":"1"*32,"tenant_generation":7}
+        result=DRIVER.restart_storage(probe,"7"*32,4,"owned-namespace")
+        self.assertEqual(result,{"component":"pageserver-1","node_id":2,"tenant_id":"1"*32,"tenant_generation":7})
+        for changes in ({"attached_pageserver":"pageserver-0"},{"attached_pageserver_node_id":0},{"attached_pageserver_node_id":True},{"tenant_generation":0},{"platform_id":"8"*32},{"platform_revision":5},{"namespace_uid":"foreign"},{"ownership_capability_verified":False}):
+            with self.assertRaisesRegex(RuntimeError,"active storage"): DRIVER.restart_storage(dict(probe,**changes),"7"*32,4,"owned-namespace")
+
+    def test_tenant_migration_requires_owned_move_and_compute_recovery(self):
+        state = {"run_id": "4" * 32, "resources": resources()}
+        value = {
+            "run_id": state["run_id"], "platform_id": "7" * 32,
+            "platform_revision": 4, "namespace_uid": "uid-recovery_target",
+            "tenant_id": "1" * 32, "timeline_id": "2" * 32,
+            "source_node_id": 1, "destination_node_id": 2,
+            "generation_before": 4, "generation_after": 5,
+            "tenant_owner_unchanged": True, "controller_move_completed": True,
+            "compute_names": ["compute-0", "compute-1"], "compute_routing_verified": True,
+            "primary_sql_verified": True, "replica_sql_verified": True, "data_sha256": "3" * 64,
+        }
+        PRODUCER.validate_observation("tenant-migration", value, state)
+        for key, replacement in (
+            ("source_node_id", True), ("destination_node_id", 1), ("destination_node_id", 9),
+            ("generation_after", 4), ("generation_before", 0), ("generation_after", 4294967296),
+            ("platform_revision", True), ("tenant_owner_unchanged", False),
+            ("controller_move_completed", False), ("compute_routing_verified", False),
+            ("primary_sql_verified", False), ("replica_sql_verified", False),
+            ("compute_names", ["compute-0"]), ("compute_names", ["compute-0", "compute-0"]),
+            ("tenant_id", "invalid"), ("data_sha256", "invalid"),
+        ):
+            with self.subTest(key=key, replacement=replacement):
+                with self.assertRaisesRegex(ValueError, "tenant-migration"):
+                    PRODUCER.validate_observation("tenant-migration", dict(value, **{key: replacement}), state)
+        with self.assertRaisesRegex(ValueError, "exact fixture"):
+            PRODUCER.validate_observation("tenant-migration", dict(value, platform_id="6" * 32, namespace_uid="uid-source"), state)
 
     def test_restored_resource_update_evidence_requires_exact_transition_and_live_pod_cpu(self):
         state={"run_id":"4"*32,"resources":resources()}

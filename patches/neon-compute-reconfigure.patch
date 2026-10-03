@@ -1,0 +1,625 @@
+diff --git a/compute_tools/src/http/routes/configure.rs b/compute_tools/src/http/routes/configure.rs
+index c06de8e..944bb1f 100644
+--- a/compute_tools/src/http/routes/configure.rs
++++ b/compute_tools/src/http/routes/configure.rs
+@@ -92,12 +92,24 @@ pub(in crate::http) async fn configure(
+     }
+ 
+     // Return current compute state if everything went well.
+-    let state = compute.state.lock().unwrap().clone();
++    let state = compute.state.lock().unwrap();
+     let ownership_token = match compute.ownership.token() {
+         Ok(token) => token,
+         Err(error) => return ownership_error(error),
+     };
+-    let body = compute_status_response(&state, ownership_token);
++    let authorized_spec_sha256 = match compute.ownership.authorized_spec_hash() {
++        Ok(hash) => hash,
++        Err(error) => return ownership_error(error),
++    };
++    let body = match compute_status_response(&state, ownership_token, authorized_spec_sha256) {
++        Ok(body) => body,
++        Err(_) => {
++            return JsonResponse::error(
++                StatusCode::INTERNAL_SERVER_ERROR,
++                "compute spec digest is unavailable",
++            );
++        }
++    };
+ 
+     JsonResponse::success(StatusCode::OK, body)
+ }
+diff --git a/compute_tools/src/http/routes/mod.rs b/compute_tools/src/http/routes/mod.rs
+index 4ec7197..ddefd83 100644
+--- a/compute_tools/src/http/routes/mod.rs
++++ b/compute_tools/src/http/routes/mod.rs
+@@ -1,4 +1,4 @@
+-use compute_api::responses::ComputeStatusResponse;
++use compute_api::responses::{ComputeStatus, ComputeStatusResponse};
+ 
+ use crate::compute::ComputeState;
+ 
+@@ -23,8 +23,13 @@ pub(in crate::http) mod terminate;
+ pub(in crate::http) fn compute_status_response(
+     state: &ComputeState,
+     durable_operation_uuid: Option<String>,
+-) -> ComputeStatusResponse {
+-    ComputeStatusResponse {
++    authorized_spec_sha256: Option<String>,
++) -> anyhow::Result<ComputeStatusResponse> {
++    let running_spec = state
++        .pspec
++        .as_ref()
++        .filter(|_| state.status == ComputeStatus::Running);
++    Ok(ComputeStatusResponse {
+         start_time: state.start_time,
+         tenant: state
+             .pspec
+@@ -40,8 +45,55 @@ pub(in crate::http) fn compute_status_response(
+                 .as_ref()
+                 .and_then(|pspec| pspec.spec.operation_uuid.clone())
+         }),
++        spec_sha256: running_spec
++            .map(|pspec| crate::ownership::spec_hash(&pspec.spec))
++            .transpose()?,
++        authorized_spec_sha256,
++        routing_sha256: running_spec
++            .map(|pspec| crate::ownership::routing_hash(&pspec.spec))
++            .transpose()?,
+         status: state.status,
+         last_active: state.last_active,
+         error: state.error.clone(),
++    })
++}
++
++#[cfg(test)]
++mod ownership_status_tests {
++    use super::*;
++    use crate::compute::ParsedSpec;
++    use compute_api::spec::ComputeSpec;
++
++    #[test]
++    fn observed_digest_is_absent_until_configuration_is_running() {
++        let mut spec = ComputeSpec::default();
++        spec.tenant_id = Some("11111111111111111111111111111111".parse().unwrap());
++        spec.timeline_id = Some("22222222222222222222222222222222".parse().unwrap());
++        spec.pageserver_connstring = Some("postgresql://pageserver:6400".into());
++        spec.safekeeper_connstrings = vec!["safekeeper:5454".into()];
++        let mut state = ComputeState::new();
++        let authorized = crate::ownership::spec_hash(&spec).unwrap();
++        state.pspec = Some(ParsedSpec::try_from(spec).unwrap());
++        for status in [
++            ComputeStatus::Empty,
++            ComputeStatus::ConfigurationPending,
++            ComputeStatus::Init,
++            ComputeStatus::Configuration,
++            ComputeStatus::Failed,
++        ] {
++            state.status = status;
++            let response =
++                compute_status_response(&state, Some("owned".into()), Some(authorized.clone()))
++                    .unwrap();
++            assert!(response.spec_sha256.is_none());
++            assert!(response.routing_sha256.is_none());
++            assert_eq!(response.authorized_spec_sha256, Some(authorized.clone()));
++        }
++        state.status = ComputeStatus::Running;
++        let response =
++            compute_status_response(&state, Some("owned".into()), Some(authorized.clone()))
++                .unwrap();
++        assert_eq!(response.spec_sha256, Some(authorized));
++        assert!(response.routing_sha256.is_some());
+     }
+ }
+diff --git a/compute_tools/src/http/routes/status.rs b/compute_tools/src/http/routes/status.rs
+index e1e44d2..330a381 100644
+--- a/compute_tools/src/http/routes/status.rs
++++ b/compute_tools/src/http/routes/status.rs
+@@ -22,7 +22,24 @@ pub(in crate::http) async fn get_status(State(compute): State<Arc<ComputeNode>>)
+             };
+         }
+     };
+-    let body = compute_status_response(&state, ownership_token);
++    let authorized_spec_sha256 = match compute.ownership.authorized_spec_hash() {
++        Ok(hash) => hash,
++        Err(_) => {
++            return JsonResponse::error(
++                StatusCode::INTERNAL_SERVER_ERROR,
++                "compute authorization digest is unavailable",
++            );
++        }
++    };
++    let body = match compute_status_response(&state, ownership_token, authorized_spec_sha256) {
++        Ok(body) => body,
++        Err(_) => {
++            return JsonResponse::error(
++                StatusCode::INTERNAL_SERVER_ERROR,
++                "compute spec digest is unavailable",
++            );
++        }
++    };
+ 
+     JsonResponse::success(StatusCode::OK, body)
+ }
+diff --git a/compute_tools/src/ownership.rs b/compute_tools/src/ownership.rs
+index e4f6ef5..09f7d7c 100644
+--- a/compute_tools/src/ownership.rs
++++ b/compute_tools/src/ownership.rs
+@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
+ use uuid::Uuid;
+ 
+ pub const HAKOPOD_OWNERSHIP_TOKEN_HEADER: &str = "hakopod-ownership-token";
++pub const HAKOPOD_EXPECTED_SPEC_HEADER: &str = "hakopod-expected-spec-sha256";
+ const OWNERSHIP_SCHEMA_VERSION: u8 = 1;
+ const MAX_OWNERSHIP_RECORD_BYTES: u64 = 4096;
+ #[cfg(not(test))]
+@@ -40,6 +41,8 @@ struct OwnershipRecord {
+     schema_version: u8,
+     token: String,
+     spec_sha256: String,
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    stable_spec_sha256: Option<String>,
+     state: OwnershipState,
+ }
+ 
+@@ -120,7 +123,9 @@ impl ComputeOwnership {
+         if spec.operation_uuid.as_deref() != Some(token) {
+             return Err(OwnershipError::Conflict);
+         }
++        let expected = expected_spec_header(headers)?;
+         let hash = spec_hash(spec).map_err(OwnershipError::Persistence)?;
++        let stable_hash = stable_spec_hash(spec).map_err(OwnershipError::Persistence)?;
+         let mut guard = self.lock_record().map_err(OwnershipError::Persistence)?;
+         let record = self.read_record().map_err(OwnershipError::Persistence)?;
+         *guard = record.clone();
+@@ -132,12 +137,29 @@ impl ComputeOwnership {
+             {
+                 Ok(())
+             }
++            Some(mut record)
++                if record.state == OwnershipState::Active
++                    && record.token == token
++                    && record.stable_spec_sha256.as_deref() == Some(stable_hash.as_str())
++                    && expected == Some(record.spec_sha256.as_str())
++                    && supported_routing_spec(spec) =>
++            {
++                record.spec_sha256 = hash;
++                self.persist_replacement(&record)
++                    .map_err(OwnershipError::Persistence)?;
++                *guard = Some(record);
++                Ok(())
++            }
+             Some(_) => Err(OwnershipError::Conflict),
+             None => {
++                if expected.is_some() {
++                    return Err(OwnershipError::Conflict);
++                }
+                 let record = OwnershipRecord {
+                     schema_version: OWNERSHIP_SCHEMA_VERSION,
+                     token: token.to_owned(),
+                     spec_sha256: hash,
++                    stable_spec_sha256: Some(stable_hash),
+                     state: OwnershipState::Active,
+                 };
+                 self.persist_new(&record)
+@@ -148,6 +170,18 @@ impl ComputeOwnership {
+         }
+     }
+ 
++    pub fn authorized_spec_hash(&self) -> std::result::Result<Option<String>, OwnershipError> {
++        if !self.enabled() {
++            return Ok(None);
++        }
++        let mut guard = self.lock_record().map_err(OwnershipError::Persistence)?;
++        let record = self.read_record().map_err(OwnershipError::Persistence)?;
++        *guard = record.clone();
++        Ok(record
++            .filter(|record| record.state == OwnershipState::Active)
++            .map(|record| record.spec_sha256))
++    }
++
+     pub fn authorize_spec_replay(
+         &self,
+         headers: &HeaderMap,
+@@ -396,6 +430,15 @@ fn validate_record(record: &OwnershipRecord) -> Result<()> {
+     {
+         bail!("invalid compute ownership spec hash");
+     }
++    if let Some(hash) = &record.stable_spec_sha256 {
++        if hash.len() != 64
++            || !hash
++                .bytes()
++                .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
++        {
++            bail!("invalid compute stable spec hash");
++        }
++    }
+     Ok(())
+ }
+ 
+@@ -469,13 +512,136 @@ fn sync_directory(parent: &Path) -> Result<()> {
+         .context("sync compute ownership state directory")
+ }
+ 
+-fn spec_hash(spec: &ComputeSpec) -> Result<String> {
++pub(crate) fn spec_hash(spec: &ComputeSpec) -> Result<String> {
+     let value = serde_json::to_value(spec).context("serialize owned compute spec")?;
++    value_hash(&value)
++}
++
++fn expected_spec_header(headers: &HeaderMap) -> std::result::Result<Option<&str>, OwnershipError> {
++    let mut values = headers.get_all(HAKOPOD_EXPECTED_SPEC_HEADER).iter();
++    let value = values
++        .next()
++        .map(|value| value.to_str().map_err(|_| OwnershipError::Conflict))
++        .transpose()?;
++    if values.next().is_some()
++        || value.is_some_and(|value| {
++            value.len() != 64
++                || !value
++                    .bytes()
++                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
++        })
++    {
++        return Err(OwnershipError::Conflict);
++    }
++    Ok(value)
++}
++
++// Only host and port can change. URL credentials and fragments are unsupported;
++// all database-path and query configuration, including TLS verification and CA
++// selection, remains part of the stable digest. Reject duplicate decoded keys.
++fn pageserver_routing_invariant(value: &str) -> Result<String> {
++    let mut parsed = url::Url::parse(value).context("parse managed pageserver URI")?;
++    if parsed.scheme() != "postgresql"
++        || parsed.host_str().is_none()
++        || parsed.port().is_none()
++        || !parsed.username().is_empty()
++        || parsed.password().is_some()
++        || parsed.fragment().is_some()
++    {
++        bail!("unsupported managed pageserver URI");
++    }
++    let mut names = std::collections::BTreeSet::new();
++    for (name, _) in parsed.query_pairs() {
++        if !names.insert(name.into_owned()) {
++            bail!("duplicate managed pageserver URI option");
++        }
++    }
++    parsed
++        .set_host(Some("routing.invalid"))
++        .map_err(|_| anyhow!("invalid managed pageserver host"))?;
++    parsed
++        .set_port(Some(6400))
++        .map_err(|_| anyhow!("invalid managed pageserver port"))?;
++    Ok(parsed.to_string())
++}
++
++fn safekeeper_address_safe(value: &str) -> bool {
++    if value.is_empty()
++        || value.len() > 300
++        || value
++            .chars()
++            .any(|c| !c.is_ascii_alphanumeric() && !matches!(c, '.' | '-' | ':' | '[' | ']'))
++    {
++        return false;
++    }
++    let Ok(parsed) = url::Url::parse(&format!("postgresql://{value}")) else {
++        return false;
++    };
++    parsed.host_str().is_some()
++        && parsed.port().is_some()
++        && parsed.path().is_empty()
++        && parsed.query().is_none()
++        && parsed.fragment().is_none()
++        && parsed.username().is_empty()
++        && parsed.password().is_none()
++}
++
++fn value_hash(value: &Value) -> Result<String> {
+     let mut canonical = Vec::new();
+-    write_canonical_json(&value, &mut canonical)?;
++    write_canonical_json(value, &mut canonical)?;
+     Ok(hex::encode(Sha256::digest(canonical)))
+ }
+ 
++// A controller notification may change only placement and safekeeper membership.
++// Identity, mode, credentials, TLS options, roles and every other parsed field
++// remain covered by this digest. Old records without it permit exact replay only.
++fn stable_spec_hash(spec: &ComputeSpec) -> Result<String> {
++    let mut value = serde_json::to_value(spec)?;
++    let object = value
++        .as_object_mut()
++        .context("owned compute spec is not an object")?;
++    if let Some(uri) = &spec.pageserver_connstring {
++        if let Ok(invariant) = pageserver_routing_invariant(uri) {
++            object.insert("pageserver_connstring".into(), Value::String(invariant));
++        }
++    }
++    for key in ["safekeeper_connstrings", "safekeepers_generation"] {
++        object.remove(key);
++    }
++    value_hash(&value)
++}
++
++fn supported_routing_spec(spec: &ComputeSpec) -> bool {
++    spec.tenant_id.is_some()
++        && spec.timeline_id.is_some()
++        && spec
++            .pageserver_connstring
++            .as_deref()
++            .is_some_and(|uri| pageserver_routing_invariant(uri).is_ok())
++        && spec.pageserver_connection_info.is_none()
++        && spec.shard_stripe_size.is_none()
++        && spec.safekeepers_generation.is_some()
++        && spec.safekeeper_connstrings.len() == 3
++        && spec
++            .safekeeper_connstrings
++            .iter()
++            .all(|value| safekeeper_address_safe(value))
++}
++
++// Keep this explicit projection byte-for-byte compatible with Hakopod's Go
++// controller. Sorting membership makes the digest independent of input order.
++pub(crate) fn routing_hash(spec: &ComputeSpec) -> Result<String> {
++    let mut members = spec.safekeeper_connstrings.clone();
++    members.sort_unstable();
++    value_hash(&serde_json::json!({
++        "pageserver_connstring": spec.pageserver_connstring,
++        "safekeeper_connstrings": members,
++        "safekeepers_generation": spec.safekeepers_generation,
++        "tenant_id": spec.tenant_id,
++        "timeline_id": spec.timeline_id,
++    }))
++}
++
+ fn write_canonical_json(value: &Value, output: &mut Vec<u8>) -> Result<()> {
+     match value {
+         Value::Null => output.extend_from_slice(b"null"),
+@@ -553,6 +719,226 @@ mod tests {
+         spec
+     }
+ 
++    fn routed_spec(token: &str) -> ComputeSpec {
++        let mut spec = spec(token);
++        spec.tenant_id = Some("11111111111111111111111111111111".parse().unwrap());
++        spec.timeline_id = Some("22222222222222222222222222222222".parse().unwrap());
++        spec.pageserver_connstring =
++            Some("postgresql://pageserver-0:6400?sslmode=verify-full&sslrootcert=/ca.crt".into());
++        spec.safekeeper_connstrings = vec![
++            "safekeeper-2:5454".into(),
++            "safekeeper-0:5454".into(),
++            "safekeeper-1:5454".into(),
++        ];
++        spec.safekeepers_generation = Some(4);
++        spec
++    }
++
++    fn cas_headers(token: &str, spec: &ComputeSpec) -> HeaderMap {
++        let mut headers = headers(token);
++        headers.insert(
++            HAKOPOD_EXPECTED_SPEC_HEADER,
++            spec_hash(spec).unwrap().parse().unwrap(),
++        );
++        headers
++    }
++
++    #[test]
++    fn routing_update_requires_current_digest_and_preserves_nonrouting_spec() {
++        let paths = TestPath::new();
++        let token = Uuid::new_v4().simple().to_string();
++        let ownership = ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap();
++        let original = routed_spec(&token);
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        let mut relocated = original.clone();
++        relocated.pageserver_connstring =
++            Some("postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt".into());
++        assert!(
++            ownership
++                .authorize_configure(&headers(&token), &relocated)
++                .is_err()
++        );
++        ownership
++            .authorize_configure(&cas_headers(&token, &original), &relocated)
++            .unwrap();
++        assert_eq!(
++            ownership.authorized_spec_hash().unwrap(),
++            Some(spec_hash(&relocated).unwrap())
++        );
++        let mut newer = relocated.clone();
++        newer.safekeepers_generation = Some(5);
++        assert!(
++            ownership
++                .authorize_configure(&cas_headers(&token, &original), &newer)
++                .is_err()
++        );
++        for altered in [
++            {
++                let mut s = newer.clone();
++                s.timeline_id = Some("33333333333333333333333333333333".parse().unwrap());
++                s
++            },
++            {
++                let mut s = newer.clone();
++                s.storage_auth_token = Some("different-secret".into());
++                s
++            },
++            {
++                let mut s = newer.clone();
++                s.project_id = Some("different-project".into());
++                s
++            },
++        ] {
++            assert!(
++                ownership
++                    .authorize_configure(&cas_headers(&token, &relocated), &altered)
++                    .is_err()
++            );
++        }
++        drop(ownership);
++        let restored = ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap();
++        restored
++            .authorize_configure(&cas_headers(&token, &relocated), &newer)
++            .unwrap();
++        restored
++            .authorize_spec_replay(&headers(&token), &newer)
++            .unwrap();
++        assert!(
++            restored
++                .authorize_spec_replay(&headers(&token), &original)
++                .is_err()
++        );
++    }
++
++    #[test]
++    fn legacy_record_can_replay_but_cannot_authorize_changed_routing() {
++        let paths = TestPath::new();
++        let token = Uuid::new_v4().simple().to_string();
++        let ownership = ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap();
++        let original = routed_spec(&token);
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        let mut record = ownership.read_record().unwrap().unwrap();
++        record.stable_spec_sha256 = None;
++        ownership.persist_replacement(&record).unwrap();
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        let mut newer = original.clone();
++        newer.safekeepers_generation = Some(5);
++        assert!(
++            ownership
++                .authorize_configure(&cas_headers(&token, &original), &newer)
++                .is_err()
++        );
++    }
++
++    #[test]
++    fn routing_cas_cannot_change_tls_credentials_or_connection_options() {
++        let paths = TestPath::new();
++        let token = Uuid::new_v4().simple().to_string();
++        let ownership = ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap();
++        let original = routed_spec(&token);
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        for uri in [
++            "postgresql://pageserver-1:6400?sslmode=disable&sslrootcert=/ca.crt",
++            "postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/different.crt",
++            "postgresql://user:password@pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt",
++            "postgres://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt",
++            "postgresql://pageserver-1:6400/other?sslmode=verify-full&sslrootcert=/ca.crt",
++            "postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt#fragment",
++            "postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt&sslmode=disable",
++            "postgresql://pageserver-1:6400?sslmode=verify-full&sslrootcert=/ca.crt&ssl%6dode=disable",
++        ] {
++            let mut changed = original.clone();
++            changed.pageserver_connstring = Some(uri.into());
++            assert!(
++                ownership
++                    .authorize_configure(&cas_headers(&token, &original), &changed)
++                    .is_err()
++            );
++        }
++        for address in [
++            "host=foreign password=secret",
++            "postgresql://foreign:5454",
++            "foreign:5454?sslmode=disable",
++            "user:secret@foreign:5454",
++            "foreign:5454/db",
++        ] {
++            let mut changed = original.clone();
++            changed.safekeeper_connstrings[0] = address.into();
++            assert!(
++                ownership
++                    .authorize_configure(&cas_headers(&token, &original), &changed)
++                    .is_err()
++            );
++        }
++        let mut changed = original.clone();
++        changed.safekeepers_generation = Some(5);
++        let mut duplicate = cas_headers(&token, &original);
++        duplicate.append(
++            HAKOPOD_EXPECTED_SPEC_HEADER,
++            spec_hash(&original).unwrap().parse().unwrap(),
++        );
++        assert!(ownership.authorize_configure(&duplicate, &changed).is_err());
++        assert_eq!(
++            ownership.authorized_spec_hash().unwrap(),
++            Some(spec_hash(&original).unwrap())
++        );
++    }
++
++    #[test]
++    fn concurrent_routing_updates_have_only_one_cas_winner() {
++        let paths = TestPath::new();
++        let token = Uuid::new_v4().simple().to_string();
++        let ownership = std::sync::Arc::new(
++            ComputeOwnership::load(Some(paths.state.clone().into_os_string())).unwrap(),
++        );
++        let original = routed_spec(&token);
++        ownership
++            .authorize_configure(&headers(&token), &original)
++            .unwrap();
++        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
++        let mut workers = Vec::new();
++        for generation in [5, 6] {
++            let ownership = ownership.clone();
++            let barrier = barrier.clone();
++            let mut updated = original.clone();
++            updated.safekeepers_generation = Some(generation);
++            let headers = cas_headers(&token, &original);
++            workers.push(thread::spawn(move || {
++                barrier.wait();
++                ownership.authorize_configure(&headers, &updated).is_ok()
++            }));
++        }
++        let winners = workers
++            .into_iter()
++            .map(|worker| worker.join().unwrap() as usize)
++            .sum::<usize>();
++        assert_eq!(winners, 1);
++    }
++
++    #[test]
++    fn routing_projection_matches_go_canonical_bytes() {
++        let spec = routed_spec("unused");
++        let canonical = br#"{"pageserver_connstring":"postgresql://pageserver-0:6400?sslmode=verify-full&sslrootcert=/ca.crt","safekeeper_connstrings":["safekeeper-0:5454","safekeeper-1:5454","safekeeper-2:5454"],"safekeepers_generation":4,"tenant_id":"11111111111111111111111111111111","timeline_id":"22222222222222222222222222222222"}"#;
++        assert_eq!(
++            routing_hash(&spec).unwrap(),
++            hex::encode(Sha256::digest(canonical))
++        );
++        let mut reordered = spec.clone();
++        reordered.safekeeper_connstrings.reverse();
++        assert_eq!(
++            routing_hash(&spec).unwrap(),
++            routing_hash(&reordered).unwrap()
++        );
++    }
++
+     #[test]
+     fn configure_is_exactly_replayable_and_restart_safe() {
+         let paths = TestPath::new();
+diff --git a/libs/compute_api/src/responses.rs b/libs/compute_api/src/responses.rs
+index 197814f..40ec56e 100644
+--- a/libs/compute_api/src/responses.rs
++++ b/libs/compute_api/src/responses.rs
+@@ -147,6 +147,15 @@ pub struct ComputeStatusResponse {
+     /// Durable control-plane operation that supplied the active spec. Callers
+     /// use this to distinguish their configure from an identical foreign one.
+     pub operation_uuid: Option<String>,
++    /// Digest of the parsed spec only after its configuration reached Running.
++    #[serde(default)]
++    pub spec_sha256: Option<String>,
++    /// Digest of the durable authorization, including a pending or replayable spec.
++    #[serde(default)]
++    pub authorized_spec_sha256: Option<String>,
++    /// Canonical placement and membership projection of the running spec.
++    #[serde(default)]
++    pub routing_sha256: Option<String>,
+     pub status: ComputeStatus,
+     #[serde(serialize_with = "rfc3339_serialize")]
+     pub last_active: Option<DateTime<Utc>>,

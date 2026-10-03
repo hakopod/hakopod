@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 2
 upstream_repository = "https://github.com/neondatabase/neon.git"
 upstream_commit = "fa504217c61bbcaf5c512d75830564541f917f8f"
 postgres_commit = "1e01fcea2a6b38180021aa83e0051d95286d9096"
@@ -12,25 +12,35 @@ proxy_patch = "patches/neon-proxy-control-plane-timeout.patch"
 proxy_patch_sha256 = "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 ownership_patch = "patches/neon-provider-ownership.patch"
 ownership_patch_sha256 = "a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
-frozen_combined_patch_sha256 = "bb37c2f06bad5aecdfe6e17a0cc19325613497b6e63d1b232b433ade2518fe30"
-combined_candidate_tree = "0e9da216fbb78976bac267a8036809e12f58a1bd"
+transport_patch = "patches/neon-storage-tls.patch"
+transport_patch_sha256 = "3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
+reconfigure_patch = "patches/neon-compute-reconfigure.patch"
+reconfigure_patch_sha256 = "12931e80616072403d44935d4e80a800c0e8576c549e107e9ddfa09c433595ca"
+placement_patch = "patches/neon-controller-placement.patch"
+placement_patch_sha256 = "9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
+frozen_combined_patch_sha256 = "1834ce6082a57388d408a3cb2d162fb970ad064324c06329e627bd5b3ea5f5f0"
+combined_candidate_tree = "5f24bced00ee471993649acdfbb3fe4e82f7eb30"
 
-# The ownership patch is intentionally derived after applying the existing proxy
-# patch. The frozen combined patch covers that original pair; the candidate
-# tree additionally binds the PostgreSQL 17.11 consumer patch above.
+# Apply proxy, ownership, PostgreSQL consumer, storage TLS, compute reconfiguration
+# and controller placement patches in that order. The combined patch and candidate
+# tree bind all six; the separate PostgreSQL tree binds the vendored server source.
 
 [source_archive]
-sha256 = "f91a9e1a5945dd1d2e634c2438d5c11052d4f2e993dc2d09c82f25d6eff995da"
-size_bytes = 113920297
+sha256 = "d60f451fa12899cc4c63991b804e2eb9deb3cf1202d36955e450299432ab76aa"
+size_bytes = 113923211
 member_count = 30844
 repeat_comparison = "PASS"
 global_member_order = "PASS"
-location = "/srv/hakopod-build/neon-pg1711-v5/source/neon-provider-source.tar.gz"
+location = "/srv/hakopod-build/neon-platform-final-v1/source-v3/neon-provider-source.tar.gz"
 
 [qualification]
 images_built = false
 images_published = false
 cluster_qualified = false
+
+[[rejected_artifacts]]
+sha256 = "b3f7bde39a0b9ce05775f3a61c6f084430ef9f5c47d806332935617899bf84d6"
+reason = "The compute authorization middleware could log a bearer token at debug level. Image preparation was stopped and the logging statement was removed."
 
 [[rejected_artifacts]]
 sha256 = "7a2f44a2a4c676be3ad64ef0ea52b3b144020d619facec4ad10ab8c94027020f"
