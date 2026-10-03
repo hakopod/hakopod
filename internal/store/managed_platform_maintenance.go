@@ -9,6 +9,12 @@ import (
 )
 
 func (s *Store) ClaimManagedPlatformMaintenance(ctx context.Context) (ManagedPlatformOperation, error) {
+	return retryManagedPlatformTransaction(ctx, func() (ManagedPlatformOperation, error) {
+		return s.claimManagedPlatformMaintenance(ctx)
+	})
+}
+
+func (s *Store) claimManagedPlatformMaintenance(ctx context.Context) (ManagedPlatformOperation, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return ManagedPlatformOperation{}, err
