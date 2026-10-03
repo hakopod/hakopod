@@ -47,7 +47,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
         self.root = Path(self.temporary.name) / 'source'
         self.directory = Path(self.temporary.name) / 'qualification'
         self.directory.mkdir()
-        for name in ('internal/cluster', 'internal/database', 'internal/backup', 'internal/spec',
+        for name in ('auth', 'cmd/hakopod-server', 'internal/cluster', 'internal/database', 'internal/backup', 'internal/spec',
                      'templates/blueprints/fixture', 'patches', 'scripts', 'release', 'installer'):
             (self.root / name).mkdir(parents=True)
         self.manifest = {'schema_version': 1, 'platform': 'linux/amd64', 'sources': {}, 'images': {}}
@@ -80,6 +80,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             (self.root / name).write_text('test fixture source\n')
         (self.root / 'internal/cluster/live_database_vitess_test.go').write_text('test fixture acceptance source\n')
         for name in ('internal/spec/templates.go', 'internal/cluster/volume_copy.py',
+                     'auth/runtime.go', 'cmd/hakopod-server/main.go',
                      'templates/embed.go', 'templates/catalog.json', 'templates/blueprints/fixture/hakopod.toml',
                      'internal/spec/.embedded-fixture'):
             (self.root / name).write_text('test fixture transitive source\n')
@@ -106,6 +107,17 @@ class VitessReleaseVerificationTest(unittest.TestCase):
 
     def test_accepts_exact_native_source_and_binaries(self):
         self.assertEqual(vitess.validate_metadata(self.directory, self.root), self.manifest)
+
+    def test_inventory_binds_authorization_and_server_bootstrap(self):
+        for name in ('auth/runtime.go', 'cmd/hakopod-server/main.go'):
+            with self.subTest(name=name):
+                self.assertIn(name, self.manifest['source_files'])
+                path = self.root / name
+                original = path.read_text()
+                path.write_text(original + 'changed\n')
+                with self.assertRaisesRegex(ValueError, 'source changed'):
+                    vitess.validate_metadata(self.directory, self.root)
+                path.write_text(original)
 
     def test_rejects_missing_or_repeated_environment_case(self):
         original = copy.deepcopy(self.acceptance['attempts'])

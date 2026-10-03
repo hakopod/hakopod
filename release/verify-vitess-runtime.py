@@ -63,7 +63,7 @@ def source_files(root):
     paths = [root / 'go.mod', root / 'go.sum']
     # Include transitive packages and embedded data. Keeping the entire internal
     # tree also catches future imports without maintaining another Go parser.
-    for name in ('internal', 'templates'):
+    for name in ('auth', 'cmd/hakopod-server', 'internal', 'templates'):
         directory = root / name
         if directory.is_symlink() or not directory.is_dir():
             raise ValueError('Missing or symbolic qualification source directory: ' + name)
