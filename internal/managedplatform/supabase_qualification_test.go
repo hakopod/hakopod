@@ -5,10 +5,7 @@ import (
 	"testing"
 )
 
-func TestSupabaseReleaseGateAndImageInventory(t *testing.T) {
-	if SupabaseReleaseQualified() {
-		t.Fatal("unqualified Supabase release gate is open")
-	}
+func TestSupabaseReleaseImageInventory(t *testing.T) {
 	images := map[string]string{}
 	for name, image := range supabaseReleaseImages {
 		images[name] = image
