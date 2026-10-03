@@ -182,11 +182,21 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		if apierrors.IsNotFound(namespaceErr) || ns.DeletionTimestamp != nil {
 			return c.deleteSupabaseOperation(ctx, state, op, before)
 		}
+		prior, current, err := loadSupabaseClaims(ctx, state, op)
+		if err != nil {
+			return err
+		}
+		namespaceClaim, claimed := current["namespace."+ns.Name]
+		if !claimed {
+			namespaceClaim, claimed = prior["namespace."+ns.Name]
+		}
+		if claimed && namespaceClaim.ResourceID != string(ns.UID) {
+			return fmt.Errorf("Neon deletion namespace claim identity changed")
+		}
+		if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+			return err
+		}
 		if request.Render.Spec.TLSMode == "managed" {
-			prior, current, err := loadSupabaseClaims(ctx, state, op)
-			if err != nil {
-				return err
-			}
 			if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
 				return err
 			}
@@ -228,6 +238,9 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		return err
 	}
 	request.Render.NamespaceUID = ns.UID
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return err
+	}
 	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
 		return err
 	}

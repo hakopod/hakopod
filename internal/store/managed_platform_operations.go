@@ -84,6 +84,12 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 		AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE (recovery.source_platform_id=o.platform_id OR recovery.target_platform_id=o.platform_id) AND recovery.status IN ('queued','running'))
 		ORDER BY o.next_attempt_at,o.created_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1)
 		RETURNING `+managedPlatformOperationColumns, lease))
+	if errors.Is(err, pgx.ErrNoRows) {
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return op, commitErr
+		}
+		return op, err
+	}
 	if err != nil {
 		return op, err
 	}
@@ -708,6 +714,8 @@ func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOpe
 	return tx.Commit(ctx)
 }
 
+// Asking for the prior revision includes older claims still owned after a
+// failed operation. The same resource bound and current-operation fence apply.
 func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceClaim, error) {
 	if revision < 1 || revision != op.Revision && revision != op.Revision-1 {
 		return nil, ErrInput
@@ -728,9 +736,9 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 		FROM platform_component_resources r
 		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind
 			AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
-		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.released_at IS NULL
+		WHERE r.platform_id=$1 AND (r.platform_revision=$2 OR $2=$3-1 AND r.platform_revision<$2) AND r.released_at IS NULL
 		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		ORDER BY r.component,r.resource_kind LIMIT $3`, op.PlatformID, revision, MaxManagedPlatformResources+1)
+		ORDER BY r.component,r.resource_kind LIMIT $4`, op.PlatformID, revision, op.Revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +798,7 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 }
 
 func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, prior PlatformResourceClaim) error {
-	if prior.PlatformID != op.PlatformID || prior.PlatformRevision != op.Revision-1 || prior.ImmutableGeneration < 1 || !managedPlatformComponent.MatchString(prior.Component) || len(prior.ResourceID) < 1 || len(prior.ResourceID) > 255 || prior.OwnerOperationID == "" {
+	if prior.PlatformID != op.PlatformID || prior.PlatformRevision < 1 || prior.PlatformRevision >= op.Revision || prior.ImmutableGeneration < 1 || !managedPlatformComponent.MatchString(prior.Component) || len(prior.ResourceID) < 1 || len(prior.ResourceID) > 255 || prior.OwnerOperationID == "" {
 		return ErrInput
 	}
 	if prior.Kind != "neon_tenant" && prior.Kind != "neon_timeline" && prior.Kind != "runtime_component" {
@@ -813,6 +821,13 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	}
 	if !managedPlatformClaimComponentAllowed(priorOperation, prior.Component, prior.Kind) {
 		return ErrInput
+	}
+	var pending bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM managed_platform_runtime_mutations WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND completed_at IS NULL)`, prior.PlatformID, prior.PlatformRevision, prior.Component).Scan(&pending); err != nil {
+		return err
+	}
+	if pending {
+		return ErrConflict
 	}
 	var baseResourceID string
 	var baseGeneration int64
