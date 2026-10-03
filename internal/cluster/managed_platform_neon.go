@@ -416,7 +416,7 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 		}
 	}
 	deprovisionOnly := op.Kind == "delete"
-	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), PageserverToken: string(pageserverToken), RequestTimeout: 20 * time.Second, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
+	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), PageserverToken: string(pageserverToken), RequestTimeout: 2 * time.Minute, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
 	if reader, ok := bindings.(neonControllerStateReader); ok && !deprovisionOnly {
 		config.ResolveComputeConfig = neonControllerComputeResolver(reader, op.PlatformID, op.Revision, request.Render.Spec.Neon.Pageservers)
 	}
