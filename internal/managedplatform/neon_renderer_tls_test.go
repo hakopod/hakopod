@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -55,8 +56,23 @@ func TestRenderNeonEncryptsBrokerAndControllerDatabaseTraffic(t *testing.T) {
 	}
 	db := database.Spec.Template.Spec.Containers[0]
 	joined := strings.Join(db.Args, " ")
-	if !strings.Contains(joined, "chmod 0600 /tmp/controller-database.key") || !strings.Contains(joined, "ssl=on") || !strings.Contains(joined, "unix_socket_directories=/tmp") || !strings.Contains(databaseConfig.Data["pg_hba.conf"], "hostnossl all all 0.0.0.0/0 reject") || !strings.Contains(databaseConfig.Data["pg_hba.conf"], "hostssl storage_controller storage_controller ::/0 scram-sha-256") {
+	if !strings.Contains(joined, "chmod 0600 /tmp/controller-database.key") || !strings.Contains(joined, "ssl=on") || !strings.Contains(joined, "unix_socket_directories=/var/run/postgresql") || !strings.Contains(databaseConfig.Data["pg_hba.conf"], "hostnossl all all 0.0.0.0/0 reject") || !strings.Contains(databaseConfig.Data["pg_hba.conf"], "hostssl storage_controller storage_controller ::/0 scram-sha-256") {
 		t.Fatal("controller database does not require TLS while preserving local bootstrap")
+	}
+	if !slices.Contains(db.Env, corev1.EnvVar{Name: "PGHOST", Value: "/var/run/postgresql"}) {
+		t.Fatal("controller database clients do not use the bootstrap socket")
+	}
+	if !slices.Contains(db.VolumeMounts, corev1.VolumeMount{Name: "controller-database-socket", MountPath: "/var/run/postgresql"}) {
+		t.Fatal("controller database bootstrap socket directory is not writable")
+	}
+	var boundedSocket bool
+	for _, volume := range database.Spec.Template.Spec.Volumes {
+		if volume.Name == "controller-database-socket" && volume.EmptyDir != nil {
+			boundedSocket = volume.EmptyDir.Medium == corev1.StorageMediumMemory && volume.EmptyDir.SizeLimit != nil && volume.EmptyDir.SizeLimit.Cmp(resource.MustParse("16Mi")) == 0
+		}
+	}
+	if !boundedSocket || db.SecurityContext == nil || db.SecurityContext.ReadOnlyRootFilesystem == nil || !*db.SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatal("controller database must retain a read-only root and bounded writable socket directory")
 	}
 	if storageController == nil {
 		t.Fatal("storage controller is missing")

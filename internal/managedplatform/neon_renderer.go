@@ -372,11 +372,16 @@ func neonPod(in NeonRenderInput, component Component, labels map[string]string, 
 	}
 	if logicalName == "controller-database" {
 		configName := "neon-controller-database-r" + strconv.FormatInt(in.Revision, 10)
+		// The PostgreSQL entrypoint clears PGHOST during initialization, so its
+		// socket must remain at the image's default path.
+		socketLimit := resource.MustParse("16Mi")
+		volumes = append(volumes, corev1.Volume{Name: "controller-database-socket", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: &socketLimit}}})
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "controller-database-socket", MountPath: "/var/run/postgresql"})
 		volumes = append(volumes, neonPVCVolume("data", "neon-controller-database"), corev1.Volume{Name: "controller-database-config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configName}}}})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: "/var/lib/postgresql/data"}, corev1.VolumeMount{Name: "controller-database-config", MountPath: "/etc/hakopod-postgres", ReadOnly: true})
 		container.Command = []string{"/bin/sh", "-ec"}
-		container.Args = []string{"umask 077; cp /var/run/secrets/hakopod/controller-database-password/tls.key /tmp/controller-database.key; chmod 0600 /tmp/controller-database.key; exec /usr/local/bin/docker-entrypoint.sh postgres -c hba_file=/etc/hakopod-postgres/pg_hba.conf -c ssl=on -c ssl_cert_file=/var/run/secrets/hakopod/controller-database-password/tls.crt -c ssl_key_file=/tmp/controller-database.key -c ssl_ca_file=/var/run/secrets/hakopod/controller-database-password/ca.crt -c unix_socket_directories=/tmp -c password_encryption=scram-sha-256"}
-		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "POSTGRES_PASSWORD", "value"), corev1.EnvVar{Name: "POSTGRES_DB", Value: "storage_controller"}, corev1.EnvVar{Name: "POSTGRES_USER", Value: "storage_controller"}, corev1.EnvVar{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"}, corev1.EnvVar{Name: "PGHOST", Value: "/tmp"})
+		container.Args = []string{"umask 077; cp /var/run/secrets/hakopod/controller-database-password/tls.key /tmp/controller-database.key; chmod 0600 /tmp/controller-database.key; exec /usr/local/bin/docker-entrypoint.sh postgres -c hba_file=/etc/hakopod-postgres/pg_hba.conf -c ssl=on -c ssl_cert_file=/var/run/secrets/hakopod/controller-database-password/tls.crt -c ssl_key_file=/tmp/controller-database.key -c ssl_ca_file=/var/run/secrets/hakopod/controller-database-password/ca.crt -c unix_socket_directories=/var/run/postgresql -c password_encryption=scram-sha-256"}
+		container.Env = append(container.Env, neonSecretEnv(in.Spec.Secrets["controller-database-password"], "POSTGRES_PASSWORD", "value"), corev1.EnvVar{Name: "POSTGRES_DB", Value: "storage_controller"}, corev1.EnvVar{Name: "POSTGRES_USER", Value: "storage_controller"}, corev1.EnvVar{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"}, corev1.EnvVar{Name: "PGHOST", Value: "/var/run/postgresql"})
 	} else if logicalName == "broker" {
 		container.Command = []string{"storage_broker"}
 		container.Args = []string{"--listen-https-addr=0.0.0.0:50051", "--ssl-key-file=/var/run/secrets/hakopod/broker-auth/tls.key", "--ssl-cert-file=/var/run/secrets/hakopod/broker-auth/tls.crt"}
