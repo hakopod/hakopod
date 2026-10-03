@@ -114,6 +114,30 @@ func TestVitessControlRuntimeHasBoundedGoResources(t *testing.T) {
 	}
 }
 
+func TestVitessTabletAndBackupProcessBudgets(t *testing.T) {
+	d := vitessTestDatabase()
+	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
+	keyspace := object["keyspaces"].([]any)[0].(map[string]any)
+	partition := keyspace["partitionings"].([]any)[0].(map[string]any)["equal"].(map[string]any)
+	pool := partition["shardTemplate"].(map[string]any)["tabletPools"].([]any)[0].(map[string]any)
+	values := map[string]string{}
+	for _, raw := range pool["extraEnv"].([]any) {
+		item := raw.(map[string]any)
+		if value, ok := item["value"].(string); ok {
+			values[item["name"].(string)] = value
+		}
+	}
+	if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "192MiB" {
+		t.Fatal("tablet restore process has no bounded Go budget")
+	}
+	for _, name := range []string{"requests", "limits"} {
+		resources := vitessBackupResources(d.Spec)[name].(map[string]any)
+		if resources["cpu"] != "600m" || resources["memory"] != "1536Mi" {
+			t.Fatal("backup omitted its Go or MySQL process allocation", resources)
+		}
+	}
+}
+
 func TestVitessTopologyProbesDoNotDependOnReadyService(t *testing.T) {
 	d := vitessTestDatabase()
 	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))

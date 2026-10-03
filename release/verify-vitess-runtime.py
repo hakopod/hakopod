@@ -157,7 +157,7 @@ def validate_native_environment(environment, case, images):
         raise ValueError('Vitess native acceptance requires a 12 GiB filesystem reserve')
     if type(budget) is not int or not 1024 ** 3 <= budget <= 64 * 1024 ** 3:
         raise ValueError('Vitess native acceptance requires a separate fixture disk budget')
-    expected_cpu = {'lifecycle': 8450, 'recovery': 16900, 'reseed': 6350, 'revocation': 4900}
+    expected_cpu = {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}
     if environment['required_cpu_milli'] != expected_cpu.get(case) or environment['cpu_shortfall_milli'] != 0:
         raise ValueError('Vitess native acceptance lacks the fixed case CPU envelope')
 

@@ -57,7 +57,7 @@ class NativePreflightTests(unittest.TestCase):
     def test_uses_canonical_digests_and_records_real_node_measurements(self):
         report, commands = self.collect()
         self.assertEqual(report['fixture_budget_bytes'], 4 * runner.GIB)
-        self.assertEqual(report['required_cpu_milli'], 8450)
+        self.assertEqual(report['required_cpu_milli'], 8850)
         self.assertEqual(report['cpu_shortfall_milli'], 0)
         for node in report['nodes']:
             self.assertEqual(node['conditions']['DiskPressure'], 'False')
@@ -143,8 +143,8 @@ class NativePreflightTests(unittest.TestCase):
         for node in constrained:
             node['status']['allocatable']['cpu'] = '3500m'
         report, _ = self.collect(inventory=constrained)
-        self.assertEqual(report['required_cpu_milli'], 8450)
-        self.assertEqual(report['cpu_shortfall_milli'], 1450)
+        self.assertEqual(report['required_cpu_milli'], 8850)
+        self.assertEqual(report['cpu_shortfall_milli'], 1850)
         self.qualified_environment(report)
         with self.assertRaises(ValueError):
             verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))

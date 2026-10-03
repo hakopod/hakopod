@@ -22,7 +22,7 @@ def environment_fixture(case, images):
                  for reference in [*images.values(), ETCD_IMAGE]]
     return {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * 1024 ** 3,
             'fixture_budget_bytes': 4 * 1024 ** 3,
-            'required_cpu_milli': {'lifecycle': 8450, 'recovery': 16900, 'reseed': 6350, 'revocation': 4900}[case],
+            'required_cpu_milli': {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}[case],
             'cpu_shortfall_milli': 0, 'host_filesystem': copy.deepcopy(filesystem),
             'nodes': [{'name': name, 'architecture': 'amd64', 'operating_system': 'linux',
                        'schedulable': True, 'image_gc_high_threshold_percent': 85,
