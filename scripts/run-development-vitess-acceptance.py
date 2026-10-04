@@ -179,7 +179,8 @@ def cluster_prerequisites(kube, receipt_path, receipt_sha256, nodes):
     observed_nodes = {item.get('metadata', {}).get('name'): item.get('metadata', {}).get('uid') for item in inventory}
     if namespace.get('metadata', {}).get('uid') != receipt['cluster_uid'] or observed_nodes != expected_nodes:
         raise RuntimeError('live development cluster identity differs from its receipt')
-    crds = command_json(kube + ['get', 'customresourcedefinitions.apiextensions.k8s.io', '-o', 'json']).get('items', [])
+    crds = command_json(kube + ['get', 'customresourcedefinitions.apiextensions.k8s.io',
+                                *sorted(VITESS_CRDS), '-o', 'json']).get('items', [])
     observed_crds = {}
     for item in crds:
         name = item.get('metadata', {}).get('name')
