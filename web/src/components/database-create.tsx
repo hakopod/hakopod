@@ -15,11 +15,13 @@ import {
   Network,
   Server,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react'
 import { client, unwrap } from '../lib/client'
 import { canAccess, useScope } from '../lib/scope'
 import { message } from '../lib/api'
 import { useDatabasePlacementNodes, type DatabaseSpec } from '../lib/databases'
+import { useBackupDestinations } from '../lib/backups'
 import { databaseEligibleNodes, databasePlacementIssue } from '../lib/database-placement'
 import { DatabasePlacementPicker } from './database-placement-picker'
 import {
@@ -81,6 +83,10 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
   const total = databaseRequestedCapacity(spec)
   const canManage = !identity.application && canAccess(identity, project, 'deployments:write')
   const nodeInventory = useDatabasePlacementNodes(project, environment, canManage)
+  const backupDestinations = useBackupDestinations(canManage && spec.engine === 'vitess')
+  const vitessDestinations = (backupDestinations.data?.items || []).filter(
+    (destination) => destination.project === project && destination.environment === environment,
+  )
   const eligibleNodes = databaseEligibleNodes(spec.engine, nodeInventory.data?.items || [])
   const placementIssue = nodeInventory.error
     ? 'Approved nodes could not be refreshed. Your selection is preserved; retry before continuing.'
@@ -120,6 +126,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
         ? { ...spec.pooling, read_only: mode === 'cluster' && spec.pooling.read_only }
         : undefined,
       shards: mode === 'cluster' && spec.engine === 'redis' ? 3 : 1,
+      vitess: spec.vitess
+        ? { ...spec.vitess, tables: mode === 'standalone' ? [] : spec.vitess.tables }
+        : undefined,
       placement: { ...spec.placement, spread: mode === 'cluster' ? 'nodes' : '' },
     })
   }
@@ -377,6 +386,8 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       <span>
                         {spec.engine === 'oracle'
                           ? 'Data Guard requires customer-licensed Enterprise support, which is still in development.'
+                          : spec.engine === 'vitess'
+                            ? 'Route through vtgate to a primary tablet in each shard, with replicas and three topology members.'
                           : spec.engine === 'clickhouse'
                             ? 'Replicate each shard across data members, with three Keeper members for coordination.'
                             : spec.engine === 'redis'
@@ -429,7 +440,15 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                             max={spec.engine === 'redis' ? 16 : 8}
                             value={spec.shards}
                             disabled={busy}
-                            onChange={(event) => update({ shards: Number(event.target.value) })}
+                            onChange={(event) => {
+                              const shards = Number(event.target.value)
+                              update({
+                                shards,
+                                vitess: spec.vitess && spec.engine === 'vitess'
+                                  ? { ...spec.vitess, tables: shards === 1 ? [] : spec.vitess.tables }
+                                  : spec.vitess,
+                              })
+                            }}
                           />
                         </label>
                       )}
@@ -451,6 +470,12 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       <p className="field-help">
                         Applications need a Redis Cluster client that can discover and reach every
                         member.
+                      </p>
+                    )}
+                    {spec.engine === 'vitess' && (
+                      <p className="field-help">
+                        Choose 1, 2, 4 or 8 shards and 1–5 additional tablets per shard. Applications
+                        connect through redundant vtgate gateways; three etcd members hold routing metadata.
                       </p>
                     )}
                   </FormSection>
@@ -639,6 +664,14 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     Includes {spec.storage_gib} GiB of backup staging. The APP schema quota is{' '}
                     {oracleFreeQuotaGiB(spec.storage_gib)} GiB, reserving space for system data,
                     undo and temporary work. Free's upstream limits still apply.
+                  </Note>
+                )}
+                {spec.engine === 'vitess' && (
+                  <Note>
+                    Each MySQL member includes a 100m CPU / 256Mi vttablet. The allocation also
+                    includes redundant vtgate gateways, three etcd topology members, control services,
+                    and bounded native-backup recovery headroom. Storage includes one data volume per tablet
+                    and 1 GiB for each topology member.
                   </Note>
                 )}
                 <div className="db-allocation-total">
@@ -877,9 +910,54 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     )}
                   </FormSection>
                 )}
+                {spec.engine === 'vitess' && (
+                  <FormSection
+                    title="Vitess routing and recovery"
+                    description="Choose the native destination used for tablet recovery. Sharded databases also require explicit table routing."
+                  >
+                    <label>
+                      Native backup destination
+                      <SelectField
+                        label="Native backup destination"
+                        value={spec.vitess?.backup_destination_id || ''}
+                        disabled={busy || backupDestinations.isPending}
+                        required
+                        options={[
+                          { value: '', label: backupDestinations.isPending ? 'Loading destinations…' : 'Choose a destination' },
+                          ...vitessDestinations.map((destination) => ({ value: destination.id, label: `${destination.name} · revision ${destination.revision}` })),
+                        ]}
+                        onValueChange={(backup_destination_id) => {
+                          const destination = vitessDestinations.find((item) => item.id === backup_destination_id)
+                          update({ vitess: { tables: spec.vitess?.tables || [], backup_destination_id, backup_destination_revision: destination?.revision || 0 } })
+                        }}
+                      />
+                      <span className="field-help">Only destinations assigned to {project} / {environment} are shown. The selected revision is fixed with the database, and the server verifies operator approval before creation.</span>
+                    </label>
+                    {backupDestinations.error && <FormError focus={false}>Backup destinations could not be loaded. Your other entries are preserved.</FormError>}
+                    {!backupDestinations.isPending && !backupDestinations.error && !vitessDestinations.length && (
+                      <Note>No native backup destination is available in this project and environment. Create one before continuing; the server will also verify operator approval.</Note>
+                    )}
+                    {spec.shards > 1 && (
+                      <div className="grid gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <strong className="text-sm">Table routing</strong>
+                          <Button type="button" size="sm" disabled={busy || (spec.vitess?.tables?.length || 0) >= 128} onClick={() => update({ vitess: { ...spec.vitess!, tables: [...(spec.vitess?.tables || []), { name: '', sharding_column: '' }] } })}>Add table</Button>
+                        </div>
+                        <p className="field-help">Add 1–128 tables. Each table uses one integer hash-routing column; names must be distinct SQL identifiers.</p>
+                        {(spec.vitess?.tables || []).map((table, index) => (
+                          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={index}>
+                            <label>Table name<Input required value={table.name} disabled={busy} maxLength={64} pattern="[A-Za-z_][A-Za-z0-9_]{0,63}" onChange={(event) => update({ vitess: { ...spec.vitess!, tables: spec.vitess!.tables!.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) } })} /></label>
+                            <label>Sharding column<Input required value={table.sharding_column} disabled={busy} maxLength={64} pattern="[A-Za-z_][A-Za-z0-9_]{0,63}" onChange={(event) => update({ vitess: { ...spec.vitess!, tables: spec.vitess!.tables!.map((item, itemIndex) => itemIndex === index ? { ...item, sharding_column: event.target.value } : item) } })} /></label>
+                            <Button type="button" size="sm" disabled={busy} aria-label={`Remove ${table.name || `table ${index + 1}`}`} onClick={() => update({ vitess: { ...spec.vitess!, tables: spec.vitess!.tables!.filter((_, itemIndex) => itemIndex !== index) } })}><Trash2 size={14} aria-hidden="true" />Remove</Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Note>vtgate accepts MySQL TLS on port 3306. Use app@primary for writes and app@replica for replica reads. Replica reads may lag.</Note>
+                  </FormSection>
+                )}
                 <Note>
-                  TLS enforcement is checked against the running database after deployment. Backup
-                  schedules must be configured after creation; replicas do not replace backups.
+                  TLS enforcement is checked against the running database after deployment. {spec.engine === 'vitess' ? 'The native recovery destination is required at creation; exported backup schedules remain separate.' : 'Backup schedules must be configured after creation; replicas do not replace backups.'}
                 </Note>
               </div>
             )}
@@ -938,7 +1016,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     <div>
                       <dt>Connection routing</dt>
                       <dd>
-                        {spec.engine === 'mysql'
+                        {spec.engine === 'vitess'
+                          ? `vtgate · ${spec.mode === 'cluster' ? 'app@primary writes and app@replica reads' : 'app@primary reads and writes'} · reviewed table routing`
+                          : spec.engine === 'mysql'
                           ? `MySQL Router · ${routerInstances(spec)} instances · ${spec.replicas ? 'write and replica routes' : 'write route'}`
                           : spec.pooling
                             ? `PgBouncer · ${spec.pooling.mode} · ${poolerInstances(spec)} instances · ${spec.pooling.read_only ? 'write and read endpoints' : 'write endpoint'} · ${spec.pooling.max_client_connections} clients and ${spec.pooling.default_pool_size} server connections per pooler`
@@ -953,8 +1033,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     </div>
                     <div>
                       <dt>Backups</dt>
-                      <dd>No schedule configured · set up after creation</dd>
+                      <dd>{spec.engine === 'vitess' ? `${vitessDestinations.find((item) => item.id === spec.vitess?.backup_destination_id)?.name || 'Native destination required'} · revision ${spec.vitess?.backup_destination_revision || '—'} · exported schedules set up after creation` : 'No schedule configured · set up after creation'}</dd>
                     </div>
+                    {spec.engine === 'vitess' && <div><dt>Table routing</dt><dd>{spec.shards > 1 ? `${spec.vitess?.tables?.length || 0} reviewed table entries` : 'Single shard · no table routing entries'}</dd></div>}
                   </dl>
                 </FormSection>
                 <Note>
@@ -1045,7 +1126,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
               <div className="db-create-member">
                 <Server size={20} aria-hidden="true" />
                 <span>
-                  {spec.engine === 'clickhouse' && spec.mode === 'cluster'
+                  {spec.engine === 'vitess'
+                    ? `${spec.shards} ${spec.shards === 1 ? 'shard' : 'shards'} · ${spec.replicas + 1} tablets each`
+                    : spec.engine === 'clickhouse' && spec.mode === 'cluster'
                     ? `${spec.shards} shards · ${spec.replicas + 1} copies each`
                     : spec.engine === 'redis' && spec.mode === 'cluster'
                       ? `${spec.shards} primary shards`
@@ -1074,6 +1157,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
               <p className="field-help">
                 Three Keeper members coordinate replication. They do not store application tables.
               </p>
+            )}
+            {spec.engine === 'vitess' && (
+              <p className="field-help">Applications connect through vtgate. Three etcd members hold routing metadata; table data remains on the tablets.</p>
             )}
             {spec.engine === 'mongodb' && (
               <p className="field-help">

@@ -15,7 +15,7 @@ export const databaseEngines = [
   { id: 'mongodb', name: 'MongoDB', category: 'Document', description: 'Flexible documents and native replica sets.', enabled: true },
   { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Column-oriented storage for analytics and replicated shards.', enabled: true },
   { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
-  { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'Sharded MySQL managed on your infrastructure.', enabled: false },
+  { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'MySQL-compatible routing across managed shards.', enabled: true },
 ] as const
 
 export const databaseVersions = (engine: string) => ({ mongodb: ['8.0'], mysql: ['8.4'], redis: ['8'], clickhouse: ['26.3'], oracle: ['23.26'], vitess: ['23'], postgresql: ['17', '18'] })[engine] || []
@@ -28,7 +28,7 @@ export function databaseEngineDefaults(spec: DatabaseSpec, engine: DatabaseSpec[
   return {
     ...spec, engine, mode, version: databaseVersions(engine)[0], pooling: undefined,
     oracle: engine === 'oracle' ? { edition: 'free' } : undefined,
-    vitess: engine === 'vitess' ? spec.vitess : undefined,
+    vitess: engine === 'vitess' ? spec.vitess || { tables: [], backup_destination_id: '', backup_destination_revision: 0 } : undefined,
     shards: engine === 'redis' && mode === 'cluster' ? 3 : 1,
     replicas: mode === 'cluster' ? votingDatabase(engine) ? 2 : Math.max(1, Math.min(spec.replicas, maximumReplicas(engine))) : 0,
     placement: { ...spec.placement, spread: mode === 'standalone' ? '' : spec.placement?.spread },
