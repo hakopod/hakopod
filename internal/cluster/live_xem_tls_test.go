@@ -17,6 +17,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -154,20 +155,29 @@ func xemTLSProbe(t *testing.T, ctx context.Context, c *Client, namespace string,
 	defer func() {
 		clean, done := context.WithTimeout(context.Background(), 30*time.Second)
 		defer done()
-		if err := c.kube.CoreV1().Pods(namespace).Delete(clean, created.Name, deleteOptions(created)); err != nil {
+		// Pod status updates change its resource version after creation. The
+		// immutable UID still protects against deleting a replacement probe.
+		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &created.UID}}
+		if err := c.kube.CoreV1().Pods(namespace).Delete(clean, created.Name, options); err != nil && !apierrors.IsNotFound(err) {
 			t.Error(err)
+			return
 		}
 		for clean.Err() == nil {
 			p, e := c.kube.CoreV1().Pods(namespace).Get(clean, created.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(e) {
+				return
+			}
 			if e != nil {
-				break
+				t.Error("could not confirm TLS probe cleanup", e)
+				return
 			}
 			if p.UID != created.UID {
 				t.Error("probe pod ownership changed")
-				break
+				return
 			}
 			_ = sleepContext(clean, time.Second)
 		}
+		t.Error("TLS probe pod cleanup timed out", clean.Err())
 	}()
 	wait, done := context.WithTimeout(ctx, 100*time.Second)
 	defer done()

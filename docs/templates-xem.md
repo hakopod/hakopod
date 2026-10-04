@@ -72,9 +72,19 @@ needed. No messages are sent by template validation or acceptance.
 ## Verification status
 
 The source contract and upstream fixes are implemented. Planner/API tests cover
-all eight bundled/existing combinations. Earlier development builds and browser
-checks covered authentication, forms and uploads with external storage. The
-final bundled-MinIO cluster matrix stopped because of development disk pressure
-before its backend and storage assertions. The shared blueprint's verification
-section records image release evidence and these runtime limits; registry
-architecture metadata alone is not a runtime claim.
+all eight bundled/existing combinations. Native AMD64 runtime acceptance on
+October 4, 2026 completed the four PostgreSQL/Redis combinations with bundled
+MinIO and a fifth case with all dependencies external. It verified bucket
+creation, administrator/frontend login, private upload and signed download,
+restart persistence, and PostgreSQL/Redis TLS trust and rejection checks.
+
+The completed coverage combines three passing cases from R4 with the two-case
+R5 retry after fixing probe cleanup; it is not a claim that R4 passed as a whole.
+All owned test namespaces, volumes, workers and clusters were removed. See
+[runtime acceptance](xem-runtime-acceptance.md) for exact source manifests,
+case timings and cleanup evidence.
+
+External services were controlled development fixtures. Final-image ARM64,
+public ingress TLS, external-provider networking, email delivery, provider bucket
+policy/CORS and backup restoration remain unverified by this acceptance.
+Registry architecture metadata alone is not a runtime claim.

@@ -14,11 +14,13 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +69,11 @@ func TestLiveXemTemplate(t *testing.T) {
 	if err != nil || string(node.UID) != nodeUID || node.Labels[xemFixtureLabel] != pool || node.Labels["hakopod.com/pool"] != pool {
 		t.Fatal("development worker ownership does not match", err)
 	}
+	for _, condition := range node.Status.Conditions {
+		if (condition.Type == corev1.NodeDiskPressure || condition.Type == corev1.NodeMemoryPressure || condition.Type == corev1.NodePIDPressure) && condition.Status != corev1.ConditionFalse {
+			t.Fatal("reserved development worker is under resource pressure", condition.Type)
+		}
+	}
 	for _, modes := range []struct{ database, redis, storage string }{{"bundled", "bundled", "bundled"}, {"external", "bundled", "bundled"}, {"bundled", "external", "bundled"}, {"external", "external", "bundled"}, {"external", "external", "external"}} {
 		if !t.Run(modes.database+"-postgres_"+modes.redis+"-redis_"+modes.storage+"-storage", func(t *testing.T) { xemAcceptance(t, ctx, c, path, node, modes.database, modes.redis, modes.storage) }) {
 			break
@@ -78,6 +85,9 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 	t.Helper()
 	runID := fmt.Sprintf("xem-%d", time.Now().UnixNano())
 	app := xemCandidate(t, runID, node.Status.NodeInfo.Architecture, databaseMode, redisMode, storageMode)
+	for _, name := range spec.Names(app) {
+		t.Logf("runtime service %s image=%s", name, app.Services[name].Image)
+	}
 	mathesarCapacity(t, ctx, c, node, app)
 	target := Target{ApplicationID: runID, Project: "xem-acceptance", Environment: "test", OperationID: "fixtures", Revision: 1, Spec: app}
 	labels := labelsFor(target, "")
@@ -131,6 +141,12 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 	target.Revision++
 	target.OperationID = "application"
 	deploy()
+	if storageMode == "bundled" {
+		if _, err := store.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket}); err != nil {
+			t.Fatal("backend did not create the bundled private bucket", err)
+		}
+		t.Log("backend automatically created the bundled private bucket")
+	}
 	// A healthy HTTP process can exist even when upstream administrator seeding
 	// failed. Keep this initial diagnostic bounded and free of secret values.
 	podsForSeed, seedErr := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{Limit: 30})
@@ -269,6 +285,25 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 		}
 		return strings.TrimSpace(string(out))
 	}
+	verifyRedisConnection := func() {
+		t.Helper()
+		pods, err := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{LabelSelector: serviceKey + "=backend", Limit: 10})
+		if err != nil || pods.Continue != "" {
+			t.Fatal("cannot observe backend Redis connection identity", err)
+		}
+		backendIPs := map[string]bool{}
+		for _, pod := range pods.Items {
+			if pod.DeletionTimestamp == nil && net.ParseIP(pod.Status.PodIP) != nil {
+				backendIPs[pod.Status.PodIP] = true
+			}
+		}
+		connections, unused, err := xemRedisConnections(redisCommand("CLIENT LIST"), backendIPs, redisDB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("Redis CLIENT LIST confirms %d initialized backend connections using database %s (%d unused pool sockets)", connections, redisDB, unused)
+	}
+	verifyRedisConnection()
 	if redisCommand("SET acceptance:persistent verified") != "OK" {
 		t.Fatal("Redis durable write failed")
 	}
@@ -312,6 +347,7 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 		t.Fatal("user identity did not persist", status)
 	}
 	verifyFile()
+	verifyRedisConnection()
 	if redisCommand("GET acceptance:persistent") != "verified" {
 		t.Fatal("Redis value did not survive restart")
 	}
@@ -348,12 +384,47 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 	t.Log("verified real admin and frontend login, host/auth rejection, private S3 upload and signed download, token refresh, unchanged PVCs and PostgreSQL/Redis/object persistence; no email sent")
 }
 
+// go-redis opens MinIdleConns before authentication or SELECT. Those untouched
+// sockets remain in DB 0 with cmd=NULL and tot-cmds=0 until their first use.
+// Every initialized backend connection must select the configured database.
+func xemRedisConnections(listing string, backendIPs map[string]bool, database string) (initialized, unused int, err error) {
+	for _, line := range strings.Split(listing, "\n") {
+		fields := map[string]string{}
+		for _, field := range strings.Fields(line) {
+			pair := strings.SplitN(field, "=", 2)
+			if len(pair) == 2 {
+				fields[pair[0]] = pair[1]
+			}
+		}
+		host, _, err := net.SplitHostPort(fields["addr"])
+		if err != nil || !backendIPs[host] {
+			continue
+		}
+		if fields["db"] == "0" && fields["cmd"] == "NULL" && fields["tot-cmds"] == "0" {
+			unused++
+			continue
+		}
+		if fields["db"] != database {
+			return initialized, unused, fmt.Errorf("backend Redis connection selected database %s, want %s (last command %s)", fields["db"], database, fields["cmd"])
+		}
+		commands, err := strconv.ParseUint(fields["tot-cmds"], 10, 64)
+		if err != nil || commands == 0 || fields["cmd"] == "" || fields["cmd"] == "NULL" {
+			return initialized, unused, fmt.Errorf("backend Redis connection has no verified completed command")
+		}
+		initialized++
+	}
+	if initialized == 0 {
+		return 0, unused, fmt.Errorf("no initialized backend Redis connection; in-memory fallback cannot pass acceptance")
+	}
+	return initialized, unused, nil
+}
+
 func xemCandidate(t *testing.T, name, architecture, databaseMode, redisMode, storageMode string) spec.Application {
 	t.Helper()
 	raw, err := os.ReadFile("../../templates/blueprints/xem/hakopod.toml")
 	if os.IsNotExist(err) {
 		raw, err = os.ReadFile("../../templates/blueprints/xem/candidate.toml")
-		t.Log("explicit prepublication candidate; image references are supplied by the local acceptance registry")
+		t.Log("explicit prepublication candidate from templates/blueprints/xem/candidate.toml")
 	}
 	if err != nil {
 		t.Fatal(err)
