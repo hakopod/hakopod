@@ -66,9 +66,11 @@ func SupabaseRequiredSecretKeys() []string  { return append([]string(nil), supab
 func SupabaseRequiredStorageKeys() []string { return append([]string(nil), supabaseStorageKeys...) }
 
 var supabaseResourceMinimums = map[string]Resources{
-	"database": {CPU: "500m", Memory: "2Gi"},
-	"pooler":   {CPU: "250m", Memory: "512Mi"},
-	"realtime": {CPU: "250m", Memory: "512Mi"},
+	"database":      {CPU: "500m", Memory: "2Gi"},
+	"pooler":        {CPU: "250m", Memory: "512Mi"},
+	"postgres-meta": {CPU: "250m", Memory: "256Mi"},
+	"realtime":      {CPU: "250m", Memory: "512Mi"},
+	"storage":       {CPU: "250m", Memory: "256Mi"},
 }
 
 type SupabaseConfig struct {

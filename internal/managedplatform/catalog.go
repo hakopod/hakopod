@@ -1,5 +1,7 @@
 package managedplatform
 
+import "k8s.io/apimachinery/pkg/api/resource"
+
 // CatalogEntry supplies editable desired configuration. Its capability is the
 // runtime qualification gate; the defaults do not describe a running platform.
 type CatalogEntry struct {
@@ -25,7 +27,16 @@ func CatalogEntries() []CatalogEntry {
 	}
 	supabase := defaults("supabase", SupabaseVersion, SupabaseComponentNames(), SupabaseRequiredStorageKeys())
 	for name, minimum := range supabaseResourceMinimums {
-		supabase.Resources[name] = minimum
+		current := supabase.Resources[name]
+		currentCPU, minimumCPU := resource.MustParse(current.CPU), resource.MustParse(minimum.CPU)
+		currentMemory, minimumMemory := resource.MustParse(current.Memory), resource.MustParse(minimum.Memory)
+		if currentCPU.Cmp(minimumCPU) < 0 {
+			current.CPU = minimum.CPU
+		}
+		if currentMemory.Cmp(minimumMemory) < 0 {
+			current.Memory = minimum.Memory
+		}
+		supabase.Resources[name] = current
 	}
 	supabase.Storage["database"] = 10
 	supabase.Supabase = &SupabaseConfig{DatabaseName: "postgres", JWTExpirySeconds: 3600, RESTMaxRows: 1000, StorageFileLimitBytes: 50 << 20, PoolSize: 10, PoolMaxClients: 100}
