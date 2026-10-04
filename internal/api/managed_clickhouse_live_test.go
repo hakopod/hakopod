@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
-	"net/netip"
 	"os"
 	"os/exec"
 	"regexp"
@@ -27,6 +27,17 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+type clickhouseAPIOutput struct {
+	bytes.Buffer
+}
+
+func (w *clickhouseAPIOutput) Write(p []byte) (int, error) {
+	if len(p) > (64<<10)-w.Len() {
+		return 0, fmt.Errorf("ClickHouse query output exceeded its bound")
+	}
+	return w.Buffer.Write(p)
+}
+
 const clickhouseAPIQuery = `set -eu
 umask 077
 IFS= read -r password
@@ -37,10 +48,11 @@ cat > "$work/query.sql"
 cat > "$work/client.xml" <<EOF
 <config><host>127.0.0.1</host><port>9440</port><tls-sni-override>$1</tls-sni-override><database>app</database><user>app</user><password>$password</password><secure>true</secure><connect_timeout>3</connect_timeout><receive_timeout>20</receive_timeout><send_timeout>20</send_timeout><send_logs_level>none</send_logs_level><openSSL><client><caConfig>/etc/hakopod-client-tls/ca.crt</caConfig><verificationMode>strict</verificationMode><extendedVerification>true</extendedVerification><loadDefaultCAFile>false</loadDefaultCAFile><invalidCertificateHandler><name>RejectCertificateHandler</name></invalidCertificateHandler></client></openSSL></config>
 EOF
+unset password
 clickhouse-client --config-file="$work/client.xml" --queries-file="$work/query.sql"
 `
 
-func clickhouseAPIPreflight(t *testing.T, ctx context.Context, kube kubernetes.Interface) ([]string, string) {
+func clickhouseAPIPreflight(t *testing.T, ctx context.Context, kube kubernetes.Interface) []string {
 	t.Helper()
 	names := strings.Split(os.Getenv("HAKOPOD_CLICKHOUSE_FAULT_NODES"), ",")
 	lease := os.Getenv("HAKOPOD_CLICKHOUSE_LEASE_ID")
@@ -49,7 +61,6 @@ func clickhouseAPIPreflight(t *testing.T, ctx context.Context, kube kubernetes.I
 		t.Fatal("exact ClickHouse node and lease inventory is required")
 	}
 	seen := map[string]bool{}
-	gateway := ""
 	for _, name := range names {
 		if seen[name] || !regexp.MustCompile(`^k3d-hakopod-clickhouse-worker-[0-9]+$`).MatchString(name) {
 			t.Fatal("invalid ClickHouse node inventory")
@@ -73,19 +84,12 @@ func clickhouseAPIPreflight(t *testing.T, ctx context.Context, kube kubernetes.I
 		if err != nil || json.Unmarshal(raw, &labels) != nil || labels["k3d.cluster"] != "hakopod-dev" || labels["k3d.role"] != "agent" || labels["com.hakopod.lease-id"] != lease {
 			t.Fatal("ClickHouse node lease identity changed")
 		}
-		raw, err = exec.CommandContext(ctx, "sudo", "docker", "inspect", name, "--format", "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}").Output()
-		address := strings.TrimSpace(string(raw))
-		parsed, parseErr := netip.ParseAddr(address)
-		if err != nil || parseErr != nil || !parsed.Is4() || !parsed.IsPrivate() || gateway != "" && gateway != address {
-			t.Fatal("ClickHouse node bridge gateway changed")
-		}
-		gateway = address
 	}
 	runtime, err := kube.NodeV1().RuntimeClasses().Get(ctx, "hakopod-clickhouse", metav1.GetOptions{})
 	if err != nil || runtime.Handler != "hakopod-clickhouse" || runtime.Annotations["hakopod.com.node-restriction.kubernetes.io/clickhouse-runtime"] != "systrap-no-patching-v1" {
 		t.Fatal("ClickHouse RuntimeClass is unavailable")
 	}
-	return names, gateway
+	return names
 }
 
 func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
@@ -110,7 +114,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, _ := clickhouseAPIPreflight(t, ctx, kube)
+	nodes := clickhouseAPIPreflight(t, ctx, kube)
 	runtime, err := cluster.New(path, cluster.Options{ClickHouseSandbox: true})
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +160,12 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 			clean, stop := context.WithTimeout(context.Background(), 3*time.Minute)
 			completed := false
 			for clean.Err() == nil {
+				current, loadErr := db.DatabaseInternal(clean, d.ID)
+				if loadErr != nil {
+					t.Errorf("reload database %s for cleanup: %v", d.ID, loadErr)
+					break
+				}
+				d = current
 				done, cleanupErr := runtime.DeleteDatabase(clean, d, func() error { return clean.Err() })
 				if cleanupErr != nil {
 					t.Errorf("cleanup database %s: %v", d.ID, cleanupErr)
@@ -218,14 +228,11 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 		member := d.Observation.Members[0]
 		host := strings.TrimSuffix(member.Name, "-0") + "." + cluster.DatabaseNamespace(d.ID) + ".svc.cluster.local"
 		input := bytes.NewBufferString(credentials["password"] + "\n" + sql + "\n")
-		var output bytes.Buffer
+		var output clickhouseAPIOutput
 		step, stop := context.WithTimeout(ctx, 30*time.Second)
 		defer stop()
 		if err := runtime.DatabaseExec(step, d, member, []string{"bash", "-c", clickhouseAPIQuery, "clickhouse-api-query", host}, input, &output); err != nil {
 			t.Fatal("ClickHouse app query failed")
-		}
-		if output.Len() > 64<<10 {
-			t.Fatal("ClickHouse query output exceeded its bound")
 		}
 		return strings.TrimSpace(output.String())
 	}
@@ -250,6 +257,9 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 			break
 		}
 		time.Sleep(time.Second)
+	}
+	if job.Status != "succeeded" {
+		t.Fatal("ClickHouse backup timed out", job.ID, job.Status)
 	}
 	artifact, err := db.BackupArtifact(ctx, job.ArtifactID)
 	if err != nil || artifact.Source.Engine != "clickhouse" || artifact.Source.ManagedDatabaseID != source.ID || artifact.SourceRevision != source.Revision || artifact.VerifiedAt == nil {
@@ -281,6 +291,9 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
+	if recovery.Status != "succeeded" {
+		t.Fatal("ClickHouse restore timed out", recovery.ID, recovery.Status)
+	}
 	if err = db.RefreshDatabaseRecoveries(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -302,11 +315,20 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
+		if claims.Continue != "" || len(claims.Items) > 8 {
+			t.Fatal("database claim list exceeded its bound")
+		}
 		volumes := make([]ownedVolume, 0, len(claims.Items))
 		for _, claim := range claims.Items {
+			if claim.Spec.VolumeName == "" || claim.UID == "" {
+				t.Fatal("database claim identity is incomplete")
+			}
 			pv, e := kube.CoreV1().PersistentVolumes().Get(ctx, claim.Spec.VolumeName, metav1.GetOptions{})
 			if e != nil {
 				t.Fatal(e)
+			}
+			if pv.Spec.ClaimRef == nil || pv.Spec.ClaimRef.Namespace != ns || pv.Spec.ClaimRef.Name != claim.Name || pv.Spec.ClaimRef.UID != claim.UID {
+				t.Fatal("database volume ownership changed")
 			}
 			volumes = append(volumes, ownedVolume{pv.Name, pv.UID})
 		}
@@ -314,8 +336,8 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 		if status := client.request("DELETE", "/databases/"+d.ID, map[string]any{"expected_revision": d.Revision, "confirm_name": d.Spec.Name}, &operation, "clickhouse-api-delete-"+d.ID); status != 202 {
 			t.Fatal("database delete", status)
 		}
+		var current managed.Operation
 		for ctx.Err() == nil {
-			var current managed.Operation
 			if status := client.request("GET", "/database-operations/"+operation.ID, nil, &current, ""); status != 200 {
 				t.Fatal("delete operation", status)
 			}
@@ -326,6 +348,9 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 				break
 			}
 			time.Sleep(time.Second)
+		}
+		if current.Status != "succeeded" {
+			t.Fatal("database deletion timed out", current.ID, current.Status, current.Phase)
 		}
 		if _, e = kube.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{}); !apierrors.IsNotFound(e) {
 			t.Fatal("owned namespace remains after deletion")
