@@ -1,4 +1,4 @@
-Hakopod 0.1.0-alpha.48 adds Mathesar and updates Xem with independent choices for bundled or existing data services.
+Hakopod 0.1.0-alpha.49 adds Mathesar and updates Xem with independent choices for bundled or existing data services.
 
 - Mathesar 0.12.0 can use bundled PostgreSQL or an existing PostgreSQL database. Existing connections default to verified TLS. Its shared RWX media storage requires a suitably configured self-hosted or user-owned server; Cloud hosted compute keeps this preset unavailable.
 - Xem can use bundled or existing PostgreSQL, Redis and object storage independently. Bundled MinIO keeps uploads private and serves signed downloads through the installation's HTTPS origin.
@@ -20,11 +20,11 @@ The engine guides and managed-database acceptance record identify tested source 
 
 ```sh
 curl --fail --location --proto '=https' --tlsv1.2 \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.48/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.48
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.49/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.49
 ```
 
-Direct upgrades are supported from alpha.46 and alpha.47. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.47 and alpha.48. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
 
 Installing or upgrading Hakopod does not install missing database controllers, increase workspace capacity or approve a storage class. Operators must prepare those separately.
 
