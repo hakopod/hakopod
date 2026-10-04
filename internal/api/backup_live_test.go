@@ -80,7 +80,16 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 	if _, err = client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String("hakopod-backup-tests")}); err != nil {
 		t.Fatal("create disposable S3 bucket", err)
 	}
-	if _, err = client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("readiness"), Body: strings.NewReader("development fixture")}); err != nil {
+	for {
+		_, err = client.PutObject(ready, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("readiness"), Body: strings.NewReader("development fixture")})
+		if err == nil {
+			break
+		}
+		select {
+		case <-ready.Done():
+		case <-time.After(time.Second):
+			continue
+		}
 		logs, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "40", name).CombinedOutput()
 		// The fixture logs contain only storage startup and volume allocation facts.
 		for _, line := range strings.Split(string(logs), "\n") {
