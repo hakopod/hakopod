@@ -106,7 +106,9 @@ jobs:
       - name: Restore the pinned template source
         run: git submodule update --init templates
       - name: Retain Vitess qualification or its compiled release hold
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare vitess --output .local/managed-vitess-release-evidence
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare vitess --output .local/managed-vitess-release-evidence
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/verify-vitess-http.py --output .local/managed-vitess-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: managed-vitess-release-evidence
