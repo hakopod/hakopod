@@ -105,12 +105,12 @@ func testVitessRecoveryIngress(t *testing.T, ctx context.Context, c *Client, tar
 	check(false)
 	stamp := time.Now().UTC()
 	target.Status, target.Recovery.RestoredAt = "ready", &stamp
-	if err := c.ReconcileDatabaseRecoveryAccess(ctx, target, func() error { return ctx.Err() }); err != nil {
+	if err := c.ReconcileDatabaseNetworkPolicy(ctx, target, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	check(false)
 	target.Recovery.InspectedAt = &stamp
-	if err := c.ReconcileDatabaseRecoveryAccess(ctx, target, func() error { return ctx.Err() }); err != nil {
+	if err := c.ReconcileDatabaseNetworkPolicy(ctx, target, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	check(true)

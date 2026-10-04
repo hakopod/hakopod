@@ -148,12 +148,12 @@ func testRecoveryIngressGates(t *testing.T, ctx context.Context, c *Client, d da
 	if err := c.databaseNetworkPolicy(ctx, d, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ReconcileDatabaseRecoveryAccess(ctx, d, func() error { return ctx.Err() }); err != nil {
+	if err := c.ReconcileDatabaseNetworkPolicy(ctx, d, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	check(false)
 	d.Recovery.InspectedAt = &stamp
-	if err := c.ReconcileDatabaseRecoveryAccess(ctx, d, func() error { return ctx.Err() }); err != nil {
+	if err := c.ReconcileDatabaseNetworkPolicy(ctx, d, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	check(true)

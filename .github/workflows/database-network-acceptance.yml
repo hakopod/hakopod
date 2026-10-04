@@ -1,0 +1,82 @@
+name: Database network acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'internal/api/database_network*.go'
+      - 'internal/api/databases.go'
+      - 'internal/cluster/database_network*.go'
+      - 'internal/cluster/database_runtime.go'
+      - 'internal/cluster/database_health.go'
+      - 'internal/store/database_maintenance.go'
+      - 'internal/store/database_observation.go'
+      - '.github/workflows/database-network-acceptance.yml'
+permissions:
+  contents: read
+concurrency:
+  group: database-network-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      HAKOPOD_DEV_SERVER_MEMORY: 3g
+      HAKOPOD_DATABASE_NETWORK_TEST: '1'
+      HAKOPOD_TEST_KUBECONFIG: ${{ github.workspace }}/.local/kubeconfig
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - name: Create the disposable named development cluster
+        run: |
+          scripts/local-up.sh
+          .local/bin/k3d node create hakopod-database-worker --cluster hakopod-dev --role agent \
+            --memory 1536m --k3s-arg '--kubelet-arg=max-pods=20' --wait --timeout 180s
+          docker update --cpus 1.5 k3d-hakopod-dev-server-0 >/dev/null
+          docker update --cpus 1 --memory 1536m --memory-swap 1536m k3d-hakopod-database-worker-0 >/dev/null
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev wait --for=condition=Ready node/k3d-hakopod-database-worker-0 --timeout=180s
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev apply -f deploy/storage/local-path.yaml
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev -n hakopod-storage rollout status deployment/local-path-provisioner --timeout=180s
+      - name: Install the pinned PostgreSQL controller in development
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --connect-timeout 10 --max-time 120 --max-filesize 8388608 \
+            https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml --output .local/cnpg-network-fixture.yaml
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          path = Path('.local/cnpg-network-fixture.yaml')
+          raw = path.read_bytes()
+          if hashlib.sha256(raw).hexdigest() != '37237f145d8138256ea25ae830f87759255665ff08f8d552fdd8224a5ec032fb':
+              raise SystemExit('CloudNativePG manifest checksum did not match')
+          image = 'ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1'
+          path.write_text(raw.decode().replace(image, image + '@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07'))
+          PY
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev apply --server-side -f .local/cnpg-network-fixture.yaml
+          kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev -n cnpg-system rollout status deployment/cnpg-controller-manager --timeout=180s
+      - name: Verify normal-loop repair against real PostgreSQL and NetworkPolicy
+        shell: bash
+        run: |
+          source .local/env
+          export HAKOPOD_TEST_DATABASE_URL="$HAKOPOD_DATABASE_URL"
+          export GOMEMLIMIT=512MiB GOMAXPROCS=2
+          mkdir -p .local/database-network-results
+          go test -p=1 ./internal/api -run '^TestLiveDatabaseNetworkPolicyRefresh$' -json -count=1 -timeout=25m | tee .local/database-network-results/result.jsonl
+      - name: Save bounded acceptance output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: database-network-acceptance
+          path: .local/database-network-results/result.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop the disposable cluster
+        if: always()
+        run: scripts/local-down.sh
