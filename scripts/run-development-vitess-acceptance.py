@@ -34,6 +34,9 @@ MAX_RUN_SECONDS = 95 * 60
 PACKAGE = 'github.com/hakopod/hakopod/internal/cluster'
 NODES = ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')
 ALLOWED_NODES = NODES + ('k3d-hakopod-database-worker-1',)
+DEDICATED_NODES = ('k3d-hakopod-vitess-worker-0', 'k3d-hakopod-vitess-worker-1',
+                   'k3d-hakopod-vitess-worker-2')
+APPROVED_NODE_SETS = (ALLOWED_NODES, DEDICATED_NODES)
 GIB = 1024 ** 3
 CASE_CPU_MILLI = {
     # These are the exact CPUReservationMilli envelopes for the fixed native
@@ -57,9 +60,19 @@ VITESS_CRDS = {
 
 def fixture_nodes(value):
     nodes = tuple(value.split(','))
-    if not nodes or any(not node for node in nodes) or len(nodes) not in (2, 3) or len(set(nodes)) != len(nodes) or any(node not in ALLOWED_NODES for node in nodes):
+    if (not nodes or any(not node for node in nodes) or len(nodes) not in (2, 3)
+            or len(set(nodes)) != len(nodes)
+            or not (set(nodes) <= set(ALLOWED_NODES) or set(nodes) == set(DEDICATED_NODES))):
         raise RuntimeError('native acceptance requires two or three unique named development nodes')
     return nodes
+
+
+def approved_node_set(nodes):
+    matches = [approved for approved in APPROVED_NODE_SETS
+               if set(nodes) <= set(approved) and (approved != DEDICATED_NODES or set(nodes) == set(approved))]
+    if len(matches) != 1:
+        raise RuntimeError('native acceptance nodes must belong to one approved development topology')
+    return matches[0]
 
 
 def canonical_image(reference):
@@ -158,7 +171,8 @@ def cluster_prerequisites(kube, receipt_path, receipt_sha256, nodes):
     if receipt.get('context') != 'k3d-hakopod-dev' or not isinstance(receipt.get('cluster_uid'), str):
         raise RuntimeError('development cluster receipt identity is invalid')
     expected_nodes = receipt.get('node_uids')
-    if not isinstance(expected_nodes, dict) or set(expected_nodes) != set(ALLOWED_NODES) or not set(nodes) <= set(expected_nodes) or any(not isinstance(uid, str) or not uid for uid in expected_nodes.values()):
+    approved_nodes = approved_node_set(nodes)
+    if not isinstance(expected_nodes, dict) or set(expected_nodes) != set(approved_nodes) or not set(nodes) <= set(expected_nodes) or any(not isinstance(uid, str) or not uid for uid in expected_nodes.values()):
         raise RuntimeError('development cluster receipt node identity differs')
     namespace = command_json(kube + ['get', 'namespace', 'kube-system', '-o', 'json'])
     inventory = command_json(kube + ['get', 'nodes', *sorted(expected_nodes), '-o', 'json']).get('items', [])

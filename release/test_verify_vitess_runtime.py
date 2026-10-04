@@ -165,6 +165,39 @@ class VitessReleaseVerificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'reserve'):
             vitess.validate_native_environment(environment, 'lifecycle', [*self.acceptance['images'].values(), ETCD_IMAGE])
 
+    def test_accepts_exact_dedicated_workers_and_rejects_other_dedicated_shapes(self):
+        environment = environment_fixture('lifecycle', self.acceptance['images'])
+        template = environment['nodes'][0]
+        dedicated = ('k3d-hakopod-vitess-worker-0', 'k3d-hakopod-vitess-worker-1',
+                     'k3d-hakopod-vitess-worker-2')
+        environment['nodes'] = []
+        for name in dedicated:
+            node = copy.deepcopy(template)
+            node['name'] = name
+            environment['nodes'].append(node)
+        environment['cluster']['node_uids'] = {name: 'uid-' + str(index)
+                                               for index, name in enumerate(dedicated)}
+        vitess.validate_native_environment(environment, 'lifecycle', [*self.acceptance['images'].values(), ETCD_IMAGE])
+
+        for names in (dedicated[:2], (dedicated[0], 'k3d-hakopod-dev-server-0', dedicated[2])):
+            malformed = copy.deepcopy(environment)
+            malformed['nodes'] = malformed['nodes'][:len(names)]
+            for node, name in zip(malformed['nodes'], names):
+                node['name'] = name
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, 'foreign node'):
+                vitess.validate_native_environment(malformed, 'lifecycle', [*self.acceptance['images'].values(), ETCD_IMAGE])
+
+        wrong_receipt = copy.deepcopy(environment)
+        wrong_receipt['cluster']['node_uids'].pop(dedicated[-1])
+        with self.assertRaisesRegex(ValueError, 'exact development cluster'):
+            vitess.validate_native_environment(wrong_receipt, 'lifecycle', [*self.acceptance['images'].values(), ETCD_IMAGE])
+
+    def test_rejects_unhashable_node_name_as_malformed_evidence(self):
+        environment = environment_fixture('lifecycle', self.acceptance['images'])
+        environment['nodes'][0]['name'] = {'unexpected': 'mapping'}
+        with self.assertRaisesRegex(ValueError, 'foreign node'):
+            vitess.validate_native_environment(environment, 'lifecycle', [*self.acceptance['images'].values(), ETCD_IMAGE])
+
     def test_rejects_missing_boolean_or_unknown_metadata_schema(self):
         for target in (self.manifest, self.acceptance):
             for value in (None, True, False, 2, '1'):
