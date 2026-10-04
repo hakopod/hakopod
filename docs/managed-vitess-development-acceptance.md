@@ -85,9 +85,12 @@ initialize a new fixture with old data. The test refuses an existing database
 namespace. A failed fixture can be retained for inspection with
 `HAKOPOD_KEEP_DATABASE_FIXTURES=1`; remove only that owned fixture before retrying.
 
-The tests permit only `k3d-hakopod-dev-server-0`,
-`k3d-hakopod-database-worker-0` and `k3d-hakopod-database-worker-1`.
-They require `HAKOPOD_DATABASE_RECOVERY_TEST=1`,
+The tests accept one of two named development topologies: two or three unique
+nodes selected from `k3d-hakopod-dev-server-0`,
+`k3d-hakopod-database-worker-0` and `k3d-hakopod-database-worker-1`; or the
+exact dedicated triple `k3d-hakopod-vitess-worker-0`,
+`k3d-hakopod-vitess-worker-1` and `k3d-hakopod-vitess-worker-2`. They require
+`HAKOPOD_DATABASE_RECOVERY_TEST=1`,
 `HAKOPOD_DATABASE_VITESS_TEST=1` and `HAKOPOD_TEST_KUBECONFIG` pointing to the
 named development context. Coordinate their resource use with other acceptance
 work before starting them.
@@ -159,9 +162,10 @@ for each run; the helper refuses to overwrite earlier evidence. Run it inside
 the development VM's bounded systemd unit after coordinating the test lane.
 Pass the protected development cluster receipt and its exact checksum with
 `--cluster-receipt` and `--cluster-receipt-sha256`. Before starting Go, the
-runner binds the live cluster and all three approved node UIDs to that receipt.
-It also requires exactly the eight established, names-accepted, namespaced
-`planetscale.com` resource definitions.
+runner binds the live cluster and every node UID in the selected topology's
+complete approved node set to that receipt, then checks the exact selected nodes
+used by the case. It also requires exactly the eight established,
+names-accepted, namespaced `planetscale.com` resource definitions.
 
 Warm the Go test cache against the exact candidate source before importing the
 images. Import the runtime, operator and etcd images into every selected node,
@@ -188,8 +192,8 @@ No Go test or database provisioning starts after a rejected preflight.
 
 The runner also reads allocatable CPU and the effective CPU requests of every
 active pod on the selected nodes. It reserves the fixed product envelope used
-by each test topology: 8,450m for lifecycle, 16,900m for simultaneous recovery
-source and target clusters, 6,350m for reseed and 4,900m for revocation. These
+by each test topology: 8,850m for lifecycle, 17,700m for simultaneous recovery
+source and target clusters, 6,550m for reseed and 5,100m for revocation. These
 figures include replacement and native backup surge from the production
 database capacity contract. The preflight records and rejects any shortfall.
 
